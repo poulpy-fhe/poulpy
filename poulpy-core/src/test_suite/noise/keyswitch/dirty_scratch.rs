@@ -35,8 +35,10 @@ use crate::{
 /// zeroing the buffer first — an obligation that was invisible at the call site
 /// and that the automorphism path did not meet. Running the same keyswitch over a
 /// zeroed and a poisoned arena pins the buffer as self-initializing.
-pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -162,7 +164,7 @@ where
 /// stale scratch. Callers compensated by pre-zeroing `res_dft`, an obligation
 /// invisible at the call site. Sibling of
 /// `test_glwe_keyswitch_ignores_dirty_scratch`.
-pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::TestBackend>(
+pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
 ) where

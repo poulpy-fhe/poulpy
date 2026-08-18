@@ -12,7 +12,6 @@ use crate::layouts::{
 /// Implementations must only read and write the regions described by the provided layouts, respect
 /// scratch-space requirements, and produce results equivalent to the documented conversion
 /// semantics for the backend.
-#[allow(private_bounds)]
 pub unsafe trait ConversionImpl<BE: Backend>: Backend {
     fn lwe_sample_extract<R, A>(module: &Module<BE>, res: &mut R, a: &A)
     where
@@ -89,8 +88,6 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See [`conversion_defaults`]
 /// for reference algorithms a backend may forward to.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait ConversionDefault<BE: Backend> {
     fn lwe_sample_extract_default<R, A>(&self, res: &mut R, a: &A)
     where
@@ -163,7 +160,6 @@ pub trait ConversionDefault<BE: Backend> {
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> ConversionImpl<BE> for BE
 where
     Module<BE>: ConversionDefault<BE>,

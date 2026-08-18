@@ -1,295 +1,232 @@
-use poulpy_hal::layouts::{Backend, DataView, MatZnx, Module, ScalarZnx, TransferFrom, VecZnx};
+//! Moving a layout from one backend to another.
+//!
+//! The destination must already exist:
+//!
+//! ```ignore
+//! let mut sk = module.glwe_secret_alloc_from_infos(&sk_host);
+//! sk_host.transfer_into(&mut sk);
+//! ```
+//!
+//! Three things follow from requiring an allocated destination, none of which a
+//! form returning a fresh value can offer:
+//!
+//! - no backend is named anywhere. Both buffer types are concrete, so nothing
+//!   has to be recovered from an associated-type projection, and there is no
+//!   type parameter whose direction a reader can misjudge.
+//! - the whole shape is checkable, not just the byte count. Both operands are
+//!   present, so `base2k`, `k`, degree, column and limb counts are all compared.
+//! - the allocation is visible and hoistable. Moving a key set allocates once,
+//!   and the cost is not hidden inside something that reads like a conversion.
+//!
+//! Impls are one per layout: a shape check, then the container move. Being a
+//! trait rather than a closed set of methods, a downstream crate can transfer
+//! its own layouts without editing this one.
 
-use crate::layouts::{
-    BackendGGLWE, BackendGGSW, BackendGLWE, BackendGLWEPlaintext, BackendGLWESecret, BackendLWE, BackendLWEPlaintext,
-    BackendLWESecret, GGLWE, GGSW, GLWE, GLWEPlaintext, GLWESecret, LWE, LWEPlaintext, LWESecret,
+use poulpy_hal::layouts::{
+    CopyFromHost, CopyToHost, Data, DataView, DataViewMut, MatZnx, ScalarZnx, VecZnx, ZnxWord, transfer_buf_into,
 };
 
-fn transfer_vec_znx<From, To>(src: &VecZnx<From::OwnedBuf, From::ZnxWord>) -> VecZnx<To::OwnedBuf, To::ZnxWord>
+use crate::layouts::{
+    GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWETensor, GLWETensorKey, LWE,
+    LWEPlaintext, LWESecret,
+};
+
+/// Moves `Self` into an already-allocated destination.
+pub trait TransferInto<Dst> {
+    /// # Panics
+    ///
+    /// If the two values do not agree on shape.
+    fn transfer_into(&self, dst: &mut Dst);
+}
+
+fn move_vec_znx<D1, D2, W>(src: &VecZnx<D1, W>, dst: &mut VecZnx<D2, W>)
 where
-    From: Backend<ZnxWord = To::ZnxWord>,
-    To: Backend + TransferFrom<From>,
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
 {
-    VecZnx::from_data(
-        <To as TransferFrom<From>>::transfer_buf(src.data()),
-        src.n(),
-        src.cols(),
-        src.size(),
-    )
+    assert_eq!(src.n(), dst.n(), "transfer_into: ring degree");
+    assert_eq!(src.cols(), dst.cols(), "transfer_into: cols");
+    assert_eq!(src.size(), dst.size(), "transfer_into: size");
+    transfer_buf_into(src.data(), dst.data_mut());
 }
 
-fn transfer_mat_znx<From, To>(src: &MatZnx<From::OwnedBuf, From::ZnxWord>) -> MatZnx<To::OwnedBuf, To::ZnxWord>
+fn move_mat_znx<D1, D2, W>(src: &MatZnx<D1, W>, dst: &mut MatZnx<D2, W>)
 where
-    From: Backend<ZnxWord = To::ZnxWord>,
-    To: Backend + TransferFrom<From>,
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
 {
-    MatZnx::from_data(
-        <To as TransferFrom<From>>::transfer_buf(src.data()),
-        src.n(),
-        src.rows(),
-        src.cols_in(),
-        src.cols_out(),
-        src.size(),
-    )
+    assert_eq!(src.n(), dst.n(), "transfer_into: ring degree");
+    assert_eq!(src.rows(), dst.rows(), "transfer_into: rows");
+    assert_eq!(src.cols_in(), dst.cols_in(), "transfer_into: cols_in");
+    assert_eq!(src.cols_out(), dst.cols_out(), "transfer_into: cols_out");
+    assert_eq!(src.size(), dst.size(), "transfer_into: size");
+    transfer_buf_into(src.data(), dst.data_mut());
 }
 
-fn transfer_scalar_znx<From, To>(src: &ScalarZnx<From::OwnedBuf, From::ZnxWord>) -> ScalarZnx<To::OwnedBuf, To::ZnxWord>
+fn move_scalar_znx<D1, D2, W>(src: &ScalarZnx<D1, W>, dst: &mut ScalarZnx<D2, W>)
 where
-    From: Backend<ZnxWord = To::ZnxWord>,
-    To: Backend + TransferFrom<From>,
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
 {
-    ScalarZnx::from_data(<To as TransferFrom<From>>::transfer_buf(src.data()), src.n(), src.cols())
+    assert_eq!(src.n(), dst.n(), "transfer_into: ring degree");
+    assert_eq!(src.cols(), dst.cols(), "transfer_into: cols");
+    transfer_buf_into(src.data(), dst.data_mut());
 }
 
-pub trait ModuleTransfer<To: Backend> {
-    fn upload_glwe<From>(&self, src: &BackendGLWE<From>) -> BackendGLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn download_glwe<From>(&self, src: &BackendGLWE<From>) -> BackendGLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn upload_lwe<From>(&self, src: &BackendLWE<From>) -> BackendLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn download_lwe<From>(&self, src: &BackendLWE<From>) -> BackendLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn upload_gglwe<From>(&self, src: &BackendGGLWE<From>) -> BackendGGLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn download_gglwe<From>(&self, src: &BackendGGLWE<From>) -> BackendGGLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn upload_ggsw<From>(&self, src: &BackendGGSW<From>) -> BackendGGSW<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn download_ggsw<From>(&self, src: &BackendGGSW<From>) -> BackendGGSW<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn upload_glwe_secret<From>(&self, src: &BackendGLWESecret<From>) -> BackendGLWESecret<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn download_glwe_secret<From>(&self, src: &BackendGLWESecret<From>) -> BackendGLWESecret<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn upload_lwe_secret<From>(&self, src: &BackendLWESecret<From>) -> BackendLWESecret<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn download_lwe_secret<From>(&self, src: &BackendLWESecret<From>) -> BackendLWESecret<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn upload_glwe_plaintext<From>(&self, src: &BackendGLWEPlaintext<From>) -> BackendGLWEPlaintext<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn download_glwe_plaintext<From>(&self, src: &BackendGLWEPlaintext<From>) -> BackendGLWEPlaintext<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn upload_lwe_plaintext<From>(&self, src: &BackendLWEPlaintext<From>) -> BackendLWEPlaintext<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
-
-    fn download_lwe_plaintext<From>(&self, src: &BackendLWEPlaintext<From>) -> BackendLWEPlaintext<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>;
+impl<D1, D2, W> TransferInto<GLWE<D2, W>> for GLWE<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWE<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWE base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: GLWE k");
+        move_vec_znx(&self.data, &mut dst.data);
+    }
 }
 
-impl<To: Backend> ModuleTransfer<To> for Module<To> {
-    fn upload_glwe<From>(&self, src: &BackendGLWE<From>) -> BackendGLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        let _ = self;
-        GLWE {
-            data: transfer_vec_znx::<From, To>(&src.data),
-            k: src.k,
-            base2k: src.base2k,
-        }
+impl<D1, D2, W> TransferInto<GLWEPlaintext<D2, W>> for GLWEPlaintext<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWEPlaintext<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWEPlaintext base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: GLWEPlaintext k");
+        move_vec_znx(&self.data, &mut dst.data);
     }
+}
 
-    fn download_glwe<From>(&self, src: &BackendGLWE<From>) -> BackendGLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        self.upload_glwe(src)
+impl<D1, D2, W> TransferInto<LWEPlaintext<D2, W>> for LWEPlaintext<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut LWEPlaintext<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: LWEPlaintext base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: LWEPlaintext k");
+        move_vec_znx(&self.data, &mut dst.data);
     }
+}
 
-    fn upload_lwe<From>(&self, src: &BackendLWE<From>) -> BackendLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        let _ = self;
-        LWE {
-            body: transfer_vec_znx::<From, To>(&src.body),
-            mask: transfer_vec_znx::<From, To>(&src.mask),
-            k: src.k,
-            base2k: src.base2k,
-        }
+impl<D1, D2, W> TransferInto<LWE<D2, W>> for LWE<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut LWE<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: LWE base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: LWE k");
+        move_vec_znx(&self.body, &mut dst.body);
+        move_vec_znx(&self.mask, &mut dst.mask);
     }
+}
 
-    fn download_lwe<From>(&self, src: &BackendLWE<From>) -> BackendLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        self.upload_lwe(src)
+impl<D1, D2, W> TransferInto<GGLWE<D2, W>> for GGLWE<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GGLWE<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GGLWE base2k");
+        assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGLWE k_aux");
+        assert_eq!(self.dsize, dst.dsize, "transfer_into: GGLWE dsize");
+        move_mat_znx(&self.data, &mut dst.data);
     }
+}
 
-    fn upload_gglwe<From>(&self, src: &BackendGGLWE<From>) -> BackendGGLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        let _ = self;
-        GGLWE {
-            data: transfer_mat_znx::<From, To>(&src.data),
-            k_aux: src.k_aux,
-            base2k: src.base2k,
-            dsize: src.dsize,
-        }
+impl<D1, D2, W> TransferInto<GGSW<D2, W>> for GGSW<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GGSW<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GGSW base2k");
+        assert_eq!(self.k_aux, dst.k_aux, "transfer_into: GGSW k_aux");
+        assert_eq!(self.dsize, dst.dsize, "transfer_into: GGSW dsize");
+        move_mat_znx(&self.data, &mut dst.data);
     }
+}
 
-    fn download_gglwe<From>(&self, src: &BackendGGLWE<From>) -> BackendGGLWE<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        self.upload_gglwe(src)
+impl<D1, D2, W> TransferInto<GLWESwitchingKey<D2, W>> for GLWESwitchingKey<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWESwitchingKey<D2, W>) {
+        self.key.transfer_into(&mut dst.key);
+        dst.input_degree = self.input_degree;
+        dst.output_degree = self.output_degree;
     }
+}
 
-    fn upload_ggsw<From>(&self, src: &BackendGGSW<From>) -> BackendGGSW<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        let _ = self;
-        GGSW {
-            data: transfer_mat_znx::<From, To>(&src.data),
-            k_aux: src.k_aux,
-            base2k: src.base2k,
-            dsize: src.dsize,
-        }
+impl<D1, D2, W> TransferInto<GLWEAutomorphismKey<D2, W>> for GLWEAutomorphismKey<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWEAutomorphismKey<D2, W>) {
+        self.key.transfer_into(&mut dst.key);
+        dst.p = self.p;
     }
+}
 
-    fn download_ggsw<From>(&self, src: &BackendGGSW<From>) -> BackendGGSW<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        self.upload_ggsw(src)
+impl<D1, D2, W> TransferInto<GLWESecret<D2, W>> for GLWESecret<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWESecret<D2, W>) {
+        move_scalar_znx(&self.data, &mut dst.data);
+        dst.dist = self.dist;
     }
+}
 
-    fn upload_glwe_secret<From>(&self, src: &BackendGLWESecret<From>) -> BackendGLWESecret<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        let _ = self;
-        GLWESecret {
-            data: transfer_scalar_znx::<From, To>(&src.data),
-            dist: src.dist,
-        }
+impl<D1, D2, W> TransferInto<LWESecret<D2, W>> for LWESecret<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut LWESecret<D2, W>) {
+        move_scalar_znx(&self.data, &mut dst.data);
+        dst.dist = self.dist;
     }
+}
 
-    fn download_glwe_secret<From>(&self, src: &BackendGLWESecret<From>) -> BackendGLWESecret<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        self.upload_glwe_secret(src)
+impl<D1, D2, W> TransferInto<GLWETensor<D2, W>> for GLWETensor<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWETensor<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWETensor base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: GLWETensor k");
+        assert_eq!(self.rank, dst.rank, "transfer_into: GLWETensor rank");
+        move_vec_znx(&self.data, &mut dst.data);
     }
+}
 
-    fn upload_lwe_secret<From>(&self, src: &BackendLWESecret<From>) -> BackendLWESecret<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        let _ = self;
-        LWESecret {
-            data: transfer_scalar_znx::<From, To>(&src.data),
-            dist: src.dist,
-        }
-    }
-
-    fn download_lwe_secret<From>(&self, src: &BackendLWESecret<From>) -> BackendLWESecret<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        self.upload_lwe_secret(src)
-    }
-
-    fn upload_glwe_plaintext<From>(&self, src: &BackendGLWEPlaintext<From>) -> BackendGLWEPlaintext<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        let _ = self;
-        GLWEPlaintext {
-            data: transfer_vec_znx::<From, To>(&src.data),
-            k: src.k,
-            base2k: src.base2k,
-        }
-    }
-
-    fn download_glwe_plaintext<From>(&self, src: &BackendGLWEPlaintext<From>) -> BackendGLWEPlaintext<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        self.upload_glwe_plaintext(src)
-    }
-
-    fn upload_lwe_plaintext<From>(&self, src: &BackendLWEPlaintext<From>) -> BackendLWEPlaintext<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        let _ = self;
-        LWEPlaintext {
-            data: transfer_vec_znx::<From, To>(&src.data),
-            k: src.k,
-            base2k: src.base2k,
-        }
-    }
-
-    fn download_lwe_plaintext<From>(&self, src: &BackendLWEPlaintext<From>) -> BackendLWEPlaintext<To>
-    where
-        From: Backend<ZnxWord = To::ZnxWord>,
-        To: TransferFrom<From>,
-    {
-        self.upload_lwe_plaintext(src)
+impl<D1, D2, W> TransferInto<GLWETensorKey<D2, W>> for GLWETensorKey<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWETensorKey<D2, W>) {
+        self.0.transfer_into(&mut dst.0);
     }
 }

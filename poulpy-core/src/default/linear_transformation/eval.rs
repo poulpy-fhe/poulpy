@@ -8,7 +8,6 @@
 //! products, lazy giant rotations, and one final BIG normalization.
 
 #![allow(clippy::too_many_arguments)]
-#![allow(private_bounds)]
 
 use poulpy_hal::{
     api::{

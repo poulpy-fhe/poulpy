@@ -12,13 +12,13 @@ pub struct GLWEPublicKey<D: Data, W: ZnxWord> {
     pub(crate) dist: Distribution,
 }
 
-impl<D: HostDataMut, W: ZnxWord> GetDistributionMut for GLWEPublicKey<D, W> {
+impl<D: Data, W: ZnxWord> GetDistributionMut for GLWEPublicKey<D, W> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GetDistribution for GLWEPublicKey<D, W> {
+impl<D: Data, W: ZnxWord> GetDistribution for GLWEPublicKey<D, W> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }

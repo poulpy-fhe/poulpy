@@ -1,12 +1,11 @@
 use poulpy_hal::{
     layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, ToOwnedDeep, TransferFrom, VecZnx,
-        VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
+        Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx, VecZnxToBackendMut,
+        VecZnxToBackendRef, WriterTo,
     },
     source::Source,
 };
 
-use crate::api::ModuleTransfer;
 use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::layouts::ZnxWord;
@@ -169,21 +168,6 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for GLWE<D, W> {
             base2k: self.base2k,
             k: self.k,
         }
-    }
-}
-
-impl<D: HostDataRef, W: ZnxWord> GLWE<D, W> {
-    /// Copies this ciphertext's backing bytes into an owned buffer of
-    /// backend `To`, routing via host bytes.
-    ///
-    /// `BE` is the backend that produced `self`; `To` is the destination.
-    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> GLWE<To::OwnedBuf, To::ZnxWord>
-    where
-        BE: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend<ZnxWord = W>,
-        To: TransferFrom<BE>,
-    {
-        dst.upload_glwe(self)
     }
 }
 

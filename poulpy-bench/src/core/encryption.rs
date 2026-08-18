@@ -17,13 +17,14 @@ use criterion::{Bencher, measurement::Measurement};
 
 use crate::core::params::{CoreParams, key_dnum_k_aux};
 
-pub fn runner_glwe_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CoreParams,
-) where
-    Module<BE>: ModuleNew<BE> + GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretSampling<BE>,
+pub fn runner_glwe_encrypt_sk<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
+    Module<BE>: ModuleNew<BE>
+        + GLWEEncryptSk<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    BE::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     let infos = GLWELayout {
         n: Degree(cp.n),
@@ -38,13 +39,13 @@ pub fn runner_glwe_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M:
     let mut source_xa = Source::new([1u8; 32]);
     let mut source_xe = Source::new([2u8; 32]);
 
-    let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(&infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, i64> = module.glwe_secret_alloc_from_infos(&infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(infos.rank());
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-    let mut ct: poulpy_core::layouts::GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut ct: poulpy_core::layouts::GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&infos));
 
     let enc_infos = NoiseInfos::new(infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
@@ -62,14 +63,14 @@ pub fn runner_glwe_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M:
     });
 }
 
-pub fn runner_ggsw_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CoreParams,
-) where
-    Module<BE>: ModuleNew<BE> + GGSWEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretSampling<BE>,
+pub fn runner_ggsw_encrypt_sk<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
+    Module<BE>: ModuleNew<BE>
+        + GGSWEncryptSk<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
-    for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     let (dnum, k_aux) = key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
     let infos = GGSWLayout {
@@ -87,7 +88,7 @@ pub fn runner_ggsw_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M:
     let mut source_xa = Source::new([1u8; 32]);
     let mut source_xe = Source::new([2u8; 32]);
 
-    let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(&infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, i64> = module.glwe_secret_alloc_from_infos(&infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(infos.rank());
@@ -113,11 +114,14 @@ pub fn runner_ggsw_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M:
     });
 }
 
-pub fn runner_glwe_automorphism_key_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+pub fn runner_glwe_automorphism_key_encrypt_sk<BE: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEAutomorphismKeyEncryptSk<BE> + GLWESecretSampling<BE>,
+    Module<BE>: ModuleNew<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWESecretSampling<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     const P: i64 = 3;
@@ -138,10 +142,10 @@ pub fn runner_glwe_automorphism_key_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, Z
     let mut source_xa = Source::new([1u8; 32]);
     let mut source_xe = Source::new([2u8; 32]);
 
-    let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(&atk_infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, i64> = module.glwe_secret_alloc_from_infos(&atk_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
-    let mut atk: GLWEAutomorphismKey<Vec<u8>, i64> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
+    let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, i64> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos));
 
     let enc_infos = NoiseInfos::new(atk_infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();

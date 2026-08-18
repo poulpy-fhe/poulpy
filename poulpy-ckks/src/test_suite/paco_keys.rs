@@ -24,7 +24,7 @@ use crate::api::CKKSEncodingOps;
 use std::collections::HashMap;
 
 use poulpy_core::{
-    ModuleTransfer,
+    TransferInto,
     layouts::{Base2K, GLWESecretPreparedFactory, LinearTransformationStrategy, ModuleCoreAlloc},
 };
 use poulpy_hal::{
@@ -120,7 +120,8 @@ where
     let glwe_infos = params.glwe_layout();
     let mut sk_host = host_module.glwe_secret_alloc_from_infos(&glwe_infos);
     spec.fill_glwe_secret(&p, &mut sk_host).unwrap();
-    let sk_raw = module.upload_glwe_secret(&sk_host);
+    let mut sk_raw = module.glwe_secret_alloc_from_infos(&glwe_infos);
+    sk_host.transfer_into(&mut sk_raw);
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk, &sk_raw);
 

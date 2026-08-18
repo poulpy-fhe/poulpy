@@ -181,7 +181,7 @@ impl_gglwe_to_backend_for_field!(GLWEToLWEKey<D, BE::ZnxWord>, 0, GLWESwitchingK
 
 impl_gglwe_at_view_for_field!(GLWEToLWEKey<BE::OwnedBuf, BE::ZnxWord>; 0.key);
 
-impl<D: HostDataMut, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWEToLWEKey<D, W> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWEToLWEKey<D, W> {
     fn input_degree(&mut self) -> &mut Degree {
         &mut self.0.input_degree
     }
@@ -191,7 +191,7 @@ impl<D: HostDataMut, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWEToLWEKey<D, 
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GLWESwitchingKeyDegrees for GLWEToLWEKey<D, W> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWEToLWEKey<D, W> {
     fn input_degree(&self) -> &Degree {
         &self.0.input_degree
     }

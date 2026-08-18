@@ -17,10 +17,12 @@ use crate::{
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
-    test_suite::{download_glwe_plaintext, upload_glwe, upload_glwe_automorphism_key, upload_glwe_plaintext, upload_glwe_secret},
+    test_suite::noise::{
+        download_glwe_plaintext, upload_glwe, upload_glwe_automorphism_key, upload_glwe_plaintext, upload_glwe_secret,
+    },
 };
 
-pub fn test_glwe_trace_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_trace_assign<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -122,7 +124,7 @@ where
                 &key_infos,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
             let mut atk_prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
                 module.glwe_automorphism_key_prepared_alloc_from_infos(&tmp);

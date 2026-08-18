@@ -2,7 +2,14 @@ use crate::layouts::{Backend, MatZnx, ScalarZnx, VecZnx};
 
 /// Instantiate a new [crate::layouts::Module].
 pub trait ModuleNew<B: Backend> {
+    /// Backend-specific construction parameters; see
+    /// [`HalModuleImpl::Config`](crate::oep::HalModuleImpl::Config).
+    type Config: Default = ();
+
     fn new(n: u64) -> Self;
+
+    /// Instantiates under an explicit configuration (device selection, ...).
+    fn new_with(n: u64, config: Self::Config) -> Self;
 }
 
 /// Query the maximum ring degree `N` of a [`Module`](crate::layouts::Module).

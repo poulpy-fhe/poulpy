@@ -15,13 +15,13 @@ use crate::{
         prepared::{GGLWEToGGSWKeyPrepared, GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::GGLWENoiseModel,
-    test_suite::{
+    test_suite::noise::{
         download_scalar_znx, upload_gglwe_to_ggsw_key, upload_ggsw, upload_glwe_automorphism_key, upload_glwe_secret,
         upload_scalar_znx,
     },
 };
 
-pub fn test_ggsw_automorphism<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_ggsw_automorphism<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -130,7 +130,7 @@ where
                 &auto_key_layout,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
             module.gglwe_to_ggsw_key_encrypt_sk(
                 &mut tsk,
@@ -138,7 +138,7 @@ where
                 &tsk_layout,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
             pt_scalar.fill_ternary_hw(0, n, &mut source_xs);
@@ -168,7 +168,7 @@ where
 
             {
                 let mut pt_scalar_backend_as_vec =
-                    crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_scalar_backend);
+                    crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_scalar_backend);
                 module.vec_znx_automorphism_assign_backend(p, &mut pt_scalar_backend_as_vec, 0, &mut scratch.borrow());
             }
             let pt_scalar_noise = download_scalar_znx::<BE>(&pt_scalar_backend);
@@ -211,7 +211,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_ggsw_automorphism_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_ggsw_automorphism_assign<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -307,7 +307,7 @@ where
                 &auto_key_layout,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
             module.gglwe_to_ggsw_key_encrypt_sk(
                 &mut tsk,
@@ -315,7 +315,7 @@ where
                 &tsk_layout,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
             pt_scalar.fill_ternary_hw(0, n, &mut source_xs);
@@ -344,7 +344,7 @@ where
 
             {
                 let mut pt_scalar_backend_as_vec =
-                    crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_scalar_backend);
+                    crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_scalar_backend);
                 module.vec_znx_automorphism_assign_backend(p, &mut pt_scalar_backend_as_vec, 0, &mut scratch.borrow());
             }
             let pt_scalar_noise = download_scalar_znx::<BE>(&pt_scalar_backend);

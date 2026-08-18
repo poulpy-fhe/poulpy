@@ -3,7 +3,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::{GGLWEPreparedVmpPMatRef, GLWESwitchingKeyPrepared},
+    prepared::{GGLWEPreparedToBackendRef, GLWESwitchingKeyPrepared},
 };
 use poulpy_hal::{
     api::{
@@ -60,10 +60,11 @@ fn ship_switching_key_product<BE>(
     BE: Backend,
     Module<BE>: VmpApplyDftToDft<BE> + VecZnxDftAddAssign<BE> + VecZnxDftCopy<BE> + VecZnxDftZero<BE> + VecZnxDftBytesOf,
 {
-    let pmat = key.vmp_pmat_backend_ref();
+    let key_ref = key.to_backend_ref();
+    let pmat = key_ref.data();
     let dsize = key.dsize().as_usize();
     if dsize == 1 {
-        module.vmp_apply_dft_to_dft(res, a, &pmat, 0, scratch);
+        module.vmp_apply_dft_to_dft(res, a, pmat, 0, scratch);
         return;
     }
     let dnum: usize = key.dnum().into();
@@ -84,13 +85,13 @@ fn ship_switching_key_product<BE>(
             module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut ai_dft.to_backend_mut(), j, a, j);
         }
         if di == 0 {
-            module.vmp_apply_dft_to_dft(&mut res_view, &ai_dft.to_backend_ref(), &pmat, 0, &mut scratch_1.borrow());
+            module.vmp_apply_dft_to_dft(&mut res_view, &ai_dft.to_backend_ref(), pmat, 0, &mut scratch_1.borrow());
         } else {
             let (mut res_tmp, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols_out, res_view.size());
             module.vmp_apply_dft_to_dft(
                 &mut res_tmp.to_backend_mut(),
                 &ai_dft.to_backend_ref(),
-                &pmat,
+                pmat,
                 di,
                 &mut scratch_2.borrow(),
             );

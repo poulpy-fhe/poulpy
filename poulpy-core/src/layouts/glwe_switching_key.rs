@@ -4,8 +4,9 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
-    GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
+    GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank,
+    TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::layouts::ZnxWord;
@@ -97,7 +98,7 @@ pub trait GLWESwitchingKeyDegrees {
     fn output_degree(&self) -> &Degree;
 }
 
-impl<D: HostDataRef, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKey<D, W> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKey<D, W> {
     fn output_degree(&self) -> &Degree {
         &self.output_degree
     }
@@ -116,7 +117,7 @@ pub trait GLWESwitchingKeyDegreesMut {
     fn output_degree(&mut self) -> &mut Degree;
 }
 
-impl<D: HostDataMut, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKey<D, W> {
+impl<D: Data, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKey<D, W> {
     fn output_degree(&mut self) -> &mut Degree {
         &mut self.output_degree
     }
@@ -169,6 +170,18 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKey<D, W> {
 
     fn dnum(&self) -> Dnum {
         self.key.dnum()
+    }
+}
+
+impl<BE: Backend> GGLWEAtBackendRef<BE> for GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendRef<BE>>::at_backend(&self.key, row, col)
+    }
+}
+
+impl<BE: Backend> GGLWEAtBackendMut<BE> for GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendMut<BE>>::at_backend_mut(&mut self.key, row, col)
     }
 }
 

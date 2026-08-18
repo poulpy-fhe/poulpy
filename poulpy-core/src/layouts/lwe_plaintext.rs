@@ -1,10 +1,7 @@
 use std::fmt;
 
-use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, Module, TransferFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord,
-};
+use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord};
 
-use crate::api::ModuleTransfer;
 use crate::layouts::{Base2K, Degree, LWEInfos, SetBase2k, TorusPrecision};
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -40,7 +37,7 @@ pub struct LWEPlaintext<D: Data, W: ZnxWord> {
 pub type LWEPlaintextBackendRef<'a, BE> = LWEPlaintext<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
 pub type LWEPlaintextBackendMut<'a, BE> = LWEPlaintext<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
 
-impl<D: HostDataMut, W: ZnxWord> SetBase2k for LWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord> SetBase2k for LWEPlaintext<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
@@ -73,19 +70,6 @@ impl<D: Data, W: ZnxWord> crate::layouts::IntPolyInfos for LWEPlaintext<D, W> {
 impl crate::layouts::IntPolyInfos for LWEPlaintextLayout {
     fn encoded_k(&self) -> crate::layouts::TorusPrecision {
         self.max_k()
-    }
-}
-
-impl<D: HostDataRef, W: ZnxWord> LWEPlaintext<D, W> {
-    /// Copies this plaintext's backing bytes into an owned buffer of
-    /// backend `To`, routing via host bytes.
-    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> LWEPlaintext<To::OwnedBuf, To::ZnxWord>
-    where
-        BE: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend<ZnxWord = W>,
-        To: TransferFrom<BE>,
-    {
-        dst.upload_lwe_plaintext(self)
     }
 }
 
@@ -218,13 +202,13 @@ impl<'b, BE: Backend + 'b> LWEPlaintextToBackendMut<BE> for &mut LWEPlaintext<BE
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> LWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord> LWEPlaintext<D, W> {
     pub fn data(&self) -> &VecZnx<D, W> {
         &self.data
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> LWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord> LWEPlaintext<D, W> {
     pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
         &mut self.data
     }

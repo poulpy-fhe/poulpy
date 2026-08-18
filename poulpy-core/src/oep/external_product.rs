@@ -81,8 +81,6 @@ pub unsafe trait GGSWExternalProductImpl<BE: Backend>: Backend {
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
 /// [`glwe_external_product_defaults`] for reference algorithms a backend may forward to.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait GLWEExternalProductDefault<BE: Backend> {
     fn glwe_external_product_dft_fill_tmp_bytes_default<A, G>(&self, a_infos: &A, ggsw_infos: &G) -> usize
     where
@@ -108,8 +106,6 @@ pub trait GLWEExternalProductDefault<BE: Backend> {
 }
 
 /// Override surface for the GGLWE external-product sub-family.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait GGLWEExternalProductDefault<BE: Backend> {
     fn gglwe_external_product_tmp_bytes_default<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
@@ -130,8 +126,6 @@ pub trait GGLWEExternalProductDefault<BE: Backend> {
 }
 
 /// Override surface for the GGSW external-product sub-family.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait GGSWExternalProductDefault<BE: Backend> {
     fn ggsw_external_product_tmp_bytes_default<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
@@ -151,7 +145,6 @@ pub trait GGSWExternalProductDefault<BE: Backend> {
         A: GGSWPreparedToBackendRef<BE> + GGSWInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWEExternalProductImpl<BE> for BE
 where
     Module<BE>: GLWEExternalProductDefault<BE>,
@@ -183,7 +176,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GGLWEExternalProductImpl<BE> for BE
 where
     Module<BE>: GGLWEExternalProductDefault<BE>,
@@ -215,7 +207,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GGSWExternalProductImpl<BE> for BE
 where
     Module<BE>: GGSWExternalProductDefault<BE>,

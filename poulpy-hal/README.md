@@ -195,23 +195,21 @@ let gpu_buf = CudaBackend::from_host_bytes(host_bytes);
 let roundtrip = CudaBackend::to_host_bytes(&gpu_buf);
 ```
 
-For cross-backend buffer transfer, `poulpy-hal` provides `TransferFrom<From>`. This is destination-owned: the destination backend declares how to import a source backend buffer.
+For cross-backend buffer transfer, `poulpy-hal` provides the buffer traits `CopyToHost` / `CopyFromHost` and the free function built on them:
 
 ```rust
-pub trait TransferFrom<From: Backend>: Backend {
-    fn transfer_buf(src: &From::OwnedBuf) -> Self::OwnedBuf;
-}
+pub fn transfer_buf_into<S: CopyToHost + ?Sized, D: CopyFromHost + ?Sized>(src: &S, dst: &mut D);
 ```
 
-The default implementation only covers simple host-resident `Vec<u8>` backends. Device backends are expected to add explicit impls for the source backends they support.
+They are implemented by the buffer, not the backend, so no backend pair is ever named. One copy whenever either side is host-visible; only device to device stages through the host.
 
-At the structured layout level, the canonical `upload_*` / `download_*` APIs live one layer above, in `poulpy-core::api::ModuleTransfer`. Those methods are built on top of `TransferFrom` and let modules move typed values such as `GLWE`, `LWE`, `GGLWE`, `GGSW`, and prepared keys between backends.
+At the structured layout level, `poulpy-core::api::TransferInto` moves typed values such as `GLWE`, `LWE`, `GGLWE`, `GGSW` and prepared keys into a destination the caller has already allocated: `src.transfer_into(&mut dst)`. It checks the full shape, not just the byte count.
 
 In practice:
 
 - use `from_host_bytes` / `to_host_bytes` when you need a low-level buffer bridge
-- use `TransferFrom` when implementing backend-to-backend storage movement
-- use `ModuleTransfer::upload_*` / `download_*` in higher-level code that moves full typed objects between backends
+- implement `CopyToHost` / `CopyFromHost` on a new buffer type to make it transferable
+- use `TransferInto` in higher-level code that moves full typed objects between backends
 
 ## Tests
 

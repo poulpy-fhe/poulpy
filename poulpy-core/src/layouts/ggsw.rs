@@ -1,7 +1,7 @@
 use poulpy_hal::{
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
-        MatZnxToBackendRef, Module, ReaderFrom, TransferFrom, WriterTo,
+        MatZnxToBackendRef, ReaderFrom, WriterTo,
     },
     source::Source,
 };
@@ -10,7 +10,6 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use crate::api::ModuleTransfer;
 use crate::layouts::{Base2K, Degree, Dnum, Dsize, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision};
 use poulpy_hal::layouts::ZnxWord;
 
@@ -389,7 +388,8 @@ impl<D: HostDataRef, W: ZnxWord> GGSW<D, W> {
     }
 }
 
-pub(crate) trait GGSWAtBackendRef<BE: Backend> {
+/// Backend-native shared view of one GLWE row.
+pub trait GGSWAtBackendRef<BE: Backend> {
     fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord>;
 }
 
@@ -451,7 +451,8 @@ impl<D: HostDataMut, W: ZnxWord> GGSW<D, W> {
     }
 }
 
-pub(crate) trait GGSWAtBackendMut<BE: Backend> {
+/// Backend-native mutable view of one GLWE row.
+pub trait GGSWAtBackendMut<BE: Backend> {
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>;
 }
 
@@ -490,19 +491,6 @@ impl<BE: Backend> GGSWAtViewMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
 impl<'a, BE: Backend + 'a> GGSWAtViewMut<BE> for GGSWBackendMut<'a, BE> {
     fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
         GGSWBackendMut::at_view_mut(self, row, col)
-    }
-}
-
-impl<D: HostDataRef, W: ZnxWord> GGSW<D, W> {
-    /// Copies this ciphertext's backing bytes into an owned buffer of
-    /// backend `To`, routing via host bytes.
-    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> GGSW<To::OwnedBuf, To::ZnxWord>
-    where
-        BE: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend<ZnxWord = W>,
-        To: TransferFrom<BE>,
-    {
-        dst.upload_ggsw(self)
     }
 }
 

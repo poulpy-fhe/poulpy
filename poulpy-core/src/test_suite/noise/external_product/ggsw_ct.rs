@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_ggsw_external_product<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_ggsw_external_product<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -127,7 +127,7 @@ where
             module.ggsw_external_product(&mut ggsw_out, &ggsw_in, &ct_rhs_prepared, &mut scratch.borrow());
 
             {
-                let mut pt_in_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
+                let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
                 module.vec_znx_rotate_assign_backend(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
             }
 
@@ -174,7 +174,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_ggsw_external_product_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_ggsw_external_product_assign<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -274,7 +274,7 @@ where
             module.ggsw_external_product_assign(&mut ggsw_out, &ct_rhs_prepared, &mut scratch.borrow());
 
             {
-                let mut pt_in_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
+                let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
                 module.vec_znx_rotate_assign_backend(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
             }
 

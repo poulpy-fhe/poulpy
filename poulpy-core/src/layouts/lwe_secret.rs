@@ -5,7 +5,7 @@ use poulpy_hal::{
         ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, Data, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, TransferFrom, ZnxView,
+        Backend, Data, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ZnxView,
         scalar_znx_as_vec_znx_backend_mut_from_mut,
     },
     source::Source,
@@ -13,7 +13,6 @@ use poulpy_hal::{
 
 use crate::{
     GetDistribution, GetDistributionMut,
-    api::ModuleTransfer,
     dist::Distribution,
     layouts::{Base2K, Degree, LWEInfos},
 };
@@ -47,19 +46,6 @@ impl<W: ZnxWord> LWESecret<Vec<u8>, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> LWESecret<D, W> {
-    /// Copies this secret's backing bytes into an owned buffer of
-    /// backend `To`, routing via host bytes.
-    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> LWESecret<To::OwnedBuf, To::ZnxWord>
-    where
-        BE: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend<ZnxWord = W>,
-        To: TransferFrom<BE>,
-    {
-        dst.upload_lwe_secret(self)
-    }
-}
-
 impl<D: Data, W: ZnxWord> LWESecret<D, W> {
     pub fn data(&self) -> &ScalarZnx<D, W> {
         &self.data
@@ -84,7 +70,7 @@ impl<D: Data, W: ZnxWord> LWESecret<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GetDistribution for LWESecret<D, W> {
+impl<D: Data, W: ZnxWord> GetDistribution for LWESecret<D, W> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }

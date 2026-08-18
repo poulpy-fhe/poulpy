@@ -210,6 +210,14 @@ impl Backend for HostBytesBackend {
         buf.len()
     }
 
+    fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize {
+        buf.len()
+    }
+
+    fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize {
+        buf.len()
+    }
+
     fn view(buf: &Self::OwnedBuf) -> Self::BufRef<'_> {
         buf.as_slice()
     }
@@ -306,57 +314,139 @@ pub trait DigestU64 {
 /// Backend-owned byte buffer type alias.
 pub type OwnedBuf<BE> = <BE as Backend>::OwnedBuf;
 
-/// Cross-backend buffer transfer into the destination backend `Self`.
+/// A buffer whose bytes can be read out to the host.
 ///
-/// This is intentionally destination-owned so the canonical public API can
-/// hang off `Module<To>` as `upload_*` / `download_*`.
-///
-/// Each concrete backend pair must provide an explicit impl. Two restricted
-/// blankets are provided for [`HostBytesBackend`] so that test/bench helpers
-/// that use it as a staging type continue to work without boilerplate:
-/// - any host `Vec<u8>` backend → `HostBytesBackend`
-/// - `HostBytesBackend` → any host `Vec<u8>` backend
-///
-/// All other backend-to-backend transfers (e.g. `FFT64Ref` ↔ `NTT4x30Ref`,
-/// `FFT64Ref` → `FFT64Avx`) must be implemented explicitly in the respective
-/// backend crates.
-///
-/// # Scope: this is a byte move, not a conversion
-///
-/// [`Self::transfer_buf`] receives an opaque buffer with no shape (`n`, `cols`,
-/// `size`) and no `base2k`, so it cannot re-decompose limbs. The layout-level
-/// helpers built on it (`ModuleTransfer::upload_*` / `download_*`) therefore
-/// re-attach the source's shape to the destination, and they require both
-/// backends to agree on the coefficient word (`To: Backend<ZnxWord =
-/// From::ZnxWord>`). Only the buffer type may differ, which is what makes
-/// host → device staging work.
-///
-/// Moving a value between backends whose limb axis differs (a different word,
-/// a different `base2k`, hence a different limb count for the same torus
-/// precision) is a re-encoding rather than a copy: it needs both `base2k`
-/// values and a caller-allocated destination at its own layout. That is a
-/// separate operation and is deliberately not expressible here.
-pub trait TransferFrom<From: Backend>: Backend {
-    /// Transfers a buffer owned by `From` into `Self`.
-    ///
-    /// Byte-for-byte; the caller guarantees both sides share a layout.
-    fn transfer_buf(src: &From::OwnedBuf) -> Self::OwnedBuf;
+/// Implemented by the buffer rather than the backend: a transfer needs to know
+/// how to read its donor and write its receiver, not which backend each came
+/// from. That is what lets the layout-level move infer everything from its two
+/// operands, with no backend named anywhere.
+pub trait CopyToHost {
+    /// Bytes spanned by this buffer.
+    fn len_bytes(&self) -> usize;
+
+    /// Reads the whole buffer into `dst`, which must be [`Self::len_bytes`] long.
+    fn copy_to_host(&self, dst: &mut [u8]);
+
+    /// Host buffers lend their bytes directly; device buffers cannot, and
+    /// return `None` so the move stages through [`Self::copy_to_host`].
+    fn as_host_bytes(&self) -> Option<&[u8]> {
+        None
+    }
 }
 
-impl<T: Backend<Location = Host, OwnedBuf = Vec<u8>>> TransferFrom<HostBytesBackend> for T {
-    fn transfer_buf(src: &Vec<u8>) -> Self::OwnedBuf {
-        T::from_host_bytes(src)
+/// A buffer whose bytes can be written from the host. Counterpart of [`CopyToHost`].
+pub trait CopyFromHost {
+    /// Bytes spanned by this buffer.
+    fn len_bytes(&self) -> usize;
+
+    /// Overwrites the whole buffer from `src`, which must be [`Self::len_bytes`] long.
+    fn copy_from_host(&mut self, src: &[u8]);
+
+    /// Host buffers lend their bytes directly; device buffers return `None`.
+    fn as_host_bytes_mut(&mut self) -> Option<&mut [u8]> {
+        None
     }
+}
+
+impl CopyToHost for Vec<u8> {
+    fn len_bytes(&self) -> usize {
+        self.len()
+    }
+    fn copy_to_host(&self, dst: &mut [u8]) {
+        dst.copy_from_slice(self);
+    }
+    fn as_host_bytes(&self) -> Option<&[u8]> {
+        Some(self)
+    }
+}
+
+impl CopyFromHost for Vec<u8> {
+    fn len_bytes(&self) -> usize {
+        self.len()
+    }
+    fn copy_from_host(&mut self, src: &[u8]) {
+        self.copy_from_slice(src);
+    }
+    fn as_host_bytes_mut(&mut self) -> Option<&mut [u8]> {
+        Some(self)
+    }
+}
+
+impl CopyToHost for &[u8] {
+    fn len_bytes(&self) -> usize {
+        <[u8]>::len(self)
+    }
+    fn copy_to_host(&self, dst: &mut [u8]) {
+        dst.copy_from_slice(self);
+    }
+    fn as_host_bytes(&self) -> Option<&[u8]> {
+        Some(self)
+    }
+}
+
+impl CopyToHost for &mut [u8] {
+    fn len_bytes(&self) -> usize {
+        <[u8]>::len(self)
+    }
+    fn copy_to_host(&self, dst: &mut [u8]) {
+        dst.copy_from_slice(self);
+    }
+    fn as_host_bytes(&self) -> Option<&[u8]> {
+        Some(self)
+    }
+}
+
+impl CopyFromHost for &mut [u8] {
+    fn len_bytes(&self) -> usize {
+        <[u8]>::len(self)
+    }
+    fn copy_from_host(&mut self, src: &[u8]) {
+        self.copy_from_slice(src);
+    }
+    fn as_host_bytes_mut(&mut self) -> Option<&mut [u8]> {
+        Some(self)
+    }
+}
+
+/// Moves `src`'s bytes into `dst`, which the caller has already allocated.
+///
+/// One copy whenever either side is host-visible, which covers host to host,
+/// host to device and device to host. Only device to device stages, and a
+/// device backend that can move directly should offer its own path.
+///
+/// # Panics
+///
+/// If the two buffers do not span the same number of bytes.
+pub fn transfer_buf_into<S: CopyToHost + ?Sized, D: CopyFromHost + ?Sized>(src: &S, dst: &mut D) {
+    let len: usize = src.len_bytes();
+    assert_eq!(
+        len,
+        dst.len_bytes(),
+        "transfer_buf_into: source is {} bytes, destination is {}",
+        len,
+        dst.len_bytes()
+    );
+    if let Some(bytes) = src.as_host_bytes() {
+        dst.copy_from_host(bytes);
+        return;
+    }
+    if let Some(bytes) = dst.as_host_bytes_mut() {
+        src.copy_to_host(bytes);
+        return;
+    }
+    let mut staging: Vec<u8> = vec![0u8; len];
+    src.copy_to_host(&mut staging);
+    dst.copy_from_host(&staging);
 }
 
 /// A backend that can exchange coefficient data with [`HostBytesBackend`].
 ///
-/// Bundles the two requirements of a host-staged transfer: the byte move itself
-/// ([`TransferFrom`]) and agreement on the coefficient word, since
-/// [`TransferFrom::transfer_buf`] is a copy and cannot re-decompose limbs.
-pub trait HostStaged: Backend<ZnxWord = <HostBytesBackend as Backend>::ZnxWord> + TransferFrom<HostBytesBackend> {}
+/// Bundles the two requirements of a host-staged transfer: buffers that can be
+/// read out to and written from host bytes, and agreement on the coefficient
+/// word, since the move is a byte copy and cannot re-decompose limbs.
+pub trait HostStaged: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> {}
 
-impl<BE> HostStaged for BE where BE: Backend<ZnxWord = <HostBytesBackend as Backend>::ZnxWord> + TransferFrom<HostBytesBackend> {}
+impl<BE> HostStaged for BE where BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost> {}
 
 /// Implement a backend marker by forwarding all storage- and handle-level
 /// behavior to an existing backend.
@@ -415,6 +505,14 @@ macro_rules! impl_backend_from {
 
             fn len_bytes(buf: &Self::OwnedBuf) -> usize {
                 <$from as poulpy_hal::layouts::Backend>::len_bytes(buf)
+            }
+
+            fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::len_bytes_ref(buf)
+            }
+
+            fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::len_bytes_mut(buf)
             }
 
             fn view(buf: &Self::OwnedBuf) -> Self::BufRef<'_> {

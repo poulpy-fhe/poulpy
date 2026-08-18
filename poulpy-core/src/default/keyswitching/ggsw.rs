@@ -2,8 +2,6 @@
 //!
 //! Re-exported publicly through `crate::oep::ggsw_keyswitch_defaults`.
 
-#![allow(private_bounds)]
-
 use poulpy_hal::{
     api::ModuleN,
     layouts::{Backend, ScratchArena},

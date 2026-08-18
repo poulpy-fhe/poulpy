@@ -14,7 +14,14 @@ use crate::{
 
 impl<BE: Backend> GLWEKeyswitchInternal<BE> for Module<BE> where Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE> {}
 
-pub(crate) trait GLWEKeyswitchInternal<BE: Backend>
+/// DFT-domain plumbing shared by the key-switch reference bodies.
+///
+/// Public because it appears in the `where` clause of the public
+/// `glwe_keyswitch*_default` functions: a backend forwarding to them by hand,
+/// rather than through [`crate::impl_glwe_keyswitch_defaults_full`], has to be
+/// able to name the bound. Blanket-implemented for every `Module<BE>` that has
+/// the underlying HAL ops, so there is nothing to implement.
+pub trait GLWEKeyswitchInternal<BE: Backend>
 where
     Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
 {
@@ -74,7 +81,14 @@ impl<BE: Backend> GGLWEProductDefault<BE> for Module<BE> where
 {
 }
 
-pub(crate) trait GGLWEProductDefault<BE: Backend>
+/// The gadget product `res += a x key` in the DFT domain, the inner loop of
+/// both key-switching and the external product.
+///
+/// Public for the same reason as [`GLWEKeyswitchInternal`], and additionally
+/// because it is the operation the digit-width contract on
+/// [`crate::oep::GLWEKeyswitchDefault`] governs: an accelerator that fuses the
+/// digit loop is replacing this.
+pub trait GGLWEProductDefault<BE: Backend>
 where
     Self: Sized
         + ModuleN
@@ -142,25 +156,10 @@ where
             let dsize: usize = key.dsize().into();
             let dnum: usize = key.dnum().into();
 
-            // `di == 0` is the overwriting pass and must leave no limb of `res`
-            // holding stale scratch, so it runs at the **full** width: the VMP
-            // zeroes whatever it does not compute, which is exactly the tail the
-            // narrowed view used to leave untouched. Two properties make this
-            // the only workable shape, and both are easy to break:
-            //
-            //   - the overwrite must be `di == 0`. `vmp_apply_dft_to_dft` covers
-            //     `res` fully only at `limb_offset == 0`; at any other offset it
-            //     writes `0..col_max - limb_offset` and zeroes from `col_max`,
-            //     leaving a gap in between. So the digits cannot be walked in
-            //     reverse to get a wider first pass.
-            //   - the accumulating passes may keep the narrow view, since every
-            //     limb they skip was already written by `di == 0`.
-            //
-            // Net effect: callers hand in arbitrary scratch. Before this, the
-            // top `dsize - 2` limbs were outside the overwriting view and
-            // silently accumulated stale bytes, so each caller had to pre-zero,
-            // an obligation invisible at the call site and, on the automorphism
-            // path, not actually met.
+            // Digit widths are the contract documented on `GLWEKeyswitchDefault`:
+            // `di == 0` overwrites at full width (which is also what zeroes the
+            // limbs the accumulating passes add into, so callers need not
+            // pre-zero), the rest accumulate through a narrowed view.
             for di in 0..dsize {
                 let (mut ai_dft, mut scratch_1) =
                     scratch
@@ -174,19 +173,8 @@ where
                 if di == 0 {
                     self.vmp_apply_dft_to_dft(res, &ai_dft.to_backend_ref(), &key.data, 0, &mut scratch_1.borrow());
                 } else {
-                    // Pass `di` consumes `a`'s limbs at offset `dsize - di - 1`
-                    // within each digit, so its product sits `dsize - 1 - di`
-                    // limbs below the top. That is the bound for a *point*
-                    // contribution, and it is not the one to use: an elementary
-                    // limb product has magnitude ~`2^(2*base2k + log_n)`, so it
-                    // spans at least two limbs rather than landing in one, and
-                    // reaches one limb further down than the naive count. Hence
-                    // `- 2`, not `- 1`.
-                    //
-                    // Do not "tighten" this to `- 1`: the keyswitch noise sweep
-                    // does not catch it (the difference measured 1e-6 bits at
-                    // n=2^12, base2k=18), so a green suite is not evidence that
-                    // the limb was free.
+                    // `- 2`, not `- 1`: see the width contract on
+                    // `GLWEKeyswitchDefault`. Tightening it is not noise-visible.
                     let res_compute_size = res.size() - ((dsize - di) as isize - 2).max(0) as usize;
                     let mut res_view = res.with_size_mut(res_compute_size);
                     self.vmp_apply_dft_to_dft_accumulate(
@@ -250,7 +238,6 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
     });
 }
 
-#[allow(private_bounds)]
 pub fn glwe_keyswitch_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
@@ -304,7 +291,6 @@ where
     lvl_0 + lvl_2
 }
 
-#[allow(private_bounds)]
 pub fn glwe_keyswitch_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -413,7 +399,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 pub fn glwe_keyswitch_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,

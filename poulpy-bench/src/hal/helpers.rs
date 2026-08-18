@@ -4,10 +4,9 @@
 
 use poulpy_hal::layouts::{
     Backend, CnvPVecLOwned, CnvPVecROwned, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, ScalarZnx,
-    ScalarZnxBackendRef, ScalarZnxToBackendRef, SvpPPol, SvpPPolOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef,
-    VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
-    VecZnxDftBackendRef, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
-    VmpPMat, VmpPMatOwned,
+    ScalarZnxBackendRef, ScalarZnxToBackendRef, SvpPPol, SvpPPolOwned, VecZnx, VecZnxBigBackendMut, VecZnxBigBackendRef,
+    VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftOwned,
+    VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat, VmpPMatOwned,
 };
 use poulpy_hal::source::Source;
 use rand::Rng;
@@ -128,17 +127,7 @@ pub fn scalar_znx_backend_ref<'a, BE: Backend<ZnxWord = i64>>(
     <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(src)
 }
 
-pub fn vec_znx_backend_ref<'a, BE: Backend<ZnxWord = i64>>(
-    src: &'a VecZnx<BE::OwnedBuf, BE::ZnxWord>,
-) -> VecZnxBackendRef<'a, BE> {
-    <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(src)
-}
-
-pub fn vec_znx_backend_mut<'a, BE: Backend<ZnxWord = i64>>(
-    src: &'a mut VecZnx<BE::OwnedBuf, BE::ZnxWord>,
-) -> VecZnxBackendMut<'a, BE> {
-    <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(src)
-}
+pub use poulpy_hal::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 
 pub fn mat_znx_backend_ref<'a, BE: Backend<ZnxWord = i64>>(
     src: &'a MatZnx<BE::OwnedBuf, BE::ZnxWord>,

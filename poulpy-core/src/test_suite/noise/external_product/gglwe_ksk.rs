@@ -18,8 +18,10 @@ use crate::{
 };
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -140,7 +142,7 @@ where
                 module.gglwe_external_product(&mut ct_gglwe_out, &ct_gglwe_in, &ct_rgsw_prepared, &mut scratch.borrow());
 
                 {
-                    let mut sk_in_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);
+                    let mut sk_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);
                     (0..rank_in).for_each(|i| {
                         module.vec_znx_rotate_assign_backend(r as i64, &mut sk_in_as_vec, i, &mut scratch.borrow()); // * X^{r}
                     });
@@ -186,7 +188,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::TestBackend>(
+pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -298,7 +300,7 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::T
                 module.gglwe_external_product_assign(&mut ct_gglwe, &ct_rgsw_prepared, &mut scratch.borrow());
 
                 {
-                    let mut sk_in_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);
+                    let mut sk_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);
                     (0..rank_in).for_each(|i| {
                         module.vec_znx_rotate_assign_backend(r as i64, &mut sk_in_as_vec, i, &mut scratch.borrow()); // * X^{r}
                     });

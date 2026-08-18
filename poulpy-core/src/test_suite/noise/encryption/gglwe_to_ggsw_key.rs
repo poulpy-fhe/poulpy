@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-pub fn test_gglwe_to_ggsw_key_encrypt_sk<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_gglwe_to_ggsw_key_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -71,11 +71,15 @@ where
             &key_infos,
             &mut source_xe,
             &mut source_xa,
-            &mut crate::test_suite::scratch_host_arena(&mut scratch),
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
 
         let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc_from_infos(&sk);
-        module.glwe_secret_tensor_prepare(&mut sk_tensor, &sk, &mut crate::test_suite::scratch_host_arena(&mut scratch));
+        module.glwe_secret_tensor_prepare(
+            &mut sk_tensor,
+            &sk,
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+        );
 
         let max_noise = DEFAULT_SIGMA_XE.log2() + 0.5 - (key_infos.k().as_usize() as f64);
 
@@ -119,8 +123,10 @@ where
     }
 }
 
-pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
@@ -178,14 +184,18 @@ where
             seed_xa,
             &key_infos,
             &mut source_xe,
-            &mut crate::test_suite::scratch_host_arena(&mut scratch),
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
 
         let mut key: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&key_infos);
         module.decompress_gglwe_to_ggsw_key(&mut key, &key_compressed);
 
         let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc_from_infos(&sk);
-        module.glwe_secret_tensor_prepare(&mut sk_tensor, &sk, &mut crate::test_suite::scratch_host_arena(&mut scratch));
+        module.glwe_secret_tensor_prepare(
+            &mut sk_tensor,
+            &sk,
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+        );
 
         let max_noise = DEFAULT_SIGMA_XE.log2() + 0.5 - (key_infos.k().as_usize() as f64);
 

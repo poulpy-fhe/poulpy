@@ -3,7 +3,7 @@
 use std::f64::consts::TAU;
 
 use poulpy_core::{
-    GLWEZero, ModuleTransfer,
+    GLWEZero, TransferInto,
     layouts::{
         BackendGLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::GLWESecretPrepared,
@@ -80,7 +80,8 @@ where
     let mut source = Source::new(seed);
     let mut sk_raw = module.glwe_secret_alloc_from_infos(&glwe_infos);
     module.glwe_secret_fill_ternary_hw(&mut sk_raw, params.hw, &mut source);
-    let sk_host = host_module.download_glwe_secret(&sk_raw);
+    let mut sk_host = host_module.glwe_secret_alloc_from_infos(&glwe_infos);
+    sk_raw.transfer_into(&mut sk_host);
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk, &sk_raw);
     (sk_host, sk_raw, sk)

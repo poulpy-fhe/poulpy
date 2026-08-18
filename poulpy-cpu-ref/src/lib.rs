@@ -10,6 +10,19 @@
 //! Both are canonical reference implementations: portable across all CPU architectures,
 //! prioritising correctness and debuggability over throughput.
 //!
+//! # Features
+//!
+//! The crate implements the [`poulpy_hal`] extension points unconditionally. The
+//! higher layers are opt-in:
+//!
+//! - `enable-core`: implements the `poulpy-core` extension points, so
+//!   `Module<FFT64Ref>` / `Module<NTT4x30Ref>` gain the scheme-level traits
+//!   (`GLWEKeyswitch`, `Automorphism`, ...). Without it those traits do not
+//!   resolve, and the failure reads as a missing impl rather than a missing
+//!   feature. Required to use this crate as the reference side of a
+//!   cross-backend comparison.
+//! - `enable-ckks`: implies `enable-core` and adds the `poulpy-ckks` layer.
+//!
 //! # Platform support
 //!
 //! Compiles and runs on any target supported by the Rust standard library.
@@ -52,36 +65,3 @@ pub mod source {
 
 pub use fft64::{FFT64Ref, FFT64ReimTable};
 pub use ntt4x30::{NTT4x30Ref, NTT4x30RefHandle};
-
-// --- TransferFrom impls ---
-mod transfer_impls {
-    use poulpy_hal::layouts::{Backend, TransferFrom};
-
-    use crate::{FFT64Ref, NTT4x30Ref};
-
-    impl TransferFrom<FFT64Ref> for FFT64Ref {
-        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            FFT64Ref::from_host_bytes(&FFT64Ref::to_host_bytes(src))
-        }
-    }
-
-    impl TransferFrom<NTT4x30Ref> for NTT4x30Ref {
-        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT4x30Ref::from_host_bytes(&NTT4x30Ref::to_host_bytes(src))
-        }
-    }
-
-    // Cross-family: coefficient-domain buffers are compatible (plain i64 data).
-    // Prepared layouts are backend-specific and must not be transferred directly;
-    // transfer the non-prepared form and re-prepare on the destination backend.
-    impl TransferFrom<NTT4x30Ref> for FFT64Ref {
-        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            FFT64Ref::from_host_bytes(&NTT4x30Ref::to_host_bytes(src))
-        }
-    }
-    impl TransferFrom<FFT64Ref> for NTT4x30Ref {
-        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT4x30Ref::from_host_bytes(&FFT64Ref::to_host_bytes(src))
-        }
-    }
-}

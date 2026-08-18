@@ -3,11 +3,8 @@ use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef, GGLWEToBackendRef, GLWEInfos,
     GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank, TorusPrecision,
-    prepared::{
-        GGLWEPrepared, GGLWEPreparedFactory, GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GGLWEPreparedVmpPMatRef,
-    },
+    prepared::{GGLWEPrepared, GGLWEPreparedFactory, GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef},
 };
-use poulpy_hal::layouts::VmpPMatBackendRef;
 
 /// DFT-domain (prepared) variant of a GLWE switching key.
 ///
@@ -208,15 +205,6 @@ where
 {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         self.key.to_backend_ref()
-    }
-}
-
-impl<D: Data, B: Backend> GGLWEPreparedVmpPMatRef<B> for GLWESwitchingKeyPrepared<D, B>
-where
-    GGLWEPrepared<D, B>: GGLWEPreparedVmpPMatRef<B>,
-{
-    fn vmp_pmat_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
-        self.key.vmp_pmat_backend_ref()
     }
 }
 

@@ -2,7 +2,7 @@ use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef},
+    layouts::{Backend, Data, Module, ScratchArena, VmpPMat},
 };
 
 use crate::layouts::{
@@ -201,24 +201,15 @@ impl<BE: Backend> GGLWEPreparedFactory<BE> for Module<BE> where
 
 // module-only API: preparation is provided by `GGLWEPreparedFactory` on `Module`.
 
-pub trait GGLWEPreparedToBackendRef<B: Backend> {
-    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B>;
+impl<D: Data, B: Backend> GGLWEPrepared<D, B> {
+    /// Returns a shared reference to the underlying [`VmpPMat`].
+    pub fn data(&self) -> &VmpPMat<D, B::DftWord, B> {
+        &self.data
+    }
 }
 
-/// Read-only access to the prepared VMP matrix stored inside a GGLWE-like key.
-///
-/// This is intentionally narrower than exposing the prepared key internals as
-/// mutable state. `VmpPMat` is the backend-prepared representation obtained from
-/// a coefficient-domain matrix; callers that need different contents should
-/// rebuild and prepare a new key/matrix instead of modifying this view.
-///
-/// The PIR collapse precompute uses this to run a specialized `1 x 1` VMP over
-/// fixed mask data while still reusing the same prepared matrix representation
-/// as the generic key-switch pipeline.
-pub trait GGLWEPreparedVmpPMatRef<B: Backend> {
-    /// Returns an immutable backend-native view of the underlying prepared VMP
-    /// matrix.
-    fn vmp_pmat_backend_ref(&self) -> VmpPMatBackendRef<'_, B>;
+pub trait GGLWEPreparedToBackendRef<B: Backend> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B>;
 }
 
 impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> {
@@ -229,12 +220,6 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
             dsize: self.dsize,
             data: self.data.to_backend_ref(),
         }
-    }
-}
-
-impl<B: Backend> GGLWEPreparedVmpPMatRef<B> for GGLWEPrepared<B::OwnedBuf, B> {
-    fn vmp_pmat_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
-        self.data.to_backend_ref()
     }
 }
 
