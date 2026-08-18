@@ -3,10 +3,7 @@
 //! ModUp's known-zero low limbs are a CKKS pipeline property, not a general
 //! Core key-switch operation.
 
-use poulpy_core::layouts::{
-    GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef,
-    prepared::{GGLWEPreparedToBackendRef, GGLWEPreparedVmpPMatRef},
-};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGLWEPreparedToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, CKKSResult, SetCKKSInfos};
@@ -46,7 +43,7 @@ pub unsafe trait CKKSEncapsulatedModUpImpl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         D2S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        S2D: GGLWEPreparedToBackendRef<BE> + GGLWEPreparedVmpPMatRef<BE> + GGLWEInfos;
+        S2D: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 /// Opts a backend into the CKKS reference encapsulated-ModUp pipeline.
@@ -94,9 +91,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
                 D2S: ::poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<$be> + ::poulpy_core::layouts::GGLWEInfos,
-                S2D: ::poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<$be>
-                    + ::poulpy_core::layouts::prepared::GGLWEPreparedVmpPMatRef<$be>
-                    + ::poulpy_core::layouts::GGLWEInfos,
+                S2D: ::poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<$be> + ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::default::bootstrapping::ckks_encapsulated_mod_up_default(
                     module,

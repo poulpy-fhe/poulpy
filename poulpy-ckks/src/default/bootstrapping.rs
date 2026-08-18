@@ -5,7 +5,7 @@ use poulpy_core::{
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
         SetBSGSMeta,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEPreparedVmpPMatRef, GLWETensorKeyPreparedToBackendRef},
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
     oep::GGLWEProductDigitsStridedImpl,
 };
@@ -905,7 +905,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     D2S: poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    S2D: GGLWEPreparedToBackendRef<BE> + GGLWEPreparedVmpPMatRef<BE> + GGLWEInfos,
+    S2D: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let dst_k = dst.k().as_usize();
     let src_k = src.k().as_usize();
@@ -951,7 +951,7 @@ fn ckks_keyswitch_assign_known_zero_limbs<BE, R, K>(
         + VecZnxIdftApply<BE>
         + VmpApplyDftToDft<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEPreparedVmpPMatRef<BE> + GGLWEInfos,
+    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     assert_eq!(res.rank(), key.rank_in());
     assert_eq!(res.rank(), key.rank_out());
@@ -1007,7 +1007,7 @@ fn ckks_keyswitch_dft_fill_known_zero_limbs<BE, R, K>(
     BE: Backend + GGLWEProductDigitsStridedImpl<BE>,
     Module<BE>: ModuleN + VecZnxDftApply<BE> + VecZnxDftBytesOf + VecZnxDftZero<BE> + VmpApplyDftToDft<BE>,
     R: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEPreparedVmpPMatRef<BE> + GGLWEInfos,
+    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let a = a.to_backend_ref();
     assert_eq!(a.base2k(), key.base2k());
@@ -1034,11 +1034,12 @@ fn ckks_keyswitch_dft_fill_known_zero_limbs<BE, R, K>(
         }
 
         let a_dft = a_dft.to_backend_ref();
-        let pmat = key.vmp_pmat_backend_ref();
+        let key_ref = key.to_backend_ref();
+        let pmat = key_ref.data();
         if key.dsize().as_usize() == 1 {
-            module.vmp_apply_dft_to_dft(res, &a_dft, &pmat, 0, &mut product_scratch);
+            module.vmp_apply_dft_to_dft(res, &a_dft, pmat, 0, &mut product_scratch);
         } else {
-            BE::gglwe_product_digits_strided(module, res, &a_dft, key.dsize().as_usize(), &pmat, &mut product_scratch);
+            BE::gglwe_product_digits_strided(module, res, &a_dft, key.dsize().as_usize(), pmat, &mut product_scratch);
         }
     });
 }

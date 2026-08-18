@@ -8,8 +8,14 @@ impl<B> ModuleNew<B> for Module<B>
 where
     B: Backend + HalModuleImpl<B>,
 {
+    type Config = <B as HalModuleImpl<B>>::Config;
+
     fn new(n: u64) -> Self {
         B::new(n)
+    }
+
+    fn new_with(n: u64, config: Self::Config) -> Self {
+        B::new_with(n, config)
     }
 }
 

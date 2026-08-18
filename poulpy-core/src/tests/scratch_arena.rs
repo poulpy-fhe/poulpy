@@ -60,6 +60,14 @@ impl Backend for TestBackend {
         buf.len()
     }
 
+    fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize {
+        buf.len()
+    }
+
+    fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize {
+        buf.len()
+    }
+
     fn view(buf: &Self::OwnedBuf) -> Self::BufRef<'_> {
         buf.as_slice()
     }

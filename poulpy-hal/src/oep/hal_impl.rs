@@ -14,8 +14,27 @@ use crate::{
 /// Implementations must return a module handle that is valid for the backend
 /// and ring degree, and uphold the backend safety contract.
 pub unsafe trait HalModuleImpl<BE: Backend>: Backend {
+    /// Backend-specific construction parameters.
+    ///
+    /// Host backends leave this at `()`. A device backend names here whatever
+    /// [`Self::new`] cannot express, a device ordinal above all: with `new`
+    /// alone, a module on a multi-GPU host lands on whatever the driver calls
+    /// the default device, which is not necessarily the one the operator means.
+    type Config: Default = ();
+
     #[allow(clippy::new_ret_no_self)]
     fn new(n: u64) -> Module<BE>;
+
+    /// Constructs a module under an explicit [`Self::Config`].
+    ///
+    /// Defaults to ignoring the configuration, which is correct for any backend
+    /// that leaves `Config = ()`. A backend declaring a real `Config` must
+    /// override this, and should keep `new` equivalent to
+    /// `new_with(n, Config::default())`.
+    #[allow(clippy::new_ret_no_self)]
+    fn new_with(n: u64, _config: Self::Config) -> Module<BE> {
+        Self::new(n)
+    }
 }
 
 /// Coefficient-domain `VecZnx` extension point.

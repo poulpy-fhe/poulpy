@@ -34,7 +34,7 @@ use crate::{
 /// 4x or more.
 const TENSOR_NOISE_MARGIN: f64 = 2.0;
 
-pub fn test_glwe_tensoring<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_tensoring<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -118,7 +118,11 @@ where
         module.glwe_secret_prepare(&mut sk_dft, &sk);
 
         let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc(rank.into());
-        module.glwe_secret_tensor_prepare(&mut sk_tensor, &sk, &mut crate::test_suite::scratch_host_arena(&mut scratch));
+        module.glwe_secret_tensor_prepare(
+            &mut sk_tensor,
+            &sk,
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+        );
 
         let mut sk_tensor_prep: GLWESecretTensorPrepared<BE::OwnedBuf, BE> =
             module.glwe_secret_tensor_prepared_alloc(rank.into());
@@ -131,7 +135,7 @@ where
             &tsk_infos,
             &mut source_xe,
             &mut source_xa,
-            &mut crate::test_suite::scratch_host_arena(&mut scratch),
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
 
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
@@ -252,7 +256,7 @@ where
     }
 }
 
-pub fn test_glwe_tensor_square<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_tensor_square<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -344,7 +348,7 @@ where
             &tsk_enc_infos,
             &mut source_xe,
             &mut source_xa,
-            &mut crate::test_suite::scratch_host_arena(&mut scratch),
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
 
         let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
@@ -401,7 +405,7 @@ where
     }
 }
 
-pub fn test_glwe_mul_plain<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_mul_plain<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -528,7 +532,7 @@ where
     }
 }
 
-pub fn test_glwe_mul_const<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_mul_const<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,

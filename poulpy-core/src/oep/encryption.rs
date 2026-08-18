@@ -459,8 +459,6 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait EncryptionDefault<BE: Backend>:
     GLWEMaskFillDefault<BE>
     + LWEFillMaskDefault<BE>

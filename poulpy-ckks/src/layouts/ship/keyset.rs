@@ -11,7 +11,7 @@
 use anyhow::{Result, ensure};
 use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 use poulpy_core::{
-    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ModuleTransfer,
+    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, TransferInto,
     layouts::{
         Base2K, GGLWEInfos, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared,
         GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout, GLWESecret, GLWESecretLayout, GLWESecretPreparedFactory,
@@ -367,10 +367,7 @@ pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
 where
     BE: HostStaged,
     BE::OwnedBuf: HostDataRef + HostDataMut,
-    Module<BE>: GLWESwitchingKeyEncryptSk<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + ModuleTransfer<BE>
-        + GaloisElement,
+    Module<BE>: GLWESwitchingKeyEncryptSk<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GaloisElement,
     Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
 {
     let n = sk_dense_host.n();
@@ -388,7 +385,8 @@ where
         data.at_mut(1, 0)[0] = 1;
         *sk_in_host.dist_mut() = Distribution::ENCAPSULATED("ship");
     }
-    let sk_in = module.upload_glwe_secret(&sk_in_host);
+    let mut sk_in = module.glwe_secret_alloc_from_infos(&sk_in_host);
+    sk_in_host.transfer_into(&mut sk_in);
 
     let mut sk_out_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
     sk_out_host.data_mut().zero();
@@ -399,7 +397,8 @@ where
     );
     // An automorphism preserves the distribution.
     *sk_out_host.dist_mut() = *sk_dense_host.dist();
-    let sk_out = module.upload_glwe_secret(&sk_out_host);
+    let mut sk_out = module.glwe_secret_alloc_from_infos(&sk_out_host);
+    sk_out_host.transfer_into(&mut sk_out);
 
     let b2k = base2k.as_usize();
     let ksk_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
@@ -451,7 +450,6 @@ impl<D: Data> ShipKeySet<D, i64> {
             + GLWETensorKeyEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + ModuleTransfer<BE>
             + CKKSModuleAlloc<BE>
             + CKKSEncryptOps<BE>
             + CKKSEncodingOps<BE, F>
@@ -493,7 +491,8 @@ impl<D: Data> ShipKeySet<D, i64> {
             rank: Rank(1),
         })?;
 
-        let sk_dense = module.upload_glwe_secret(sk_dense_host);
+        let mut sk_dense = module.glwe_secret_alloc_from_infos(sk_dense_host);
+        sk_dense_host.transfer_into(&mut sk_dense);
         let mut sk_dense_prepared = module.glwe_secret_prepared_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
         module.glwe_secret_prepare(&mut sk_dense_prepared, &sk_dense);
 
@@ -548,7 +547,8 @@ impl<D: Data> ShipKeySet<D, i64> {
         // object encrypted under the sparse secret.
         let mut sk_sparse_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
         spec.fill_glwe_secret(plan, &mut sk_sparse_host)?;
-        let sk_sparse = module.upload_glwe_secret(&sk_sparse_host);
+        let mut sk_sparse = module.glwe_secret_alloc_from_infos(&sk_sparse_host);
+        sk_sparse_host.transfer_into(&mut sk_sparse);
         let d2s_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
             n,
             base2k,

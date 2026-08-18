@@ -13,7 +13,6 @@ use crate::layouts::{
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
-#[allow(private_bounds)]
 pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
     fn glwe_automorphism_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -144,8 +143,6 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
 /// `glwe_automorphism_defaults::*` free function — those carry the HAL bounds in their
 /// own `where` clauses, so the requirement only kicks in for methods that actually use
 /// the default implementation.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait GLWEAutomorphismDefault<BE: Backend> {
     fn glwe_automorphism_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -202,8 +199,6 @@ pub trait GLWEAutomorphismDefault<BE: Backend> {
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
 /// [`crate::default::automorphism::ggsw`] for reference algorithms a backend may forward to.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait GGSWAutomorphismDefault<BE: Backend> {
     fn ggsw_automorphism_tmp_bytes_default<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
@@ -230,8 +225,6 @@ pub trait GGSWAutomorphismDefault<BE: Backend> {
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
 /// [`crate::default::automorphism::gglwe`] for reference algorithms a backend may forward to.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait GGLWEAutomorphismDefault<BE: Backend> {
     fn glwe_automorphism_key_automorphism_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -256,7 +249,6 @@ pub trait GGLWEAutomorphismDefault<BE: Backend> {
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE> AutomorphismImpl<BE> for BE
 where
     BE: Backend,

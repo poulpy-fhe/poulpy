@@ -68,8 +68,6 @@ pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See [`decryption_defaults`]
 /// for reference algorithms a backend may forward to.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait DecryptionDefault<BE: Backend> {
     fn glwe_decrypt_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -225,7 +223,6 @@ macro_rules! impl_decryption_defaults_full {
     };
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend + HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE>> DecryptionImpl<BE>
     for BE
 where

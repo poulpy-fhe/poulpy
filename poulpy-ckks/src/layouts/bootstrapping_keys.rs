@@ -34,11 +34,11 @@ use anyhow::Result;
 use poulpy_core::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     layouts::{
-        BackendGLWESecret, GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEPreparedVmpPMatRef, GGLWEToBackendRef,
-        GLWEAutomorphismKey, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees,
-        GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GetGaloisElement, LWEInfos, ModuleCoreAlloc,
+        BackendGLWESecret, GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
+        GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
+        GLWEInfos, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
+        GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
+        GetGaloisElement, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -73,7 +73,7 @@ pub trait BootstrappingKeys<BE: Backend> {
     type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
     /// The prepared key-switching key type for sparse-secret encapsulation.
-    type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEPreparedVmpPMatRef<BE> + GGLWEInfos;
+    type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     /// Rotation (automorphism) keys for `CoeffsToSlots` / `SlotsToCoeffs`.
     fn rotation_keys(&self) -> &Self::RotationKeys;
@@ -126,7 +126,7 @@ impl<D: Data, BE: Backend> BootstrappingKeys<BE> for BootstrappingKeysPrepared<D
 where
     GLWEAutomorphismKeyPrepared<D, BE>: CKKSAtkBounds<BE>,
     GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEPreparedVmpPMatRef<BE> + GGLWEInfos,
+    GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     type AutomorphismKey = GLWEAutomorphismKeyPrepared<D, BE>;
     type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;

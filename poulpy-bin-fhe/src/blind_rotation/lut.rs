@@ -1,3 +1,4 @@
+use poulpy_core::api::TransferInto;
 use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_cpu_ref::reference::znx::{ZnxCopy, ZnxRef, ZnxRotate, ZnxSwitchRing};
 use poulpy_hal::layouts::ZnxWord;
@@ -7,8 +8,8 @@ use poulpy_hal::{
         VecZnxRotateAssignTmpBytes,
     },
     layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScratchOwned, TransferFrom, VecZnx, VecZnxToBackendMut, ZnxViewMut,
-        vec_znx_host_backend_mut,
+        Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx, VecZnxToBackendMut,
+        ZnxViewMut, vec_znx_host_backend_mut,
     },
 };
 
@@ -242,19 +243,26 @@ impl<D: Data, W: ZnxWord> LookupTable<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> LookupTable<D, W> {
-    pub fn to_backend<From, To>(&self, dst: &Module<To>) -> LookupTable<To::OwnedBuf, To::ZnxWord>
-    where
-        From: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend<ZnxWord = W> + TransferFrom<From>,
-    {
-        LookupTable {
-            data: self.data.iter().map(|glwe| glwe.to_backend::<From, To>(dst)).collect(),
-            rot_dir: self.rot_dir,
-            base2k: self.base2k,
-            k: self.k,
-            drift: self.drift,
+/// Uploads a host-built table into an already-allocated destination.
+///
+/// The scalars travel with the limbs: `drift` and `rot_dir` are set by
+/// [`LookupTable::set`], and a destination left at its `alloc` defaults would
+/// blind-rotate by the wrong offset.
+impl<D1, D2, W> TransferInto<LookupTable<D2, W>> for LookupTable<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut LookupTable<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: LookupTable base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: LookupTable k");
+        assert_eq!(self.data.len(), dst.data.len(), "transfer_into: LookupTable extension_factor");
+        for (src, dst) in self.data.iter().zip(dst.data.iter_mut()) {
+            src.transfer_into(dst);
         }
+        dst.rot_dir = self.rot_dir;
+        dst.drift = self.drift;
     }
 }
 
@@ -403,5 +411,38 @@ where
         });
 
         res.data.rotate_right(k_lo);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use poulpy_cpu_ref::FFT64Ref;
+
+    /// The upload carries `drift`, which `set` makes non-zero and `alloc` leaves at 0.
+    #[test]
+    fn transfer_into_carries_scalars() {
+        let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(32);
+        let infos = LookUpTableLayout {
+            n: module.n().into(),
+            extension_factor: 2,
+            k: 40usize.into(),
+            base2k: 20usize.into(),
+        };
+
+        let mut src: LookupTable<Vec<u8>, i64> = LookupTable::alloc(&module, &infos);
+        let f: Vec<i64> = (0..8).map(|i| i - 4).collect();
+        src.set(&module, &f, 21);
+        src.set_rotation_direction(LookUpTableRotationDirection::Right);
+        assert_ne!(src.drift, 0);
+
+        let mut dst: LookupTable<Vec<u8>, i64> = LookupTable::alloc(&module, &infos);
+        src.transfer_into(&mut dst);
+
+        assert_eq!(dst.drift, src.drift);
+        assert!(matches!(dst.rot_dir, LookUpTableRotationDirection::Right));
+        for (a, b) in src.data.iter().zip(dst.data.iter()) {
+            assert_eq!(a, b);
+        }
     }
 }

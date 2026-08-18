@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    api::ModuleTransfer,
+    api::TransferInto,
     layouts::{Base2K, Dnum, Dsize, GGLWE, GLWE, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
@@ -60,6 +60,14 @@ impl Backend for SrcBackend {
         buf.copy_from_slice(src);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
+        buf.len()
+    }
+
+    fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize {
+        buf.len()
+    }
+
+    fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize {
         buf.len()
     }
 
@@ -174,6 +182,14 @@ impl Backend for DstBackend {
         buf.len()
     }
 
+    fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize {
+        buf.len()
+    }
+
+    fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize {
+        buf.len()
+    }
+
     fn view(buf: &Self::OwnedBuf) -> Self::BufRef<'_> {
         buf.as_slice()
     }
@@ -242,27 +258,6 @@ unsafe impl HalModuleImpl<DstBackend> for DstBackend {
     }
 }
 
-impl poulpy_hal::layouts::TransferFrom<SrcBackend> for SrcBackend {
-    fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-        src.clone()
-    }
-}
-impl poulpy_hal::layouts::TransferFrom<DstBackend> for DstBackend {
-    fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-        src.clone()
-    }
-}
-impl poulpy_hal::layouts::TransferFrom<SrcBackend> for DstBackend {
-    fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-        src.clone()
-    }
-}
-impl poulpy_hal::layouts::TransferFrom<DstBackend> for SrcBackend {
-    fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-        src.clone()
-    }
-}
-
 fn fill_bytes(buf: &mut [u8]) {
     for (i, byte) in buf.iter_mut().enumerate() {
         *byte = (i as u8).wrapping_mul(17).wrapping_add(3);
@@ -277,11 +272,11 @@ fn module_transfer_glwe_roundtrip() {
         src_module.glwe_alloc(Base2K(12), TorusPrecision(33), Rank(2));
     fill_bytes(&mut src.data.data);
 
-    let uploaded = dst_module.upload_glwe::<SrcBackend>(&src);
-    let downloaded = src_module.download_glwe::<DstBackend>(&uploaded);
-    let via_wrapper = src.to_backend::<SrcBackend, DstBackend>(&dst_module);
+    let mut uploaded = dst_module.glwe_alloc_from_infos(&src);
+    src.transfer_into(&mut uploaded);
+    let mut downloaded = src_module.glwe_alloc_from_infos(&src);
+    uploaded.transfer_into(&mut downloaded);
 
-    assert_eq!(uploaded, via_wrapper);
     assert_eq!(downloaded, src);
 }
 
@@ -293,10 +288,58 @@ fn module_transfer_gglwe_roundtrip() {
         src_module.gglwe_alloc(Base2K(12), Dnum(3), Dsize(1), TorusPrecision(12 + 6), Rank(1), Rank(2));
     fill_bytes(src.data.data_mut());
 
-    let uploaded = dst_module.upload_gglwe::<SrcBackend>(&src);
-    let downloaded = src_module.download_gglwe::<DstBackend>(&uploaded);
-    let via_wrapper = src.to_backend::<SrcBackend, DstBackend>(&dst_module);
+    let mut uploaded = dst_module.gglwe_alloc_from_infos(&src);
+    src.transfer_into(&mut uploaded);
+    let mut downloaded = src_module.gglwe_alloc_from_infos(&src);
+    uploaded.transfer_into(&mut downloaded);
 
-    assert_eq!(uploaded, via_wrapper);
     assert_eq!(downloaded, src);
+}
+
+/// `transfer_buf_into` writes into a destination the caller already owns, so a
+/// loop can hoist the allocation out. One copy whenever either side is
+/// host-visible.
+#[test]
+fn transfer_buf_into_reuses_destination() {
+    use poulpy_hal::layouts::transfer_buf_into;
+
+    let len = 256usize;
+    let mut a: Vec<u8> = <SrcBackend as Backend>::alloc_bytes(len);
+    let mut b: Vec<u8> = <SrcBackend as Backend>::alloc_bytes(len);
+    fill_bytes(&mut a);
+    b.iter_mut().enumerate().for_each(|(i, x)| *x = (i as u8).wrapping_mul(31));
+
+    let mut dst: Vec<u8> = <DstBackend as Backend>::alloc_bytes(len);
+
+    transfer_buf_into(&a, &mut dst);
+    assert_eq!(dst, a);
+
+    // Same destination, different source: no bytes of `a` survive.
+    transfer_buf_into(&b, &mut dst);
+    assert_eq!(dst, b);
+    assert_ne!(dst, a);
+}
+
+/// The size check lives in the shared move, so no implementor can skip it.
+#[test]
+#[should_panic(expected = "transfer_buf_into: source is 256 bytes, destination is 128")]
+fn transfer_buf_into_rejects_size_mismatch() {
+    use poulpy_hal::layouts::transfer_buf_into;
+
+    let src: Vec<u8> = <SrcBackend as Backend>::alloc_bytes(256);
+    let mut dst: Vec<u8> = <DstBackend as Backend>::alloc_bytes(128);
+    transfer_buf_into(&src, &mut dst);
+}
+
+/// A layout move checks the whole shape, not just the byte count.
+#[test]
+#[should_panic(expected = "transfer_into: GLWE k")]
+fn transfer_into_rejects_shape_mismatch() {
+    use crate::api::TransferInto;
+
+    let src_module: Module<SrcBackend> = Module::new(64);
+    let dst_module: Module<DstBackend> = Module::new(64);
+    let src = src_module.glwe_alloc(Base2K(12), TorusPrecision(24), Rank(1));
+    let mut dst = dst_module.glwe_alloc(Base2K(12), TorusPrecision(36), Rank(1));
+    src.transfer_into(&mut dst);
 }

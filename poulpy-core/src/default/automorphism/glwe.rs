@@ -8,8 +8,6 @@
 //!
 //! These items are re-exported publicly through `crate::oep::glwe_automorphism_defaults`.
 
-#![allow(private_bounds)]
-
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{

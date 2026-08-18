@@ -3,8 +3,6 @@
 //!
 //! Re-exported publicly through `crate::oep::glwe_external_product_defaults`.
 
-#![allow(private_bounds)]
-
 use crate::api::GLWEBytesOf;
 use poulpy_hal::layouts::VecZnxDftBackendMut;
 use poulpy_hal::{

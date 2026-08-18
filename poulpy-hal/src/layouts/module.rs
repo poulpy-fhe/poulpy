@@ -98,6 +98,13 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]);
     /// Returns the number of bytes stored in a backend-owned buffer.
     fn len_bytes(buf: &Self::OwnedBuf) -> usize;
+    /// Returns the number of bytes spanned by a shared borrowed view.
+    ///
+    /// Views are the unit a transfer addresses, so their extent has to be
+    /// legible without an owned buffer in hand.
+    fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize;
+    /// Returns the number of bytes spanned by a mutable borrowed view.
+    fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize;
     /// Borrows a shared backend-native view over an owned buffer.
     fn view(buf: &Self::OwnedBuf) -> Self::BufRef<'_>;
     /// Reborrows an existing shared backend-native view.

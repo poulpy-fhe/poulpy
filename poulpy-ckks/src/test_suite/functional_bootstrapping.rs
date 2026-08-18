@@ -199,7 +199,7 @@ where
     };
     assert_eq!(functional_k, expected_functional_k);
     let k_boot = functional_k.next_multiple_of(2 * params.base2k);
-    let backend_luts: Vec<_> = host_luts.iter().map(|lut| lut.to_backend(module)).collect();
+    let backend_luts: Vec<_> = host_luts.iter().map(|lut| lut.transfer_to(module)).collect();
     let tp = CKKSTestParams {
         k: k_boot,
         prec_meta: CKKSMeta {

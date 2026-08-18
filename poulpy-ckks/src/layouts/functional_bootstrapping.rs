@@ -7,8 +7,9 @@
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst};
-use poulpy_core::api::ModuleTransfer;
+use poulpy_core::api::TransferInto;
 use poulpy_core::layouts::Base2K;
+use poulpy_core::layouts::ModuleCoreAlloc;
 use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module};
 
 use crate::{
@@ -101,11 +102,16 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
 
     /// Uploads every encoded coefficient to `module`'s backend while
     /// preserving the LUT kind and message-ratio metadata.
-    pub fn to_backend<BE>(&self, module: &Module<BE>) -> EncodedLut<CKKSPlaintextOwned<BE>>
+    pub fn transfer_to<BE>(&self, module: &Module<BE>) -> EncodedLut<CKKSPlaintextOwned<BE>>
     where
         BE: Backend + HostStaged,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
     {
-        self.map(|pt| CKKSPlaintext::from_inner(module.upload_glwe_plaintext(&pt.inner), pt.meta()))
+        self.map(|pt| {
+            let mut inner = module.glwe_plaintext_alloc_from_infos(&pt.inner);
+            pt.inner.transfer_into(&mut inner);
+            CKKSPlaintext::from_inner(inner, pt.meta())
+        })
     }
 }
 

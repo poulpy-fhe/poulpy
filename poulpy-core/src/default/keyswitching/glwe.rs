@@ -18,7 +18,14 @@ use crate::{
 
 impl<BE: Backend> GLWEKeyswitchInternal<BE> for Module<BE> where Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE> {}
 
-pub(crate) trait GLWEKeyswitchInternal<BE: Backend>
+/// DFT-domain plumbing shared by the key-switch reference bodies.
+///
+/// Public because it appears in the `where` clause of the public
+/// `glwe_keyswitch*_default` functions: a backend forwarding to them by hand,
+/// rather than through [`crate::impl_glwe_keyswitch_defaults_full`], has to be
+/// able to name the bound. Blanket-implemented for every `Module<BE>` that has
+/// the underlying HAL ops, so there is nothing to implement.
+pub trait GLWEKeyswitchInternal<BE: Backend>
 where
     Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
 {
@@ -102,7 +109,14 @@ where
     }
 }
 
-pub(crate) trait GGLWEProductDefault<BE: Backend>
+/// The gadget product `res += a x key` in the DFT domain, the inner loop of
+/// both key-switching and the external product.
+///
+/// Public for the same reason as [`GLWEKeyswitchInternal`], and additionally
+/// because it is the operation the digit-width contract on
+/// [`crate::oep::GLWEKeyswitchDefault`] governs: an accelerator that fuses the
+/// digit loop is replacing this.
+pub trait GGLWEProductDefault<BE: Backend>
 where
     Self: Sized
         + ModuleN
@@ -352,7 +366,6 @@ where
     lvl_0 + lvl_2
 }
 
-#[allow(private_bounds)]
 pub fn glwe_keyswitch_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -461,7 +474,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 pub fn glwe_keyswitch_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,

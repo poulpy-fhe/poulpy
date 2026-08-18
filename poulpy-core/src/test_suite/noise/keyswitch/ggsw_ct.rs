@@ -19,7 +19,7 @@ use crate::{
 };
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_ggsw_keyswitch<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_ggsw_keyswitch<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -136,7 +136,7 @@ where
                 &tsk_infos,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
             pt_scalar.fill_ternary_hw(0, n, &mut source_xs);
@@ -203,7 +203,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_ggsw_keyswitch_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_ggsw_keyswitch_assign<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -308,7 +308,7 @@ where
                 &tsk_infos,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
             pt_scalar.fill_ternary_hw(0, n, &mut source_xs);

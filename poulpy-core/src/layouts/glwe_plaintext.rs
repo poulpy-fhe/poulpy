@@ -1,11 +1,11 @@
 use std::fmt;
 
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, Module, TransferFrom, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef,
+    Backend, Data, FillUniform, HostDataMut, HostDataRef, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef,
     VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord,
 };
+use poulpy_hal::source::Source;
 
-use crate::api::ModuleTransfer;
 use crate::layouts::{
     Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision,
 };
@@ -145,19 +145,6 @@ impl IntPolyInfos for GLWEPlaintextLayout {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GLWEPlaintext<D, W> {
-    /// Copies this plaintext's backing bytes into an owned buffer of
-    /// backend `To`, routing via host bytes.
-    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> GLWEPlaintext<To::OwnedBuf, To::ZnxWord>
-    where
-        BE: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend<ZnxWord = W>,
-        To: TransferFrom<BE>,
-    {
-        dst.upload_glwe_plaintext(self)
-    }
-}
-
 impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     /// Replaces this plaintext's backing storage with host bytes uploaded into
     /// backend `BE`. The shape and metadata are preserved.
@@ -203,6 +190,12 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
             base2k: self.base2k,
             k: self.k,
         }
+    }
+}
+
+impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWEPlaintext<D, W> {
+    fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
+        self.data.fill_uniform(log_bound, source);
     }
 }
 
@@ -352,13 +345,13 @@ impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMu
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     pub fn data(&self) -> &VecZnx<D, W> {
         &self.data
     }

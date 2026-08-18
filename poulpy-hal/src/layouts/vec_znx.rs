@@ -541,6 +541,32 @@ impl<'b, B: Backend + 'b> VecZnxReborrowBackendMut<B> for VecZnx<B::BufMut<'b>, 
 /// `B` only through associated types, which leaves `B` unconstrained in an
 /// `impl` header.
 ///
+/// Borrows a backend-owned `VecZnx` as the backend's native shared view.
+///
+/// [`VecZnxToBackendRef`] is keyed on `B::OwnedBuf`, a projection the compiler
+/// cannot invert, so `vec.to_backend_ref()` cannot infer `B` the way the
+/// backend-keyed containers (`VecZnxDft`, `VecZnxBig`) can. This names the
+/// backend once, as a turbofish, instead of spelling the qualified path.
+pub fn vec_znx_backend_ref<'a, B: Backend>(vec: &'a VecZnx<B::OwnedBuf, B::ZnxWord>) -> VecZnxBackendRef<'a, B> {
+    <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(vec)
+}
+
+/// Reborrows an existing native mutable view for a shorter lifetime.
+///
+/// Same inference problem as [`vec_znx_backend_mut`]: the impl is keyed on
+/// `B::BufMut`, so the backend is named once here instead of at each call.
+pub fn vec_znx_reborrow_backend_mut<'a, B: Backend>(vec: &'a mut VecZnxBackendMut<'_, B>) -> VecZnxBackendMut<'a, B> {
+    <VecZnx<B::BufMut<'_>, B::ZnxWord> as VecZnxReborrowBackendMut<B>>::reborrow_backend_mut(vec)
+}
+
+/// Borrows a backend-owned `VecZnx` as the backend's native mutable view.
+///
+/// See [`vec_znx_backend_ref`] for why this exists rather than a bare
+/// `to_backend_mut()`.
+pub fn vec_znx_backend_mut<'a, B: Backend>(vec: &'a mut VecZnx<B::OwnedBuf, B::ZnxWord>) -> VecZnxBackendMut<'a, B> {
+    <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(vec)
+}
+
 /// # Panics
 ///
 /// Panics if `size > vec.size()`.

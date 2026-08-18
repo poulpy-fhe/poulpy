@@ -1,16 +1,20 @@
+use poulpy_core::api::TransferInto;
 use poulpy_core::{
     GLWEAdd, GLWEMulPlain, GLWENormalize, GLWESub,
     layouts::{Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, ModuleCoreAlloc, Rank, TorusPrecision},
 };
+use poulpy_hal::layouts::CopyFromHost;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostDataMut, Module, ScratchOwned},
+    layouts::{Backend, Module, ScratchOwned},
+    source::Source,
 };
 
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
+use crate::core::fill::{host_glwe, host_glwe_plaintext, staging};
 use crate::core::params::CoreParams;
 
 fn glwe_layout(cp: &CoreParams) -> GLWELayout {
@@ -22,18 +26,23 @@ fn glwe_layout(cp: &CoreParams) -> GLWELayout {
     }
 }
 
-pub fn runner_glwe_add_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+pub fn runner_glwe_add_into<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEAdd<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEAdd<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source: Source = Source::new([0u8; 32]);
+    let host = staging(cp.n as usize);
 
-    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let a: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut a: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut b: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut a);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut b);
 
     bencher.iter(|| {
         module.glwe_add_into(&mut res, &a, &b);
@@ -41,17 +50,21 @@ pub fn runner_glwe_add_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: M
     });
 }
 
-pub fn runner_glwe_add_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+pub fn runner_glwe_add_assign<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEAdd<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEAdd<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source: Source = Source::new([0u8; 32]);
+    let host = staging(cp.n as usize);
 
-    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut b: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut b);
 
     bencher.iter(|| {
         module.glwe_add_assign(&mut res, &b);
@@ -59,18 +72,23 @@ pub fn runner_glwe_add_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M:
     });
 }
 
-pub fn runner_glwe_sub<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+pub fn runner_glwe_sub<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWESub<BE>,
+    Module<BE>: ModuleNew<BE> + GLWESub<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source: Source = Source::new([0u8; 32]);
+    let host = staging(cp.n as usize);
 
-    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let a: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut a: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut b: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut a);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut b);
 
     bencher.iter(|| {
         module.glwe_sub(&mut res, &a, &b);
@@ -78,17 +96,21 @@ pub fn runner_glwe_sub<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measur
     });
 }
 
-pub fn runner_glwe_sub_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+pub fn runner_glwe_sub_assign<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWESub<BE>,
+    Module<BE>: ModuleNew<BE> + GLWESub<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source: Source = Source::new([0u8; 32]);
+    let host = staging(cp.n as usize);
 
-    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut b: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut b);
 
     bencher.iter(|| {
         module.glwe_sub_assign(&mut res, &b);
@@ -96,20 +118,22 @@ pub fn runner_glwe_sub_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M:
     });
 }
 
-pub fn runner_glwe_normalize<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+pub fn runner_glwe_normalize<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWENormalize<BE>,
+    Module<BE>: ModuleNew<BE> + GLWENormalize<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
-    for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source: Source = Source::new([0u8; 32]);
+    let host = staging(cp.n as usize);
 
-    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let a: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut a: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut a);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_normalize_tmp_bytes());
 
     bencher.iter(|| {
@@ -118,18 +142,20 @@ pub fn runner_glwe_normalize<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: 
     });
 }
 
-pub fn runner_glwe_normalize_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+pub fn runner_glwe_normalize_assign<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWENormalize<BE>,
+    Module<BE>: ModuleNew<BE> + GLWENormalize<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source: Source = Source::new([0u8; 32]);
+    let host = staging(cp.n as usize);
 
-    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_normalize_tmp_bytes());
 
     bencher.iter(|| {
@@ -138,20 +164,24 @@ pub fn runner_glwe_normalize_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i6
     });
 }
 
-pub fn runner_glwe_mul_plain<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+pub fn runner_glwe_mul_plain<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEMulPlain<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source: Source = Source::new([0u8; 32]);
+    let host = staging(cp.n as usize);
 
-    let mut ct_out: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let ct_in: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let pt: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
+    let mut ct_out: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut ct_in: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut ct_out);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut ct_in);
+    host_glwe_plaintext(&host, &infos, &mut source).transfer_into(&mut pt);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&ct_out, &ct_in, &pt));
 
     bencher.iter(|| {
@@ -160,19 +190,22 @@ pub fn runner_glwe_mul_plain<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: 
     });
 }
 
-pub fn runner_glwe_mul_plain_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+pub fn runner_glwe_mul_plain_assign<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEMulPlain<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source: Source = Source::new([0u8; 32]);
+    let host = staging(cp.n as usize);
 
-    let mut ct: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let pt: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
+    let mut ct: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
+    host_glwe(&host, &infos, &mut source).transfer_into(&mut ct);
+    host_glwe_plaintext(&host, &infos, &mut source).transfer_into(&mut pt);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&infos, &ct, &pt));
 
     bencher.iter(|| {

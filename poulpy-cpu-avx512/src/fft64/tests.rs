@@ -135,7 +135,7 @@ backend_test_suite! {
     backend = crate::FFT64Avx512,
     params = TestParams { size: 1<<8, base2k: 17 },
     tests = {
-        glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::test_glwe_expand_lwe_matrix_decrypt,
+        glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::noise::test_glwe_expand_lwe_matrix_decrypt,
     }
 }
 

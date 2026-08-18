@@ -136,7 +136,7 @@ backend_test_suite! {
     backend = crate::NTT4x30Avx,
     params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
-        glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::test_glwe_expand_lwe_matrix_decrypt,
+        glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::noise::test_glwe_expand_lwe_matrix_decrypt,
     }
 }
 

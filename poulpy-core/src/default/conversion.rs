@@ -4,8 +4,6 @@
 //!
 //! Re-exported publicly through `crate::oep::conversion_defaults`.
 
-#![allow(private_bounds)]
-
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{

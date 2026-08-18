@@ -375,7 +375,6 @@ pub unsafe trait GLWEPackImpl<BE: Backend>: Backend {
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWEMulConstImpl<BE> for BE
 where
     Module<BE>: GLWEMulConstDefault<BE>,
@@ -420,7 +419,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWEMulPlainImpl<BE> for BE
 where
     Module<BE>: GLWEMulPlainDefault<BE>,
@@ -458,7 +456,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWETensoringImpl<BE> for BE
 where
     Module<BE>: GLWETensoringDefault<BE>,
@@ -527,7 +524,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWEAddImpl<BE> for BE
 where
     Module<BE>: GLWEAddDefault<BE>,
@@ -550,7 +546,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWENegateImpl<BE> for BE
 where
     Module<BE>: GLWENegateDefault<BE>,
@@ -571,7 +566,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWESubImpl<BE> for BE
 where
     Module<BE>: GLWESubDefault<BE>,
@@ -602,7 +596,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWEZeroImpl<BE> for BE
 where
     Module<BE>: GLWEZeroDefault<BE>,
@@ -615,7 +608,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWECopyImpl<BE> for BE
 where
     Module<BE>: GLWECopyDefault<BE>,
@@ -629,7 +621,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWERotateImpl<BE> for BE
 where
     Module<BE>: GLWERotateDefault<BE>,
@@ -654,7 +645,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWEMulXpMinusOneImpl<BE> for BE
 where
     Module<BE>: GLWEMulXpMinusOneDefault<BE>,
@@ -675,7 +665,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWEShiftImpl<BE> for BE
 where
     Module<BE>: GLWEShiftDefault<BE>,
@@ -723,7 +712,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWENormalizeImpl<BE> for BE
 where
     Module<BE>: GLWENormalizeDefault<BE>,
@@ -748,7 +736,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GGSWRotateImpl<BE> for BE
 where
     Module<BE>: GGSWRotateDefault<BE>,
@@ -774,7 +761,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWETraceImpl<BE> for BE
 where
     Module<BE>: crate::default::glwe_trace::GLWETraceDefault<BE>,
@@ -814,7 +800,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWEPackImpl<BE> for BE
 where
     Module<BE>: crate::default::glwe_packing::GLWEPackingDefault<BE>,
@@ -849,128 +834,6 @@ where
         module.glwe_pack_default(res, a, log_gap_out, keys, &mut scratch_local)
     }
 }
-
-/// Delegate the `GLWERotateImpl` family to another host backend through the
-/// module-owned transfer API.
-///
-/// This intentionally routes values through `upload_glwe` / `download_glwe`
-/// so a partial backend can keep explicit ownership boundaries when it falls
-/// back to another backend's implementation.
-#[macro_export]
-macro_rules! impl_glwe_rotate_impl_from {
-    ($be:ty, $from:ty) => {
-        unsafe impl $crate::oep::GLWERotateImpl<$be> for $be {
-            fn glwe_rotate_tmp_bytes(module: &poulpy_hal::layouts::Module<$be>) -> usize {
-                let delegate: poulpy_hal::layouts::Module<$from> =
-                    <poulpy_hal::layouts::Module<$from> as poulpy_hal::api::ModuleNew<$from>>::new(module.n() as u64);
-                <poulpy_hal::layouts::Module<$from> as $crate::api::GLWERotate<$from>>::glwe_rotate_tmp_bytes(&delegate)
-            }
-
-            fn glwe_rotate<R, A>(module: &poulpy_hal::layouts::Module<$be>, k: i64, res: &mut R, a: &A)
-            where
-                R: $crate::layouts::GLWEToBackendMut,
-                A: $crate::layouts::GLWEToBackendRef,
-            {
-                let delegate: poulpy_hal::layouts::Module<$from> =
-                    <poulpy_hal::layouts::Module<$from> as poulpy_hal::api::ModuleNew<$from>>::new(module.n() as u64);
-
-                let a_host: $crate::layouts::GLWE<Vec<u8>, <$be as poulpy_hal::layouts::Backend>::ZnxWord> =
-                    poulpy_hal::layouts::ToOwnedDeep::to_owned_deep(&$crate::layouts::GLWEToBackendRef::to_backend_ref(a));
-                let a_src: $crate::layouts::GLWE<
-                    <$be as poulpy_hal::layouts::Backend>::OwnedBuf,
-                    <$be as poulpy_hal::layouts::Backend>::ZnxWord,
-                > = a_host.reinterpret::<$be>();
-
-                let res_infos = $crate::layouts::GLWEToBackendMut::to_backend_mut(res);
-                let res_host: $crate::layouts::GLWE<
-                    <$from as poulpy_hal::layouts::Backend>::OwnedBuf,
-                    <$from as poulpy_hal::layouts::Backend>::ZnxWord,
-                > = delegate.glwe_alloc_from_infos(&res_infos);
-                let res_src: $crate::layouts::GLWE<
-                    <$be as poulpy_hal::layouts::Backend>::OwnedBuf,
-                    <$be as poulpy_hal::layouts::Backend>::ZnxWord,
-                > = res_host.reinterpret::<$be>();
-
-                let a_delegate = $crate::api::ModuleTransfer::upload_glwe::<$be>(&delegate, &a_src);
-                let mut res_delegate = $crate::api::ModuleTransfer::upload_glwe::<$be>(&delegate, &res_src);
-
-                <poulpy_hal::layouts::Module<$from> as $crate::api::GLWERotate<$from>>::glwe_rotate(
-                    &delegate,
-                    k,
-                    &mut res_delegate,
-                    &a_delegate,
-                );
-
-                let res_back: $crate::layouts::GLWE<
-                    <$be as poulpy_hal::layouts::Backend>::OwnedBuf,
-                    <$be as poulpy_hal::layouts::Backend>::ZnxWord,
-                > = $crate::api::ModuleTransfer::download_glwe::<$from>(&delegate, &res_delegate);
-                let res_back_ref = $crate::layouts::GLWEToBackendRef::to_backend_ref(&res_back);
-
-                let mut bytes = Vec::new();
-                poulpy_hal::layouts::WriterTo::write_to(&res_back_ref, &mut bytes)
-                    .expect("failed to serialize delegated GLWE rotate result");
-
-                let mut cursor = std::io::Cursor::new(bytes);
-                let mut res_mut = $crate::layouts::GLWEToBackendMut::to_backend_mut(res);
-                poulpy_hal::layouts::ReaderFrom::read_from(&mut res_mut, &mut cursor)
-                    .expect("failed to write delegated GLWE rotate result back");
-            }
-
-            fn glwe_rotate_assign<R>(
-                module: &poulpy_hal::layouts::Module<$be>,
-                k: i64,
-                res: &mut R,
-                _scratch: &mut poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) where
-                R: $crate::layouts::GLWEToBackendMut,
-            {
-                let delegate: poulpy_hal::layouts::Module<$from> =
-                    <poulpy_hal::layouts::Module<$from> as poulpy_hal::api::ModuleNew<$from>>::new(module.n() as u64);
-
-                let res_host: $crate::layouts::GLWE<Vec<u8>, <$be as poulpy_hal::layouts::Backend>::ZnxWord> =
-                    poulpy_hal::layouts::ToOwnedDeep::to_owned_deep(&$crate::layouts::GLWEToBackendMut::to_backend_mut(res));
-                let res_src: $crate::layouts::GLWE<
-                    <$be as poulpy_hal::layouts::Backend>::OwnedBuf,
-                    <$be as poulpy_hal::layouts::Backend>::ZnxWord,
-                > = res_host.reinterpret::<$be>();
-                let mut res_delegate = $crate::api::ModuleTransfer::upload_glwe::<$be>(&delegate, &res_src);
-
-                let mut scratch_owned: poulpy_hal::layouts::ScratchOwned<$from> =
-                    <poulpy_hal::layouts::ScratchOwned<$from> as poulpy_hal::api::ScratchOwnedAlloc<$from>>::alloc(
-                        <poulpy_hal::layouts::Module<$from> as $crate::api::GLWERotate<$from>>::glwe_rotate_tmp_bytes(&delegate),
-                    );
-                let scratch_delegate =
-                    <poulpy_hal::layouts::ScratchOwned<$from> as poulpy_hal::api::ScratchOwnedBorrow<$from>>::borrow(
-                        &mut scratch_owned,
-                    );
-
-                <poulpy_hal::layouts::Module<$from> as $crate::api::GLWERotate<$from>>::glwe_rotate_assign(
-                    &delegate,
-                    k,
-                    &mut res_delegate,
-                    scratch_delegate,
-                );
-
-                let res_back: $crate::layouts::GLWE<
-                    <$be as poulpy_hal::layouts::Backend>::OwnedBuf,
-                    <$be as poulpy_hal::layouts::Backend>::ZnxWord,
-                > = $crate::api::ModuleTransfer::download_glwe::<$from>(&delegate, &res_delegate);
-                let res_back_ref = $crate::layouts::GLWEToBackendRef::to_backend_ref(&res_back);
-
-                let mut bytes = Vec::new();
-                poulpy_hal::layouts::WriterTo::write_to(&res_back_ref, &mut bytes)
-                    .expect("failed to serialize delegated GLWE rotate inplace result");
-
-                let mut cursor = std::io::Cursor::new(bytes);
-                let mut res_mut = $crate::layouts::GLWEToBackendMut::to_backend_mut(res);
-                poulpy_hal::layouts::ReaderFrom::read_from(&mut res_mut, &mut cursor)
-                    .expect("failed to write delegated GLWE rotate inplace result back");
-            }
-        }
-    };
-}
-
 /// Implements [`GLWETraceDefault`] for `Module<$be>` by forwarding every method to
 /// the corresponding [`glwe_trace_defaults`] free function.
 #[macro_export]

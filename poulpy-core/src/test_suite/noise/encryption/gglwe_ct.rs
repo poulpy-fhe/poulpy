@@ -20,7 +20,7 @@ use crate::{
     noise::GGLWENoise,
 };
 
-pub fn test_gglwe_switching_key_encrypt_sk<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_gglwe_switching_key_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -151,7 +151,7 @@ where
     }
 }
 
-pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::TestBackend>(
+pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -221,7 +221,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::Tes
                     seed_xa,
                     &gglwe_infos,
                     &mut source_xe,
-                    &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                    &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
                 );
 
                 let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> =
@@ -289,12 +289,12 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::Tes
             seed_xa,
             &gglwe_infos,
             &mut source_xe,
-            &mut crate::test_suite::scratch_host_arena(&mut scratch),
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
         );
     }
 }
 
-pub fn test_gglwe_compressed_encrypt_sk<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_gglwe_compressed_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,

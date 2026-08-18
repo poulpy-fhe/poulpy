@@ -1,3 +1,4 @@
+use poulpy_hal::layouts::HostStaged;
 use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_cpu_ref::reference::znx::{ZnxCopy, ZnxRef, ZnxRotate, ZnxSwitchRing};
 use poulpy_hal::{
@@ -6,7 +7,7 @@ use poulpy_hal::{
         VecZnxRotateAssignTmpBytes,
     },
     layouts::{
-        Backend, Data, HostDataRef, Module, ScratchOwned, TransferFrom, VecZnx, VecZnxToBackendMut, ZnxViewMut,
+        Backend, Data, HostDataRef, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxViewMut,
         vec_znx_host_backend_mut,
     },
 };
@@ -242,19 +243,6 @@ impl LookupTable {
 }
 
 impl<D: HostDataRef, W: ZnxWord> LookupTable<D, W> {
-    pub fn to_backend<From, To>(&self, dst: &Module<To>) -> LookupTable<To::OwnedBuf>
-    where
-        From: Backend<OwnedBuf = D>,
-        To: Backend + TransferFrom<From>,
-    {
-        LookupTable {
-            data: self.data.iter().map(|glwe| glwe.to_backend::<From, To>(dst)).collect(),
-            rot_dir: self.rot_dir,
-            base2k: self.base2k,
-            k: self.k,
-            drift: self.drift,
-        }
-    }
 }
 
 pub(crate) trait DivRound {
