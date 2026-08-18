@@ -13,7 +13,6 @@ use crate::layouts::{
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
-#[allow(private_bounds)]
 pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
     fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(module: &Module<BE>, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
@@ -84,8 +83,6 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
 /// for the reference algorithms a backend may forward to (the
 /// [`crate::impl_linear_transformation_defaults_full`] macro wires every method
 /// to them).
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait LinearTransformationDefault<BE: Backend> {
     fn glwe_eval_linear_transformation_tmp_bytes_default<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
@@ -150,7 +147,6 @@ pub trait LinearTransformationDefault<BE: Backend> {
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE> LinearTransformationImpl<BE> for BE
 where
     BE: Backend,

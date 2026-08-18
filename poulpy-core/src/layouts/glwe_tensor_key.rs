@@ -4,8 +4,9 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
-    GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
+    GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank,
+    TorusPrecision,
 };
 
 use poulpy_hal::layouts::ZnxWord;
@@ -130,6 +131,18 @@ impl GGLWEInfos for GLWETensorKeyLayout {
 
     fn rank_out(&self) -> Rank {
         self.rank
+    }
+}
+
+impl<BE: Backend> GGLWEAtBackendRef<BE> for GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendRef<BE>>::at_backend(&self.0, row, col)
+    }
+}
+
+impl<BE: Backend> GGLWEAtBackendMut<BE> for GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendMut<BE>>::at_backend_mut(&mut self.0, row, col)
     }
 }
 

@@ -36,8 +36,10 @@ fn write_vec_znx_bytes(out: &mut Vec<u8>, n: u64, cols: u64, size: u64, max_size
     out.extend_from_slice(&raw);
 }
 
-pub fn test_lwe_read_from_rejects_malformed_shape<BE: crate::test_suite::TestBackend>(_params: &TestParams, _module: &Module<BE>)
-where
+pub fn test_lwe_read_from_rejects_malformed_shape<BE: crate::test_suite::noise::TestBackend>(
+    _params: &TestParams,
+    _module: &Module<BE>,
+) where
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
 {
@@ -61,7 +63,7 @@ where
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }
 
-pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE: crate::test_suite::TestBackend>(
+pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE: crate::test_suite::noise::TestBackend>(
     _params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -82,7 +84,7 @@ pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE:
     assert_eq!(sk_lwe.dist(), crate::dist::Distribution::TernaryFixed(3));
 }
 
-pub fn test_glwe_base2k_conversion<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_base2k_conversion<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -166,7 +168,7 @@ where
     }
 }
 
-pub fn test_lwe_to_glwe<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_lwe_to_glwe<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -256,7 +258,7 @@ where
         &lwe_to_glwe_infos,
         &mut source_xe,
         &mut source_xa,
-        &mut crate::test_suite::scratch_host_arena(&mut scratch),
+        &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
     );
 
     let mut glwe_ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
@@ -285,7 +287,7 @@ where
     assert_eq!(glwe_pt.data.at(0, 0)[0], lwe_pt_conv.data.at(0, 0)[0]);
 }
 
-pub fn test_glwe_to_lwe<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_to_lwe<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -409,7 +411,7 @@ where
     assert_eq!(glwe_pt_conv.data.at(0, 0)[a_idx], lwe_pt.data.at(0, 0)[0]);
 }
 
-pub fn test_glwe_expand_lwe<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_expand_lwe<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -505,7 +507,7 @@ where
     }
 }
 
-pub fn test_glwe_expand_lwe_rejects_incompatible_lwe_layout<BE: crate::test_suite::TestBackend>(
+pub fn test_glwe_expand_lwe_rejects_incompatible_lwe_layout<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -552,7 +554,7 @@ pub fn test_glwe_expand_lwe_rejects_incompatible_lwe_layout<BE: crate::test_suit
     );
 }
 
-pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,

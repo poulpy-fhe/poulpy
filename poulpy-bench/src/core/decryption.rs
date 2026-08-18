@@ -16,14 +16,17 @@ use criterion::{Bencher, measurement::Measurement};
 
 use crate::core::params::CoreParams;
 
-pub fn runner_glwe_decrypt<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, M: Measurement>(
+pub fn runner_glwe_decrypt<BE: Backend<ZnxWord = i64> + HostBackend, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEDecrypt<BE> + GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretSampling<BE>,
+    Module<BE>: ModuleNew<BE>
+        + GLWEDecrypt<BE>
+        + GLWEEncryptSk<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
-    for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     let infos = GLWELayout {
         n: Degree(cp.n),
@@ -38,14 +41,14 @@ pub fn runner_glwe_decrypt<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + Host
     let mut source_xa = Source::new([1u8; 32]);
     let mut source_xe = Source::new([2u8; 32]);
 
-    let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(&infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, i64> = module.glwe_secret_alloc_from_infos(&infos);
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(infos.rank());
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-    let mut ct: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
-    let mut pt: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
+    let mut ct: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module

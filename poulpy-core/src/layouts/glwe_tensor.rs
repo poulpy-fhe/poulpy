@@ -21,19 +21,19 @@ pub struct GLWETensor<D: Data, W: ZnxWord> {
 pub type GLWETensorBackendRef<'a, BE> = GLWETensor<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
 pub type GLWETensorBackendMut<'a, BE> = GLWETensor<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
 
-impl<D: HostDataMut, W: ZnxWord> SetBase2k for GLWETensor<D, W> {
+impl<D: Data, W: ZnxWord> SetBase2k for GLWETensor<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GLWETensor<D, W> {
+impl<D: Data, W: ZnxWord> GLWETensor<D, W> {
     pub fn data(&self) -> &VecZnx<D, W> {
         &self.data
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GLWETensor<D, W> {
+impl<D: Data, W: ZnxWord> GLWETensor<D, W> {
     pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
         &mut self.data
     }

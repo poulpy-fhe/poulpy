@@ -6,8 +6,8 @@ use poulpy_hal::{
         VecZnxCopyRangeBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, TransferFrom,
-        ZnxViewMut, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
+        Backend, Data, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ZnxViewMut,
+        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -15,7 +15,6 @@ use poulpy_hal::{
 
 use crate::{
     GetDistribution, GetDistributionMut,
-    api::ModuleTransfer,
     dist::Distribution,
     layouts::{Base2K, Degree, GLWEInfos, LWEInfos, LWESecretToBackendMut, Rank},
 };
@@ -101,19 +100,6 @@ impl<D: Data, W: ZnxWord> GetDistributionMut for GLWESecret<D, W> {
 impl<D: Data, W: ZnxWord> GLWEInfos for GLWESecret<D, W> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32)
-    }
-}
-
-impl<D: HostDataRef, W: ZnxWord> GLWESecret<D, W> {
-    /// Copies this secret's backing bytes into an owned buffer of
-    /// backend `To`, routing via host bytes.
-    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> GLWESecret<To::OwnedBuf, To::ZnxWord>
-    where
-        BE: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend<ZnxWord = W>,
-        To: TransferFrom<BE>,
-    {
-        dst.upload_glwe_secret(self)
     }
 }
 

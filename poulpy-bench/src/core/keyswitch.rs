@@ -1,14 +1,14 @@
 use poulpy_core::{
-    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEEncryptSk, GLWEKeyswitch, GLWESwitchingKeyEncryptSk,
+    GLWEKeyswitch,
+    layouts::LWEInfos,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GLWE, GLWEInfos, GLWELayout, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling,
-        GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, LWEInfos,
-        ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
+        Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEInfos, GGLWELayout, GLWE, GLWEInfos, GLWELayout, ModuleCoreAlloc, Rank,
+        TorusPrecision, prepared::GGLWEPreparedFactory,
     },
 };
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, NoiseInfos, ScratchOwned},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
+    layouts::{Backend, MatZnx, MatZnxAtBackendMut, Module, ScratchOwned, VecZnxBackendMut, vec_znx_backend_mut},
     source::Source,
 };
 
@@ -18,20 +18,71 @@ use criterion::{Bencher, measurement::Measurement};
 
 use crate::core::params::{CoreParams, key_dnum_k_aux};
 
-pub fn runner_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CoreParams,
-) where
+/// Fills one GLWE with uniform noise, through the backend.
+///
+/// Takes the backend view rather than the `GLWE` so that a GGLWE row, which is
+/// a GLWE, can reuse it. The view carries its own column count: `rank + 1` for a
+/// ciphertext, `rank_out + 1` for a key row.
+fn fill_glwe_view<BE>(module: &Module<BE>, glwe: &mut VecZnxBackendMut<'_, BE>, base2k: usize, source: &mut Source)
+where
+    BE: Backend<ZnxWord = i64>,
+    Module<BE>: VecZnxFillUniformSourceBackend<BE>,
+{
+    for col in 0..glwe.cols() {
+        module.vec_znx_fill_uniform_source_backend(base2k, glwe, col, source);
+    }
+}
+
+/// Fills a GLWE ciphertext with uniform noise.
+fn fill_glwe<BE>(module: &Module<BE>, ct: &mut GLWE<BE::OwnedBuf, BE::ZnxWord>, source: &mut Source)
+where
+    BE: Backend<ZnxWord = i64>,
+    Module<BE>: VecZnxFillUniformSourceBackend<BE>,
+    GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEInfos,
+{
+    let base2k: usize = ct.base2k().into();
+    fill_glwe_view(module, &mut vec_znx_backend_mut::<BE>(ct.data_mut()), base2k, source);
+}
+
+/// Fills a GGLWE with uniform noise, one GLWE row at a time.
+fn fill_gglwe<BE>(module: &Module<BE>, key: &mut GGLWE<BE::OwnedBuf, BE::ZnxWord>, source: &mut Source)
+where
+    BE: Backend<ZnxWord = i64>,
+    Module<BE>: VecZnxFillUniformSourceBackend<BE>,
+    GGLWE<BE::OwnedBuf, BE::ZnxWord>: GGLWEInfos,
+    MatZnx<BE::OwnedBuf, BE::ZnxWord>: MatZnxAtBackendMut<BE>,
+{
+    let base2k: usize = key.base2k().into();
+    let rows: usize = key.dnum().as_usize();
+    let cols_in: usize = key.rank_in().as_usize();
+    let data = key.data_mut();
+    for row in 0..rows {
+        for col_in in 0..cols_in {
+            fill_glwe_view(module, &mut data.at_backend_mut(row, col_in), base2k, source);
+        }
+    }
+}
+
+/// Times `glwe_keyswitch` alone.
+///
+/// The operands are uniform noise filled in through the backend rather than
+/// genuine ciphertexts. Nothing is decrypted, and the arithmetic is
+/// data-independent: an encryption of zero is uniform limbs too, so this is the
+/// same input distribution reached without secrets, encryption or a transfer.
+/// It is also what keeps the runner open to a device backend, which needs only
+/// allocation, the prepared-key factory, the backend fill and the operation.
+///
+/// Setup is outside `bencher.iter`, so a device backend measures the kernel and
+/// not the bus.
+pub fn runner_glwe_keyswitch<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
     Module<BE>: ModuleNew<BE>
-        + GLWESwitchingKeyEncryptSk<BE>
-        + GLWEEncryptSk<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWEKeyswitch<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>
-        + GLWESecretSampling<BE>,
+        + GGLWEPreparedFactory<BE>
+        + VecZnxFillUniformSourceBackend<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
-    for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
+    MatZnx<BE::OwnedBuf, i64>: MatZnxAtBackendMut<BE>,
 {
     let glwe = GLWELayout {
         n: Degree(cp.n),
@@ -40,7 +91,7 @@ pub fn runner_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: 
         rank: Rank(cp.rank),
     };
     let (dnum, k_aux) = key_dnum_k_aux(cp.k + cp.dsize * cp.base2k, cp.base2k, cp.dsize);
-    let ksk_infos = GLWESwitchingKeyLayout {
+    let key_infos = GGLWELayout {
         n: Degree(cp.n),
         base2k: Base2K(cp.base2k),
         k_aux: TorusPrecision(k_aux),
@@ -52,62 +103,28 @@ pub fn runner_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: 
 
     let glwe_in = &glwe;
     let glwe_out = &glwe;
-    let gglwe = &ksk_infos;
 
-    let n: usize = cp.n as usize;
-    let module: Module<BE> = Module::<BE>::new(n as u64);
+    let module: Module<BE> = Module::<BE>::new(cp.n as u64);
+    let mut source: Source = Source::new([0u8; 32]);
 
-    let mut ksk: GLWESwitchingKey<Vec<u8>, i64> = module.glwe_switching_key_alloc_from_infos(gglwe);
-    let mut ct_in: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(glwe_in);
-    let mut ct_out: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(glwe_out);
+    let mut ct_in = module.glwe_alloc_from_infos(glwe_in);
+    let mut ct_out = module.glwe_alloc_from_infos(glwe_out);
+    let mut key_coeffs = module.gglwe_alloc_from_infos(&key_infos);
+
+    fill_glwe(&module, &mut ct_in, &mut source);
+    fill_gglwe(&module, &mut key_coeffs, &mut source);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .glwe_switching_key_encrypt_sk_tmp_bytes(gglwe)
-            .max(module.glwe_encrypt_sk_tmp_bytes(glwe_in))
-            .max(module.glwe_keyswitch_tmp_bytes(glwe_out, glwe_in, gglwe)),
+            .gglwe_prepare_tmp_bytes(&key_infos)
+            .max(module.glwe_keyswitch_tmp_bytes(glwe_out, glwe_in, &key_infos)),
     );
 
-    let mut source_xs: Source = Source::new([0u8; 32]);
-    let mut source_xe: Source = Source::new([1u8; 32]);
-    let mut source_xa: Source = Source::new([2u8; 32]);
-
-    let mut sk_in: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(glwe_in);
-    module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
-
-    let mut sk_in_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(glwe_in.rank());
-    module.glwe_secret_prepare(&mut sk_in_prepared, &sk_in);
-
-    let mut sk_out: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(glwe_out);
-    module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
-
-    let ksk_enc_infos = NoiseInfos::new(gglwe.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
-    let glwe_enc_infos = NoiseInfos::new(glwe_in.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
-
-    module.glwe_switching_key_encrypt_sk(
-        &mut ksk,
-        &sk_in,
-        &sk_out,
-        &ksk_enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
-
-    module.glwe_encrypt_zero_sk(
-        &mut ct_in,
-        &sk_in_prepared,
-        &glwe_enc_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
-
-    let mut ksk_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> = module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
-    module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
+    let mut key = module.gglwe_prepared_alloc_from_infos(&key_infos);
+    module.gglwe_prepare(&mut key, &key_coeffs, &mut scratch.borrow());
 
     bencher.iter(|| {
-        module.glwe_keyswitch(&mut ct_out, &ct_in, &ksk_prepared, &mut scratch.borrow());
+        module.glwe_keyswitch(&mut ct_out, &ct_in, &key, &mut scratch.borrow());
         black_box(());
     });
 }

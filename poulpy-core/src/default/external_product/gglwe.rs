@@ -2,8 +2,6 @@
 //!
 //! Re-exported publicly through `crate::oep::gglwe_external_product_defaults`.
 
-#![allow(private_bounds)]
-
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{

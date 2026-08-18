@@ -8,8 +8,7 @@
 
 use crate::layouts::{
     Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef,
-    ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxOwned, VecZnxToBackendMut,
-    VecZnxToBackendRef,
+    ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
 };
 
 pub mod convolution;
@@ -52,13 +51,7 @@ pub trait TestBackend: Backend<ZnxWord = i64> {}
 
 impl<BE: Backend<ZnxWord = i64>> TestBackend for BE {}
 
-pub fn vec_znx_backend_ref<'a, BE: Backend>(vec: &'a VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnxBackendRef<'a, BE> {
-    <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(vec)
-}
-
-pub fn vec_znx_backend_mut<'a, BE: Backend>(vec: &'a mut VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnxBackendMut<'a, BE> {
-    <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(vec)
-}
+pub use crate::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 
 /// Mutable backend view narrowed to `size` limbs, leaving the allocation intact.
 ///

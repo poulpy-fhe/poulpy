@@ -7,7 +7,7 @@ use poulpy_hal::{
         VecZnxRotateAssignTmpBytes,
     },
     layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScratchOwned, TransferFrom, VecZnx, VecZnxToBackendMut, ZnxViewMut,
+        Backend, Data, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxViewMut,
         vec_znx_host_backend_mut,
     },
 };
@@ -242,21 +242,7 @@ impl<D: Data, W: ZnxWord> LookupTable<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> LookupTable<D, W> {
-    pub fn to_backend<From, To>(&self, dst: &Module<To>) -> LookupTable<To::OwnedBuf, To::ZnxWord>
-    where
-        From: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend<ZnxWord = W> + TransferFrom<From>,
-    {
-        LookupTable {
-            data: self.data.iter().map(|glwe| glwe.to_backend::<From, To>(dst)).collect(),
-            rot_dir: self.rot_dir,
-            base2k: self.base2k,
-            k: self.k,
-            drift: self.drift,
-        }
-    }
-}
+impl<D: HostDataRef, W: ZnxWord> LookupTable<D, W> {}
 
 pub(crate) trait DivRound {
     fn div_round(self, rhs: Self) -> Self;

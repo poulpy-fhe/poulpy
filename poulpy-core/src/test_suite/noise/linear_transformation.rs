@@ -29,7 +29,7 @@ use crate::{
     msb_mask_bottom_limb,
 };
 
-pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite::TestBackend>(
+pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
 ) where

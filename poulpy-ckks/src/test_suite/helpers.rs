@@ -31,7 +31,7 @@ use crate::{
 use num_traits::{Float, FromPrimitive, ToPrimitive};
 use poulpy_core::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWENormalize, GLWESub,
-    GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ModuleTransfer, ScratchArenaTakeCore,
+    GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ScratchArenaTakeCore, TransferInto,
     layouts::{
         BackendGLWESecret, Base2K, Degree, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
         GLWESecretPreparedFactory, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPrepared,
@@ -43,7 +43,7 @@ use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, ScratchOwnedAlloc},
     layouts::{
         Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena,
-        ScratchOwned, TransferFrom, ZnxWord,
+        ScratchOwned, ZnxWord,
     },
     source::Source,
 };
@@ -151,7 +151,7 @@ pub const MUL_CONST: (f64, f64) = (0.271_828_182_845_904_5, -0.141_421_356_237_3
 /// float quantization targets `i64`/`i128` limbs. A backend with a narrower
 /// coefficient word needs its own codec, and its own suites.
 pub trait TestContextBackend:
-    Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + TransferFrom<HostBytesBackend> + Send + Sync + 'static
+    Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + HostStaged + Send + Sync + 'static
 where
     ScratchOwned<Self>: ScratchOwnedAlloc<Self>,
     for<'a> ScratchArena<'a, Self>: ScratchArenaTakeCore<'a, Self>,
@@ -160,7 +160,7 @@ where
 
 impl<BE> TestContextBackend for BE
 where
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + TransferFrom<HostBytesBackend> + Send + Sync + 'static,
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + HostStaged + Send + Sync + 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
 }
@@ -540,7 +540,9 @@ pub fn upload_pt<BE>(module: &Module<BE>, pt: &CKKSPlaintextOwned<HostBytesBacke
 where
     BE: HostStaged,
 {
-    CKKSPlaintext::from_inner(module.upload_glwe_plaintext(&pt.inner), pt.meta())
+    let mut inner = module.glwe_plaintext_alloc_from_infos(&pt.inner);
+    pt.inner.transfer_into(&mut inner);
+    CKKSPlaintext::from_inner(inner, pt.meta())
 }
 
 /// Downloads a backend plaintext to the host.

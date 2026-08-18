@@ -1,12 +1,11 @@
 use poulpy_hal::{
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
-        MatZnxToBackendRef, Module, ReaderFrom, TransferFrom, WriterTo,
+        MatZnxToBackendRef, ReaderFrom, WriterTo,
     },
     source::Source,
 };
 
-use crate::api::ModuleTransfer;
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGSWAtViewRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
@@ -275,13 +274,15 @@ impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWE<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GGLWE<D, W> {
+impl<D: Data, W: ZnxWord> GGLWE<D, W> {
+    /// Returns a shared reference to the underlying [`MatZnx`].
     pub fn data(&self) -> &MatZnx<D, W> {
         &self.data
     }
 }
 
-pub(crate) trait GGLWEAtBackendRef<BE: Backend> {
+/// Backend-native shared view of one GLWE row.
+pub trait GGLWEAtBackendRef<BE: Backend> {
     fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord>;
 }
 
@@ -334,13 +335,15 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GGLWE<D, W> {
+impl<D: Data, W: ZnxWord> GGLWE<D, W> {
+    /// Returns a mutable reference to the underlying [`MatZnx`].
     pub fn data_mut(&mut self) -> &mut MatZnx<D, W> {
         &mut self.data
     }
 }
 
-pub(crate) trait GGLWEAtBackendMut<BE: Backend> {
+/// Backend-native mutable view of one GLWE row.
+pub trait GGLWEAtBackendMut<BE: Backend> {
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>;
 }
 
@@ -424,19 +427,6 @@ impl<D: HostDataMut, W: ZnxWord> GGLWE<D, W> {
         let k = self.k();
         let data = self.data.at_mut(row, col);
         GLWE { base2k, k, data }
-    }
-}
-
-impl<D: HostDataRef, W: ZnxWord> GGLWE<D, W> {
-    /// Copies this ciphertext's backing bytes into an owned buffer of
-    /// backend `To`, routing via host bytes.
-    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> GGLWE<To::OwnedBuf, To::ZnxWord>
-    where
-        BE: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend<ZnxWord = W>,
-        To: TransferFrom<BE>,
-    {
-        dst.upload_gglwe(self)
     }
 }
 

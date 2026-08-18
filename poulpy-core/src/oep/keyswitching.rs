@@ -13,7 +13,6 @@ use crate::layouts::{
 /// # Safety
 /// Implementations must satisfy the documented key-switch semantics, honor layout metadata and
 /// prepared-key interpretation, and keep all reads and writes within the described backend buffers.
-#[allow(private_bounds)]
 pub unsafe trait GLWEKeyswitchImpl<BE: Backend>: Backend {
     fn glwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -38,7 +37,6 @@ pub unsafe trait GLWEKeyswitchImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must preserve ciphertext invariants, use scratch space according to the
 /// advertised temporary-size contract, and uphold aliasing guarantees for backend-owned buffers.
-#[allow(private_bounds)]
 pub unsafe trait GGLWEKeyswitchImpl<BE: Backend>: Backend {
     fn gglwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -63,7 +61,6 @@ pub unsafe trait GGLWEKeyswitchImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must correctly interpret prepared key material for the backend, respect all
 /// layout-derived bounds, and avoid invalid aliasing or mutation through scratch-backed views.
-#[allow(private_bounds)]
 pub unsafe trait GGSWKeyswitchImpl<BE: Backend>: Backend {
     fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(
         module: &Module<BE>,
@@ -97,7 +94,6 @@ pub unsafe trait GGSWKeyswitchImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must only access the ciphertext and key regions described by the layouts and
 /// must produce results matching the logical key-switch operation for the backend.
-#[allow(private_bounds)]
 pub unsafe trait LWEKeyswitchImpl<BE: Backend>: Backend {
     fn lwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -116,8 +112,38 @@ pub unsafe trait LWEKeyswitchImpl<BE: Backend>: Backend {
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See [`glwe_keyswitch_defaults`]
 /// for reference algorithms a backend may forward to.
-#[doc(hidden)]
-#[allow(private_bounds)]
+///
+/// # Gadget-digit width contract
+///
+/// An override that fuses the digit loop (rather than forwarding to the reference
+/// body) must reproduce its output widths exactly, because the choice is not
+/// noise-visible: an accumulator one limb too narrow still passes the keyswitch
+/// noise sweep. With `key_size = key.size()` and `res_size = res.size()`, digit
+/// `di` of `0..dsize` contributes to output limb `c` iff
+///
+/// ```text
+/// c < min(key_size - di, width(di))
+/// width(0)  = res_size
+/// width(di) = res_size - max(dsize - di - 2, 0)      for di > 0
+/// ```
+///
+/// Two properties are load-bearing:
+///
+/// - `di == 0` runs at **full** width and is the overwriting pass. On CPU it is
+///   also what zeroes the limbs the accumulating digits add into, so the digits
+///   cannot be walked in reverse to widen the first pass. An implementation that
+///   writes each output limb exactly once needs no zeroing but must still match
+///   the arithmetic.
+/// - the `- 2` in `width(di)` is not an off-by-one. Pass `di` consumes `a`'s limbs
+///   at offset `dsize - di - 1`, so a *point* contribution would land
+///   `dsize - 1 - di` limbs below the top; but an elementary limb product has
+///   magnitude `~2^(2*base2k + log_n)` and spans two limbs, reaching one further
+///   down. Tightening it to `- 1` is silent: the difference measured 1e-6 bits at
+///   `n = 2^12`, `base2k = 18`.
+///
+/// TODO: ONCE PR #213 is merged, update this contract.
+///
+/// Assert parity against a reference backend, not only the noise bound.
 pub trait GLWEKeyswitchDefault<BE: Backend> {
     fn glwe_keyswitch_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -138,8 +164,6 @@ pub trait GLWEKeyswitchDefault<BE: Backend> {
 }
 
 /// Override surface for the GGLWE key-switching sub-family.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait GGLWEKeyswitchDefault<BE: Backend> {
     fn gglwe_keyswitch_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -160,8 +184,6 @@ pub trait GGLWEKeyswitchDefault<BE: Backend> {
 }
 
 /// Override surface for the GGSW key-switching sub-family.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait GGSWKeyswitchDefault<BE: Backend> {
     fn ggsw_keyswitch_tmp_bytes_default<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
@@ -185,8 +207,6 @@ pub trait GGSWKeyswitchDefault<BE: Backend> {
 }
 
 /// Override surface for the LWE key-switching sub-family.
-#[doc(hidden)]
-#[allow(private_bounds)]
 pub trait LWEKeyswitchDefault<BE: Backend> {
     fn lwe_keyswitch_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -201,7 +221,6 @@ pub trait LWEKeyswitchDefault<BE: Backend> {
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWEKeyswitchImpl<BE> for BE
 where
     Module<BE>: GLWEKeyswitchDefault<BE>,
@@ -233,7 +252,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GGLWEKeyswitchImpl<BE> for BE
 where
     Module<BE>: GGLWEKeyswitchDefault<BE>,
@@ -265,7 +283,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> GGSWKeyswitchImpl<BE> for BE
 where
     Module<BE>: GGSWKeyswitchDefault<BE>,
@@ -306,7 +323,6 @@ where
     }
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> LWEKeyswitchImpl<BE> for BE
 where
     Module<BE>: LWEKeyswitchDefault<BE>,

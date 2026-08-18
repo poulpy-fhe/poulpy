@@ -1,11 +1,10 @@
 use std::fmt;
 
 use poulpy_hal::layouts::{
-    Backend, Data, HostDataMut, HostDataRef, Module, TransferFrom, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef,
-    VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord,
+    Backend, Data, HostDataRef, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef, VecZnxToBackendMut,
+    VecZnxToBackendRef, ZnxWord,
 };
 
-use crate::api::ModuleTransfer;
 use crate::layouts::{
     Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision,
 };
@@ -142,19 +141,6 @@ impl<D: Data, W: ZnxWord> IntPolyInfos for GLWEPlaintext<D, W> {
 impl IntPolyInfos for GLWEPlaintextLayout {
     fn encoded_k(&self) -> TorusPrecision {
         self.max_k()
-    }
-}
-
-impl<D: HostDataRef, W: ZnxWord> GLWEPlaintext<D, W> {
-    /// Copies this plaintext's backing bytes into an owned buffer of
-    /// backend `To`, routing via host bytes.
-    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> GLWEPlaintext<To::OwnedBuf, To::ZnxWord>
-    where
-        BE: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend<ZnxWord = W>,
-        To: TransferFrom<BE>,
-    {
-        dst.upload_glwe_plaintext(self)
     }
 }
 
@@ -352,13 +338,13 @@ impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMu
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GLWEPlaintext<D, W> {
+impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     pub fn data(&self) -> &VecZnx<D, W> {
         &self.data
     }

@@ -17,7 +17,7 @@ use crate::{
 };
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBackend + Backend<OwnedBuf = Vec<u8>>>(
+pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::TestBackend + Backend<OwnedBuf = Vec<u8>>>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -113,7 +113,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
                 &auto_key_in_infos,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
             // gglwe_{s2}(s1) -> s1 -> s2
@@ -124,7 +124,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
                 &auto_key_apply_infos,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
             let mut auto_key_apply_prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
@@ -149,8 +149,9 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
                 sk_auto.data().cols(),
             );
             {
-                let sk_backend_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_ref::<BE>(&sk_backend);
-                let mut sk_auto_backend_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_auto_backend);
+                let sk_backend_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_ref::<BE>(&sk_backend);
+                let mut sk_auto_backend_as_vec =
+                    crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_auto_backend);
                 for i in 0..rank {
                     module.vec_znx_automorphism_backend(
                         module.galois_element_inv(p0 * p1),
@@ -191,7 +192,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::TestBackend + Backend<OwnedBuf = Vec<u8>>>(
+pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::noise::TestBackend + Backend<OwnedBuf = Vec<u8>>>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -269,7 +270,7 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
                 &auto_key_layout,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
             // gglwe_{s2}(s1) -> s1 -> s2
@@ -280,7 +281,7 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
                 &auto_key_apply_layout,
                 &mut source_xe,
                 &mut source_xa,
-                &mut crate::test_suite::scratch_host_arena(&mut scratch),
+                &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
             let mut auto_key_apply_prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
@@ -301,8 +302,9 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
                 sk_auto.data().cols(),
             );
             {
-                let sk_backend_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_ref::<BE>(&sk_backend);
-                let mut sk_auto_backend_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_auto_backend);
+                let sk_backend_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_ref::<BE>(&sk_backend);
+                let mut sk_auto_backend_as_vec =
+                    crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_auto_backend);
                 for i in 0..rank {
                     module.vec_znx_automorphism_backend(
                         module.galois_element_inv(p0 * p1),

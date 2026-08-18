@@ -2,8 +2,6 @@
 //!
 //! Re-exported publicly through `crate::oep::lwe_keyswitch_defaults`.
 
-#![allow(private_bounds)]
-
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{ModuleN, VecZnxCopyRangeBackend, VecZnxZeroBackend},

@@ -4,8 +4,9 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
-    GGLWELayout, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtBackendMut, GGLWEAtBackendRef, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut,
+    GGLWEBackendRef, GGLWEInfos, GGLWELayout, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef,
+    LWEInfos, Rank, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::layouts::ZnxWord;
@@ -61,13 +62,13 @@ pub trait SetGaloisElement {
     fn set_p(&mut self, p: i64);
 }
 
-impl<D: HostDataMut, W: ZnxWord> SetGaloisElement for GLWEAutomorphismKey<D, W> {
+impl<D: Data, W: ZnxWord> SetGaloisElement for GLWEAutomorphismKey<D, W> {
     fn set_p(&mut self, p: i64) {
         self.p = p
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GetGaloisElement for GLWEAutomorphismKey<D, W> {
+impl<D: Data, W: ZnxWord> GetGaloisElement for GLWEAutomorphismKey<D, W> {
     fn p(&self) -> i64 {
         self.p
     }
@@ -169,6 +170,18 @@ impl GGLWEInfos for GLWEAutomorphismKeyLayout {
 
     fn rank_out(&self) -> Rank {
         self.rank
+    }
+}
+
+impl<BE: Backend> GGLWEAtBackendRef<BE> for GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendRef<BE>>::at_backend(&self.key, row, col)
+    }
+}
+
+impl<BE: Backend> GGLWEAtBackendMut<BE> for GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
+        <GGLWE<BE::OwnedBuf, BE::ZnxWord> as GGLWEAtBackendMut<BE>>::at_backend_mut(&mut self.key, row, col)
     }
 }
 
