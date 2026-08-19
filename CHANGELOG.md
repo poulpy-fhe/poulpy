@@ -37,14 +37,14 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** remove the exported `impl_glwe_rotate_impl_from!`; the blanket `GLWERotateImpl` impl supersedes it.
 - **Breaking:** `GLWEKeyswitchInternal` and `GGLWEProductDefault` become public; they appear in the bounds of the public `glwe_keyswitch*_default` functions.
 - The `*Default` override surfaces are no longer `#[doc(hidden)]`; `oep`'s module docs describe the `*Impl` / `*Default` split with a worked override.
-- The gadget-digit width rule moves from an in-function comment to the `GLWEKeyswitchDefault` contract.
-- Add `GLWEKeyswitch::glwe_keyswitch_assign_zero_prefix`, which skips forward transforms for a caller-declared zero limb prefix; CKKS encapsulated ModUp uses it for its second key switch.
+- The gadget-digit width rule moves from an in-function comment to the `GLWEKeyswitchDefault` contract and the shared `gglwe_product_digit_output_size` helper.
+- CKKS encapsulated ModUp composes ordinary dense-to-sparse and sparse-to-dense key switches around ModUp; backends can override `CKKSEncapsulatedModUpImpl` to fuse it.
 - Relax to `D: Data`: `GGLWE` / `GLWEPlaintext` / `LWEPlaintext` / `GLWETensor` `data()` / `data_mut()`, `GLWESwitchingKeyDegrees(Mut)`, `Get`/`SetGaloisElement`, `GetDistribution(Mut)`, `SetBase2k`.
 - **Breaking:** `GGLWEAtBackendRef`/`Mut` and `GGSWAtBackendRef`/`Mut` become public; `GLWESwitchingKey`, `GLWEAutomorphismKey` and `GLWETensorKey` delegate them.
 - **Breaking:** remove `ModuleTransfer` and the inherent `Layout::to_backend` methods (29 in total) in favour of `api::TransferInto`, which writes into a destination the caller allocates: `src.transfer_into(&mut dst)`. Checks shape, not just byte length.
 - **Breaking:** `test_suite` splits into `test_suite::noise` (the existing scheme-correctness suite, moved wholesale) and `test_suite::parity`. `core_backend_test_suite!` is unchanged.
 - Add `BackendGLWESwitchingKey<BE>` / `BackendGLWEAutomorphismKey<BE>`.
-- Add `test_suite::parity` and `core_parity_test_suite!`: runs one operation on a reference and a tested backend over identical uniform inputs and asserts byte equality. Covers key-switch (GLWE, assign, known-zero-prefix assign, GGLWE), automorphism, external product, tensoring and the other keyless GLWE operations. Needs no secrets, encryption or noise model. An optional `shapes = ParityShapes { .. }` restricts the rank and `dsize` sweep for a backend with a narrower envelope.
+- Add `test_suite::parity` and `core_parity_test_suite!`: runs one operation on a reference and a tested backend over identical uniform inputs and asserts byte equality. Covers key-switch (GLWE, assign, GGLWE), the strided GGLWE product hook, automorphism, external product, tensoring and the other keyless GLWE operations. Needs no secrets, encryption or noise model. An optional `shapes = ParityShapes { .. }` restricts the rank and `dsize` sweep for a backend with a narrower envelope.
 - `poulpy-cpu-avx`, `-avx512` and `-arm` run the parity suite against their `poulpy-cpu-ref` sibling, for the FFT64 and NTT4x30 families.
 
 ### `poulpy-hal`

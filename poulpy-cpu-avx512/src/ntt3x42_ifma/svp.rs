@@ -17,7 +17,7 @@ use crate::ntt3x42_ifma::{
     kernels::{cond_sub_2q_si512, harvey_modmul_si512, ntt_avx512},
     module::handle,
     primes::Primes42,
-    serial::{SendPtr, for_index},
+    serial::for_index,
     tables::harvey_quotient,
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
     vec_znx_dft::{MASK20, MASK22, MASK42},
@@ -127,11 +127,11 @@ pub(crate) fn svp_apply_dft_to_dft(
     let a_u64: &[u64] = cast_slice(a.data());
     let prepared = &a_u64[6 * n * a_col..][..6 * n];
     let b_u64: &[u64] = cast_slice(b.data());
-    let base_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
+    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
 
     for_index(res_size, 2 * n * res_size, |j| {
-        let res_u64: &mut [u64] =
-            unsafe { std::slice::from_raw_parts_mut(base_ptr.get().add(2 * n * (j * res_cols + res_col)), 2 * n) };
+        let start = 2 * n * (j * res_cols + res_col);
+        let res_u64 = &mut res_data[start..start + 2 * n];
         if j < min_size {
             let b_limb: &[u64] = &b_u64[2 * n * (j * b_cols + b_col)..][..2 * n];
             unsafe { mul_packed_limb(n, res_u64.as_mut_ptr(), b_limb.as_ptr(), prepared) };
@@ -155,11 +155,11 @@ pub(crate) fn svp_apply_dft_to_dft_assign(
 
     let a_u64: &[u64] = cast_slice(a.data());
     let prepared = &a_u64[6 * n * a_col..][..6 * n];
-    let base_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
+    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
 
     for_index(res_size, 2 * n * res_size, |j| {
-        let res_u64: &mut [u64] =
-            unsafe { std::slice::from_raw_parts_mut(base_ptr.get().add(2 * n * (j * res_cols + res_col)), 2 * n) };
+        let start = 2 * n * (j * res_cols + res_col);
+        let res_u64 = &mut res_data[start..start + 2 * n];
         let ptr = res_u64.as_mut_ptr();
         unsafe { mul_packed_limb(n, ptr, ptr, prepared) };
     });

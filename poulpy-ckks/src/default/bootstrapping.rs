@@ -7,13 +7,7 @@ use poulpy_core::{
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
-use poulpy_hal::{
-    api::{
-        ModuleN, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
-        VecZnxIdftApply,
-    },
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use std::ops::Deref;
 
 use crate::{
@@ -874,9 +868,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
 }
 
 /// Reference SSE pipeline: switch to the sparse secret before ModUp to bound
-/// wrap-around, then restore the dense secret afterward. Every complete limb
-/// introduced by the raise is a known-zero prefix that the second switch can
-/// skip; a remaining partial limb is processed normally.
+/// wrap-around, then restore the dense secret afterward.
 #[doc(hidden)]
 pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src, D2S, S2D>(
     module: &Module<BE>,
@@ -888,37 +880,15 @@ pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src, D2S, S2D>(
 ) -> Result<()>
 where
     BE: Backend + CKKSEncapsulatedModUpImpl<BE>,
-    Module<BE>: GLWECopy<BE>
-        + GLWEShift<BE>
-        + GLWEKeyswitch<BE>
-        + ModuleN
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftBytesOf
-        + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>,
+    Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     D2S: poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     S2D: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let dst_k = dst.k().as_usize();
-    let src_k = src.k().as_usize();
-    ckks_ensure!(
-        dst_k >= src_k,
-        "ckks_mod_up: dst.k ({dst_k}) < src.k ({src_k}); ModUp must widen, not shrink, the modulus"
-    );
-    let modulus_raise = dst_k - src_k;
-
     module.glwe_keyswitch_assign(src, dense_to_sparse, scratch);
-    let base2k = dst.base2k().as_usize();
     BootstrappingDefault::new(module).ckks_mod_up_into_default(dst, src, scratch)?;
-    // ModUp introduces `floor(modulus_raise / base2k)` complete zero limbs.
-    // Any remaining bits occupy the next limb, which must still be transformed.
-    let leading_zero_limbs = modulus_raise / base2k;
-    module.glwe_keyswitch_assign_zero_prefix(dst, sparse_to_dense, leading_zero_limbs, scratch);
+    module.glwe_keyswitch_assign(dst, sparse_to_dense, scratch);
     Ok(())
 }
 

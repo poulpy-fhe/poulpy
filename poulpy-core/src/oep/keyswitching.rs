@@ -8,6 +8,20 @@ use crate::layouts::{
     prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
+/// Output limbs computed by gadget digit `di`.
+///
+/// The first digit overwrites the full result. Later digits can omit limbs
+/// below the two-limb product spill window.
+#[inline]
+pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: usize, di: usize) -> usize {
+    assert!(di < dsize);
+    if di == 0 {
+        res_size
+    } else {
+        res_size.min(key_size.saturating_sub(dsize.saturating_sub(di + 2)))
+    }
+}
+
 /// Backend implementation of the interleaved-digit GGLWE product.
 ///
 /// For `dsize >= 2`, it must reproduce
@@ -104,16 +118,6 @@ pub unsafe trait GLWEKeyswitchImpl<BE: Backend>: Backend {
 
     fn glwe_keyswitch_assign<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
-
-    fn glwe_keyswitch_assign_zero_prefix<R, K>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &K,
-        zero_limbs: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
@@ -245,16 +249,6 @@ pub trait GLWEKeyswitchDefault<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
-
-    fn glwe_keyswitch_assign_zero_prefix_default<R, K>(
-        &self,
-        res: &mut R,
-        key: &K,
-        zero_limbs: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 /// Override surface for the GGLWE key-switching sub-family.
@@ -343,19 +337,6 @@ where
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.glwe_keyswitch_assign_default(res, key, scratch)
-    }
-
-    fn glwe_keyswitch_assign_zero_prefix<R, K>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &K,
-        zero_limbs: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    {
-        module.glwe_keyswitch_assign_zero_prefix_default(res, key, zero_limbs, scratch)
     }
 }
 
@@ -496,21 +477,6 @@ macro_rules! impl_glwe_keyswitch_defaults_full {
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
             {
                 $crate::default::keyswitching::glwe::glwe_keyswitch_assign_default::<$be, _, _, _>(self, res, key, scratch)
-            }
-
-            fn glwe_keyswitch_assign_zero_prefix_default<R, K>(
-                &self,
-                res: &mut R,
-                key: &K,
-                zero_limbs: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
-            {
-                $crate::default::keyswitching::glwe::glwe_keyswitch_assign_zero_prefix_default::<$be, _, _, _>(
-                    self, res, key, zero_limbs, scratch,
-                )
             }
         }
     };

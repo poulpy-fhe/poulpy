@@ -327,6 +327,11 @@ fn test_convolution_pairwise_ntt3x42_ifma() {
 }
 
 #[test]
+fn test_gglwe_product_digits_strided_bit_identical() {
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT3x42Ifma>::new(64), 50);
+}
+
+#[test]
 fn test_convolution_accumulate_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
     test_convolution_accumulate(&module, 12);

@@ -207,6 +207,11 @@ fn test_convolution_direct() {
     test_convolution_accumulate(&module, 50);
 }
 
+#[test]
+fn test_gglwe_product_digits_strided_bit_identical() {
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT4x30Avx512>::new(64), 50);
+}
+
 cross_backend_test_suite! {
     mod word_compat,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,

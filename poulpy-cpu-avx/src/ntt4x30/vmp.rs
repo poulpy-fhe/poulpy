@@ -12,6 +12,7 @@ use core::arch::x86_64::{
     _mm256_storeu_si256, _mm256_sub_epi64, _mm256_xor_si256,
 };
 
+use poulpy_core::oep::gglwe_product_digit_output_size;
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, types::Q_SHIFTED, vec_znx_dft::NttModuleHandle,
 };
@@ -417,16 +418,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     for di in 0..dsize {
         let digit_limbs = ((a_size + di) / dsize).min(dnum);
         // Match the reference product: full-width overwrite, then narrowed accumulations.
-        let pad = if di == 0 {
-            0
-        } else {
-            ((dsize - di) as isize - 2).max(0) as usize
-        };
-        let active_size = if di == 0 {
-            output_size
-        } else {
-            output_size.min(pmat.size().saturating_sub(pad))
-        };
+        let active_size = gglwe_product_digit_output_size(output_size, pmat.size(), dsize, di);
         let limb_offset = di * cols_out;
         let row_end = (a_cols * digit_limbs).min(nrows);
         let limb_base = dsize - 1 - di;

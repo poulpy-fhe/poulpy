@@ -1,7 +1,7 @@
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VmpApplyDftToDft,
+        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft,
         VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef},
@@ -13,13 +13,10 @@ use crate::{
         GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, GadgetProductOutputSizeParams, LWEInfos,
         gadget_product_output_size, prepared::GGLWEPreparedToBackendRef,
     },
-    oep::GGLWEProductDigitsStridedImpl,
+    oep::{GGLWEProductDigitsStridedImpl, gglwe_product_digit_output_size},
 };
 
-impl<BE: Backend> GLWEKeyswitchInternal<BE> for Module<BE> where
-    Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE> + VecZnxDftZero<BE>
-{
-}
+impl<BE: Backend> GLWEKeyswitchInternal<BE> for Module<BE> where Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE> {}
 
 /// DFT-domain plumbing shared by the key-switch reference bodies.
 ///
@@ -30,7 +27,7 @@ impl<BE: Backend> GLWEKeyswitchInternal<BE> for Module<BE> where
 /// the underlying HAL ops, so there is nothing to implement.
 pub trait GLWEKeyswitchInternal<BE: Backend>
 where
-    Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE> + VecZnxDftZero<BE>,
+    Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
 {
     fn glwe_keyswitch_internal_tmp_bytes_from_sizes<K>(
         &self,
@@ -56,20 +53,18 @@ where
         self.glwe_keyswitch_internal_tmp_bytes_from_sizes(a_infos.rank().as_usize(), res_infos.size(), a_infos.size(), key_infos)
     }
 
-    /// See [`glwe_keyswitch_dft_fill`] for the meaning of `zero_limbs`.
     fn glwe_keyswitch_internal<'r, A, K>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, BE>,
         a: &A,
         key: &K,
-        zero_limbs: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
-        glwe_keyswitch_dft_fill(self, res, a, &key, zero_limbs, scratch);
+        glwe_keyswitch_dft_fill(self, res, a, &key, scratch);
     }
 }
 
@@ -208,8 +203,7 @@ pub fn gglwe_product_digits_strided_default<BE: Backend>(
         if di == 0 {
             module.vmp_apply_dft_to_dft(res, &digit.to_backend_ref(), pmat, 0, &mut digit_scratch);
         } else {
-            let pad = ((dsize - di) as isize - 2).max(0) as usize;
-            let compute_size = res.size().min(pmat.size().saturating_sub(pad));
+            let compute_size = gglwe_product_digit_output_size(res.size(), pmat.size(), dsize, di);
             let mut res_view = res.with_size_mut(compute_size);
             module.vmp_apply_dft_to_dft_accumulate(&mut res_view, &digit.to_backend_ref(), pmat, di, &mut digit_scratch);
         }
@@ -232,22 +226,16 @@ use crate::{
     oep::GLWEKeyswitchDefault,
 };
 
-/// Transforms the mask of `a` and applies the gadget product into `res`.
-///
-/// `zero_limbs` leading (most significant) limbs of `a` are taken as zero and
-/// their forward transforms skipped. They are still written as zeros: the digit
-/// gather indexes limbs absolutely and scratch is dirty by contract.
 fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
     module: &M,
     res: &mut VecZnxDftBackendMut<'r, BE>,
     a: &A,
     key: &GGLWEPreparedBackendRef<'_, BE>,
-    zero_limbs: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     A: GLWEToBackendRef<BE>,
-    M: GLWEKeyswitchInternal<BE> + GGLWEProductDefault<BE> + VecZnxDftApply<BE> + VecZnxDftZero<BE>,
+    M: GLWEKeyswitchInternal<BE> + GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
 {
     let a = a.to_backend_ref();
     assert_eq!(a.base2k(), key.base2k());
@@ -260,21 +248,11 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
     );
     let mask_cols = a.rank().as_usize();
     let a_size: usize = a.size();
-    assert!(zero_limbs <= a_size, "zero_limbs ({zero_limbs}) > a.size() ({a_size})");
     scratch.scope(|scratch_phase| {
         let (mut a_dft, mut scratch_1) = scratch_phase.take_vec_znx_dft_scratch(module, mask_cols, a_size);
-        if zero_limbs != 0 {
-            let mut prefix = a_dft.with_limb_range_mut(0, zero_limbs);
-            for col_i in 0..mask_cols {
-                module.vec_znx_dft_zero(&mut prefix, col_i);
-            }
-        }
-        if zero_limbs != a_size {
-            let mut live = a_dft.with_limb_range_mut(zero_limbs, a_size);
-            for col_i in 0..mask_cols {
-                let a_data: &VecZnxBackendRef<'_, BE> = &a.data;
-                module.vec_znx_dft_apply(1, zero_limbs, &mut live, col_i, a_data, col_i + 1);
-            }
+        for col_i in 0..mask_cols {
+            let a_data: &VecZnxBackendRef<'_, BE> = &a.data;
+            module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, a_data, col_i + 1);
         }
         let a_dft_ref = a_dft.to_backend_ref();
         module.gglwe_product_dft_default(res, &a_dft_ref, key, &mut scratch_1.borrow());
@@ -467,10 +445,10 @@ where
                 rank: a.rank(),
             });
             module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2.borrow());
-            glwe_keyswitch_dft_fill(module, &mut res_dft, &a_conv, &key, 0, &mut scratch_2);
+            glwe_keyswitch_dft_fill(module, &mut res_dft, &a_conv, &key, &mut scratch_2);
         });
     } else {
-        glwe_keyswitch_dft_fill(module, &mut res_dft, a, &key, 0, &mut scratch.borrow());
+        glwe_keyswitch_dft_fill(module, &mut res_dft, a, &key, &mut scratch.borrow());
     }
 
     let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, output_size);
@@ -529,36 +507,6 @@ where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    glwe_keyswitch_assign_zero_prefix_default(module, res, key, 0, scratch)
-}
-
-/// [`glwe_keyswitch_assign_default`] where the `zero_limbs` leading (most
-/// significant) limbs of `res` are known to be zero, skipping their forward
-/// transforms. Requires `res.base2k() == key.base2k()` unless `zero_limbs` is
-/// zero. Overstating `zero_limbs` silently corrupts the output.
-pub fn glwe_keyswitch_assign_zero_prefix_default<BE, M, R, K>(
-    module: &M,
-    res: &mut R,
-    key: &K,
-    zero_limbs: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: GLWEBytesOf<BE>
-        + GLWEKeyswitchDefault<BE>
-        + ModuleN
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalizeDefault<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>
-        + VecZnxNormalize<BE>
-        + VecZnxNormalizeAssignBackend<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-{
     assert_eq!(
         res.rank(),
         key.rank_in(),
@@ -588,17 +536,6 @@ pub fn glwe_keyswitch_assign_zero_prefix_default<BE, M, R, K>(
 
     let res_base2k: usize = res.base2k().as_usize();
     let key_base2k: usize = key.base2k().as_usize();
-    assert!(
-        zero_limbs <= res.size(),
-        "zero_limbs ({zero_limbs}) > res.size() ({})",
-        res.size()
-    );
-    // A radix change re-cuts the limb boundaries, so a count in the input radix
-    // no longer names whole limbs of the converted operand.
-    assert!(
-        zero_limbs == 0 || res_base2k == key_base2k,
-        "zero_limbs requires res.base2k() ({res_base2k}) == key.base2k() ({key_base2k})"
-    );
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
 
@@ -612,7 +549,7 @@ pub fn glwe_keyswitch_assign_zero_prefix_default<BE, M, R, K>(
         });
         module.glwe_normalize_default(&mut res_conv, res, &mut scratch_3.borrow());
 
-        module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, zero_limbs, &mut scratch_3);
+        module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_3);
 
         let (mut res_big, mut scratch) = scratch_3.take_vec_znx_big_scratch(module, cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
@@ -637,7 +574,7 @@ pub fn glwe_keyswitch_assign_zero_prefix_default<BE, M, R, K>(
     } else {
         {
             let mut ks_scratch = scratch_1.borrow();
-            module.glwe_keyswitch_internal(&mut res_dft, res, key, zero_limbs, &mut ks_scratch);
+            module.glwe_keyswitch_internal(&mut res_dft, res, key, &mut ks_scratch);
         }
         let res_ref = GLWEToBackendRef::<BE>::to_backend_ref(res);
         let (mut res_big, mut scratch) = scratch_1.take_vec_znx_big_scratch(module, cols, output_size);

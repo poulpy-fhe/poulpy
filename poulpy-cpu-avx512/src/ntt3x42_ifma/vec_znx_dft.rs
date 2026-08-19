@@ -7,7 +7,7 @@ use crate::ntt3x42_ifma::{
     kernels::{cond_sub_2q_si512, harvey_modmul_si512, ntt_avx512},
     module::handle,
     primes::{PrimeSetNtt3x42Ifma, Primes42},
-    serial::{SendPtr, for_index, for_index_with},
+    serial::{for_index, for_index_with},
     tables::Ntt3x42IfmaTableInv,
     traits::{Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64, Ntt3x42IfmaToZnx128},
     vmp::{pack_y, unpack_y},
@@ -254,10 +254,16 @@ pub(crate) const MASK42: u64 = (1u64 << 42) - 1;
 pub(crate) const MASK22: u64 = (1u64 << 22) - 1;
 pub(crate) const MASK20: u64 = (1u64 << 20) - 1;
 
-/// Pointer to the packed limb `(col, j)` of a `VecZnxDft` u64 view.
 #[inline(always)]
-fn limb2n(base: *mut u64, n: usize, cols: usize, col: usize, j: usize) -> *mut u64 {
-    unsafe { base.add(2 * n * (j * cols + col)) }
+fn packed_limb(data: &[u64], n: usize, cols: usize, col: usize, j: usize) -> &[u64] {
+    let start = 2 * n * (j * cols + col);
+    &data[start..start + 2 * n]
+}
+
+#[inline(always)]
+fn packed_limb_mut(data: &mut [u64], n: usize, cols: usize, col: usize, j: usize) -> &mut [u64] {
+    let start = 2 * n * (j * cols + col);
+    &mut data[start..start + 2 * n]
 }
 
 /// Load and unpack the x8 group at u64 offset `off` of a packed limb.
@@ -502,23 +508,23 @@ pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
     let res_cols = res.cols();
     let res_size = res.size();
 
-    let src_base = SendPtr(cast_slice_mut::<_, u64>(a.data_mut()).as_mut_ptr());
-    let dst_base = SendPtr(res.raw_mut().as_mut_ptr());
+    let src_data: &[u64] = cast_slice(a.data());
+    let dst_data = res.raw_mut();
 
     for_index_with(
         res_size,
         3 * n * res_size,
         || vec![0u64; 3 * n],
         |scratch, j| {
-            let dst_ptr = unsafe { dst_base.get().add(n * (j * res_cols + res_col)) };
+            let start = n * (j * res_cols + res_col);
+            let dst = &mut dst_data[start..start + n];
             if j < min_size {
-                let src: &[u64] = unsafe { std::slice::from_raw_parts(limb2n(src_base.get(), n, a_cols, a_col, j), 2 * n) };
+                let src = packed_limb(src_data, n, a_cols, a_col, j);
                 unsafe {
                     unpack_limb_3x42(n, scratch, src);
-                    intt_then_compact_ifma(n, 1, scratch.as_mut_ptr(), dst_ptr, table);
+                    intt_then_compact_ifma(n, 1, scratch.as_mut_ptr(), dst.as_mut_ptr(), table);
                 }
             } else {
-                let dst: &mut [i128] = unsafe { std::slice::from_raw_parts_mut(dst_ptr, n) };
                 dst.fill(0i128);
             }
         },
@@ -544,13 +550,13 @@ pub(crate) fn vec_znx_dft_apply(
     let steps = a_size.div_ceil(step);
     let min_steps = res_size.min(steps);
 
-    let base = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
+    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
     for_index_with(
         res_size,
         3 * n * res_size,
         || vec![0u64; 3 * n],
         |scratch, j| {
-            let res_slice: &mut [u64] = unsafe { std::slice::from_raw_parts_mut(limb2n(base.get(), n, cols, res_col, j), 2 * n) };
+            let res_slice = packed_limb_mut(res_data, n, cols, res_col, j);
             let limb = offset + j * step;
             if j < min_steps && limb < a_size {
                 NTT3x42Ifma::ntt3x42_ifma_from_znx64(scratch, a.at(a_col, limb));
@@ -589,13 +595,14 @@ pub(crate) fn vec_znx_idft_apply(
     let _ = tmp;
 
     let a_u64: &[u64] = cast_slice(a.data());
-    let base = SendPtr(res.raw_mut().as_mut_ptr());
+    let res_data = res.raw_mut();
     for_index_with(
         res_size,
         3 * n * res_size,
         || vec![0u64; 3 * n],
         |scratch, j| {
-            let dst: &mut [i128] = unsafe { std::slice::from_raw_parts_mut(base.get().add(n * (j * res_cols + res_col)), n) };
+            let start = n * (j * res_cols + res_col);
+            let dst = &mut res_data[start..start + n];
             if j < min_size {
                 let a_slice: &[u64] = &a_u64[2 * n * (j * a_cols + a_col)..][..2 * n];
                 unsafe { unpack_limb_3x42(n, scratch, a_slice) };
@@ -629,18 +636,21 @@ pub(crate) fn vec_znx_dft_add_into(
     } else {
         (b_size.min(res_size), a_size.min(res_size), false)
     };
-    let rp = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-    let ap = SendPtr(cast_slice::<_, u64>(a.data()).as_ptr() as *mut u64);
-    let bp = SendPtr(cast_slice::<_, u64>(b.data()).as_ptr() as *mut u64);
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    let bp: &[u64] = cast_slice(b.data());
     for_index(res_size, 2 * n * res_size, |j| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(limb2n(rp.get(), n, rc, res_col, j), 2 * n) };
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
         if j < sum_size {
-            let av = unsafe { std::slice::from_raw_parts(limb2n(ap.get(), n, ac, a_col, j), 2 * n) };
-            let bv = unsafe { std::slice::from_raw_parts(limb2n(bp.get(), n, bc, b_col, j), 2 * n) };
+            let av = packed_limb(ap, n, ac, a_col, j);
+            let bv = packed_limb(bp, n, bc, b_col, j);
             unsafe { packed_add(n, dst, av, bv) };
         } else if j < cpy_size {
-            let (sp, sc, scol) = if cpy_from_b { (bp, bc, b_col) } else { (ap, ac, a_col) };
-            let sv = unsafe { std::slice::from_raw_parts(limb2n(sp.get(), n, sc, scol, j), 2 * n) };
+            let sv = if cpy_from_b {
+                packed_limb(bp, n, bc, b_col, j)
+            } else {
+                packed_limb(ap, n, ac, a_col, j)
+            };
             dst.copy_from_slice(sv);
         } else {
             dst.fill(0);
@@ -658,11 +668,11 @@ pub(crate) fn vec_znx_dft_add_assign(
     let n = res.n();
     let (rc, ac) = (res.cols(), a.cols());
     let sum_size = res.size().min(a.size());
-    let rp = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-    let ap = SendPtr(cast_slice::<_, u64>(a.data()).as_ptr() as *mut u64);
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
     for_index(sum_size, 2 * n * sum_size, |j| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(limb2n(rp.get(), n, rc, res_col, j), 2 * n) };
-        let av = unsafe { std::slice::from_raw_parts(limb2n(ap.get(), n, ac, a_col, j), 2 * n) };
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+        let av = packed_limb(ap, n, ac, a_col, j);
         unsafe { packed_add_assign(n, dst, av) };
     });
 }
@@ -690,11 +700,11 @@ pub(crate) fn vec_znx_dft_add_scaled_assign(
         (0, 0, a_size.min(res_size))
     };
 
-    let rp = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-    let ap = SendPtr(cast_slice::<_, u64>(a.data()).as_ptr() as *mut u64);
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
     for_index(sum_size, 2 * n * sum_size, |j| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(limb2n(rp.get(), n, rc, res_col, j + res_shift), 2 * n) };
-        let av = unsafe { std::slice::from_raw_parts(limb2n(ap.get(), n, ac, a_col, j + a_shift), 2 * n) };
+        let dst = packed_limb_mut(rp, n, rc, res_col, j + res_shift);
+        let av = packed_limb(ap, n, ac, a_col, j + a_shift);
         unsafe { packed_add_assign(n, dst, av) };
     });
 }
@@ -716,21 +726,21 @@ pub(crate) fn vec_znx_dft_sub(
     } else {
         (b_size.min(res_size), a_size.min(res_size), false)
     };
-    let rp = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-    let ap = SendPtr(cast_slice::<_, u64>(a.data()).as_ptr() as *mut u64);
-    let bp = SendPtr(cast_slice::<_, u64>(b.data()).as_ptr() as *mut u64);
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    let bp: &[u64] = cast_slice(b.data());
     for_index(res_size, 2 * n * res_size, |j| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(limb2n(rp.get(), n, rc, res_col, j), 2 * n) };
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
         if j < sum_size {
-            let av = unsafe { std::slice::from_raw_parts(limb2n(ap.get(), n, ac, a_col, j), 2 * n) };
-            let bv = unsafe { std::slice::from_raw_parts(limb2n(bp.get(), n, bc, b_col, j), 2 * n) };
+            let av = packed_limb(ap, n, ac, a_col, j);
+            let bv = packed_limb(bp, n, bc, b_col, j);
             unsafe { packed_sub(n, dst, av, bv) };
         } else if j < cpy_size {
             if negate_tail {
-                let bv = unsafe { std::slice::from_raw_parts(limb2n(bp.get(), n, bc, b_col, j), 2 * n) };
+                let bv = packed_limb(bp, n, bc, b_col, j);
                 unsafe { packed_negate(n, dst, bv) };
             } else {
-                let av = unsafe { std::slice::from_raw_parts(limb2n(ap.get(), n, ac, a_col, j), 2 * n) };
+                let av = packed_limb(ap, n, ac, a_col, j);
                 dst.copy_from_slice(av);
             }
         } else {
@@ -749,11 +759,11 @@ pub(crate) fn vec_znx_dft_sub_assign(
     let n = res.n();
     let (rc, ac) = (res.cols(), a.cols());
     let sum_size = res.size().min(a.size());
-    let rp = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-    let ap = SendPtr(cast_slice::<_, u64>(a.data()).as_ptr() as *mut u64);
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
     for_index(sum_size, 2 * n * sum_size, |j| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(limb2n(rp.get(), n, rc, res_col, j), 2 * n) };
-        let av = unsafe { std::slice::from_raw_parts(limb2n(ap.get(), n, ac, a_col, j), 2 * n) };
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+        let av = packed_limb(ap, n, ac, a_col, j);
         unsafe { packed_sub_assign(n, dst, av) };
     });
 }
@@ -769,12 +779,12 @@ pub(crate) fn vec_znx_dft_sub_negate_assign(
     let (rc, ac) = (res.cols(), a.cols());
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
-    let rp = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-    let ap = SendPtr(cast_slice::<_, u64>(a.data()).as_ptr() as *mut u64);
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
     for_index(res_size, 2 * n * res_size, |j| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(limb2n(rp.get(), n, rc, res_col, j), 2 * n) };
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
         if j < sum_size {
-            let av = unsafe { std::slice::from_raw_parts(limb2n(ap.get(), n, ac, a_col, j), 2 * n) };
+            let av = packed_limb(ap, n, ac, a_col, j);
             unsafe { packed_sub_negate_assign(n, dst, av) };
         } else {
             unsafe { packed_negate_assign(n, dst) };
@@ -803,13 +813,13 @@ pub(crate) fn vec_znx_dft_copy(
     let steps: usize = a_size.div_ceil(step);
     let min_steps: usize = res_size.min(steps);
 
-    let rp = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-    let ap = SendPtr(cast_slice::<_, u64>(a.data()).as_ptr() as *mut u64);
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
     for_index(res_size, 2 * n * res_size, |j| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(limb2n(rp.get(), n, rc, res_col, j), 2 * n) };
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
         let limb = offset + j * step;
         if j < min_steps && limb < a_size {
-            let av = unsafe { std::slice::from_raw_parts(limb2n(ap.get(), n, ac, a_col, limb), 2 * n) };
+            let av = packed_limb(ap, n, ac, a_col, limb);
             dst.copy_from_slice(av);
         } else {
             dst.fill(0);
@@ -822,9 +832,9 @@ pub(crate) fn vec_znx_dft_zero(res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>, r
     let n = res.n();
     let rc = res.cols();
     let res_size = res.size();
-    let rp = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
     for_index(res_size, 2 * n * res_size, |j| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(limb2n(rp.get(), n, rc, res_col, j), 2 * n) };
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
         dst.fill(0);
     });
 }
@@ -850,12 +860,12 @@ pub(crate) fn vec_znx_dft_automorphism(
     let min_size: usize = res_size.min(a_size);
     let perm: &[u32] = &plan.perm;
 
-    let rp = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-    let ap = SendPtr(cast_slice::<_, u64>(a.data()).as_ptr() as *mut u64);
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
     for_index(res_size, 2 * n * res_size, |limb| {
-        let res_slice = unsafe { std::slice::from_raw_parts_mut(limb2n(rp.get(), n, rc, res_col, limb), 2 * n) };
+        let res_slice = packed_limb_mut(rp, n, rc, res_col, limb);
         if limb < min_size {
-            let a_slice = unsafe { std::slice::from_raw_parts(limb2n(ap.get(), n, ac, a_col, limb), 2 * n) };
+            let a_slice = packed_limb(ap, n, ac, a_col, limb);
             for (i, &p) in perm.iter().enumerate() {
                 let p = p as usize;
                 let src_off = 16 * (p >> 3) + (p & 7);

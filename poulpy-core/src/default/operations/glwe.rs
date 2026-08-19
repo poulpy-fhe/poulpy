@@ -1276,7 +1276,7 @@ pub fn msb_mask_bottom_limb(base2k: usize, k: usize) -> i64 {
     }
 }
 
-pub(crate) fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i64) {
+pub fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i64) {
     assert_ne!(base2k, 0);
     if cnv_offset < base2k {
         (0, -((base2k - (cnv_offset % base2k)) as i64))
@@ -1302,7 +1302,7 @@ fn normalize_input_limb_bound_worst_case(full_size: usize, res_size: usize, res_
 }
 
 #[inline]
-fn normalize_input_limb_bound_with_offset(
+pub fn normalize_input_limb_bound_with_offset(
     full_size: usize,
     res_size: usize,
     res_base2k: usize,

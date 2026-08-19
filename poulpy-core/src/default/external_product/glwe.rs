@@ -22,7 +22,7 @@ use crate::{
         GGSWInfos, GGSWPreparedBackendRef, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
         GadgetProductOutputSizeParams, LWEInfos, gadget_product_output_size, prepared::GGSWPreparedToBackendRef,
     },
-    oep::GLWEExternalProductDefault,
+    oep::{GLWEExternalProductDefault, gglwe_product_digit_output_size},
 };
 
 /// Practical limb window used for an immediately normalized GGSW external
@@ -115,8 +115,7 @@ fn glwe_external_product_dft_fill<BE, M>(
                 if di == 0 {
                     module.vmp_apply_dft_to_dft(res_dft, &a_dft.to_backend_ref(), &ggsw.data, 0, &mut scratch_1.borrow());
                 } else {
-                    let pad = ((dsize - di) as isize - 2).max(0) as usize;
-                    let res_compute_size = res_dft.size().min(ggsw.size().saturating_sub(pad));
+                    let res_compute_size = gglwe_product_digit_output_size(res_dft.size(), ggsw.size(), dsize, di);
                     let mut res_view = res_dft.with_size_mut(res_compute_size);
                     module.vmp_apply_dft_to_dft_accumulate(
                         &mut res_view,

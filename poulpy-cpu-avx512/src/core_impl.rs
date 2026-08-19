@@ -2,7 +2,9 @@
 use crate::NTT3x42Ifma;
 use crate::{FFT64Avx512, NTT4x30Avx512};
 use poulpy_core::{
-    default::operations::{GLWETensoringDefault, msb_mask_bottom_limb},
+    default::operations::{
+        GLWETensoringDefault, cnv_offset_to_limb_offset, msb_mask_bottom_limb, normalize_input_limb_bound_with_offset,
+    },
     impl_conversion_defaults_full, impl_decryption_defaults_full, impl_encryption_defaults_full,
     impl_gglwe_automorphism_defaults_full, impl_gglwe_external_product_defaults_full, impl_gglwe_keyswitch_defaults_full,
     impl_gglwe_product_digits_strided_default, impl_ggsw_automorphism_defaults_full, impl_ggsw_external_product_defaults_full,
@@ -93,25 +95,6 @@ fn rank_one_tensor_supported<BE: Backend, R: GLWEInfos>(module: &Module<BE>, res
     res.rank().as_usize() == 1 && matches!(module.n(), 32768 | 65536)
 }
 
-#[inline]
-fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i64) {
-    assert_ne!(base2k, 0);
-    if cnv_offset < base2k {
-        (0, -((base2k - (cnv_offset % base2k)) as i64))
-    } else {
-        ((cnv_offset / base2k).saturating_sub(1), (cnv_offset % base2k) as i64)
-    }
-}
-
-#[inline]
-fn normalize_input_limb_bound(full_size: usize, res_size: usize, res_base2k: usize, in_base2k: usize, res_offset: i64) -> usize {
-    let mut offset_bits = res_offset % in_base2k as i64;
-    if res_offset < 0 && offset_bits != 0 {
-        offset_bits += in_base2k as i64;
-    }
-    full_size.min((res_size * res_base2k + offset_bits as usize).div_ceil(in_base2k))
-}
-
 fn rank_one_tensor_work_bytes<BE: RankOneTensorDft>(
     module: &Module<BE>,
     res_size: usize,
@@ -193,7 +176,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
 {
     let res_base2k = res.base2k().as_usize();
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, in_base2k);
-    let dft_size = normalize_input_limb_bound(
+    let dft_size = normalize_input_limb_bound_with_offset(
         a_size + b_size - cnv_offset_hi,
         res.size(),
         res_base2k,

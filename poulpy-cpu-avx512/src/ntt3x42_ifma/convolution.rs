@@ -10,7 +10,7 @@ use crate::ntt3x42_ifma::{
     kernels::{cond_sub_2q_si512, ntt_avx512},
     module::handle,
     primes::Primes42,
-    serial::{SendPtr, for_index, for_index_with, use_task_split},
+    serial::for_index,
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_hal::layouts::{
@@ -229,7 +229,7 @@ unsafe fn conv_planar_rank1(
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 unsafe fn conv_columns_packed_group<const ACC: bool, const PAIRWISE: bool>(
-    res_ptr: SendPtr<u64>,
+    res: &mut [u64],
     res_col: usize,
     n: usize,
     res_cols: usize,
@@ -393,7 +393,7 @@ unsafe fn conv_columns_packed_group<const ACC: bool, const PAIRWISE: bool>(
             let p0 = _mm512_loadu_si512(out_base.add(8 * k_rel) as *const __m512i);
             let p1 = _mm512_loadu_si512(out_base.add(8 * (staged + k_rel)) as *const __m512i);
             let p2 = _mm512_loadu_si512(out_base.add(8 * (2 * staged + k_rel)) as *const __m512i);
-            let dst = res_ptr.get().add((k_rel * res_cols + res_col) * 2 * n + 16 * group);
+            let dst = res.as_mut_ptr().add((k_rel * res_cols + res_col) * 2 * n + 16 * group);
             if ACC {
                 let d = unpack_y(
                     _mm512_loadu_si512(dst as *const __m512i),
@@ -451,67 +451,29 @@ unsafe fn conv_columns_packed<const ACC: bool, const PAIRWISE: bool>(
     let n_groups = n / 8;
     let n_tiles = min_size.div_ceil(TILE);
     let task_tmp_len = 3 * 8 * win_rows + 3 * 8 * b_size + 3 * 8 * n_tiles * TILE;
-    let work = 3 * n_groups * n_tiles.max(1) * (a_size + b_size).max(1);
-
     let res_cols = res.cols();
-    let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, min_size);
-
-    let task_split = use_task_split(n_groups, work);
-    if task_split {
-        for_index_with(
-            n_groups,
-            work,
-            || vec![0u64; task_tmp_len],
-            |local_tmp, group| {
-                unsafe {
-                    conv_columns_packed_group::<ACC, PAIRWISE>(
-                        res_ptr,
-                        res_col,
-                        n,
-                        res_cols,
-                        min_size,
-                        offset,
-                        group,
-                        a0_col,
-                        a1_col,
-                        a_size,
-                        b0_col,
-                        b1_col,
-                        b_size,
-                        cached_overwrite,
-                        local_tmp,
-                    );
-                    if !ACC && !cached_overwrite {
-                        // Non-temporal stores must be fenced on the issuing
-                        // thread before the pool join publishes them.
-                        _mm_sfence();
-                    }
-                }
-            },
-        );
-    } else {
-        let tmp = &mut tmp[..task_tmp_len];
-        for group in 0..n_groups {
-            unsafe {
-                conv_columns_packed_group::<ACC, PAIRWISE>(
-                    res_ptr,
-                    res_col,
-                    n,
-                    res_cols,
-                    min_size,
-                    offset,
-                    group,
-                    a0_col,
-                    a1_col,
-                    a_size,
-                    b0_col,
-                    b1_col,
-                    b_size,
-                    cached_overwrite,
-                    tmp,
-                );
-            }
+    let tmp = &mut tmp[..task_tmp_len];
+    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
+    for group in 0..n_groups {
+        unsafe {
+            conv_columns_packed_group::<ACC, PAIRWISE>(
+                res_data,
+                res_col,
+                n,
+                res_cols,
+                min_size,
+                offset,
+                group,
+                a0_col,
+                a1_col,
+                a_size,
+                b0_col,
+                b1_col,
+                b_size,
+                cached_overwrite,
+                tmp,
+            );
         }
     }
 
@@ -519,9 +481,7 @@ unsafe fn conv_columns_packed<const ACC: bool, const PAIRWISE: bool>(
         for j in min_size..res_size {
             zero_res_limb(res, res_col, j);
         }
-        if !cached_overwrite && !task_split {
-            // Order the non-temporal stores against any subsequent load of
-            // `res` on the sequential path. Task issuers fence above.
+        if !cached_overwrite {
             _mm_sfence();
         }
     }
@@ -530,7 +490,7 @@ unsafe fn conv_columns_packed<const ACC: bool, const PAIRWISE: bool>(
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 unsafe fn conv_tensor_rank1_packed_group(
-    res_ptr: SendPtr<u64>,
+    res: &mut [u64],
     n: usize,
     res_cols: usize,
     min_size: usize,
@@ -635,7 +595,7 @@ unsafe fn conv_tensor_rank1_packed_group(
 
             for (col, values) in [(0, d0), (1, pairwise), (2, d1)] {
                 let [w0, w1] = pack_y(values, m22);
-                let dst = res_ptr.get().add((k * res_cols + col) * 2 * n + 16 * group);
+                let dst = res.as_mut_ptr().add((k * res_cols + col) * 2 * n + 16 * group);
                 if cached_overwrite {
                     _mm512_storeu_si512(dst as *mut __m512i, w0);
                     _mm512_storeu_si512(dst.add(8) as *mut __m512i, w1);
@@ -679,9 +639,7 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma(
     let staged = min_size.div_ceil(TILE) * TILE;
     let task_tmp_len = 6 * 8 * win_rows + 6 * 8 * b_size + 9 * 8 * staged;
     let n_groups = n / 8;
-    let work = 9 * n_groups * staged.max(1) * (a_size + b_size).max(1);
     let res_cols = res.cols();
-    let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, min_size);
     let a_raw: &[u64] = cast_slice(a.data());
     let b_raw: &[u64] = cast_slice(b.data());
@@ -693,58 +651,30 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma(
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
-    if use_task_split(n_groups, work) {
-        for_index_with(
-            n_groups,
-            work,
-            || vec![0u64; task_tmp_len],
-            |local_tmp, group| unsafe {
-                conv_tensor_rank1_packed_group(
-                    res_ptr,
-                    n,
-                    res_cols,
-                    min_size,
-                    offset,
-                    group,
-                    a0,
-                    a1,
-                    a_size,
-                    b0,
-                    b1,
-                    b_size,
-                    cached_overwrite,
-                    local_tmp,
-                );
-                if !cached_overwrite {
-                    _mm_sfence();
-                }
-            },
-        );
-    } else {
-        let task_tmp = &mut tmp_u64[..task_tmp_len];
-        for group in 0..n_groups {
-            unsafe {
-                conv_tensor_rank1_packed_group(
-                    res_ptr,
-                    n,
-                    res_cols,
-                    min_size,
-                    offset,
-                    group,
-                    a0,
-                    a1,
-                    a_size,
-                    b0,
-                    b1,
-                    b_size,
-                    cached_overwrite,
-                    task_tmp,
-                );
-            }
+    let task_tmp = &mut tmp_u64[..task_tmp_len];
+    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
+    for group in 0..n_groups {
+        unsafe {
+            conv_tensor_rank1_packed_group(
+                res_data,
+                n,
+                res_cols,
+                min_size,
+                offset,
+                group,
+                a0,
+                a1,
+                a_size,
+                b0,
+                b1,
+                b_size,
+                cached_overwrite,
+                task_tmp,
+            );
         }
-        if !cached_overwrite {
-            _mm_sfence();
-        }
+    }
+    if !cached_overwrite {
+        _mm_sfence();
     }
 
     for col in 0..3 {
@@ -932,37 +862,6 @@ pub(crate) fn cnv_prepare_left(
     let res_size = res.size();
     let min_size = res_size.min(a.size());
 
-    let task_count = cols * res_size;
-    let work = 3 * n * task_count;
-    if use_task_split(task_count, work) {
-        let col_stride = 2 * n * res_size;
-        let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-        for_index_with(
-            task_count,
-            work,
-            || vec![0u64; 6 * n],
-            |tmp, task| {
-                let col = task / res_size;
-                let j = task % res_size;
-                let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
-                let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
-                if j < min_size {
-                    if j + 1 == min_size {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-                    } else {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                    }
-                    unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-                    NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-                    unsafe { pack_limb_packed(dst, limb_c, n, res_size, j) };
-                } else {
-                    zero_limb_packed(dst, res_size, j, n / 8);
-                }
-            },
-        );
-        return;
-    }
-
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
@@ -1006,37 +905,6 @@ pub(crate) fn cnv_prepare_right(
     let res_size = res.size();
     let min_size = res_size.min(a.size());
 
-    let task_count = cols * res_size;
-    let work = 3 * n * task_count;
-    if use_task_split(task_count, work) {
-        let col_stride = 2 * n * res_size;
-        let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-        for_index_with(
-            task_count,
-            work,
-            || vec![0u64; 6 * n],
-            |tmp, task| {
-                let col = task / res_size;
-                let j = task % res_size;
-                let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
-                let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
-                if j < min_size {
-                    if j + 1 == min_size {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-                    } else {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                    }
-                    unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-                    NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-                    unsafe { pack_limb_packed(dst, limb_c, n, res_size, res_size - 1 - j) };
-                } else {
-                    zero_limb_packed(dst, res_size, res_size - 1 - j, n / 8);
-                }
-            },
-        );
-        return;
-    }
-
     let (limb_b, limb_c) = tmp[..6 * n].split_at_mut(3 * n);
 
     let res_raw: &mut [u64] = cast_slice_mut(res.data_mut());
@@ -1077,41 +945,6 @@ pub(crate) fn cnv_prepare_self(
     let cols = left.cols();
     let res_size = left.size();
     let min_size = res_size.min(a.size());
-
-    let task_count = cols * res_size;
-    let work = 3 * n * task_count;
-    if use_task_split(task_count, work) {
-        let col_stride = 2 * n * res_size;
-        let left_ptr = SendPtr(cast_slice_mut::<_, u64>(left.data_mut()).as_mut_ptr());
-        let right_ptr = SendPtr(cast_slice_mut::<_, u64>(right.data_mut()).as_mut_ptr());
-        for_index_with(
-            task_count,
-            work,
-            || vec![0u64; 6 * n],
-            |tmp, task| {
-                let col = task / res_size;
-                let j = task % res_size;
-                let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
-                let dst_l = unsafe { std::slice::from_raw_parts_mut(left_ptr.get().add(col * col_stride), col_stride) };
-                let dst_r = unsafe { std::slice::from_raw_parts_mut(right_ptr.get().add(col * col_stride), col_stride) };
-                if j < min_size {
-                    if j + 1 == min_size {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-                    } else {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                    }
-                    unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-                    NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-                    unsafe { pack_limb_packed(dst_l, limb_c, n, res_size, j) };
-                    unsafe { pack_limb_packed(dst_r, limb_c, n, res_size, res_size - 1 - j) };
-                } else {
-                    zero_limb_packed(dst_l, res_size, j, n / 8);
-                    zero_limb_packed(dst_r, res_size, res_size - 1 - j, n / 8);
-                }
-            },
-        );
-        return;
-    }
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
@@ -1177,12 +1010,13 @@ pub(crate) fn cnv_by_const_apply(
     let offset = cnv_offset.min(bound);
     let n = res.n();
     let rc = res.cols();
-    let rp = SendPtr(res.raw_mut().as_mut_ptr());
+    let res_raw = res.raw_mut();
 
     if b_size == 1 {
         let b0 = b.at(b_col, 0)[b_coeff] as i128;
         for_index(res_size, 2 * n * res_size, |k| {
-            let res_limb = unsafe { std::slice::from_raw_parts_mut(rp.get().add(n * (k * rc + res_col)), n) };
+            let start = n * (k * rc + res_col);
+            let res_limb = &mut res_raw[start..start + n];
             let k_abs = k + offset;
             if k < min_size && k_abs < a_size {
                 let a_limb = a.at(a_col, k_abs);
@@ -1197,7 +1031,8 @@ pub(crate) fn cnv_by_const_apply(
     }
 
     for_index(res_size, 2 * n * res_size * b_size, |k| {
-        let res_limb = unsafe { std::slice::from_raw_parts_mut(rp.get().add(n * (k * rc + res_col)), n) };
+        let start = n * (k * rc + res_col);
+        let res_limb = &mut res_raw[start..start + n];
         if k < min_size {
             let k_abs = k + offset;
             let j_min = k_abs.saturating_sub(a_size - 1);

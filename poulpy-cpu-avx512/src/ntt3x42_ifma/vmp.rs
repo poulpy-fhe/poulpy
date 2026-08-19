@@ -20,9 +20,9 @@ use crate::ntt3x42_ifma::{
     kernels::ntt_avx512,
     module::handle,
     primes::Primes42,
-    serial::{SendPtr, for_index_with, use_task_split},
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
+use poulpy_core::oep::gglwe_product_digit_output_size;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
     VmpPMatBackendRef, ZnxInfos,
@@ -574,62 +574,20 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
         return;
     }
 
-    let work = 3 * n * row_max.max(1) * (col_max - limb_offset).max(1);
-    if !use_task_split(n_blk_quads, work) {
-        // Scratch: 32 u64 reserved for layout compatibility with vmp_apply_tmp_bytes_ifma
-        //        + 3 * 8 * row_max u64 for prime-major x extract
-        let (_kernel_output, x_pm) = tmp.split_at_mut(32);
-        let x_pm = &mut x_pm[..3 * 8 * row_max];
-
-        for bq in 0..n_blk_quads {
-            unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_u64, x_pm) };
-
-            for col_pmat in limb_offset..col_max {
-                let col_res = col_pmat - limb_offset;
-                let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
-
-                unsafe {
-                    let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                    let dst_base = res_u64.as_mut_ptr().add(col_res * 2 * n);
-                    save_planar_result::<OVERWRITE>(dst_base, bq, &pc, red[0], red[1], red[2]);
-                }
+    let (_kernel_output, x_pm) = tmp.split_at_mut(32);
+    let x_pm = &mut x_pm[..3 * 8 * row_max];
+    for bq in 0..n_blk_quads {
+        unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_u64, x_pm) };
+        for col_pmat in limb_offset..col_max {
+            let col_res = col_pmat - limb_offset;
+            let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
+            unsafe {
+                let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
+                let dst_base = res_u64.as_mut_ptr().add(col_res * 2 * n);
+                save_planar_result::<OVERWRITE>(dst_base, bq, &pc, red[0], red[1], red[2]);
             }
         }
-
-        if OVERWRITE {
-            let active_cols = col_max.saturating_sub(limb_offset);
-            for col in active_cols..res_size {
-                res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
-            }
-            _mm_sfence();
-        }
-        return;
     }
-
-    let res_ptr = SendPtr(res_u64.as_mut_ptr());
-    for_index_with(
-        n_blk_quads,
-        work,
-        || vec![0u64; 3 * 8 * row_max],
-        |x_pm, bq| {
-            unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_u64, x_pm) };
-
-            for col_pmat in limb_offset..col_max {
-                let col_res = col_pmat - limb_offset;
-                let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
-
-                unsafe {
-                    let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                    let dst_base = res_ptr.get().add(col_res * 2 * n);
-                    save_planar_result::<OVERWRITE>(dst_base, bq, &pc, red[0], red[1], red[2]);
-                }
-            }
-
-            if OVERWRITE {
-                _mm_sfence();
-            }
-        },
-    );
 
     if OVERWRITE {
         let active_cols = col_max.saturating_sub(limb_offset);
@@ -769,16 +727,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
     for di in 0..dsize {
         let digit_limbs = ((a_size + di) / dsize).min(dnum);
         // Match the reference product: full-width overwrite, then narrowed accumulations.
-        let pad = if di == 0 {
-            0
-        } else {
-            ((dsize - di) as isize - 2).max(0) as usize
-        };
-        let active_size = if di == 0 {
-            output_size
-        } else {
-            output_size.min(pmat.size().saturating_sub(pad))
-        };
+        let active_size = gglwe_product_digit_output_size(output_size, pmat.size(), dsize, di);
         let limb_off = di * cols_out;
         let row_end = nrows.min(a_cols * digit_limbs);
         let limb_base = dsize - 1 - di;
@@ -808,12 +757,9 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
 
     let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
     let row_max_all = row_maxs.iter().copied().max().unwrap_or(0) as usize;
-    let work: usize = (0..dsize)
-        .map(|di| 3 * n * (row_maxs[di] as usize).max(1) * (col_maxs[di] as usize).saturating_sub(limb_offs[di] as usize).max(1))
-        .sum();
-
-    let res_ptr = SendPtr(res_u64.as_mut_ptr());
-    let process_bq = |x_pm: &mut [u64], bq: usize| {
+    let (_kernel_output, x_pm) = tmp.split_at_mut(32);
+    let x_pm = &mut x_pm[..3 * 8 * row_max_all];
+    for bq in 0..n_blk_quads {
         for di in 0..dsize {
             let limb_off = limb_offs[di] as usize;
             let col_max = col_maxs[di] as usize;
@@ -836,7 +782,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
 
                 unsafe {
                     let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                    let dst_base = res_ptr.get().add(col_res * 2 * n);
+                    let dst_base = res_u64.as_mut_ptr().add(col_res * 2 * n);
                     if di == 0 {
                         save_planar_overwrite(dst_base, bq, red[0], red[1], red[2]);
                     } else {
@@ -845,21 +791,6 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
                 }
             }
         }
-    };
-
-    if !use_task_split(n_blk_quads, work) {
-        let (_kernel_output, x_pm) = tmp.split_at_mut(32);
-        let x_pm = &mut x_pm[..3 * 8 * row_max_all];
-        for bq in 0..n_blk_quads {
-            process_bq(x_pm, bq);
-        }
-    } else {
-        for_index_with(
-            n_blk_quads,
-            work,
-            || vec![0u64; 3 * 8 * row_max_all],
-            |x_pm, bq| process_bq(x_pm, bq),
-        );
     }
 }
 
