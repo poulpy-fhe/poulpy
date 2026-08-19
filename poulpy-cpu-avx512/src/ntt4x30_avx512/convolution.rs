@@ -9,7 +9,6 @@ use core::arch::x86_64::{
 };
 
 use poulpy_cpu_ref::reference::ntt4x30::{
-    NttSubAssign,
     mat_vec::BbcMeta,
     primes::{PrimeSet, Primes30},
     vec_znx_dft::NttModuleHandle,
@@ -167,7 +166,7 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_avx512(
     let meta: &BbcMeta<Primes30> = module.get_bbc_meta();
     let stage_col_stride = 8 * GROUP * min_size;
     let mut diag0 = [0u64; 8 * TILE];
-    let mut cross = [0u64; 8 * TILE];
+    let mut pair = [0u64; 8 * TILE];
     let mut diag1 = [0u64; 8 * TILE];
     let q_rows = [
         Primes30::Q[0],
@@ -226,15 +225,13 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_avx512(
             let b_start = b_size - j_hi;
             unsafe {
                 vec_mat_tile4_bbc_canonical_avx512(meta, len, &mut diag0, &a0_win[16 * win_base..], &b0_blk[16 * b_start..]);
-                vec_mat_tile4_bbc_canonical_avx512(meta, len, &mut cross, &a_sum_win[16 * win_base..], &b_sum[16 * b_start..]);
+                vec_mat_tile4_bbc_canonical_avx512(meta, len, &mut pair, &a_sum_win[16 * win_base..], &b_sum[16 * b_start..]);
                 vec_mat_tile4_bbc_canonical_avx512(meta, len, &mut diag1, &a1_win[16 * win_base..], &b1_blk[16 * b_start..]);
             }
-            <NTT4x30Avx512 as NttSubAssign>::ntt_sub_assign(&mut cross, &diag0);
-            <NTT4x30Avx512 as NttSubAssign>::ntt_sub_assign(&mut cross, &diag1);
 
             let k_rel = TILE * tile;
             for t in 0..TILE.min(min_size - k_rel) {
-                for (col, values) in [(0, &diag0), (1, &cross), (2, &diag1)] {
+                for (col, values) in [(0, &diag0), (1, &pair), (2, &diag1)] {
                     let dst = col * stage_col_stride + 8 * ((k_rel + t) * GROUP + group_pos);
                     stage[dst..dst + 8].copy_from_slice(&values[8 * t..8 * (t + 1)]);
                 }

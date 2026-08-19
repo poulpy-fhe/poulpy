@@ -4,6 +4,7 @@ use std::f64::consts::TAU;
 
 use poulpy_core::{
     GLWEZero, TransferInto,
+    default::keyswitching::glwe::GGLWEProductDefault,
     layouts::{
         BackendGLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::GLWESecretPrepared,
@@ -262,6 +263,7 @@ pub fn test_ship_mux_rotate<BE, F, E>(params: CKKSTestParams, module: &Module<BE
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>
+        + GGLWEProductDefault<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
         + VecZnxDftCopy<BE>

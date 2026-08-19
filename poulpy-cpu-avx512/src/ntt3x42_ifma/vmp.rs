@@ -718,118 +718,6 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma(
     }
 }
 
-/// Fused multi-digit VMP over materialized digit slices.
-pub(crate) fn vmp_apply_dft_to_dft_digits_ifma(
-    _module: &Module<crate::NTT3x42Ifma>,
-    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
-    digits: &[VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>],
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
-    tmp: &mut [u64],
-) {
-    let n = res.n();
-    let output_size = res.size();
-
-    let dsize = digits.len();
-    if dsize == 0 || n < 2 {
-        return;
-    }
-
-    let n_blk_quads = n / 8;
-    let nrows = pmat.rows() * pmat.cols_in();
-    let ncols = pmat.cols_out() * pmat.size();
-    let cols_out = pmat.cols_out();
-    let res_cols = res.cols();
-
-    let bq_stride = ncols * nrows * 16;
-    let col_stride_y = nrows * 16;
-
-    let mut a_slices: Vec<&[u64]> = Vec::with_capacity(dsize);
-    let mut row_maxs: Vec<usize> = Vec::with_capacity(dsize);
-    let mut limb_offs: Vec<usize> = Vec::with_capacity(dsize);
-    let mut col_maxs: Vec<usize> = Vec::with_capacity(dsize);
-    for (di, a) in digits.iter().enumerate() {
-        let a_u64: &[u64] = &cast_slice::<_, u64>(a.data())[..2 * n * a.poly_count()];
-        let a_size = a_u64.len() / (2 * n);
-        // Match the default implementation: the first (overwriting) digit
-        // initializes the full destination. Only accumulating digits use the
-        // narrowed output view.
-        let pad = if di == 0 {
-            0
-        } else {
-            ((dsize - di) as isize - 2).max(0) as usize
-        };
-        let active_size = if di == 0 {
-            output_size
-        } else {
-            output_size.min(pmat.size().saturating_sub(pad))
-        };
-        let res_size_di = res_cols * active_size;
-        let limb_off = di * cols_out;
-        a_slices.push(a_u64);
-        row_maxs.push(nrows.min(a_size));
-        limb_offs.push(limb_off);
-        col_maxs.push(ncols.min(res_size_di + limb_off));
-    }
-
-    let res_u64: &mut [u64] = &mut cast_slice_mut::<_, u64>(res.data_mut())[..2 * n * res_cols * output_size];
-    let pmat_u64: &[u64] = cast_slice(pmat.data());
-
-    let res_flat = res_cols * output_size;
-    for col in col_maxs[0]..res_flat {
-        res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
-    }
-
-    let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
-    let row_max_all = row_maxs.iter().copied().max().unwrap_or(0);
-    let work: usize = (0..dsize)
-        .map(|di| 3 * n * row_maxs[di].max(1) * col_maxs[di].saturating_sub(limb_offs[di]).max(1))
-        .sum();
-
-    let res_ptr = SendPtr(res_u64.as_mut_ptr());
-    let process_bq = |x_pm: &mut [u64], bq: usize| {
-        for di in 0..dsize {
-            let limb_off = limb_offs[di];
-            let col_max = col_maxs[di];
-            if limb_off >= col_max {
-                continue;
-            }
-            let row_max = row_maxs[di];
-            let x_pm = &mut x_pm[..3 * 8 * row_max];
-            unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_slices[di], x_pm) };
-
-            for col_pmat in limb_off..col_max {
-                let col_res = col_pmat - limb_off;
-                let y_off = bq * bq_stride + col_pmat * col_stride_y;
-
-                unsafe {
-                    let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                    let dst_base = res_ptr.get().add(col_res * 2 * n);
-                    if di == 0 {
-                        save_planar_overwrite(dst_base, bq, red[0], red[1], red[2]);
-                    } else {
-                        save_planar_add(dst_base, bq, &pc, red[0], red[1], red[2]);
-                    }
-                }
-            }
-        }
-    };
-
-    if !use_task_split(n_blk_quads, work) {
-        let (_kernel_output, x_pm) = tmp.split_at_mut(32);
-        let x_pm = &mut x_pm[..3 * 8 * row_max_all];
-        for bq in 0..n_blk_quads {
-            process_bq(x_pm, bq);
-        }
-    } else {
-        for_index_with(
-            n_blk_quads,
-            work,
-            || vec![0u64; 3 * 8 * row_max_all],
-            |x_pm, bq| process_bq(x_pm, bq),
-        );
-    }
-}
-
 pub(crate) fn vmp_apply_digits_strided_tmp_bytes_ifma(
     a_cols: usize,
     a_size: usize,
@@ -842,7 +730,7 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_ifma(
         .map(|di| (a_cols * ((a_size + di) / dsize).min(b_rows)).min(nrows))
         .max()
         .unwrap_or(0);
-    (32 + 3 * 8 * row_max_all) * size_of::<u64>()
+    (4 * dsize + 32 + 3 * 8 * row_max_all) * size_of::<u64>()
 }
 
 /// Fused multi-digit VMP over strided digit rows.
@@ -874,15 +762,13 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
     let col_stride_y = nrows * 16;
     let a_u64: &[u64] = &cast_slice::<_, u64>(a.data())[..2 * n * a.poly_count()];
 
-    let mut row_maxs: Vec<usize> = Vec::with_capacity(dsize);
-    let mut row_starts: Vec<usize> = Vec::with_capacity(dsize);
-    let mut limb_offs: Vec<usize> = Vec::with_capacity(dsize);
-    let mut col_maxs: Vec<usize> = Vec::with_capacity(dsize);
+    let (digit_meta, tmp) = tmp.split_at_mut(4 * dsize);
+    let (row_maxs, digit_meta) = digit_meta.split_at_mut(dsize);
+    let (row_starts, digit_meta) = digit_meta.split_at_mut(dsize);
+    let (limb_offs, col_maxs) = digit_meta.split_at_mut(dsize);
     for di in 0..dsize {
         let digit_limbs = ((a_size + di) / dsize).min(dnum);
-        // Match the default implementation: the first (overwriting) digit
-        // initializes the full destination. Only accumulating digits use the
-        // narrowed output view.
+        // Match the reference product: full-width overwrite, then narrowed accumulations.
         let pad = if di == 0 {
             0
         } else {
@@ -893,7 +779,6 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
         } else {
             output_size.min(pmat.size().saturating_sub(pad))
         };
-        let res_size_di = res_cols * active_size;
         let limb_off = di * cols_out;
         let row_end = nrows.min(a_cols * digit_limbs);
         let limb_base = dsize - 1 - di;
@@ -903,10 +788,10 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
                 a_u64[flat * 2 * n..(flat + 1) * 2 * n].iter().all(|&x| x == 0)
             })
             .count();
-        row_starts.push(row_start);
-        row_maxs.push(row_end - row_start);
-        limb_offs.push(limb_off);
-        col_maxs.push(ncols.min(res_size_di + limb_off));
+        row_starts[di] = row_start as u64;
+        row_maxs[di] = (row_end - row_start) as u64;
+        limb_offs[di] = limb_off as u64;
+        col_maxs[di] = ncols.min(res_cols * active_size + limb_off) as u64;
     }
 
     let res_u64: &mut [u64] = &mut cast_slice_mut::<_, u64>(res.data_mut())[..2 * n * res_cols * output_size];
@@ -916,30 +801,30 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
     if row_maxs[0] == 0 {
         res_u64.fill(0);
     } else {
-        for col in col_maxs[0]..res_flat {
+        for col in col_maxs[0] as usize..res_flat {
             res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
         }
     }
 
     let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
-    let row_max_all = row_maxs.iter().copied().max().unwrap_or(0);
+    let row_max_all = row_maxs.iter().copied().max().unwrap_or(0) as usize;
     let work: usize = (0..dsize)
-        .map(|di| 3 * n * row_maxs[di].max(1) * col_maxs[di].saturating_sub(limb_offs[di]).max(1))
+        .map(|di| 3 * n * (row_maxs[di] as usize).max(1) * (col_maxs[di] as usize).saturating_sub(limb_offs[di] as usize).max(1))
         .sum();
 
     let res_ptr = SendPtr(res_u64.as_mut_ptr());
     let process_bq = |x_pm: &mut [u64], bq: usize| {
         for di in 0..dsize {
-            let limb_off = limb_offs[di];
-            let col_max = col_maxs[di];
+            let limb_off = limb_offs[di] as usize;
+            let col_max = col_maxs[di] as usize;
             if limb_off >= col_max {
                 continue;
             }
-            let row_max = row_maxs[di];
+            let row_max = row_maxs[di] as usize;
             if row_max == 0 {
                 continue;
             }
-            let row_start = row_starts[di];
+            let row_start = row_starts[di] as usize;
             let x_pm = &mut x_pm[..3 * 8 * row_max];
             unsafe {
                 extract_blk_quad_prime_major_strided(n, row_max, bq, a_u64, a_cols, dsize - 1 - di, dsize, row_start, x_pm)

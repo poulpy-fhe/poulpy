@@ -406,7 +406,7 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_avx(
         .map(|di| (a_cols * ((a_size + di) / dsize).min(b_rows)).min(nrows))
         .max()
         .unwrap_or(0);
-    (16 + 16 * row_max) * size_of::<u64>()
+    (4 * dsize + 16 + 16 * row_max) * size_of::<u64>()
 }
 
 /// Applies all gadget digits directly from their interleaved source limbs.
@@ -443,15 +443,13 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     let col_stride = nrows * 16;
     let bp_stride = ncols * nrows * 16;
 
-    let mut row_maxs = Vec::with_capacity(dsize);
-    let mut row_starts = Vec::with_capacity(dsize);
-    let mut limb_offsets = Vec::with_capacity(dsize);
-    let mut col_maxs = Vec::with_capacity(dsize);
+    let (digit_meta, tmp) = tmp.split_at_mut(4 * dsize);
+    let (row_maxs, digit_meta) = digit_meta.split_at_mut(dsize);
+    let (row_starts, digit_meta) = digit_meta.split_at_mut(dsize);
+    let (limb_offsets, col_maxs) = digit_meta.split_at_mut(dsize);
     for di in 0..dsize {
         let digit_limbs = ((a_size + di) / dsize).min(dnum);
-        // Match the default implementation: the first (overwriting) digit
-        // initializes the full destination. Only accumulating digits use the
-        // narrowed output view.
+        // Match the reference product: full-width overwrite, then narrowed accumulations.
         let pad = if di == 0 {
             0
         } else {
@@ -462,7 +460,6 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
         } else {
             output_size.min(pmat.size().saturating_sub(pad))
         };
-        let res_size_di = res_cols * active_size;
         let limb_offset = di * cols_out;
         let row_end = (a_cols * digit_limbs).min(nrows);
         let limb_base = dsize - 1 - di;
@@ -472,17 +469,17 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
                 a_u64[flat * 4 * n..(flat + 1) * 4 * n].iter().all(|&x| x == 0)
             })
             .count();
-        row_starts.push(row_start);
-        row_maxs.push(row_end - row_start);
-        limb_offsets.push(limb_offset);
-        col_maxs.push(ncols.min(res_size_di + limb_offset));
+        row_starts[di] = row_start as u64;
+        row_maxs[di] = (row_end - row_start) as u64;
+        limb_offsets[di] = limb_offset as u64;
+        col_maxs[di] = ncols.min(res_cols * active_size + limb_offset) as u64;
     }
 
     let res_flat = res_cols * output_size;
     if row_maxs[0] == 0 {
         res_u64.fill(0);
     } else {
-        for col in col_maxs[0]..res_flat {
+        for col in col_maxs[0] as usize..res_flat {
             res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
         }
     }
@@ -490,16 +487,16 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     let (blkpair_output, x_pm) = tmp.split_at_mut(16);
     for bp in 0..n_block_pairs {
         for di in 0..dsize {
-            let limb_offset = limb_offsets[di];
-            let col_max = col_maxs[di];
+            let limb_offset = limb_offsets[di] as usize;
+            let col_max = col_maxs[di] as usize;
             if limb_offset >= col_max {
                 continue;
             }
-            let row_max = row_maxs[di];
+            let row_max = row_maxs[di] as usize;
             if row_max == 0 {
                 continue;
             }
-            let row_start = row_starts[di];
+            let row_start = row_starts[di] as usize;
             let x_pm = &mut x_pm[..16 * row_max];
             unsafe {
                 extract_blk_pair_prime_major_strided_avx512(

@@ -1,12 +1,88 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
     GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
     prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
+
+/// Backend implementation of the interleaved-digit GGLWE product.
+///
+/// For `dsize >= 2`, it must reproduce
+/// [`gglwe_product_digits_strided_default`](crate::default::keyswitching::glwe::gglwe_product_digits_strided_default)
+/// bit for bit.
+///
+/// # Safety
+/// Implementations must honor the supplied layouts and return a scratch bound
+/// sufficient for [`Self::gglwe_product_digits_strided`].
+pub unsafe trait GGLWEProductDigitsStridedImpl<BE: Backend>: Backend {
+    #[allow(clippy::too_many_arguments)]
+    fn gglwe_product_digits_strided_tmp_bytes(
+        module: &Module<BE>,
+        res_size: usize,
+        a_cols: usize,
+        a_size: usize,
+        dsize: usize,
+        pmat_rows: usize,
+        pmat_cols_in: usize,
+        pmat_cols_out: usize,
+        pmat_size: usize,
+    ) -> usize;
+
+    fn gglwe_product_digits_strided(
+        module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        dsize: usize,
+        pmat: &VmpPMatBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+}
+
+/// Opts a backend into the canonical GGLWE interleaved-digit product.
+#[macro_export]
+macro_rules! impl_gglwe_product_digits_strided_default {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GGLWEProductDigitsStridedImpl<$be> for $be {
+            fn gglwe_product_digits_strided_tmp_bytes(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res_size: usize,
+                a_cols: usize,
+                a_size: usize,
+                dsize: usize,
+                pmat_rows: usize,
+                pmat_cols_in: usize,
+                pmat_cols_out: usize,
+                pmat_size: usize,
+            ) -> usize {
+                $crate::default::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
+                    module,
+                    res_size,
+                    a_cols,
+                    a_size,
+                    dsize,
+                    pmat_rows,
+                    pmat_cols_in,
+                    pmat_cols_out,
+                    pmat_size,
+                )
+            }
+
+            fn gglwe_product_digits_strided(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
+                a: &::poulpy_hal::layouts::VecZnxDftBackendRef<'_, $be>,
+                dsize: usize,
+                pmat: &::poulpy_hal::layouts::VmpPMatBackendRef<'_, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) {
+                $crate::default::keyswitching::glwe::gglwe_product_digits_strided_default(module, res, a, dsize, pmat, scratch)
+            }
+        }
+    };
+}
 
 /// Backend-provided GLWE key-switching operations.
 ///
@@ -28,6 +104,16 @@ pub unsafe trait GLWEKeyswitchImpl<BE: Backend>: Backend {
 
     fn glwe_keyswitch_assign<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
     where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+
+    fn glwe_keyswitch_assign_zero_prefix<R, K>(
+        module: &Module<BE>,
+        res: &mut R,
+        key: &K,
+        zero_limbs: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
@@ -141,8 +227,6 @@ pub unsafe trait LWEKeyswitchImpl<BE: Backend>: Backend {
 ///   down. Tightening it to `- 1` is silent: the difference measured 1e-6 bits at
 ///   `n = 2^12`, `base2k = 18`.
 ///
-/// TODO: ONCE PR #213 is merged, update this contract.
-///
 /// Assert parity against a reference backend, not only the noise bound.
 pub trait GLWEKeyswitchDefault<BE: Backend> {
     fn glwe_keyswitch_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -159,6 +243,16 @@ pub trait GLWEKeyswitchDefault<BE: Backend> {
 
     fn glwe_keyswitch_assign_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
     where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+
+    fn glwe_keyswitch_assign_zero_prefix_default<R, K>(
+        &self,
+        res: &mut R,
+        key: &K,
+        zero_limbs: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
@@ -249,6 +343,19 @@ where
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.glwe_keyswitch_assign_default(res, key, scratch)
+    }
+
+    fn glwe_keyswitch_assign_zero_prefix<R, K>(
+        module: &Module<BE>,
+        res: &mut R,
+        key: &K,
+        zero_limbs: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.glwe_keyswitch_assign_zero_prefix_default(res, key, zero_limbs, scratch)
     }
 }
 
@@ -389,6 +496,21 @@ macro_rules! impl_glwe_keyswitch_defaults_full {
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
             {
                 $crate::default::keyswitching::glwe::glwe_keyswitch_assign_default::<$be, _, _, _>(self, res, key, scratch)
+            }
+
+            fn glwe_keyswitch_assign_zero_prefix_default<R, K>(
+                &self,
+                res: &mut R,
+                key: &K,
+                zero_limbs: usize,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
+            {
+                $crate::default::keyswitching::glwe::glwe_keyswitch_assign_zero_prefix_default::<$be, _, _, _>(
+                    self, res, key, zero_limbs, scratch,
+                )
             }
         }
     };

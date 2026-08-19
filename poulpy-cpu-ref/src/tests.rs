@@ -11,8 +11,6 @@ use poulpy_hal::{
 };
 
 use crate::{FFT64Ref, NTT4x30Ref};
-#[cfg(feature = "enable-core")]
-use poulpy_core::test_suite::fused::test_glwe_tensor_rank1_dft;
 
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
@@ -35,12 +33,6 @@ fn test_convolution_fft64_ref() {
 fn test_convolution_pairwise_fft64_ref() {
     let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
     test_convolution_pairwise(&module, 17);
-}
-
-#[test]
-#[cfg(feature = "enable-core")]
-fn test_glwe_tensor_rank1_dft_fft64_ref() {
-    test_glwe_tensor_rank1_dft(&Module::<FFT64Ref>::new(8), 17, 15);
 }
 
 #[test]
@@ -71,12 +63,6 @@ fn test_convolution_ntt4x30_ref() {
 fn test_convolution_pairwise_ntt4x30_ref() {
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
     test_convolution_pairwise(&module, 50);
-}
-
-#[test]
-#[cfg(feature = "enable-core")]
-fn test_glwe_tensor_rank1_dft_ntt4x30_ref() {
-    test_glwe_tensor_rank1_dft(&Module::<NTT4x30Ref>::new(8), 50, 15);
 }
 
 #[test]

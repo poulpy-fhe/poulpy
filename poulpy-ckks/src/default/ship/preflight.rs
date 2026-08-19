@@ -3,6 +3,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
+    default::keyswitching::glwe::GGLWEProductDefault,
     layouts::{GLWELayout, Rank},
 };
 
@@ -38,6 +39,7 @@ where
     BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
+        + GGLWEProductDefault<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>

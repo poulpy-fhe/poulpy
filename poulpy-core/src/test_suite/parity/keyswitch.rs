@@ -2,7 +2,7 @@
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostDataMut, Module, ScratchOwned},
+    layouts::{HostDataMut, Module, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
@@ -109,6 +109,86 @@ pub fn test_glwe_keyswitch_parity<BR, BT>(
                 assert_eq!(
                     res_ref, have,
                     "glwe_keyswitch: rank_in={rank_in} rank_out={rank_out} dsize={dsize} k_in={k_in}"
+                );
+            }
+        }
+    }
+}
+
+/// `glwe_keyswitch_assign_zero_prefix` agrees with the reference backend.
+///
+/// Zeroing the declared DFT prefix reaches the skipped-row path; zeroing
+/// coefficient limbs does not produce zero DFT rows.
+pub fn test_glwe_keyswitch_zero_prefix_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    BR: ParityBackend,
+    BT: ParityBackend,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWEKeyswitch<BR> + GGLWEPreparedFactory<BR>,
+    Module<BT>: GLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
+    assert_eq!(module_ref.n(), module_test.n());
+
+    let n = module_ref.n() as u32;
+    let base2k = params.base2k;
+    let k = 5 * base2k;
+    let limbs = k / base2k;
+    let mut source = Source::new([31u8; 32]);
+
+    for &rank in &shapes.ranks {
+        for dsize in shapes.dsizes(k, base2k) {
+            for zero_limbs in [0usize, 1, limbs - 1, limbs] {
+                let infos = GLWELayout {
+                    n: Degree(n),
+                    base2k: Base2K(base2k as u32),
+                    k: TorusPrecision(k as u32),
+                    rank: Rank(rank as u32),
+                };
+                let key_infos = key_layout(n, base2k, k, dsize, rank, rank);
+
+                let mut ct_ref = ref_glwe(module_ref, &infos, &mut source);
+                for col in 0..rank + 1 {
+                    for limb in 0..zero_limbs {
+                        ct_ref.data.at_mut(col, limb).fill(0);
+                    }
+                }
+                let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
+
+                let mut ct_test = module_test.glwe_alloc_from_infos(&infos);
+                ct_ref.transfer_into(&mut ct_test);
+                let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
+                key_ref_coeffs.transfer_into(&mut key_test_coeffs);
+
+                let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
+                    module_ref
+                        .gglwe_prepare_tmp_bytes(&key_infos)
+                        .max(module_ref.glwe_keyswitch_tmp_bytes(&infos, &infos, &key_infos)),
+                );
+                let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(
+                    module_test
+                        .gglwe_prepare_tmp_bytes(&key_infos)
+                        .max(module_test.glwe_keyswitch_tmp_bytes(&infos, &infos, &key_infos)),
+                );
+
+                let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
+                module_ref.gglwe_prepare(&mut key_ref, &key_ref_coeffs, &mut scratch_ref.borrow());
+                let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
+                module_test.gglwe_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
+
+                module_ref.glwe_keyswitch_assign_zero_prefix(&mut ct_ref, &key_ref, zero_limbs, &mut scratch_ref.borrow());
+                module_test.glwe_keyswitch_assign_zero_prefix(&mut ct_test, &key_test, zero_limbs, &mut scratch_test.borrow());
+
+                let mut have = module_ref.glwe_alloc_from_infos(&infos);
+                ct_test.transfer_into(&mut have);
+                assert_eq!(
+                    ct_ref, have,
+                    "glwe_keyswitch_assign_zero_prefix: rank={rank} dsize={dsize} zero_limbs={zero_limbs}"
                 );
             }
         }

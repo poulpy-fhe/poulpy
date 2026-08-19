@@ -11,7 +11,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAdd, GLWENegate, GLWENormalize, GLWERotate, GLWESub,
+    GLWEAdd, GLWENegate, GLWENormalize, GLWERotate, GLWESub, GLWETensoring,
     api::TransferInto,
     layouts::{Base2K, Degree, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision},
     test_suite::parity::{ParityBackend, ParityShapes, ref_glwe},
@@ -248,5 +248,78 @@ pub fn test_glwe_rotate_parity<BR, BT>(
             move |m, res, a, _, _| m.glwe_rotate(k, res, a),
             move |m, res, a, _, _| m.glwe_rotate(k, res, a),
         );
+    }
+}
+
+/// Checks tensor apply and square across ranks against the reference backend,
+/// including specializations selected by rank and ring degree.
+pub fn test_glwe_tensor_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    BR: ParityBackend,
+    BT: ParityBackend,
+    BR::OwnedBuf: HostDataMut,
+    Module<BR>: GLWETensoring<BR> + ModuleCoreAlloc<OwnedBuf = BR::OwnedBuf, ZnxWord = i64>,
+    Module<BT>: GLWETensoring<BT> + ModuleCoreAlloc<OwnedBuf = BT::OwnedBuf, ZnxWord = i64>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
+{
+    assert_eq!(module_ref.n(), module_test.n());
+    let n = module_ref.n() as u32;
+    let base2k = params.base2k;
+    let mut source = Source::new([29u8; 32]);
+
+    for a_infos in layouts(n, base2k, shapes) {
+        let res_infos = GLWELayout {
+            n: a_infos.n,
+            base2k: a_infos.base2k,
+            k: TorusPrecision(2 * a_infos.k.0),
+            rank: a_infos.rank,
+        };
+
+        let a_ref = ref_glwe(module_ref, &a_infos, &mut source);
+        let b_ref = ref_glwe(module_ref, &a_infos, &mut source);
+        let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
+        a_ref.transfer_into(&mut a_test);
+        let mut b_test = module_test.glwe_alloc_from_infos(&a_infos);
+        b_ref.transfer_into(&mut b_test);
+
+        let mut out_ref = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
+        let mut out_test = module_test.glwe_tensor_alloc_from_infos(&res_infos);
+        let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
+            module_ref
+                .glwe_tensor_apply_tmp_bytes(&out_ref, &a_ref, &b_ref)
+                .max(module_ref.glwe_tensor_square_apply_tmp_bytes(&out_ref, &a_ref)),
+        );
+        let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(
+            module_test
+                .glwe_tensor_apply_tmp_bytes(&out_test, &a_test, &b_test)
+                .max(module_test.glwe_tensor_square_apply_tmp_bytes(&out_test, &a_test)),
+        );
+
+        for cnv_offset in [0, base2k - 1, base2k, a_infos.k.0 as usize] {
+            module_ref.glwe_tensor_apply(cnv_offset, &mut out_ref, &a_ref, &b_ref, &mut scratch_ref.borrow());
+            module_test.glwe_tensor_apply(cnv_offset, &mut out_test, &a_test, &b_test, &mut scratch_test.borrow());
+            let mut have = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
+            out_test.transfer_into(&mut have);
+            assert_eq!(
+                out_ref, have,
+                "glwe_tensor_apply: k={:?} rank={:?} offset={cnv_offset}",
+                a_infos.k, a_infos.rank
+            );
+
+            module_ref.glwe_tensor_square_apply(cnv_offset, &mut out_ref, &a_ref, &mut scratch_ref.borrow());
+            module_test.glwe_tensor_square_apply(cnv_offset, &mut out_test, &a_test, &mut scratch_test.borrow());
+            let mut have = module_ref.glwe_tensor_alloc_from_infos(&res_infos);
+            out_test.transfer_into(&mut have);
+            assert_eq!(
+                out_ref, have,
+                "glwe_tensor_square_apply: k={:?} rank={:?} offset={cnv_offset}",
+                a_infos.k, a_infos.rank
+            );
+        }
     }
 }

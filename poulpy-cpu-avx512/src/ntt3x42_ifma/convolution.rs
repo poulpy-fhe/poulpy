@@ -27,7 +27,7 @@ use crate::NTT3x42Ifma;
 use core::arch::x86_64::{
     __m512i, _mm_sfence, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
     _mm512_or_si512, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512,
-    _mm512_stream_si512, _mm512_sub_epi64,
+    _mm512_stream_si512,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -622,21 +622,18 @@ unsafe fn conv_tensor_rank1_packed_group(
             a0_win, a1_win, b0_pl, b1_pl, win_rows, b_size, min_size, offset, staged, diag0, pair, diag1,
         );
 
-        let pc = [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)];
         for k in 0..min_size {
             let mut d0 = [_mm512_setzero_si512(); 3];
-            let mut cross = [_mm512_setzero_si512(); 3];
+            let mut pairwise = [_mm512_setzero_si512(); 3];
             let mut d1 = [_mm512_setzero_si512(); 3];
             for p in 0..3 {
                 let off = p * 8 * staged + 8 * k;
                 d0[p] = _mm512_loadu_si512(diag0.as_ptr().add(off) as *const __m512i);
                 d1[p] = _mm512_loadu_si512(diag1.as_ptr().add(off) as *const __m512i);
-                let pair_p = _mm512_loadu_si512(pair.as_ptr().add(off) as *const __m512i);
-                let value = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(pair_p, pc[p].q), d0[p]), pc[p].q);
-                cross[p] = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(value, pc[p].q), d1[p]), pc[p].q);
+                pairwise[p] = _mm512_loadu_si512(pair.as_ptr().add(off) as *const __m512i);
             }
 
-            for (col, values) in [(0, d0), (1, cross), (2, d1)] {
+            for (col, values) in [(0, d0), (1, pairwise), (2, d1)] {
                 let [w0, w1] = pack_y(values, m22);
                 let dst = res_ptr.get().add((k * res_cols + col) * 2 * n + 16 * group);
                 if cached_overwrite {

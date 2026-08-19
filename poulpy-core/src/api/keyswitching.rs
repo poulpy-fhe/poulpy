@@ -25,6 +25,20 @@ pub trait GLWEKeyswitch<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+
+    /// [`Self::glwe_keyswitch_assign`] where the `zero_limbs` leading (most
+    /// significant) limbs `[0, zero_limbs)` of `res` are known to be zero,
+    /// skipping their forward transforms. Same result and scratch bound.
+    /// Requires `res.base2k() == key.base2k()` unless `zero_limbs` is zero.
+    fn glwe_keyswitch_assign_zero_prefix<R, K>(
+        &self,
+        res: &mut R,
+        key: &K,
+        zero_limbs: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 pub trait GGLWEKeyswitch<BE: Backend> {

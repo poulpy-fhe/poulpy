@@ -50,6 +50,14 @@ impl_keyswitching_delegate!(
         BE::glwe_keyswitch_assign(self, res, key, scratch)
     }
 
+    fn glwe_keyswitch_assign_zero_prefix<R, K>(&self, res: &mut R, key: &K, zero_limbs: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        BE::glwe_keyswitch_assign_zero_prefix(self, res, key, zero_limbs, scratch)
+    }
+
 );
 
 impl_keyswitching_delegate!(

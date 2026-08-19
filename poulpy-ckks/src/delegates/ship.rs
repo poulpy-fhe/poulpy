@@ -1,6 +1,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
+    default::keyswitching::glwe::GGLWEProductDefault,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
@@ -28,6 +29,7 @@ where
     BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
+        + GGLWEProductDefault<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>

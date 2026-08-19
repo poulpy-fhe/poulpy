@@ -13,7 +13,6 @@
 //! accumulator one limb too narrow passes the key-switch noise sweep), and
 //! parity alone cannot tell you the reference is right.
 
-pub mod fused;
 pub mod noise;
 pub mod parity;
 
@@ -46,6 +45,8 @@ macro_rules! core_backend_test_suite {
                 glwe_external_product_assign => $crate::test_suite::noise::external_product::test_glwe_external_product_assign,
                 glwe_keyswitch_ignores_dirty_scratch =>
                     $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_ignores_dirty_scratch,
+                glwe_keyswitch_zero_prefix_matches_plain =>
+                    $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_zero_prefix_matches_plain,
                 glwe_external_product_ignores_dirty_scratch =>
                     $crate::test_suite::noise::keyswitch::test_glwe_external_product_ignores_dirty_scratch,
                 glwe_rotate => $crate::test_suite::noise::test_glwe_rotate,

@@ -2,21 +2,16 @@
 
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
-    default::keyswitching::glwe::gglwe_product_accumulation_output_size,
-    layouts::{
-        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        prepared::{GGLWEPreparedToBackendRef, GLWESwitchingKeyPrepared},
-    },
+    default::keyswitching::glwe::{GGLWEProductDefault, gglwe_product_accumulation_output_size},
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GGLWEPreparedToBackendRef},
 };
 use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VecZnxIdftApplyTmpA, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApplyTmpA,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
 };
 
@@ -50,81 +45,17 @@ where
     plans
 }
 
-/// `res = a x key` in the DFT domain (the VMP of the keyswitch, without the
-/// input DFT or the output IDFT/normalize); replicates the gadget digit loop
-/// of the default GGLWE product for `dsize > 1`.
-fn ship_switching_key_product<BE>(
-    module: &Module<BE>,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    key: &GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    Module<BE>: VmpApplyDftToDft<BE> + VecZnxDftAddAssign<BE> + VecZnxDftCopy<BE> + VecZnxDftZero<BE> + VecZnxDftBytesOf,
-{
-    let key_ref = key.to_backend_ref();
-    let pmat = key_ref.data();
-    let dsize = key.dsize().as_usize();
-    if dsize == 1 {
-        module.vmp_apply_dft_to_dft(res, a, pmat, 0, scratch);
-        return;
-    }
-    let dnum: usize = key.dnum().into();
-    let cols = a.cols();
-    let cols_out = res.cols();
-    let a_size = a.size();
-    for col in 0..cols_out {
-        module.vec_znx_dft_zero(res, col);
-    }
-    for di in 0..dsize {
-        let (mut ai_dft, mut scratch_1) =
-            scratch
-                .borrow()
-                .take_vec_znx_dft_scratch(module, cols, ((a_size + di) / dsize).min(dnum));
-        let pad = ((dsize - di) as isize - 2).max(0) as usize;
-        let res_compute_size = res.size().min(pmat.size().saturating_sub(pad));
-        let mut res_view = res.with_size_mut(res_compute_size);
-        for j in 0..cols {
-            module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut ai_dft.to_backend_mut(), j, a, j);
-        }
-        if di == 0 {
-            module.vmp_apply_dft_to_dft(&mut res_view, &ai_dft.to_backend_ref(), pmat, 0, &mut scratch_1.borrow());
-        } else {
-            let (mut res_tmp, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols_out, res_view.size());
-            module.vmp_apply_dft_to_dft(
-                &mut res_tmp.to_backend_mut(),
-                &ai_dft.to_backend_ref(),
-                pmat,
-                di,
-                &mut scratch_2.borrow(),
-            );
-            for col in 0..cols_out {
-                module.vec_znx_dft_add_assign(&mut res_view, col, &res_tmp.to_backend_ref(), col);
-            }
-        }
-    }
-}
-
 /// Scratch bytes for [`ship_mux_rotate`].
 pub(crate) fn ship_mux_rotate_tmp_bytes<BE, C, K>(module: &Module<BE>, ct: &C, key: &K, term_count: usize) -> usize
 where
     BE: Backend,
     C: LWEInfos,
     K: GGLWEInfos,
-    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VmpApplyDftToDftTmpBytes + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + GGLWEProductDefault<BE>,
 {
     let a_size = ct.size();
-    let key_size = key.size();
     let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
-    let dsize = key.dsize().as_usize();
-    let dnum: usize = key.dnum().into();
-    let vmp = module.vmp_apply_dft_to_dft_tmp_bytes(output_size, a_size, dnum, 2, 2, key_size);
-    let product = if dsize == 1 {
-        vmp
-    } else {
-        module.bytes_of_vec_znx_dft(2, a_size.div_ceil(dsize).min(dnum)) + module.bytes_of_vec_znx_dft(2, output_size) + vmp
-    };
+    let product = module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, key);
     let mux = 2 * module.bytes_of_vec_znx_dft(2, output_size) + product;
     let finalize = module.bytes_of_vec_znx_big(2, output_size) + module.vec_znx_big_normalize_tmp_bytes();
     module.bytes_of_vec_znx_dft(2, a_size) + module.bytes_of_vec_znx_dft(2, output_size) + mux.max(finalize)
@@ -146,13 +77,12 @@ where
     BE: Backend,
     Module<BE>: VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftAutomorphism<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf,
+        + VecZnxDftBytesOf
+        + GGLWEProductDefault<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
     const OP: &str = "ship_mux_rotate";
@@ -188,7 +118,12 @@ where
             ckks_ensure!(key.key.size() == key_size, "{OP}: inconsistent key sizes in group");
             {
                 let mut prod_dft_mut = prod_dft.to_backend_mut();
-                ship_switching_key_product(module, &mut prod_dft_mut, &a_dft_ref, &key.key, &mut scratch_4.borrow());
+                module.gglwe_product_dft_default(
+                    &mut prod_dft_mut,
+                    &a_dft_ref,
+                    &key.key.to_backend_ref(),
+                    &mut scratch_4.borrow(),
+                );
             }
             if key.gal_el == 1 {
                 let prod_ref = prod_dft.to_backend_ref();

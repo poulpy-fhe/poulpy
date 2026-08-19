@@ -29,8 +29,8 @@ use crate::oep::{
     AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl,
     GGLWEProductDigitsStridedImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
     GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
-    GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensorRank1DftImpl, GLWETensoringImpl,
-    GLWETraceImpl, LWEKeyswitchImpl,
+    GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
+    LWEKeyswitchImpl,
 };
 use crate::{
     api::TransferInto,
@@ -62,7 +62,6 @@ pub trait TestBackend:
     + GGLWEExternalProductImpl<Self>
     + GGSWExternalProductImpl<Self>
     + GLWETensoringImpl<Self>
-    + GLWETensorRank1DftImpl<Self>
     + GGLWEProductDigitsStridedImpl<Self>
     + GLWEMulConstImpl<Self>
     + GLWEMulPlainImpl<Self>
@@ -99,7 +98,6 @@ where
         + GGLWEExternalProductImpl<BE>
         + GGSWExternalProductImpl<BE>
         + GLWETensoringImpl<BE>
-        + GLWETensorRank1DftImpl<BE>
         + GGLWEProductDigitsStridedImpl<BE>
         + GLWEMulConstImpl<BE>
         + GLWEMulPlainImpl<BE>
