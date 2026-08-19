@@ -2,7 +2,8 @@ use poulpy_hal::{
     DEFAULTALIGN, is_aligned,
     layouts::{Backend, Module},
     test_suite::convolution::{
-        test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+        test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
+        test_convolution_pairwise,
     },
 };
 
@@ -309,117 +310,6 @@ mod ntt3x42_ifma_tests {
 }
 
 #[test]
-fn test_vmp_apply_dft_to_dft_digits_strided_bit_identical() {
-    use poulpy_hal::{
-        api::{
-            ScratchOwnedAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftCopy, VmpApplyDftToDft, VmpApplyDftToDftAccumulate,
-            VmpApplyDftToDftDigitsStrided, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
-        },
-        layouts::{
-            FillUniform, MatZnxToBackendRef, ScratchOwned, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut,
-            VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef,
-        },
-        source::Source,
-    };
-
-    let n = 64;
-    let base2k = 50;
-    let module = Module::<NTT3x42Ifma>::new(n as u64);
-    let mut source = Source::new([2u8; 32]);
-    let cases: [(usize, usize, usize, usize); 6] = [
-        (2, 1, 2, 4),
-        (2, 2, 1, 5),
-        (3, 1, 1, 7),
-        (3, 2, 2, 2),
-        (2, 1, 1, 1),
-        (3, 2, 1, 8),
-    ];
-
-    let mut any_nonzero = false;
-    for (dsize, cols_in, cols_out, a_size) in cases {
-        let rows = a_size.div_ceil(dsize);
-        let size_out = a_size;
-        let mut scratch: ScratchOwned<NTT3x42Ifma> = ScratchOwned::alloc(
-            module
-                .vmp_apply_dft_to_dft_tmp_bytes(size_out, a_size, rows, cols_in, cols_out, size_out)
-                .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size_out)),
-        );
-
-        let mut a = module.vec_znx_alloc(cols_in, a_size);
-        a.fill_uniform(base2k, &mut source);
-        let mut a_dft = module.vec_znx_dft_alloc(cols_in, a_size);
-        for col in 0..cols_in {
-            module.vec_znx_dft_apply(
-                1,
-                0,
-                &mut a_dft.to_backend_mut(),
-                col,
-                &VecZnxToBackendRef::<NTT3x42Ifma>::to_backend_ref(&a),
-                col,
-            );
-        }
-
-        let mut mat = module.mat_znx_alloc(rows, cols_in, cols_out, size_out);
-        mat.fill_uniform(base2k, &mut source);
-        let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
-        module.vmp_prepare(
-            &mut pmat.to_backend_mut(),
-            &MatZnxToBackendRef::<NTT3x42Ifma>::to_backend_ref(&mat),
-            &mut scratch.arena(),
-        );
-
-        let mut res_sequential = module.vec_znx_dft_alloc(cols_out, size_out);
-        for di in 0..dsize {
-            let digit_size = ((a_size + di) / dsize).min(rows);
-            let mut digit = module.vec_znx_dft_alloc(cols_in, digit_size.max(1));
-            let mut digit_backend = digit.to_backend_mut();
-            let mut digit_view = digit_backend.with_size_mut(digit_size);
-            for col in 0..cols_in {
-                module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut digit_view, col, &a_dft.to_backend_ref(), col);
-            }
-            let res_size = res_sequential.size() - ((dsize - di) as isize - 2).max(0) as usize;
-            let mut res_backend = res_sequential.to_backend_mut();
-            let mut res_view = res_backend.with_size_mut(res_size);
-            if di == 0 {
-                module.vmp_apply_dft_to_dft(
-                    &mut res_view,
-                    &digit_view.reborrow_backend_ref(),
-                    &pmat.to_backend_ref(),
-                    0,
-                    &mut scratch.arena(),
-                );
-            } else {
-                module.vmp_apply_dft_to_dft_accumulate(
-                    &mut res_view,
-                    &digit_view.reborrow_backend_ref(),
-                    &pmat.to_backend_ref(),
-                    di,
-                    &mut scratch.arena(),
-                );
-            }
-        }
-
-        let mut res_strided = module.vec_znx_dft_alloc(cols_out, size_out);
-        module.vmp_apply_dft_to_dft_digits_strided(
-            &mut res_strided.to_backend_mut(),
-            &a_dft.to_backend_ref(),
-            dsize,
-            &pmat.to_backend_ref(),
-            &mut scratch.arena(),
-        );
-
-        let sequential = res_sequential.data.as_slice();
-        let strided = res_strided.data.as_slice();
-        any_nonzero |= sequential.iter().any(|&byte| byte != 0);
-        assert_eq!(
-            sequential, strided,
-            "strided VMP differs for dsize={dsize}, cols_in={cols_in}, cols_out={cols_out}, a_size={a_size}"
-        );
-    }
-    assert!(any_nonzero);
-}
-
-#[test]
 fn test_convolution_by_const_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
     test_convolution_by_const(&module, 12);
@@ -446,6 +336,19 @@ fn test_gglwe_product_digits_strided_bit_identical() {
 fn test_convolution_accumulate_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
     test_convolution_accumulate(&module, 12);
+}
+
+#[test]
+fn test_convolution_accumulate_fused_ntt3x42_ifma() {
+    let module = Module::<NTT3x42Ifma>::new(1 << 8);
+    test_convolution_accumulate_fused(&module, 12);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_convolution_accumulate_fused_ntt3x42_ifma_rayon() {
+    let module = Module::<crate::NTT3x42IfmaRayon>::new(1 << 8);
+    test_convolution_accumulate_fused(&module, 12);
 }
 
 #[test]

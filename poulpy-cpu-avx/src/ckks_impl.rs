@@ -63,6 +63,7 @@ impl_ckks_dft_defaults!(NTT4x30Avx);
 mod rayon_defaults {
     use super::*;
 
+    impl_ckks_encapsulated_mod_up_default!(NTT4x30AvxRayon);
     impl_ckks_conjugate_defaults!(NTT4x30AvxRayon);
     impl_ckks_copy_defaults!(NTT4x30AvxRayon);
     impl_ckks_encryption_defaults!(NTT4x30AvxRayon);

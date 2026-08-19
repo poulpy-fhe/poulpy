@@ -10,6 +10,7 @@ use crate::{
         reim4::Reim4BlkMatVec,
     },
 };
+use poulpy_hal::execution::TaskExecutor;
 
 pub fn vmp_prepare_tmp_bytes(n: usize) -> usize {
     n * size_of::<i64>()
@@ -213,6 +214,76 @@ pub fn vmp_apply_dft_to_dft<BE>(
 }
 
 #[allow(clippy::too_many_arguments)]
+unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
+    n: usize,
+    m: usize,
+    res_addr: usize,
+    a: &[f64],
+    pmat: &[f64],
+    limb_offset: usize,
+    nrows: usize,
+    ncols: usize,
+    row_start: usize,
+    row_max: usize,
+    col_max: usize,
+    blk_i: usize,
+    tmp: &mut [f64],
+) where
+    REIM: ReimArith + Reim4BlkMatVec,
+{
+    let (mat2cols_output, extracted_blk) = tmp.split_at_mut(16);
+    let mat_blk_start = &pmat[blk_i * (8 * nrows * ncols)..];
+    REIM::reim4_extract_1blk_contiguous(m, row_max, blk_i, extracted_blk, &a[row_start * n..]);
+    let block_offset = 4 * blk_i;
+    let save = |col: usize, src: &[f64]| unsafe {
+        let base = (res_addr as *mut f64).add(col * n + block_offset);
+        if OVERWRITE {
+            std::ptr::copy_nonoverlapping(src.as_ptr(), base, 4);
+            std::ptr::copy_nonoverlapping(src.as_ptr().add(4), base.add(m), 4);
+        } else {
+            for i in 0..4 {
+                *base.add(i) += src[i];
+                *base.add(m + i) += src[4 + i];
+            }
+        }
+    };
+
+    if limb_offset.is_multiple_of(2) {
+        for (col_res, col_pmat) in (0..).step_by(2).zip((limb_offset..col_max - 1).step_by(2)) {
+            let col_offset = col_pmat * (8 * nrows) + row_start * 16;
+            REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+            save(col_res, &mat2cols_output[..8]);
+            save(col_res + 1, &mat2cols_output[8..16]);
+        }
+    } else {
+        let col_offset = (limb_offset - 1) * (8 * nrows) + row_start * 16;
+        REIM::reim4_mat2cols_2ndcol_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+        save(0, &mat2cols_output[..8]);
+
+        for (col_res, col_pmat) in (1..).step_by(2).zip((limb_offset + 1..col_max - 1).step_by(2)) {
+            let col_offset = col_pmat * (8 * nrows) + row_start * 16;
+            REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+            save(col_res, &mat2cols_output[..8]);
+            save(col_res + 1, &mat2cols_output[8..16]);
+        }
+    }
+
+    if !col_max.is_multiple_of(2) {
+        let last_col = col_max - 1;
+        let row_offset = if ncols == col_max { row_start * 8 } else { row_start * 16 };
+        let col_offset = last_col * (8 * nrows) + row_offset;
+        if last_col >= limb_offset {
+            if ncols == col_max {
+                REIM::reim4_mat1col_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+            } else {
+                REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
+            }
+            save(last_col - limb_offset, &mat2cols_output[..8]);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM>(
     n: usize,
     res: &mut [f64],
@@ -223,7 +294,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM>(
     ncols: usize,
     tmp_bytes: &mut [f64],
 ) where
-    REIM: ReimArith + Reim4BlkMatVec,
+    REIM: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec,
 {
     #[cfg(debug_assertions)]
     {
@@ -238,8 +309,6 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM>(
     let res_size: usize = res.len() / n;
 
     let m: usize = n >> 1;
-
-    let (mat2cols_output, extracted_blk) = tmp_bytes.split_at_mut(16);
 
     let row_end: usize = nrows.min(a_size);
     let row_start = a
@@ -257,42 +326,49 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM>(
         return;
     }
 
-    for blk_i in 0..(m >> 2) {
-        let mat_blk_start: &[f64] = &pmat[blk_i * (8 * nrows * ncols)..];
-
-        REIM::reim4_extract_1blk_contiguous(m, row_max, blk_i, extracted_blk, &a[row_start * n..]);
-
-        if limb_offset.is_multiple_of(2) {
-            for (col_res, col_pmat) in (0..).step_by(2).zip((limb_offset..col_max - 1).step_by(2)) {
-                let col_offset: usize = col_pmat * (8 * nrows) + row_start * 16;
-                REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
-                REIM::reim4_save_2blks::<OVERWRITE>(m, blk_i, &mut res[col_res * n..], mat2cols_output);
-            }
-        } else {
-            let col_offset: usize = (limb_offset - 1) * (8 * nrows) + row_start * 16;
-            REIM::reim4_mat2cols_2ndcol_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
-
-            REIM::reim4_save_1blk::<OVERWRITE>(m, blk_i, res, mat2cols_output);
-
-            for (col_res, col_pmat) in (1..).step_by(2).zip((limb_offset + 1..col_max - 1).step_by(2)) {
-                let col_offset: usize = col_pmat * (8 * nrows) + row_start * 16;
-                REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
-                REIM::reim4_save_2blks::<OVERWRITE>(m, blk_i, &mut res[col_res * n..], mat2cols_output);
-            }
-        }
-
-        if !col_max.is_multiple_of(2) {
-            let last_col: usize = col_max - 1;
-            let row_offset = if ncols == col_max { row_start * 8 } else { row_start * 16 };
-            let col_offset: usize = last_col * (8 * nrows) + row_offset;
-
-            if last_col >= limb_offset {
-                if ncols == col_max {
-                    REIM::reim4_mat1col_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
-                } else {
-                    REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
-                }
-                REIM::reim4_save_1blk::<OVERWRITE>(m, blk_i, &mut res[(last_col - limb_offset) * n..], mat2cols_output);
+    let block_count = m >> 2;
+    let task_tmp_len = 16 + 8 * row_max;
+    let res_addr = res.as_mut_ptr() as usize;
+    if REIM::TaskExecutor::is_parallel() && block_count > 1 {
+        REIM::TaskExecutor::for_each_init(
+            block_count,
+            || vec![0.0; task_tmp_len],
+            |tmp, blk_i| unsafe {
+                vmp_apply_dft_to_dft_block::<OVERWRITE, REIM>(
+                    n,
+                    m,
+                    res_addr,
+                    a,
+                    pmat,
+                    limb_offset,
+                    nrows,
+                    ncols,
+                    row_start,
+                    row_max,
+                    col_max,
+                    blk_i,
+                    tmp,
+                );
+            },
+        );
+    } else {
+        for blk_i in 0..block_count {
+            unsafe {
+                vmp_apply_dft_to_dft_block::<OVERWRITE, REIM>(
+                    n,
+                    m,
+                    res_addr,
+                    a,
+                    pmat,
+                    limb_offset,
+                    nrows,
+                    ncols,
+                    row_start,
+                    row_max,
+                    col_max,
+                    blk_i,
+                    tmp_bytes,
+                );
             }
         }
     }

@@ -10,9 +10,12 @@ use crate::ntt3x42_ifma::{
     kernels::{cond_sub_2q_si512, ntt_avx512},
     module::handle,
     primes::Primes42,
-    serial::for_index,
+    serial::{SendPtr, for_index},
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
+use poulpy_hal::execution::TaskExecutor;
+#[cfg(feature = "enable-rayon")]
+use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
     VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
@@ -229,7 +232,7 @@ unsafe fn conv_planar_rank1(
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 unsafe fn conv_columns_packed_group<const ACC: bool, const PAIRWISE: bool>(
-    res: &mut [u64],
+    res_ptr: SendPtr<u64>,
     res_col: usize,
     n: usize,
     res_cols: usize,
@@ -393,7 +396,7 @@ unsafe fn conv_columns_packed_group<const ACC: bool, const PAIRWISE: bool>(
             let p0 = _mm512_loadu_si512(out_base.add(8 * k_rel) as *const __m512i);
             let p1 = _mm512_loadu_si512(out_base.add(8 * (staged + k_rel)) as *const __m512i);
             let p2 = _mm512_loadu_si512(out_base.add(8 * (2 * staged + k_rel)) as *const __m512i);
-            let dst = res.as_mut_ptr().add((k_rel * res_cols + res_col) * 2 * n + 16 * group);
+            let dst = res_ptr.get().add((k_rel * res_cols + res_col) * 2 * n + 16 * group);
             if ACC {
                 let d = unpack_y(
                     _mm512_loadu_si512(dst as *const __m512i),
@@ -429,7 +432,7 @@ unsafe fn conv_columns_packed_group<const ACC: bool, const PAIRWISE: bool>(
 
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-unsafe fn conv_columns_packed<const ACC: bool, const PAIRWISE: bool>(
+unsafe fn conv_columns_packed<E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
@@ -452,28 +455,63 @@ unsafe fn conv_columns_packed<const ACC: bool, const PAIRWISE: bool>(
     let n_tiles = min_size.div_ceil(TILE);
     let task_tmp_len = 3 * 8 * win_rows + 3 * 8 * b_size + 3 * 8 * n_tiles * TILE;
     let res_cols = res.cols();
+    let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, min_size);
-    let tmp = &mut tmp[..task_tmp_len];
-    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
-    for group in 0..n_groups {
-        unsafe {
-            conv_columns_packed_group::<ACC, PAIRWISE>(
-                res_data,
-                res_col,
-                n,
-                res_cols,
-                min_size,
-                offset,
-                group,
-                a0_col,
-                a1_col,
-                a_size,
-                b0_col,
-                b1_col,
-                b_size,
-                cached_overwrite,
-                tmp,
-            );
+
+    let task_split = E::is_parallel() && n_groups > 1;
+    if task_split {
+        E::for_each_init(
+            n_groups,
+            || vec![0u64; task_tmp_len],
+            |local_tmp: &mut Vec<u64>, group| {
+                unsafe {
+                    conv_columns_packed_group::<ACC, PAIRWISE>(
+                        res_ptr,
+                        res_col,
+                        n,
+                        res_cols,
+                        min_size,
+                        offset,
+                        group,
+                        a0_col,
+                        a1_col,
+                        a_size,
+                        b0_col,
+                        b1_col,
+                        b_size,
+                        cached_overwrite,
+                        local_tmp,
+                    );
+                    if !ACC && !cached_overwrite {
+                        // Non-temporal stores must be fenced on the issuing
+                        // thread before the pool join publishes them.
+                        _mm_sfence();
+                    }
+                }
+            },
+        );
+    } else {
+        let tmp = &mut tmp[..task_tmp_len];
+        for group in 0..n_groups {
+            unsafe {
+                conv_columns_packed_group::<ACC, PAIRWISE>(
+                    res_ptr,
+                    res_col,
+                    n,
+                    res_cols,
+                    min_size,
+                    offset,
+                    group,
+                    a0_col,
+                    a1_col,
+                    a_size,
+                    b0_col,
+                    b1_col,
+                    b_size,
+                    cached_overwrite,
+                    tmp,
+                );
+            }
         }
     }
 
@@ -490,7 +528,7 @@ unsafe fn conv_columns_packed<const ACC: bool, const PAIRWISE: bool>(
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 unsafe fn conv_tensor_rank1_packed_group(
-    res: &mut [u64],
+    res_ptr: SendPtr<u64>,
     n: usize,
     res_cols: usize,
     min_size: usize,
@@ -595,7 +633,7 @@ unsafe fn conv_tensor_rank1_packed_group(
 
             for (col, values) in [(0, d0), (1, pairwise), (2, d1)] {
                 let [w0, w1] = pack_y(values, m22);
-                let dst = res.as_mut_ptr().add((k * res_cols + col) * 2 * n + 16 * group);
+                let dst = res_ptr.get().add((k * res_cols + col) * 2 * n + 16 * group);
                 if cached_overwrite {
                     _mm512_storeu_si512(dst as *mut __m512i, w0);
                     _mm512_storeu_si512(dst.add(8) as *mut __m512i, w1);
@@ -609,7 +647,7 @@ unsafe fn conv_tensor_rank1_packed_group(
 }
 
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma(
+pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     a: &CnvPVecLBackendRef<'_, NTT3x42Ifma>,
@@ -640,6 +678,7 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma(
     let task_tmp_len = 6 * 8 * win_rows + 6 * 8 * b_size + 9 * 8 * staged;
     let n_groups = n / 8;
     let res_cols = res.cols();
+    let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, min_size);
     let a_raw: &[u64] = cast_slice(a.data());
     let b_raw: &[u64] = cast_slice(b.data());
@@ -651,30 +690,57 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma(
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
-    let task_tmp = &mut tmp_u64[..task_tmp_len];
-    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
-    for group in 0..n_groups {
-        unsafe {
-            conv_tensor_rank1_packed_group(
-                res_data,
-                n,
-                res_cols,
-                min_size,
-                offset,
-                group,
-                a0,
-                a1,
-                a_size,
-                b0,
-                b1,
-                b_size,
-                cached_overwrite,
-                task_tmp,
-            );
+    if E::is_parallel() && n_groups > 1 {
+        E::for_each_init(
+            n_groups,
+            || vec![0u64; task_tmp_len],
+            |local_tmp: &mut Vec<u64>, group| unsafe {
+                conv_tensor_rank1_packed_group(
+                    res_ptr,
+                    n,
+                    res_cols,
+                    min_size,
+                    offset,
+                    group,
+                    a0,
+                    a1,
+                    a_size,
+                    b0,
+                    b1,
+                    b_size,
+                    cached_overwrite,
+                    local_tmp,
+                );
+                if !cached_overwrite {
+                    _mm_sfence();
+                }
+            },
+        );
+    } else {
+        let task_tmp = &mut tmp_u64[..task_tmp_len];
+        for group in 0..n_groups {
+            unsafe {
+                conv_tensor_rank1_packed_group(
+                    res_ptr,
+                    n,
+                    res_cols,
+                    min_size,
+                    offset,
+                    group,
+                    a0,
+                    a1,
+                    a_size,
+                    b0,
+                    b1,
+                    b_size,
+                    cached_overwrite,
+                    task_tmp,
+                );
+            }
         }
-    }
-    if !cached_overwrite {
-        _mm_sfence();
+        if !cached_overwrite {
+            _mm_sfence();
+        }
     }
 
     for col in 0..3 {
@@ -687,7 +753,7 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma(
 /// DFT-domain bivariate convolution `res[k] = Σ a[j] ⊙ b[k−j]`.
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_apply_dft_ifma(
+pub(crate) unsafe fn cnv_apply_dft_ifma<E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -715,7 +781,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma(
     let a_col_u64 = col_slice(cast_slice(a.data()), n, a_size, a_col);
     let b_col_u64 = col_slice(cast_slice(b.data()), n, b_size, b_col);
     unsafe {
-        conv_columns_packed::<false, false>(
+        conv_columns_packed::<E, false, false>(
             cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, tmp_u64,
         );
     }
@@ -724,7 +790,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma(
 /// Accumulating variant of [`cnv_apply_dft_ifma`].
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma(
+pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma<E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -749,9 +815,137 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma(
     let a_col_u64 = col_slice(cast_slice(a.data()), n, a_size, a_col);
     let b_col_u64 = col_slice(cast_slice(b.data()), n, b_size, b_col);
     unsafe {
-        conv_columns_packed::<true, false>(
+        conv_columns_packed::<E, true, false>(
             cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, tmp_u64,
         );
+    }
+}
+
+#[cfg(feature = "enable-rayon")]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+pub(crate) unsafe fn cnv_accumulate_dft_ifma<'a, E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
+    cnv_offset: usize,
+    res_col: usize,
+    terms: &[CnvDftAccTerm<'a, NTT3x42Ifma>],
+    tmp: &mut [u8],
+) {
+    struct PreparedTerm<'a> {
+        a_col: &'a [u64],
+        a_size: usize,
+        b_col: &'a [u64],
+        b_size: usize,
+        offset: usize,
+        min_size: usize,
+    }
+
+    let n = res.n();
+    let res_size = res.size();
+    let n_groups = n / 8;
+    let mut task_tmp_len = 0;
+    let mut max_size = 0;
+    let prepared: Vec<_> = terms
+        .iter()
+        .filter(|term| term.a.size() != 0 && term.b.size() != 0)
+        .map(|term| {
+            let a_size = term.a.size();
+            let b_size = term.b.size();
+            let bound = a_size + b_size - 1;
+            let offset = cnv_offset.min(bound);
+            let min_size = res_size.min((bound + 1).saturating_sub(offset));
+            task_tmp_len =
+                task_tmp_len.max(3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + 3 * 8 * min_size.div_ceil(TILE) * TILE);
+            max_size = max_size.max(min_size);
+            PreparedTerm {
+                a_col: col_slice(cast_slice(term.a.data()), n, a_size, term.a_col),
+                a_size,
+                b_col: col_slice(cast_slice(term.b.data()), n, b_size, term.b_col),
+                b_size,
+                offset,
+                min_size,
+            }
+        })
+        .collect();
+
+    if prepared.is_empty() || res_size == 0 {
+        for j in 0..res_size {
+            zero_res_limb(res, res_col, j);
+        }
+        return;
+    }
+
+    for j in prepared[0].min_size..max_size {
+        zero_res_limb(res, res_col, j);
+    }
+
+    let res_cols = res.cols();
+    let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
+    let cached_overwrite = cached_overwrite_stores(n, max_size);
+    let run_group = |local_tmp: &mut [u64], group: usize| {
+        for (index, term) in prepared.iter().enumerate() {
+            unsafe {
+                if index == 0 {
+                    conv_columns_packed_group::<false, false>(
+                        res_ptr,
+                        res_col,
+                        n,
+                        res_cols,
+                        term.min_size,
+                        term.offset,
+                        group,
+                        term.a_col,
+                        term.a_col,
+                        term.a_size,
+                        term.b_col,
+                        term.b_col,
+                        term.b_size,
+                        cached_overwrite,
+                        local_tmp,
+                    );
+                } else {
+                    conv_columns_packed_group::<true, false>(
+                        res_ptr,
+                        res_col,
+                        n,
+                        res_cols,
+                        term.min_size,
+                        term.offset,
+                        group,
+                        term.a_col,
+                        term.a_col,
+                        term.a_size,
+                        term.b_col,
+                        term.b_col,
+                        term.b_size,
+                        cached_overwrite,
+                        local_tmp,
+                    );
+                }
+            }
+        }
+        if !cached_overwrite {
+            _mm_sfence();
+        }
+    };
+
+    if E::is_parallel() && n_groups > 1 {
+        E::for_each_init(
+            n_groups,
+            || vec![0u64; task_tmp_len],
+            |local_tmp: &mut Vec<u64>, group| run_group(local_tmp, group),
+        );
+    } else {
+        let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+        debug_assert!(prefix.is_empty());
+        debug_assert!(suffix.is_empty());
+        let local_tmp = &mut tmp_u64[..task_tmp_len];
+        for group in 0..n_groups {
+            run_group(local_tmp, group);
+        }
+    }
+
+    for j in max_size..res_size {
+        zero_res_limb(res, res_col, j);
     }
 }
 
@@ -761,7 +955,7 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma(
 /// When `col_0 == col_1`, delegates to [`cnv_apply_dft_ifma`].
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
+pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -772,7 +966,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
     tmp: &mut [u8],
 ) {
     if col_0 == col_1 {
-        unsafe { cnv_apply_dft_ifma(res, cnv_offset, res_col, a, col_0, b, col_1, tmp) };
+        unsafe { cnv_apply_dft_ifma::<E>(res, cnv_offset, res_col, a, col_0, b, col_1, tmp) };
         return;
     }
 
@@ -797,7 +991,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
     let a1 = col_slice(a_u64, n, a_size, col_1);
     let b0 = col_slice(b_u64, n, b_size, col_0);
     let b1 = col_slice(b_u64, n, b_size, col_1);
-    unsafe { conv_columns_packed::<false, true>(cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, tmp_u64) };
+    unsafe { conv_columns_packed::<E, false, true>(cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, tmp_u64) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -849,7 +1043,7 @@ pub(crate) fn cnv_prepare_left_tmp_bytes(n: usize) -> usize {
     6 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_left(
+pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     module: &Module<NTT3x42Ifma>,
     res: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma>,
     a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
@@ -861,6 +1055,35 @@ pub(crate) fn cnv_prepare_left(
     let cols = res.cols();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
+
+    let task_count = cols * res_size;
+    if E::is_parallel() && task_count > 1 {
+        let col_stride = 2 * n * res_size;
+        let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
+        E::for_each_init(
+            task_count,
+            || vec![0u64; 6 * n],
+            |tmp: &mut Vec<u64>, task| {
+                let col = task / res_size;
+                let j = task % res_size;
+                let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
+                let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
+                if j < min_size {
+                    if j + 1 == min_size {
+                        NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
+                    } else {
+                        NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+                    }
+                    unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
+                    NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
+                    unsafe { pack_limb_packed(dst, limb_c, n, res_size, j) };
+                } else {
+                    zero_limb_packed(dst, res_size, j, n / 8);
+                }
+            },
+        );
+        return;
+    }
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
@@ -892,7 +1115,7 @@ pub(crate) fn cnv_prepare_right_tmp_bytes(n: usize) -> usize {
     6 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_right(
+pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
     module: &Module<NTT3x42Ifma>,
     res: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma>,
     a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
@@ -904,6 +1127,35 @@ pub(crate) fn cnv_prepare_right(
     let cols = res.cols();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
+
+    let task_count = cols * res_size;
+    if E::is_parallel() && task_count > 1 {
+        let col_stride = 2 * n * res_size;
+        let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
+        E::for_each_init(
+            task_count,
+            || vec![0u64; 6 * n],
+            |tmp: &mut Vec<u64>, task| {
+                let col = task / res_size;
+                let j = task % res_size;
+                let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
+                let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
+                if j < min_size {
+                    if j + 1 == min_size {
+                        NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
+                    } else {
+                        NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+                    }
+                    unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
+                    NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
+                    unsafe { pack_limb_packed(dst, limb_c, n, res_size, res_size - 1 - j) };
+                } else {
+                    zero_limb_packed(dst, res_size, res_size - 1 - j, n / 8);
+                }
+            },
+        );
+        return;
+    }
 
     let (limb_b, limb_c) = tmp[..6 * n].split_at_mut(3 * n);
 
@@ -932,7 +1184,7 @@ pub(crate) fn cnv_prepare_self_tmp_bytes(n: usize) -> usize {
     6 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_self(
+pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
     module: &Module<NTT3x42Ifma>,
     left: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma>,
     right: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma>,
@@ -945,6 +1197,39 @@ pub(crate) fn cnv_prepare_self(
     let cols = left.cols();
     let res_size = left.size();
     let min_size = res_size.min(a.size());
+
+    let task_count = cols * res_size;
+    if E::is_parallel() && task_count > 1 {
+        let col_stride = 2 * n * res_size;
+        let left_ptr = SendPtr(cast_slice_mut::<_, u64>(left.data_mut()).as_mut_ptr());
+        let right_ptr = SendPtr(cast_slice_mut::<_, u64>(right.data_mut()).as_mut_ptr());
+        E::for_each_init(
+            task_count,
+            || vec![0u64; 6 * n],
+            |tmp: &mut Vec<u64>, task| {
+                let col = task / res_size;
+                let j = task % res_size;
+                let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
+                let dst_l = unsafe { std::slice::from_raw_parts_mut(left_ptr.get().add(col * col_stride), col_stride) };
+                let dst_r = unsafe { std::slice::from_raw_parts_mut(right_ptr.get().add(col * col_stride), col_stride) };
+                if j < min_size {
+                    if j + 1 == min_size {
+                        NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
+                    } else {
+                        NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
+                    }
+                    unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
+                    NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
+                    unsafe { pack_limb_packed(dst_l, limb_c, n, res_size, j) };
+                    unsafe { pack_limb_packed(dst_r, limb_c, n, res_size, res_size - 1 - j) };
+                } else {
+                    zero_limb_packed(dst_l, res_size, j, n / 8);
+                    zero_limb_packed(dst_r, res_size, res_size - 1 - j, n / 8);
+                }
+            },
+        );
+        return;
+    }
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());

@@ -83,6 +83,17 @@ poulpy_core::core_parity_test_suite! {
     }
 }
 
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+poulpy_core::core_parity_test_suite! {
+    mod core_parity_ntt3x42_ifma_rayon_fused,
+    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT3x42IfmaRayon,
+    params = TestParams { size: 1<<15, base2k: 52 },
+    tests = {
+        glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+    }
+}
+
 #[cfg(feature = "enable-ifma")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma,

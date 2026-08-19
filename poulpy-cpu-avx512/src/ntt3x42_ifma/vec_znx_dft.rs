@@ -494,6 +494,7 @@ unsafe fn packed_negate_assign(n: usize, dst: &mut [u64]) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[inline(always)]
+#[cfg(feature = "enable-rayon")]
 pub(crate) fn vec_znx_idft_apply_tmpa_limb_ifma(
     module: &Module<NTT3x42Ifma>,
     dst: &mut [i128],
@@ -608,6 +609,7 @@ pub(crate) fn vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
 
 /// Inverse NTT (non-destructive) for the IFMA backend.
 #[inline(always)]
+#[cfg(feature = "enable-rayon")]
 pub(crate) fn vec_znx_idft_apply_limb(module: &Module<NTT3x42Ifma>, dst: &mut [i128], src: Option<&[u64]>, scratch: &mut [u64]) {
     let n = module.n();
     assert_eq!(dst.len(), n);

@@ -13,6 +13,8 @@ use poulpy_hal::layouts::{Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBa
 
 impl_glwe_tensoring_default!(FFT64Avx);
 impl_glwe_tensoring_default!(NTT4x30Avx);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_tensoring_default!(NTT4x30AvxRayon);
 impl_gglwe_product_digits_strided_default!(FFT64Avx);
 
 unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx> for NTT4x30Avx {

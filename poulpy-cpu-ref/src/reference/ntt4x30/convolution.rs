@@ -10,6 +10,7 @@
 //! [`NttMulBbc1ColX2::ntt_mul_bbc_tile4_x2`].
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use poulpy_hal::execution::TaskExecutor;
 
 use crate::{
     layouts::{
@@ -79,11 +80,16 @@ fn canonical_sum_row(dst: &mut [u32], a: &[u32], b: &[u32]) {
 ///   of overwriting.
 /// - `PAIRWISE`: operands are `(a0 + a1) mod q` and the lazy sum `b0 + b1`.
 #[allow(clippy::too_many_arguments)]
-fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
-    module: &impl NttModuleHandle,
-    cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
+unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
+    module: &(impl NttModuleHandle + Sync),
+    res_addr: usize,
+    res_limb_words: usize,
+    res_cols: usize,
     res_col: usize,
+    min_size: usize,
+    offset: usize,
+    block_start: usize,
+    block_count: usize,
     a0_col: &[u32],
     a1_col: &[u32],
     a_size: usize,
@@ -96,15 +102,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
-    let n = res.n();
-    let res_size = res.size();
-
-    let bound = a_size + b_size - 1;
-    let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
-
     let meta = module.get_bbc_meta();
-    let n_blks = n / 2;
     let pad = TILE - 1;
     let win_rows = a_size + 2 * pad;
 
@@ -122,7 +120,8 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
     let n_tiles = min_size.div_ceil(TILE);
     let mut out = [0u64; 8 * TILE];
 
-    for blk in 0..n_blks {
+    for local_blk in 0..block_count {
+        let blk = block_start + local_blk;
         // Stage this block's a rows (or the canonical pairwise sum) into the
         // padded window; b rows are read in place (lazy-summed when PAIRWISE).
         let a_blk = &a0_col[blk * 16 * a_size..(blk + 1) * 16 * a_size];
@@ -149,7 +148,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
             &b0_col[blk * 16 * b_size..(blk + 1) * 16 * b_size]
         };
 
-        let grp_pos = blk % CNV_ACC_GROUP;
+        let grp_pos = local_blk;
 
         for tile in 0..n_tiles {
             let k0 = offset + TILE * tile;
@@ -177,17 +176,106 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
         }
 
         // Flush the group per limb as one contiguous run.
-        let in_group = grp_pos + 1;
-        if in_group == CNV_ACC_GROUP || blk == n_blks - 1 {
-            let grp_base = blk + 1 - in_group;
-            for k in 0..min_size {
-                let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
-                let run = &stage[8 * k * CNV_ACC_GROUP..8 * (k * CNV_ACC_GROUP + in_group)];
-                if ACC {
-                    BE::ntt_add_assign(&mut res_u64[8 * grp_base..8 * (grp_base + in_group)], run);
-                } else {
-                    res_u64[8 * grp_base..8 * (grp_base + in_group)].copy_from_slice(run);
-                }
+    }
+
+    for k in 0..min_size {
+        let dst = unsafe {
+            std::slice::from_raw_parts_mut(
+                (res_addr as *mut u64).add(res_limb_words * (k * res_cols + res_col) + 8 * block_start),
+                8 * block_count,
+            )
+        };
+        let run = &stage[8 * k * CNV_ACC_GROUP..8 * (k * CNV_ACC_GROUP + block_count)];
+        if ACC {
+            BE::ntt_add_assign(dst, run);
+        } else {
+            dst.copy_from_slice(run);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
+    module: &(impl NttModuleHandle + Sync),
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a0_col: &[u32],
+    a1_col: &[u32],
+    a_size: usize,
+    b0_col: &[u32],
+    b1_col: &[u32],
+    b_size: usize,
+    tmp: &mut [u8],
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    let n = res.n();
+    let res_size = res.size();
+    let bound = a_size + b_size - 1;
+    let offset = cnv_offset.min(bound);
+    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let n_blks = n / 2;
+    let group_count = n_blks.div_ceil(CNV_ACC_GROUP);
+    let res_limb_words = cast_slice::<Q120bScalar, u64>(res.at(res_col, 0)).len();
+    let res_cols = res.cols();
+    let res_addr = cast_slice_mut::<Q120bScalar, u64>(res.raw_mut()).as_mut_ptr() as usize;
+    let task_tmp_bytes = if PAIRWISE {
+        ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+    } else {
+        ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+    };
+
+    if BE::TaskExecutor::is_parallel() && group_count > 1 {
+        BE::TaskExecutor::for_each_init(
+            group_count,
+            || vec![0u8; task_tmp_bytes],
+            |local_tmp, group| unsafe {
+                let block_start = group * CNV_ACC_GROUP;
+                ntt4x30_conv_block_group::<BE, ACC, PAIRWISE>(
+                    module,
+                    res_addr,
+                    res_limb_words,
+                    res_cols,
+                    res_col,
+                    min_size,
+                    offset,
+                    block_start,
+                    CNV_ACC_GROUP.min(n_blks - block_start),
+                    a0_col,
+                    a1_col,
+                    a_size,
+                    b0_col,
+                    b1_col,
+                    b_size,
+                    local_tmp,
+                );
+            },
+        );
+    } else {
+        for group in 0..group_count {
+            let block_start = group * CNV_ACC_GROUP;
+            unsafe {
+                ntt4x30_conv_block_group::<BE, ACC, PAIRWISE>(
+                    module,
+                    res_addr,
+                    res_limb_words,
+                    res_cols,
+                    res_col,
+                    min_size,
+                    offset,
+                    block_start,
+                    CNV_ACC_GROUP.min(n_blks - block_start),
+                    a0_col,
+                    a1_col,
+                    a_size,
+                    b0_col,
+                    b1_col,
+                    b_size,
+                    tmp,
+                );
             }
         }
     }
@@ -213,7 +301,7 @@ fn col_slice_u32(raw: &[Q120bScalar], n: usize, size: usize, col: usize) -> &[u3
 /// Output limbs `min_size..res.size()` are zeroed.
 #[allow(clippy::too_many_arguments)]
 pub fn ntt4x30_cnv_apply_dft<BE>(
-    module: &impl NttModuleHandle,
+    module: &(impl NttModuleHandle + Sync),
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -250,7 +338,7 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
 /// Limbs `>= min_size` are left untouched.
 #[allow(clippy::too_many_arguments)]
 pub fn ntt4x30_cnv_apply_dft_accumulate<BE>(
-    module: &impl NttModuleHandle,
+    module: &(impl NttModuleHandle + Sync),
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -427,7 +515,7 @@ pub fn ntt4x30_cnv_accumulate_dft<BE>(
 /// When `col_i == col_j` this delegates to [`ntt4x30_cnv_apply_dft`].
 #[allow(clippy::too_many_arguments)]
 pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
-    module: &impl NttModuleHandle,
+    module: &(impl NttModuleHandle + Sync),
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -512,6 +600,43 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
     let canon: &mut [u32] = cast_slice_mut(canon_u64);
 
     let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
+    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 {
+        let res_addr = res_u32.as_mut_ptr() as usize;
+        BE::TaskExecutor::for_each_init(
+            cols * res_size,
+            || vec![0u64; 8 * n],
+            |task_tmp, task| {
+                let col = task / res_size;
+                let j = task % res_size;
+                let (limb, canon_u64) = task_tmp.split_at_mut(4 * n);
+                let canon: &mut [u32] = cast_slice_mut(canon_u64);
+                if j < min_size {
+                    if j + 1 == min_size {
+                        BE::ntt_from_znx64_masked(limb, a.at(col, j), mask);
+                    } else {
+                        BE::ntt_from_znx64(limb, a.at(col, j));
+                    }
+                    BE::ntt_dft_execute(table, limb);
+                }
+                for g in (0..n_blks).step_by(PREP_GROUP) {
+                    let gl = PREP_GROUP.min(n_blks - g);
+                    if j < min_size {
+                        BE::ntt_pack_left_1blk_x2(&mut canon[..16 * gl], &limb[8 * g..], gl, 8, 0);
+                    }
+                    for i in 0..gl {
+                        let off = col * col_stride + ((g + i) * res_size + j) * 16;
+                        let dst = unsafe { std::slice::from_raw_parts_mut((res_addr as *mut u32).add(off), 16) };
+                        if j < min_size {
+                            dst.copy_from_slice(&canon[16 * i..16 * (i + 1)]);
+                        } else {
+                            dst.fill(0);
+                        }
+                    }
+                }
+            },
+        );
+        return;
+    }
     for col in 0..cols {
         let dst = &mut res_u32[col * col_stride..(col + 1) * col_stride];
         for j in 0..min_size {
@@ -567,6 +692,39 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
     let limb_c: &mut [u32] = cast_slice_mut(limb_c_u64);
 
     let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
+    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 {
+        let res_addr = res_u32.as_mut_ptr() as usize;
+        BE::TaskExecutor::for_each_init(
+            cols * res_size,
+            || vec![0u64; 8 * n],
+            |task_tmp, task| {
+                let col = task / res_size;
+                let j = task % res_size;
+                let (limb_b, limb_c_u64) = task_tmp.split_at_mut(4 * n);
+                let limb_c: &mut [u32] = cast_slice_mut(limb_c_u64);
+                if j < min_size {
+                    if j + 1 == min_size {
+                        BE::ntt_from_znx64_masked(limb_b, a.at(col, j), mask);
+                    } else {
+                        BE::ntt_from_znx64(limb_b, a.at(col, j));
+                    }
+                    BE::ntt_dft_execute(table, limb_b);
+                    BE::ntt_c_from_b(n, limb_c, limb_b);
+                }
+                let row = res_size - 1 - j;
+                for blk in 0..n_blks {
+                    let off = col * col_stride + (blk * res_size + row) * 16;
+                    let dst = unsafe { std::slice::from_raw_parts_mut((res_addr as *mut u32).add(off), 16) };
+                    if j < min_size {
+                        dst.copy_from_slice(&limb_c[16 * blk..16 * (blk + 1)]);
+                    } else {
+                        dst.fill(0);
+                    }
+                }
+            },
+        );
+        return;
+    }
     for col in 0..cols {
         let dst = &mut res_u32[col * col_stride..(col + 1) * col_stride];
         for j in 0..min_size {
@@ -631,6 +789,57 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
 
     let left_u32: &mut [u32] = cast_slice_mut(left.raw_mut());
     let right_u32: &mut [u32] = cast_slice_mut(right.raw_mut());
+    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 {
+        let left_addr = left_u32.as_mut_ptr() as usize;
+        let right_addr = right_u32.as_mut_ptr() as usize;
+        BE::TaskExecutor::for_each_init(
+            cols * res_size,
+            || vec![0u64; 12 * n],
+            |task_tmp, task| {
+                let col = task / res_size;
+                let j = task % res_size;
+                let (limb_b, rest) = task_tmp.split_at_mut(4 * n);
+                let (canon_u64, limb_c_u64) = rest.split_at_mut(4 * n);
+                let canon: &mut [u32] = cast_slice_mut(canon_u64);
+                let limb_c: &mut [u32] = cast_slice_mut(limb_c_u64);
+                if j < min_size {
+                    if j + 1 == min_size {
+                        BE::ntt_from_znx64_masked(limb_b, a.at(col, j), mask);
+                    } else {
+                        BE::ntt_from_znx64(limb_b, a.at(col, j));
+                    }
+                    BE::ntt_dft_execute(table, limb_b);
+                    BE::ntt_c_from_b(n, limb_c, limb_b);
+                }
+                for g in (0..n_blks).step_by(PREP_GROUP) {
+                    let gl = PREP_GROUP.min(n_blks - g);
+                    if j < min_size {
+                        BE::ntt_pack_left_1blk_x2(&mut canon[..16 * gl], &limb_b[8 * g..], gl, 8, 0);
+                    }
+                    for i in 0..gl {
+                        let left_off = col * col_stride + ((g + i) * res_size + j) * 16;
+                        let left_dst = unsafe { std::slice::from_raw_parts_mut((left_addr as *mut u32).add(left_off), 16) };
+                        if j < min_size {
+                            left_dst.copy_from_slice(&canon[16 * i..16 * (i + 1)]);
+                        } else {
+                            left_dst.fill(0);
+                        }
+                    }
+                }
+                let row = res_size - 1 - j;
+                for blk in 0..n_blks {
+                    let right_off = col * col_stride + (blk * res_size + row) * 16;
+                    let right_dst = unsafe { std::slice::from_raw_parts_mut((right_addr as *mut u32).add(right_off), 16) };
+                    if j < min_size {
+                        right_dst.copy_from_slice(&limb_c[16 * blk..16 * (blk + 1)]);
+                    } else {
+                        right_dst.fill(0);
+                    }
+                }
+            },
+        );
+        return;
+    }
     for col in 0..cols {
         let dst_l = &mut left_u32[col * col_stride..(col + 1) * col_stride];
         let dst_r = &mut right_u32[col * col_stride..(col + 1) * col_stride];

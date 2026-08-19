@@ -33,7 +33,11 @@ impl TaskExecutor for RayonTaskExecutor {
         F: Fn(&mut S, usize) + Send + Sync,
     {
         use ::rayon::prelude::*;
-        (0..count).into_par_iter().for_each_init(init, task);
+        if count == 0 {
+            return;
+        }
+        let min_len = count.div_ceil(::rayon::current_num_threads().max(1));
+        (0..count).into_par_iter().with_min_len(min_len).for_each_init(init, task);
     }
 }
 

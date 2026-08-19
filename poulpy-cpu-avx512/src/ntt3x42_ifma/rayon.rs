@@ -20,11 +20,11 @@ use poulpy_cpu_ref::{
 use poulpy_hal::{
     api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView,
-        DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, SvpPPol, SvpPPolBackendMut,
-        SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef,
-        ZnxView, ZnxViewMut,
+        CnvDftAccTerm, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef,
+        DataView, DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, SvpPPol,
+        SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxDft,
+        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat, VmpPMatBackendMut,
+        VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
@@ -906,13 +906,14 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow().into_backend::<NTT3x42Ifma>();
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_prepare_left(
+        let bytes = super::convolution::cnv_prepare_left_tmp_bytes(module.n());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        super::convolution::cnv_prepare_left::<NTT3x42IfmaRayonExecutor>(
             base_module(module),
             &mut base_cnv_l_mut(res),
             a,
             mask,
-            &mut scratch,
+            tmp,
         )
     }
 
@@ -927,13 +928,14 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow().into_backend::<NTT3x42Ifma>();
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_prepare_right(
+        let bytes = super::convolution::cnv_prepare_right_tmp_bytes(module.n());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        super::convolution::cnv_prepare_right::<NTT3x42IfmaRayonExecutor>(
             base_module(module),
             &mut base_cnv_r_mut(res),
             a,
             mask,
-            &mut scratch,
+            tmp,
         )
     }
 
@@ -991,7 +993,7 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     }
 
     fn cnv_apply_dft(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -1001,22 +1003,24 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow().into_backend::<NTT3x42Ifma>();
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_apply_dft(
-            base_module(module),
-            cnv_offset,
-            &mut base_dft_mut(res),
-            res_col,
-            &base_cnv_l_ref(a),
-            a_col,
-            &base_cnv_r_ref(b),
-            b_col,
-            &mut scratch,
-        )
+        let bytes = super::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            super::convolution::cnv_apply_dft_ifma::<NTT3x42IfmaRayonExecutor>(
+                &mut base_dft_mut(res),
+                cnv_offset,
+                res_col,
+                &base_cnv_l_ref(a),
+                a_col,
+                &base_cnv_r_ref(b),
+                b_col,
+                tmp,
+            );
+        }
     }
 
     fn cnv_apply_dft_accumulate(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -1026,18 +1030,72 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow().into_backend::<NTT3x42Ifma>();
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_apply_dft_accumulate(
+        let bytes = super::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            super::convolution::cnv_apply_dft_accumulate_ifma::<NTT3x42IfmaRayonExecutor>(
+                &mut base_dft_mut(res),
+                cnv_offset,
+                res_col,
+                &base_cnv_l_ref(a),
+                a_col,
+                &base_cnv_r_ref(b),
+                b_col,
+                tmp,
+            );
+        }
+    }
+
+    fn cnv_accumulate_dft_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_accumulate_dft_tmp_bytes(
             base_module(module),
             cnv_offset,
-            &mut base_dft_mut(res),
-            res_col,
-            &base_cnv_l_ref(a),
-            a_col,
-            &base_cnv_r_ref(b),
-            b_col,
-            &mut scratch,
+            res_size,
+            a_size,
+            b_size,
         )
+    }
+
+    fn cnv_accumulate_dft<'a>(
+        _module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        terms: &[CnvDftAccTerm<'a, Self>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Self: HalVecZnxDftImpl<Self> + 'a,
+    {
+        let base_terms: Vec<_> = terms
+            .iter()
+            .map(|term| CnvDftAccTerm {
+                a: base_cnv_l_ref(&term.a),
+                a_col: term.a_col,
+                b: base_cnv_r_ref(&term.b),
+                b_col: term.b_col,
+            })
+            .collect();
+        let bytes = base_terms
+            .iter()
+            .map(|term| super::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), term.a.size(), term.b.size()))
+            .max()
+            .unwrap_or(0);
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            super::convolution::cnv_accumulate_dft_ifma::<NTT3x42IfmaRayonExecutor>(
+                &mut base_dft_mut(res),
+                cnv_offset,
+                res_col,
+                &base_terms,
+                tmp,
+            );
+        }
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(
@@ -1057,7 +1115,7 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     }
 
     fn cnv_pairwise_apply_dft(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -1067,18 +1125,20 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         j: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow().into_backend::<NTT3x42Ifma>();
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_pairwise_apply_dft(
-            base_module(module),
-            cnv_offset,
-            &mut base_dft_mut(res),
-            res_col,
-            &base_cnv_l_ref(a),
-            &base_cnv_r_ref(b),
-            i,
-            j,
-            &mut scratch,
-        )
+        let bytes = super::convolution::cnv_pairwise_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            super::convolution::cnv_pairwise_apply_dft_ifma::<NTT3x42IfmaRayonExecutor>(
+                &mut base_dft_mut(res),
+                cnv_offset,
+                res_col,
+                &base_cnv_l_ref(a),
+                &base_cnv_r_ref(b),
+                i,
+                j,
+                tmp,
+            );
+        }
     }
 
     fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
@@ -1093,14 +1153,15 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow().into_backend::<NTT3x42Ifma>();
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_prepare_self(
+        let bytes = super::convolution::cnv_prepare_self_tmp_bytes(module.n());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        super::convolution::cnv_prepare_self::<NTT3x42IfmaRayonExecutor>(
             base_module(module),
             &mut base_cnv_l_mut(left),
             &mut base_cnv_r_mut(right),
             a,
             mask,
-            &mut scratch,
+            tmp,
         )
     }
 }

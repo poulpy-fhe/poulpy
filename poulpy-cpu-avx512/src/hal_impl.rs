@@ -600,6 +600,7 @@ mod ifma_impl {
     use poulpy_cpu_ref::hal_defaults::HalVecZnxDefault;
     use poulpy_hal::{
         api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
+        execution::SerialTaskExecutor,
         layouts::{
             Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, SvpPPolBackendMut,
             SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -978,7 +979,7 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_left_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            crate::ntt3x42_ifma::convolution::cnv_prepare_left(module, res, a, mask, tmp);
+            crate::ntt3x42_ifma::convolution::cnv_prepare_left::<SerialTaskExecutor>(module, res, a, mask, tmp);
         }
 
         fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -994,7 +995,7 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_right_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-            crate::ntt3x42_ifma::convolution::cnv_prepare_right(module, res, a, mask, tmp);
+            crate::ntt3x42_ifma::convolution::cnv_prepare_right::<SerialTaskExecutor>(module, res, a, mask, tmp);
         }
 
         fn cnv_apply_dft_tmp_bytes(
@@ -1050,7 +1051,9 @@ mod ifma_impl {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
-                crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma(res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
+                crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma::<SerialTaskExecutor>(
+                    res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
+                );
             }
         }
 
@@ -1069,7 +1072,7 @@ mod ifma_impl {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
-                crate::ntt3x42_ifma::convolution::cnv_apply_dft_accumulate_ifma(
+                crate::ntt3x42_ifma::convolution::cnv_apply_dft_accumulate_ifma::<SerialTaskExecutor>(
                     res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
                 );
             }
@@ -1100,7 +1103,9 @@ mod ifma_impl {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
-                crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_dft_ifma(res, cnv_offset, res_col, a, b, i, j, tmp);
+                crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_dft_ifma::<SerialTaskExecutor>(
+                    res, cnv_offset, res_col, a, b, i, j, tmp,
+                );
             }
         }
 
@@ -1118,7 +1123,7 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_self_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            crate::ntt3x42_ifma::convolution::cnv_prepare_self(module, left, right, a, mask, tmp);
+            crate::ntt3x42_ifma::convolution::cnv_prepare_self::<SerialTaskExecutor>(module, left, right, a, mask, tmp);
         }
     }
 }

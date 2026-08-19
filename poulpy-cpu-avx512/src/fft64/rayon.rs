@@ -3,7 +3,9 @@
 use rayon::prelude::*;
 
 use poulpy_cpu_ref::{
-    hal_defaults::{BigWordHadamardProduct, FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, HalVecZnxDefault},
+    hal_defaults::{
+        BigWordHadamardProduct, FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VmpDefault, HalVecZnxDefault,
+    },
     reference::{
         fft64::{
             convolution::I64Ops,
@@ -21,13 +23,14 @@ use poulpy_cpu_ref::{
         },
     },
 };
+use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::{
     api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
         DataView, DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut,
         VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDft, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef,
-        ZnxView, ZnxViewMut,
+        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView,
+        ZnxViewMut,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
@@ -57,15 +60,6 @@ fn base_big_mut<'a>(a: &'a mut VecZnxBigBackendMut<'_, FFT64Avx512Rayon>) -> Vec
 
 fn base_big_ref<'a>(a: &'a VecZnxBigBackendRef<'_, FFT64Avx512Rayon>) -> VecZnxBigBackendRef<'a, FFT64Avx512> {
     VecZnxBig::from_data(&**a.data(), a.n(), a.cols(), a.size())
-}
-
-fn base_vmp_ref<'a>(a: &'a VmpPMatBackendRef<'_, FFT64Avx512Rayon>) -> VmpPMatBackendRef<'a, FFT64Avx512> {
-    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size())
-}
-
-fn base_vmp_mut<'a>(a: &'a mut VmpPMatBackendMut<'_, FFT64Avx512Rayon>) -> VmpPMatBackendMut<'a, FFT64Avx512> {
-    let (n, rows, cols_in, cols_out, size) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size());
-    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size)
 }
 
 fn parallel_chunk_len(len: usize) -> Option<usize> {
@@ -317,6 +311,64 @@ impl Reim4BlkMatVec for FFT64Avx512Rayon {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool>(
+    m: usize,
+    min_size: usize,
+    offset: usize,
+    dst: &mut [f64],
+    dst_stride: usize,
+    a0: &[f64],
+    a1: &[f64],
+    a_size: usize,
+    b0: &[f64],
+    b1: &[f64],
+    b_size: usize,
+) {
+    let block_count = m / 4;
+    let task_tmp_len = 8 * (min_size + (a_size + b_size) * PAIRWISE as usize);
+    let dst_addr = dst.as_mut_ptr() as usize;
+    RayonTaskExecutor::for_each_init(
+        block_count,
+        || vec![0.0; task_tmp_len],
+        |tmp, block| {
+            let (a, b, out) = if PAIRWISE {
+                let (a, rest) = tmp.split_at_mut(8 * a_size);
+                let (b, out) = rest.split_at_mut(8 * b_size);
+                <FFT64Avx512 as ReimArith>::reim_add(
+                    a,
+                    &a0[block * 8 * a_size..][..8 * a_size],
+                    &a1[block * 8 * a_size..][..8 * a_size],
+                );
+                <FFT64Avx512 as ReimArith>::reim_add(
+                    b,
+                    &b0[block * 8 * b_size..][..8 * b_size],
+                    &b1[block * 8 * b_size..][..8 * b_size],
+                );
+                (&*a, &*b, out)
+            } else {
+                (&a0[block * 8 * a_size..], &b0[block * 8 * b_size..], &mut tmp[..8 * min_size])
+            };
+            <FFT64Avx512 as Reim4Convolution>::reim4_convolution(out, min_size, offset, a, a_size, b, b_size);
+            unsafe {
+                let dst = dst_addr as *mut f64;
+                for k in 0..min_size {
+                    let base = dst.add(dst_stride * k + 4 * block);
+                    if ACC {
+                        for i in 0..4 {
+                            *base.add(i) += out[8 * k + i];
+                            *base.add(m + i) += out[8 * k + 4 + i];
+                        }
+                    } else {
+                        std::ptr::copy_nonoverlapping(out.as_ptr().add(8 * k), base, 4);
+                        std::ptr::copy_nonoverlapping(out.as_ptr().add(8 * k + 4), base.add(m), 4);
+                    }
+                }
+            }
+        },
+    );
+}
+
 impl Reim4Convolution for FFT64Avx512Rayon {
     #[inline(always)]
     fn reim4_convolution_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
@@ -343,9 +395,12 @@ impl Reim4Convolution for FFT64Avx512Rayon {
         b_size: usize,
         tmp: &mut [f64],
     ) {
-        <FFT64Avx512 as Reim4Convolution>::reim4_convolution_apply(
-            m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp,
-        )
+        if !RayonTaskExecutor::is_parallel() {
+            return <FFT64Avx512 as Reim4Convolution>::reim4_convolution_apply(
+                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp,
+            );
+        }
+        parallel_reim4_convolution_apply::<false, false>(m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size);
     }
     #[inline(always)]
     fn reim4_convolution_apply_accumulate(
@@ -360,9 +415,12 @@ impl Reim4Convolution for FFT64Avx512Rayon {
         b_size: usize,
         tmp: &mut [f64],
     ) {
-        <FFT64Avx512 as Reim4Convolution>::reim4_convolution_apply_accumulate(
-            m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp,
-        )
+        if !RayonTaskExecutor::is_parallel() {
+            return <FFT64Avx512 as Reim4Convolution>::reim4_convolution_apply_accumulate(
+                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp,
+            );
+        }
+        parallel_reim4_convolution_apply::<false, true>(m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size);
     }
     #[inline(always)]
     fn reim4_convolution_pairwise_apply(
@@ -379,9 +437,12 @@ impl Reim4Convolution for FFT64Avx512Rayon {
         b_size: usize,
         tmp: &mut [f64],
     ) {
-        <FFT64Avx512 as Reim4Convolution>::reim4_convolution_pairwise_apply(
-            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp,
-        )
+        if !RayonTaskExecutor::is_parallel() {
+            return <FFT64Avx512 as Reim4Convolution>::reim4_convolution_pairwise_apply(
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp,
+            );
+        }
+        parallel_reim4_convolution_apply::<true, false>(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size);
     }
     #[inline(always)]
     fn reim4_convolution_by_real_const_1coeff(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64]) {
@@ -435,7 +496,7 @@ unsafe impl HalModuleImpl<FFT64Avx512Rayon> for FFT64Avx512Rayon {
 unsafe impl HalVmpImpl<FFT64Avx512Rayon> for FFT64Avx512Rayon {
     #[inline(always)]
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-        <FFT64Avx512 as HalVmpImpl<FFT64Avx512>>::vmp_prepare_tmp_bytes(base_module(module), rows, cols_in, cols_out, size)
+        <Self as FFT64VmpDefault<Self>>::vmp_prepare_tmp_bytes_default(module, rows, cols_in, cols_out, size)
     }
 
     #[inline(always)]
@@ -445,8 +506,8 @@ unsafe impl HalVmpImpl<FFT64Avx512Rayon> for FFT64Avx512Rayon {
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow().into_backend::<FFT64Avx512>();
-        <FFT64Avx512 as HalVmpImpl<FFT64Avx512>>::vmp_prepare(base_module(module), &mut base_vmp_mut(res), a, &mut scratch)
+        let mut scratch = scratch.borrow();
+        <Self as FFT64VmpDefault<Self>>::vmp_prepare_default(module, res, a, &mut scratch)
     }
 
     #[inline(always)]
@@ -508,14 +569,8 @@ unsafe impl HalVmpImpl<FFT64Avx512Rayon> for FFT64Avx512Rayon {
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        <FFT64Avx512 as HalVmpImpl<FFT64Avx512>>::vmp_apply_dft_to_dft_tmp_bytes(
-            base_module(module),
-            res_size,
-            a_size,
-            b_rows,
-            b_cols_in,
-            b_cols_out,
-            b_size,
+        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_tmp_bytes_default(
+            module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
         )
     }
 
@@ -528,15 +583,8 @@ unsafe impl HalVmpImpl<FFT64Avx512Rayon> for FFT64Avx512Rayon {
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow().into_backend::<FFT64Avx512>();
-        <FFT64Avx512 as HalVmpImpl<FFT64Avx512>>::vmp_apply_dft_to_dft(
-            base_module(module),
-            &mut base_dft_mut(res),
-            &base_dft_ref(a),
-            &base_vmp_ref(b),
-            limb_offset,
-            &mut scratch,
-        )
+        let mut scratch = scratch.borrow();
+        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_default(module, res, a, b, limb_offset, &mut scratch)
     }
 
     #[inline(always)]
@@ -549,14 +597,8 @@ unsafe impl HalVmpImpl<FFT64Avx512Rayon> for FFT64Avx512Rayon {
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        <FFT64Avx512 as HalVmpImpl<FFT64Avx512>>::vmp_apply_dft_to_dft_accumulate_tmp_bytes(
-            base_module(module),
-            res_size,
-            a_size,
-            b_rows,
-            b_cols_in,
-            b_cols_out,
-            b_size,
+        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_tmp_bytes_default(
+            module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
         )
     }
 
@@ -569,20 +611,13 @@ unsafe impl HalVmpImpl<FFT64Avx512Rayon> for FFT64Avx512Rayon {
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow().into_backend::<FFT64Avx512>();
-        <FFT64Avx512 as HalVmpImpl<FFT64Avx512>>::vmp_apply_dft_to_dft_accumulate(
-            base_module(module),
-            &mut base_dft_mut(res),
-            &base_dft_ref(a),
-            &base_vmp_ref(b),
-            limb_offset,
-            &mut scratch,
-        )
+        let mut scratch = scratch.borrow();
+        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_default(module, res, a, b, limb_offset, &mut scratch)
     }
 
     #[inline(always)]
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
-        <FFT64Avx512 as HalVmpImpl<FFT64Avx512>>::vmp_zero(base_module(module), &mut base_vmp_mut(res))
+        <Self as FFT64VmpDefault<Self>>::vmp_zero_default(module, res)
     }
 }
 unsafe impl HalConvolutionImpl<FFT64Avx512Rayon> for FFT64Avx512Rayon {

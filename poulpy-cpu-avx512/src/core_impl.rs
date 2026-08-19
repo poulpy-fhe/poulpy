@@ -31,6 +31,8 @@ use poulpy_hal::{
 };
 
 impl_glwe_tensoring_default!(FFT64Avx512);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_tensoring_default!(FFT64Avx512Rayon);
 impl_gglwe_product_digits_strided_default!(FFT64Avx512);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_product_digits_strided_default!(FFT64Avx512Rayon);
@@ -83,7 +85,11 @@ impl RankOneTensorDft for NTT3x42Ifma {
     ) {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        unsafe { crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma(res, cnv_offset, a, b, tmp) };
+        unsafe {
+            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
+                res, cnv_offset, a, b, tmp,
+            )
+        };
     }
 }
 
@@ -104,7 +110,7 @@ impl RankOneTensorDft for NTT3x42IfmaRayon {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma(
+            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<crate::NTT3x42IfmaRayonExecutor>(
                 &mut crate::ntt3x42_ifma::rayon::base_dft_mut(res),
                 cnv_offset,
                 &crate::ntt3x42_ifma::rayon::base_cnv_l_ref(a),

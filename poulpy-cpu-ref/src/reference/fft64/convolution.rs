@@ -9,6 +9,7 @@ use crate::{
         vec_znx_dft::vec_znx_dft_apply,
     },
 };
+use poulpy_hal::execution::TaskExecutor;
 
 pub fn convolution_prepare_left<BE>(
     table: &ReimFFTTable<f64>,
@@ -58,6 +59,36 @@ fn convolution_prepare<R, BE>(
     let n: usize = table.m() << 1;
 
     let res_raw: &mut [f64] = res.raw_mut();
+
+    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 {
+        let res_addr = res_raw.as_mut_ptr() as usize;
+        BE::TaskExecutor::for_each_init(
+            cols * res_size,
+            || vec![0.0; n],
+            |limb, task| {
+                let col = task / res_size;
+                let j = task % res_size;
+                if j < min_size {
+                    if j + 1 == min_size {
+                        BE::reim_from_znx_masked(limb, a.at(col, j), mask);
+                    } else {
+                        BE::reim_from_znx(limb, a.at(col, j));
+                    }
+                    BE::reim_dft_execute(table, limb);
+                }
+                for blk_i in 0..m / 4 {
+                    let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
+                    let dst = unsafe { std::slice::from_raw_parts_mut((res_addr as *mut f64).add(off), 8) };
+                    if j < min_size {
+                        BE::reim4_extract_1blk_contiguous(m, 1, blk_i, dst, limb);
+                    } else {
+                        dst.fill(0.0);
+                    }
+                }
+            },
+        );
+        return;
+    }
 
     for i in 0..cols {
         // FFT all limbs (unmasked); the last active limb will be overwritten below.
@@ -110,6 +141,40 @@ pub fn convolution_prepare_self<BE>(
 
     let left_raw: &mut [f64] = left.raw_mut();
     let right_raw: &mut [f64] = right.raw_mut();
+
+    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 {
+        let left_addr = left_raw.as_mut_ptr() as usize;
+        let right_addr = right_raw.as_mut_ptr() as usize;
+        BE::TaskExecutor::for_each_init(
+            cols * res_size,
+            || vec![0.0; n],
+            |limb, task| {
+                let col = task / res_size;
+                let j = task % res_size;
+                if j < min_size {
+                    if j + 1 == min_size {
+                        BE::reim_from_znx_masked(limb, a.at(col, j), mask);
+                    } else {
+                        BE::reim_from_znx(limb, a.at(col, j));
+                    }
+                    BE::reim_dft_execute(table, limb);
+                }
+                for blk_i in 0..m / 4 {
+                    let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
+                    let left_dst = unsafe { std::slice::from_raw_parts_mut((left_addr as *mut f64).add(off), 8) };
+                    if j < min_size {
+                        BE::reim4_extract_1blk_contiguous(m, 1, blk_i, left_dst, limb);
+                    } else {
+                        left_dst.fill(0.0);
+                    }
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(left_dst.as_ptr(), (right_addr as *mut f64).add(off), 8);
+                    }
+                }
+            },
+        );
+        return;
+    }
 
     for i in 0..cols {
         // FFT all limbs (unmasked); the last active limb will be overwritten below.

@@ -18,6 +18,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_cpu_ref::reference::ntt4x30::{
     convolution::cnv_accumulate_schedule, mat_vec::BbcMeta, primes::Primes30, types::Q120bScalar, vec_znx_dft::NttModuleHandle,
 };
+use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{Backend, CnvDftAccTerm, HostDataMut, HostDataRef, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
 
 use super::mat_vec_avx::reduce_bbc;
@@ -32,11 +33,74 @@ pub(crate) fn cnv_accumulate_dft_avx_tmp_bytes(res_size: usize) -> usize {
 
 /// One resolved window: base pointers at block 0 plus the per-block strides.
 struct WindowAvx {
-    a: *const u32,
-    b: *const u32,
+    a: usize,
+    b: usize,
     a_stride: usize,
     b_stride: usize,
     len: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn cnv_accumulate_group_avx(
+    meta: &BbcMeta<Primes30>,
+    windows: &[Vec<WindowAvx>],
+    res_addr: usize,
+    res_limb_words: usize,
+    res_cols: usize,
+    res_col: usize,
+    block_start: usize,
+    block_count: usize,
+    tmp: &mut [u8],
+) {
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    debug_assert!(prefix.is_empty());
+    debug_assert!(suffix.is_empty());
+    let stage = &mut tmp_u64[..8 * GROUP * windows.len()];
+
+    unsafe {
+        let mask32 = _mm256_set1_epi64x(u32::MAX as i64);
+        let mask_h2 = _mm256_set1_epi64x(((1u64 << meta.h) - 1) as i64);
+        let s2l_pow_red = _mm256_loadu_si256(meta.s2l_pow_red.as_ptr() as *const __m256i);
+        let s2h_pow_red = _mm256_loadu_si256(meta.s2h_pow_red.as_ptr() as *const __m256i);
+
+        for local_blk in 0..block_count {
+            let blk = block_start + local_blk;
+            for (k, windows_k) in windows.iter().enumerate() {
+                let mut s0a = _mm256_setzero_si256();
+                let mut s1a = _mm256_setzero_si256();
+                let mut s0b = _mm256_setzero_si256();
+                let mut s1b = _mm256_setzero_si256();
+
+                for w in windows_k {
+                    let mut x_ptr = (w.a as *const u32).add(blk * w.a_stride) as *const __m256i;
+                    let mut y_ptr = (w.b as *const u32).add(blk * w.b_stride) as *const __m256i;
+                    for _ in 0..w.len {
+                        let xa = _mm256_loadu_si256(x_ptr);
+                        let xb = _mm256_loadu_si256(x_ptr.add(1));
+                        let ya = _mm256_loadu_si256(y_ptr);
+                        let yb = _mm256_loadu_si256(y_ptr.add(1));
+                        let pa = _mm256_mul_epu32(xa, ya);
+                        let pb = _mm256_mul_epu32(xb, yb);
+                        s0a = _mm256_add_epi64(s0a, _mm256_and_si256(pa, mask32));
+                        s1a = _mm256_add_epi64(s1a, _mm256_srli_epi64::<32>(pa));
+                        s0b = _mm256_add_epi64(s0b, _mm256_and_si256(pb, mask32));
+                        s1b = _mm256_add_epi64(s1b, _mm256_srli_epi64::<32>(pb));
+                        x_ptr = x_ptr.add(2);
+                        y_ptr = y_ptr.add(2);
+                    }
+                }
+
+                let out = stage.as_mut_ptr().add(8 * (k * GROUP + local_blk)) as *mut __m256i;
+                _mm256_storeu_si256(out, reduce_bbc(s0a, s1a, mask_h2, meta.h, s2l_pow_red, s2h_pow_red));
+                _mm256_storeu_si256(out.add(1), reduce_bbc(s0b, s1b, mask_h2, meta.h, s2l_pow_red, s2h_pow_red));
+            }
+        }
+
+        for k in 0..windows.len() {
+            let dst = (res_addr as *mut u64).add(res_limb_words * (k * res_cols + res_col) + 8 * block_start);
+            std::ptr::copy_nonoverlapping(stage.as_ptr().add(8 * k * GROUP), dst, 8 * block_count);
+        }
+    }
 }
 
 pub(crate) unsafe fn cnv_accumulate_dft_avx<BE>(
@@ -95,8 +159,8 @@ pub(crate) unsafe fn cnv_accumulate_dft_avx<BE>(
                 .map(|e| {
                     let (a_col, b_col, a_size, b_size) = term_cols[e.term];
                     WindowAvx {
-                        a: unsafe { a_col.as_ptr().add(16 * e.a_row) },
-                        b: unsafe { b_col.as_ptr().add(16 * e.b_row) },
+                        a: unsafe { a_col.as_ptr().add(16 * e.a_row) } as usize,
+                        b: unsafe { b_col.as_ptr().add(16 * e.b_row) } as usize,
                         a_stride: 16 * a_size,
                         b_stride: 16 * b_size,
                         len: e.len,
@@ -106,64 +170,45 @@ pub(crate) unsafe fn cnv_accumulate_dft_avx<BE>(
         })
         .collect();
 
-    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
-    let stage = &mut tmp_u64[..8 * GROUP * res_size];
-
-    unsafe {
-        let mask32 = _mm256_set1_epi64x(u32::MAX as i64);
-        let mask_h2 = _mm256_set1_epi64x(((1u64 << meta.h) - 1) as i64);
-        let s2l_pow_red = _mm256_loadu_si256(meta.s2l_pow_red.as_ptr() as *const __m256i);
-        let s2h_pow_red = _mm256_loadu_si256(meta.s2h_pow_red.as_ptr() as *const __m256i);
-
-        for blk in 0..n_blks {
-            let grp_pos = blk % GROUP;
-
-            for (k, windows_k) in windows.iter().enumerate() {
-                // Per x2 pair half: (low, high) lazy accumulators.
-                let mut s0a = _mm256_setzero_si256();
-                let mut s1a = _mm256_setzero_si256();
-                let mut s0b = _mm256_setzero_si256();
-                let mut s1b = _mm256_setzero_si256();
-
-                for w in windows_k {
-                    let mut x_ptr = w.a.add(blk * w.a_stride) as *const __m256i;
-                    let mut y_ptr = w.b.add(blk * w.b_stride) as *const __m256i;
-                    for _ in 0..w.len {
-                        let xa = _mm256_loadu_si256(x_ptr);
-                        let xb = _mm256_loadu_si256(x_ptr.add(1));
-                        let ya = _mm256_loadu_si256(y_ptr);
-                        let yb = _mm256_loadu_si256(y_ptr.add(1));
-
-                        // Canonical x: only the x_lo * y_lo product contributes.
-                        let pa = _mm256_mul_epu32(xa, ya);
-                        let pb = _mm256_mul_epu32(xb, yb);
-
-                        s0a = _mm256_add_epi64(s0a, _mm256_and_si256(pa, mask32));
-                        s1a = _mm256_add_epi64(s1a, _mm256_srli_epi64::<32>(pa));
-                        s0b = _mm256_add_epi64(s0b, _mm256_and_si256(pb, mask32));
-                        s1b = _mm256_add_epi64(s1b, _mm256_srli_epi64::<32>(pb));
-
-                        x_ptr = x_ptr.add(2);
-                        y_ptr = y_ptr.add(2);
-                    }
-                }
-
-                let out = stage.as_mut_ptr().add(8 * (k * GROUP + grp_pos)) as *mut __m256i;
-                _mm256_storeu_si256(out, reduce_bbc(s0a, s1a, mask_h2, meta.h, s2l_pow_red, s2h_pow_red));
-                _mm256_storeu_si256(out.add(1), reduce_bbc(s0b, s1b, mask_h2, meta.h, s2l_pow_red, s2h_pow_red));
-            }
-
-            // Flush the group per limb as one contiguous run.
-            let in_group = grp_pos + 1;
-            if in_group == GROUP || blk == n_blks - 1 {
-                let grp_base = blk + 1 - in_group;
-                for k in 0..res_size {
-                    let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
-                    res_u64[8 * grp_base..8 * (grp_base + in_group)]
-                        .copy_from_slice(&stage[8 * k * GROUP..8 * (k * GROUP + in_group)]);
-                }
+    let group_count = n_blks.div_ceil(GROUP);
+    let res_limb_words = cast_slice::<Q120bScalar, u64>(res.at(res_col, 0)).len();
+    let res_cols = res.cols();
+    let res_addr = cast_slice_mut::<Q120bScalar, u64>(res.raw_mut()).as_mut_ptr() as usize;
+    let task_tmp_bytes = cnv_accumulate_dft_avx_tmp_bytes(res_size);
+    if BE::TaskExecutor::is_parallel() && group_count > 1 {
+        BE::TaskExecutor::for_each_init(
+            group_count,
+            || vec![0u8; task_tmp_bytes],
+            |local_tmp, group| unsafe {
+                let block_start = group * GROUP;
+                cnv_accumulate_group_avx(
+                    meta,
+                    &windows,
+                    res_addr,
+                    res_limb_words,
+                    res_cols,
+                    res_col,
+                    block_start,
+                    GROUP.min(n_blks - block_start),
+                    local_tmp,
+                );
+            },
+        );
+    } else {
+        for group in 0..group_count {
+            let block_start = group * GROUP;
+            unsafe {
+                cnv_accumulate_group_avx(
+                    meta,
+                    &windows,
+                    res_addr,
+                    res_limb_words,
+                    res_cols,
+                    res_col,
+                    block_start,
+                    GROUP.min(n_blks - block_start),
+                    tmp,
+                );
             }
         }
     }
