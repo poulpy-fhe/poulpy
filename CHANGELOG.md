@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-20
+
+- Update `dashu-float` to 0.6 and `astro-float-num` to 0.3.7, and refresh the `bytemuck`, `serde`, `serde_json` and `anyhow` pins. The dashu 0.6 context operations return a `Result`, which the internal binary128 helpers now unwrap; no public API changes.
+- Publish from CI through crates.io trusted publishing (`.github/workflows/release.yml`, triggered by a `v*` tag). The internal workspace dependencies carry a `version` requirement so `cargo publish` can package them.
+
 ## [0.8.0] - 2026-08-20
 
 Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2025/886](https://eprint.iacr.org/2025/886)) and **SHIP** (Cheon, Hanrot, Kim & Stehlé, [ePrint 2025/784](https://eprint.iacr.org/2025/784)), moves CKKS encoding onto a backend-resident op family, and lands a production-readiness pass over `poulpy-ckks` (typed errors, constructor-validated plans, scratch-carved intermediates, binary128-exact tables, four-layer consolidation). Keys every polynomial layout by an explicit word type (`ZnxWord` / `BigWord` / `DftWord`) and the DFT/big containers by their backend, collapses the limb-width model to a claimed precision plus an allocation, and reparameterizes evaluation keys by an auxiliary guard `k_aux`. Trims gadget products to their live limbs on exact-DFT backends, opens the strided GGLWE product and tensoring to backend overrides, and lands a round of AVX2/AVX-512 NTT, VMP and convolution optimization. Opens the layouts, key containers and benchmarks to non-host device backends, and adds a reference-vs-backend byte-parity test suite.
