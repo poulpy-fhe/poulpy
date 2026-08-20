@@ -2,7 +2,7 @@
 
 ## Report a Vulnerability
 
-To report a vulnerability, please contact us at: **[jean-philippe@phantom.zone](mailto:jean-philippe@phantom.zone)**
+To report a vulnerability, please contact us at **[jean-philippe.bossuat@idealringslab.com](mailto:jean-philippe.bossuat@idealringslab.com)**
 
 Include in your report (if possible):
 
