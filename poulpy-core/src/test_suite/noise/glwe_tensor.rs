@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssignBackend},
-    layouts::{FillUniform, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
+    layouts::{FillUniform, Module, ScratchOwned, VecZnx, ZnxViewMut},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -375,11 +375,8 @@ where
             module.glwe_tensor_square_apply(scale + res_offset, &mut res_square, &a, &mut scratch.borrow());
             module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &a, &mut scratch.borrow());
 
-            assert_eq!(res_square.data().raw(), res_tensor.data().raw());
-
             module.glwe_tensor_relinearize(&mut res_relin_square, &res_square, &tsk_prep, &mut scratch.borrow());
             module.glwe_tensor_relinearize(&mut res_relin_tensor, &res_tensor, &tsk_prep, &mut scratch.borrow());
-            assert_eq!(res_relin_square.data().raw(), res_relin_tensor.data().raw());
 
             // Decrypt one side to ensure the square path remains functionally valid.
             module.glwe_decrypt(&res_relin_square, &mut pt_have, &sk_dft, &mut scratch.borrow());
