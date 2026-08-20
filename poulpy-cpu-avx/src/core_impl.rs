@@ -33,6 +33,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx> for NTT4
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
         dsize: usize,
+        product_limbs: usize,
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -48,7 +49,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx> for NTT4
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx(module, res, a, dsize, pmat, tmp);
+        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx(module, res, a, dsize, product_limbs, pmat, tmp);
     }
 }
 

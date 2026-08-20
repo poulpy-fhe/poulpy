@@ -37,7 +37,7 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** remove the exported `impl_glwe_rotate_impl_from!`; the blanket `GLWERotateImpl` impl supersedes it.
 - **Breaking:** `GLWEKeyswitchInternal` and `GGLWEProductDefault` become public; they appear in the bounds of the public `glwe_keyswitch*_default` functions.
 - The `*Default` override surfaces are no longer `#[doc(hidden)]`; `oep`'s module docs describe the `*Impl` / `*Default` split with a worked override.
-- The gadget-digit width rule moves from an in-function comment to the `GLWEKeyswitchDefault` contract and the shared `gglwe_product_digit_output_size` helper.
+- The gadget-digit width rule moves to the `GLWEKeyswitchDefault` contract and shared `gglwe_product_digit_output_size` helper; `GGLWEProductDefault` passes its accumulation count through `GGLWEProductDigitsStridedImpl` as a shape-derived `product_limbs` spill window instead of a fixed two limbs.
 - CKKS encapsulated ModUp composes ordinary dense-to-sparse and sparse-to-dense key switches around ModUp; backends can override `CKKSEncapsulatedModUpImpl` to fuse it.
 - Relax to `D: Data`: `GGLWE` / `GLWEPlaintext` / `LWEPlaintext` / `GLWETensor` `data()` / `data_mut()`, `GLWESwitchingKeyDegrees(Mut)`, `Get`/`SetGaloisElement`, `GetDistribution(Mut)`, `SetBase2k`.
 - **Breaking:** `GGLWEAtBackendRef`/`Mut` and `GGSWAtBackendRef`/`Mut` become public; `GLWESwitchingKey`, `GLWEAutomorphismKey` and `GLWETensorKey` delegate them.

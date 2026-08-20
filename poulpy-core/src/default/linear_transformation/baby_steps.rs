@@ -152,7 +152,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
         // See `glwe_hoisted_baby_rotations`: multi-digit VMP accumulates into
         // top limbs that must not contain stale scratch contents.
     }
-    module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, &key_ref, &mut scratch_1.borrow());
+    module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, &key_ref, 1, &mut scratch_1.borrow());
 
     let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module, cols, key_size);
     let res_dft_ref = res_dft.to_backend_ref();

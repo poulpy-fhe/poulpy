@@ -20,7 +20,8 @@ use crate::{
     default::operations::GLWENormalizeDefault,
     layouts::{
         GGSWInfos, GGSWPreparedBackendRef, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
-        GadgetProductOutputSizeParams, LWEInfos, gadget_product_output_size, prepared::GGSWPreparedToBackendRef,
+        GadgetProductOutputSizeParams, LWEInfos, gadget_product_limbs, gadget_product_output_size,
+        prepared::GGSWPreparedToBackendRef,
     },
     oep::{GLWEExternalProductDefault, gglwe_product_digit_output_size},
 };
@@ -91,14 +92,21 @@ fn glwe_external_product_dft_fill<BE, M>(
             let a_dft_ref = a_dft.to_backend_ref();
             module.vmp_apply_dft_to_dft(res_dft, &a_dft_ref, &ggsw.data, 0, &mut scratch_1.borrow());
         } else {
+            let product_terms = ggsw
+                .n()
+                .as_usize()
+                .saturating_mul(ggsw.dnum().as_usize())
+                .saturating_mul(dsize)
+                .saturating_mul(cols);
+            let product_limbs = gadget_product_limbs(ggsw.base2k(), product_terms);
             // Same shape as `gglwe_product_dft_default`, and the same two
             // constraints hold; see the comment there for why. In short:
             // `di == 0` is the overwriting pass and must run at the **full**
             // width so no limb of `res_dft` keeps stale scratch, and it must be
             // `di == 0` because `vmp_apply_dft_to_dft` covers its destination
             // fully only at `limb_offset == 0`. The accumulating passes may keep
-            // the narrow view. `- 2` rather than `- 1` because an elementary
-            // limb product spans two limbs; do not tighten it.
+            // the narrow view. The spill width includes both the elementary
+            // two-limb product and the accumulation growth for this shape.
             //
             // The one difference from the keyswitch: there the operand arrives
             // already in DFT and each digit is sliced out with
@@ -115,7 +123,7 @@ fn glwe_external_product_dft_fill<BE, M>(
                 if di == 0 {
                     module.vmp_apply_dft_to_dft(res_dft, &a_dft.to_backend_ref(), &ggsw.data, 0, &mut scratch_1.borrow());
                 } else {
-                    let res_compute_size = gglwe_product_digit_output_size(res_dft.size(), ggsw.size(), dsize, di);
+                    let res_compute_size = gglwe_product_digit_output_size(res_dft.size(), ggsw.size(), dsize, di, product_limbs);
                     let mut res_view = res_dft.with_size_mut(res_compute_size);
                     module.vmp_apply_dft_to_dft_accumulate(
                         &mut res_view,

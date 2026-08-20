@@ -122,6 +122,7 @@ where
                     &mut prod_dft_mut,
                     &a_dft_ref,
                     &key.key.to_backend_ref(),
+                    keys.len(),
                     &mut scratch_4.borrow(),
                 );
             }

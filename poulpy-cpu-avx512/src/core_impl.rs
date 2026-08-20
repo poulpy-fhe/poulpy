@@ -468,6 +468,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512> for N
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
         dsize: usize,
+        product_limbs: usize,
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -483,7 +484,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512> for N
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx(module, res, a, dsize, pmat, tmp);
+        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx(module, res, a, dsize, product_limbs, pmat, tmp);
     }
 }
 
@@ -508,6 +509,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42Ifma> for NTT
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
         dsize: usize,
+        product_limbs: usize,
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -523,7 +525,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42Ifma> for NTT
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma(module, res, a, dsize, pmat, tmp);
+        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma(module, res, a, dsize, product_limbs, pmat, tmp);
     }
 }
 

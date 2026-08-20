@@ -80,6 +80,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     prod_base2k: usize,
     key: &K,
     output_size: usize,
+    term_count: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -128,7 +129,13 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
 
     let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols, output_size);
     let key_ref = key.to_backend_ref();
-    module.gglwe_product_dft_default(&mut ks_dft, &a_dft.to_backend_ref(), &key_ref, &mut scratch_2.borrow());
+    module.gglwe_product_dft_default(
+        &mut ks_dft,
+        &a_dft.to_backend_ref(),
+        &key_ref,
+        term_count,
+        &mut scratch_2.borrow(),
+    );
 
     // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `output_size`,
     // matching the existing BIG lazy path's rotated contribution size.

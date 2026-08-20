@@ -697,6 +697,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
     res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
     a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
     dsize: usize,
+    product_limbs: usize,
     pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
     tmp: &mut [u64],
 ) {
@@ -727,7 +728,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
     for di in 0..dsize {
         let digit_limbs = ((a_size + di) / dsize).min(dnum);
         // Match the reference product: full-width overwrite, then narrowed accumulations.
-        let active_size = gglwe_product_digit_output_size(output_size, pmat.size(), dsize, di);
+        let active_size = gglwe_product_digit_output_size(output_size, pmat.size(), dsize, di, product_limbs);
         let limb_off = di * cols_out;
         let row_end = nrows.min(a_cols * digit_limbs);
         let limb_base = dsize - 1 - di;

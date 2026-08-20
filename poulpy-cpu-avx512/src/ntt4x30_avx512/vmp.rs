@@ -418,6 +418,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
     dsize: usize,
+    product_limbs: usize,
     pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
     tmp: &mut [u64],
 ) {
@@ -451,7 +452,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     for di in 0..dsize {
         let digit_limbs = ((a_size + di) / dsize).min(dnum);
         // Match the reference product: full-width overwrite, then narrowed accumulations.
-        let active_size = gglwe_product_digit_output_size(output_size, pmat.size(), dsize, di);
+        let active_size = gglwe_product_digit_output_size(output_size, pmat.size(), dsize, di, product_limbs);
         let limb_offset = di * cols_out;
         let row_end = (a_cols * digit_limbs).min(nrows);
         let limb_base = dsize - 1 - di;

@@ -11,7 +11,7 @@ use crate::{
     ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, GadgetProductOutputSizeParams, LWEInfos,
-        gadget_product_output_size, prepared::GGLWEPreparedToBackendRef,
+        gadget_product_limbs, gadget_product_output_size, prepared::GGLWEPreparedToBackendRef,
     },
     oep::{GGLWEProductDigitsStridedImpl, gglwe_product_digit_output_size},
 };
@@ -101,6 +101,7 @@ where
         res: &mut VecZnxDftBackendMut<'r, BE>,
         a: &VecZnxDftBackendRef<'a, BE>,
         key: &GGLWEPreparedBackendRef<'_, BE>,
+        term_count: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         let a_size = a.size();
@@ -116,7 +117,15 @@ where
         if dsize == 1 {
             self.vmp_apply_dft_to_dft(res, a, &key.data, 0, scratch);
         } else {
-            BE::gglwe_product_digits_strided(self, res, a, dsize, &key.data, scratch);
+            let product_terms = key
+                .n()
+                .as_usize()
+                .saturating_mul(key.dnum().as_usize())
+                .saturating_mul(dsize)
+                .saturating_mul(key.rank_in().as_usize().max(1))
+                .saturating_mul(term_count.max(1));
+            let product_limbs = gadget_product_limbs(key.base2k(), product_terms);
+            BE::gglwe_product_digits_strided(self, res, a, dsize, product_limbs, &key.data, scratch);
         }
     }
 }
@@ -140,11 +149,14 @@ where
     where
         K: GGLWEInfos;
 
+    /// Applies one GGLWE product into a DFT accumulator that will contain
+    /// `term_count` such products before normalization.
     fn gglwe_product_dft_default<'r, 'a>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, BE>,
         a: &VecZnxDftBackendRef<'a, BE>,
         key: &GGLWEPreparedBackendRef<'_, BE>,
+        term_count: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }
@@ -183,6 +195,7 @@ pub fn gglwe_product_digits_strided_default<BE: Backend>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     a: &VecZnxDftBackendRef<'_, BE>,
     dsize: usize,
+    product_limbs: usize,
     pmat: &poulpy_hal::layouts::VmpPMatBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -203,7 +216,7 @@ pub fn gglwe_product_digits_strided_default<BE: Backend>(
         if di == 0 {
             module.vmp_apply_dft_to_dft(res, &digit.to_backend_ref(), pmat, 0, &mut digit_scratch);
         } else {
-            let compute_size = gglwe_product_digit_output_size(res.size(), pmat.size(), dsize, di);
+            let compute_size = gglwe_product_digit_output_size(res.size(), pmat.size(), dsize, di, product_limbs);
             let mut res_view = res.with_size_mut(compute_size);
             module.vmp_apply_dft_to_dft_accumulate(&mut res_view, &digit.to_backend_ref(), pmat, di, &mut digit_scratch);
         }
@@ -255,7 +268,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, a_data, col_i + 1);
         }
         let a_dft_ref = a_dft.to_backend_ref();
-        module.gglwe_product_dft_default(res, &a_dft_ref, key, &mut scratch_1.borrow());
+        module.gglwe_product_dft_default(res, &a_dft_ref, key, 1, &mut scratch_1.borrow());
     });
 }
 

@@ -628,7 +628,7 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
         let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(module, cols, output_size);
         {
             let mut scratch_prod = scratch_1.borrow();
-            module.gglwe_product_dft_default(&mut res_dft, a_dft, tsk.at(col - 1), &mut scratch_prod);
+            module.gglwe_product_dft_default(&mut res_dft, a_dft, tsk.at(col - 1), 1, &mut scratch_prod);
         }
 
         let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module, cols, res_dft.size());

@@ -698,7 +698,7 @@ where
         let tsk = tsk.to_backend_ref();
 
         let a_dft_ref = a_dft.to_backend_ref();
-        self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, &tsk.0, &mut scratch_2);
+        self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2);
         let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self, cols, output_size);
         {
             let mut res_big_backend = res_big.to_backend_mut();

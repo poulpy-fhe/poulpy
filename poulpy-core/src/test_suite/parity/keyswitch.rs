@@ -18,7 +18,7 @@ use crate::{
     GGLWEKeyswitch, GLWEKeyswitch,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, gadget_product_limbs,
         prepared::GGLWEPreparedFactory,
     },
     oep::GGLWEProductDigitsStridedImpl,
@@ -66,6 +66,8 @@ where
     }) {
         let rows = a_size.div_ceil(dsize);
         let size_out = a_size;
+        let product_terms = module.n().saturating_mul(rows).saturating_mul(dsize).saturating_mul(cols_in);
+        let product_limbs = gadget_product_limbs(Base2K(base2k as u32), product_terms);
         let default_tmp = crate::default::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
             module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
         );
@@ -107,6 +109,7 @@ where
             &mut want.to_backend_mut(),
             &a_dft.to_backend_ref(),
             dsize,
+            product_limbs,
             &pmat.to_backend_ref(),
             &mut scratch.borrow(),
         );
@@ -118,6 +121,7 @@ where
             &mut have.to_backend_mut(),
             &a_dft.to_backend_ref(),
             dsize,
+            product_limbs,
             &pmat.to_backend_ref(),
             &mut scratch.borrow(),
         );

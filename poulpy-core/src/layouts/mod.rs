@@ -1325,6 +1325,20 @@ pub(crate) struct GadgetProductOutputSizeParams {
     pub(crate) extra_live_limbs: usize,
 }
 
+/// Worst-case radix limbs occupied by one coefficient of a gadget product.
+///
+/// Each elementary coefficient product contributes two limbs. Accumulating
+/// `product_terms` such products adds `ceil(log2(product_terms))` bits.
+pub(crate) fn gadget_product_limbs(key_base2k: Base2K, product_terms: usize) -> usize {
+    let base2k = key_base2k.as_usize();
+    let accumulation_bits = if product_terms <= 1 {
+        0
+    } else {
+        usize::BITS as usize - (product_terms - 1).leading_zeros() as usize
+    };
+    base2k.saturating_mul(2).saturating_add(accumulation_bits).div_ceil(base2k)
+}
+
 /// Sizes the key region materialized for a gadget product and its immediate
 /// normalization.
 ///
@@ -1358,14 +1372,7 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         .max(output_k.as_usize())
         .div_ceil(base2k)
         .saturating_add(extra_live_limbs);
-    let accumulation_bits = if product_terms <= 1 {
-        0
-    } else {
-        usize::BITS as usize - (product_terms - 1).leading_zeros() as usize
-    };
-    // A coefficient product is below 2^(2*base2k); summing `product_terms`
-    // signed products adds at most ceil(log2(product_terms)) bits.
-    let product_limbs = base2k.saturating_mul(2).saturating_add(accumulation_bits).div_ceil(base2k);
+    let product_limbs = gadget_product_limbs(key_base2k, product_terms);
     work_size.min(live_limbs.saturating_add(product_limbs))
 }
 
@@ -1426,5 +1433,12 @@ mod gadget_sizing_tests {
             }),
             6
         );
+    }
+
+    #[test]
+    fn product_limbs_include_coefficient_accumulation_growth() {
+        assert_eq!(gadget_product_limbs(Base2K(30), 1), 2);
+        assert_eq!(gadget_product_limbs(Base2K(30), 1 << 16), 3);
+        assert_eq!(gadget_product_limbs(Base2K(19), 1 << 20), 4);
     }
 }

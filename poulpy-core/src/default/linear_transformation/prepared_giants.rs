@@ -271,6 +271,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                             prod_base2k.as_usize(),
                             key,
                             key_output_size,
+                            nonzero_giant_rotations,
                             &mut scratch_rot,
                         );
                     }
