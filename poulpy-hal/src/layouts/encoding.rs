@@ -376,11 +376,14 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         (0..size).for_each(|i| {
             if i == 0 {
                 izip!(a.at(col, size - i - 1).iter(), data.iter_mut()).for_each(|(x, y)| {
-                    *y = ctx.div(FBig::<HalfEven>::from(*x).repr(), scale.repr()).value();
+                    *y = ctx.div(FBig::<HalfEven>::from(*x).repr(), scale.repr()).unwrap().value();
                 });
             } else {
                 izip!(a.at(col, size - i - 1).iter(), data.iter_mut()).for_each(|(x, y)| {
-                    *y = ctx.div((y.clone() + FBig::<HalfEven>::from(*x)).repr(), scale.repr()).value();
+                    *y = ctx
+                        .div((y.clone() + FBig::<HalfEven>::from(*x)).repr(), scale.repr())
+                        .unwrap()
+                        .value();
                 });
             }
         });
