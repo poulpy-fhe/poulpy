@@ -12,8 +12,7 @@ use crate::{
     },
     operations::{
         GGSWRotateDefault, GLWEAddDefault, GLWECopyDefault, GLWEMulConstDefault, GLWEMulPlainDefault, GLWEMulXpMinusOneDefault,
-        GLWENegateDefault, GLWENormalizeDefault, GLWERotateDefault, GLWEShiftDefault, GLWESubDefault, GLWETensoringDefault,
-        GLWEZeroDefault,
+        GLWENegateDefault, GLWENormalizeDefault, GLWERotateDefault, GLWEShiftDefault, GLWESubDefault, GLWEZeroDefault,
     },
 };
 
@@ -456,72 +455,108 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWETensoringImpl<BE> for BE
-where
-    Module<BE>: GLWETensoringDefault<BE>,
-{
-    fn glwe_tensor_apply_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        B: GLWEInfos,
-    {
-        module.glwe_tensor_apply_tmp_bytes_default(res, a, b)
-    }
+/// Implements the canonical Core tensoring operation for a backend.
+///
+/// Explicit opt-in lets optimized backends dispatch to specialized kernels.
+#[macro_export]
+macro_rules! impl_glwe_tensoring_default {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GLWETensoringImpl<$be> for $be {
+            fn glwe_tensor_apply_tmp_bytes<R, A, B>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a: &A,
+                b: &B,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_apply_tmp_bytes_default(
+                    module, res, a, b,
+                )
+            }
 
-    fn glwe_tensor_square_apply_tmp_bytes<R, A>(module: &Module<BE>, res: &R, a: &A) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-    {
-        module.glwe_tensor_square_apply_tmp_bytes_default(res, a)
-    }
+            fn glwe_tensor_square_apply_tmp_bytes<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a: &A,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_square_apply_tmp_bytes_default(
+                    module, res, a,
+                )
+            }
 
-    fn glwe_tensor_apply<R, A, B>(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        module.glwe_tensor_apply_default(cnv_offset, res, a, b, scratch)
-    }
+            fn glwe_tensor_apply<R, A, B>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                a: &A,
+                b: &B,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_apply_default(
+                    module, cnv_offset, res, a, b, scratch,
+                )
+            }
 
-    fn glwe_tensor_square_apply<R, A>(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        module.glwe_tensor_square_apply_default(cnv_offset, res, a, scratch)
-    }
+            fn glwe_tensor_square_apply<R, A>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                cnv_offset: usize,
+                res: &mut R,
+                a: &A,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_square_apply_default(
+                    module, cnv_offset, res, a, scratch,
+                )
+            }
 
-    fn glwe_tensor_relinearize<R, A, T>(module: &Module<BE>, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    {
-        module.glwe_tensor_relinearize_default(res, a, tsk, scratch)
-    }
+            fn glwe_tensor_relinearize<R, A, T>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &mut R,
+                a: &A,
+                tsk: &T,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                T: $crate::layouts::GGLWEInfos + $crate::layouts::prepared::GLWETensorKeyPreparedToBackendRef<$be>,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_relinearize_default(
+                    module, res, a, tsk, scratch,
+                )
+            }
 
-    fn glwe_tensor_relinearize_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, tsk: &B) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        B: GGLWEInfos,
-    {
-        module.glwe_tensor_relinearize_tmp_bytes_default(res, a, tsk)
-    }
+            fn glwe_tensor_relinearize_tmp_bytes<R, A, B>(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &R,
+                a: &A,
+                tsk: &B,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEInfos,
+                B: $crate::layouts::GGLWEInfos,
+            {
+                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_relinearize_tmp_bytes_default(
+                    module, res, a, tsk,
+                )
+            }
+        }
+    };
 }
 
 unsafe impl<BE: Backend> GLWEAddImpl<BE> for BE

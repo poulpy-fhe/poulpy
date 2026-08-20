@@ -79,7 +79,8 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     prod_dft: &VecZnxDftBackendRef<'_, BE>,
     prod_base2k: usize,
     key: &K,
-    key_size: usize,
+    output_size: usize,
+    term_count: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -100,9 +101,9 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     let key_base2k = key.base2k().as_usize();
     assert_eq!(prod_base2k, key_base2k, "lazy DFT path requires prod_base2k == key.base2k()");
     assert_eq!(prod_dft.cols(), cols);
-    let key_size = key_size.min(key.size());
-    assert_eq!(res_dft.size(), key_size);
-    let mask_small_size = prod_dft.size().min(key_size);
+    let output_size = output_size.min(key.size());
+    assert_eq!(res_dft.size(), output_size);
+    let mask_small_size = prod_dft.size().min(output_size);
 
     let scratch = scratch.borrow();
     let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(module, rank, mask_small_size);
@@ -126,11 +127,17 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
         }
     }
 
-    let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols, key_size);
+    let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols, output_size);
     let key_ref = key.to_backend_ref();
-    module.gglwe_product_dft_default(&mut ks_dft, &a_dft.to_backend_ref(), &key_ref, &mut scratch_2.borrow());
+    module.gglwe_product_dft_default(
+        &mut ks_dft,
+        &a_dft.to_backend_ref(),
+        &key_ref,
+        term_count,
+        &mut scratch_2.borrow(),
+    );
 
-    // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `key_size`,
+    // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `output_size`,
     // matching the existing BIG lazy path's rotated contribution size.
     module.vec_znx_dft_add_assign(&mut ks_dft, 0, prod_dft, 0);
 

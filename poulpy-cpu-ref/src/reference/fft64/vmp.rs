@@ -241,10 +241,16 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM>(
 
     let (mat2cols_output, extracted_blk) = tmp_bytes.split_at_mut(16);
 
-    let row_max: usize = nrows.min(a_size);
+    let row_end: usize = nrows.min(a_size);
+    let row_start = a
+        .chunks_exact(n)
+        .take(row_end)
+        .take_while(|row| row.iter().all(|&x| x == 0.0))
+        .count();
+    let row_max: usize = row_end - row_start;
     let col_max: usize = ncols.min(res_size);
 
-    if limb_offset >= col_max {
+    if limb_offset >= col_max || row_max == 0 {
         if OVERWRITE {
             REIM::reim_zero(res);
         }
@@ -254,22 +260,22 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM>(
     for blk_i in 0..(m >> 2) {
         let mat_blk_start: &[f64] = &pmat[blk_i * (8 * nrows * ncols)..];
 
-        REIM::reim4_extract_1blk_contiguous(m, row_max, blk_i, extracted_blk, a);
+        REIM::reim4_extract_1blk_contiguous(m, row_max, blk_i, extracted_blk, &a[row_start * n..]);
 
         if limb_offset.is_multiple_of(2) {
             for (col_res, col_pmat) in (0..).step_by(2).zip((limb_offset..col_max - 1).step_by(2)) {
-                let col_offset: usize = col_pmat * (8 * nrows);
+                let col_offset: usize = col_pmat * (8 * nrows) + row_start * 16;
                 REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
                 REIM::reim4_save_2blks::<OVERWRITE>(m, blk_i, &mut res[col_res * n..], mat2cols_output);
             }
         } else {
-            let col_offset: usize = (limb_offset - 1) * (8 * nrows);
+            let col_offset: usize = (limb_offset - 1) * (8 * nrows) + row_start * 16;
             REIM::reim4_mat2cols_2ndcol_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
 
             REIM::reim4_save_1blk::<OVERWRITE>(m, blk_i, res, mat2cols_output);
 
             for (col_res, col_pmat) in (1..).step_by(2).zip((limb_offset + 1..col_max - 1).step_by(2)) {
-                let col_offset: usize = col_pmat * (8 * nrows);
+                let col_offset: usize = col_pmat * (8 * nrows) + row_start * 16;
                 REIM::reim4_mat2cols_prod(row_max, mat2cols_output, extracted_blk, &mat_blk_start[col_offset..]);
                 REIM::reim4_save_2blks::<OVERWRITE>(m, blk_i, &mut res[col_res * n..], mat2cols_output);
             }
@@ -277,7 +283,8 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM>(
 
         if !col_max.is_multiple_of(2) {
             let last_col: usize = col_max - 1;
-            let col_offset: usize = last_col * (8 * nrows);
+            let row_offset = if ncols == col_max { row_start * 8 } else { row_start * 16 };
+            let col_offset: usize = last_col * (8 * nrows) + row_offset;
 
             if last_col >= limb_offset {
                 if ncols == col_max {

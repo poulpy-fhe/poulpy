@@ -128,6 +128,15 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     pub fn shape(&self) -> VecZnxShape {
         self.shape
     }
+
+    /// Whether the backend's physical representation can be viewed as `W`
+    /// elements. Packed backends may use `W` only as an identity marker.
+    fn has_element_view(&self) -> bool {
+        let element_bytes = crate::layouts::element_view_span(self)
+            .checked_mul(size_of::<W>())
+            .expect("VecZnxDft element-view byte size overflows usize");
+        element_bytes == B::bytes_of_vec_znx_dft(self.n(), self.cols(), self.size())
+    }
 }
 
 impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
@@ -141,9 +150,33 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
     ///
     /// Panics if `size > self.size()`.
     pub fn with_size_mut(&mut self, size: usize) -> VecZnxDftBackendMut<'_, B> {
+        self.with_limb_range_mut(0, size)
+    }
+
+    /// Reborrows a contiguous range of DFT limbs as a mutable vector.
+    ///
+    /// The returned view contains limbs `start..end` for every column and
+    /// renumbers `start` as limb zero. Dropping it leaves `self` unchanged.
+    /// This is the typed alternative to manually slicing the backend buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `start <= end <= self.size()`.
+    pub fn with_limb_range_mut(&mut self, start: usize, end: usize) -> VecZnxDftBackendMut<'_, B> {
+        assert!(start <= end, "DFT limb range start ({start}) exceeds end ({end})");
+        assert!(
+            end <= self.size(),
+            "DFT limb range end ({end}) exceeds size ({})",
+            self.size()
+        );
+
+        let n = self.n();
+        let cols = self.cols();
+        let offset = B::bytes_of_vec_znx_dft(n, cols, start);
+        let len = B::bytes_of_vec_znx_dft(n, cols, end - start);
         VecZnxDft {
-            data: B::view_mut_ref(&mut self.data),
-            shape: self.shape.with_size(size),
+            data: B::region_mut_ref(&mut self.data, offset, len),
+            shape: VecZnxShape::new(n, cols, end - start),
             _phantom: PhantomData,
         }
     }
@@ -151,10 +184,55 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
 
 impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> ZnxZero for VecZnxDft<D, W, B> {
     fn zero(&mut self) {
-        self.raw_mut().fill(W::zero())
+        if self.has_element_view() {
+            self.raw_mut().fill(W::zero());
+            return;
+        }
+
+        let byte_len = B::bytes_of_vec_znx_dft(self.n(), self.cols(), self.size());
+        let data = self.data.as_mut();
+        assert!(
+            byte_len <= data.len(),
+            "VecZnxDft backend representation ({byte_len} bytes) exceeds the {}-byte buffer",
+            data.len()
+        );
+        data[..byte_len].fill(0);
     }
+
     fn zero_at(&mut self, i: usize, j: usize) {
-        self.at_mut(i, j).fill(W::zero());
+        if self.has_element_view() {
+            self.at_mut(i, j).fill(W::zero());
+            return;
+        }
+
+        assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
+        assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
+
+        let block_bytes = B::bytes_of_vec_znx_dft(self.n(), 1, 1);
+        let byte_len = crate::layouts::checked_product(&[block_bytes, self.cols(), self.size()], "VecZnxDft packed byte size");
+        assert_eq!(
+            byte_len,
+            B::bytes_of_vec_znx_dft(self.n(), self.cols(), self.size()),
+            "VecZnxDft backend representation is not block-linear"
+        );
+
+        let block = j
+            .checked_mul(self.cols())
+            .and_then(|x| x.checked_add(i))
+            .expect("VecZnxDft packed block index overflows usize");
+        let offset = block
+            .checked_mul(block_bytes)
+            .expect("VecZnxDft packed block offset overflows usize");
+        let end = offset
+            .checked_add(block_bytes)
+            .expect("VecZnxDft packed block end overflows usize");
+        let data = self.data.as_mut();
+        assert!(
+            end <= data.len(),
+            "VecZnxDft packed block ({i}, {j}) exceeds the {}-byte buffer",
+            data.len()
+        );
+        data[offset..end].fill(0);
     }
 }
 
@@ -297,6 +375,14 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for VecZn
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "VecZnxDft(n={}, cols={}, size={})", self.n(), self.cols(), self.size())?;
 
+        if !self.has_element_view() {
+            return writeln!(
+                f,
+                "  <backend-packed representation: {} bytes>",
+                B::bytes_of_vec_znx_dft(self.n(), self.cols(), self.size())
+            );
+        }
+
         for col in 0..self.cols() {
             writeln!(f, "Column {col}:")?;
             for size in 0..self.size() {
@@ -347,5 +433,30 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
             shape,
             _phantom: PhantomData,
         }
+    }
+}
+
+#[cfg(test)]
+mod limb_range_tests {
+    use super::*;
+    use crate::layouts::{HostBytesBackend, VecZnxDftToBackendMut};
+
+    #[test]
+    fn mutable_limb_range_rebases_a_nonzero_start() {
+        let (n, cols, size) = (4, 2, 4);
+        let mut dft = VecZnxDft::<Vec<u8>, i64, HostBytesBackend>::alloc(n, cols, size);
+        dft.data.fill(0xA5);
+
+        {
+            let mut backend = dft.to_backend_mut();
+            let middle = backend.with_limb_range_mut(1, 3);
+            assert_eq!((middle.n(), middle.cols(), middle.size()), (n, cols, 2));
+            middle.data.fill(0);
+        }
+
+        let limb_bytes = HostBytesBackend::bytes_of_vec_znx_dft(n, cols, 1);
+        assert!(dft.data[..limb_bytes].iter().all(|byte| *byte == 0xA5));
+        assert!(dft.data[limb_bytes..3 * limb_bytes].iter().all(|byte| *byte == 0));
+        assert!(dft.data[3 * limb_bytes..].iter().all(|byte| *byte == 0xA5));
     }
 }

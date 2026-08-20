@@ -13,6 +13,7 @@ use core::arch::x86_64::{
     _mm512_storeu_si512,
 };
 
+use poulpy_core::oep::gglwe_product_digit_output_size;
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
@@ -160,6 +161,46 @@ unsafe fn extract_blk_pair_prime_major_avx512(n: usize, row_max: usize, blk_pair
     }
 }
 
+/// Strided-digit variant of [`extract_blk_pair_prime_major_avx512`].
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512f")]
+unsafe fn extract_blk_pair_prime_major_strided_avx512(
+    n: usize,
+    row_max: usize,
+    blk_pair: usize,
+    src: &[u64],
+    cols: usize,
+    limb_base: usize,
+    limb_step: usize,
+    row_start: usize,
+    dst: &mut [u64],
+) {
+    debug_assert!(n.is_multiple_of(4));
+    debug_assert!(dst.len() >= 16 * row_max);
+
+    let plane_stride = 4 * row_max;
+    let coeff_base = 16 * blk_pair;
+    let idx_p0 = _mm512_set_epi64(0, 0, 0, 0, 12, 8, 4, 0);
+    let idx_p1 = _mm512_set_epi64(0, 0, 0, 0, 13, 9, 5, 1);
+    let idx_p2 = _mm512_set_epi64(0, 0, 0, 0, 14, 10, 6, 2);
+    let idx_p3 = _mm512_set_epi64(0, 0, 0, 0, 15, 11, 7, 3);
+
+    for row in 0..row_max {
+        let logical_row = row_start + row;
+        let col = logical_row % cols;
+        let digit = logical_row / cols;
+        let flat = (limb_base + digit * limb_step) * cols + col;
+        let row_base = flat * 4 * n + coeff_base;
+        let v0 = unsafe { _mm512_loadu_si512(src.as_ptr().add(row_base) as *const __m512i) };
+        let v1 = unsafe { _mm512_loadu_si512(src.as_ptr().add(row_base + 8) as *const __m512i) };
+        for (p, idx) in [idx_p0, idx_p1, idx_p2, idx_p3].into_iter().enumerate() {
+            let dst_ptr = unsafe { dst.as_mut_ptr().add(p * plane_stride + row * 4) as *mut __m256i };
+            let plane = _mm512_permutex2var_epi64(v0, idx, v1);
+            unsafe { _mm256_storeu_si256(dst_ptr, _mm512_castsi512_si256(plane)) };
+        }
+    }
+}
+
 /// Non-temporal write of one x2-block (8 u64) into a q120b vector.
 ///
 /// `VecZnxDft` storage is 64-byte aligned, and every x2-block offset is a
@@ -174,6 +215,20 @@ unsafe fn save_blk_overwrite_nt(_n: usize, blk: usize, dst: &mut [u64], src: &[u
     unsafe {
         _mm256_stream_si256(dst_ptr, _mm256_loadu_si256(src_ptr));
         _mm256_stream_si256(dst_ptr.add(1), _mm256_loadu_si256(src_ptr.add(1)));
+    }
+}
+
+/// Cached overwrite used when a following gadget digit immediately reads the
+/// same block for accumulation.
+#[target_feature(enable = "avx512f")]
+unsafe fn save_blk_overwrite(blk: usize, dst: &mut [u64], src: &[u64]) {
+    debug_assert!(src.len() >= 8);
+    let off = 8 * blk;
+    unsafe {
+        _mm512_storeu_si512(
+            dst.as_mut_ptr().add(off) as *mut __m512i,
+            _mm512_loadu_si512(src.as_ptr() as *const __m512i),
+        );
     }
 }
 
@@ -220,10 +275,16 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
     let res_size = res_u64.len() / (4 * n);
     let n_block_pairs = n / 4;
 
-    let row_max = nrows.min(a_size);
+    let row_end = nrows.min(a_size);
+    let row_start = a_u64
+        .chunks_exact(4 * n)
+        .take(row_end)
+        .take_while(|row| row.iter().all(|&x| x == 0))
+        .count();
+    let row_max = row_end - row_start;
     let col_max = ncols.min(res_size + limb_offset);
 
-    if limb_offset >= col_max {
+    if limb_offset >= col_max || row_max == 0 {
         if OVERWRITE {
             res_u64.fill(0);
         }
@@ -235,13 +296,14 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
     let plane_stride = nrows * 4;
     let col_stride = nrows * 16;
     let bp_stride = ncols * nrows * 16;
+    let a_u64 = &a_u64[row_start * 4 * n..];
 
     for bp in 0..n_block_pairs {
         unsafe { extract_blk_pair_prime_major_avx512(n, row_max, bp, a_u64, x_pm) };
 
         for col_pmat in limb_offset..col_max {
             let col_res = col_pmat - limb_offset;
-            let y_off = bp * bp_stride + col_pmat * col_stride;
+            let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
 
             unsafe {
                 vec_mat1col_product_blkpair_bbc_pm_avx512(meta, row_max, blkpair_output, x_pm, &pmat_u64[y_off..], plane_stride)
@@ -330,6 +392,145 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_avx(
             meta,
             tmp,
         );
+    }
+}
+
+pub(crate) fn vmp_apply_digits_strided_tmp_bytes_avx(
+    a_cols: usize,
+    a_size: usize,
+    dsize: usize,
+    b_rows: usize,
+    b_cols_in: usize,
+) -> usize {
+    let nrows = b_rows * b_cols_in;
+    let row_max = (0..dsize)
+        .map(|di| (a_cols * ((a_size + di) / dsize).min(b_rows)).min(nrows))
+        .max()
+        .unwrap_or(0);
+    (4 * dsize + 16 + 16 * row_max) * size_of::<u64>()
+}
+
+/// Applies all gadget digits directly from their interleaved source limbs.
+/// The block-pair outer loop keeps the prepared-matrix working set hot and
+/// avoids materializing a temporary DFT vector for every digit.
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
+    module: &Module<NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
+    tmp: &mut [u64],
+) {
+    let n = res.n();
+    let output_size = res.size();
+    if dsize == 0 || n < 4 {
+        return;
+    }
+
+    let n_block_pairs = n / 4;
+    let nrows = pmat.cols_in() * pmat.rows();
+    let ncols = pmat.cols_out() * pmat.size();
+    let cols_out = pmat.cols_out();
+    let res_cols = res.cols();
+    let a_cols = a.cols();
+    let a_size = a.size();
+    let dnum = pmat.rows();
+    let meta = module.get_bbc_meta();
+    let a_u64: &[u64] = cast_slice(a.raw());
+    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
+    let pmat_u64: &[u64] = cast_slice(pmat.raw());
+
+    let plane_stride = nrows * 4;
+    let col_stride = nrows * 16;
+    let bp_stride = ncols * nrows * 16;
+
+    let (digit_meta, tmp) = tmp.split_at_mut(4 * dsize);
+    let (row_maxs, digit_meta) = digit_meta.split_at_mut(dsize);
+    let (row_starts, digit_meta) = digit_meta.split_at_mut(dsize);
+    let (limb_offsets, col_maxs) = digit_meta.split_at_mut(dsize);
+    for di in 0..dsize {
+        let digit_limbs = ((a_size + di) / dsize).min(dnum);
+        // Match the reference product: full-width overwrite, then narrowed accumulations.
+        let active_size = gglwe_product_digit_output_size(output_size, pmat.size(), dsize, di, product_limbs);
+        let limb_offset = di * cols_out;
+        let row_end = (a_cols * digit_limbs).min(nrows);
+        let limb_base = dsize - 1 - di;
+        let row_start = (0..row_end)
+            .take_while(|&row| {
+                let flat = (limb_base + (row / a_cols) * dsize) * a_cols + row % a_cols;
+                a_u64[flat * 4 * n..(flat + 1) * 4 * n].iter().all(|&x| x == 0)
+            })
+            .count();
+        row_starts[di] = row_start as u64;
+        row_maxs[di] = (row_end - row_start) as u64;
+        limb_offsets[di] = limb_offset as u64;
+        col_maxs[di] = ncols.min(res_cols * active_size + limb_offset) as u64;
+    }
+
+    let res_flat = res_cols * output_size;
+    if row_maxs[0] == 0 {
+        res_u64.fill(0);
+    } else {
+        for col in col_maxs[0] as usize..res_flat {
+            res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
+        }
+    }
+
+    let (blkpair_output, x_pm) = tmp.split_at_mut(16);
+    for bp in 0..n_block_pairs {
+        for di in 0..dsize {
+            let limb_offset = limb_offsets[di] as usize;
+            let col_max = col_maxs[di] as usize;
+            if limb_offset >= col_max {
+                continue;
+            }
+            let row_max = row_maxs[di] as usize;
+            if row_max == 0 {
+                continue;
+            }
+            let row_start = row_starts[di] as usize;
+            let x_pm = &mut x_pm[..16 * row_max];
+            unsafe {
+                extract_blk_pair_prime_major_strided_avx512(
+                    n,
+                    row_max,
+                    bp,
+                    a_u64,
+                    a_cols,
+                    dsize - 1 - di,
+                    dsize,
+                    row_start,
+                    x_pm,
+                );
+            }
+
+            for col_pmat in limb_offset..col_max {
+                let col_res = col_pmat - limb_offset;
+                // `row_start` is an offset within each prime plane.
+                let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
+                unsafe {
+                    vec_mat1col_product_blkpair_bbc_pm_avx512(
+                        meta,
+                        row_max,
+                        blkpair_output,
+                        x_pm,
+                        &pmat_u64[y_off..],
+                        plane_stride,
+                    );
+                    let base = col_res * 4 * n;
+                    let blk0 = 2 * bp;
+                    let blk1 = blk0 + 1;
+                    if di == 0 {
+                        save_blk_overwrite(blk0, &mut res_u64[base..], &blkpair_output[0..8]);
+                        save_blk_overwrite(blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                    } else {
+                        save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
+                        save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                    }
+                }
+            }
+        }
     }
 }
 

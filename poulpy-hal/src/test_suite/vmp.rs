@@ -182,6 +182,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         + VecZnxIdftApplyTmpA<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxDftApply<BR>
+        + VecZnxDftZero<BR>
         + VmpPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
@@ -195,6 +196,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         + VecZnxIdftApplyTmpA<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxDftApply<BT>
+        + VecZnxDftZero<BT>
         + VmpPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
@@ -252,6 +254,16 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                             &vec_znx_backend_ref::<BT>(&a_test_backend),
                             j,
                         );
+                    }
+                    if cols_in == 1 && cols_out == 1 && size_in == max_size && size_out == max_size {
+                        let prefix_size = size_in - 1;
+                        let mut a_dft_ref = a_dft_ref.to_backend_mut();
+                        let mut prefix_ref = a_dft_ref.with_limb_range_mut(0, prefix_size);
+                        module_ref.vec_znx_dft_zero(&mut prefix_ref, 0);
+
+                        let mut a_dft_test = a_dft_test.to_backend_mut();
+                        let mut prefix_test = a_dft_test.with_limb_range_mut(0, prefix_size);
+                        module_test.vec_znx_dft_zero(&mut prefix_test, 0);
                     }
 
                     assert_eq!(a.digest_u64(), a_digest);

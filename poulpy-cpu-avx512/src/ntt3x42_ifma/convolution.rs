@@ -1,37 +1,33 @@
 //! Polynomial convolution AVX512 kernels for [`NTT3x42Ifma`](crate::NTT3x42Ifma).
 //!
-//! Prepared operands use a block-major layout: for column `col` and x2 NTT
-//! block `blk`, all `size` limb rows (8 u64 each) are stored contiguously at
-//! `col * (n/2) * size * 8 + blk * size * 8`, with `CnvPVecR` rows in reversed
-//! limb order. The apply kernels therefore read both operands sequentially and
-//! tile four output limbs per pass over a zero-padded `a` window, reducing
-//! each output once with [`reduce_bbc_ifma_simd_512`].
-
-#![allow(dead_code)]
+//! Prepared operands use the packed 2-word group-major layout shared with
+//! `VecZnxDft` and `VmpPMat`.
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use poulpy_hal::layouts::PrimeSet;
 use std::mem::size_of;
 
 use crate::ntt3x42_ifma::{
     kernels::{cond_sub_2q_si512, ntt_avx512},
     module::handle,
     primes::Primes42,
-    tables::{harvey_modmul, harvey_quotient},
-    traits::{Ntt3x42IfmaAddAssign, Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
-    types::Q126Scalar,
+    serial::for_index,
+    traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_hal::layouts::{
-    CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, Module, VecZnxBackendRef,
-    VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
+    CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
+    VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
 };
 
-use super::mat_vec_ifma::{PrimeConsts512, reduce_bbc_ifma_simd_512, reduce_bbc_single_prime_512};
+use super::{
+    mat_vec_ifma::{PrimeConsts512, reduce_bbc_single_prime_512},
+    vmp::{pack_y, unpack_y},
+};
 
 use crate::NTT3x42Ifma;
 use core::arch::x86_64::{
-    __m512i, _mm_sfence, _mm512_add_epi64, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
-    _mm512_setzero_si512, _mm512_storeu_si512, _mm512_stream_si512,
+    __m512i, _mm_sfence, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
+    _mm512_or_si512, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512,
+    _mm512_stream_si512,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,24 +37,187 @@ use core::arch::x86_64::{
 /// Output-tile width of the apply kernels (padded window rows on each side).
 const TILE: usize = 4;
 
-/// Block-group size of the accumulate flush.
-const CNV_ACC_GROUP: usize = 16;
-
-/// Scratch bytes required by [`cnv_apply_dft_ifma`] and its accumulate variant.
-///
-/// Stores the padded `a` window plus the accumulate staging group.
-pub(crate) fn cnv_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
-    let min_size: usize = res_size.min(a_size + b_size);
-    (8 * (a_size + 2 * (TILE - 1)) + 8 * CNV_ACC_GROUP * min_size) * size_of::<u64>()
+/// Keep small overwrite results cache-resident for their immediate consumer.
+/// Larger outputs use non-temporal stores to avoid evicting the convolution
+/// inputs and staging buffers.
+#[inline]
+fn cached_overwrite_stores(n: usize, size: usize) -> bool {
+    const MAX_CACHED_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
+    n.checked_mul(size)
+        .and_then(|len| len.checked_mul(2 * size_of::<u64>()))
+        .is_some_and(|bytes| bytes <= MAX_CACHED_OUTPUT_BYTES)
 }
 
-/// Scratch bytes required by [`cnv_pairwise_apply_dft_ifma`]: the apply
-/// scratch plus the summed `b` rows.
+/// Scratch bytes for the packed apply kernels.
+pub(crate) fn cnv_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    let staged = res_size.min(a_size + b_size).div_ceil(TILE) * TILE;
+    (3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + 3 * 8 * staged) * size_of::<u64>()
+}
+
+/// Scratch bytes for pairwise packed apply.
 pub(crate) fn cnv_pairwise_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     if a_size == 0 || b_size == 0 || res_size == 0 {
         0
     } else {
-        cnv_apply_dft_ifma_tmp_bytes(res_size, a_size, b_size) + 8 * b_size * size_of::<u64>()
+        cnv_apply_dft_ifma_tmp_bytes(res_size, a_size, b_size)
+    }
+}
+
+pub(crate) fn cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    let staged = res_size.min(a_size + b_size).div_ceil(TILE) * TILE;
+    (6 * 8 * (a_size + 2 * (TILE - 1)) + 6 * 8 * b_size + 9 * 8 * staged) * size_of::<u64>()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Packed layout helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Zero the packed limb `(col, j)` of a `VecZnxDft`.
+#[inline]
+fn zero_res_limb(res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>, col: usize, j: usize) {
+    let n = res.n();
+    let cols = res.cols();
+    let off = 2 * n * (j * cols + col);
+    let res_u64: &mut [u64] = cast_slice_mut(res.data_mut());
+    res_u64[off..off + 2 * n].fill(0);
+}
+
+#[inline(always)]
+fn col_slice(raw: &[u64], n: usize, size: usize, col: usize) -> &[u64] {
+    let stride = 2 * n * size;
+    &raw[col * stride..(col + 1) * stride]
+}
+
+#[inline(always)]
+fn col_slice_mut(raw: &mut [u64], n: usize, size: usize, col: usize) -> &mut [u64] {
+    let stride = 2 * n * size;
+    &mut raw[col * stride..(col + 1) * stride]
+}
+
+/// Offset (in u64) of the packed 2-word row of `(limb_row, group)` in a column.
+#[inline(always)]
+fn packed_row_offset(size: usize, limb_row: usize, group: usize) -> usize {
+    (group * size + limb_row) * 16
+}
+
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn conv_planar_rank1(
+    a0: &[u64],
+    a1: &[u64],
+    b0: &[u64],
+    b1: &[u64],
+    win_rows: usize,
+    b_size: usize,
+    min_size: usize,
+    offset: usize,
+    staged: usize,
+    diag0: &mut [u64],
+    pair: &mut [u64],
+    diag1: &mut [u64],
+) {
+    const WIDTH: usize = 2;
+    let pad = TILE - 1;
+    let n_tiles = min_size.div_ceil(WIDTH);
+    let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
+
+    unsafe {
+        for (prime, pc_prime) in pc.iter().enumerate() {
+            let a0_p = a0.as_ptr().add(prime * 8 * win_rows);
+            let a1_p = a1.as_ptr().add(prime * 8 * win_rows);
+            let b0_p = b0.as_ptr().add(prime * 8 * b_size);
+            let b1_p = b1.as_ptr().add(prime * 8 * b_size);
+
+            for tile in 0..n_tiles {
+                let k0 = offset + WIDTH * tile;
+                let j_lo = (k0 + 1).saturating_sub(win_rows - 2 * pad).min(b_size);
+                let j_hi = (k0 + WIDTH).min(b_size);
+
+                let mut d0_lo0 = _mm512_setzero_si512();
+                let mut d0_hi0 = _mm512_setzero_si512();
+                let mut d0_lo1 = _mm512_setzero_si512();
+                let mut d0_hi1 = _mm512_setzero_si512();
+                let mut ps_lo0 = _mm512_setzero_si512();
+                let mut ps_hi0 = _mm512_setzero_si512();
+                let mut ps_lo1 = _mm512_setzero_si512();
+                let mut ps_hi1 = _mm512_setzero_si512();
+                let mut d1_lo0 = _mm512_setzero_si512();
+                let mut d1_hi0 = _mm512_setzero_si512();
+                let mut d1_lo1 = _mm512_setzero_si512();
+                let mut d1_hi1 = _mm512_setzero_si512();
+
+                if j_lo < j_hi {
+                    let r_start = b_size - j_hi;
+                    let r_end = b_size - j_lo;
+                    let win_start = 8 * ((k0 + pad + 1) - j_hi);
+                    let mut a0_ptr = a0_p.add(win_start);
+                    let mut a1_ptr = a1_p.add(win_start);
+                    let mut b0_ptr = b0_p.add(8 * r_start);
+                    let mut b1_ptr = b1_p.add(8 * r_start);
+                    let mut a00 = _mm512_loadu_si512(a0_ptr as *const __m512i);
+                    let mut a01 = _mm512_loadu_si512(a0_ptr.add(8) as *const __m512i);
+                    let mut a10 = _mm512_loadu_si512(a1_ptr as *const __m512i);
+                    let mut a11 = _mm512_loadu_si512(a1_ptr.add(8) as *const __m512i);
+
+                    let mut r = r_start;
+                    loop {
+                        let y0 = _mm512_loadu_si512(b0_ptr as *const __m512i);
+                        let y1 = _mm512_loadu_si512(b1_ptr as *const __m512i);
+                        let ys = _mm512_add_epi64(y0, y1);
+
+                        d0_lo0 = _mm512_madd52lo_epu64(d0_lo0, a00, y0);
+                        d0_hi0 = _mm512_madd52hi_epu64(d0_hi0, a00, y0);
+                        d0_lo1 = _mm512_madd52lo_epu64(d0_lo1, a01, y0);
+                        d0_hi1 = _mm512_madd52hi_epu64(d0_hi1, a01, y0);
+                        d1_lo0 = _mm512_madd52lo_epu64(d1_lo0, a10, y1);
+                        d1_hi0 = _mm512_madd52hi_epu64(d1_hi0, a10, y1);
+                        d1_lo1 = _mm512_madd52lo_epu64(d1_lo1, a11, y1);
+                        d1_hi1 = _mm512_madd52hi_epu64(d1_hi1, a11, y1);
+                        let as0 = _mm512_add_epi64(a00, a10);
+                        let as1 = _mm512_add_epi64(a01, a11);
+                        ps_lo0 = _mm512_madd52lo_epu64(ps_lo0, as0, ys);
+                        ps_hi0 = _mm512_madd52hi_epu64(ps_hi0, as0, ys);
+                        ps_lo1 = _mm512_madd52lo_epu64(ps_lo1, as1, ys);
+                        ps_hi1 = _mm512_madd52hi_epu64(ps_hi1, as1, ys);
+
+                        r += 1;
+                        if r == r_end {
+                            break;
+                        }
+                        a00 = a01;
+                        a10 = a11;
+                        a0_ptr = a0_ptr.add(8);
+                        a1_ptr = a1_ptr.add(8);
+                        a01 = _mm512_loadu_si512(a0_ptr.add(8) as *const __m512i);
+                        a11 = _mm512_loadu_si512(a1_ptr.add(8) as *const __m512i);
+                        b0_ptr = b0_ptr.add(8);
+                        b1_ptr = b1_ptr.add(8);
+                    }
+                }
+
+                let store = |out: &mut [u64], t: usize, lo: __m512i, hi: __m512i| {
+                    let value = reduce_bbc_single_prime_512(
+                        lo,
+                        hi,
+                        pc_prime.q,
+                        pc_prime.q2,
+                        pc_prime.pow42,
+                        pc_prime.pow52,
+                        pc_prime.pow52_quot,
+                    );
+                    _mm512_storeu_si512(
+                        out.as_mut_ptr().add(prime * 8 * staged + 8 * (WIDTH * tile + t)) as *mut __m512i,
+                        value,
+                    );
+                };
+                store(diag0, 0, d0_lo0, d0_hi0);
+                store(diag0, 1, d0_lo1, d0_hi1);
+                store(pair, 0, ps_lo0, ps_hi0);
+                store(pair, 1, ps_lo1, ps_hi1);
+                store(diag1, 0, d1_lo0, d1_hi0);
+                store(diag1, 1, d1_lo1, d1_hi1);
+            }
+        }
     }
 }
 
@@ -66,85 +225,94 @@ pub(crate) fn cnv_pairwise_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usi
 // Tiled column kernel
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Convolve one column pair into `res[res_col]`, tiling [`TILE`] output limbs
-/// per pass over the zero-padded `a` window.
-///
-/// - `ACC`: accumulate into `res` (via group-staged `ntt3x42_ifma_add_assign`)
-///   instead of overwriting (NT stores).
-/// - `PAIRWISE`: operands are the lane-wise sums `a0 + a1` and `b0 + b1`.
+/// Convolve one x8 coefficient group of a column pair.
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-unsafe fn conv_columns_ifma<const ACC: bool, const PAIRWISE: bool>(
-    cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
+unsafe fn conv_columns_packed_group<const ACC: bool, const PAIRWISE: bool>(
+    res: &mut [u64],
     res_col: usize,
+    n: usize,
+    res_cols: usize,
+    min_size: usize,
+    offset: usize,
+    group: usize,
     a0_col: &[u64],
     a1_col: &[u64],
     a_size: usize,
     b0_col: &[u64],
     b1_col: &[u64],
     b_size: usize,
+    cached_overwrite: bool,
     tmp: &mut [u64],
 ) {
-    let n = res.n();
-    let res_size = res.size();
-
-    let bound = a_size + b_size - 1;
-    let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
-
-    let n_blks = n / 2;
     let pad = TILE - 1;
     let win_rows = a_size + 2 * pad;
-
-    let (win, rest) = tmp.split_at_mut(8 * win_rows);
-    let (stage, rest) = rest.split_at_mut(if ACC { 8 * CNV_ACC_GROUP * min_size } else { 0 });
-    let b_sum: &mut [u64] = &mut rest[..if PAIRWISE { 8 * b_size } else { 0 }];
+    let n_tiles = min_size.div_ceil(TILE);
+    let staged = n_tiles * TILE;
+    let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
+    let (win, rest) = tmp.split_at_mut(3 * 8 * win_rows);
+    let (b_pl, out_st) = rest.split_at_mut(3 * 8 * b_size);
+    let out_st = &mut out_st[..3 * 8 * staged];
+    let out_base = out_st.as_mut_ptr();
 
     unsafe {
+        let m42 = _mm512_set1_epi64(((1u64 << 42) - 1) as i64);
+        let m20 = _mm512_set1_epi64(((1u64 << 20) - 1) as i64);
+        let m22 = _mm512_set1_epi64(((1u64 << 22) - 1) as i64);
         let zero = _mm512_setzero_si512();
-        for r in 0..pad {
-            _mm512_storeu_si512(win.as_mut_ptr().add(8 * r) as *mut __m512i, zero);
-            _mm512_storeu_si512(win.as_mut_ptr().add(8 * (a_size + pad + r)) as *mut __m512i, zero);
+        for p in 0..3 {
+            let wp = win.as_mut_ptr().add(p * 8 * win_rows);
+            for r in 0..pad {
+                _mm512_storeu_si512(wp.add(8 * r) as *mut __m512i, zero);
+                _mm512_storeu_si512(wp.add(8 * (a_size + pad + r)) as *mut __m512i, zero);
+            }
         }
 
-        let n_tiles = min_size.div_ceil(TILE);
-
-        for blk in 0..n_blks {
-            // Stage this block's a rows (or the pairwise sum) into the padded
-            // window; b rows are read in place (summed first when PAIRWISE).
-            let a_blk = a0_col.as_ptr().add(blk * 8 * a_size);
+        let a0_base = a0_col.as_ptr().add(packed_row_offset(a_size, 0, group));
+        let a1_base = a1_col.as_ptr().add(packed_row_offset(a_size, 0, group));
+        for r in 0..a_size {
+            let w0 = _mm512_loadu_si512(a0_base.add(16 * r) as *const __m512i);
+            let w1 = _mm512_loadu_si512(a0_base.add(16 * r + 8) as *const __m512i);
+            let mut y = unpack_y(w0, w1, m42, m20);
             if PAIRWISE {
-                let a1_blk = a1_col.as_ptr().add(blk * 8 * a_size);
-                for r in 0..a_size {
-                    let s = _mm512_add_epi64(
-                        _mm512_loadu_si512(a_blk.add(8 * r) as *const __m512i),
-                        _mm512_loadu_si512(a1_blk.add(8 * r) as *const __m512i),
-                    );
-                    _mm512_storeu_si512(win.as_mut_ptr().add(8 * (pad + r)) as *mut __m512i, s);
-                }
-            } else {
-                for r in 0..a_size {
-                    let v = _mm512_loadu_si512(a_blk.add(8 * r) as *const __m512i);
-                    _mm512_storeu_si512(win.as_mut_ptr().add(8 * (pad + r)) as *mut __m512i, v);
-                }
+                let v0 = _mm512_loadu_si512(a1_base.add(16 * r) as *const __m512i);
+                let v1 = _mm512_loadu_si512(a1_base.add(16 * r + 8) as *const __m512i);
+                let y1 = unpack_y(v0, v1, m42, m20);
+                y = [
+                    _mm512_add_epi64(y[0], y1[0]),
+                    _mm512_add_epi64(y[1], y1[1]),
+                    _mm512_add_epi64(y[2], y1[2]),
+                ];
             }
-            let b_blk: *const u64 = if PAIRWISE {
-                let b0_blk = b0_col.as_ptr().add(blk * 8 * b_size);
-                let b1_blk = b1_col.as_ptr().add(blk * 8 * b_size);
-                for r in 0..b_size {
-                    let s = _mm512_add_epi64(
-                        _mm512_loadu_si512(b0_blk.add(8 * r) as *const __m512i),
-                        _mm512_loadu_si512(b1_blk.add(8 * r) as *const __m512i),
-                    );
-                    _mm512_storeu_si512(b_sum.as_mut_ptr().add(8 * r) as *mut __m512i, s);
-                }
-                b_sum.as_ptr()
-            } else {
-                b0_col.as_ptr().add(blk * 8 * b_size)
-            };
+            for (p, yp) in y.iter().enumerate() {
+                _mm512_storeu_si512(win.as_mut_ptr().add(p * 8 * win_rows + 8 * (pad + r)) as *mut __m512i, *yp);
+            }
+        }
 
-            let grp_pos = blk % CNV_ACC_GROUP;
+        let b0_base = b0_col.as_ptr().add(packed_row_offset(b_size, 0, group));
+        let b1_base = b1_col.as_ptr().add(packed_row_offset(b_size, 0, group));
+        for r in 0..b_size {
+            let w0 = _mm512_loadu_si512(b0_base.add(16 * r) as *const __m512i);
+            let w1 = _mm512_loadu_si512(b0_base.add(16 * r + 8) as *const __m512i);
+            let mut y = unpack_y(w0, w1, m42, m20);
+            if PAIRWISE {
+                let v0 = _mm512_loadu_si512(b1_base.add(16 * r) as *const __m512i);
+                let v1 = _mm512_loadu_si512(b1_base.add(16 * r + 8) as *const __m512i);
+                let y1 = unpack_y(v0, v1, m42, m20);
+                y = [
+                    _mm512_add_epi64(y[0], y1[0]),
+                    _mm512_add_epi64(y[1], y1[1]),
+                    _mm512_add_epi64(y[2], y1[2]),
+                ];
+            }
+            for (p, yp) in y.iter().enumerate() {
+                _mm512_storeu_si512(b_pl.as_mut_ptr().add(p * 8 * b_size + 8 * r) as *mut __m512i, *yp);
+            }
+        }
+
+        for (prime, pc_prime) in pc.iter().enumerate() {
+            let win_p = win.as_ptr().add(prime * 8 * win_rows);
+            let b_base = b_pl.as_ptr().add(prime * 8 * b_size);
 
             for tile in 0..n_tiles {
                 let k0 = offset + TILE * tile;
@@ -166,8 +334,8 @@ unsafe fn conv_columns_ifma<const ACC: bool, const PAIRWISE: bool>(
                     // row per r and reusing three of four registers.
                     let r_start = b_size - j_hi;
                     let r_end = b_size - j_lo;
-                    let mut w_ptr = win.as_ptr().add(8 * ((k0 + pad + 1) - j_hi));
-                    let mut y_ptr = b_blk.add(8 * r_start);
+                    let mut w_ptr = win_p.add(8 * ((k0 + pad + 1) - j_hi));
+                    let mut y_ptr = b_base.add(8 * r_start);
 
                     let mut w0 = _mm512_loadu_si512(w_ptr as *const __m512i);
                     let mut w1 = _mm512_loadu_si512(w_ptr.add(8) as *const __m512i);
@@ -200,52 +368,57 @@ unsafe fn conv_columns_ifma<const ACC: bool, const PAIRWISE: bool>(
                     }
                 }
 
-                let k_rel = TILE * tile;
-                let mut store = |t: usize, lo: __m512i, hi: __m512i| {
-                    let out = reduce_bbc_ifma_simd_512(lo, hi);
-                    if ACC {
-                        // Limb-major staging keeps each flush run contiguous in res.
-                        let dst = stage.as_mut_ptr().add(8 * ((k_rel + t) * CNV_ACC_GROUP + grp_pos));
-                        _mm512_storeu_si512(dst as *mut __m512i, out);
-                    } else {
-                        let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k_rel + t));
-                        _mm512_stream_si512(res_u64.as_mut_ptr().add(8 * blk) as *mut __m512i, out);
-                    }
+                let store = |t: usize, lo: __m512i, hi: __m512i| {
+                    let out = reduce_bbc_single_prime_512(
+                        lo,
+                        hi,
+                        pc_prime.q,
+                        pc_prime.q2,
+                        pc_prime.pow42,
+                        pc_prime.pow52,
+                        pc_prime.pow52_quot,
+                    );
+                    _mm512_storeu_si512(out_base.add(prime * 8 * staged + 8 * (TILE * tile + t)) as *mut __m512i, out);
                 };
-                store(0, acc_lo0, acc_hi0);
-                if k_rel + 1 < min_size {
-                    store(1, acc_lo1, acc_hi1);
-                }
-                if k_rel + 2 < min_size {
-                    store(2, acc_lo2, acc_hi2);
-                }
-                if k_rel + 3 < min_size {
-                    store(3, acc_lo3, acc_hi3);
-                }
-            }
 
-            // Accumulate path: flush the group per limb as one contiguous add.
-            if ACC {
-                let in_group = grp_pos + 1;
-                if in_group == CNV_ACC_GROUP || blk == n_blks - 1 {
-                    let grp_base = blk + 1 - in_group;
-                    for k in 0..min_size {
-                        let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
-                        NTT3x42Ifma::ntt3x42_ifma_add_assign(
-                            &mut res_u64[8 * grp_base..8 * (grp_base + in_group)],
-                            &stage[8 * k * CNV_ACC_GROUP..8 * (k * CNV_ACC_GROUP + in_group)],
-                        );
-                    }
-                }
+                store(0, acc_lo0, acc_hi0);
+                store(1, acc_lo1, acc_hi1);
+                store(2, acc_lo2, acc_hi2);
+                store(3, acc_lo3, acc_hi3);
             }
         }
 
-        if !ACC {
-            for j in min_size..res_size {
-                res.at_mut(res_col, j).fill(Q126Scalar([0; 3]));
+        // Pack the three canonical staging planes into the packed output rows.
+        for k_rel in 0..min_size {
+            let p0 = _mm512_loadu_si512(out_base.add(8 * k_rel) as *const __m512i);
+            let p1 = _mm512_loadu_si512(out_base.add(8 * (staged + k_rel)) as *const __m512i);
+            let p2 = _mm512_loadu_si512(out_base.add(8 * (2 * staged + k_rel)) as *const __m512i);
+            let dst = res.as_mut_ptr().add((k_rel * res_cols + res_col) * 2 * n + 16 * group);
+            if ACC {
+                let d = unpack_y(
+                    _mm512_loadu_si512(dst as *const __m512i),
+                    _mm512_loadu_si512(dst.add(8) as *const __m512i),
+                    m42,
+                    m20,
+                );
+                let r = [
+                    cond_sub_2q_si512(_mm512_add_epi64(d[0], p0), pc[0].q),
+                    cond_sub_2q_si512(_mm512_add_epi64(d[1], p1), pc[1].q),
+                    cond_sub_2q_si512(_mm512_add_epi64(d[2], p2), pc[2].q),
+                ];
+                let [w0, w1] = pack_y(r, m22);
+                _mm512_storeu_si512(dst as *mut __m512i, w0);
+                _mm512_storeu_si512(dst.add(8) as *mut __m512i, w1);
+            } else {
+                let [w0, w1] = pack_y([p0, p1, p2], m22);
+                if cached_overwrite {
+                    _mm512_storeu_si512(dst as *mut __m512i, w0);
+                    _mm512_storeu_si512(dst.add(8) as *mut __m512i, w1);
+                } else {
+                    _mm512_stream_si512(dst as *mut __m512i, w0);
+                    _mm512_stream_si512(dst.add(8) as *mut __m512i, w1);
+                }
             }
-            // Order the non-temporal stores against any subsequent load of `res`.
-            _mm_sfence();
         }
     }
 }
@@ -254,54 +427,9 @@ unsafe fn conv_columns_ifma<const ACC: bool, const PAIRWISE: bool>(
 // Entry points
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn col_slice(raw: &[Q126Scalar], n: usize, size: usize, col: usize) -> &[u64] {
-    let stride = 3 * n * size;
-    &cast_slice(raw)[col * stride..(col + 1) * stride]
-}
-
-#[inline(always)]
-fn col_slice_mut(raw: &mut [Q126Scalar], n: usize, size: usize, col: usize) -> &mut [u64] {
-    let stride = 3 * n * size;
-    &mut cast_slice_mut(raw)[col * stride..(col + 1) * stride]
-}
-
-#[inline(always)]
-fn prepared_row_offset(n: usize, size: usize, limb_row: usize, prime: usize, group: usize) -> usize {
-    prime * n * size + group * size * 8 + limb_row * 8
-}
-
-#[inline(always)]
-fn prepared_row(data: &[u64], n: usize, size: usize, limb_row: usize, prime: usize, group: usize) -> &[u64] {
-    let off = prepared_row_offset(n, size, limb_row, prime, group);
-    &data[off..off + 8]
-}
-
-#[target_feature(enable = "avx512f")]
-unsafe fn scatter_limb_planar(dst: &mut [u64], src: &[u64], n: usize, size: usize, limb_row: usize) {
-    let n_groups = n / 8;
-    for prime in 0..3 {
-        for group in 0..n_groups {
-            let dst_off = prepared_row_offset(n, size, limb_row, prime, group);
-            let src_off = prime * n + 8 * group;
-            dst[dst_off..dst_off + 8].copy_from_slice(&src[src_off..src_off + 8]);
-        }
-    }
-}
-
-#[target_feature(enable = "avx512f")]
-unsafe fn zero_limb_planar(dst: &mut [u64], n: usize, size: usize, limb_row: usize) {
-    let n_groups = n / 8;
-    for prime in 0..3 {
-        for group in 0..n_groups {
-            let dst_off = prepared_row_offset(n, size, limb_row, prime, group);
-            dst[dst_off..dst_off + 8].fill(0);
-        }
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-unsafe fn conv_columns_planar<const ACC: bool, const PAIRWISE: bool>(
+unsafe fn conv_columns_packed<const ACC: bool, const PAIRWISE: bool>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
@@ -319,221 +447,239 @@ unsafe fn conv_columns_planar<const ACC: bool, const PAIRWISE: bool>(
     let offset = cnv_offset.min(bound);
     let min_size = res_size.min((bound + 1).saturating_sub(offset));
 
-    let pad = TILE - 1;
-    let win_rows = a_size + 2 * pad;
+    let win_rows = a_size + 2 * (TILE - 1);
     let n_groups = n / 8;
     let n_tiles = min_size.div_ceil(TILE);
-    let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
-    let (win, rest) = tmp.split_at_mut(8 * win_rows);
-    let b_sum = &mut rest[..if PAIRWISE { 8 * b_size } else { 0 }];
-
-    unsafe {
-        let zero = _mm512_setzero_si512();
-        for r in 0..pad {
-            _mm512_storeu_si512(win.as_mut_ptr().add(8 * r) as *mut __m512i, zero);
-            _mm512_storeu_si512(win.as_mut_ptr().add(8 * (a_size + pad + r)) as *mut __m512i, zero);
+    let task_tmp_len = 3 * 8 * win_rows + 3 * 8 * b_size + 3 * 8 * n_tiles * TILE;
+    let res_cols = res.cols();
+    let cached_overwrite = cached_overwrite_stores(n, min_size);
+    let tmp = &mut tmp[..task_tmp_len];
+    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
+    for group in 0..n_groups {
+        unsafe {
+            conv_columns_packed_group::<ACC, PAIRWISE>(
+                res_data,
+                res_col,
+                n,
+                res_cols,
+                min_size,
+                offset,
+                group,
+                a0_col,
+                a1_col,
+                a_size,
+                b0_col,
+                b1_col,
+                b_size,
+                cached_overwrite,
+                tmp,
+            );
         }
+    }
 
-        for (prime, pc_prime) in pc.iter().enumerate() {
-            for group in 0..n_groups {
-                for r in 0..a_size {
-                    let a0 = prepared_row(a0_col, n, a_size, r, prime, group).as_ptr();
-                    let v = if PAIRWISE {
-                        let a1 = prepared_row(a1_col, n, a_size, r, prime, group).as_ptr();
-                        _mm512_add_epi64(
-                            _mm512_loadu_si512(a0 as *const __m512i),
-                            _mm512_loadu_si512(a1 as *const __m512i),
-                        )
-                    } else {
-                        _mm512_loadu_si512(a0 as *const __m512i)
-                    };
-                    _mm512_storeu_si512(win.as_mut_ptr().add(8 * (pad + r)) as *mut __m512i, v);
-                }
-
-                let b_base: *const u64 = if PAIRWISE {
-                    for r in 0..b_size {
-                        let b0 = prepared_row(b0_col, n, b_size, r, prime, group).as_ptr();
-                        let b1 = prepared_row(b1_col, n, b_size, r, prime, group).as_ptr();
-                        let s = _mm512_add_epi64(
-                            _mm512_loadu_si512(b0 as *const __m512i),
-                            _mm512_loadu_si512(b1 as *const __m512i),
-                        );
-                        _mm512_storeu_si512(b_sum.as_mut_ptr().add(8 * r) as *mut __m512i, s);
-                    }
-                    b_sum.as_ptr()
-                } else {
-                    b0_col.as_ptr().add(prepared_row_offset(n, b_size, 0, prime, group))
-                };
-
-                for tile in 0..n_tiles {
-                    let k0 = offset + TILE * tile;
-                    let j_lo = (k0 + 1).saturating_sub(a_size).min(b_size);
-                    let j_hi = (k0 + TILE).min(b_size);
-
-                    let mut acc_lo0 = _mm512_setzero_si512();
-                    let mut acc_hi0 = _mm512_setzero_si512();
-                    let mut acc_lo1 = _mm512_setzero_si512();
-                    let mut acc_hi1 = _mm512_setzero_si512();
-                    let mut acc_lo2 = _mm512_setzero_si512();
-                    let mut acc_hi2 = _mm512_setzero_si512();
-                    let mut acc_lo3 = _mm512_setzero_si512();
-                    let mut acc_hi3 = _mm512_setzero_si512();
-
-                    if j_lo < j_hi {
-                        let r_start = b_size - j_hi;
-                        let r_end = b_size - j_lo;
-                        let mut w_ptr = win.as_ptr().add(8 * ((k0 + pad + 1) - j_hi));
-                        let mut y_ptr = b_base.add(8 * r_start);
-
-                        let mut w0 = _mm512_loadu_si512(w_ptr as *const __m512i);
-                        let mut w1 = _mm512_loadu_si512(w_ptr.add(8) as *const __m512i);
-                        let mut w2 = _mm512_loadu_si512(w_ptr.add(16) as *const __m512i);
-                        let mut w3 = _mm512_loadu_si512(w_ptr.add(24) as *const __m512i);
-
-                        let mut r = r_start;
-                        loop {
-                            let y = _mm512_loadu_si512(y_ptr as *const __m512i);
-
-                            acc_lo0 = _mm512_madd52lo_epu64(acc_lo0, w0, y);
-                            acc_hi0 = _mm512_madd52hi_epu64(acc_hi0, w0, y);
-                            acc_lo1 = _mm512_madd52lo_epu64(acc_lo1, w1, y);
-                            acc_hi1 = _mm512_madd52hi_epu64(acc_hi1, w1, y);
-                            acc_lo2 = _mm512_madd52lo_epu64(acc_lo2, w2, y);
-                            acc_hi2 = _mm512_madd52hi_epu64(acc_hi2, w2, y);
-                            acc_lo3 = _mm512_madd52lo_epu64(acc_lo3, w3, y);
-                            acc_hi3 = _mm512_madd52hi_epu64(acc_hi3, w3, y);
-
-                            r += 1;
-                            if r == r_end {
-                                break;
-                            }
-                            w0 = w1;
-                            w1 = w2;
-                            w2 = w3;
-                            w_ptr = w_ptr.add(8);
-                            w3 = _mm512_loadu_si512(w_ptr.add(24) as *const __m512i);
-                            y_ptr = y_ptr.add(8);
-                        }
-                    }
-
-                    let mut store = |t: usize, lo: __m512i, hi: __m512i| {
-                        let k_rel = TILE * tile + t;
-                        if k_rel >= min_size {
-                            return;
-                        }
-                        let out = reduce_bbc_single_prime_512(
-                            lo,
-                            hi,
-                            pc_prime.q,
-                            pc_prime.q2,
-                            pc_prime.pow42,
-                            pc_prime.pow52,
-                            pc_prime.pow52_quot,
-                        );
-                        let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k_rel));
-                        let dst = res_u64.as_mut_ptr().add(prime * n + 8 * group) as *mut __m512i;
-                        if ACC {
-                            let d = _mm512_loadu_si512(dst as *const __m512i);
-                            _mm512_storeu_si512(dst, cond_sub_2q_si512(_mm512_add_epi64(d, out), pc_prime.q2));
-                        } else {
-                            _mm512_stream_si512(dst, out);
-                        }
-                    };
-
-                    store(0, acc_lo0, acc_hi0);
-                    store(1, acc_lo1, acc_hi1);
-                    store(2, acc_lo2, acc_hi2);
-                    store(3, acc_lo3, acc_hi3);
-                }
-            }
+    if !ACC {
+        for j in min_size..res_size {
+            zero_res_limb(res, res_col, j);
         }
-
-        if !ACC {
-            for j in min_size..res_size {
-                cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
-            }
+        if !cached_overwrite {
             _mm_sfence();
         }
     }
 }
 
-#[inline(always)]
-fn limb_plane(data: &[u64], n: usize, limb: usize, prime: usize) -> &[u64] {
-    let base = limb * 3 * n + prime * n;
-    &data[base..base + n]
-}
-
-#[inline(always)]
-fn limb_plane_mut(data: &mut [u64], n: usize, limb: usize, prime: usize) -> &mut [u64] {
-    let base = limb * 3 * n + prime * n;
-    &mut data[base..base + n]
-}
-
-#[inline(always)]
-fn mul_mod_lazy(a: u64, b: u64, prime: usize) -> u64 {
-    let q = Primes42::Q[prime];
-    let b = b % q;
-    harvey_modmul(a, b, harvey_quotient(b, q), q) % q
-}
-
 #[allow(clippy::too_many_arguments)]
-fn conv_columns_planar_scalar<const ACC: bool, const PAIRWISE: bool>(
-    cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
-    res_col: usize,
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn conv_tensor_rank1_packed_group(
+    res: &mut [u64],
+    n: usize,
+    res_cols: usize,
+    min_size: usize,
+    offset: usize,
+    group: usize,
     a0_col: &[u64],
     a1_col: &[u64],
     a_size: usize,
     b0_col: &[u64],
     b1_col: &[u64],
     b_size: usize,
+    cached_overwrite: bool,
+    tmp: &mut [u64],
 ) {
-    let n = res.n();
-    let res_size = res.size();
-    let bound = a_size + b_size - 1;
-    let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
-    let mut tmp = vec![0u64; 3 * n];
+    let pad = TILE - 1;
+    let win_rows = a_size + 2 * pad;
+    let staged = min_size.div_ceil(TILE) * TILE;
+    let (a0_win, rest) = tmp.split_at_mut(3 * 8 * win_rows);
+    let (a1_win, rest) = rest.split_at_mut(3 * 8 * win_rows);
+    let (b0_pl, rest) = rest.split_at_mut(3 * 8 * b_size);
+    let (b1_pl, rest) = rest.split_at_mut(3 * 8 * b_size);
+    let (diag0, rest) = rest.split_at_mut(3 * 8 * staged);
+    let (pair, diag1) = rest.split_at_mut(3 * 8 * staged);
 
-    for k_rel in 0..min_size {
-        let k_abs = offset + k_rel;
-        tmp.fill(0);
-        let j_min = k_abs.saturating_sub(a_size - 1);
-        let j_max = (k_abs + 1).min(b_size);
-        for prime in 0..3 {
-            let q = Primes42::Q[prime];
-            let out = limb_plane_mut(&mut tmp, n, 0, prime);
-            for j in j_min..j_max {
-                let a_limb = k_abs - j;
-                let a0 = limb_plane(a0_col, n, a_limb, prime);
-                let b0 = limb_plane(b0_col, n, j, prime);
-                if PAIRWISE {
-                    let a1 = limb_plane(a1_col, n, a_limb, prime);
-                    let b1 = limb_plane(b1_col, n, j, prime);
-                    for i in 0..n {
-                        let av = a0[i] + a1[i];
-                        let bv = (b0[i] + b1[i]) % q;
-                        out[i] = ((out[i] as u128 + mul_mod_lazy(av, bv, prime) as u128) % q as u128) as u64;
-                    }
-                } else {
-                    for i in 0..n {
-                        out[i] = ((out[i] as u128 + mul_mod_lazy(a0[i], b0[i], prime) as u128) % q as u128) as u64;
-                    }
+    unsafe {
+        let m42 = _mm512_set1_epi64(((1u64 << 42) - 1) as i64);
+        let m20 = _mm512_set1_epi64(((1u64 << 20) - 1) as i64);
+        let m22 = _mm512_set1_epi64(((1u64 << 22) - 1) as i64);
+        let zero = _mm512_setzero_si512();
+        for p in 0..3 {
+            for win in [&mut *a0_win, &mut *a1_win] {
+                let wp = win.as_mut_ptr().add(p * 8 * win_rows);
+                for r in 0..pad {
+                    _mm512_storeu_si512(wp.add(8 * r) as *mut __m512i, zero);
+                    _mm512_storeu_si512(wp.add(8 * (a_size + pad + r)) as *mut __m512i, zero);
                 }
             }
         }
 
-        let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k_rel));
-        if ACC {
-            NTT3x42Ifma::ntt3x42_ifma_add_assign(res_u64, &tmp);
-        } else {
-            res_u64.copy_from_slice(&tmp);
+        let a0_base = a0_col.as_ptr().add(packed_row_offset(a_size, 0, group));
+        let a1_base = a1_col.as_ptr().add(packed_row_offset(a_size, 0, group));
+        for r in 0..a_size {
+            let a0 = unpack_y(
+                _mm512_loadu_si512(a0_base.add(16 * r) as *const __m512i),
+                _mm512_loadu_si512(a0_base.add(16 * r + 8) as *const __m512i),
+                m42,
+                m20,
+            );
+            let a1 = unpack_y(
+                _mm512_loadu_si512(a1_base.add(16 * r) as *const __m512i),
+                _mm512_loadu_si512(a1_base.add(16 * r + 8) as *const __m512i),
+                m42,
+                m20,
+            );
+            for p in 0..3 {
+                _mm512_storeu_si512(
+                    a0_win.as_mut_ptr().add(p * 8 * win_rows + 8 * (pad + r)) as *mut __m512i,
+                    a0[p],
+                );
+                _mm512_storeu_si512(
+                    a1_win.as_mut_ptr().add(p * 8 * win_rows + 8 * (pad + r)) as *mut __m512i,
+                    a1[p],
+                );
+            }
+        }
+
+        let b0_base = b0_col.as_ptr().add(packed_row_offset(b_size, 0, group));
+        let b1_base = b1_col.as_ptr().add(packed_row_offset(b_size, 0, group));
+        for r in 0..b_size {
+            let b0 = unpack_y(
+                _mm512_loadu_si512(b0_base.add(16 * r) as *const __m512i),
+                _mm512_loadu_si512(b0_base.add(16 * r + 8) as *const __m512i),
+                m42,
+                m20,
+            );
+            let b1 = unpack_y(
+                _mm512_loadu_si512(b1_base.add(16 * r) as *const __m512i),
+                _mm512_loadu_si512(b1_base.add(16 * r + 8) as *const __m512i),
+                m42,
+                m20,
+            );
+            for p in 0..3 {
+                _mm512_storeu_si512(b0_pl.as_mut_ptr().add(p * 8 * b_size + 8 * r) as *mut __m512i, b0[p]);
+                _mm512_storeu_si512(b1_pl.as_mut_ptr().add(p * 8 * b_size + 8 * r) as *mut __m512i, b1[p]);
+            }
+        }
+
+        conv_planar_rank1(
+            a0_win, a1_win, b0_pl, b1_pl, win_rows, b_size, min_size, offset, staged, diag0, pair, diag1,
+        );
+
+        for k in 0..min_size {
+            let mut d0 = [_mm512_setzero_si512(); 3];
+            let mut pairwise = [_mm512_setzero_si512(); 3];
+            let mut d1 = [_mm512_setzero_si512(); 3];
+            for p in 0..3 {
+                let off = p * 8 * staged + 8 * k;
+                d0[p] = _mm512_loadu_si512(diag0.as_ptr().add(off) as *const __m512i);
+                d1[p] = _mm512_loadu_si512(diag1.as_ptr().add(off) as *const __m512i);
+                pairwise[p] = _mm512_loadu_si512(pair.as_ptr().add(off) as *const __m512i);
+            }
+
+            for (col, values) in [(0, d0), (1, pairwise), (2, d1)] {
+                let [w0, w1] = pack_y(values, m22);
+                let dst = res.as_mut_ptr().add((k * res_cols + col) * 2 * n + 16 * group);
+                if cached_overwrite {
+                    _mm512_storeu_si512(dst as *mut __m512i, w0);
+                    _mm512_storeu_si512(dst.add(8) as *mut __m512i, w1);
+                } else {
+                    _mm512_stream_si512(dst as *mut __m512i, w0);
+                    _mm512_stream_si512(dst.add(8) as *mut __m512i, w1);
+                }
+            }
         }
     }
+}
 
-    if !ACC {
+#[target_feature(enable = "avx512ifma,avx512vl")]
+pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma(
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
+    cnv_offset: usize,
+    a: &CnvPVecLBackendRef<'_, NTT3x42Ifma>,
+    b: &CnvPVecRBackendRef<'_, NTT3x42Ifma>,
+    tmp: &mut [u8],
+) {
+    assert!(res.cols() >= 3);
+    assert!(a.cols() >= 2);
+    assert!(b.cols() >= 2);
+    let n = res.n();
+    let res_size = res.size();
+    let a_size = a.size();
+    let b_size = b.size();
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        for col in 0..3 {
+            for j in 0..res_size {
+                zero_res_limb(res, col, j);
+            }
+        }
+        return;
+    }
+
+    let bound = a_size + b_size - 1;
+    let offset = cnv_offset.min(bound);
+    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let win_rows = a_size + 2 * (TILE - 1);
+    let staged = min_size.div_ceil(TILE) * TILE;
+    let task_tmp_len = 6 * 8 * win_rows + 6 * 8 * b_size + 9 * 8 * staged;
+    let n_groups = n / 8;
+    let res_cols = res.cols();
+    let cached_overwrite = cached_overwrite_stores(n, min_size);
+    let a_raw: &[u64] = cast_slice(a.data());
+    let b_raw: &[u64] = cast_slice(b.data());
+    let a0 = col_slice(a_raw, n, a_size, 0);
+    let a1 = col_slice(a_raw, n, a_size, 1);
+    let b0 = col_slice(b_raw, n, b_size, 0);
+    let b1 = col_slice(b_raw, n, b_size, 1);
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    debug_assert!(prefix.is_empty());
+    debug_assert!(suffix.is_empty());
+
+    let task_tmp = &mut tmp_u64[..task_tmp_len];
+    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
+    for group in 0..n_groups {
+        unsafe {
+            conv_tensor_rank1_packed_group(
+                res_data,
+                n,
+                res_cols,
+                min_size,
+                offset,
+                group,
+                a0,
+                a1,
+                a_size,
+                b0,
+                b1,
+                b_size,
+                cached_overwrite,
+                task_tmp,
+            );
+        }
+    }
+    if !cached_overwrite {
+        _mm_sfence();
+    }
+
+    for col in 0..3 {
         for j in min_size..res_size {
-            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+            zero_res_limb(res, col, j);
         }
     }
 }
@@ -557,7 +703,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma(
     let b_size = b.size();
     if res_size == 0 || a_size == 0 || b_size == 0 {
         for j in 0..res_size {
-            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+            zero_res_limb(res, res_col, j);
         }
         return;
     }
@@ -566,18 +712,16 @@ pub(crate) unsafe fn cnv_apply_dft_ifma(
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
-    let a_col_u64 = col_slice(a.raw(), n, a_size, a_col);
-    let b_col_u64 = col_slice(b.raw(), n, b_size, b_col);
+    let a_col_u64 = col_slice(cast_slice(a.data()), n, a_size, a_col);
+    let b_col_u64 = col_slice(cast_slice(b.data()), n, b_size, b_col);
     unsafe {
-        conv_columns_planar::<false, false>(
+        conv_columns_packed::<false, false>(
             cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, tmp_u64,
         );
     }
 }
 
-/// Accumulating variant of [`cnv_apply_dft_ifma`]: `res[k] += Σ a[j] ⊙ b[k−j]`
-/// via `ntt3x42_ifma_add_assign` (bit-identical to apply + DFT add).
-/// Limbs `>= min_size` are left untouched.
+/// Accumulating variant of [`cnv_apply_dft_ifma`].
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma(
@@ -602,10 +746,10 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma(
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
-    let a_col_u64 = col_slice(a.raw(), n, a_size, a_col);
-    let b_col_u64 = col_slice(b.raw(), n, b_size, b_col);
+    let a_col_u64 = col_slice(cast_slice(a.data()), n, a_size, a_col);
+    let b_col_u64 = col_slice(cast_slice(b.data()), n, b_size, b_col);
     unsafe {
-        conv_columns_planar::<true, false>(
+        conv_columns_packed::<true, false>(
             cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, tmp_u64,
         );
     }
@@ -638,7 +782,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
     let b_size = b.size();
     if res_size == 0 || a_size == 0 || b_size == 0 {
         for j in 0..res_size {
-            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+            zero_res_limb(res, res_col, j);
         }
         return;
     }
@@ -647,35 +791,62 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
-    let a0 = col_slice(a.raw(), n, a_size, col_0);
-    let a1 = col_slice(a.raw(), n, a_size, col_1);
-    let b0 = col_slice(b.raw(), n, b_size, col_0);
-    let b1 = col_slice(b.raw(), n, b_size, col_1);
-    unsafe { conv_columns_planar::<false, true>(cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, tmp_u64) };
+    let a_u64: &[u64] = cast_slice(a.data());
+    let b_u64: &[u64] = cast_slice(b.data());
+    let a0 = col_slice(a_u64, n, a_size, col_0);
+    let a1 = col_slice(a_u64, n, a_size, col_1);
+    let b0 = col_slice(b_u64, n, b_size, col_0);
+    let b1 = col_slice(b_u64, n, b_size, col_1);
+    unsafe { conv_columns_packed::<false, true>(cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, tmp_u64) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prepare paths
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Scatter one NTT-domain limb (x2 blocks of 8 u64) into block-major rows.
-fn scatter_limb(dst: &mut [u64], src: &[u64], size: usize, row: usize, n_blks: usize) {
-    for blk in 0..n_blks {
-        let off = (blk * size + row) * 8;
-        dst[off..off + 8].copy_from_slice(&src[8 * blk..8 * blk + 8]);
+/// Pack one canonical planar NTT-domain limb (`[0, q)` residues) into the
+/// packed 2-word rows of `(limb_row, group)` for every group.
+#[target_feature(enable = "avx512f")]
+unsafe fn pack_limb_packed(dst: &mut [u64], src: &[u64], n: usize, size: usize, limb_row: usize) {
+    let n_groups = n / 8;
+    // Prepared operands are re-read long after every cache level has turned
+    // over; NT stores skip the write-allocate read of the destination lines.
+    // Row offsets are multiples of 128 bytes, so base alignment suffices.
+    let streamable = dst.as_ptr().addr().is_multiple_of(64);
+    let m22 = _mm512_set1_epi64(((1u64 << 22) - 1) as i64);
+    for group in 0..n_groups {
+        let src_off = 8 * group;
+        unsafe {
+            let p0 = _mm512_loadu_si512(src.as_ptr().add(src_off) as *const __m512i);
+            let p1 = _mm512_loadu_si512(src.as_ptr().add(n + src_off) as *const __m512i);
+            let p2 = _mm512_loadu_si512(src.as_ptr().add(2 * n + src_off) as *const __m512i);
+            let w0 = _mm512_or_si512(p0, _mm512_slli_epi64::<42>(_mm512_and_si512(p1, m22)));
+            let w1 = _mm512_or_si512(_mm512_srli_epi64::<22>(p1), _mm512_slli_epi64::<20>(p2));
+            let dst_off = packed_row_offset(size, limb_row, group);
+            if streamable {
+                _mm512_stream_si512(dst.as_mut_ptr().add(dst_off) as *mut __m512i, w0);
+                _mm512_stream_si512(dst.as_mut_ptr().add(dst_off + 8) as *mut __m512i, w1);
+            } else {
+                _mm512_storeu_si512(dst.as_mut_ptr().add(dst_off) as *mut __m512i, w0);
+                _mm512_storeu_si512(dst.as_mut_ptr().add(dst_off + 8) as *mut __m512i, w1);
+            }
+        }
+    }
+    if streamable {
+        _mm_sfence();
     }
 }
 
-fn zero_row(dst: &mut [u64], size: usize, row: usize, n_blks: usize) {
-    for blk in 0..n_blks {
-        let off = (blk * size + row) * 8;
-        dst[off..off + 8].fill(0);
+fn zero_limb_packed(dst: &mut [u64], size: usize, limb_row: usize, n_groups: usize) {
+    for group in 0..n_groups {
+        let off = packed_row_offset(size, limb_row, group);
+        dst[off..off + 16].fill(0);
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_left`]: one NTT-domain limb.
+/// Scratch bytes required by [`cnv_prepare_left`]: NTT and canonical limbs.
 pub(crate) fn cnv_prepare_left_tmp_bytes(n: usize) -> usize {
-    3 * n * size_of::<u64>()
+    6 * n * size_of::<u64>()
 }
 
 pub(crate) fn cnv_prepare_left(
@@ -694,28 +865,29 @@ pub(crate) fn cnv_prepare_left(
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
-    let limb = &mut tmp_u64[..3 * n];
+    let (limb_b, limb_c) = tmp_u64[..6 * n].split_at_mut(3 * n);
 
-    let res_raw = res.raw_mut();
+    let res_raw: &mut [u64] = cast_slice_mut(res.data_mut());
     for col in 0..cols {
         let dst = col_slice_mut(res_raw, n, res_size, col);
         for j in 0..min_size {
             if j + 1 == min_size {
-                NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb, a.at(col, j), mask);
+                NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
             } else {
-                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb, a.at(col, j));
+                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
             }
-            // Lazy [0, 4q): the left operand feeds only the BBC product (bound 2^44 > 4q).
-            unsafe { ntt_avx512::<Primes42>(table, limb, true) };
-            unsafe { scatter_limb_planar(dst, limb, n, res_size, j) };
+            // Lazy [0, 4q): c_from_b re-reduces to the canonical packing domain.
+            unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
+            NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
+            unsafe { pack_limb_packed(dst, limb_c, n, res_size, j) };
         }
         for j in min_size..res_size {
-            unsafe { zero_limb_planar(dst, n, res_size, j) };
+            zero_limb_packed(dst, res_size, j, n / 8);
         }
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_right`]: NTT and converted limbs.
+/// Scratch bytes required by [`cnv_prepare_right`]: NTT and canonical limbs.
 pub(crate) fn cnv_prepare_right_tmp_bytes(n: usize) -> usize {
     6 * n * size_of::<u64>()
 }
@@ -735,7 +907,7 @@ pub(crate) fn cnv_prepare_right(
 
     let (limb_b, limb_c) = tmp[..6 * n].split_at_mut(3 * n);
 
-    let res_raw = res.raw_mut();
+    let res_raw: &mut [u64] = cast_slice_mut(res.data_mut());
     for col in 0..cols {
         let dst = col_slice_mut(res_raw, n, res_size, col);
         for j in 0..min_size {
@@ -744,18 +916,18 @@ pub(crate) fn cnv_prepare_right(
             } else {
                 NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
             }
-            // Lazy [0, 4q): c_from_b re-reduces from [0, 4q).
+            // Lazy [0, 4q): c_from_b re-reduces to the canonical packing domain.
             unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
             NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-            unsafe { scatter_limb_planar(dst, limb_c, n, res_size, res_size - 1 - j) };
+            unsafe { pack_limb_packed(dst, limb_c, n, res_size, res_size - 1 - j) };
         }
         for j in min_size..res_size {
-            unsafe { zero_limb_planar(dst, n, res_size, res_size - 1 - j) };
+            zero_limb_packed(dst, res_size, res_size - 1 - j, n / 8);
         }
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_self`]: NTT and converted limbs.
+/// Scratch bytes required by [`cnv_prepare_self`]: NTT and canonical limbs.
 pub(crate) fn cnv_prepare_self_tmp_bytes(n: usize) -> usize {
     6 * n * size_of::<u64>()
 }
@@ -779,8 +951,8 @@ pub(crate) fn cnv_prepare_self(
     debug_assert!(suffix.is_empty());
     let (limb_b, limb_c) = tmp_u64[..6 * n].split_at_mut(3 * n);
 
-    let left_raw = left.raw_mut();
-    let right_raw = right.raw_mut();
+    let left_raw: &mut [u64] = cast_slice_mut(left.data_mut());
+    let right_raw: &mut [u64] = cast_slice_mut(right.data_mut());
     for col in 0..cols {
         let dst_l = col_slice_mut(left_raw, n, res_size, col);
         let dst_r = col_slice_mut(right_raw, n, res_size, col);
@@ -790,15 +962,15 @@ pub(crate) fn cnv_prepare_self(
             } else {
                 NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
             }
-            // Lazy [0, 4q): left operand → BBC (bound 2^44 > 4q); limb_b → c_from_b (re-reduces).
+            // Lazy [0, 4q): c_from_b re-reduces to the canonical packing domain.
             unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-            unsafe { scatter_limb_planar(dst_l, limb_b, n, res_size, j) };
             NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-            unsafe { scatter_limb_planar(dst_r, limb_c, n, res_size, res_size - 1 - j) };
+            unsafe { pack_limb_packed(dst_l, limb_c, n, res_size, j) };
+            unsafe { pack_limb_packed(dst_r, limb_c, n, res_size, res_size - 1 - j) };
         }
         for j in min_size..res_size {
-            unsafe { zero_limb_planar(dst_l, n, res_size, j) };
-            unsafe { zero_limb_planar(dst_r, n, res_size, res_size - 1 - j) };
+            zero_limb_packed(dst_l, res_size, j, n / 8);
+            zero_limb_packed(dst_r, res_size, res_size - 1 - j, n / 8);
         }
     }
 }
@@ -836,13 +1008,17 @@ pub(crate) fn cnv_by_const_apply(
     let bound = a_size + b_size - 1;
     let min_size = res_size.min(bound);
     let offset = cnv_offset.min(bound);
+    let n = res.n();
+    let rc = res.cols();
+    let res_raw = res.raw_mut();
 
     if b_size == 1 {
         let b0 = b.at(b_col, 0)[b_coeff] as i128;
-        for k in 0..min_size {
+        for_index(res_size, 2 * n * res_size, |k| {
+            let start = n * (k * rc + res_col);
+            let res_limb = &mut res_raw[start..start + n];
             let k_abs = k + offset;
-            let res_limb: &mut [i128] = res.at_mut(res_col, k);
-            if k_abs < a_size {
+            if k < min_size && k_abs < a_size {
                 let a_limb = a.at(a_col, k_abs);
                 for n_i in 0..res_limb.len() {
                     res_limb[n_i] = (a_limb[n_i] as i128) * b0;
@@ -850,30 +1026,27 @@ pub(crate) fn cnv_by_const_apply(
             } else {
                 res_limb.fill(0i128);
             }
-        }
-
-        for j in min_size..res_size {
-            res.at_mut(res_col, j).fill(0i128);
-        }
+        });
         return;
     }
 
-    for k in 0..min_size {
-        let k_abs = k + offset;
-        let j_min = k_abs.saturating_sub(a_size - 1);
-        let j_max = (k_abs + 1).min(b_size);
-        let res_limb: &mut [i128] = res.at_mut(res_col, k);
-        for (n_i, r) in res_limb.iter_mut().enumerate() {
-            let mut acc: i128 = 0;
-            for j in j_min..j_max {
-                let b_j = b.at(b_col, j)[b_coeff];
-                acc += a.at(a_col, k_abs - j)[n_i] as i128 * b_j as i128;
+    for_index(res_size, 2 * n * res_size * b_size, |k| {
+        let start = n * (k * rc + res_col);
+        let res_limb = &mut res_raw[start..start + n];
+        if k < min_size {
+            let k_abs = k + offset;
+            let j_min = k_abs.saturating_sub(a_size - 1);
+            let j_max = (k_abs + 1).min(b_size);
+            for (n_i, r) in res_limb.iter_mut().enumerate() {
+                let mut acc: i128 = 0;
+                for j in j_min..j_max {
+                    let b_j = b.at(b_col, j)[b_coeff];
+                    acc += a.at(a_col, k_abs - j)[n_i] as i128 * b_j as i128;
+                }
+                *r = acc;
             }
-            *r = acc;
+        } else {
+            res_limb.fill(0i128);
         }
-    }
-
-    for j in min_size..res_size {
-        res.at_mut(res_col, j).fill(0i128);
-    }
+    });
 }

@@ -188,22 +188,33 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     let prod_size = baby_size + diagonal_size - cnv_offset_hi;
 
     let num_giant_steps = rhs.giant_steps.len();
-    let has_nonzero_giant_rotation = rhs.giant_steps.iter().any(|gs| gs.rot != 0);
+    let nonzero_giant_rotations = rhs.giant_steps.iter().filter(|gs| gs.rot != 0).count();
+    let has_nonzero_giant_rotation = nonzero_giant_rotations != 0;
     // `automorphism_key_infos()` panics on an empty key map (legitimate for
     // an identity-only transform), so only consult it when at least one giant
     // rotation actually needs a key.
-    let (use_lazy_giant_rotation, key_size_effective) = if has_nonzero_giant_rotation {
+    let (use_lazy_giant_rotation, key_output_size) = if has_nonzero_giant_rotation {
         let key_infos = keys.automorphism_key_infos();
         let key_base2k = key_infos.base2k();
-        let key_size_effective = key_infos.work_size(res.k());
-        (res_base2k == key_base2k && prod_base2k == key_base2k, key_size_effective)
+        let bases_match = res_base2k == key_base2k && prod_base2k == key_base2k;
+        // PROD may carry a partial low limb beyond the destination's live
+        // precision. Preserve the same guard below that wider input while the
+        // sizing helper applies the key's work-region cap.
+        let output_size = crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(
+            res,
+            res,
+            &key_infos,
+            nonzero_giant_rotations,
+            prod_size.saturating_sub(res.size()),
+        );
+        (bases_match, output_size)
     } else {
         // No giant rotation: BIG-flow accumulator is always valid (no key required).
         (true, res.size())
     };
     let use_final_lazy_accumulator = !has_nonzero_giant_rotation || use_lazy_giant_rotation;
     let lazy_size = if use_lazy_giant_rotation {
-        key_size_effective.max(prod_size)
+        key_output_size.max(prod_size)
     } else {
         res.size().max(prod_size)
     };
@@ -249,9 +260,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                     .unwrap_or_else(|| panic!("missing automorphism key for giant-step rotation {rot}"));
                 {
                     let (mut rot_dft, mut scratch_rot) =
-                        scratch_phase
-                            .borrow()
-                            .take_vec_znx_dft_scratch(module, cols, key_size_effective);
+                        scratch_phase.borrow().take_vec_znx_dft_scratch(module, cols, key_output_size);
                     {
                         let mut rot_dft_backend = rot_dft.to_backend_mut();
                         let prod_dft_ref = prod_dft.to_backend_ref();
@@ -261,7 +270,8 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                             &prod_dft_ref,
                             prod_base2k.as_usize(),
                             key,
-                            key_size_effective,
+                            key_output_size,
+                            nonzero_giant_rotations,
                             &mut scratch_rot,
                         );
                     }

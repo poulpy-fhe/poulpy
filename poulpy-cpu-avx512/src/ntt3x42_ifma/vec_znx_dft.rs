@@ -1,28 +1,28 @@
 //! NTT-domain SIMD helpers for [`NTT3x42Ifma`](crate::NTT3x42Ifma).
 //!
-//! SIMD Garner reconstruction for the consume path.
+//! Packed `VecZnxDft` layout and SIMD helpers for [`NTT3x42Ifma`](crate::NTT3x42Ifma).
 
 use crate::NTT3x42Ifma;
 use crate::ntt3x42_ifma::{
-    kernels::{cond_sub_2q_si512, harvey_modmul_si512},
+    kernels::{cond_sub_2q_si512, harvey_modmul_si512, ntt_avx512},
     module::handle,
     primes::{PrimeSetNtt3x42Ifma, Primes42},
-    tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
-    traits::{
-        Ntt3x42IfmaAdd, Ntt3x42IfmaAddAssign, Ntt3x42IfmaCopy, Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64, Ntt3x42IfmaNegate,
-        Ntt3x42IfmaNegateAssign, Ntt3x42IfmaSub, Ntt3x42IfmaSubAssign, Ntt3x42IfmaSubNegateAssign, Ntt3x42IfmaToZnx128,
-        Ntt3x42IfmaZero,
-    },
+    serial::{for_index, for_index_with},
+    tables::Ntt3x42IfmaTableInv,
+    traits::{Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64, Ntt3x42IfmaToZnx128},
+    vmp::{pack_y, unpack_y},
 };
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
-    __m512i, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
-    _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64,
+    __m512i, __mmask8, _MM_CMPINT_LT, _mm512_add_epi64, _mm512_and_si512, _mm512_cmp_epu64_mask, _mm512_cmpeq_epi64_mask,
+    _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_mask_sub_epi64, _mm512_permutex2var_epi64,
+    _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512,
+    _mm512_sub_epi64,
 };
 use poulpy_hal::layouts::PrimeSet;
 use poulpy_hal::layouts::{
-    Data, HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
-    VecZnxDftBackendRef, ZnxView, ZnxViewMut,
+    DataView, DataViewMut, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView,
+    ZnxViewMut,
 };
 
 // 3-prime CRT -> i128 reconstruction helpers.
@@ -36,6 +36,10 @@ const Q2: u64 = Q[2];
 const Q01: u128 = Q0 as u128 * Q1 as u128;
 const BIG_Q: u128 = Q01 * Q2 as u128;
 const HALF_BIG_Q: u128 = BIG_Q / 2;
+const BIG_Q_LO: u64 = BIG_Q as u64;
+const BIG_Q_HI: u64 = (BIG_Q >> 64) as u64;
+const HALF_BIG_Q_LO: u64 = HALF_BIG_Q as u64;
+const HALF_BIG_Q_HI: u64 = (HALF_BIG_Q >> 64) as u64;
 const Q01_LO: u64 = (Q01 & ((1u128 << 52) - 1)) as u64;
 const Q01_HI: u64 = (Q01 >> 52) as u64;
 
@@ -95,6 +99,41 @@ fn garner_from_residues(r0: u64, r1: u64, r2: u64) -> i128 {
     }
 }
 
+/// Convert eight unsigned CRT representatives to the symmetric i128 range and
+/// store them in native interleaved `[lo, hi]` memory order.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn store_symmetric_i128x8(dst: *mut i128, lo: __m512i, hi: __m512i) {
+    unsafe {
+        let half_lo = _mm512_set1_epi64(HALF_BIG_Q_LO as i64);
+        let half_hi = _mm512_set1_epi64(HALF_BIG_Q_HI as i64);
+        let big_lo = _mm512_set1_epi64(BIG_Q_LO as i64);
+        let big_hi = _mm512_set1_epi64(BIG_Q_HI as i64);
+        let one = _mm512_set1_epi64(1);
+
+        // Strict unsigned 128-bit comparison: (hi, lo) > HALF_BIG_Q.
+        let hi_gt = _mm512_cmp_epu64_mask(half_hi, hi, _MM_CMPINT_LT);
+        let hi_eq = _mm512_cmpeq_epi64_mask(hi, half_hi);
+        let lo_gt = _mm512_cmp_epu64_mask(half_lo, lo, _MM_CMPINT_LT);
+        let subtract_q: __mmask8 = hi_gt | (hi_eq & lo_gt);
+
+        // Masked 128-bit subtraction with a low-to-high borrow.
+        let borrow = subtract_q & _mm512_cmp_epu64_mask(lo, big_lo, _MM_CMPINT_LT);
+        let lo = _mm512_mask_sub_epi64(lo, subtract_q, lo, big_lo);
+        let hi = _mm512_mask_sub_epi64(hi, subtract_q, hi, big_hi);
+        let hi = _mm512_mask_sub_epi64(hi, borrow, hi, one);
+
+        // [lo0..lo7] + [hi0..hi7] -> two native i128 store vectors.
+        let interleave_lo = _mm512_set_epi64(11, 3, 10, 2, 9, 1, 8, 0);
+        let interleave_hi = _mm512_set_epi64(15, 7, 14, 6, 13, 5, 12, 4);
+        let out0 = _mm512_permutex2var_epi64(lo, interleave_lo, hi);
+        let out1 = _mm512_permutex2var_epi64(lo, interleave_hi, hi);
+        let dst = dst as *mut __m512i;
+        _mm512_storeu_si512(dst, out0);
+        _mm512_storeu_si512(dst.add(1), out1);
+    }
+}
+
 /// CRT reconstruction: planar 3-prime IFMA b-format to i128.
 ///
 /// Input residues must be in `[0, 2q)` (b-format after iNTT).
@@ -124,9 +163,6 @@ pub(crate) unsafe fn simd_b_ntt3x42_ifma_to_znx128(nn: usize, res: &mut [i128], 
         let mask52 = _mm512_set1_epi64(((1u64 << 52) - 1) as i64);
         let mask12 = _mm512_set1_epi64(0xFFF);
         let zero = _mm512_setzero_si512();
-        let mut lo_lanes = [0u64; 8];
-        let mut hi_lanes = [0u64; 8];
-
         let mut c = 0usize;
         while c + 8 <= nn {
             let r0 = cond_sub_2q_si512(_mm512_loadu_si512(a.as_ptr().add(c) as *const __m512i), q0);
@@ -158,16 +194,7 @@ pub(crate) unsafe fn simd_b_ntt3x42_ifma_to_znx128(nn: usize, res: &mut [i128], 
             let a1 = _mm512_and_si512(a1, mask52);
             let lo = _mm512_add_epi64(a0, _mm512_slli_epi64::<52>(_mm512_and_si512(a1, mask12)));
             let hi = _mm512_add_epi64(_mm512_srli_epi64::<12>(a1), _mm512_slli_epi64::<40>(a2));
-            _mm512_storeu_si512(lo_lanes.as_mut_ptr() as *mut __m512i, lo);
-            _mm512_storeu_si512(hi_lanes.as_mut_ptr() as *mut __m512i, hi);
-            for lane in 0..8 {
-                let result = lo_lanes[lane] as u128 | ((hi_lanes[lane] as u128) << 64);
-                res[c + lane] = if result > HALF_BIG_Q {
-                    result as i128 - BIG_Q as i128
-                } else {
-                    result as i128
-                };
-            }
+            store_symmetric_i128x8(res.as_mut_ptr().add(c), lo, hi);
 
             c += 8;
         }
@@ -218,8 +245,255 @@ unsafe fn intt_then_compact_ifma(
     }
 }
 
-/// `VecZnxIdftApplyTmpA` fast path: iNTT consumes `a` in place, Garner streams
-/// into `res`. Limbs past `min(res.size(), a.size())` are zero-padded.
+// ─────────────────────────────────────────────────────────────────────────────
+// Packed 3x42 layout helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Bit masks of the packed 2-word coefficient encoding.
+pub(crate) const MASK42: u64 = (1u64 << 42) - 1;
+pub(crate) const MASK22: u64 = (1u64 << 22) - 1;
+pub(crate) const MASK20: u64 = (1u64 << 20) - 1;
+
+#[inline(always)]
+fn packed_limb(data: &[u64], n: usize, cols: usize, col: usize, j: usize) -> &[u64] {
+    let start = 2 * n * (j * cols + col);
+    &data[start..start + 2 * n]
+}
+
+#[inline(always)]
+fn packed_limb_mut(data: &mut [u64], n: usize, cols: usize, col: usize, j: usize) -> &mut [u64] {
+    let start = 2 * n * (j * cols + col);
+    &mut data[start..start + 2 * n]
+}
+
+/// Load and unpack the x8 group at u64 offset `off` of a packed limb.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn load_group(src: &[u64], off: usize, m42: __m512i, m20: __m512i) -> [__m512i; 3] {
+    unsafe {
+        let w0 = _mm512_loadu_si512(src.as_ptr().add(off) as *const __m512i);
+        let w1 = _mm512_loadu_si512(src.as_ptr().add(off + 8) as *const __m512i);
+        unpack_y(w0, w1, m42, m20)
+    }
+}
+
+/// Pack and store the x8 group at u64 offset `off` of a packed limb.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn store_group(dst: &mut [u64], off: usize, y: [__m512i; 3], m22: __m512i) {
+    unsafe {
+        let [w0, w1] = pack_y(y, m22);
+        _mm512_storeu_si512(dst.as_mut_ptr().add(off) as *mut __m512i, w0);
+        _mm512_storeu_si512(dst.as_mut_ptr().add(off + 8) as *mut __m512i, w1);
+    }
+}
+
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn q_vec_512() -> [__m512i; 3] {
+    [
+        _mm512_set1_epi64(Q0 as i64),
+        _mm512_set1_epi64(Q1 as i64),
+        _mm512_set1_epi64(Q2 as i64),
+    ]
+}
+
+/// Reduce a lazy planar NTT limb from `[0, 4q)` while packing it, keeping the
+/// final reduction in registers instead of a separate canonicalize pass.
+#[target_feature(enable = "avx512f")]
+unsafe fn pack_limb_3x42_lazy(n: usize, dst: &mut [u64], src: &[u64]) {
+    unsafe {
+        let m22 = _mm512_set1_epi64(MASK22 as i64);
+        let q = q_vec_512();
+        let q2 = [
+            _mm512_add_epi64(q[0], q[0]),
+            _mm512_add_epi64(q[1], q[1]),
+            _mm512_add_epi64(q[2], q[2]),
+        ];
+        for g in 0..n / 8 {
+            let p0 = _mm512_loadu_si512(src.as_ptr().add(8 * g) as *const __m512i);
+            let p1 = _mm512_loadu_si512(src.as_ptr().add(n + 8 * g) as *const __m512i);
+            let p2 = _mm512_loadu_si512(src.as_ptr().add(2 * n + 8 * g) as *const __m512i);
+            let p0 = cond_sub_2q_si512(cond_sub_2q_si512(p0, q2[0]), q[0]);
+            let p1 = cond_sub_2q_si512(cond_sub_2q_si512(p1, q2[1]), q[1]);
+            let p2 = cond_sub_2q_si512(cond_sub_2q_si512(p2, q2[2]), q[2]);
+            store_group(dst, 16 * g, [p0, p1, p2], m22);
+        }
+    }
+}
+
+/// Unpack a packed limb into planar residues.
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn unpack_limb_3x42(n: usize, dst: &mut [u64], src: &[u64]) {
+    unsafe {
+        let m42 = _mm512_set1_epi64(MASK42 as i64);
+        let m20 = _mm512_set1_epi64(MASK20 as i64);
+        for g in 0..n / 8 {
+            let y = load_group(src, 16 * g, m42, m20);
+            _mm512_storeu_si512(dst.as_mut_ptr().add(8 * g) as *mut __m512i, y[0]);
+            _mm512_storeu_si512(dst.as_mut_ptr().add(n + 8 * g) as *mut __m512i, y[1]);
+            _mm512_storeu_si512(dst.as_mut_ptr().add(2 * n + 8 * g) as *mut __m512i, y[2]);
+        }
+    }
+}
+
+/// `dst = a + b` on packed limbs, canonical (`x + y` then conditional subtract `q`).
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_add(n: usize, dst: &mut [u64], a: &[u64], b: &[u64]) {
+    unsafe {
+        let m42 = _mm512_set1_epi64(MASK42 as i64);
+        let m20 = _mm512_set1_epi64(MASK20 as i64);
+        let m22 = _mm512_set1_epi64(MASK22 as i64);
+        let q = q_vec_512();
+        for g in 0..n / 8 {
+            let off = 16 * g;
+            let ya = load_group(a, off, m42, m20);
+            let yb = load_group(b, off, m42, m20);
+            let r = [
+                cond_sub_2q_si512(_mm512_add_epi64(ya[0], yb[0]), q[0]),
+                cond_sub_2q_si512(_mm512_add_epi64(ya[1], yb[1]), q[1]),
+                cond_sub_2q_si512(_mm512_add_epi64(ya[2], yb[2]), q[2]),
+            ];
+            store_group(dst, off, r, m22);
+        }
+    }
+}
+
+/// `dst += a` on packed limbs, canonical.
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_add_assign(n: usize, dst: &mut [u64], a: &[u64]) {
+    unsafe {
+        let m42 = _mm512_set1_epi64(MASK42 as i64);
+        let m20 = _mm512_set1_epi64(MASK20 as i64);
+        let m22 = _mm512_set1_epi64(MASK22 as i64);
+        let q = q_vec_512();
+        for g in 0..n / 8 {
+            let off = 16 * g;
+            let yd = load_group(dst, off, m42, m20);
+            let ya = load_group(a, off, m42, m20);
+            let r = [
+                cond_sub_2q_si512(_mm512_add_epi64(yd[0], ya[0]), q[0]),
+                cond_sub_2q_si512(_mm512_add_epi64(yd[1], ya[1]), q[1]),
+                cond_sub_2q_si512(_mm512_add_epi64(yd[2], ya[2]), q[2]),
+            ];
+            store_group(dst, off, r, m22);
+        }
+    }
+}
+
+/// `dst = a - b` on packed limbs, canonical (`x + q - y` then conditional subtract `q`).
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_sub(n: usize, dst: &mut [u64], a: &[u64], b: &[u64]) {
+    unsafe {
+        let m42 = _mm512_set1_epi64(MASK42 as i64);
+        let m20 = _mm512_set1_epi64(MASK20 as i64);
+        let m22 = _mm512_set1_epi64(MASK22 as i64);
+        let q = q_vec_512();
+        for g in 0..n / 8 {
+            let off = 16 * g;
+            let ya = load_group(a, off, m42, m20);
+            let yb = load_group(b, off, m42, m20);
+            let r = [
+                cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(ya[0], q[0]), yb[0]), q[0]),
+                cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(ya[1], q[1]), yb[1]), q[1]),
+                cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(ya[2], q[2]), yb[2]), q[2]),
+            ];
+            store_group(dst, off, r, m22);
+        }
+    }
+}
+
+/// `dst -= a` on packed limbs, canonical.
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_sub_assign(n: usize, dst: &mut [u64], a: &[u64]) {
+    unsafe {
+        let m42 = _mm512_set1_epi64(MASK42 as i64);
+        let m20 = _mm512_set1_epi64(MASK20 as i64);
+        let m22 = _mm512_set1_epi64(MASK22 as i64);
+        let q = q_vec_512();
+        for g in 0..n / 8 {
+            let off = 16 * g;
+            let yd = load_group(dst, off, m42, m20);
+            let ya = load_group(a, off, m42, m20);
+            let r = [
+                cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(yd[0], q[0]), ya[0]), q[0]),
+                cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(yd[1], q[1]), ya[1]), q[1]),
+                cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(yd[2], q[2]), ya[2]), q[2]),
+            ];
+            store_group(dst, off, r, m22);
+        }
+    }
+}
+
+/// `dst = a - dst` on packed limbs, canonical.
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_sub_negate_assign(n: usize, dst: &mut [u64], a: &[u64]) {
+    unsafe {
+        let m42 = _mm512_set1_epi64(MASK42 as i64);
+        let m20 = _mm512_set1_epi64(MASK20 as i64);
+        let m22 = _mm512_set1_epi64(MASK22 as i64);
+        let q = q_vec_512();
+        for g in 0..n / 8 {
+            let off = 16 * g;
+            let yd = load_group(dst, off, m42, m20);
+            let ya = load_group(a, off, m42, m20);
+            let r = [
+                cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(ya[0], q[0]), yd[0]), q[0]),
+                cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(ya[1], q[1]), yd[1]), q[1]),
+                cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(ya[2], q[2]), yd[2]), q[2]),
+            ];
+            store_group(dst, off, r, m22);
+        }
+    }
+}
+
+/// `dst = -a` on packed limbs, canonical (`q - x` then conditional subtract `q`).
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_negate(n: usize, dst: &mut [u64], a: &[u64]) {
+    unsafe {
+        let m42 = _mm512_set1_epi64(MASK42 as i64);
+        let m20 = _mm512_set1_epi64(MASK20 as i64);
+        let m22 = _mm512_set1_epi64(MASK22 as i64);
+        let q = q_vec_512();
+        for g in 0..n / 8 {
+            let off = 16 * g;
+            let ya = load_group(a, off, m42, m20);
+            let r = [
+                cond_sub_2q_si512(_mm512_sub_epi64(q[0], ya[0]), q[0]),
+                cond_sub_2q_si512(_mm512_sub_epi64(q[1], ya[1]), q[1]),
+                cond_sub_2q_si512(_mm512_sub_epi64(q[2], ya[2]), q[2]),
+            ];
+            store_group(dst, off, r, m22);
+        }
+    }
+}
+
+/// `dst = -dst` on packed limbs, canonical.
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_negate_assign(n: usize, dst: &mut [u64]) {
+    unsafe {
+        let m42 = _mm512_set1_epi64(MASK42 as i64);
+        let m20 = _mm512_set1_epi64(MASK20 as i64);
+        let m22 = _mm512_set1_epi64(MASK22 as i64);
+        let q = q_vec_512();
+        for g in 0..n / 8 {
+            let off = 16 * g;
+            let yd = load_group(dst, off, m42, m20);
+            let r = [
+                cond_sub_2q_si512(_mm512_sub_epi64(q[0], yd[0]), q[0]),
+                cond_sub_2q_si512(_mm512_sub_epi64(q[1], yd[1]), q[1]),
+                cond_sub_2q_si512(_mm512_sub_epi64(q[2], yd[2]), q[2]),
+            ];
+            store_group(dst, off, r, m22);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Forward / inverse NTT
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// `VecZnxIdftApplyTmpA` packed fast path.
 pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
     module: &Module<crate::NTT3x42Ifma>,
     res: &mut VecZnxBigBackendMut<'_, crate::NTT3x42Ifma>,
@@ -234,45 +508,30 @@ pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
     let res_cols = res.cols();
     let res_size = res.size();
 
-    let src_base: *mut u64 = cast_slice_mut::<_, u64>(a.raw_mut()).as_mut_ptr();
-    let dst_base: *mut i128 = res.raw_mut().as_mut_ptr();
+    let src_data: &[u64] = cast_slice(a.data());
+    let dst_data = res.raw_mut();
 
-    for j in 0..min_size {
-        let src_off_u64 = 3 * n * (j * a_cols + a_col);
-        let dst_off_i128 = n * (j * res_cols + res_col);
-        unsafe {
-            intt_then_compact_ifma(n, 1, src_base.add(src_off_u64), dst_base.add(dst_off_i128), table);
-        }
-    }
-
-    for j in min_size..res_size {
-        res.at_mut(res_col, j).fill(0i128);
-    }
+    for_index_with(
+        res_size,
+        3 * n * res_size,
+        || vec![0u64; 3 * n],
+        |scratch, j| {
+            let start = n * (j * res_cols + res_col);
+            let dst = &mut dst_data[start..start + n];
+            if j < min_size {
+                let src = packed_limb(src_data, n, a_cols, a_col, j);
+                unsafe {
+                    unpack_limb_3x42(n, scratch, src);
+                    intt_then_compact_ifma(n, 1, scratch.as_mut_ptr(), dst.as_mut_ptr(), table);
+                }
+            } else {
+                dst.fill(0i128);
+            }
+        },
+    );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DFT-domain VecZnxDft operations
-// ─────────────────────────────────────────────────────────────────────────────
-
-#[inline(always)]
-fn limb_u64<D: Data + HostDataRef>(
-    v: &VecZnxDft<D, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::DftWord, NTT3x42Ifma>,
-    col: usize,
-    limb: usize,
-) -> &[u64] {
-    cast_slice(v.at(col, limb))
-}
-
-#[inline(always)]
-fn limb_u64_mut<D: Data + HostDataMut>(
-    v: &mut VecZnxDft<D, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::DftWord, NTT3x42Ifma>,
-    col: usize,
-    limb: usize,
-) -> &mut [u64] {
-    cast_slice_mut(v.at_mut(col, limb))
-}
-
-/// Forward NTT for the IFMA backend.
+/// Forward NTT into the packed layout.
 pub(crate) fn vec_znx_dft_apply(
     module: &Module<NTT3x42Ifma>,
     step: usize,
@@ -286,23 +545,30 @@ pub(crate) fn vec_znx_dft_apply(
     let res_size = res.size();
     let table = &handle(module).table_ntt;
 
+    let n = res.n();
+    let cols = res.cols();
     let steps = a_size.div_ceil(step);
     let min_steps = res_size.min(steps);
 
-    for j in 0..min_steps {
-        let limb = offset + j * step;
-        if limb < a_size {
-            let res_slice: &mut [u64] = limb_u64_mut(res, res_col, j);
-            NTT3x42Ifma::ntt3x42_ifma_from_znx64(res_slice, a.at(a_col, limb));
-            <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTable<Primes42>>>::ntt3x42_ifma_dft_execute(table, res_slice);
-        } else {
-            NTT3x42Ifma::ntt3x42_ifma_zero(limb_u64_mut(res, res_col, j));
-        }
-    }
-
-    for j in min_steps..res_size {
-        NTT3x42Ifma::ntt3x42_ifma_zero(limb_u64_mut(res, res_col, j));
-    }
+    let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
+    for_index_with(
+        res_size,
+        3 * n * res_size,
+        || vec![0u64; 3 * n],
+        |scratch, j| {
+            let res_slice = packed_limb_mut(res_data, n, cols, res_col, j);
+            let limb = offset + j * step;
+            if j < min_steps && limb < a_size {
+                NTT3x42Ifma::ntt3x42_ifma_from_znx64(scratch, a.at(a_col, limb));
+                unsafe {
+                    ntt_avx512::<Primes42>(table, scratch, true);
+                    pack_limb_3x42_lazy(n, res_slice, scratch);
+                }
+            } else {
+                res_slice.fill(0);
+            }
+        },
+    );
 }
 
 /// Scratch space (in bytes) for [`vec_znx_idft_apply`].
@@ -321,22 +587,37 @@ pub(crate) fn vec_znx_idft_apply(
     tmp: &mut [u64],
 ) {
     let n = res.n();
+    let res_cols = res.cols();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
+    let a_cols = a.cols();
     let table = &handle(module).table_intt;
+    let _ = tmp;
 
-    for j in 0..min_size {
-        let a_slice: &[u64] = limb_u64(a, a_col, j);
-        let tmp_n: &mut [u64] = &mut tmp[..3 * n];
-        NTT3x42Ifma::ntt3x42_ifma_copy(tmp_n, a_slice);
-        <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42>>>::ntt3x42_ifma_dft_execute(table, tmp_n);
-        NTT3x42Ifma::ntt3x42_ifma_to_znx128(res.at_mut(res_col, j), n, tmp_n);
-    }
-
-    for j in min_size..res_size {
-        res.at_mut(res_col, j).fill(0i128);
-    }
+    let a_u64: &[u64] = cast_slice(a.data());
+    let res_data = res.raw_mut();
+    for_index_with(
+        res_size,
+        3 * n * res_size,
+        || vec![0u64; 3 * n],
+        |scratch, j| {
+            let start = n * (j * res_cols + res_col);
+            let dst = &mut res_data[start..start + n];
+            if j < min_size {
+                let a_slice: &[u64] = &a_u64[2 * n * (j * a_cols + a_col)..][..2 * n];
+                unsafe { unpack_limb_3x42(n, scratch, a_slice) };
+                <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42>>>::ntt3x42_ifma_dft_execute(table, scratch);
+                NTT3x42Ifma::ntt3x42_ifma_to_znx128(dst, n, scratch);
+            } else {
+                dst.fill(0i128);
+            }
+        },
+    );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DFT-domain VecZnxDft operations
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// DFT-domain add: `res[res_col] = a[a_col] + b[b_col]`.
 pub(crate) fn vec_znx_dft_add_into(
@@ -347,35 +628,34 @@ pub(crate) fn vec_znx_dft_add_into(
     b: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
     b_col: usize,
 ) {
-    let res_size = res.size();
-    let a_size = a.size();
-    let b_size = b.size();
-
-    if a_size <= b_size {
-        let sum_size = a_size.min(res_size);
-        let cpy_size = b_size.min(res_size);
-        for j in 0..sum_size {
-            NTT3x42Ifma::ntt3x42_ifma_add(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j), limb_u64(b, b_col, j));
-        }
-        for j in sum_size..cpy_size {
-            NTT3x42Ifma::ntt3x42_ifma_copy(limb_u64_mut(res, res_col, j), limb_u64(b, b_col, j));
-        }
-        for j in cpy_size..res_size {
-            NTT3x42Ifma::ntt3x42_ifma_zero(limb_u64_mut(res, res_col, j));
-        }
+    let n = res.n();
+    let (rc, ac, bc) = (res.cols(), a.cols(), b.cols());
+    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
+    let (sum_size, cpy_size, cpy_from_b) = if a_size <= b_size {
+        (a_size.min(res_size), b_size.min(res_size), true)
     } else {
-        let sum_size = b_size.min(res_size);
-        let cpy_size = a_size.min(res_size);
-        for j in 0..sum_size {
-            NTT3x42Ifma::ntt3x42_ifma_add(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j), limb_u64(b, b_col, j));
+        (b_size.min(res_size), a_size.min(res_size), false)
+    };
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    let bp: &[u64] = cast_slice(b.data());
+    for_index(res_size, 2 * n * res_size, |j| {
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+        if j < sum_size {
+            let av = packed_limb(ap, n, ac, a_col, j);
+            let bv = packed_limb(bp, n, bc, b_col, j);
+            unsafe { packed_add(n, dst, av, bv) };
+        } else if j < cpy_size {
+            let sv = if cpy_from_b {
+                packed_limb(bp, n, bc, b_col, j)
+            } else {
+                packed_limb(ap, n, ac, a_col, j)
+            };
+            dst.copy_from_slice(sv);
+        } else {
+            dst.fill(0);
         }
-        for j in sum_size..cpy_size {
-            NTT3x42Ifma::ntt3x42_ifma_copy(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
-        }
-        for j in cpy_size..res_size {
-            NTT3x42Ifma::ntt3x42_ifma_zero(limb_u64_mut(res, res_col, j));
-        }
-    }
+    });
 }
 
 /// DFT-domain in-place add: `res[res_col] += a[a_col]`.
@@ -385,10 +665,16 @@ pub(crate) fn vec_znx_dft_add_assign(
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
     a_col: usize,
 ) {
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
     let sum_size = res.size().min(a.size());
-    for j in 0..sum_size {
-        NTT3x42Ifma::ntt3x42_ifma_add_assign(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
-    }
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    for_index(sum_size, 2 * n * sum_size, |j| {
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+        let av = packed_limb(ap, n, ac, a_col, j);
+        unsafe { packed_add_assign(n, dst, av) };
+    });
 }
 
 /// DFT-domain scaled in-place add: `res[res_col] += a[a_col] >> (a_scale * base2k)`.
@@ -399,27 +685,28 @@ pub(crate) fn vec_znx_dft_add_scaled_assign(
     a_col: usize,
     a_scale: i64,
 ) {
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
     let res_size = res.size();
     let a_size = a.size();
 
-    if a_scale > 0 {
+    let (res_shift, a_shift, sum_size) = if a_scale > 0 {
         let shift = (a_scale as usize).min(a_size);
-        let sum_size = a_size.min(res_size).saturating_sub(shift);
-        for j in 0..sum_size {
-            NTT3x42Ifma::ntt3x42_ifma_add_assign(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j + shift));
-        }
+        (0, shift, a_size.min(res_size).saturating_sub(shift))
     } else if a_scale < 0 {
         let shift = (a_scale.unsigned_abs() as usize).min(res_size);
-        let sum_size = a_size.min(res_size.saturating_sub(shift));
-        for j in 0..sum_size {
-            NTT3x42Ifma::ntt3x42_ifma_add_assign(limb_u64_mut(res, res_col, j + shift), limb_u64(a, a_col, j));
-        }
+        (shift, 0, a_size.min(res_size.saturating_sub(shift)))
     } else {
-        let sum_size = a_size.min(res_size);
-        for j in 0..sum_size {
-            NTT3x42Ifma::ntt3x42_ifma_add_assign(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
-        }
-    }
+        (0, 0, a_size.min(res_size))
+    };
+
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    for_index(sum_size, 2 * n * sum_size, |j| {
+        let dst = packed_limb_mut(rp, n, rc, res_col, j + res_shift);
+        let av = packed_limb(ap, n, ac, a_col, j + a_shift);
+        unsafe { packed_add_assign(n, dst, av) };
+    });
 }
 
 /// DFT-domain sub: `res[res_col] = a[a_col] - b[b_col]`.
@@ -431,35 +718,35 @@ pub(crate) fn vec_znx_dft_sub(
     b: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
     b_col: usize,
 ) {
-    let res_size = res.size();
-    let a_size = a.size();
-    let b_size = b.size();
-
-    if a_size <= b_size {
-        let sum_size = a_size.min(res_size);
-        let cpy_size = b_size.min(res_size);
-        for j in 0..sum_size {
-            NTT3x42Ifma::ntt3x42_ifma_sub(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j), limb_u64(b, b_col, j));
-        }
-        for j in sum_size..cpy_size {
-            NTT3x42Ifma::ntt3x42_ifma_negate(limb_u64_mut(res, res_col, j), limb_u64(b, b_col, j));
-        }
-        for j in cpy_size..res_size {
-            NTT3x42Ifma::ntt3x42_ifma_zero(limb_u64_mut(res, res_col, j));
-        }
+    let n = res.n();
+    let (rc, ac, bc) = (res.cols(), a.cols(), b.cols());
+    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
+    let (sum_size, cpy_size, negate_tail) = if a_size <= b_size {
+        (a_size.min(res_size), b_size.min(res_size), true)
     } else {
-        let sum_size = b_size.min(res_size);
-        let cpy_size = a_size.min(res_size);
-        for j in 0..sum_size {
-            NTT3x42Ifma::ntt3x42_ifma_sub(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j), limb_u64(b, b_col, j));
+        (b_size.min(res_size), a_size.min(res_size), false)
+    };
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    let bp: &[u64] = cast_slice(b.data());
+    for_index(res_size, 2 * n * res_size, |j| {
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+        if j < sum_size {
+            let av = packed_limb(ap, n, ac, a_col, j);
+            let bv = packed_limb(bp, n, bc, b_col, j);
+            unsafe { packed_sub(n, dst, av, bv) };
+        } else if j < cpy_size {
+            if negate_tail {
+                let bv = packed_limb(bp, n, bc, b_col, j);
+                unsafe { packed_negate(n, dst, bv) };
+            } else {
+                let av = packed_limb(ap, n, ac, a_col, j);
+                dst.copy_from_slice(av);
+            }
+        } else {
+            dst.fill(0);
         }
-        for j in sum_size..cpy_size {
-            NTT3x42Ifma::ntt3x42_ifma_copy(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
-        }
-        for j in cpy_size..res_size {
-            NTT3x42Ifma::ntt3x42_ifma_zero(limb_u64_mut(res, res_col, j));
-        }
-    }
+    });
 }
 
 /// DFT-domain in-place sub: `res[res_col] -= a[a_col]`.
@@ -469,10 +756,16 @@ pub(crate) fn vec_znx_dft_sub_assign(
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
     a_col: usize,
 ) {
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
     let sum_size = res.size().min(a.size());
-    for j in 0..sum_size {
-        NTT3x42Ifma::ntt3x42_ifma_sub_assign(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
-    }
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    for_index(sum_size, 2 * n * sum_size, |j| {
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+        let av = packed_limb(ap, n, ac, a_col, j);
+        unsafe { packed_sub_assign(n, dst, av) };
+    });
 }
 
 /// DFT-domain in-place swap-sub: `res[res_col] = a[a_col] - res[res_col]`.
@@ -482,14 +775,21 @@ pub(crate) fn vec_znx_dft_sub_negate_assign(
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
     a_col: usize,
 ) {
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
-    for j in 0..sum_size {
-        NTT3x42Ifma::ntt3x42_ifma_sub_negate_assign(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
-    }
-    for j in sum_size..res_size {
-        NTT3x42Ifma::ntt3x42_ifma_negate_assign(limb_u64_mut(res, res_col, j));
-    }
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    for_index(res_size, 2 * n * res_size, |j| {
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+        if j < sum_size {
+            let av = packed_limb(ap, n, ac, a_col, j);
+            unsafe { packed_sub_negate_assign(n, dst, av) };
+        } else {
+            unsafe { packed_negate_assign(n, dst) };
+        }
+    });
 }
 
 /// DFT-domain copy with stride: `res[res_col][j] = a[a_col][offset + j*step]`.
@@ -506,32 +806,40 @@ pub(crate) fn vec_znx_dft_copy(
         assert_eq!(res.n(), a.n())
     }
 
-    let steps: usize = a.size().div_ceil(step);
-    let min_steps: usize = res.size().min(steps);
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
+    let res_size = res.size();
+    let a_size = a.size();
+    let steps: usize = a_size.div_ceil(step);
+    let min_steps: usize = res_size.min(steps);
 
-    for j in 0..min_steps {
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    for_index(res_size, 2 * n * res_size, |j| {
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
         let limb = offset + j * step;
-        if limb < a.size() {
-            NTT3x42Ifma::ntt3x42_ifma_copy(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, limb));
+        if j < min_steps && limb < a_size {
+            let av = packed_limb(ap, n, ac, a_col, limb);
+            dst.copy_from_slice(av);
         } else {
-            NTT3x42Ifma::ntt3x42_ifma_zero(limb_u64_mut(res, res_col, j));
+            dst.fill(0);
         }
-    }
-    for j in min_steps..res.size() {
-        NTT3x42Ifma::ntt3x42_ifma_zero(limb_u64_mut(res, res_col, j));
-    }
+    });
 }
 
 /// Zero all limbs of `res[res_col]`.
 pub(crate) fn vec_znx_dft_zero(res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>, res_col: usize) {
-    for j in 0..res.size() {
-        NTT3x42Ifma::ntt3x42_ifma_zero(limb_u64_mut(res, res_col, j));
-    }
+    let n = res.n();
+    let rc = res.cols();
+    let res_size = res.size();
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    for_index(res_size, 2 * n * res_size, |j| {
+        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+        dst.fill(0);
+    });
 }
 
-/// NTT3x42 automorphism on the planar layout: each limb stores three contiguous
-/// `n`-element residue planes, and the NTT slot action is a pure permutation, so
-/// for every output slot `i` we copy the source slot `perm[i]` within each plane.
+/// Packed-layout NTT3x42 automorphism.
 pub(crate) fn vec_znx_dft_automorphism(
     plan: &poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
@@ -546,25 +854,27 @@ pub(crate) fn vec_znx_dft_automorphism(
     }
 
     let n: usize = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
     let res_size: usize = res.size();
     let a_size: usize = a.size();
     let min_size: usize = res_size.min(a_size);
     let perm: &[u32] = &plan.perm;
 
-    for limb in 0..min_size {
-        let a_slice: &[u64] = limb_u64(a, a_col, limb);
-        let res_slice: &mut [u64] = limb_u64_mut(res, res_col, limb);
-        for plane in 0..3 {
-            let base: usize = plane * n;
-            let src: &[u64] = &a_slice[base..base + n];
-            let dst: &mut [u64] = &mut res_slice[base..base + n];
-            for i in 0..n {
-                dst[i] = src[perm[i] as usize];
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    for_index(res_size, 2 * n * res_size, |limb| {
+        let res_slice = packed_limb_mut(rp, n, rc, res_col, limb);
+        if limb < min_size {
+            let a_slice = packed_limb(ap, n, ac, a_col, limb);
+            for (i, &p) in perm.iter().enumerate() {
+                let p = p as usize;
+                let src_off = 16 * (p >> 3) + (p & 7);
+                let dst_off = 16 * (i >> 3) + (i & 7);
+                res_slice[dst_off] = a_slice[src_off];
+                res_slice[dst_off + 8] = a_slice[src_off + 8];
             }
+        } else {
+            res_slice.fill(0);
         }
-    }
-
-    for limb in min_size..res_size {
-        NTT3x42Ifma::ntt3x42_ifma_zero(limb_u64_mut(res, res_col, limb));
-    }
+    });
 }

@@ -37,13 +37,14 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** remove the exported `impl_glwe_rotate_impl_from!`; the blanket `GLWERotateImpl` impl supersedes it.
 - **Breaking:** `GLWEKeyswitchInternal` and `GGLWEProductDefault` become public; they appear in the bounds of the public `glwe_keyswitch*_default` functions.
 - The `*Default` override surfaces are no longer `#[doc(hidden)]`; `oep`'s module docs describe the `*Impl` / `*Default` split with a worked override.
-- The gadget-digit width rule moves from an in-function comment to the `GLWEKeyswitchDefault` contract.
+- The gadget-digit width rule moves to the `GLWEKeyswitchDefault` contract and shared `gglwe_product_digit_output_size` helper; `GGLWEProductDefault` passes its accumulation count through `GGLWEProductDigitsStridedImpl` as a shape-derived `product_limbs` spill window instead of a fixed two limbs.
+- CKKS encapsulated ModUp composes ordinary dense-to-sparse and sparse-to-dense key switches around ModUp; backends can override `CKKSEncapsulatedModUpImpl` to fuse it.
 - Relax to `D: Data`: `GGLWE` / `GLWEPlaintext` / `LWEPlaintext` / `GLWETensor` `data()` / `data_mut()`, `GLWESwitchingKeyDegrees(Mut)`, `Get`/`SetGaloisElement`, `GetDistribution(Mut)`, `SetBase2k`.
 - **Breaking:** `GGLWEAtBackendRef`/`Mut` and `GGSWAtBackendRef`/`Mut` become public; `GLWESwitchingKey`, `GLWEAutomorphismKey` and `GLWETensorKey` delegate them.
 - **Breaking:** remove `ModuleTransfer` and the inherent `Layout::to_backend` methods (29 in total) in favour of `api::TransferInto`, which writes into a destination the caller allocates: `src.transfer_into(&mut dst)`. Checks shape, not just byte length.
 - **Breaking:** `test_suite` splits into `test_suite::noise` (the existing scheme-correctness suite, moved wholesale) and `test_suite::parity`. `core_backend_test_suite!` is unchanged.
 - Add `BackendGLWESwitchingKey<BE>` / `BackendGLWEAutomorphismKey<BE>`.
-- Add `test_suite::parity` and `core_parity_test_suite!`: runs one operation on a reference and a tested backend over identical uniform inputs and asserts byte equality. Covers key-switch (GLWE, assign, GGLWE), automorphism, external product and the keyless GLWE operations. Needs no secrets, encryption or noise model. An optional `shapes = ParityShapes { .. }` restricts the rank and `dsize` sweep for a backend with a narrower envelope.
+- Add `test_suite::parity` and `core_parity_test_suite!`: runs one operation on a reference and a tested backend over identical uniform inputs and asserts byte equality. Covers key-switch (GLWE, assign, GGLWE), the strided GGLWE product hook, automorphism, external product, tensoring and the other keyless GLWE operations. Needs no secrets, encryption or noise model. An optional `shapes = ParityShapes { .. }` restricts the rank and `dsize` sweep for a backend with a narrower envelope.
 - `poulpy-cpu-avx`, `-avx512` and `-arm` run the parity suite against their `poulpy-cpu-ref` sibling, for the FFT64 and NTT4x30 families.
 
 ### `poulpy-hal`
@@ -156,6 +157,19 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - Add `ckks_paco.rs` and `ckks_ship.rs` with the `impl_ckks_paco_coeff_encoding!` and `impl_ckks_ship_coeff_encoding!` macros, invoked by every backend.
 - Add benchmarks binaries based on Criterion and the new `poulpy-bench` harness.
 - Fix `poulpy-cpu-avx512` compiling with `enable-ckks,enable-avx512f` but without `enable-ifma`.
+
+### `poulpy-core`: fused VMP and tensoring overrides
+
+- Add the Core-owned `GGLWEProductDigitsStridedImpl` backend hook, including scratch sizing, which applies every gadget digit directly from an interleaved DFT input. The portable default materializes one digit at a time; accelerated backends can fuse the passes while preserving the reference digit-width schedule.
+- **Breaking for backend implementations:** tensoring becomes an explicit `GLWETensoringImpl` opt-in through `impl_glwe_tensoring_default!` instead of a blanket implementation, allowing optimized backends to override the complete operation and its scratch bounds.
+- The AVX-512 NTT backends specialize rank-one tensor apply and square at `n = 2^15` and `n = 2^16` with a direct three-product DFT path, avoiding the coefficient-domain diagonal cache and its associated scratch allocation; other shapes use the canonical all-rank implementation.
+
+### `poulpy-cpu-avx` / `poulpy-cpu-avx512`: NTT, VMP and convolution optimization
+
+- Pack `NTT3x42Ifma` transform-domain vectors and prepared convolution operands into two `u64` words per coefficient instead of three. The existing packed VMP representation is retained, reducing `VecZnxDft` and `CnvPVecL/R` storage and bandwidth by one third.
+- Fuse multi-digit VMP on `NTT4x30Avx`, `NTT4x30Avx512` and `NTT3x42Ifma`: digit rows are read directly from their interleaved source, matrix data is streamed once per output block, and intermediate digit buffers are removed. The AVX accumulating save is also vectorized.
+- Vectorize packed `NTT3x42Ifma` scalar-vector products, enlarge the cache-resident NTT base case, and fuse the forward NTT stages specialized for `n = 2^15` and `n = 2^16`.
+- Fuse rank-one tensor convolution on the AVX-512 NTT backends, computing all three output columns while the prepared inputs remain resident.
 
 ### `poulpy-hal`: word genericity delivered
 

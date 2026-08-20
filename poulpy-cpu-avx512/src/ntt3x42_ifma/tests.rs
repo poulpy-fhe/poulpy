@@ -1,5 +1,6 @@
 use poulpy_hal::{
-    layouts::Module,
+    DEFAULTALIGN, is_aligned,
+    layouts::{Backend, Module},
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
     },
@@ -12,7 +13,10 @@ mod ntt3x42_ifma_tests {
     use crate::ntt3x42_ifma::{
         primes::Primes42, reference::arithmetic::b_ntt3x42_ifma_to_znx128_ref, vec_znx_dft::simd_b_ntt3x42_ifma_to_znx128,
     };
-    use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
+    use poulpy_hal::{
+        backend_test_suite, cross_backend_test_suite,
+        layouts::{Backend, SvpPPolOwned, VecZnxDftOwned, ZnxView, ZnxViewMut, ZnxZero},
+    };
 
     cross_backend_test_suite! {
         mod vec_znx,
@@ -209,6 +213,47 @@ mod ntt3x42_ifma_tests {
     }
 
     #[test]
+    fn test_packed_layout_zero_and_display() {
+        const N: usize = 64;
+        const COLS: usize = 2;
+        const SIZE: usize = 3;
+
+        let mut dft = VecZnxDftOwned::<crate::NTT3x42Ifma>::alloc(N, COLS, SIZE);
+        let block_bytes = <crate::NTT3x42Ifma as Backend>::bytes_of_vec_znx_dft(N, 1, 1);
+        let byte_len = <crate::NTT3x42Ifma as Backend>::bytes_of_vec_znx_dft(N, COLS, SIZE);
+        dft.data[..byte_len].fill(0xa5);
+
+        dft.zero_at(1, 1);
+
+        let offset = (COLS + 1) * block_bytes;
+        assert!(dft.data[..offset].iter().all(|&byte| byte == 0xa5));
+        assert!(dft.data[offset..offset + block_bytes].iter().all(|&byte| byte == 0));
+        assert!(dft.data[offset + block_bytes..byte_len].iter().all(|&byte| byte == 0xa5));
+
+        let display = format!("{dft}");
+        assert!(display.contains("<backend-packed representation:"));
+
+        dft.zero();
+        assert!(dft.data[..byte_len].iter().all(|&byte| byte == 0));
+
+        let mut svp = SvpPPolOwned::<crate::NTT3x42Ifma>::alloc(N, COLS);
+        let display = format!("{svp}");
+        assert!(display.contains("<backend-packed representation:"));
+        assert!(
+            std::panic::catch_unwind(|| {
+                let _ = svp.at(1, 0);
+            })
+            .is_err()
+        );
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = svp.at_mut(1, 0);
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
     fn test_b_to_znx128_ifma_asm_edges_vs_ref() {
         const Q: [u64; 3] = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
         let big_q = Q[0] as u128 * Q[1] as u128 * Q[2] as u128;
@@ -282,6 +327,11 @@ fn test_convolution_pairwise_ntt3x42_ifma() {
 }
 
 #[test]
+fn test_gglwe_product_digits_strided_bit_identical() {
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT3x42Ifma>::new(64), 50);
+}
+
+#[test]
 fn test_convolution_accumulate_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
     test_convolution_accumulate(&module, 12);
@@ -291,4 +341,14 @@ fn test_convolution_accumulate_ntt3x42_ifma() {
 #[should_panic(expected = "NTT3x42Ifma requires n >= 8")]
 fn test_ntt3x42_ifma_rejects_too_small_ring() {
     let _ = Module::<NTT3x42Ifma>::new(4);
+}
+
+#[test]
+fn test_ntt3x42_ifma_zeroed_allocation_alignment_and_padding() {
+    for len in [1usize, 63, 64, 65, 4_096, (1 << 20) + 1] {
+        let bytes = <NTT3x42Ifma as Backend>::alloc_zeroed_bytes(len);
+        assert_eq!(bytes.len(), len.next_multiple_of(DEFAULTALIGN));
+        assert!(is_aligned(bytes.as_ptr()));
+        assert!(bytes.iter().all(|&byte| byte == 0));
+    }
 }

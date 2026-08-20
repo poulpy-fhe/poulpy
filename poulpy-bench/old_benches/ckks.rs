@@ -21,10 +21,11 @@ use poulpy_core::{
         GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision,
     },
     oep::{
-        AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGSWExternalProductImpl,
-        GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEExternalProductImpl, GLWEKeyswitchImpl,
-        GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl, GLWENormalizeImpl, GLWEPackImpl,
-        GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl, LWEKeyswitchImpl, LinearTransformationImpl,
+        AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl,
+        GGLWEProductDigitsStridedImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
+        GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
+        GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl,
+        GLWETraceImpl, LWEKeyswitchImpl, LinearTransformationImpl,
     },
 };
 use poulpy_hal::{
@@ -104,6 +105,7 @@ pub trait CkksBenchBackend:
     + GGLWEExternalProductImpl<Self>
     + GGSWExternalProductImpl<Self>
     + GLWETensoringImpl<Self>
+    + GGLWEProductDigitsStridedImpl<Self>
     + GLWEMulConstImpl<Self>
     + GLWEMulPlainImpl<Self>
     + GLWERotateImpl<Self>
@@ -163,6 +165,7 @@ where
         + GGLWEExternalProductImpl<BE>
         + GGSWExternalProductImpl<BE>
         + GLWETensoringImpl<BE>
+        + GGLWEProductDigitsStridedImpl<BE>
         + GLWEMulConstImpl<BE>
         + GLWEMulPlainImpl<BE>
         + GLWERotateImpl<BE>
@@ -758,13 +761,9 @@ fn mul_tsk_layout(p: &CkksMulParams) -> GLWETensorKeyLayout {
     }
 }
 
-<<<<<<< HEAD:poulpy-bench/old_benches/ckks.rs
-fn reset_dst_meta(dst: &mut CKKSCiphertext<Vec<u8>>, meta: CKKSMeta) {
-=======
 fn reset_dst_meta(dst: &mut CKKSCiphertext<Vec<u8>, i64>, meta: CKKSMeta) {
     dst.data_mut().raw_mut().fill(0);
     dst.set_meta_checked(meta).unwrap();
->>>>>>> main:poulpy-bench/src/bench_suite/ckks.rs
 }
 
 /// Lean per-size setup for the `ckks_mul` sweep: only the operands, plaintexts,

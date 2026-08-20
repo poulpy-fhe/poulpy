@@ -58,6 +58,17 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for SvpPPol<
 
 impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for SvpPPol<D, W, B> {
     type Scalar = W;
+
+    fn validate_element_view(&self) {
+        let element_bytes = crate::layouts::element_view_span(self)
+            .checked_mul(size_of::<W>())
+            .expect("SvpPPol element-view byte size overflows usize");
+        let backend_bytes = B::bytes_of_svp_ppol(self.n(), self.cols());
+        assert_eq!(
+            element_bytes, backend_bytes,
+            "SvpPPol backend representation ({backend_bytes} bytes) does not expose a dense {element_bytes}-byte element view"
+        );
+    }
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for SvpPPol<D, W, B> {
@@ -227,6 +238,14 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
 impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for SvpPPol<D, W, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "SvpPPol(n={}, cols={})", self.n(), self.cols())?;
+
+        let element_bytes = crate::layouts::element_view_span(self)
+            .checked_mul(size_of::<W>())
+            .expect("SvpPPol element-view byte size overflows usize");
+        let backend_bytes = B::bytes_of_svp_ppol(self.n(), self.cols());
+        if element_bytes != backend_bytes {
+            return writeln!(f, "  <backend-packed representation: {backend_bytes} bytes>");
+        }
 
         for col in 0..self.cols() {
             writeln!(f, "Column {col}:")?;

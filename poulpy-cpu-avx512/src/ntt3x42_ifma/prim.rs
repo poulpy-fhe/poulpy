@@ -8,11 +8,7 @@ use crate::ntt3x42_ifma::{
     bbc_meta::Bbc126IfmaMeta,
     primes::Primes42,
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
-    traits::{
-        Ntt3x42IfmaAdd, Ntt3x42IfmaAddAssign, Ntt3x42IfmaCFromB, Ntt3x42IfmaCopy, Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64,
-        Ntt3x42IfmaMulBbc, Ntt3x42IfmaNegate, Ntt3x42IfmaNegateAssign, Ntt3x42IfmaSub, Ntt3x42IfmaSubAssign,
-        Ntt3x42IfmaSubNegateAssign, Ntt3x42IfmaToZnx128, Ntt3x42IfmaZero,
-    },
+    traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64, Ntt3x42IfmaMulBbc, Ntt3x42IfmaToZnx128},
 };
 use poulpy_hal::layouts::PrimeSet;
 
@@ -311,73 +307,6 @@ impl Ntt3x42IfmaToZnx128 for NTT3x42Ifma {
     #[inline(always)]
     fn ntt3x42_ifma_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
         unsafe { super::vec_znx_dft::simd_b_ntt3x42_ifma_to_znx128(divisor_is_n, res, a) };
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// IFMA-specific addition / subtraction / negation / copy / zero
-// ──────────────────────────────────────────────────────────────────────────────
-
-impl Ntt3x42IfmaAdd for NTT3x42Ifma {
-    #[inline(always)]
-    fn ntt3x42_ifma_add(res: &mut [u64], a: &[u64], b: &[u64]) {
-        unsafe { simd_add(res, a, b) };
-    }
-}
-
-impl Ntt3x42IfmaAddAssign for NTT3x42Ifma {
-    #[inline(always)]
-    fn ntt3x42_ifma_add_assign(res: &mut [u64], a: &[u64]) {
-        unsafe { simd_add_assign(res, a) };
-    }
-}
-
-impl Ntt3x42IfmaSub for NTT3x42Ifma {
-    #[inline(always)]
-    fn ntt3x42_ifma_sub(res: &mut [u64], a: &[u64], b: &[u64]) {
-        unsafe { simd_sub(res, a, b) };
-    }
-}
-
-impl Ntt3x42IfmaSubAssign for NTT3x42Ifma {
-    #[inline(always)]
-    fn ntt3x42_ifma_sub_assign(res: &mut [u64], a: &[u64]) {
-        unsafe { simd_sub_assign(res, a) };
-    }
-}
-
-impl Ntt3x42IfmaSubNegateAssign for NTT3x42Ifma {
-    #[inline(always)]
-    fn ntt3x42_ifma_sub_negate_assign(res: &mut [u64], a: &[u64]) {
-        unsafe { simd_sub_negate_assign(res, a) };
-    }
-}
-
-impl Ntt3x42IfmaNegate for NTT3x42Ifma {
-    #[inline(always)]
-    fn ntt3x42_ifma_negate(res: &mut [u64], a: &[u64]) {
-        unsafe { simd_negate(res, a) };
-    }
-}
-
-impl Ntt3x42IfmaNegateAssign for NTT3x42Ifma {
-    #[inline(always)]
-    fn ntt3x42_ifma_negate_assign(res: &mut [u64]) {
-        unsafe { simd_negate_assign(res) };
-    }
-}
-
-impl Ntt3x42IfmaZero for NTT3x42Ifma {
-    #[inline(always)]
-    fn ntt3x42_ifma_zero(res: &mut [u64]) {
-        res.fill(0);
-    }
-}
-
-impl Ntt3x42IfmaCopy for NTT3x42Ifma {
-    #[inline(always)]
-    fn ntt3x42_ifma_copy(res: &mut [u64], a: &[u64]) {
-        res.copy_from_slice(a);
     }
 }
 

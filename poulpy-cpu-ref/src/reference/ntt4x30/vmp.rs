@@ -188,10 +188,16 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
     let a_size = a_u64.len() / (4 * n); // number of input polynomials
     let res_size = res_u64.len() / (4 * n); // number of output polynomials
 
-    let row_max = nrows.min(a_size);
+    let row_end = nrows.min(a_size);
+    let row_start = a_u64
+        .chunks_exact(4 * n)
+        .take(row_end)
+        .take_while(|row| row.iter().all(|&x| x == 0))
+        .count();
+    let row_max = row_end - row_start;
     let col_max = ncols.min(res_size + limb_offset);
 
-    if limb_offset >= col_max {
+    if limb_offset >= col_max || row_max == 0 {
         if OVERWRITE {
             res_u64.fill(0);
         }
@@ -202,6 +208,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
     let (mat2cols_output, extracted_blk) = tmp.split_at_mut(16);
 
     let offset = nrows * ncols * 16; // u32 stride between blocks
+    let a_u64 = &a_u64[row_start * 4 * n..];
 
     for blk_j in 0..n_blks {
         let mat_blk_u32 = &pmat_u32[blk_j * offset..];
@@ -213,7 +220,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
         if limb_offset.is_multiple_of(2) {
             // Process paired columns: limb_offset, limb_offset+2, limb_offset+4, ...
             for (col_res, col_pmat) in (0..).step_by(2).zip((limb_offset..col_max - 1).step_by(2)) {
-                let col_offset = col_pmat * (nrows * 16); // u32
+                let col_offset = col_pmat * (nrows * 16) + row_start * 32; // u32
                 BE::ntt_mul_bbc_2cols_x2(meta, row_max, mat2cols_output, extracted_u32, &mat_blk_u32[col_offset..]);
 
                 let (res_col0, res_col1) = (col_res, col_res + 1);
@@ -229,7 +236,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
             }
         } else {
             // Odd limb_offset: the first output col is the 2nd col of pair (limb_offset-1, limb_offset).
-            let col_offset = (limb_offset - 1) * (nrows * 16);
+            let col_offset = (limb_offset - 1) * (nrows * 16) + row_start * 32;
             BE::ntt_mul_bbc_2cols_x2(meta, row_max, mat2cols_output, extracted_u32, &mat_blk_u32[col_offset..]);
 
             // Only save the 2nd column result (mat2cols_output[8..16]) → col_res = 0
@@ -241,7 +248,7 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
 
             // Process remaining paired columns.
             for (col_res, col_pmat) in (1..).step_by(2).zip((limb_offset + 1..col_max - 1).step_by(2)) {
-                let col_offset = col_pmat * (nrows * 16);
+                let col_offset = col_pmat * (nrows * 16) + row_start * 32;
                 BE::ntt_mul_bbc_2cols_x2(meta, row_max, mat2cols_output, extracted_u32, &mat_blk_u32[col_offset..]);
 
                 let base0 = col_res * 4 * n;
@@ -260,7 +267,8 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
         if !col_max.is_multiple_of(2) {
             let last_col = col_max - 1;
             if last_col >= limb_offset {
-                let col_offset = last_col * (nrows * 16);
+                let row_offset = if ncols == col_max { row_start * 16 } else { row_start * 32 };
+                let col_offset = last_col * (nrows * 16) + row_offset;
                 if ncols == col_max {
                     BE::ntt_mul_bbc_1col_x2(
                         meta,

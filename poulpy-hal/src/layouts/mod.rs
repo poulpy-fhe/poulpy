@@ -458,6 +458,8 @@ impl<BE> HostStaged for BE where BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost
 macro_rules! impl_backend_from {
     ($be:ty, $from:ty) => {
         impl poulpy_hal::layouts::Backend for $be {
+            const DFT_IS_EXACT: bool = <$from as poulpy_hal::layouts::Backend>::DFT_IS_EXACT;
+
             type ZnxWord = <$from as poulpy_hal::layouts::Backend>::ZnxWord;
             type BigWord = <$from as poulpy_hal::layouts::Backend>::BigWord;
             type DftWord = <$from as poulpy_hal::layouts::Backend>::DftWord;

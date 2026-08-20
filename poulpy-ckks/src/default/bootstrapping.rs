@@ -3,7 +3,8 @@ use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-        SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
+        SetBSGSMeta,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -20,6 +21,7 @@ use crate::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertextOwned,
         CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
     },
+    oep::CKKSEncapsulatedModUpImpl,
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -71,7 +73,7 @@ impl<BE: Backend> Deref for BootstrappingDefault<'_, BE> {
     }
 }
 
-impl<BE: Backend> BootstrappingDefault<'_, BE> {
+impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
     pub(crate) fn ckks_mod_up_tmp_bytes_default(&self) -> usize
     where
         Module<BE>: GLWEShift<BE>,
@@ -142,9 +144,13 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
             if ctx.pipeline() == BootstrappingPipeline::C2SFirst {
                 carved += in_ct_bytes;
             }
-            nested = nested
-                .max(self.glwe_keyswitch_tmp_bytes(&in_layout.glwe_layout, &in_layout.glwe_layout, &encaps.dense_to_sparse))
-                .max(self.glwe_keyswitch_tmp_bytes(&boot_layout, &boot_layout, &encaps.sparse_to_dense));
+            nested = nested.max(BE::ckks_encapsulated_mod_up_tmp_bytes(
+                self.0,
+                &boot_layout,
+                &in_layout,
+                &encaps.dense_to_sparse,
+                &encaps.sparse_to_dense,
+            ));
         }
 
         carved + nested
@@ -261,9 +267,7 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
     {
         match keys.encapsulation_keys() {
             Some((dense_to_sparse, sparse_to_dense)) => {
-                self.glwe_keyswitch_assign(src, dense_to_sparse, scratch);
-                self.ckks_mod_up_into_default(dst, src, scratch)?;
-                self.glwe_keyswitch_assign(dst, sparse_to_dense, scratch);
+                BE::ckks_encapsulated_mod_up(self.0, dst, src, dense_to_sparse, sparse_to_dense, scratch)?;
             }
             None => self.ckks_mod_up_into_default(dst, src, scratch)?,
         }
@@ -861,6 +865,54 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
         }
         Ok(())
     }
+}
+
+/// Reference SSE pipeline: switch to the sparse secret before ModUp to bound
+/// wrap-around, then restore the dense secret afterward.
+#[doc(hidden)]
+pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src, D2S, S2D>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &mut Src,
+    dense_to_sparse: &D2S,
+    sparse_to_dense: &S2D,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend + CKKSEncapsulatedModUpImpl<BE>,
+    Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE>,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    D2S: poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    S2D: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    module.glwe_keyswitch_assign(src, dense_to_sparse, scratch);
+    BootstrappingDefault::new(module).ckks_mod_up_into_default(dst, src, scratch)?;
+    module.glwe_keyswitch_assign(dst, sparse_to_dense, scratch);
+    Ok(())
+}
+
+/// Scratch bound for [`ckks_encapsulated_mod_up_default`].
+#[doc(hidden)]
+pub fn ckks_encapsulated_mod_up_tmp_bytes_default<BE, Dst, Src, D2S, S2D>(
+    module: &Module<BE>,
+    dst_infos: &Dst,
+    src_infos: &Src,
+    dense_to_sparse_infos: &D2S,
+    sparse_to_dense_infos: &S2D,
+) -> usize
+where
+    BE: Backend,
+    Module<BE>: GLWEShift<BE> + GLWEKeyswitch<BE>,
+    Dst: CKKSCtBounds,
+    Src: CKKSCtBounds,
+    D2S: GGLWEInfos,
+    S2D: GGLWEInfos,
+{
+    module
+        .glwe_keyswitch_tmp_bytes(src_infos, src_infos, dense_to_sparse_infos)
+        .max(module.glwe_shift_tmp_bytes())
+        .max(module.glwe_keyswitch_tmp_bytes(dst_infos, dst_infos, sparse_to_dense_infos))
 }
 
 fn ensure_unit_circle_exp_context<BE: Backend, F>(ctx: &BootstrappingContext<BE, F>) -> Result<()> {

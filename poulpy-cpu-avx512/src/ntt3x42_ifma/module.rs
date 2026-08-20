@@ -37,6 +37,8 @@ pub struct NTT3x42IfmaHandle {
 }
 
 impl Backend for NTT3x42Ifma {
+    const DFT_IS_EXACT: bool = true;
+
     type DftWord = Q126Scalar;
     type ZnxWord = i64;
     type BigWord = i128;
@@ -46,6 +48,9 @@ impl Backend for NTT3x42Ifma {
     type Handle = NTT3x42IfmaHandle;
     type Location = poulpy_hal::layouts::Host;
     fn alloc_bytes(len: usize) -> Self::OwnedBuf {
+        alloc_aligned::<u8>(len)
+    }
+    fn alloc_zeroed_bytes(len: usize) -> Self::OwnedBuf {
         alloc_aligned::<u8>(len)
     }
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
@@ -138,6 +143,21 @@ impl Backend for NTT3x42Ifma {
         &mut buf[offset..offset + len]
     }
 
+    fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
+        // Three canonical residues followed by their three Harvey quotients.
+        [n, cols, 6, size_of::<u64>()]
+            .into_iter()
+            .try_fold(1usize, usize::checked_mul)
+            .expect("IFMA SvpPPol byte size overflows usize")
+    }
+
+    fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
+        [n, cols, size, 2, size_of::<u64>()]
+            .into_iter()
+            .try_fold(1usize, usize::checked_mul)
+            .expect("IFMA VecZnxDft byte size overflows usize")
+    }
+
     fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
         // Packed prime-major layout: the three 42-bit CRT residues per
         // coefficient are packed into 2 × u64 (126 of 128 bits), unpacked
@@ -146,6 +166,20 @@ impl Backend for NTT3x42Ifma {
             .into_iter()
             .try_fold(1usize, usize::checked_mul)
             .expect("IFMA VmpPMat byte size overflows usize")
+    }
+
+    fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
+        [n, cols, size, 2, size_of::<u64>()]
+            .into_iter()
+            .try_fold(1usize, usize::checked_mul)
+            .expect("IFMA CnvPVecL byte size overflows usize")
+    }
+
+    fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
+        [n, cols, size, 2, size_of::<u64>()]
+            .into_iter()
+            .try_fold(1usize, usize::checked_mul)
+            .expect("IFMA CnvPVecR byte size overflows usize")
     }
 
     unsafe fn destroy(handle: NonNull<Self::Handle>) {

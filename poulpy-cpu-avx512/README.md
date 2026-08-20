@@ -35,8 +35,7 @@ When neither feature is enabled, this crate compiles as an empty shell. That kee
 For the AVX-512F-only `FFT64Avx512` and `NTT4x30Avx512` backends:
 
 ```bash
-RUSTFLAGS="-C target-feature=+avx512f" \
-cargo build --features enable-avx512f
+RUSTFLAGS="-C target-feature=+avx512f" cargo build --features enable-avx512f
 ```
 
 For all three backends (AVX-512F + IFMA):

@@ -131,8 +131,13 @@ pub trait DataViewMut: DataView {
 pub trait ZnxView: VecZnxInfos + DataView<D: HostDataRef> {
     type Scalar: Copy + Zero + Display + Debug + Pod;
 
+    /// Rejects generic element access when a packed backend has no dense [`Self::Scalar`] view.
+    #[doc(hidden)]
+    fn validate_element_view(&self) {}
+
     /// Returns a non-mutable pointer to the underlying coefficients array.
     fn as_ptr(&self) -> *const Self::Scalar {
+        self.validate_element_view();
         let ptr: *const u8 = self.data().as_ref().as_ptr();
         assert!(
             (ptr as usize).is_multiple_of(align_of::<Self::Scalar>()),
@@ -150,11 +155,13 @@ pub trait ZnxView: VecZnxInfos + DataView<D: HostDataRef> {
     /// scalars), which happens when the backend sizes this container below its
     /// word type's element view (the word is then a sizing/identity token only).
     fn raw(&self) -> &[Self::Scalar] {
+        self.validate_element_view();
         raw_scalars(self.data().as_ref(), element_view_span(self))
     }
 
     /// Returns a non-mutable pointer starting at the j-th small polynomial of the i-th column.
     fn at_ptr(&self, i: usize, j: usize) -> *const Self::Scalar {
+        self.validate_element_view();
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
         let offset: usize = j
@@ -188,6 +195,7 @@ pub trait ZnxView: VecZnxInfos + DataView<D: HostDataRef> {
 pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
     /// Returns a mutable pointer to the underlying coefficients array.
     fn as_mut_ptr(&mut self) -> *mut Self::Scalar {
+        self.validate_element_view();
         let ptr: *mut u8 = self.data_mut().as_mut().as_mut_ptr();
         assert!(
             (ptr as usize).is_multiple_of(align_of::<Self::Scalar>()),
@@ -203,12 +211,14 @@ pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
     ///
     /// Panics if the buffer is smaller than the element view (see [`ZnxView::raw`]).
     fn raw_mut(&mut self) -> &mut [Self::Scalar] {
+        self.validate_element_view();
         let span: usize = element_view_span(self);
         raw_scalars_mut(self.data_mut().as_mut(), span)
     }
 
     /// Returns a mutable pointer starting at the j-th small polynomial of the i-th column.
     fn at_mut_ptr(&mut self, i: usize, j: usize) -> *mut Self::Scalar {
+        self.validate_element_view();
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
         let offset: usize = j

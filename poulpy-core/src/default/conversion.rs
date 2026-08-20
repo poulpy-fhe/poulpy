@@ -20,7 +20,10 @@ use poulpy_hal::{
 
 use crate::{
     GLWERotate, ScratchArenaTakeCore,
-    default::{keyswitching::GGLWEProductDefault, operations::GLWECopyDefault},
+    default::{
+        keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
+        operations::GLWECopyDefault,
+    },
     layouts::{
         GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut,
         GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut,
@@ -495,12 +498,12 @@ where
     let cols: usize = rank + 1;
 
     let a_size: usize = res_infos.k().as_usize().div_ceil(tsk_base2k);
-    let tsk_size: usize = tsk_infos.size();
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, res_infos, tsk_infos);
 
     let lvl_0: usize = module.bytes_of_vec_znx_dft(cols - 1, a_size) + BE::bytes_of_vec_znx(module.n(), 1, a_size);
-    let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(cols, tsk_size);
-    let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_default(tsk_size, a_size, tsk_infos);
-    let lvl_1_big: usize = module.bytes_of_vec_znx_big(cols, tsk_size)
+    let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(cols, output_size);
+    let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, tsk_infos);
+    let lvl_1_big: usize = module.bytes_of_vec_znx_big(cols, output_size)
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
@@ -529,7 +532,7 @@ where
 {
     let mut res_backend = res.to_backend_mut();
 
-    let tsk_size: usize = tsk.work_size(res_backend.k());
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_backend, &res_backend, tsk);
     let res_base2k: usize = res_backend.base2k().into();
     let tsk_base2k: usize = tsk.base2k().into();
 
@@ -588,7 +591,7 @@ where
                 &a_0_ref,
                 &a_dft_ref,
                 tsk,
-                tsk_size,
+                output_size,
                 &mut scratch_row,
             );
         }
@@ -603,7 +606,7 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
     a_0: &VecZnxBackendRef<'a, BE>,
     a_dft: &VecZnxDftBackendRef<'b, BE>,
     tsk: &T,
-    tsk_size: usize,
+    output_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: GLWEBytesOf<BE>
@@ -622,10 +625,10 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
 
     for col in 1..cols {
         let scratch_row = scratch.borrow();
-        let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(module, cols, tsk_size);
+        let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(module, cols, output_size);
         {
             let mut scratch_prod = scratch_1.borrow();
-            module.gglwe_product_dft_default(&mut res_dft, a_dft, tsk.at(col - 1), &mut scratch_prod);
+            module.gglwe_product_dft_default(&mut res_dft, a_dft, tsk.at(col - 1), 1, &mut scratch_prod);
         }
 
         let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module, cols, res_dft.size());

@@ -28,6 +28,8 @@ pub struct NTT4x30NeonHandle {
 }
 
 impl Backend for NTT4x30Neon {
+    const DFT_IS_EXACT: bool = true;
+
     type DftWord = Q120bScalar;
     type ZnxWord = i64;
     type BigWord = i128;

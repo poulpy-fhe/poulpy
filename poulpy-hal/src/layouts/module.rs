@@ -19,6 +19,13 @@ use crate::{
 /// correctly deallocate the handle without double-free.
 #[allow(clippy::missing_safety_doc)]
 pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
+    /// Whether this backend's transform-domain arithmetic is exact within its
+    /// documented operand bounds.
+    ///
+    /// This is an arithmetic property of the backend implementation, not of
+    /// the [`DftWord`](crate::layouts::DftWord) byte-layout marker.
+    const DFT_IS_EXACT: bool = false;
+
     /// Word type for coefficient-domain (small) polynomial representations.
     type ZnxWord: crate::layouts::ZnxWord;
     /// Word type for extended-precision (big) polynomial representations.

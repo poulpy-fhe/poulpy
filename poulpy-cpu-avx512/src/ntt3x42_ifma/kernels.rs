@@ -192,7 +192,7 @@ unsafe fn write_fwd_interleaved_t1(arg1: __m512i, arg2: __m512i, out: *mut u64) 
 
 /// Largest sub-transform handled directly by the breadth-first base case.
 /// Sub-transforms larger than this split depth-first for cache locality.
-const BASE_NTT_SIZE: usize = 1024;
+const BASE_NTT_SIZE: usize = 2048;
 
 /// Breadth-first forward transform of one sub-plane of length `n_sub`.
 ///
@@ -428,6 +428,48 @@ unsafe fn fwd_plane<const ILM: bool>(
     }
 }
 
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn fwd_top2<const N: usize>(ptr: *mut u64, root: &[u64], precon: &[u64], q_v: __m512i, q2_v: __m512i) {
+    unsafe {
+        let quarter = N / 4;
+        let w0 = _mm512_set1_epi64(root[1] as i64);
+        let wp0 = _mm512_set1_epi64(precon[1] as i64);
+        let w1 = _mm512_set1_epi64(root[2] as i64);
+        let wp1 = _mm512_set1_epi64(precon[2] as i64);
+        let w2 = _mm512_set1_epi64(root[3] as i64);
+        let wp2 = _mm512_set1_epi64(precon[3] as i64);
+
+        let mut j = 0usize;
+        while j < quarter {
+            let p0 = ptr.add(j) as *mut __m512i;
+            let p1 = ptr.add(j + quarter) as *mut __m512i;
+            let p2 = ptr.add(j + 2 * quarter) as *mut __m512i;
+            let p3 = ptr.add(j + 3 * quarter) as *mut __m512i;
+            let a = _mm512_loadu_si512(p0 as *const __m512i);
+            let b = _mm512_loadu_si512(p1 as *const __m512i);
+            let c = _mm512_loadu_si512(p2 as *const __m512i);
+            let d = _mm512_loadu_si512(p3 as *const __m512i);
+
+            let tc = harvey_modmul_si512(c, w0, wp0, q_v);
+            let td = harvey_modmul_si512(d, w0, wp0, q_v);
+            let u0 = _mm512_add_epi64(a, tc);
+            let u1 = _mm512_add_epi64(b, td);
+            let u2 = _mm512_sub_epi64(_mm512_add_epi64(a, q2_v), tc);
+            let u3 = _mm512_sub_epi64(_mm512_add_epi64(b, q2_v), td);
+
+            let t1 = harvey_modmul_si512(u1, w1, wp1, q_v);
+            let t3 = harvey_modmul_si512(u3, w2, wp2, q_v);
+            let u0 = cond_sub_2q_si512(u0, q2_v);
+            let u2 = cond_sub_2q_si512(u2, q2_v);
+            _mm512_storeu_si512(p0, _mm512_add_epi64(u0, t1));
+            _mm512_storeu_si512(p1, _mm512_sub_epi64(_mm512_add_epi64(u0, q2_v), t1));
+            _mm512_storeu_si512(p2, _mm512_add_epi64(u2, t3));
+            _mm512_storeu_si512(p3, _mm512_sub_epi64(_mm512_add_epi64(u2, q2_v), t3));
+            j += 8;
+        }
+    }
+}
+
 /// Forward NTT (Cooley-Tukey, natural-order input -> bit-reversed output,
 /// negacyclic).
 ///
@@ -468,8 +510,32 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable
                 (&[], &[])
             };
 
-            // Depth-first transform; the depth-0 top stage skips its precondition.
-            fwd_plane::<true>(ptr, n, 0, 0, root, precon, tail, tail_p, q, q2, q_v, q2_v);
+            if n == 1 << 15 || n == 1 << 16 {
+                if n == 1 << 15 {
+                    fwd_top2::<{ 1 << 15 }>(ptr, root, precon, q_v, q2_v);
+                } else {
+                    fwd_top2::<{ 1 << 16 }>(ptr, root, precon, q_v, q2_v);
+                }
+                let quarter = n / 4;
+                for part in 0..4 {
+                    fwd_plane::<false>(
+                        ptr.add(part * quarter),
+                        quarter,
+                        2,
+                        part,
+                        root,
+                        precon,
+                        tail,
+                        tail_p,
+                        q,
+                        q2,
+                        q_v,
+                        q2_v,
+                    );
+                }
+            } else {
+                fwd_plane::<true>(ptr, n, 0, 0, root, precon, tail, tail_p, q, q2, q_v, q2_v);
+            }
 
             // Final reduction [0, 4q) -> [0, q), skipped on lazy output.
             if !lazy_output {
@@ -1098,6 +1164,16 @@ mod tests {
     }
 
     #[test]
+    fn ntt_avx512_vs_ref_n32768_pseudorandom() {
+        ntt_avx512_vs_ref_pseudorandom(32768);
+    }
+
+    #[test]
+    fn ntt_avx512_vs_ref_n65536_pseudorandom() {
+        ntt_avx512_vs_ref_pseudorandom(65536);
+    }
+
+    #[test]
     fn intt_avx512_vs_ref_n4096_pseudorandom() {
         intt_avx512_vs_ref_pseudorandom(4096);
     }
@@ -1110,6 +1186,16 @@ mod tests {
     #[test]
     fn intt_avx512_vs_ref_n16384_pseudorandom() {
         intt_avx512_vs_ref_pseudorandom(16384);
+    }
+
+    #[test]
+    fn intt_avx512_vs_ref_n32768_pseudorandom() {
+        intt_avx512_vs_ref_pseudorandom(32768);
+    }
+
+    #[test]
+    fn intt_avx512_vs_ref_n65536_pseudorandom() {
+        intt_avx512_vs_ref_pseudorandom(65536);
     }
 
     #[test]

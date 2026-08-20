@@ -108,7 +108,7 @@ own tables of `BenchOp`s and call `bench_ops` directly. For example, a backend t
 implements the HAL but not the core layer can still benchmark the HAL ops it supports, and
 a backend that implements only a subset of the HAL can still benchmark the ops it
 supports. A backend can also filter, reorder, or extend the tables before passing them to
-`bench_ops`. 
+`bench_ops`.
 
 ```rust
 use std::marker::PhantomData;
@@ -151,7 +151,7 @@ Criterion treats any trailing arguments after `--` as a filter matched
 against the benchmark's full id (`<backend>/<layer>/<op name>/<params>`), so
 you can scope a run to one layer, backend, or op by passing a matching
 prefix or substring. `--list` (optionally combined with a filter) prints the matching ids
-without running them. 
+without running them.
 
 ```sh
 # Only the HAL layer, on the NTT4x30Ref backend

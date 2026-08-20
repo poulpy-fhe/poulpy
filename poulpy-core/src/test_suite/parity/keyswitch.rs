@@ -1,8 +1,15 @@
 //! Key-switch parity: the gadget digit loop, compared across backends.
 
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostDataMut, Module, ScratchOwned},
+    api::{
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
+        VecZnxDftZero, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes,
+        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+    },
+    layouts::{
+        FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, VecZnx, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef,
+    },
     source::Source,
     test_suite::TestParams,
 };
@@ -11,11 +18,123 @@ use crate::{
     GGLWEKeyswitch, GLWEKeyswitch,
     api::TransferInto,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, gadget_product_limbs,
         prepared::GGLWEPreparedFactory,
     },
+    oep::GGLWEProductDigitsStridedImpl,
     test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe},
 };
+
+/// Checks a backend's interleaved-digit product against the Core definition.
+pub fn test_gglwe_product_digits_strided<BE>(module: &Module<BE>, base2k: usize)
+where
+    BE: poulpy_hal::test_suite::TestBackend + GGLWEProductDigitsStridedImpl<BE>,
+    BE::OwnedBuf: HostDataMut,
+    Module<BE>: VecZnxAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftCopy<BE>
+        + VecZnxDftZero<BE>
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyDftToDftTmpBytes
+        + VmpApplyDftToDftAccumulateTmpBytes
+        + VmpPMatAlloc<BE>
+        + VmpPrepare<BE>
+        + VmpPrepareTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    let mut source = Source::new([2u8; 32]);
+    let cases: [(usize, usize, usize, usize); 6] = [
+        (2, 1, 2, 4),
+        (2, 2, 1, 5),
+        (3, 1, 1, 7),
+        (3, 2, 2, 2),
+        (2, 1, 1, 1),
+        (3, 2, 1, 8),
+    ];
+
+    for (dsize, cols_in, cols_out, a_size, sparse) in cases.into_iter().flat_map(|case| {
+        let (dsize, cols_in, cols_out, a_size) = case;
+        [
+            (dsize, cols_in, cols_out, a_size, false),
+            (dsize, cols_in, cols_out, a_size, true),
+        ]
+    }) {
+        let rows = a_size.div_ceil(dsize);
+        let size_out = a_size;
+        let product_terms = module.n().saturating_mul(rows).saturating_mul(dsize).saturating_mul(cols_in);
+        let product_limbs = gadget_product_limbs(Base2K(base2k as u32), product_terms);
+        let default_tmp = crate::default::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
+            module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
+        );
+        let backend_tmp = BE::gglwe_product_digits_strided_tmp_bytes(
+            module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
+        );
+        let mut scratch = ScratchOwned::<BE>::alloc(
+            default_tmp
+                .max(backend_tmp)
+                .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size_out)),
+        );
+
+        let mut a = module.vec_znx_alloc(cols_in, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let mut a_dft = module.vec_znx_dft_alloc(cols_in, a_size);
+        for col in 0..cols_in {
+            let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&a);
+            module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), col, &a, col);
+        }
+        if sparse && a_size > 1 {
+            let mut a_dft = a_dft.to_backend_mut();
+            let mut prefix = a_dft.with_limb_range_mut(0, a_size - 1);
+            for col in 0..cols_in {
+                module.vec_znx_dft_zero(&mut prefix, col);
+            }
+        }
+
+        let mut mat = module.mat_znx_alloc(rows, cols_in, cols_out, size_out);
+        mat.fill_uniform(base2k, &mut source);
+        let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
+        let mat = <MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat);
+        module.vmp_prepare(&mut pmat.to_backend_mut(), &mat, &mut scratch.borrow());
+
+        let mut want = module.vec_znx_dft_alloc(cols_out, size_out);
+        let sentinel = vec![1u8; BE::len_bytes(&want.data)];
+        BE::copy_from_host(&mut want.data, &sentinel);
+        crate::default::keyswitching::glwe::gglwe_product_digits_strided_default(
+            module,
+            &mut want.to_backend_mut(),
+            &a_dft.to_backend_ref(),
+            dsize,
+            product_limbs,
+            &pmat.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+
+        let mut have = module.vec_znx_dft_alloc(cols_out, size_out);
+        BE::copy_from_host(&mut have.data, &sentinel);
+        BE::gglwe_product_digits_strided(
+            module,
+            &mut have.to_backend_mut(),
+            &a_dft.to_backend_ref(),
+            dsize,
+            product_limbs,
+            &pmat.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
+
+        let want = BE::to_host_bytes(&want.data);
+        let have = BE::to_host_bytes(&have.data);
+        assert_ne!(want, sentinel, "reference VMP did not overwrite the destination");
+        assert_eq!(
+            have, want,
+            "strided VMP mismatch for dsize={dsize}, a_size={a_size}, sparse={sparse}"
+        );
+    }
+}
 
 /// Key layout for a `rank_in -> rank_out` switch covering `k` bits of input.
 fn key_layout(n: u32, base2k: usize, k: usize, dsize: usize, rank_in: usize, rank_out: usize) -> GGLWELayout {

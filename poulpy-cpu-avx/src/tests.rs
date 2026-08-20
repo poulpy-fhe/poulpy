@@ -16,6 +16,7 @@ poulpy_core::core_parity_test_suite! {
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
         glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
         glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
+        glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
 }
 
@@ -35,6 +36,7 @@ poulpy_core::core_parity_test_suite! {
         glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
         glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
         glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
+        glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
 }
 

@@ -16,7 +16,7 @@ use poulpy_hal::{
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
-fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
+pub(crate) fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
 where
     BE: Backend<ZnxWord = i64> + 'a,
     BE::BufMut<'a>: HostBufMut<'a>,
@@ -745,7 +745,7 @@ mod ifma_impl {
         }
     }
 
-    use poulpy_cpu_ref::hal_defaults::{NTT4x30SvpDefault, NTT4x30VecZnxBigDefault};
+    use poulpy_cpu_ref::hal_defaults::NTT4x30VecZnxBigDefault;
 
     unsafe impl HalVecZnxBigImpl<NTT3x42Ifma> for NTT3x42Ifma {
         poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
@@ -763,13 +763,13 @@ mod ifma_impl {
         }
 
         fn svp_ppol_copy_backend(
-            module: &Module<Self>,
+            _module: &Module<Self>,
             res: &mut SvpPPolBackendMut<'_, Self>,
             res_col: usize,
             a: &SvpPPolBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as NTT4x30SvpDefault<Self>>::svp_ppol_copy_backend_default(module, res, res_col, a, a_col);
+            crate::ntt3x42_ifma::svp::svp_ppol_copy_backend(res, res_col, a, a_col);
         }
 
         fn svp_apply_dft(

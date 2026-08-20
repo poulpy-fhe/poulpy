@@ -28,51 +28,6 @@ pub trait Ntt3x42IfmaToZnx128 {
     fn ntt3x42_ifma_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]);
 }
 
-/// Component-wise addition of two CRT vectors.
-pub trait Ntt3x42IfmaAdd {
-    fn ntt3x42_ifma_add(res: &mut [u64], a: &[u64], b: &[u64]);
-}
-
-/// In-place component-wise addition.
-pub trait Ntt3x42IfmaAddAssign {
-    fn ntt3x42_ifma_add_assign(res: &mut [u64], a: &[u64]);
-}
-
-/// Component-wise subtraction.
-pub trait Ntt3x42IfmaSub {
-    fn ntt3x42_ifma_sub(res: &mut [u64], a: &[u64], b: &[u64]);
-}
-
-/// In-place component-wise subtraction.
-pub trait Ntt3x42IfmaSubAssign {
-    fn ntt3x42_ifma_sub_assign(res: &mut [u64], a: &[u64]);
-}
-
-/// In-place swap-subtract: `res = a - res`.
-pub trait Ntt3x42IfmaSubNegateAssign {
-    fn ntt3x42_ifma_sub_negate_assign(res: &mut [u64], a: &[u64]);
-}
-
-/// Component-wise negation.
-pub trait Ntt3x42IfmaNegate {
-    fn ntt3x42_ifma_negate(res: &mut [u64], a: &[u64]);
-}
-
-/// In-place negation.
-pub trait Ntt3x42IfmaNegateAssign {
-    fn ntt3x42_ifma_negate_assign(res: &mut [u64]);
-}
-
-/// Zero a CRT vector.
-pub trait Ntt3x42IfmaZero {
-    fn ntt3x42_ifma_zero(res: &mut [u64]);
-}
-
-/// Copy a CRT vector.
-pub trait Ntt3x42IfmaCopy {
-    fn ntt3x42_ifma_copy(res: &mut [u64], a: &[u64]);
-}
-
 /// Pointwise product: b × c → b (overwrite).
 ///
 /// `ntt_coeff` is in b format (as u32 view), `prepared` is in Harvey-prepared c format.

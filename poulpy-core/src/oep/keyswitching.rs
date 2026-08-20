@@ -1,12 +1,114 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
     GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
     prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
+
+/// Output limbs computed by gadget digit `di`.
+///
+/// The first digit overwrites the full result. Later digits can omit limbs
+/// below the supplied product spill window.
+#[inline]
+pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: usize, di: usize, product_limbs: usize) -> usize {
+    assert!(di < dsize);
+    if di == 0 {
+        res_size
+    } else {
+        let omitted_limbs = dsize.saturating_sub(di.saturating_add(product_limbs));
+        res_size.min(key_size.saturating_sub(omitted_limbs))
+    }
+}
+
+/// Backend implementation of the interleaved-digit GGLWE product.
+///
+/// For `dsize >= 2`, it must reproduce
+/// [`gglwe_product_digits_strided_default`](crate::default::keyswitching::glwe::gglwe_product_digits_strided_default)
+/// bit for bit. `product_limbs` is the caller-derived spill width for the full
+/// coefficient-product accumulation.
+///
+/// # Safety
+/// Implementations must honor the supplied layouts and return a scratch bound
+/// sufficient for [`Self::gglwe_product_digits_strided`].
+pub unsafe trait GGLWEProductDigitsStridedImpl<BE: Backend>: Backend {
+    #[allow(clippy::too_many_arguments)]
+    fn gglwe_product_digits_strided_tmp_bytes(
+        module: &Module<BE>,
+        res_size: usize,
+        a_cols: usize,
+        a_size: usize,
+        dsize: usize,
+        pmat_rows: usize,
+        pmat_cols_in: usize,
+        pmat_cols_out: usize,
+        pmat_size: usize,
+    ) -> usize;
+
+    fn gglwe_product_digits_strided(
+        module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        dsize: usize,
+        product_limbs: usize,
+        pmat: &VmpPMatBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+}
+
+/// Opts a backend into the canonical GGLWE interleaved-digit product.
+#[macro_export]
+macro_rules! impl_gglwe_product_digits_strided_default {
+    ($be:ty) => {
+        unsafe impl $crate::oep::GGLWEProductDigitsStridedImpl<$be> for $be {
+            fn gglwe_product_digits_strided_tmp_bytes(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res_size: usize,
+                a_cols: usize,
+                a_size: usize,
+                dsize: usize,
+                pmat_rows: usize,
+                pmat_cols_in: usize,
+                pmat_cols_out: usize,
+                pmat_size: usize,
+            ) -> usize {
+                $crate::default::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
+                    module,
+                    res_size,
+                    a_cols,
+                    a_size,
+                    dsize,
+                    pmat_rows,
+                    pmat_cols_in,
+                    pmat_cols_out,
+                    pmat_size,
+                )
+            }
+
+            fn gglwe_product_digits_strided(
+                module: &::poulpy_hal::layouts::Module<$be>,
+                res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
+                a: &::poulpy_hal::layouts::VecZnxDftBackendRef<'_, $be>,
+                dsize: usize,
+                product_limbs: usize,
+                pmat: &::poulpy_hal::layouts::VmpPMatBackendRef<'_, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) {
+                $crate::default::keyswitching::glwe::gglwe_product_digits_strided_default(
+                    module,
+                    res,
+                    a,
+                    dsize,
+                    product_limbs,
+                    pmat,
+                    scratch,
+                )
+            }
+        }
+    };
+}
 
 /// Backend-provided GLWE key-switching operations.
 ///
@@ -122,9 +224,11 @@ pub unsafe trait LWEKeyswitchImpl<BE: Backend>: Backend {
 /// `di` of `0..dsize` contributes to output limb `c` iff
 ///
 /// ```text
-/// c < min(key_size - di, width(di))
-/// width(0)  = res_size
-/// width(di) = res_size - max(dsize - di - 2, 0)      for di > 0
+/// c < min(key_size - di, compute_size(di))
+/// compute_size(0)  = res_size
+/// compute_size(di) = min(res_size,
+///                        key_size - max(dsize - di - product_limbs, 0))
+///                    for di > 0
 /// ```
 ///
 /// Two properties are load-bearing:
@@ -134,14 +238,12 @@ pub unsafe trait LWEKeyswitchImpl<BE: Backend>: Backend {
 ///   cannot be walked in reverse to widen the first pass. An implementation that
 ///   writes each output limb exactly once needs no zeroing but must still match
 ///   the arithmetic.
-/// - the `- 2` in `width(di)` is not an off-by-one. Pass `di` consumes `a`'s limbs
-///   at offset `dsize - di - 1`, so a *point* contribution would land
-///   `dsize - 1 - di` limbs below the top; but an elementary limb product has
-///   magnitude `~2^(2*base2k + log_n)` and spans two limbs, reaching one further
-///   down. Tightening it to `- 1` is silent: the difference measured 1e-6 bits at
-///   `n = 2^12`, `base2k = 18`.
-///
-/// TODO: ONCE PR #213 is merged, update this contract.
+/// - `product_limbs` is the two-limb elementary product plus the coefficient
+///   accumulation growth. Pass `di` consumes `a`'s limbs at offset
+///   `dsize - di - 1`; the product spill reaches further down according to the
+///   ring and matrix shape. Treating this as a constant is silent at small
+///   shapes but truncates live limbs once the accumulation needs a third or
+///   fourth limb.
 ///
 /// Assert parity against a reference backend, not only the noise bound.
 pub trait GLWEKeyswitchDefault<BE: Backend> {
@@ -531,4 +633,17 @@ macro_rules! impl_lwe_keyswitch_defaults_full {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod digit_output_size_tests {
+    use super::gglwe_product_digit_output_size;
+
+    #[test]
+    fn product_spill_controls_later_digit_widths() {
+        assert_eq!(gglwe_product_digit_output_size(12, 12, 7, 0, 2), 12);
+        assert_eq!(gglwe_product_digit_output_size(12, 12, 7, 1, 2), 8);
+        assert_eq!(gglwe_product_digit_output_size(12, 12, 7, 1, 4), 10);
+        assert_eq!(gglwe_product_digit_output_size(9, 12, 7, 1, 4), 9);
+    }
 }

@@ -10,9 +10,11 @@
 //!
 //! - **Unconditional blankets** — [`CKKSEvalModImpl`]: pure compositions of already-wired families, so they blanket over any backend whose constituent families are wired; there is no per-backend macro because there is nothing backend-specific to opt into.
 //! - **Scalar-generic encoding seams** — [`CKKSEncodingImpl<BE, F>`], [`DFTMatrixImpl<BE, F>`], and [`CKKSPaCoCoeffEncodingImpl`]: parameterized by the encoding scalar and tied to the backend's FFT/codec plumbing, they are wired by backend-crate-side macros (e.g. `impl_ckks_encoding_*!` in the CPU backends) rather than by crate-side default markers, keeping host/FFT bounds out of this crate's API per the no-host-bounds rule.
-//! - **No-OEP families** — bootstrapping and the composite ops (`CKKSMulAddOps`, `CKKSMulSubOps`, `CKKSAffineOps`, `CKKSAddManyOps`, `CKKSDotProductOps`, linear transformations): pure api-level compositions of other families' ops, implemented directly on `Module<BE>` in the delegates layer with no override seam of their own — overriding their constituents overrides them.
+//! - **Narrow protocol seam** — [`CKKSEncapsulatedModUpImpl`] lets backends optimize bootstrapping's dense-to-sparse → ModUp → sparse-to-dense stage.
+//! - **No-OEP families** — the remaining composite ops (`CKKSMulAddOps`, `CKKSMulSubOps`, `CKKSAffineOps`, `CKKSAddManyOps`, `CKKSDotProductOps`, linear transformations): pure api-level compositions of other families' ops, implemented directly on `Module<BE>` in the delegates layer with no override seam of their own — overriding their constituents overrides them.
 
 mod add;
+mod bootstrapping;
 mod carry_verb;
 mod ckks_impl;
 mod conjugate;
@@ -34,6 +36,7 @@ mod sub;
 
 pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_defaults;
+pub use bootstrapping::{CKKSEncapsulatedModUpImpl, impl_ckks_encapsulated_mod_up_default};
 pub use ckks_impl::CKKSImpl;
 pub use conjugate::CKKSConjugateImpl;
 pub use conjugate::impl_ckks_conjugate_defaults;

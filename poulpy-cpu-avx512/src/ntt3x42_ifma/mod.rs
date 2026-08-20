@@ -16,7 +16,8 @@
 //!
 //! # Scalar types
 //!
-//! - `DftWord = Q126Scalar` — 24-byte marker for three planar prime residues.
+//! - `DftWord = Q126Scalar` — an identity marker; DFT storage packs three
+//!   42-bit prime residues into two `u64` words per coefficient.
 //! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
 pub(crate) mod bbc_meta;
@@ -27,6 +28,7 @@ pub(crate) mod module;
 mod prim;
 pub(crate) mod primes;
 pub(crate) mod reference;
+mod serial;
 pub(crate) mod svp;
 pub(crate) mod tables;
 pub(crate) mod traits;
@@ -48,7 +50,8 @@ mod tests;
 ///
 /// # Backend characteristics
 ///
-/// - **DftWord**: `Q126Scalar` — 24-byte marker for three planar prime residues.
+/// - **DftWord**: `Q126Scalar` — an identity marker for a packed two-word
+///   representation of three 42-bit prime residues.
 /// - **BigWord**: `i128` — large-coefficient ring elements use 128-bit signed integers.
 /// - **Prime set**: `Primes42` (three ~42-bit primes, Q ≈ 2^126).
 ///

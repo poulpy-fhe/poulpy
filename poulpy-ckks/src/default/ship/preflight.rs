@@ -3,6 +3,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
+    default::keyswitching::glwe::GGLWEProductDefault,
     layouts::{GLWELayout, Rank},
 };
 
@@ -38,6 +39,7 @@ where
     BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
+        + GGLWEProductDefault<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
@@ -94,7 +96,7 @@ where
     for ik in keys.index_keys() {
         for group in ik.mux_keys() {
             if let Some(mux) = group.first() {
-                bytes = bytes.max(ship_mux_rotate_tmp_bytes(module, &raised, &mux.key));
+                bytes = bytes.max(ship_mux_rotate_tmp_bytes(module, &raised, &mux.key, group.len()));
             }
         }
     }

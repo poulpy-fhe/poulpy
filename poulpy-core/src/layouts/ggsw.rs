@@ -29,18 +29,6 @@ where
     fn k_aux(&self) -> TorusPrecision;
     /// Returns the number of gadget-decomposition rows.
     fn dnum(&self) -> Dnum;
-    /// Number of key limbs an operation should process when applied to an input
-    /// ciphertext of precision `input_k`: `ceil((input_k + k_aux) / base2k)`,
-    /// clamped to the key's own allocated width. Replaces the old explicit
-    /// `key_size` / `tsk_size` operation arguments.
-    fn work_size(&self, input_k: TorusPrecision) -> usize {
-        self.size().min(crate::layouts::key_work_size(
-            self.base2k(),
-            input_k,
-            self.dsize(),
-            self.k_aux(),
-        ))
-    }
     /// Returns the decomposition digit size.
     fn dsize(&self) -> Dsize;
     /// Returns a plain-data [`GGSWLayout`] snapshot of the current parameters.

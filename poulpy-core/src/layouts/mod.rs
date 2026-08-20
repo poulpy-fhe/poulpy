@@ -1311,3 +1311,134 @@ pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize, k_au
     let digits: u32 = input_k.0.div_ceil(digit_bits);
     (digits * dsize.0 + k_aux.0.div_ceil(base2k.0)) as usize
 }
+
+/// Inputs used to size the key region materialized for a gadget product.
+pub(crate) struct GadgetProductOutputSizeParams {
+    pub(crate) key_size: usize,
+    pub(crate) key_base2k: Base2K,
+    pub(crate) input_k: TorusPrecision,
+    pub(crate) output_k: TorusPrecision,
+    pub(crate) dsize: Dsize,
+    pub(crate) k_aux: TorusPrecision,
+    pub(crate) dft_is_exact: bool,
+    pub(crate) product_terms: usize,
+    pub(crate) extra_live_limbs: usize,
+}
+
+/// Worst-case radix limbs occupied by one coefficient of a gadget product.
+///
+/// Each elementary coefficient product contributes two limbs. Accumulating
+/// `product_terms` such products adds `ceil(log2(product_terms))` bits.
+pub(crate) fn gadget_product_limbs(key_base2k: Base2K, product_terms: usize) -> usize {
+    let base2k = key_base2k.as_usize();
+    let accumulation_bits = if product_terms <= 1 {
+        0
+    } else {
+        usize::BITS as usize - (product_terms - 1).leading_zeros() as usize
+    };
+    base2k.saturating_mul(2).saturating_add(accumulation_bits).div_ceil(base2k)
+}
+
+/// Sizes the key region materialized for a gadget product and its immediate
+/// normalization.
+///
+/// All lower limbs can, in principle, affect the rounded result through a
+/// sufficiently long carry chain. For exact transform backends, this keeps a
+/// conservative practical window: the live input/output precision, converted
+/// to the key radix, plus the worst-case limb growth of the signed polynomial
+/// products accumulated into one coefficient. Approximate transform backends
+/// retain the complete work region because their rounding error does not obey
+/// that exact carry model.
+pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) -> usize {
+    let GadgetProductOutputSizeParams {
+        key_size,
+        key_base2k,
+        input_k,
+        output_k,
+        dsize,
+        k_aux,
+        dft_is_exact,
+        product_terms,
+        extra_live_limbs,
+    } = params;
+    let work_size = key_size.min(key_work_size(key_base2k, input_k, dsize, k_aux));
+    if !dft_is_exact {
+        return work_size;
+    }
+
+    let base2k = key_base2k.as_usize();
+    let live_limbs = input_k
+        .as_usize()
+        .max(output_k.as_usize())
+        .div_ceil(base2k)
+        .saturating_add(extra_live_limbs);
+    let product_limbs = gadget_product_limbs(key_base2k, product_terms);
+    work_size.min(live_limbs.saturating_add(product_limbs))
+}
+
+#[cfg(test)]
+mod gadget_sizing_tests {
+    use super::*;
+
+    #[test]
+    fn work_size_rounds_input_to_a_whole_digit_before_aux_limbs() {
+        // Two 2-limb digits plus two auxiliary limbs.
+        assert_eq!(key_work_size(Base2K(30), TorusPrecision(61), Dsize(2), TorusPrecision(31)), 6);
+    }
+
+    #[test]
+    fn output_size_converts_precision_to_the_key_radix_and_caps_at_work_size() {
+        let params = |dft_is_exact| GadgetProductOutputSizeParams {
+            key_size: 12,
+            key_base2k: Base2K(30),
+            input_k: TorusPrecision(61),
+            output_k: TorusPrecision(91),
+            dsize: Dsize(2),
+            k_aux: TorusPrecision(31),
+            dft_is_exact,
+            product_terms: 1,
+            extra_live_limbs: 0,
+        };
+        assert_eq!(gadget_product_output_size(params(true)), 6);
+        assert_eq!(gadget_product_output_size(params(false)), 6);
+    }
+
+    #[test]
+    fn output_size_accounts_for_polynomial_accumulation_growth() {
+        assert_eq!(
+            gadget_product_output_size(GadgetProductOutputSizeParams {
+                key_size: 12,
+                key_base2k: Base2K(30),
+                input_k: TorusPrecision(60),
+                output_k: TorusPrecision(90),
+                dsize: Dsize(1),
+                k_aux: TorusPrecision(180),
+                dft_is_exact: true,
+                product_terms: 1,
+                extra_live_limbs: 0,
+            }),
+            5
+        );
+        assert_eq!(
+            gadget_product_output_size(GadgetProductOutputSizeParams {
+                key_size: 12,
+                key_base2k: Base2K(30),
+                input_k: TorusPrecision(60),
+                output_k: TorusPrecision(90),
+                dsize: Dsize(1),
+                k_aux: TorusPrecision(180),
+                dft_is_exact: true,
+                product_terms: 1 << 16,
+                extra_live_limbs: 0,
+            }),
+            6
+        );
+    }
+
+    #[test]
+    fn product_limbs_include_coefficient_accumulation_growth() {
+        assert_eq!(gadget_product_limbs(Base2K(30), 1), 2);
+        assert_eq!(gadget_product_limbs(Base2K(30), 1 << 16), 3);
+        assert_eq!(gadget_product_limbs(Base2K(19), 1 << 20), 4);
+    }
+}
