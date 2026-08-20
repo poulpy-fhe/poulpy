@@ -6,24 +6,13 @@
 </p>
 
 [![CI](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml)
+[![HEIR](https://img.shields.io/badge/HEIR-Poulpy_backend-4285F4)](https://github.com/google/heir/tree/main/lib/Target/Poulpy)
 
-**Poulpy** is a **fast and modular** FHE library that implements Ring-Learning-With-Errors based homomorphic encryption over the Torus. It adopts the bivariate polynomial representation proposed in [Revisiting Key Decomposition Techniques for FHE: Simpler, Faster and More Generic](https://eprint.iacr.org/2023/771) to represent Torus polynomials. Compared with the residue number system (RNS), this representation provides simpler and more reusable arithmetic, a **common plaintext space** for all schemes, and native bridges between schemes. Poulpy also decouples scheme implementations from the polynomial arithmetic backend by being built from the ground up around a **hardware abstraction layer** that closely matches the API of [spqlios-arithmetic](https://github.com/tfhe/spqlios-arithmetic). Leveraging the HAL, users can develop applications generic over the backend and choose a backend at runtime.
+**Poulpy** is a **fast and modular** FHE library that implements Ring-Learning-With-Errors based homomorphic encryption over the Torus. It adopts the bivariate polynomial representation proposed in [Revisiting Key Decomposition Techniques for FHE: Simpler, Faster and More Generic](https://eprint.iacr.org/2023/771) to represent Torus polynomials. Compared with the residue number system (RNS), this representation provides simpler and more reusable arithmetic, a **common plaintext space** for all schemes, and native bridges between schemes. Poulpy also decouples scheme implementations from the polynomial arithmetic backend by being built from the ground up around a **hardware abstraction layer**. Leveraging the HAL, users can develop applications generic over the backend and choose a backend at runtime.
 
 <p align="center">
 <img src="docs/img/lib_diagram.png" />
 </p>
-
-## Library Crates
-
-- **`poulpy-hal`**: a crate providing layouts and a trait-based hardware acceleration layer with open extension points, matching the API and types of spqlios-arithmetic. This crate does not provide concrete implementations other than the layouts (e.g. `VecZnx`, `VmpPmat`).
-- **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic Module-LWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-ref`, `poulpy-cpu-avx`).
-- **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
-- **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate; its public APIs have moved to the backend-owned HAL/core surface, while a few host/reference-backend dependencies remain for this release.
-- **`poulpy-cpu-ref`**: the reference CPU implementation of **`poulpy-hal`**.
-- **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**. Enable it with the `enable-avx` feature on crates that expose that feature.
-- **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing three backends: `FFT64Avx512` and `NTT4x30Avx512` (AVX-512F, via `enable-avx512f`) and `NTT3x42Ifma` (AVX-512F + IFMA + VL + BMI2 + ADX, via `enable-ifma`).
-- **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing two backends: `FFT64Neon` and `NTT4x30Neon`. Enable it with the `enable-neon` feature on crates that expose that feature.
-- **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
 
 ## Architecture
 
@@ -91,7 +80,7 @@ This provides the following benefits:
 
 - **Simpler implementation:** Since cyclotomic arithmetic is decoupled from the coefficient representation, the same pipeline (including DFT) can be reused for all limbs, unlike in the RNS representation. The bivariate representation also has a straightforward flat, aligned, and vectorized memory layout. These properties make it a strong target for hardware acceleration.
 
-- **Deterministic computation:** Although it is defined on the Torus, bivariate arithmetic remains integer polynomial arithmetic, ensuring all computations are deterministic. Outputs are reproducible and identical regardless of the backend or hardware.
+- **Deterministic computation:** Although it is defined on the Torus, bivariate arithmetic remains integer polynomial arithmetic, ensuring all computations are deterministic. Outputs are reproducible and identical regardless of the backend or hardware (even when using floating point).
 
 The bivariate representation recovers bit-granular scale and capacity management that RNS-CKKS lacks. A recent RNS-based technique, [Grafting](https://eprint.iacr.org/2024/1014) by Cheon et al., targets the same goal from inside the RNS world by decoupling scale factors from the modulus. For a detailed comparison of the two approaches, see [docs/grafting-vs-bivariate.md](docs/grafting-vs-bivariate.md).
 
@@ -110,8 +99,8 @@ For example, a CKKS application can depend on:
 
 ```toml
 [dependencies]
-poulpy-ckks = "0.6"
-poulpy-cpu-ref = "0.6"
+poulpy-ckks = "0.8.0"
+poulpy-cpu-ref = "0.8.0"
 ```
 
 For binary FHE:
@@ -127,6 +116,28 @@ poulpy-cpu-ref = "0.6"
 * The [`docs/`](./docs) folder holds the full documentation — a codebase map, the backend guide, design notes, and architecture diagrams. Start with its [index](./docs/README.md).
 * Crate package pages and generated Rust documentation are linked from the crates.io entries above.
 * Crate-specific READMEs provide more focused usage notes, especially [`poulpy-ckks`](./poulpy-ckks/README.md) and [`poulpy-bench`](./poulpy-bench/README.md).
+
+## Built with Poulpy
+
+Projects building on Poulpy. Open a pull request to add yours.
+
+**Function evaluation**
+
+- [`poulpy-libm`](https://github.com/poulpy-fhe/poulpy-libm): homomorphic evaluation of libm-style mathematical functions on CKKS ciphertexts, built on `poulpy-ckks`'s Remez approximation planning.
+
+**Private information retrieval**
+
+- [`poulpy-pir`](https://github.com/poulpy-fhe/poulpy-pir): single-server, communication-efficient PIR with server-side preprocessing, implementing both constructions of [InsPIRe](https://eprint.iacr.org/2025/1352) in the CRS model.
+- [`eth-pir`](https://github.com/poulpy-fhe/eth-pir): PIR over Ethereum token balances, built on `poulpy-pir`.
+- [`poulpy-eth-pir-demo`](https://github.com/poulpy-fhe/poulpy-eth-pir-demo): live demo querying USDT and USDC balances on Ethereum mainnet privately.
+
+**Compilers**
+
+- [HEIR](https://github.com/google/heir): Google's MLIR-based FHE compiler, carrying a Poulpy dialect and a [Poulpy emitter](https://github.com/google/heir/tree/main/lib/Target/Poulpy) that translates compiled circuits to Poulpy Rust.
+
+**Wrappers and bindings**
+
+- [`squid`](https://github.com/cedoor/squid): an ergonomic Rust wrapper over `poulpy-bin-fhe`'s gate-level integer arithmetic, with browser and Node bindings (WebAssembly and napi-rs). [Live demo](https://squid.cedoor.dev/).
 
 ## Testing Backend-Gated Integrations
 
@@ -176,10 +187,10 @@ Consider joining our [telegram](https://t.me/+uy7_HADsdN1jNmU1) group for any qu
 Please use the following BibTeX entry for citing Poulpy:
 
     @misc{poulpy,
-        title = {Poulpy v0.7.0},
-        author = {Jean-Philippe Bossuat and Jules Dumezy and Rasoul Akhavan Mahdavi and Janmajaya Mall and Cedoor and Luis Ruiz-Lopez},
-        affiliation = {Jean-Philippe Bossuat: Ideal Rings Lab and PhantomZone; Jules Dumezy: CEA-List, Universit{\'e} Paris-Saclay; Rasoul Akhavan Mahdavi: University of Waterloo; Janmajaya Mall: PhantomZone; Cedoor: Independent contributor; Luis Ruiz-Lopez: University of Waterloo},
+        title = {Poulpy v0.8.0},
+        author = {Jean-Philippe Bossuat and Jules Dumezy and Rasoul Akhavan Mahdavi and Janmajaya Mall and Cedoor and Luis Ruiz-Lopez and Christian Mouchet},
+        affiliation = {Jean-Philippe Bossuat: Ideal Rings Lab and PhantomZone; Jules Dumezy: CEA-List, Universit{\'e} Paris-Saclay; Rasoul Akhavan Mahdavi: University of Waterloo; Janmajaya Mall: PhantomZone; Cedoor: Independent contributor; Luis Ruiz-Lopez: University of Waterloo; Christian Mouchet: Independent contributor},
         howpublished = {Online: \url{https://github.com/poulpy-fhe/poulpy}},
-        month = July,
+        month = August,
         year = 2026,
     }

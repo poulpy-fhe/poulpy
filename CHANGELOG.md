@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2025/886](https://eprint.iacr.org/2025/886)) and **SHIP** (Cheon, Hanrot, Kim & Stehlé, [ePrint 2025/784](https://eprint.iacr.org/2025/784)); moves CKKS encoding onto a backend-resident op family; keys every polynomial layout by an explicit word type (`ZnxWord` / `BigWord` / `DftWord`) and the DFT/big containers by their backend; and lands a production-readiness pass over `poulpy-ckks` (typed errors, constructor-validated plans, scratch-carved intermediates, binary128-exact tables, four-layer consolidation).
+## [0.8.0] - 2026-08-20
+
+Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2025/886](https://eprint.iacr.org/2025/886)) and **SHIP** (Cheon, Hanrot, Kim & Stehlé, [ePrint 2025/784](https://eprint.iacr.org/2025/784)), moves CKKS encoding onto a backend-resident op family, and lands a production-readiness pass over `poulpy-ckks` (typed errors, constructor-validated plans, scratch-carved intermediates, binary128-exact tables, four-layer consolidation). Keys every polynomial layout by an explicit word type (`ZnxWord` / `BigWord` / `DftWord`) and the DFT/big containers by their backend, collapses the limb-width model to a claimed precision plus an allocation, and reparameterizes evaluation keys by an auxiliary guard `k_aux`. Trims gadget products to their live limbs on exact-DFT backends, opens the strided GGLWE product and tensoring to backend overrides, and lands a round of AVX2/AVX-512 NTT, VMP and convolution optimization. Opens the layouts, key containers and benchmarks to non-host device backends, and adds a reference-vs-backend byte-parity test suite.
 
 ### `poulpy-hal`: word-keyed layouts
 
@@ -38,6 +40,8 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** `GLWEKeyswitchInternal` and `GGLWEProductDefault` become public; they appear in the bounds of the public `glwe_keyswitch*_default` functions.
 - The `*Default` override surfaces are no longer `#[doc(hidden)]`; `oep`'s module docs describe the `*Impl` / `*Default` split with a worked override.
 - The gadget-digit width rule moves to the `GLWEKeyswitchDefault` contract and shared `gglwe_product_digit_output_size` helper; `GGLWEProductDefault` passes its accumulation count through `GGLWEProductDigitsStridedImpl` as a shape-derived `product_limbs` spill window instead of a fixed two limbs.
+- Gadget products on an exact-DFT backend trim their working width to the limbs that can still affect the result, through the single `gadget_product_output_size`. It takes both operand precisions, so a cross-radix product is sized from its own shape. Approximate-DFT backends keep the full `key_work_size` width.
+- **Breaking:** remove `GGLWEInfos::work_size` and `GGSWInfos::work_size`; the width is derived by `gadget_product_output_size` from the operand precisions, which `work_size` did not see.
 - CKKS encapsulated ModUp composes ordinary dense-to-sparse and sparse-to-dense key switches around ModUp; backends can override `CKKSEncapsulatedModUpImpl` to fuse it.
 - Relax to `D: Data`: `GGLWE` / `GLWEPlaintext` / `LWEPlaintext` / `GLWETensor` `data()` / `data_mut()`, `GLWESwitchingKeyDegrees(Mut)`, `Get`/`SetGaloisElement`, `GetDistribution(Mut)`, `SetBase2k`.
 - **Breaking:** `GGLWEAtBackendRef`/`Mut` and `GGSWAtBackendRef`/`Mut` become public; `GLWESwitchingKey`, `GLWEAutomorphismKey` and `GLWETensorKey` delegate them.
@@ -59,6 +63,8 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** remove `max_size` from the layout family. `size` is both the working and the allocated width, fixed at construction, and narrowing is exclusively a borrowed view (`with_size_mut`, and the new `vec_znx_backend_mut_with_size`). Removed: `VecZnxShape::max_size`, the inherent `max_size()`, `from_data_with_max_size`, `vec_znx_alloc_with_max_size`; `VecZnxShape::new` loses its fourth argument. The `VecZnx` wire format drops one `u64` field.
 - **Breaking:** split `ZnxInfos` into a shape trait plus `VecZnxInfos` (adding `cols()`) and `MatZnxInfos` (adding `rows()`, `cols_in()`, `cols_out()`); `poly_count()` becomes required. `ZnxView` now requires `VecZnxInfos` and the matrix containers expose inherent `raw()` / `raw_mut()` instead.
 - Re-document `Module` as a multi-ring execution context: `n()` is the maximum ring degree, with the new alias `max_n()`.
+- Add `Backend::DFT_IS_EXACT` (default `false`), declaring that the DFT round-trip is exact rather than floating-point. Consumers use it to decide whether a working width may be trimmed.
+- Add `VecZnxDft::with_limb_range_mut(start, end)`, a borrowed view of a limb window, replacing manual `region_mut` / `from_data` carving.
 
 ### `poulpy-core`
 
