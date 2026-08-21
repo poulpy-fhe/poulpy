@@ -48,6 +48,8 @@ pub(crate) mod mat_vec_avx512;
 mod module;
 pub(crate) mod ntt;
 mod prim;
+#[cfg(feature = "enable-rayon")]
+pub(crate) mod rayon;
 mod vec_znx_big;
 pub(crate) mod vec_znx_dft_consume;
 pub(crate) mod vmp;
@@ -77,5 +79,12 @@ mod znx;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NTT4x30Avx512;
 
+/// Rayon-scheduled AVX-512F NTT4x30 backend.
+#[cfg(feature = "enable-rayon")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct NTT4x30Avx512Rayon;
+
+#[cfg(all(test, feature = "enable-rayon"))]
+mod rayon_tests;
 #[cfg(test)]
 mod tests;

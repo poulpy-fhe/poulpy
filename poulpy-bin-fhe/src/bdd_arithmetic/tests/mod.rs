@@ -38,3 +38,7 @@ mod fft64_avx512;
 #[cfg(test)]
 #[cfg(all(feature = "enable-avx512f-rayon", target_arch = "x86_64", target_feature = "avx512f"))]
 mod fft64_avx512_rayon;
+
+#[cfg(test)]
+#[cfg(all(feature = "enable-avx512f-rayon", target_arch = "x86_64", target_feature = "avx512f"))]
+mod ntt4x30_avx512_rayon;

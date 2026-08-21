@@ -1,10 +1,10 @@
-#[cfg(feature = "enable-rayon")]
-use crate::FFT64Avx512Rayon;
 #[cfg(feature = "enable-ifma")]
 use crate::NTT3x42Ifma;
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 use crate::NTT3x42IfmaRayon;
 use crate::{FFT64Avx512, NTT4x30Avx512};
+#[cfg(feature = "enable-rayon")]
+use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 use poulpy_ckks::{
     impl_ckks_add_defaults, impl_ckks_conjugate_defaults, impl_ckks_copy_defaults, impl_ckks_dft_defaults,
     impl_ckks_encapsulated_mod_up_default, impl_ckks_encryption_defaults, impl_ckks_imag_defaults, impl_ckks_mul_defaults,
@@ -144,6 +144,29 @@ impl_ckks_sub_defaults!(FFT64Avx512Rayon);
 impl_ckks_plaintext_defaults!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_dft_defaults!(FFT64Avx512Rayon);
+
+#[cfg(feature = "enable-rayon")]
+mod ntt4x30_rayon_defaults {
+    use super::*;
+
+    impl_ckks_encapsulated_mod_up_default!(NTT4x30Avx512Rayon);
+    impl_ckks_conjugate_defaults!(NTT4x30Avx512Rayon);
+    impl_ckks_copy_defaults!(NTT4x30Avx512Rayon);
+    impl_ckks_encryption_defaults!(NTT4x30Avx512Rayon);
+    impl_ckks_imag_defaults!(NTT4x30Avx512Rayon);
+    impl_ckks_mul_defaults!(NTT4x30Avx512Rayon);
+    impl_ckks_neg_defaults!(NTT4x30Avx512Rayon);
+    impl_ckks_pow2_defaults!(NTT4x30Avx512Rayon);
+    impl_ckks_rotate_defaults!(NTT4x30Avx512Rayon);
+    select_avx512_encoding_transform!(NTT4x30Avx512Rayon);
+    ::poulpy_cpu_ref::impl_ckks_encoding!(NTT4x30Avx512Rayon);
+    ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT4x30Avx512Rayon);
+    ::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT4x30Avx512Rayon);
+    impl_ckks_add_defaults!(NTT4x30Avx512Rayon);
+    impl_ckks_sub_defaults!(NTT4x30Avx512Rayon);
+    impl_ckks_plaintext_defaults!(NTT4x30Avx512Rayon);
+    impl_ckks_dft_defaults!(NTT4x30Avx512Rayon);
+}
 
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 mod ifma_rayon_defaults {

@@ -175,7 +175,14 @@ unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let bytes = crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_avx(module, res, a, b, limb_offset, tmp);
+        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+            module,
+            res,
+            a,
+            b,
+            limb_offset,
+            tmp,
+        );
     }
 
     fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
@@ -200,7 +207,14 @@ unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let bytes = crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_accumulate_avx(module, res, a, b, limb_offset, tmp);
+        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_accumulate_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+            module,
+            res,
+            a,
+            b,
+            limb_offset,
+            tmp,
+        );
     }
 
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
