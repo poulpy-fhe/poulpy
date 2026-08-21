@@ -9,7 +9,6 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    layouts::EvalModPlan,
     CKKSCtBounds, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps,

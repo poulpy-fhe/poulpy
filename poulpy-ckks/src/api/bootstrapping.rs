@@ -3,7 +3,6 @@ use poulpy_core::layouts::{GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBacken
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
-    layouts::EvalModPlan,
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSDFTOps, CKKSEvalModOps},
     layouts::EvalModPlan,
