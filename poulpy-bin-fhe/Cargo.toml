@@ -10,32 +10,11 @@ homepage = "https://github.com/poulpy-fhe/poulpy"
 documentation = "https://docs.rs/poulpy-bin-fhe"
 
 [features]
-enable-bin-fhe = ["poulpy-cpu-ref/enable-core"]
-enable-avx = [
-    "enable-bin-fhe",
-    "dep:poulpy-cpu-avx",
-    "poulpy-cpu-avx/enable-avx",
-]
-enable-avx512f = [
-    "enable-bin-fhe",
-    "dep:poulpy-cpu-avx512",
-    "poulpy-cpu-avx512/enable-avx512f",
-]
-enable-ifma = [
-    "enable-avx512f",
-    "poulpy-cpu-avx512/enable-ifma",
-]
-enable-neon = [
-    "enable-bin-fhe",
-    "dep:poulpy-cpu-arm",
-    "poulpy-cpu-arm/enable-neon",
-]
+# Kept as the historical opt-in switch used by the CI feature sets and by
+# downstream crates; the gate-level API itself is unconditional.
+enable-bin-fhe = []
 
 [dependencies]
-poulpy-cpu-avx = {workspace = true, optional = true}
-poulpy-cpu-avx512 = {workspace = true, optional = true}
-poulpy-cpu-arm = {workspace = true, optional = true}
-poulpy-cpu-ref = {workspace = true}
 poulpy-hal = {workspace = true}
 poulpy-core = {workspace = true}
 itertools = {workspace = true}
@@ -43,15 +22,3 @@ byteorder = {workspace = true}
 rand = {workspace = true}
 paste = {workspace = true}
 anyhow = {workspace = true}
-
-[[example]]
-name = "bdd_arithmetic"
-required-features = ["enable-bin-fhe"]
-
-[[example]]
-name = "circuit_bootstrapping"
-required-features = ["enable-bin-fhe"]
-
-[[example]]
-name = "max_array"
-required-features = ["enable-bin-fhe"]

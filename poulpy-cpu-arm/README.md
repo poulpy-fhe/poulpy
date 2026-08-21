@@ -7,7 +7,6 @@ This backend implements the Poulpy HAL extension traits and can be used by:
 - [`poulpy-hal`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-hal)
 - [`poulpy-core`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-core)
 - [`poulpy-ckks`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
-- [`poulpy-bin-fhe`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-bin-fhe) through the crate's explicit `enable-neon` integration feature
 
 ## 🚩 Safety and Requirements
 
@@ -72,7 +71,7 @@ let module: Module<FFT64Neon> = Module::<FFT64Neon>::new(1 << log_n);
 let module: Module<NTT4x30Neon> = Module::<NTT4x30Neon>::new(1 << log_n);
 ```
 
-Once compiled with `enable-neon`, both backends are usable anywhere Poulpy expects a backend type in the HAL/core/CKKS layers. `poulpy-bin-fhe` has a separate `enable-neon` feature for its current crate-local integration.
+Once compiled with `enable-neon`, both backends are usable anywhere Poulpy expects a backend type in the HAL/core/CKKS layers.
 
 ## Numerical contract
 

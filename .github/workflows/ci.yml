@@ -48,7 +48,6 @@ env:
     poulpy-cpu-arm/enable-ckks
     poulpy-cpu-arm/enable-neon
     poulpy-bin-fhe/enable-bin-fhe
-    poulpy-bin-fhe/enable-neon
 
 jobs:
   portable:

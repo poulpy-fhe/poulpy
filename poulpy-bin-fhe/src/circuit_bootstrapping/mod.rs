@@ -39,8 +39,9 @@ mod key;
 mod key_compressed;
 mod key_prepared;
 
-#[cfg(all(test, feature = "enable-bin-fhe"))]
-pub mod tests;
+/// Backend-generic test bodies, instantiated by the backend crates through
+/// [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite).
+pub mod test_suite;
 
 pub(crate) fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
     (0..log_n)

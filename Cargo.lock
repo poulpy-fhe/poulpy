@@ -584,10 +584,6 @@ dependencies = [
  "itertools 0.15.0",
  "paste",
  "poulpy-core",
- "poulpy-cpu-arm",
- "poulpy-cpu-avx",
- "poulpy-cpu-avx512",
- "poulpy-cpu-ref",
  "poulpy-hal",
  "rand",
 ]

@@ -38,9 +38,9 @@ backend-backed examples are skipped.
 
 ## Backend Status
 
-Most public traits and helpers now use the backend-owned HAL/core surface
-(`ScratchArena<'_, BE>`, `...ToBackendRef<BE>`, and
-`...ToBackendMut<BE>`). The crate is still not fully backend-agnostic in
-v0.6.0: it keeps an unconditional `poulpy-cpu-ref` dependency and several
-host `Vec<u8>` / `HostBackend` bounds. Full backend-agnostic cleanup is
-planned as follow-up work.
+Public traits and helpers use the backend-owned HAL/core surface
+(`ScratchArena<'_, BE>`, `...ToBackendRef<BE>`, and `...ToBackendMut<BE>`),
+and the crate depends on no backend: it names only `poulpy-hal` and
+`poulpy-core`. Backend crates instantiate its tests through
+`bin_fhe_backend_test_suite!`. Several host `Vec<u8>` / `HostBackend` bounds
+remain and are follow-up work.

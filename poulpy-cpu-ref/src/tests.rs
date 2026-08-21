@@ -373,3 +373,6 @@ fn assert_f64_word_containers_are_eq() {
     requires_eq::<poulpy_hal::layouts::SvpPPolOwned<crate::FFT64Ref>>();
     requires_eq::<poulpy_hal::layouts::VmpPMatOwned<crate::FFT64Ref>>();
 }
+
+#[cfg(feature = "enable-core")]
+poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Ref);
