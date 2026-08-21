@@ -5,7 +5,8 @@ use poulpy_core::{
     glwe_prepare_right, glwe_tensor_apply_prepared_right,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        ModuleCoreAlloc, TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef,
+        ModuleCoreAlloc, TorusPrecision,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -64,7 +65,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
 
@@ -91,7 +92,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
 
@@ -152,7 +153,7 @@ pub trait CKKSMulDefault<BE: Backend> {
     where
         Self: GLWETensoring<BE> + GiantStepTensorBounds<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         // Prepared operands are long-lived cached objects: reject one built
         // under a different ring degree, radix, or rank before touching `dst`.
@@ -228,7 +229,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
 
@@ -253,7 +254,7 @@ pub trait CKKSMulDefault<BE: Backend> {
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
 
@@ -453,7 +454,7 @@ where
     BE: Backend,
     M: GLWETensoring<BE> + ?Sized,
     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-    T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let do_stamp = |dst: &mut Dst| {
         dst.set_log_budget(stamp.log_budget);

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### `poulpy-core`
+
+- Add the missing `GGLWEPreparedToBackendRef` impl for `GLWETensorKeyPrepared`, the twin of the `Mut` one. The newtype field and every `GGLWEPrepared` field are `pub(crate)`, so no downstream crate could supply it. The relinearization path (`GLWETensoringImpl::glwe_tensor_relinearize` and the `poulpy-ckks` `mul` / `polynomial_evaluation` / `composite` chains that reach it) carries the bound alongside `GLWETensorKeyPreparedToBackendRef`, so a backend override can read the key's `VmpPMat` without naming the newtype field.
+
 ## [0.8.1] - 2026-08-20
 
 - Update `dashu-float` to 0.6 and `astro-float-num` to 0.3.7, and refresh the `bytemuck`, `serde`, `serde_json` and `anyhow` pins. The dashu 0.6 context operations return a `Result`, which the internal binary128 helpers now unwrap; no public API changes.

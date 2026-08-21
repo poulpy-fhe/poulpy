@@ -5,7 +5,7 @@ use crate::{
     default::polynomial_evaluation::BSGSOps,
     layouts::{
         BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
 
@@ -50,7 +50,7 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }
 
 /// Override surface carrying the reference BSGS phase implementations.
@@ -89,7 +89,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }
 
 unsafe impl<BE: Backend> PolynomialEvaluationImpl<BE> for BE
@@ -132,7 +132,7 @@ where
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         module.glwe_eval_giant_steps_default::<Ops, R, B, V, P, A, G, T>(ops, res, baby_steps, power_basis, tsk, scratch)
     }

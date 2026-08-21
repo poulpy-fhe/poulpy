@@ -70,7 +70,7 @@ pub trait BootstrappingKeys<BE: Backend> {
     type RotationKeys: GLWEAutomorphismKeyHelper<Self::AutomorphismKey, BE>;
 
     /// The prepared tensor (relinearization) key type for EvalMod.
-    type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+    type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     /// The prepared key-switching key type for sparse-secret encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
@@ -125,7 +125,7 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
 impl<D: Data, BE: Backend> BootstrappingKeys<BE> for BootstrappingKeysPrepared<D, BE>
 where
     GLWEAutomorphismKeyPrepared<D, BE>: CKKSAtkBounds<BE>,
-    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     type AutomorphismKey = GLWEAutomorphismKeyPrepared<D, BE>;

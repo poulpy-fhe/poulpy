@@ -2,7 +2,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
-    prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
+    prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEPolynomialEvaluation, GLWEShift, GLWETensoring, GLWEZero,
@@ -81,7 +81,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis_impl<R, C, A, G, T>(
         module: &Module<BE>,
@@ -96,7 +96,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     fn ckks_eval_poly_real_const_coeffs_impl<R, S, B>(
         module: &Module<BE>,
@@ -165,7 +165,7 @@ where
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.ckks_eval_poly_real_const_coeffs_from_power_basis_default::<R, B, A, G, T>(res, poly, power_basis, tsk, scratch)
     }
@@ -183,7 +183,7 @@ where
         C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.ckks_eval_poly_complex_const_coeffs_from_power_basis_default::<R, C, A, G, T>(res, poly, power_basis, tsk, scratch)
     }

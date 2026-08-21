@@ -2,7 +2,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, ZnxWord};
@@ -130,7 +130,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> anyhow::Result<()>
     where
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         module
             .ckks_mul_prepared_assign(dst, prepared, tsk, scratch)
@@ -163,7 +163,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 
     fn ckks_eval_poly_complex_const_coeffs_from_power_basis_default<R, C, A, G, T>(
         &self,
@@ -186,7 +186,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }
 
 impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
@@ -212,7 +212,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         ckks_ensure!(
             poly.baby_steps() > 0,
@@ -289,7 +289,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         let poly_re = &poly.re;
         let poly_im = &poly.im;

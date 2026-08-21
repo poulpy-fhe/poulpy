@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
-    prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
+    prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 
 use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertextOwned, polynomial::ComplexBSGSPolynomial};
@@ -26,7 +26,7 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 
     /// Evaluates a complex-coefficient polynomial `Σ_k (a_k + i·b_k)·z^k`,
     /// where `poly.re`/`poly.im` are the matched real/imag BSGS decompositions
@@ -44,7 +44,7 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 
     /// Builds the power basis internally then evaluates a real-coefficient
     /// polynomial.
