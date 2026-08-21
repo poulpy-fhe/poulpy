@@ -276,18 +276,19 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
+        // rather than silently copying into a rank-1 scratch ciphertext.
+        ckks_ensure!(
+            src.rank().as_usize() == 1 && dst.rank().as_usize() == 1,
+            "ckks_bootstrap_mod_up supports rank-1 ciphertexts only, got rank {} -> {}",
+            src.rank().as_usize(),
+            dst.rank().as_usize()
+        );
+
         // The input-width copy is scoped so its scratch is released right after
         // ModUp widens it into `dst`.
         scratch.scope(|scratch_inner| {
-            let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(
-                &GLWELayout {
-                    n: src.n(),
-                    base2k: src.base2k(),
-                    k: src.k(),
-                    rank: Rank(1),
-                },
-                src.meta(),
-            );
+            let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(src, src.meta());
             self.ckks_copy(&mut ct0, src, &mut scratch_inner)?;
             self.ckks_bootstrap_mod_up_from_mut(dst, &mut ct0, Some(eval_mod), keys, &mut scratch_inner)
         })?;
