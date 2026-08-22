@@ -31,10 +31,14 @@ pub unsafe trait CKKSEncapsulatedModUpImpl<BE: Backend>: Backend {
         D2S: GGLWEInfos,
         S2D: GGLWEInfos;
 
+    /// `scale_up` is applied to the raised ciphertext between ModUp and the
+    /// sparse-to-dense switch, so the message is already at its final scale when
+    /// that key-switch's noise is added.
     fn ckks_encapsulated_mod_up<Dst, Src, D2S, S2D>(
         module: &Module<BE>,
         dst: &mut Dst,
         src: &mut Src,
+        scale_up: usize,
         dense_to_sparse: &D2S,
         sparse_to_dense: &S2D,
         scratch: &mut ScratchArena<'_, BE>,
@@ -77,6 +81,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
                 module: &::poulpy_hal::layouts::Module<$be>,
                 dst: &mut Dst,
                 src: &mut Src,
+                scale_up: usize,
                 dense_to_sparse: &D2S,
                 sparse_to_dense: &S2D,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
@@ -97,6 +102,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
                     module,
                     dst,
                     src,
+                    scale_up,
                     dense_to_sparse,
                     sparse_to_dense,
                     scratch,

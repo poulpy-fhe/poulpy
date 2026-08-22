@@ -15,6 +15,7 @@ use crate::{
         CKKSEvalModOps, CKKSImagOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     default::bootstrapping::BootstrappingDefault,
+    layouts::EvalModPlan,
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSModuleAlloc,
         CKKSPlaintextOwned, EncodedLut,
@@ -77,12 +78,41 @@ where
         BootstrappingDefault::new(self).ckks_functional_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, luts, keys_layout)
     }
 
-    fn ckks_mod_up_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mod_up_into<Dst, Src>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        eval_mod: &EvalModPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BootstrappingDefault::new(self).ckks_mod_up_into_default(dst, src, scratch)
+        let scale_up = eval_mod.raised_scale_up(src.log_delta())?;
+        BootstrappingDefault::new(self).ckks_mod_up_into_default(dst, src, scale_up, scratch)?;
+        // Relabel by the message ratio here, so callers never have to stamp
+        // metadata by hand after the call.
+        let mut meta = dst.meta();
+        meta.log_delta += eval_mod.log_msg_ratio;
+        dst.set_meta(meta);
+        Ok(())
+    }
+
+    fn ckks_bootstrap_mod_up<Dst, Src, K>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        eval_mod: &EvalModPlan,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: BootstrappingKeys<BE>,
+    {
+        BootstrappingDefault::new(self).ckks_bootstrap_mod_up_default(dst, src, eval_mod, keys, scratch)
     }
 
     fn ckks_bootstrap<F, K>(

@@ -2,8 +2,8 @@ use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedFactory, GGLWEToBackendRef,
-    GLWEInfos, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
+    GGLWEPreparedFactory, GGLWEToBackendRef, GLWEInfos, LWEInfos, Rank, TorusPrecision,
 };
 
 /// DFT-domain (prepared) variant of a GLWE tensor key.
@@ -155,6 +155,15 @@ where
 {
     fn to_backend_mut(&mut self) -> GLWETensorKeyPreparedBackendMut<'_, B> {
         GLWETensorKeyPrepared(self.0.to_backend_mut())
+    }
+}
+
+impl<D: Data, B: Backend> GGLWEPreparedToBackendRef<B> for GLWETensorKeyPrepared<D, B>
+where
+    GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
+{
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
+        self.0.to_backend_ref()
     }
 }
 

@@ -20,7 +20,7 @@ use poulpy_hal::{
 use crate::{
     layouts::{
         BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
     oep::PolynomialEvaluationDefault,
 };
@@ -127,7 +127,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 
     /// Computes `dst += a` with budget alignment, normalizing `dst`.
     fn add_assign(&self, module: &Module<BE>, dst: &mut V, a: &V, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
@@ -204,7 +204,7 @@ where
     P: GLWEToBackendRef<BE>,
     A: GLWEToBackendRef<BE>,
     G: PowerBasisHelper<BE, A>,
-    T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
 {
     ensure!(
         !baby_steps.is_empty(),
@@ -318,7 +318,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         eval_giant_steps::<R, B, V, P, A, G, T, BE, Ops>(self, ops, res, baby_steps, power_basis, tsk, scratch)
     }

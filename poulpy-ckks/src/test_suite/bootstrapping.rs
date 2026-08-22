@@ -34,12 +34,9 @@ use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
 use std::time::Instant;
 
-use poulpy_core::{
-    GLWEKeyswitch,
-    layouts::{
-        GGLWEInfos, GLWEInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
-    },
+use poulpy_core::layouts::{
+    GGLWEInfos, GLWEInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -285,7 +282,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         (rr, ri)
     };
 
-    let mut ct0 = ckks_encrypt_with_prec(
+    let ct0 = ckks_encrypt_with_prec(
         &tp,
         &module,
         &host_module,
@@ -349,24 +346,16 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     }
 
     let now = Instant::now();
-    // 1) (encapsulate) denseToSparse, ModUp, sparseToDense — so the integer
-    //    wrap-around `I(X)·q` ModUp exposes is bounded by the *sparse* secret's
-    //    Hamming weight. Then relabel at the input-modulus scale (free
-    //    /message-ratio): `I(X)·q` becomes the integer part, the message the
+    // 1) The whole raise step: lift to the plan's message ratio, (encapsulate)
+    //    denseToSparse / ModUp / sparseToDense so the integer wrap-around `I(X)·q`
+    //    is bounded by the *sparse* secret's Hamming weight, and relabel by the
+    //    message ratio: `I(X)·q` becomes the integer part, the message the
     //    residue `Δ·c/q`.
-    if let Some((dense_to_sparse, _)) = bsk.encapsulation_keys() {
-        module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, &mut scratch.borrow());
-    }
-    println!("denseToSparse: {:?}", now.elapsed());
-
-    let now = Instant::now();
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module.ckks_mod_up_into(&mut ct, &ct0, &mut scratch.borrow()).unwrap();
-    if let Some((_, sparse_to_dense)) = bsk.encapsulation_keys() {
-        module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, &mut scratch.borrow());
-    }
-    ct.set_meta(meta(log_modulus_in, k_boot - log_modulus_in).meta);
-    println!("ckks_mod_up_into: {:?}", now.elapsed());
+    module
+        .ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, &mut scratch.borrow())
+        .unwrap();
+    println!("ckks_bootstrap_mod_up: {:?}", now.elapsed());
 
     let mut log_budget_check = k_boot - ct.log_delta();
 
@@ -702,7 +691,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
 
     let (re, im) = test_vector_1::<F>(m);
 
-    let mut ct0 = ckks_encrypt_with_prec(
+    let ct0 = ckks_encrypt_with_prec(
         &tp,
         &module,
         &host_module,
@@ -765,16 +754,12 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         assert!(precision_stats(&im_bs, &im_zero, log_delta).avg_log2_prec >= 5.0);
     }
 
-    // 1) (encapsulate) denseToSparse, ModUp, sparseToDense.
-    if let Some((dense_to_sparse, _)) = bsk.encapsulation_keys() {
-        module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, &mut scratch.borrow());
-    }
+    // 1) The whole raise step: lift, (encapsulate) denseToSparse / ModUp /
+    //    sparseToDense, relabel by the message ratio.
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-    module.ckks_mod_up_into(&mut ct, &ct0, &mut scratch.borrow()).unwrap();
-    if let Some((_, sparse_to_dense)) = bsk.encapsulation_keys() {
-        module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, &mut scratch.borrow());
-    }
-    ct.set_meta(meta(log_modulus_in, k_boot - log_modulus_in).meta);
+    module
+        .ckks_bootstrap_mod_up(&mut ct, &ct0, plan.eval_mod(), &bsk, &mut scratch.borrow())
+        .unwrap();
 
     // 2) CoeffsToSlots (split): LP (low precision, `1/K` scaling) for the round, and
     //    HP (full precision, natural scaling) for the high-precision `Δm + I·q`.

@@ -5,7 +5,7 @@ use crate::{
     BSGSOps,
     layouts::{
         BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
 
@@ -50,5 +50,5 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }
