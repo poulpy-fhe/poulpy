@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-08-22
+
 ### `poulpy-hal`
 
 - Add `reference::znx`, the portable scalar kernels over `[i64]`, moved out of `poulpy-cpu-ref` so that a crate can reach them without depending on a backend. `poulpy_cpu_ref::reference::znx` re-exports them, so existing paths are unchanged.
@@ -19,6 +21,14 @@
 
 - ModUp lifts `Δ·m` to `k - log_msg_ratio`, then to `f_mod_log_delta` fused into the widening shift, both before the sparse-to-dense switch. Recovers `f_mod_log_delta - k` bits (19.7 → 26.9 at `LogN=16`, `Δ=2^40`, ratio `2^8`). C2S-first only.
 - **Breaking:** `ckks_mod_up_into` takes `&EvalModPlan` and returns a labelled ciphertext; new `ckks_bootstrap_mod_up` does the whole raise step; `CKKSEncapsulatedModUpImpl::ckks_encapsulated_mod_up` takes `scale_up`.
+
+### `poulpy-bin-fhe`
+
+- **Breaking:** drop the `enable-avx` / `enable-avx512f` / `enable-ifma` / `enable-neon` features and the backend dependencies; only `enable-bin-fhe` remains. The tests are backend-generic and instantiated by backend crates through `bin_fhe_backend_test_suite!`; the examples move to `poulpy-cpu-ref/examples`.
+
+### CPU backends
+
+- `mod tests` is gated on the backend feature alone, not on `enable-ckks`, so the core-parity and bin-FHE suites run without it.
 
 ## [0.8.1] - 2026-08-20
 
