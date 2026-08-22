@@ -27,6 +27,15 @@ mod fft64_avx;
     target_feature = "avx2",
     target_feature = "fma"
 ))]
+mod fft64_avx_rayon;
+
+#[cfg(test)]
+#[cfg(all(
+    feature = "enable-avx-rayon",
+    target_arch = "x86_64",
+    target_feature = "avx2",
+    target_feature = "fma"
+))]
 mod ntt4x30_avx_rayon;
 
 #[cfg(test)]

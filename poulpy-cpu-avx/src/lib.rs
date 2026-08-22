@@ -1,7 +1,8 @@
 //! AVX2/FMA-accelerated CPU backend for the Poulpy lattice cryptography library.
 //!
 //! This crate provides AVX2/FMA FFT and NTT backends for [`poulpy_hal`],
-//! including the optional Rayon-scheduled [`NTT4x30AvxRayon`] backend.
+//! including the optional Rayon-scheduled [`FFT64AvxRayon`] and
+//! [`NTT4x30AvxRayon`] backends.
 //!
 //! # Architecture
 //!
@@ -125,7 +126,7 @@
 //! # Feature flags
 //!
 //! - `enable-avx`: exports the AVX2/FMA backends.
-//! - `enable-rayon`: exports `NTT4x30AvxRayon` and its crate-owned executor.
+//! - `enable-rayon`: exports `FFT64AvxRayon`, `NTT4x30AvxRayon`, and their crate-owned executor.
 //! - `enable-ckks`: wires the enabled backends into `poulpy-ckks`.
 //!
 //! # Platform support
@@ -198,6 +199,8 @@ mod ntt4x30;
 mod tests;
 #[cfg(feature = "enable-avx")]
 mod znx_avx;
+#[cfg(all(feature = "enable-avx", feature = "enable-rayon"))]
+pub use fft64::FFT64AvxRayon;
 #[cfg(feature = "enable-avx")]
 pub use fft64::{FFT64Avx, FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
 #[cfg(feature = "enable-avx")]

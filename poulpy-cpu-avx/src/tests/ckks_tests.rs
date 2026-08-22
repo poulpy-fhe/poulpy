@@ -13,6 +13,16 @@ ckks_backend_test_suite!(
 
 #[cfg(feature = "enable-rayon")]
 ckks_backend_test_suite!(
+    mod fft64_rayon_f64,
+    backend = crate::FFT64AvxRayon,
+    scalar = f64,
+    encoder = crate::FFT64AvxReimTable,
+    params = poulpy_ckks::test_suite::FFT64_PARAMS_F64,
+    rotations = super::ATK_ROTATIONS,
+);
+
+#[cfg(feature = "enable-rayon")]
+ckks_backend_test_suite!(
     mod ntt4x30_rayon_f64,
     backend = crate::NTT4x30AvxRayon,
     scalar = f64,
