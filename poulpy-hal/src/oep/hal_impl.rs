@@ -1225,6 +1225,50 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         }
     }
 
+    /// Computes `res[res_col + c] (=|+=) Σ_t a_t[a_col + c] ⊛ b_t[b_col]` for
+    /// every `c < cols`.
+    ///
+    /// The default loops the single-column ops (so a backend's fused
+    /// `cnv_accumulate_dft` is still used per column); backends should override
+    /// it with a kernel that tiles the broadcast RHS across the columns.
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_accumulate_dft_columns<'a>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        store: crate::layouts::CnvDftStore,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        cols: usize,
+        terms: &[crate::layouts::CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: HalVecZnxDftImpl<BE> + 'a,
+    {
+        for col in 0..cols {
+            let shifted: Vec<crate::layouts::CnvDftAccTerm<'_, BE>> = terms.iter().map(|term| term.at_column(col)).collect();
+            match store {
+                crate::layouts::CnvDftStore::Overwrite => {
+                    Self::cnv_accumulate_dft(module, cnv_offset, res, res_col + col, &shifted, scratch);
+                }
+                crate::layouts::CnvDftStore::Accumulate => {
+                    for term in &shifted {
+                        Self::cnv_apply_dft_accumulate(
+                            module,
+                            cnv_offset,
+                            res,
+                            res_col + col,
+                            &term.a,
+                            term.a_col,
+                            &term.b,
+                            term.b_col,
+                            scratch,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     fn cnv_pairwise_apply_dft_tmp_bytes(
         module: &Module<BE>,
         cnv_offset: usize,

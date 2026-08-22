@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### `poulpy-hal`
+
+- Add `Convolution::cnv_accumulate_dft_columns`, the multi-column form of `cnv_accumulate_dft`: `res[res_col + c] (=|+=) Σ_t a_t[a_col + c] ⊛ b_t[b_col]` for every `c < cols`, the right operand broadcast across the columns and the store selected by the new `CnvDftStore`. One call per BSGS giant step at any rank. The default loops the single-column ops (so a fused `cnv_accumulate_dft` is still used); `CnvDftAccTerm::at_column` reborrows a term at a column offset.
+
+### `poulpy-core`
+
+- The linear-transformation PROD block hands each giant step to `cnv_accumulate_dft_columns` (one term list per giant step instead of one per output column), on both the resident and the streamed diagonal path.
+- Add `LinearTransformationBabySteps::baby_step_mut` / `baby_steps_mut`, so a backend can retire a fused rotation/keyswitch straight into prepared storage.
+
+### `poulpy-ckks`
+
+- The homomorphic (I)DFT chain ping-pongs the running ciphertext between `ct` and one scratch ciphertext through `ckks_eval_linear_transformation_into` instead of every factor evaluating into scratch and copying back; only the leading factor of an odd-length chain still copies (6 copies saved across the 5-factor C2S and 3-factor S2C chains). Scratch is unchanged, and `CKKSLinearTransformationOps::ckks_dft_evaluate_tmp_bytes` now states the whole-chain budget.
+- Add `LinearTransformationEvalParams`: the validated per-transform `cnv_offset` (and its limb split), PROD width and result `log_budget`/`log_delta`, used by `ckks_eval_linear_transformation_into` and available to external chain evaluators.
+- `DFTMatrix::factors()` is public (read-only), replacing the crate-private `factor_operands()`.
+
 ## [0.8.2] - 2026-08-22
 
 ### `poulpy-hal`

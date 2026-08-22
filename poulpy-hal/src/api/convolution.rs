@@ -1,6 +1,6 @@
 use crate::layouts::{
-    Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut, CnvPVecRBackendRef,
-    CnvPVecROwned, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+    Backend, CnvDftAccTerm, CnvDftStore, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut,
+    CnvPVecRBackendRef, CnvPVecROwned, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
 };
 
 /// Allocates prepared convolution operands ([`CnvPVecL`](crate::layouts::CnvPVecL), [`CnvPVecR`](crate::layouts::CnvPVecR)).
@@ -189,6 +189,29 @@ pub trait Convolution<BE: Backend> {
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
+        terms: &[CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a;
+
+    /// Multi-column variant of [`cnv_accumulate_dft`](Convolution::cnv_accumulate_dft):
+    /// for every output column `c < cols`,
+    /// `res[res_col + c] (=|+=) Σ_t a_t[a_col + c] ⊛ b_t[b_col]`.
+    ///
+    /// The right operand of each term is broadcast across the output columns
+    /// (one GLWE mask/body sweep against one diagonal), so a whole BSGS giant
+    /// step is one call. `store` selects whether the destination columns are
+    /// overwritten or accumulated into; `Overwrite` also zeroes the limbs past
+    /// the convolution bound, `Accumulate` leaves them untouched. Scratch
+    /// requirement is [`cnv_accumulate_dft_tmp_bytes`](Convolution::cnv_accumulate_dft_tmp_bytes).
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_accumulate_dft_columns<'a>(
+        &self,
+        cnv_offset: usize,
+        store: CnvDftStore,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        cols: usize,
         terms: &[CnvDftAccTerm<'a, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where

@@ -1,8 +1,8 @@
 use crate::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
-        Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut, CnvPVecRBackendRef,
-        CnvPVecROwned, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        Backend, CnvDftAccTerm, CnvDftStore, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut,
+        CnvPVecRBackendRef, CnvPVecROwned, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
     },
     oep::{HalConvolutionImpl, HalVecZnxDftImpl},
 };
@@ -164,6 +164,20 @@ impl_convolution_delegate!(
         BE: 'a,
     {
         <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft(self, cnv_offset, res, res_col, terms, scratch)
+    },
+    fn cnv_accumulate_dft_columns<'a>(
+        &self,
+        cnv_offset: usize,
+        store: CnvDftStore,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        cols: usize,
+        terms: &[CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a,
+    {
+        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_columns(self, cnv_offset, store, res, res_col, cols, terms, scratch)
     },
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_pairwise_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)

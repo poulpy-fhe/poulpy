@@ -357,7 +357,7 @@ where
         + VecZnxBigAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    use crate::layouts::CnvDftAccTerm;
+    use crate::layouts::{CnvDftAccTerm, CnvDftStore};
 
     let mut source: Source = Source::new([0u8; 32]);
 
@@ -492,6 +492,91 @@ where
         let have = download_vec_znx::<BE>(&have_backend);
         let want = download_vec_znx::<BE>(&want_backend);
         assert_eq!(have, want, "fused accumulate != per-term sequence (cnv_offset={cnv_offset})");
+
+        // Multi-column broadcast: `res[c] = Sum_t a[t.a_col + c] (x) b[t.b_col]`,
+        // then the same terms accumulated on top. `a_col` is the base column of
+        // the broadcast, `b_col` is shared by every output column.
+        let broadcast_b_cols: [usize; 2] = [0, 1];
+        for store in [CnvDftStore::Overwrite, CnvDftStore::Accumulate] {
+            let terms: Vec<CnvDftAccTerm<'_, BE>> = broadcast_b_cols
+                .iter()
+                .map(|&b_col| CnvDftAccTerm {
+                    a: a_prep.to_backend_ref(),
+                    a_col: 0,
+                    b: b_prep.to_backend_ref(),
+                    b_col,
+                })
+                .collect();
+            module.cnv_accumulate_dft_columns(
+                cnv_offset,
+                store,
+                &mut res_fused.to_backend_mut(),
+                0,
+                cols,
+                &terms,
+                &mut scratch.arena(),
+            );
+
+            for col in 0..cols {
+                for (idx, &b_col) in broadcast_b_cols.iter().enumerate() {
+                    if idx == 0 && store == CnvDftStore::Overwrite {
+                        module.cnv_apply_dft(
+                            cnv_offset,
+                            &mut res_ref.to_backend_mut(),
+                            col,
+                            &a_prep.to_backend_ref(),
+                            col,
+                            &b_prep.to_backend_ref(),
+                            b_col,
+                            &mut scratch.arena(),
+                        );
+                    } else {
+                        module.cnv_apply_dft_accumulate(
+                            cnv_offset,
+                            &mut res_ref.to_backend_mut(),
+                            col,
+                            &a_prep.to_backend_ref(),
+                            col,
+                            &b_prep.to_backend_ref(),
+                            b_col,
+                            &mut scratch.arena(),
+                        );
+                    }
+                }
+            }
+
+            for col in 0..cols {
+                module.vec_znx_idft_apply_tmpa(&mut big_fused.to_backend_mut(), 0, &mut res_fused.to_backend_mut(), col);
+                module.vec_znx_idft_apply_tmpa(&mut big_ref.to_backend_mut(), 0, &mut res_ref.to_backend_mut(), col);
+                let mut have_backend = upload_vec_znx::<BE>(&host_template);
+                let mut want_backend = upload_vec_znx::<BE>(&host_template);
+                module.vec_znx_big_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                    base2k,
+                    0,
+                    0,
+                    &big_fused.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch.arena(),
+                );
+                module.vec_znx_big_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                    base2k,
+                    0,
+                    0,
+                    &big_ref.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch.arena(),
+                );
+                assert_eq!(
+                    download_vec_znx::<BE>(&have_backend),
+                    download_vec_znx::<BE>(&want_backend),
+                    "column accumulate != per-column sequence (cnv_offset={cnv_offset}, col={col}, store={store:?})"
+                );
+            }
+        }
     }
 }
 

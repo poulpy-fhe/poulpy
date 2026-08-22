@@ -628,8 +628,9 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
         &self.inner.plan
     }
 
-    /// The per-factor right operands, in evaluation order.
-    pub(crate) fn factor_operands(&self) -> &[R] {
+    /// The per-factor right operands, in evaluation order (read-only), for
+    /// external chain evaluators.
+    pub fn factors(&self) -> &[R] {
         &self.inner.factors
     }
 
