@@ -33,6 +33,12 @@ RUSTFLAGS="-C target-feature=+avx2,+fma" \
 cargo test -p poulpy-bin-fhe --features enable-avx
 ```
 
+For Rayon-scheduled NEON acceleration on AArch64 targets:
+
+```sh
+cargo test -p poulpy-bin-fhe --features enable-neon-rayon
+```
+
 Without `enable-bin-fhe`, the public API still builds, but this crate's
 backend-backed examples are skipped.
 

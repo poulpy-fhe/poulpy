@@ -42,6 +42,10 @@ enable-neon = [
     "dep:poulpy-cpu-arm",
     "poulpy-cpu-arm/enable-neon",
 ]
+enable-neon-rayon = [
+    "enable-neon",
+    "poulpy-cpu-arm/enable-rayon",
+]
 
 [dependencies]
 poulpy-cpu-avx = {workspace = true, optional = true}

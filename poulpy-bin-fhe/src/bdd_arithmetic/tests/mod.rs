@@ -51,3 +51,11 @@ mod fft64_avx512_rayon;
 #[cfg(test)]
 #[cfg(all(feature = "enable-avx512f-rayon", target_arch = "x86_64", target_feature = "avx512f"))]
 mod ntt4x30_avx512_rayon;
+
+#[cfg(test)]
+#[cfg(all(feature = "enable-neon-rayon", target_arch = "aarch64"))]
+mod fft64_neon_rayon;
+
+#[cfg(test)]
+#[cfg(all(feature = "enable-neon-rayon", target_arch = "aarch64"))]
+mod ntt4x30_neon_rayon;

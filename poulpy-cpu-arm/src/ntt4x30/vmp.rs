@@ -10,13 +10,30 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, types::Q_SHIFTED, vec_znx_dft::NttModuleHandle,
 };
-use poulpy_hal::layouts::{
-    DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
-    ZnxView, ZnxViewMut,
+use poulpy_hal::{
+    execution::TaskExecutor,
+    layouts::{
+        DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
+        ZnxView, ZnxViewMut,
+    },
 };
 
 use super::super::neon::ntt4x30_mat_vec::vec_mat1col_product_blkpair_bbc_pm_neon;
 use crate::NTT4x30Neon;
+
+#[derive(Clone, Copy)]
+struct SendU64Ptr(*mut u64);
+
+// Each task writes a distinct NTT block pair and joins before reuse.
+unsafe impl Send for SendU64Ptr {}
+unsafe impl Sync for SendU64Ptr {}
+
+impl SendU64Ptr {
+    #[inline(always)]
+    fn get(&self) -> *mut u64 {
+        self.0
+    }
+}
 
 /// Scratch space (in bytes) required by the NEON VMP prepare kernel.
 pub(crate) fn vmp_prepare_tmp_bytes_neon(n: usize) -> usize {
@@ -145,9 +162,9 @@ fn save_blk_overwrite(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
 }
 
 #[inline(always)]
-fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
+fn save_blk_add(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
     debug_assert!(src.len() >= 8);
-    debug_assert!(dst.len() >= 4 * n);
+    debug_assert!(dst.len() >= 8 * (blk + 1));
     for i in 0..8 {
         let k = i % 4;
         dst[8 * blk + i] = dst[8 * blk + i] % Q_SHIFTED[k] + src[i] % Q_SHIFTED[k];
@@ -155,7 +172,7 @@ fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vmp_apply_core_neon_pm<const OVERWRITE: bool>(
+fn vmp_apply_core_neon_pm<const OVERWRITE: bool, E: TaskExecutor>(
     n: usize,
     res_u64: &mut [u64],
     a_u64: &[u64],
@@ -190,35 +207,74 @@ fn vmp_apply_core_neon_pm<const OVERWRITE: bool>(
         return;
     }
 
-    let (blkpair_output, x_pm) = tmp.split_at_mut(16);
-    let x_pm = &mut x_pm[..16 * row_max];
     let plane_stride = n_block_pairs * ncols * nrows * 4;
     let bp_stride = ncols * nrows * 4;
     let col_stride = nrows * 4;
     let a_u64 = &a_u64[row_start * 4 * n..];
 
-    for bp in 0..n_block_pairs {
-        extract_blk_pair_prime_major_neon(n, row_max, bp, a_u64, x_pm);
+    if !E::is_parallel() || n_block_pairs < 2 {
+        let (blkpair_output, x_pm) = tmp.split_at_mut(16);
+        let x_pm = &mut x_pm[..16 * row_max];
+        for bp in 0..n_block_pairs {
+            extract_blk_pair_prime_major_neon(n, row_max, bp, a_u64, x_pm);
 
-        for col_pmat in limb_offset..col_max {
-            let col_res = col_pmat - limb_offset;
-            let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
+            for col_pmat in limb_offset..col_max {
+                let col_res = col_pmat - limb_offset;
+                let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
 
-            unsafe {
-                vec_mat1col_product_blkpair_bbc_pm_neon(meta, row_max, blkpair_output, x_pm, &pmat_u64[y_off..], plane_stride)
-            };
+                unsafe {
+                    vec_mat1col_product_blkpair_bbc_pm_neon(meta, row_max, blkpair_output, x_pm, &pmat_u64[y_off..], plane_stride)
+                };
 
-            let blk0 = 2 * bp;
-            let blk1 = blk0 + 1;
-            let base = col_res * 4 * n;
-            if OVERWRITE {
-                save_blk_overwrite(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
-                save_blk_overwrite(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
-            } else {
-                save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
-                save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                let blk0 = 2 * bp;
+                let blk1 = blk0 + 1;
+                let base = col_res * 4 * n;
+                if OVERWRITE {
+                    save_blk_overwrite(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
+                    save_blk_overwrite(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                } else {
+                    save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
+                    save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                }
             }
         }
+    } else {
+        let res_ptr = SendU64Ptr(res_u64.as_mut_ptr());
+        E::for_each_init(
+            n_block_pairs,
+            || vec![0u64; 16 + 16 * row_max],
+            |task_tmp, bp| {
+                let (blkpair_output, x_pm) = task_tmp.split_at_mut(16);
+                extract_blk_pair_prime_major_neon(n, row_max, bp, a_u64, x_pm);
+
+                for col_pmat in limb_offset..col_max {
+                    let col_res = col_pmat - limb_offset;
+                    let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
+                    unsafe {
+                        vec_mat1col_product_blkpair_bbc_pm_neon(
+                            meta,
+                            row_max,
+                            blkpair_output,
+                            x_pm,
+                            &pmat_u64[y_off..],
+                            plane_stride,
+                        );
+                        let base = col_res * 4 * n;
+                        let blk0 = 2 * bp;
+                        let blk1 = blk0 + 1;
+                        let dst0 = std::slice::from_raw_parts_mut(res_ptr.get().add(base + 8 * blk0), 8);
+                        let dst1 = std::slice::from_raw_parts_mut(res_ptr.get().add(base + 8 * blk1), 8);
+                        if OVERWRITE {
+                            save_blk_overwrite(n, 0, dst0, &blkpair_output[0..8]);
+                            save_blk_overwrite(n, 0, dst1, &blkpair_output[8..16]);
+                        } else {
+                            save_blk_add(n, 0, dst0, &blkpair_output[0..8]);
+                            save_blk_add(n, 0, dst1, &blkpair_output[8..16]);
+                        }
+                    }
+                }
+            },
+        );
     }
 
     if OVERWRITE {
@@ -229,7 +285,7 @@ fn vmp_apply_core_neon_pm<const OVERWRITE: bool>(
     }
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_neon(
+pub(crate) fn vmp_apply_dft_to_dft_neon<E: TaskExecutor>(
     module: &Module<NTT4x30Neon>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Neon>,
@@ -246,7 +302,7 @@ pub(crate) fn vmp_apply_dft_to_dft_neon(
     let a_u64: &[u64] = cast_slice(a.raw());
     let pmat_u64: &[u64] = cast_slice(pmat.raw());
 
-    vmp_apply_core_neon_pm::<true>(
+    vmp_apply_core_neon_pm::<true, E>(
         n,
         res_u64,
         a_u64,
@@ -259,7 +315,7 @@ pub(crate) fn vmp_apply_dft_to_dft_neon(
     );
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_neon(
+pub(crate) fn vmp_apply_dft_to_dft_accumulate_neon<E: TaskExecutor>(
     module: &Module<NTT4x30Neon>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Neon>,
@@ -276,7 +332,7 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_neon(
     let a_u64: &[u64] = cast_slice(a.raw());
     let pmat_u64: &[u64] = cast_slice(pmat.raw());
 
-    vmp_apply_core_neon_pm::<false>(
+    vmp_apply_core_neon_pm::<false, E>(
         n,
         res_u64,
         a_u64,

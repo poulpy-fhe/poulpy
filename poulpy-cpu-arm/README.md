@@ -49,18 +49,18 @@ cargo bench --features enable-neon
 cargo test -p poulpy-cpu-arm --features enable-neon
 ```
 
-To include CKKS backend wiring in the NEON test build:
+To include CKKS and Rayon backend wiring in the NEON test build:
 
 ```bash
-cargo test -p poulpy-cpu-arm --features enable-neon,enable-ckks
+cargo test -p poulpy-cpu-arm --features enable-neon,enable-rayon,enable-ckks
 ```
 
 ## Basic Usage
 
-This crate exposes two NEON-accelerated backends:
+This crate exposes two NEON-accelerated backends and Rayon-scheduled variants of both:
 
 ```rust
-use poulpy_cpu_arm::{FFT64Neon, NTT4x30Neon};
+use poulpy_cpu_arm::{FFT64Neon, FFT64NeonRayon, NTT4x30Neon, NTT4x30NeonRayon};
 use poulpy_hal::{api::ModuleNew, layouts::Module};
 
 let log_n: usize = 10;
@@ -70,9 +70,13 @@ let module: Module<FFT64Neon> = Module::<FFT64Neon>::new(1 << log_n);
 
 // Q120 NTT backend (NEON, CRT over four ~30-bit primes)
 let module: Module<NTT4x30Neon> = Module::<NTT4x30Neon>::new(1 << log_n);
+
+// Rayon variants use the same NEON kernels with backend-owned scheduling
+let module: Module<FFT64NeonRayon> = Module::<FFT64NeonRayon>::new(1 << log_n);
+let module: Module<NTT4x30NeonRayon> = Module::<NTT4x30NeonRayon>::new(1 << log_n);
 ```
 
-Once compiled with `enable-neon`, both backends are usable anywhere Poulpy expects a backend type in the HAL/core/CKKS layers. `poulpy-bin-fhe` has a separate `enable-neon` feature for its current crate-local integration.
+The serial backends require `enable-neon`; the Rayon variants additionally require `enable-rayon`. All four are usable anywhere Poulpy expects a backend type in the HAL/core/CKKS layers. `poulpy-bin-fhe` exposes them through its `enable-neon` and `enable-neon-rayon` integration features.
 
 ## Numerical contract
 
