@@ -112,7 +112,7 @@ pub trait PaCoKeys<BE: Backend> {
     type RotationKeys: GLWEAutomorphismKeyHelper<Self::AutomorphismKey, BE>;
 
     /// Prepared tensor (relinearization) key used by the product fold.
-    type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+    type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     /// Prepared dense-to-PaCo switching key used by optional encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees;
@@ -514,7 +514,7 @@ impl<D: Data, BE: Backend> PaCoKeys<BE> for PaCoKeysPrepared<D, BE>
 where
     CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + CKKSCtBounds,
     GLWEAutomorphismKeyPrepared<D, BE>: CKKSAtkBounds<BE>,
-    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
     type BootstrappingKey = CKKSCiphertext<D, BE::ZnxWord>;

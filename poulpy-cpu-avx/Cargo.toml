@@ -1,6 +1,6 @@
 [package]
 name = "poulpy-cpu-avx"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
@@ -34,6 +34,8 @@ paste = {workspace = true}
 rayon = {workspace = true, optional = true}
 
 [dev-dependencies]
+# The core parity suites compare against the reference backend's impls.
+poulpy-cpu-ref = {workspace = true, features = ["enable-core"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 poulpy-bench = {workspace = true}

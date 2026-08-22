@@ -1,3 +1,4 @@
+#[cfg(feature = "enable-ckks")]
 mod ckks_tests;
 
 poulpy_core::core_parity_test_suite! {
@@ -19,6 +20,14 @@ poulpy_core::core_parity_test_suite! {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
 }
+
+poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Neon);
+
+#[cfg(feature = "enable-rayon")]
+poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64_rayon, backend = crate::FFT64NeonRayon);
+
+#[cfg(feature = "enable-rayon")]
+poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_ntt4x30_rayon, backend = crate::NTT4x30NeonRayon);
 
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {

@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### `poulpy-hal`
+
+- Add `reference::znx`, the portable scalar kernels over `[i64]`, moved out of `poulpy-cpu-ref` so that a crate can reach them without depending on a backend. `poulpy_cpu_ref::reference::znx` re-exports them, so existing paths are unchanged.
+
+### `poulpy-bin-fhe`
+
+- **Breaking:** the crate no longer depends on any backend, in `dependencies` or `dev-dependencies`, matching `poulpy-core` and `poulpy-ckks`. The `enable-avx`, `enable-avx512f`, `enable-ifma` and `enable-neon` features are removed (`enable-neon` was inert: nothing referenced `poulpy-cpu-arm`), and `enable-bin-fhe` no longer enables anything.
+- **Breaking:** the per-backend test modules are replaced by public `blind_rotation::test_suite`, `circuit_bootstrapping::test_suite` and `bdd_arithmetic::test_suite`, instantiated by a backend crate through the new `bin_fhe_backend_test_suite!`. The `bdd_arithmetic` / `circuit_bootstrapping` / `max_array` examples move to `poulpy-cpu-ref` and run on `FFT64Ref`.
+
+### `poulpy-core`
+
+- Add the missing `GGLWEPreparedToBackendRef` impl for `GLWETensorKeyPrepared`, the twin of the `Mut` one. The newtype field and every `GGLWEPrepared` field are `pub(crate)`, so no downstream crate could supply it. The relinearization path (`GLWETensoringImpl::glwe_tensor_relinearize` and the `poulpy-ckks` `mul` / `polynomial_evaluation` / `composite` chains that reach it) carries the bound alongside `GLWETensorKeyPreparedToBackendRef`, so a backend override can read the key's `VmpPMat` without naming the newtype field.
+
+### `poulpy-ckks`
+
+- ModUp lifts `Δ·m` to `k - log_msg_ratio`, then to `f_mod_log_delta` fused into the widening shift, both before the sparse-to-dense switch. Recovers `f_mod_log_delta - k` bits (19.7 → 26.9 at `LogN=16`, `Δ=2^40`, ratio `2^8`). C2S-first only.
+- **Breaking:** `ckks_mod_up_into` takes `&EvalModPlan` and returns a labelled ciphertext; new `ckks_bootstrap_mod_up` does the whole raise step; `CKKSEncapsulatedModUpImpl::ckks_encapsulated_mod_up` takes `scale_up`.
+
+## [0.8.1] - 2026-08-20
+
+- Update `dashu-float` to 0.6 and `astro-float-num` to 0.3.7, and refresh the `bytemuck`, `serde`, `serde_json` and `anyhow` pins. The dashu 0.6 context operations return a `Result`, which the internal binary128 helpers now unwrap; no public API changes.
+- Publish from CI through crates.io trusted publishing (`.github/workflows/release.yml`, triggered by a `v*` tag). The internal workspace dependencies carry a `version` requirement so `cargo publish` can package them.
+
 ## [0.8.0] - 2026-08-20
 
 Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2025/886](https://eprint.iacr.org/2025/886)) and **SHIP** (Cheon, Hanrot, Kim & Stehlé, [ePrint 2025/784](https://eprint.iacr.org/2025/784)), moves CKKS encoding onto a backend-resident op family, and lands a production-readiness pass over `poulpy-ckks` (typed errors, constructor-validated plans, scratch-carved intermediates, binary128-exact tables, four-layer consolidation). Keys every polynomial layout by an explicit word type (`ZnxWord` / `BigWord` / `DftWord`) and the DFT/big containers by their backend, collapses the limb-width model to a claimed precision plus an allocation, and reparameterizes evaluation keys by an auxiliary guard `k_aux`. Trims gadget products to their live limbs on exact-DFT backends, opens the strided GGLWE product and tensoring to backend overrides, and lands a round of AVX2/AVX-512 NTT, VMP and convolution optimization. Opens the layouts, key containers and benchmarks to non-host device backends, and adds a reference-vs-backend byte-parity test suite.

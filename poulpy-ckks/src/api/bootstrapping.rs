@@ -5,6 +5,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSDFTOps, CKKSEvalModOps},
+    layouts::EvalModPlan,
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
     },
@@ -72,10 +73,46 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// `dst` must carry the target (raised) modulus: `dst.k() ≥
     /// src.k()`. See the trait docs for the exact semantics and
     /// metadata effect.
-    fn ckks_mod_up_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    ///
+    /// `eval_mod` supplies the lift: the raise stops short of the natural
+    /// magnitude so the message lands at the plan's scale rather than the input
+    /// modulus'. `src` is expected to already carry the plan's message ratio.
+    /// `dst` comes back fully labelled, at the plan's scale: no metadata stamping
+    /// is left to the caller.
+    ///
+    /// This is the bare stage. For the whole raise step, including the
+    /// encapsulation switches, use [`Self::ckks_bootstrap_mod_up`].
+    fn ckks_mod_up_into<Dst, Src>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        eval_mod: &EvalModPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+
+    /// Whole raise step of the bootstrap, as one call: lift `Δ·m` to the plan's
+    /// message ratio, switch to the sparse secret when `keys` carry the
+    /// encapsulation switches, ModUp into `dst` (with the second lift to the
+    /// plan's scale fused into its shift), switch back, and relabel by the
+    /// message ratio so `I(X)·q` is the integer part and the message the residue.
+    ///
+    /// `dst` must be allocated at the bootstrap modulus. Scratch is bounded by
+    /// [`Self::ckks_bootstrap_tmp_bytes`].
+    fn ckks_bootstrap_mod_up<Dst, Src, K>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        eval_mod: &EvalModPlan,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: BootstrappingKeys<BE>;
 
     /// One-shot CKKS bootstrap, driven by the compiled context.
     ///

@@ -33,7 +33,7 @@ fn pi_big() -> FBig<HalfEven> {
 fn two_pi_big() -> FBig<HalfEven> {
     let pi = pi_big();
     let ctx = ctx();
-    ctx.mul(pi.repr(), FBig::<HalfEven>::from(2).repr()).value()
+    ctx.mul(pi.repr(), FBig::<HalfEven>::from(2).repr()).unwrap().value()
 }
 
 fn from_i64(x: i64) -> FBig<HalfEven> {
@@ -48,19 +48,19 @@ fn from_f64(x: f64) -> FBig<HalfEven> {
 }
 
 fn add(a: &FBig<HalfEven>, b: &FBig<HalfEven>) -> FBig<HalfEven> {
-    ctx().add(a.repr(), b.repr()).value()
+    ctx().add(a.repr(), b.repr()).unwrap().value()
 }
 
 fn sub(a: &FBig<HalfEven>, b: &FBig<HalfEven>) -> FBig<HalfEven> {
-    ctx().sub(a.repr(), b.repr()).value()
+    ctx().sub(a.repr(), b.repr()).unwrap().value()
 }
 
 fn mul(a: &FBig<HalfEven>, b: &FBig<HalfEven>) -> FBig<HalfEven> {
-    ctx().mul(a.repr(), b.repr()).value()
+    ctx().mul(a.repr(), b.repr()).unwrap().value()
 }
 
 fn div(a: &FBig<HalfEven>, b: &FBig<HalfEven>) -> FBig<HalfEven> {
-    ctx().div(a.repr(), b.repr()).value()
+    ctx().div(a.repr(), b.repr()).unwrap().value()
 }
 
 fn neg(a: &FBig<HalfEven>) -> FBig<HalfEven> {

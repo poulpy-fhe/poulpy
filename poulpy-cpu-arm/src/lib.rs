@@ -169,7 +169,7 @@ mod hal_impl;
 mod neon;
 #[cfg(feature = "enable-neon")]
 mod ntt4x30;
-#[cfg(all(test, feature = "enable-neon", feature = "enable-ckks"))]
+#[cfg(all(test, feature = "enable-neon"))]
 mod tests;
 
 #[cfg(feature = "enable-rayon")]

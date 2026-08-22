@@ -143,7 +143,9 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>,
+        T: GGLWEInfos
+            + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>
+            + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
     {
         mul_then_combine(
             dst,
@@ -371,7 +373,9 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>,
+        T: GGLWEInfos
+            + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>
+            + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
     {
         mul_then_combine(
             dst,
@@ -524,7 +528,8 @@ where
         CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
         CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWETensorKeyPrepared<T, BE>: poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>,
+        GLWETensorKeyPrepared<T, BE>: poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>
+            + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
     {
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
         let n: usize = a.len();

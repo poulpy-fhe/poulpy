@@ -1,3 +1,4 @@
+#[cfg(feature = "enable-ckks")]
 mod ckks_tests;
 
 poulpy_core::core_parity_test_suite! {
@@ -77,3 +78,12 @@ poulpy_core::core_parity_test_suite! {
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
     }
 }
+
+#[cfg(feature = "enable-avx")]
+poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Avx);
+
+#[cfg(feature = "enable-rayon")]
+poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64_rayon, backend = crate::FFT64AvxRayon);
+
+#[cfg(feature = "enable-rayon")]
+poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_ntt4x30_rayon, backend = crate::NTT4x30AvxRayon);

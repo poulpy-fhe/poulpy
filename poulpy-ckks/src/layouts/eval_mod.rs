@@ -192,6 +192,31 @@ impl EvalModPlan {
         }
     }
 
+    /// Bits `Δ·m` must be lifted by, at the input modulus `2^k`, for a ciphertext
+    /// of scale `log_delta` to carry exactly this plan's message ratio. Errors if
+    /// the input cannot reach that ratio.
+    pub(crate) fn input_scale_up(&self, k: usize, log_delta: usize) -> Result<usize> {
+        let log_msg_ratio = self.log_msg_ratio;
+        ensure!(
+            k >= log_delta + log_msg_ratio,
+            "EvalModPlan: input k ({k}) < log_delta ({log_delta}) + log_msg_ratio ({log_msg_ratio})"
+        );
+        Ok(k - log_delta - log_msg_ratio)
+    }
+
+    /// Bits the raised ciphertext must be lifted by, on top of a ModUp from a
+    /// modulus of scale `log_delta`, to reach this plan's own scale. Errors if the
+    /// plan's scale sits below the modulus it would have to lift from.
+    pub(crate) fn raised_scale_up(&self, log_delta: usize) -> Result<usize> {
+        let f_mod_log_delta = self.f_mod_log_delta;
+        let log_msg_ratio = self.log_msg_ratio;
+        ensure!(
+            f_mod_log_delta >= log_delta + log_msg_ratio,
+            "EvalModPlan: f_mod_log_delta ({f_mod_log_delta}) < log_delta ({log_delta}) + log_msg_ratio ({log_msg_ratio})"
+        );
+        Ok(f_mod_log_delta - log_delta - log_msg_ratio)
+    }
+
     /// Multiplicative levels the eval_mod pipeline consumes: BSGS depth of the
     /// base `f` polynomial + `f_mod_log_interval_reduction` range-extension steps
     /// + BSGS depth of the optional inverse `f⁻¹` post-composition.

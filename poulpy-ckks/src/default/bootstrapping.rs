@@ -1,4 +1,4 @@
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, ckks_ensure, layouts::eval_mod::EvalModPlan};
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
@@ -149,10 +149,11 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             ))
             .max(eval_mod_tmp);
 
+        if ctx.pipeline() == BootstrappingPipeline::C2SFirst {
+            carved += in_ct_bytes;
+        }
+
         if let Some(encaps) = &keys_layout.encapsulation {
-            if ctx.pipeline() == BootstrappingPipeline::C2SFirst {
-                carved += in_ct_bytes;
-            }
             nested = nested.max(BE::ckks_encapsulated_mod_up_tmp_bytes(
                 self.0,
                 &boot_layout,
@@ -214,10 +215,13 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         base.max(carved + nested)
     }
 
+    /// `scale_up` lifts the message that many bits above its natural magnitude,
+    /// fused into the widening shift rather than costing a second pass.
     pub(crate) fn ckks_mod_up_into_default<Dst, Src>(
         &self,
         dst: &mut Dst,
         src: &Src,
+        scale_up: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -233,8 +237,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         let k_small: usize = src.k().as_usize();
 
         ckks_ensure!(
-            k_large >= k_small,
-            "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}); ModUp must widen, not shrink, the modulus"
+            k_large >= k_small + scale_up,
+            "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}) + scale_up ({scale_up}); ModUp must widen, not shrink, the modulus"
         );
 
         // MSB-align `src` into the wider `dst`: the value occupies the top
@@ -244,15 +248,17 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         // Shift the digits down to their natural integer magnitude. This is the
         // modulus raise: the raised-from modulus `q = 2^k_small` becomes an
         // explicit, un-reduced multiple `I(X)·q` living in the `[0, 2^k_large)`
-        // window, which EvalMod subsequently removes. (A zero shift — when the
-        // input already fills the storage — is a no-op.)
-        self.glwe_rsh(k_large - k_small, dst, scratch);
+        // window, which EvalMod subsequently removes. (A zero shift, when the
+        // input already fills the storage, is a no-op.) Stopping `scale_up` bits
+        // short of the natural magnitude is the fused lift: the value lands
+        // multiplied by `2^scale_up`, absorbed by the matching `log_delta`.
+        self.glwe_rsh(k_large - k_small - scale_up, dst, scratch);
 
-        // `log_delta` is unchanged (the integer `Δ·m` keeps its scale); the
-        // remaining headroom now spans the full raised modulus, so the torus
+        // `log_delta` picks up the fused lift, so the encoded value is unchanged;
+        // the remaining headroom now spans the full raised modulus, so the torus
         // width `k` becomes `k_large` and `log_budget = k_large - log_delta`.
         dst.set_meta(CKKSMeta {
-            log_delta: src.log_delta(),
+            log_delta: src.log_delta() + scale_up,
             log_sparsity: src.log_sparsity(),
             slots: src.slots(),
         });
@@ -261,24 +267,88 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         Ok(())
     }
 
-    fn ckks_bootstrap_mod_up_from_mut<Dst, Src, K>(
+    /// Whole raise step: lift to the plan's message ratio, (encapsulate) ModUp
+    /// with the second lift fused into its shift, then relabel by the message
+    /// ratio so `I(X)·q` is the integer part and the message the residue.
+    pub(crate) fn ckks_bootstrap_mod_up_default<Dst, Src, K>(
         &self,
         dst: &mut Dst,
-        src: &mut Src,
+        src: &Src,
+        eval_mod: &EvalModPlan,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE> + CKKSCopyOps<BE>,
+        K: BootstrappingKeys<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
+        // rather than silently copying into a rank-1 scratch ciphertext.
+        ckks_ensure!(
+            src.rank().as_usize() == 1 && dst.rank().as_usize() == 1,
+            "ckks_bootstrap_mod_up supports rank-1 ciphertexts only, got rank {} -> {}",
+            src.rank().as_usize(),
+            dst.rank().as_usize()
+        );
+
+        // The input-width copy is scoped so its scratch is released right after
+        // ModUp widens it into `dst`.
+        scratch.scope(|scratch_inner| {
+            let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(src, src.meta());
+            self.ckks_copy(&mut ct0, src, &mut scratch_inner)?;
+            self.ckks_bootstrap_mod_up_from_mut(dst, &mut ct0, Some(eval_mod), keys, &mut scratch_inner)
+        })?;
+
+        dst.set_meta(CKKSMeta {
+            log_sparsity: src.log_sparsity(),
+            log_delta: dst.log_delta() + eval_mod.log_msg_ratio,
+            slots: src.slots(),
+        });
+        Ok(())
+    }
+
+    fn ckks_bootstrap_mod_up_from_mut<Dst, Src, K>(
+        &self,
+        dst: &mut Dst,
+        src: &mut Src,
+        lift: Option<&EvalModPlan>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
         K: BootstrappingKeys<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
+        // Both lifts come from the plan; `None` skips them (for pipelines whose
+        // input does not meet the plan's message-ratio contract). The first
+        // normalizes the input to that ratio, the second takes the raised
+        // ciphertext up to EvalMod's own scale and is fused into ModUp's shift.
+        let mut scale_up = 0;
+        if let Some(plan) = lift {
+            let k: usize = src.k().as_usize();
+            let log_delta: usize = src.log_delta();
+            let scale_up_in = plan.input_scale_up(k, log_delta)?;
+            if scale_up_in != 0 {
+                self.ckks_mul_pow2_assign(src, scale_up_in, scratch)?;
+                // Not `set_log_delta`: it preserves `log_budget` and grows `k`, which
+                // cancels the shift. The lift spends budget at a fixed modulus.
+                let mut meta = src.meta();
+                meta.log_delta = log_delta + scale_up_in;
+                src.set_meta(meta);
+            }
+            scale_up = plan.raised_scale_up(src.log_delta())?;
+        }
+
         match keys.encapsulation_keys() {
             Some((dense_to_sparse, sparse_to_dense)) => {
-                BE::ckks_encapsulated_mod_up(self.0, dst, src, dense_to_sparse, sparse_to_dense, scratch)?;
+                BE::ckks_encapsulated_mod_up(self.0, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch)?;
             }
-            None => self.ckks_mod_up_into_default(dst, src, scratch)?,
+            None => self.ckks_mod_up_into_default(dst, src, scale_up, scratch)?,
         }
         Ok(())
     }
@@ -532,7 +602,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             )?;
 
             let log_modulus_in = ct_coeffs.k().as_usize();
-            self.ckks_bootstrap_mod_up_from_mut(ct_raised, &mut ct_coeffs, keys, &mut scratch_inner)?;
+            self.ckks_bootstrap_mod_up_from_mut(ct_raised, &mut ct_coeffs, None, keys, &mut scratch_inner)?;
             ct_raised.set_meta(CKKSMeta {
                 log_sparsity: ct_in.log_sparsity(),
                 log_delta: log_modulus_in,
@@ -602,7 +672,6 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
 
         let base2k = ct_in.base2k();
         let k_boot = ct_out.k();
-        let log_modulus_in = ct_in.k();
         let boot_layout = GLWELayout {
             n: ct_out.n(),
             base2k,
@@ -615,36 +684,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             // integer wrap-around `I·q` exposed by ModUp is bounded by the *sparse* secret's
             // Hamming weight (https://eprint.iacr.org/2022/024).
             let (mut ct, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
-            match encapsulation_keys {
-                Some(_) => {
-                    // The input-width copy is scoped so its scratch is released
-                    // right after ModUp widens it into `ct`.
-                    scratch_local.scope(|scratch_inner| {
-                        let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(
-                            &GLWELayout {
-                                n: ct_in.n(),
-                                base2k,
-                                k: log_modulus_in,
-                                rank: Rank(1),
-                            },
-                            ct_in.meta(),
-                        );
-                        self.ckks_copy(&mut ct0, ct_in, &mut scratch_inner)?;
-                        self.ckks_bootstrap_mod_up_from_mut(&mut ct, &mut ct0, keys, &mut scratch_inner)
-                    })?;
-                }
-                None => {
-                    self.ckks_mod_up_into_default(&mut ct, ct_in, &mut scratch_local)?;
-                }
-            }
-
-            // Relabel at the input-modulus scale (free /message-ratio): the integer
-            // wrap-around becomes the integer part, the message the residue.
-            ct.set_meta(CKKSMeta {
-                log_sparsity: ct_in.log_sparsity(),
-                log_delta: log_modulus_in.as_usize(),
-                slots: ct_in.slots(),
-            });
+            self.ckks_bootstrap_mod_up_default(&mut ct, ct_in, &ctx.eval_mod().plan, keys, &mut scratch_local)?;
 
             // CoeffsToSlots (split): coefficients → (real, imag) slots. In the standard
             // pipeline this feeds EvalMod directly; in EvalRound+ it is the low-precision
@@ -928,20 +968,23 @@ pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src, D2S, S2D>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,
+    scale_up: usize,
     dense_to_sparse: &D2S,
     sparse_to_dense: &S2D,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend + CKKSEncapsulatedModUpImpl<BE>,
-    Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     D2S: poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     S2D: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     module.glwe_keyswitch_assign(src, dense_to_sparse, scratch);
-    BootstrappingDefault::new(module).ckks_mod_up_into_default(dst, src, scratch)?;
+    // The lift is fused into ModUp, so the message is already at its final scale
+    // when sparse-to-dense adds its noise.
+    BootstrappingDefault::new(module).ckks_mod_up_into_default(dst, src, scale_up, scratch)?;
     module.glwe_keyswitch_assign(dst, sparse_to_dense, scratch);
     Ok(())
 }

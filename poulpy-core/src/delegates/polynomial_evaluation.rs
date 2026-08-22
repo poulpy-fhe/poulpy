@@ -5,7 +5,7 @@ use crate::{
     BSGSOps, GLWEPolynomialEvaluation,
     layouts::{
         BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
     oep::PolynomialEvaluationImpl,
 };
@@ -47,7 +47,7 @@ impl<BE: Backend + PolynomialEvaluationImpl<BE>> GLWEPolynomialEvaluation<BE> fo
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         BE::glwe_eval_giant_steps::<Ops, R, B, V, P, A, G, T>(self, ops, res, baby_steps, power_basis, tsk, scratch)
     }

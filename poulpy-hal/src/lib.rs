@@ -123,6 +123,9 @@ pub mod layouts;
 /// [`doc::backend_safety`] for the safety contract.
 pub mod oep;
 
+/// Portable scalar kernels over `[i64]`, shared by every backend.
+pub mod reference;
+
 /// Deterministic pseudorandom number generation based on ChaCha8.
 pub mod source;
 

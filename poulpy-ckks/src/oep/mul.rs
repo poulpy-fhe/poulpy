@@ -4,7 +4,10 @@ use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds,
-    layouts::{GGLWEInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef},
+    layouts::{
+        GGLWEInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+    },
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, VecZnxCopyBackend},
@@ -56,7 +59,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
     fn ckks_mul_assign_impl<Dst, A, T>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -67,7 +70,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
     fn ckks_prepare_right_impl<A>(
         module: &Module<BE>,
         a: &A,
@@ -84,7 +87,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
     fn ckks_square_into_impl<Dst, A, T>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -95,7 +98,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
     fn ckks_square_assign_impl<Dst, T>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -104,7 +107,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
     fn ckks_mul_pt_vec_into_impl<Dst, A, P>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -213,7 +216,7 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.ckks_mul_into_default(dst, a, b, tsk, scratch)
     }
@@ -228,7 +231,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.ckks_mul_assign_default(dst, a, tsk, scratch)
     }
@@ -249,7 +252,7 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.ckks_mul_prepared_assign_default(dst, prepared, tsk, scratch)
     }
@@ -264,7 +267,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.ckks_square_into_default(dst, a, tsk, scratch)
     }
@@ -277,7 +280,7 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.ckks_square_assign_default(dst, tsk, scratch)
     }
