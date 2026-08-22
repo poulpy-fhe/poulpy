@@ -10,7 +10,7 @@ use crate::ntt3x42_ifma::{
     kernels::{cond_sub_2q_si512, ntt_avx512},
     module::handle,
     primes::Primes42,
-    serial::{SendPtr, for_index},
+    serial::SendPtr,
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_hal::execution::TaskExecutor;
@@ -1269,7 +1269,7 @@ pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply(
+pub(crate) fn cnv_by_const_apply<E: TaskExecutor>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
@@ -1295,13 +1295,13 @@ pub(crate) fn cnv_by_const_apply(
     let offset = cnv_offset.min(bound);
     let n = res.n();
     let rc = res.cols();
-    let res_raw = res.raw_mut();
+    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
 
     if b_size == 1 {
         let b0 = b.at(b_col, 0)[b_coeff] as i128;
-        for_index(res_size, 2 * n * res_size, |k| {
+        let process = |k: usize| {
             let start = n * (k * rc + res_col);
-            let res_limb = &mut res_raw[start..start + n];
+            let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), n) };
             let k_abs = k + offset;
             if k < min_size && k_abs < a_size {
                 let a_limb = a.at(a_col, k_abs);
@@ -1311,13 +1311,20 @@ pub(crate) fn cnv_by_const_apply(
             } else {
                 res_limb.fill(0i128);
             }
-        });
+        };
+        if E::IS_PARALLEL {
+            E::for_each_init(res_size, || (), |_, k| process(k));
+        } else {
+            for k in 0..res_size {
+                process(k);
+            }
+        }
         return;
     }
 
-    for_index(res_size, 2 * n * res_size * b_size, |k| {
+    let process = |k: usize| {
         let start = n * (k * rc + res_col);
-        let res_limb = &mut res_raw[start..start + n];
+        let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), n) };
         if k < min_size {
             let k_abs = k + offset;
             let j_min = k_abs.saturating_sub(a_size - 1);
@@ -1333,5 +1340,12 @@ pub(crate) fn cnv_by_const_apply(
         } else {
             res_limb.fill(0i128);
         }
-    });
+    };
+    if E::IS_PARALLEL {
+        E::for_each_init(res_size, || (), |_, k| process(k));
+    } else {
+        for k in 0..res_size {
+            process(k);
+        }
+    }
 }

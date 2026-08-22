@@ -886,7 +886,7 @@ pub fn ntt4x30_cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b
 /// Each output limb is computed as an `i128` inner product. Output limbs
 /// `min_size..res.size()` are zeroed. `_tmp` is unused.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_by_const_apply<BE>(
+pub fn ntt4x30_cnv_by_const_apply<BE, E: TaskExecutor>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -915,11 +915,18 @@ pub fn ntt4x30_cnv_by_const_apply<BE>(
     let offset = cnv_offset.min(bound);
     let min_size = res_size.min((bound + 1).saturating_sub(offset));
 
-    for k in 0..min_size {
+    let n = res.n();
+    let res_cols = res.cols();
+    let res_addr = res.raw_mut().as_mut_ptr() as usize;
+    let process = |k: usize| {
+        let res_limb = unsafe { std::slice::from_raw_parts_mut((res_addr as *mut i128).add(n * (k * res_cols + res_col)), n) };
+        if k >= min_size {
+            res_limb.fill(0);
+            return;
+        }
         let k_abs = k + offset;
         let j_min = k_abs.saturating_sub(a_size - 1);
         let j_max = (k_abs + 1).min(b_size);
-        let res_limb: &mut [i128] = res.at_mut(res_col, k);
         for (n_i, r) in res_limb.iter_mut().enumerate() {
             let mut acc: i128 = 0;
             for j in j_min..j_max {
@@ -928,10 +935,14 @@ pub fn ntt4x30_cnv_by_const_apply<BE>(
             }
             *r = acc;
         }
-    }
+    };
 
-    for j in min_size..res_size {
-        res.at_mut(res_col, j).fill(0i128);
+    if E::IS_PARALLEL {
+        E::for_each_init(res_size, || (), |_, k| process(k));
+    } else {
+        for k in 0..res_size {
+            process(k);
+        }
     }
 }
 

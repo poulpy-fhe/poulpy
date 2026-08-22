@@ -34,6 +34,7 @@ use poulpy_cpu_ref::{
 };
 use poulpy_hal::{
     api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
+    execution::SerialTaskExecutor,
     layouts::{
         Backend, DataView, DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
         VecZnxBig, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
@@ -463,14 +464,25 @@ unsafe impl HalVmpImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     ) {
         let bytes = super::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::vmp::vmp_apply_dft_to_dft_avx::<RayonTaskExecutor>(
-            base_module(module),
-            &mut base_dft_mut(res),
-            &base_dft_ref(a),
-            &base_vmp_ref(b),
-            limb_offset,
-            tmp,
-        );
+        if RayonTaskExecutor::should_serialize_inner() {
+            super::vmp::vmp_apply_dft_to_dft_avx::<SerialTaskExecutor>(
+                base_module(module),
+                &mut base_dft_mut(res),
+                &base_dft_ref(a),
+                &base_vmp_ref(b),
+                limb_offset,
+                tmp,
+            );
+        } else {
+            super::vmp::vmp_apply_dft_to_dft_avx::<RayonTaskExecutor>(
+                base_module(module),
+                &mut base_dft_mut(res),
+                &base_dft_ref(a),
+                &base_vmp_ref(b),
+                limb_offset,
+                tmp,
+            );
+        }
     }
 
     fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
@@ -495,14 +507,25 @@ unsafe impl HalVmpImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     ) {
         let bytes = super::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::vmp::vmp_apply_dft_to_dft_accumulate_avx::<RayonTaskExecutor>(
-            base_module(module),
-            &mut base_dft_mut(res),
-            &base_dft_ref(a),
-            &base_vmp_ref(b),
-            limb_offset,
-            tmp,
-        );
+        if RayonTaskExecutor::should_serialize_inner() {
+            super::vmp::vmp_apply_dft_to_dft_accumulate_avx::<SerialTaskExecutor>(
+                base_module(module),
+                &mut base_dft_mut(res),
+                &base_dft_ref(a),
+                &base_vmp_ref(b),
+                limb_offset,
+                tmp,
+            );
+        } else {
+            super::vmp::vmp_apply_dft_to_dft_accumulate_avx::<RayonTaskExecutor>(
+                base_module(module),
+                &mut base_dft_mut(res),
+                &base_dft_ref(a),
+                &base_vmp_ref(b),
+                limb_offset,
+                tmp,
+            );
+        }
     }
 
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
@@ -613,9 +636,9 @@ unsafe impl HalConvolutionImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
-        mut res: &mut VecZnxBigBackendMut<'_, Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
@@ -624,19 +647,18 @@ unsafe impl HalConvolutionImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_by_const_apply_default(
-            module,
-            cnv_offset,
-            &mut res,
-            res_col,
-            a,
-            a_col,
-            b,
-            b_col,
-            b_coeff,
-            &mut scratch,
-        );
+        let bytes =
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        if RayonTaskExecutor::should_serialize_inner() {
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, SerialTaskExecutor>(
+                cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp,
+            );
+        } else {
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, RayonTaskExecutor>(
+                cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp,
+            );
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1039,6 +1061,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
 #[cfg(test)]
 mod tests {
     use poulpy_cpu_ref::reference::znx::ZnxAdd;
+    use poulpy_hal::{layouts::Module, test_suite::convolution::test_convolution_by_const};
 
     use super::NTT4x30AvxRayon;
 
@@ -1049,5 +1072,10 @@ mod tests {
         let mut actual = vec![0; 1 << 16];
         <NTT4x30AvxRayon as ZnxAdd>::znx_add(&mut actual, &a, &b);
         assert!(actual.iter().all(|&x| x == i64::MIN));
+    }
+
+    #[test]
+    fn convolution_by_const() {
+        test_convolution_by_const(&Module::<NTT4x30AvxRayon>::new(1 << 8), 50);
     }
 }

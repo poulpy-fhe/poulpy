@@ -315,6 +315,13 @@ fn test_convolution_by_const_ntt3x42_ifma() {
     test_convolution_by_const(&module, 12);
 }
 
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_convolution_by_const_ntt3x42_ifma_rayon() {
+    let module = Module::<crate::NTT3x42IfmaRayon>::new(8);
+    test_convolution_by_const(&module, 12);
+}
+
 #[test]
 fn test_convolution_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);

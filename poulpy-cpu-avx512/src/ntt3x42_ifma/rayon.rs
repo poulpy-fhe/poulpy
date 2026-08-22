@@ -19,6 +19,7 @@ use poulpy_cpu_ref::{
 };
 use poulpy_hal::{
     api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
+    execution::SerialTaskExecutor,
     layouts::{
         CnvDftAccTerm, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef,
         DataView, DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, SvpPPol,
@@ -791,14 +792,25 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     ) {
         let bytes = super::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::vmp::vmp_apply_dft_to_dft_ifma::<NTT3x42IfmaRayonExecutor>(
-            base_module(module),
-            &mut base_dft_mut(res),
-            &base_dft_ref(a),
-            &base_vmp_ref(b),
-            limb_offset,
-            tmp,
-        )
+        if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
+            super::vmp::vmp_apply_dft_to_dft_ifma::<SerialTaskExecutor>(
+                base_module(module),
+                &mut base_dft_mut(res),
+                &base_dft_ref(a),
+                &base_vmp_ref(b),
+                limb_offset,
+                tmp,
+            )
+        } else {
+            super::vmp::vmp_apply_dft_to_dft_ifma::<NTT3x42IfmaRayonExecutor>(
+                base_module(module),
+                &mut base_dft_mut(res),
+                &base_dft_ref(a),
+                &base_vmp_ref(b),
+                limb_offset,
+                tmp,
+            )
+        }
     }
 
     fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
@@ -831,14 +843,25 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     ) {
         let bytes = super::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::vmp::vmp_apply_dft_to_dft_accumulate_ifma::<NTT3x42IfmaRayonExecutor>(
-            base_module(module),
-            &mut base_dft_mut(res),
-            &base_dft_ref(a),
-            &base_vmp_ref(b),
-            limb_offset,
-            tmp,
-        )
+        if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
+            super::vmp::vmp_apply_dft_to_dft_accumulate_ifma::<SerialTaskExecutor>(
+                base_module(module),
+                &mut base_dft_mut(res),
+                &base_dft_ref(a),
+                &base_vmp_ref(b),
+                limb_offset,
+                tmp,
+            )
+        } else {
+            super::vmp::vmp_apply_dft_to_dft_accumulate_ifma::<NTT3x42IfmaRayonExecutor>(
+                base_module(module),
+                &mut base_dft_mut(res),
+                &base_dft_ref(a),
+                &base_vmp_ref(b),
+                limb_offset,
+                tmp,
+            )
+        }
     }
 
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
@@ -966,7 +989,7 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     }
 
     fn cnv_by_const_apply(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -977,19 +1000,33 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow().into_backend::<NTT3x42Ifma>();
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_by_const_apply(
-            base_module(module),
-            cnv_offset,
-            &mut base_big_mut(res),
-            res_col,
-            a,
-            a_col,
-            b,
-            b_col,
-            b_coeff,
-            &mut scratch,
-        )
+        let bytes = super::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
+            super::convolution::cnv_by_const_apply::<SerialTaskExecutor>(
+                cnv_offset,
+                &mut base_big_mut(res),
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_coeff,
+                tmp,
+            )
+        } else {
+            super::convolution::cnv_by_const_apply::<NTT3x42IfmaRayonExecutor>(
+                cnv_offset,
+                &mut base_big_mut(res),
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_coeff,
+                tmp,
+            )
+        }
     }
 
     fn cnv_apply_dft(

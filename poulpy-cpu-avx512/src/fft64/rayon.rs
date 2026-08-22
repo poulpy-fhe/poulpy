@@ -38,6 +38,8 @@ use poulpy_hal::{
 use super::FFT64Avx512Rayon;
 use crate::{FFT64Avx512, execution::RayonTaskExecutor};
 
+const VMP_PARALLELISM: usize = 4;
+
 poulpy_hal::impl_backend_from!(FFT64Avx512Rayon, FFT64Avx512, RayonTaskExecutor);
 
 fn base_module(module: &Module<FFT64Avx512Rayon>) -> &Module<FFT64Avx512> {
@@ -583,8 +585,26 @@ unsafe impl HalVmpImpl<FFT64Avx512Rayon> for FFT64Avx512Rayon {
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        if RayonTaskExecutor::should_serialize_inner() {
+            return <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_with_kernel_default::<FFT64Avx512>(
+                module,
+                res,
+                a,
+                b,
+                limb_offset,
+                scratch,
+            );
+        }
         let mut scratch = scratch.borrow();
-        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_default(module, res, a, b, limb_offset, &mut scratch)
+        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_with_kernel_and_parallelism_default::<Self>(
+            module,
+            res,
+            a,
+            b,
+            limb_offset,
+            VMP_PARALLELISM,
+            &mut scratch,
+        )
     }
 
     #[inline(always)]
@@ -611,8 +631,26 @@ unsafe impl HalVmpImpl<FFT64Avx512Rayon> for FFT64Avx512Rayon {
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
+        if RayonTaskExecutor::should_serialize_inner() {
+            return <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_with_kernel_default::<FFT64Avx512>(
+                module,
+                res,
+                a,
+                b,
+                limb_offset,
+                scratch,
+            );
+        }
         let mut scratch = scratch.borrow();
-        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_default(module, res, a, b, limb_offset, &mut scratch)
+        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_with_kernel_and_parallelism_default::<Self>(
+            module,
+            res,
+            a,
+            b,
+            limb_offset,
+            VMP_PARALLELISM,
+            &mut scratch,
+        )
     }
 
     #[inline(always)]

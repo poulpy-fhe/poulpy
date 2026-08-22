@@ -23,7 +23,8 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend<OwnedBuf = Vec
     n_lwe: usize,
     block_size: usize,
     extension_factor: usize,
-) where
+) -> GLWE<Vec<u8>, i64>
+where
     M: ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + BlindRotationKeyEncryptSk<BRA, BE>
@@ -177,4 +178,6 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend<OwnedBuf = Vec
     have = (have + message_modulus as i64) % (message_modulus as i64);
 
     assert_eq!(have, f(x) % (message_modulus as i64));
+
+    res
 }

@@ -34,6 +34,15 @@ pub trait TaskExecutor: Send + Sync + 'static {
             task(&mut state, index);
         }
     }
+
+    fn for_each_init_with_parallelism<S, I, F>(count: usize, _parallelism: usize, init: I, task: F)
+    where
+        S: Send,
+        I: Fn() -> S + Send + Sync,
+        F: Fn(&mut S, usize) + Send + Sync,
+    {
+        Self::for_each_init(count, init, task);
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

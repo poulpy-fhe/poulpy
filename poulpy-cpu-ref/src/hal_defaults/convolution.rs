@@ -31,6 +31,7 @@ use crate::reference::{
 };
 use poulpy_hal::{
     api::{HostBufMut, ModuleN, VecZnxDftBytesOf},
+    execution::SerialTaskExecutor,
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, Module,
         ScratchArena, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxDft, VecZnxDftToBackendMut,
@@ -396,7 +397,7 @@ where
         let mut res_ref = res.to_backend_mut();
         let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes(0, 0, 0);
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_by_const_apply::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+        ntt4x30_cnv_by_const_apply::<BE, SerialTaskExecutor>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]

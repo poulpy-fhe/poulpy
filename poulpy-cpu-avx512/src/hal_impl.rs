@@ -1047,7 +1047,9 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            crate::ntt3x42_ifma::convolution::cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp);
+            crate::ntt3x42_ifma::convolution::cnv_by_const_apply::<poulpy_hal::execution::SerialTaskExecutor>(
+                cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp,
+            );
         }
 
         #[allow(clippy::too_many_arguments)]
