@@ -11,30 +11,21 @@ It provides:
 
 ## Tests And Backend Integration
 
-`poulpy-bin-fhe` exposes its public API as soon as the crate is imported.
-Backend crates own the feature flags that wire concrete implementations into
-that API. For this crate's local tests and examples, enable the reference
-backend integration:
+`poulpy-bin-fhe` exposes its public API as soon as the crate is imported, and
+depends on no backend. Its tests are backend-generic: each backend crate
+instantiates them with `bin_fhe_backend_test_suite!`, so they run from there:
 
 ```sh
-cargo test -p poulpy-bin-fhe --features enable-bin-fhe
+cargo test -p poulpy-cpu-ref --features enable-core bin_fhe
 ```
-
-To include examples and test targets in a compile check:
-
-```sh
-cargo check -p poulpy-bin-fhe --all-targets --features enable-bin-fhe
-```
-
-For AVX2/FMA acceleration on x86_64 targets:
 
 ```sh
 RUSTFLAGS="-C target-feature=+avx2,+fma" \
-cargo test -p poulpy-bin-fhe --features enable-avx
+cargo test -p poulpy-cpu-avx --features enable-avx bin_fhe
 ```
 
-Without `enable-bin-fhe`, the public API still builds, but this crate's
-backend-backed examples are skipped.
+The runnable examples live in `poulpy-cpu-ref/examples` (`bdd_arithmetic`,
+`circuit_bootstrapping`, `max_array`), behind its `enable-core` feature.
 
 ## Backend Status
 

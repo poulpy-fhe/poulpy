@@ -123,7 +123,7 @@ Your backend will automatically integrate with the backend-generic layers:
 * `poulpy-core`
 * `poulpy-ckks`
 
-No modifications to those crates are necessary — the HAL provides the extension points. Scheme crates that still carry crate-specific backend glue, such as parts of `poulpy-bin-fhe` in v0.6.0, may need follow-up integration work. Only the operations that need a faster implementation require explicit overrides; everything else is inherited from the `default` layer for free.
+No modifications to those crates are necessary — the HAL provides the extension points. Only the operations that need a faster implementation require explicit overrides; everything else is inherited from the `default` layer for free.
 
 ---
 
