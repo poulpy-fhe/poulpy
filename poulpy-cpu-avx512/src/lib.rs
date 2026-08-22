@@ -190,7 +190,7 @@ mod ckks_impl;
 #[cfg(feature = "enable-avx512f")]
 mod core_impl;
 
-#[cfg(all(test, feature = "enable-avx512f", feature = "enable-ckks"))]
+#[cfg(all(test, feature = "enable-avx512f"))]
 mod tests;
 
 #[cfg(feature = "enable-avx512f")]

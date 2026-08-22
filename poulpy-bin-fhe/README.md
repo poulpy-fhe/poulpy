@@ -11,36 +11,27 @@ It provides:
 
 ## Tests And Backend Integration
 
-`poulpy-bin-fhe` exposes its public API as soon as the crate is imported.
-Backend crates own the feature flags that wire concrete implementations into
-that API. For this crate's local tests and examples, enable the reference
-backend integration:
+`poulpy-bin-fhe` exposes its public API as soon as the crate is imported, and
+depends on no backend. Its tests are backend-generic: each backend crate
+instantiates them with `bin_fhe_backend_test_suite!`, so they run from there:
 
 ```sh
-cargo test -p poulpy-bin-fhe --features enable-bin-fhe
+cargo test -p poulpy-cpu-ref --features enable-core bin_fhe
 ```
-
-To include examples and test targets in a compile check:
-
-```sh
-cargo check -p poulpy-bin-fhe --all-targets --features enable-bin-fhe
-```
-
-For AVX2/FMA acceleration on x86_64 targets:
 
 ```sh
 RUSTFLAGS="-C target-feature=+avx2,+fma" \
-cargo test -p poulpy-bin-fhe --features enable-avx
+cargo test -p poulpy-cpu-avx --features enable-avx bin_fhe
 ```
 
-Without `enable-bin-fhe`, the public API still builds, but this crate's
-backend-backed examples are skipped.
+The runnable examples live in `poulpy-cpu-ref/examples` (`bdd_arithmetic`,
+`circuit_bootstrapping`, `max_array`), behind its `enable-core` feature.
 
 ## Backend Status
 
-Most public traits and helpers now use the backend-owned HAL/core surface
-(`ScratchArena<'_, BE>`, `...ToBackendRef<BE>`, and
-`...ToBackendMut<BE>`). The crate is still not fully backend-agnostic in
-v0.6.0: it keeps an unconditional `poulpy-cpu-ref` dependency and several
-host `Vec<u8>` / `HostBackend` bounds. Full backend-agnostic cleanup is
-planned as follow-up work.
+Public traits and helpers use the backend-owned HAL/core surface
+(`ScratchArena<'_, BE>`, `...ToBackendRef<BE>`, and `...ToBackendMut<BE>`),
+and the crate depends on no backend: it names only `poulpy-hal` and
+`poulpy-core`. Backend crates instantiate its tests through
+`bin_fhe_backend_test_suite!`. Several host `Vec<u8>` / `HostBackend` bounds
+remain and are follow-up work.

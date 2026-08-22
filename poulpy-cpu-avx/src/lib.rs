@@ -192,7 +192,7 @@ mod hal_impl;
 #[cfg(feature = "enable-avx")]
 mod ntt4x30;
 #[cfg(feature = "enable-avx")]
-#[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
+#[cfg(all(test, feature = "enable-avx"))]
 mod tests;
 #[cfg(feature = "enable-avx")]
 mod znx_avx;

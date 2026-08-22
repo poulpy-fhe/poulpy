@@ -1,3 +1,4 @@
+#[cfg(feature = "enable-ckks")]
 mod ckks_tests;
 
 poulpy_core::core_parity_test_suite! {

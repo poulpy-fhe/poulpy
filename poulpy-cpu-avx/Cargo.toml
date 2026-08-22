@@ -32,6 +32,8 @@ rand_chacha = {workspace = true}
 paste = {workspace = true}
 
 [dev-dependencies]
+# The core parity suites compare against the reference backend's impls.
+poulpy-cpu-ref = {workspace = true, features = ["enable-core"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 poulpy-bench = {workspace = true}

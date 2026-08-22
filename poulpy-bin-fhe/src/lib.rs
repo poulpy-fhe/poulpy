@@ -1,9 +1,8 @@
 //! # poulpy-bin-fhe
 //!
 //! Backend-agnostic implementation of binary / gate-level FHE, built on top
-//! of the low-level primitives provided by `poulpy-core`, `poulpy-hal`, and
-//! the available compute backends (`poulpy-cpu-ref`, `poulpy-cpu-avx`,
-//! `poulpy-cpu-avx512`).
+//! of the low-level primitives provided by `poulpy-core` and `poulpy-hal`.
+//! This crate names no backend: pick one at the call site.
 //!
 //! ## Overview
 //!
@@ -30,3 +29,4 @@
 pub mod bdd_arithmetic;
 pub mod blind_rotation;
 pub mod circuit_bootstrapping;
+pub mod test_suite;

@@ -49,6 +49,18 @@ required-features = ["enable-ckks"]
 name = "core_encryption"
 required-features = ["enable-core"]
 
+[[example]]
+name = "bdd_arithmetic"
+required-features = ["enable-core"]
+
+[[example]]
+name = "circuit_bootstrapping"
+required-features = ["enable-core"]
+
+[[example]]
+name = "max_array"
+required-features = ["enable-core"]
+
 [dev-dependencies]
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}

@@ -72,8 +72,9 @@ pub(crate) use circuits::*;
 pub use eval::*;
 pub use key::*;
 
-#[cfg(all(test, feature = "enable-bin-fhe"))]
-pub mod tests;
+/// Backend-generic test bodies, instantiated by the backend crates through
+/// [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite).
+pub mod test_suite;
 
 /// Marker trait for unsigned integer types whose bits can be encrypted by [`FheUint`].
 ///

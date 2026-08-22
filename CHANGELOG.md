@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### `poulpy-hal`
+
+- Add `reference::znx`, the portable scalar kernels over `[i64]`, moved out of `poulpy-cpu-ref` so that a crate can reach them without depending on a backend. `poulpy_cpu_ref::reference::znx` re-exports them, so existing paths are unchanged.
+
+### `poulpy-bin-fhe`
+
+- **Breaking:** the crate no longer depends on any backend, in `dependencies` or `dev-dependencies`, matching `poulpy-core` and `poulpy-ckks`. The `enable-avx`, `enable-avx512f`, `enable-ifma` and `enable-neon` features are removed (`enable-neon` was inert: nothing referenced `poulpy-cpu-arm`), and `enable-bin-fhe` no longer enables anything.
+- **Breaking:** the per-backend test modules are replaced by public `blind_rotation::test_suite`, `circuit_bootstrapping::test_suite` and `bdd_arithmetic::test_suite`, instantiated by a backend crate through the new `bin_fhe_backend_test_suite!`. The `bdd_arithmetic` / `circuit_bootstrapping` / `max_array` examples move to `poulpy-cpu-ref` and run on `FFT64Ref`.
+
 ### `poulpy-core`
 
 - Add the missing `GGLWEPreparedToBackendRef` impl for `GLWETensorKeyPrepared`, the twin of the `Mut` one. The newtype field and every `GGLWEPrepared` field are `pub(crate)`, so no downstream crate could supply it. The relinearization path (`GLWETensoringImpl::glwe_tensor_relinearize` and the `poulpy-ckks` `mul` / `polynomial_evaluation` / `composite` chains that reach it) carries the bound alongside `GLWETensorKeyPreparedToBackendRef`, so a backend override can read the key's `VmpPMat` without naming the newtype field.
