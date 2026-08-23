@@ -159,8 +159,6 @@ compile_error!("feature `enable-neon` requires target_arch = \"aarch64\".");
 mod ckks_impl;
 #[cfg(feature = "enable-neon")]
 mod core_impl;
-#[cfg(feature = "enable-rayon")]
-mod execution;
 #[cfg(feature = "enable-neon")]
 mod fft64;
 #[cfg(feature = "enable-neon")]
@@ -183,3 +181,5 @@ pub use ntt4x30::NTT4x30NeonRayon;
 
 #[cfg(feature = "enable-neon")]
 mod layout_compat;
+
+pub mod capabilities;

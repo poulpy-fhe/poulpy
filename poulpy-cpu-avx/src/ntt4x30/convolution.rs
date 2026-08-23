@@ -176,24 +176,20 @@ pub(crate) unsafe fn cnv_accumulate_dft_avx<BE>(
     let res_addr = cast_slice_mut::<Q120bScalar, u64>(res.raw_mut()).as_mut_ptr() as usize;
     let task_tmp_bytes = cnv_accumulate_dft_avx_tmp_bytes(res_size);
     if BE::TaskExecutor::is_parallel() && group_count > 1 {
-        BE::TaskExecutor::for_each_init(
-            group_count,
-            || vec![0u8; task_tmp_bytes],
-            |local_tmp, group| unsafe {
-                let block_start = group * GROUP;
-                cnv_accumulate_group_avx(
-                    meta,
-                    &windows,
-                    res_addr,
-                    res_limb_words,
-                    res_cols,
-                    res_col,
-                    block_start,
-                    GROUP.min(n_blks - block_start),
-                    local_tmp,
-                );
-            },
-        );
+        BE::TaskExecutor::for_each_chunked(group_count, tmp, task_tmp_bytes, |local_tmp, group| unsafe {
+            let block_start = group * GROUP;
+            cnv_accumulate_group_avx(
+                meta,
+                &windows,
+                res_addr,
+                res_limb_words,
+                res_cols,
+                res_col,
+                block_start,
+                GROUP.min(n_blks - block_start),
+                local_tmp,
+            );
+        });
     } else {
         for group in 0..group_count {
             let block_start = group * GROUP;

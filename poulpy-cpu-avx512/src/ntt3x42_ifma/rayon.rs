@@ -19,7 +19,7 @@ use poulpy_cpu_ref::{
 };
 use poulpy_hal::{
     api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
-    execution::SerialTaskExecutor,
+    execution::{SerialTaskExecutor, TaskExecutor},
     layouts::{
         CnvDftAccTerm, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef,
         DataView, DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, SvpPPol,
@@ -31,6 +31,7 @@ use poulpy_hal::{
 };
 
 use super::{NTT3x42Ifma, NTT3x42IfmaRayon, NTT3x42IfmaRayonExecutor};
+use poulpy_cpu_rayon::RayonTaskExecutor;
 
 fn base_module(module: &Module<NTT3x42IfmaRayon>) -> &Module<NTT3x42Ifma> {
     module.reinterpret()
@@ -376,7 +377,9 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
-        <NTT3x42Ifma as HalVecZnxDftImpl<NTT3x42Ifma>>::vec_znx_idft_apply_tmp_bytes(base_module(module))
+        <NTT3x42Ifma as HalVecZnxDftImpl<NTT3x42Ifma>>::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
+            poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 3 * module.n() * size_of::<u64>(),
+        )
     }
 
     #[inline(always)]
@@ -394,14 +397,20 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
             let min_size = res.size().min(a.size());
             let a_cols = a.cols();
             let src = cast_slice::<_, u64>(a.data());
-            res.raw_mut().par_chunks_mut(n * res_cols).enumerate().for_each_init(
-                || vec![0u64; 3 * n],
-                |scratch, (j, group)| {
-                    let dst = &mut group[n * res_col..][..n];
-                    let src = (j < min_size).then(|| &src[2 * n * (j * a_cols + a_col)..][..2 * n]);
-                    super::vec_znx_dft::vec_znx_idft_apply_limb(base_module(module), dst, src, scratch);
-                },
+            let size = res.size();
+            let per_worker = 3 * n;
+            let workers = poulpy_cpu_rayon::workers_within(
+                size.min(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT),
+                per_worker * size_of::<u64>(),
+                scratch.available(),
             );
+            let (worker_tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * per_worker);
+            let res_addr = res.raw_mut().as_mut_ptr() as usize;
+            RayonTaskExecutor::for_each_chunked(size, worker_tmp, per_worker, |scratch, j| {
+                let dst = unsafe { std::slice::from_raw_parts_mut((res_addr as *mut i128).add(n * (j * res_cols + res_col)), n) };
+                let src = (j < min_size).then(|| &src[2 * n * (j * a_cols + a_col)..][..2 * n]);
+                super::vec_znx_dft::vec_znx_idft_apply_limb(base_module(module), dst, src, scratch);
+            });
             return;
         }
         let mut res = base_big_mut(res);
@@ -771,15 +780,16 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        <NTT3x42Ifma as HalVmpImpl<NTT3x42Ifma>>::vmp_apply_dft_to_dft_tmp_bytes(
-            base_module(module),
-            res_size,
-            a_size,
-            b_rows,
-            b_cols_in,
-            b_cols_out,
-            b_size,
-        )
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::VMP)
+            * <NTT3x42Ifma as HalVmpImpl<NTT3x42Ifma>>::vmp_apply_dft_to_dft_tmp_bytes(
+                base_module(module),
+                res_size,
+                a_size,
+                b_rows,
+                b_cols_in,
+                b_cols_out,
+                b_size,
+            )
     }
 
     fn vmp_apply_dft_to_dft(
@@ -790,7 +800,12 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = super::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
+        let per_worker = super::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::VMP,
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
             super::vmp::vmp_apply_dft_to_dft_ifma::<SerialTaskExecutor>(
@@ -822,15 +837,16 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        <NTT3x42Ifma as HalVmpImpl<NTT3x42Ifma>>::vmp_apply_dft_to_dft_accumulate_tmp_bytes(
-            base_module(module),
-            res_size,
-            a_size,
-            b_rows,
-            b_cols_in,
-            b_cols_out,
-            b_size,
-        )
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::VMP)
+            * <NTT3x42Ifma as HalVmpImpl<NTT3x42Ifma>>::vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+                base_module(module),
+                res_size,
+                a_size,
+                b_rows,
+                b_cols_in,
+                b_cols_out,
+                b_size,
+            )
     }
 
     fn vmp_apply_dft_to_dft_accumulate(
@@ -841,7 +857,12 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = super::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
+        let per_worker = super::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::VMP,
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
             super::vmp::vmp_apply_dft_to_dft_accumulate_ifma::<SerialTaskExecutor>(
@@ -881,7 +902,8 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42IfmaRayon> fo
         _pmat_cols_out: usize,
         _pmat_size: usize,
     ) -> usize {
-        super::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a_cols, a_size, dsize, pmat_rows, pmat_cols_in)
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::VMP)
+            * super::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a_cols, a_size, dsize, pmat_rows, pmat_cols_in)
     }
 
     fn gglwe_product_digits_strided(
@@ -919,7 +941,8 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42IfmaRayon> fo
 
 unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_prepare_left_tmp_bytes(base_module(module), res_size, a_size)
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
+            * <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_prepare_left_tmp_bytes(base_module(module), res_size, a_size)
     }
 
     fn cnv_prepare_left(
@@ -929,7 +952,12 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = super::convolution::cnv_prepare_left_tmp_bytes(module.n());
+        let per_worker = super::convolution::cnv_prepare_left_tmp_bytes(module.n());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         super::convolution::cnv_prepare_left::<NTT3x42IfmaRayonExecutor>(
             base_module(module),
@@ -941,7 +969,8 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     }
 
     fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_prepare_right_tmp_bytes(base_module(module), res_size, a_size)
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
+            * <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_prepare_right_tmp_bytes(base_module(module), res_size, a_size)
     }
 
     fn cnv_prepare_right(
@@ -951,7 +980,12 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = super::convolution::cnv_prepare_right_tmp_bytes(module.n());
+        let per_worker = super::convolution::cnv_prepare_right_tmp_bytes(module.n());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::convolution::cnv_prepare_right::<NTT3x42IfmaRayonExecutor>(
             base_module(module),
@@ -963,13 +997,14 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     }
 
     fn cnv_apply_dft_tmp_bytes(module: &Module<Self>, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_apply_dft_tmp_bytes(
-            base_module(module),
-            cnv_offset,
-            res_size,
-            a_size,
-            b_size,
-        )
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
+            * <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_apply_dft_tmp_bytes(
+                base_module(module),
+                cnv_offset,
+                res_size,
+                a_size,
+                b_size,
+            )
     }
 
     fn cnv_by_const_apply_tmp_bytes(
@@ -1040,7 +1075,12 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = super::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+        let per_worker = super::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
             super::convolution::cnv_apply_dft_ifma::<NTT3x42IfmaRayonExecutor>(
@@ -1067,7 +1107,12 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = super::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+        let per_worker = super::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
             super::convolution::cnv_apply_dft_accumulate_ifma::<NTT3x42IfmaRayonExecutor>(
@@ -1201,6 +1246,14 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
             tmp,
         )
     }
+}
+
+/// Measured on AVX-512 hardware at `logN` 15 and 16; see `docs/performance.md`.
+impl poulpy_hal::execution::ScratchWorkers for NTT3x42IfmaRayon {
+    const PREPARE: usize = 4;
+    const APPLY: usize = 8;
+    const VMP: usize = 4;
+    const IDFT: usize = 8;
 }
 
 #[cfg(test)]

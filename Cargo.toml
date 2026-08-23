@@ -1,5 +1,5 @@
 [workspace]
-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
+members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-cpu-rayon", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
 default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
 resolver = "3"
 
@@ -17,6 +17,7 @@ poulpy-cpu-avx = {path = "poulpy-cpu-avx", version = "0.8.1"}
 poulpy-cpu-arm = {path = "poulpy-cpu-arm", version = "0.8.1"}
 poulpy-cpu-ref = {path = "poulpy-cpu-ref", version = "0.8.1"}
 poulpy-cpu-avx512 = {path = "poulpy-cpu-avx512", version = "0.8.1"}
+poulpy-cpu-rayon = {path = "poulpy-cpu-rayon", version = "0.8.1"}
 poulpy-bin-fhe = {path = "poulpy-bin-fhe"}
 poulpy-bench = {path = "poulpy-bench"}
 poulpy-ckks = {path = "poulpy-ckks", version = "0.8.1"}

@@ -90,3 +90,39 @@ poulpy_core::core_parity_test_suite! {
         glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
     }
 }
+
+#[cfg(feature = "enable-rayon")]
+poulpy_bin_fhe::bin_fhe_parity_test_suite!(
+    mod bin_fhe_parity_fft64_rayon,
+    backend_ref = crate::FFT64Neon,
+    backend_test = crate::FFT64NeonRayon,
+);
+
+#[cfg(feature = "enable-rayon")]
+poulpy_bin_fhe::bin_fhe_parity_test_suite!(
+    mod bin_fhe_parity_ntt4x30_rayon,
+    backend_ref = crate::NTT4x30Neon,
+    backend_test = crate::NTT4x30NeonRayon,
+);
+
+/// On-demand thread-count diagnostic; see `docs/performance.md`.
+#[cfg(feature = "enable-rayon")]
+mod tuning {
+    use poulpy_cpu_rayon::tuning::{Mode, ProbeShape, default_thread_sweep, thread_scaling};
+
+    const LOG_N: usize = 15;
+    const SIZE: usize = 12;
+    /// GLWE rank of the workload; the probes take `rank + 1` columns.
+    const RANK: usize = 1;
+    const MODE: Mode = Mode::Fast;
+
+    #[test]
+    #[ignore = "diagnostic: run on the machine you deploy on"]
+    fn thread_scaling_report() {
+        let sweep = default_thread_sweep();
+        thread_scaling::<crate::FFT64NeonRayon>(ProbeShape::square(1 << LOG_N, SIZE, RANK + 1), &sweep, MODE)
+            .print("FFT64NeonRayon");
+        thread_scaling::<crate::NTT4x30NeonRayon>(ProbeShape::square(1 << LOG_N, SIZE, RANK + 1), &sweep, MODE)
+            .print("NTT4x30NeonRayon");
+    }
+}

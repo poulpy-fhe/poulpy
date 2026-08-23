@@ -460,36 +460,32 @@ unsafe fn conv_columns_packed<E: TaskExecutor, const ACC: bool, const PAIRWISE: 
 
     let task_split = E::is_parallel() && n_groups > 1;
     if task_split {
-        E::for_each_init(
-            n_groups,
-            || vec![0u64; task_tmp_len],
-            |local_tmp: &mut Vec<u64>, group| {
-                unsafe {
-                    conv_columns_packed_group::<ACC, PAIRWISE>(
-                        res_ptr,
-                        res_col,
-                        n,
-                        res_cols,
-                        min_size,
-                        offset,
-                        group,
-                        a0_col,
-                        a1_col,
-                        a_size,
-                        b0_col,
-                        b1_col,
-                        b_size,
-                        cached_overwrite,
-                        local_tmp,
-                    );
-                    if !ACC && !cached_overwrite {
-                        // Non-temporal stores must be fenced on the issuing
-                        // thread before the pool join publishes them.
-                        _mm_sfence();
-                    }
+        E::for_each_chunked(n_groups, tmp, task_tmp_len, |local_tmp, group| {
+            unsafe {
+                conv_columns_packed_group::<ACC, PAIRWISE>(
+                    res_ptr,
+                    res_col,
+                    n,
+                    res_cols,
+                    min_size,
+                    offset,
+                    group,
+                    a0_col,
+                    a1_col,
+                    a_size,
+                    b0_col,
+                    b1_col,
+                    b_size,
+                    cached_overwrite,
+                    local_tmp,
+                );
+                if !ACC && !cached_overwrite {
+                    // Non-temporal stores must be fenced on the issuing
+                    // thread before the pool join publishes them.
+                    _mm_sfence();
                 }
-            },
-        );
+            }
+        });
     } else {
         let tmp = &mut tmp[..task_tmp_len];
         for group in 0..n_groups {
@@ -691,31 +687,27 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<E: TaskExecutor>(
     debug_assert!(suffix.is_empty());
 
     if E::is_parallel() && n_groups > 1 {
-        E::for_each_init(
-            n_groups,
-            || vec![0u64; task_tmp_len],
-            |local_tmp: &mut Vec<u64>, group| unsafe {
-                conv_tensor_rank1_packed_group(
-                    res_ptr,
-                    n,
-                    res_cols,
-                    min_size,
-                    offset,
-                    group,
-                    a0,
-                    a1,
-                    a_size,
-                    b0,
-                    b1,
-                    b_size,
-                    cached_overwrite,
-                    local_tmp,
-                );
-                if !cached_overwrite {
-                    _mm_sfence();
-                }
-            },
-        );
+        E::for_each_chunked(n_groups, tmp_u64, task_tmp_len, |local_tmp, group| unsafe {
+            conv_tensor_rank1_packed_group(
+                res_ptr,
+                n,
+                res_cols,
+                min_size,
+                offset,
+                group,
+                a0,
+                a1,
+                a_size,
+                b0,
+                b1,
+                b_size,
+                cached_overwrite,
+                local_tmp,
+            );
+            if !cached_overwrite {
+                _mm_sfence();
+            }
+        });
     } else {
         let task_tmp = &mut tmp_u64[..task_tmp_len];
         for group in 0..n_groups {
@@ -929,11 +921,10 @@ pub(crate) unsafe fn cnv_accumulate_dft_ifma<'a, E: TaskExecutor>(
     };
 
     if E::is_parallel() && n_groups > 1 {
-        E::for_each_init(
-            n_groups,
-            || vec![0u64; task_tmp_len],
-            |local_tmp: &mut Vec<u64>, group| run_group(local_tmp, group),
-        );
+        let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+        debug_assert!(prefix.is_empty());
+        debug_assert!(suffix.is_empty());
+        E::for_each_chunked(n_groups, tmp_u64, task_tmp_len, run_group);
     } else {
         let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
         debug_assert!(prefix.is_empty());
@@ -1060,28 +1051,25 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     if E::is_parallel() && task_count > 1 {
         let col_stride = 2 * n * res_size;
         let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-        E::for_each_init(
-            task_count,
-            || vec![0u64; 6 * n],
-            |tmp: &mut Vec<u64>, task| {
-                let col = task / res_size;
-                let j = task % res_size;
-                let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
-                let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
-                if j < min_size {
-                    if j + 1 == min_size {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-                    } else {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                    }
-                    unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-                    NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-                    unsafe { pack_limb_packed(dst, limb_c, n, res_size, j) };
+        let (_, worker_tmp, _) = unsafe { tmp.align_to_mut::<u64>() };
+        E::for_each_chunked(task_count, worker_tmp, 6 * n, |tmp, task| {
+            let col = task / res_size;
+            let j = task % res_size;
+            let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
+            let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
+            if j < min_size {
+                if j + 1 == min_size {
+                    NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
                 } else {
-                    zero_limb_packed(dst, res_size, j, n / 8);
+                    NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
                 }
-            },
-        );
+                unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
+                NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
+                unsafe { pack_limb_packed(dst, limb_c, n, res_size, j) };
+            } else {
+                zero_limb_packed(dst, res_size, j, n / 8);
+            }
+        });
         return;
     }
 
@@ -1132,28 +1120,25 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
     if E::is_parallel() && task_count > 1 {
         let col_stride = 2 * n * res_size;
         let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
-        E::for_each_init(
-            task_count,
-            || vec![0u64; 6 * n],
-            |tmp: &mut Vec<u64>, task| {
-                let col = task / res_size;
-                let j = task % res_size;
-                let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
-                let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
-                if j < min_size {
-                    if j + 1 == min_size {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-                    } else {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                    }
-                    unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-                    NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-                    unsafe { pack_limb_packed(dst, limb_c, n, res_size, res_size - 1 - j) };
+        let (_, worker_tmp, _) = unsafe { tmp.align_to_mut::<u64>() };
+        E::for_each_chunked(task_count, worker_tmp, 6 * n, |tmp, task| {
+            let col = task / res_size;
+            let j = task % res_size;
+            let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
+            let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
+            if j < min_size {
+                if j + 1 == min_size {
+                    NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
                 } else {
-                    zero_limb_packed(dst, res_size, res_size - 1 - j, n / 8);
+                    NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
                 }
-            },
-        );
+                unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
+                NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
+                unsafe { pack_limb_packed(dst, limb_c, n, res_size, res_size - 1 - j) };
+            } else {
+                zero_limb_packed(dst, res_size, res_size - 1 - j, n / 8);
+            }
+        });
         return;
     }
 
@@ -1203,31 +1188,28 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
         let col_stride = 2 * n * res_size;
         let left_ptr = SendPtr(cast_slice_mut::<_, u64>(left.data_mut()).as_mut_ptr());
         let right_ptr = SendPtr(cast_slice_mut::<_, u64>(right.data_mut()).as_mut_ptr());
-        E::for_each_init(
-            task_count,
-            || vec![0u64; 6 * n],
-            |tmp: &mut Vec<u64>, task| {
-                let col = task / res_size;
-                let j = task % res_size;
-                let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
-                let dst_l = unsafe { std::slice::from_raw_parts_mut(left_ptr.get().add(col * col_stride), col_stride) };
-                let dst_r = unsafe { std::slice::from_raw_parts_mut(right_ptr.get().add(col * col_stride), col_stride) };
-                if j < min_size {
-                    if j + 1 == min_size {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-                    } else {
-                        NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                    }
-                    unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
-                    NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-                    unsafe { pack_limb_packed(dst_l, limb_c, n, res_size, j) };
-                    unsafe { pack_limb_packed(dst_r, limb_c, n, res_size, res_size - 1 - j) };
+        let (_, worker_tmp, _) = unsafe { tmp.align_to_mut::<u64>() };
+        E::for_each_chunked(task_count, worker_tmp, 6 * n, |tmp, task| {
+            let col = task / res_size;
+            let j = task % res_size;
+            let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
+            let dst_l = unsafe { std::slice::from_raw_parts_mut(left_ptr.get().add(col * col_stride), col_stride) };
+            let dst_r = unsafe { std::slice::from_raw_parts_mut(right_ptr.get().add(col * col_stride), col_stride) };
+            if j < min_size {
+                if j + 1 == min_size {
+                    NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
                 } else {
-                    zero_limb_packed(dst_l, res_size, j, n / 8);
-                    zero_limb_packed(dst_r, res_size, res_size - 1 - j, n / 8);
+                    NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
                 }
-            },
-        );
+                unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
+                NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
+                unsafe { pack_limb_packed(dst_l, limb_c, n, res_size, j) };
+                unsafe { pack_limb_packed(dst_r, limb_c, n, res_size, res_size - 1 - j) };
+            } else {
+                zero_limb_packed(dst_l, res_size, j, n / 8);
+                zero_limb_packed(dst_r, res_size, res_size - 1 - j, n / 8);
+            }
+        });
         return;
     }
 
@@ -1313,7 +1295,7 @@ pub(crate) fn cnv_by_const_apply<E: TaskExecutor>(
             }
         };
         if E::IS_PARALLEL {
-            E::for_each_init(res_size, || (), |_, k| process(k));
+            E::for_each(res_size, process);
         } else {
             for k in 0..res_size {
                 process(k);
@@ -1342,7 +1324,7 @@ pub(crate) fn cnv_by_const_apply<E: TaskExecutor>(
         }
     };
     if E::IS_PARALLEL {
-        E::for_each_init(res_size, || (), |_, k| process(k));
+        E::for_each(res_size, process);
     } else {
         for k in 0..res_size {
             process(k);

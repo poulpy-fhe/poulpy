@@ -101,7 +101,7 @@ where
     {
         let atk_infos = key.automorphism_key_infos();
         let glwe_slot_bytes = T::BITS as usize * self.glwe_bytes_of_from_infos(res_infos);
-        let bdd_per_thread = crate::parallel::worker_scratch_bytes::<BE>(self.execute_bdd_circuit_tmp_bytes(
+        let bdd_per_thread = poulpy_hal::execution::worker_scratch_bytes::<BE>(self.execute_bdd_circuit_tmp_bytes(
             res_infos,
             circuit.max_state_size(),
             ggsw_infos,

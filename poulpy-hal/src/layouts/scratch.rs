@@ -28,9 +28,8 @@ pub struct ScratchArena<'a, B: Backend> {
     _phantom: PhantomData<&'a mut B::OwnedBuf>,
 }
 
-// Moving an arena transfers exclusive access to its range. Arenas produced by
-// `split` have disjoint ranges in the shared allocation.
-unsafe impl<B: Backend> Send for ScratchArena<'_, B> {}
+// Moving an arena transfers exclusive access to its disjoint byte range.
+unsafe impl<B: Backend> Send for ScratchArena<'_, B> where B::OwnedBuf: Send {}
 
 impl<B: Backend> ScratchOwned<B> {
     /// Borrows this owned scratch buffer as a backend-native arena.

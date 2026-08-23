@@ -8,7 +8,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    execution::TaskExecutor,
+    execution::{TaskExecutor, worker_scratch_bytes},
     layouts::{Backend, Module, ScratchArena},
 };
 use std::ops::Deref;
@@ -130,7 +130,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
 
         let eval_mod_tmp = self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key);
         let eval_mod_tmp = if <BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
-            2 * eval_mod_tmp.next_multiple_of(BE::SCRATCH_ALIGN)
+            2 * worker_scratch_bytes::<BE>(eval_mod_tmp)
         } else {
             eval_mod_tmp
         };
@@ -431,7 +431,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
     {
-        if !<BE::TaskExecutor as TaskExecutor>::is_parallel() {
+        if !<BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
             self.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
             self.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
             return Ok(());
@@ -439,8 +439,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
 
         let task_bytes = self
             .ckks_eval_mod_tmp_bytes(res_real, r0, ctx.eval_mod(), keys.tensor_key())
-            .max(self.ckks_eval_mod_tmp_bytes(res_imag, i0, ctx.eval_mod(), keys.tensor_key()))
-            .next_multiple_of(BE::SCRATCH_ALIGN);
+            .max(self.ckks_eval_mod_tmp_bytes(res_imag, i0, ctx.eval_mod(), keys.tensor_key()));
+        let task_bytes = worker_scratch_bytes::<BE>(task_bytes);
         let (arenas, _) = scratch.borrow().split(2, task_bytes);
         let mut arenas = arenas.into_iter();
         let mut scratch_real = arenas.next().unwrap();

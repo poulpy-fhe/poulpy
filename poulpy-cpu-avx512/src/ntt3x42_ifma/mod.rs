@@ -75,7 +75,7 @@ pub struct NTT3x42Ifma;
 pub struct NTT3x42IfmaRayon;
 
 #[cfg(feature = "enable-rayon")]
-pub type NTT3x42IfmaRayonExecutor = crate::execution::RayonTaskExecutor;
+pub type NTT3x42IfmaRayonExecutor = poulpy_cpu_rayon::RayonTaskExecutor;
 
 #[cfg(feature = "enable-rayon")]
 poulpy_hal::impl_backend_from!(NTT3x42IfmaRayon, NTT3x42Ifma, NTT3x42IfmaRayonExecutor);

@@ -156,3 +156,42 @@ poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64_rayon, backend = c
 
 #[cfg(all(feature = "enable-rayon", target_arch = "x86_64", target_feature = "avx512f"))]
 poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_ntt4x30_rayon, backend = crate::NTT4x30Avx512Rayon);
+
+#[cfg(all(feature = "enable-rayon", target_arch = "x86_64", target_feature = "avx512f"))]
+poulpy_bin_fhe::bin_fhe_parity_test_suite!(
+    mod bin_fhe_parity_fft64_rayon,
+    backend_ref = crate::FFT64Avx512,
+    backend_test = crate::FFT64Avx512Rayon,
+);
+
+#[cfg(all(feature = "enable-rayon", target_arch = "x86_64", target_feature = "avx512f"))]
+poulpy_bin_fhe::bin_fhe_parity_test_suite!(
+    mod bin_fhe_parity_ntt4x30_rayon,
+    backend_ref = crate::NTT4x30Avx512,
+    backend_test = crate::NTT4x30Avx512Rayon,
+);
+
+/// On-demand thread-count diagnostic; see `docs/performance.md`.
+#[cfg(feature = "enable-rayon")]
+mod tuning {
+    use poulpy_cpu_rayon::tuning::{Mode, ProbeShape, default_thread_sweep, thread_scaling};
+
+    const LOG_N: usize = 15;
+    const SIZE: usize = 12;
+    /// GLWE rank of the workload; the probes take `rank + 1` columns.
+    const RANK: usize = 1;
+    const MODE: Mode = Mode::Fast;
+
+    #[test]
+    #[ignore = "diagnostic: run on the machine you deploy on"]
+    fn thread_scaling_report() {
+        let sweep = default_thread_sweep();
+        thread_scaling::<crate::FFT64Avx512Rayon>(ProbeShape::square(1 << LOG_N, SIZE, RANK + 1), &sweep, MODE)
+            .print("FFT64Avx512Rayon");
+        thread_scaling::<crate::NTT4x30Avx512Rayon>(ProbeShape::square(1 << LOG_N, SIZE, RANK + 1), &sweep, MODE)
+            .print("NTT4x30Avx512Rayon");
+        #[cfg(feature = "enable-ifma")]
+        thread_scaling::<crate::NTT3x42IfmaRayon>(ProbeShape::square(1 << LOG_N, SIZE, RANK + 1), &sweep, MODE)
+            .print("NTT3x42IfmaRayon");
+    }
+}

@@ -93,7 +93,7 @@ where
             if extension_factor == 1 && BE::TaskExecutor::IS_PARALLEL {
                 acc_dft
                     + 2 * block_size * vmp_res
-                    + ((block_size * crate::parallel::worker_scratch_bytes::<BE>(vmp))
+                    + ((block_size * poulpy_hal::execution::worker_scratch_bytes::<BE>(vmp))
                         | (acc_big
                             + (self
                                 .vec_znx_big_normalize_tmp_bytes()
@@ -427,12 +427,12 @@ fn execute_block_binary<R, DataIn, M, BE: Backend<ZnxWord = i64> + 'static>(
     let scratch = scratch.borrow();
     let (mut acc_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module, cols, dnum);
 
-    if BE::TaskExecutor::is_parallel() {
+    if BE::TaskExecutor::IS_PARALLEL {
         let (vmp_res, scratch_2) = scratch_1.take_vec_znx_dft_slice_scratch(module, block_size, cols, brk.size());
         let (contributions, mut scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module, block_size, cols, brk.size());
         let mut tasks: Vec<_> = vmp_res.into_iter().zip(contributions).collect();
-        let workers = crate::parallel::worker_count::<BE::TaskExecutor>(block_size, block_size);
-        let worker_scratch_bytes = crate::parallel::worker_scratch_bytes::<BE>(module.vmp_apply_dft_to_dft_tmp_bytes(
+        let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(block_size, block_size);
+        let worker_scratch_bytes = poulpy_hal::execution::worker_scratch_bytes::<BE>(module.vmp_apply_dft_to_dft_tmp_bytes(
             brk.size(),
             dnum,
             dnum,
@@ -452,7 +452,7 @@ fn execute_block_binary<R, DataIn, M, BE: Backend<ZnxWord = i64> + 'static>(
             }
 
             let (worker_scratch, _) = scratch_3.borrow().split(workers, worker_scratch_bytes);
-            crate::parallel::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
+            poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
                 &mut tasks,
                 0,
                 worker_scratch,

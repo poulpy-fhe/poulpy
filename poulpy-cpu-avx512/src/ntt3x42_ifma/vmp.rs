@@ -610,28 +610,24 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool, E: TaskExecutor>(
     }
 
     let res_ptr = SendPtr(res_u64.as_mut_ptr());
-    E::for_each_init(
-        n_blk_quads,
-        || vec![0u64; 3 * 8 * row_max],
-        |x_pm, bq| {
-            unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_u64, x_pm) };
+    E::for_each_chunked(n_blk_quads, tmp, 3 * 8 * row_max, |x_pm, bq| {
+        unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_u64, x_pm) };
 
-            for col_pmat in limb_offset..col_max {
-                let col_res = col_pmat - limb_offset;
-                let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
+        for col_pmat in limb_offset..col_max {
+            let col_res = col_pmat - limb_offset;
+            let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
 
-                unsafe {
-                    let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                    let dst_base = res_ptr.get().add(col_res * 2 * n);
-                    save_planar_result::<OVERWRITE>(dst_base, bq, &pc, red[0], red[1], red[2]);
-                }
+            unsafe {
+                let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
+                let dst_base = res_ptr.get().add(col_res * 2 * n);
+                save_planar_result::<OVERWRITE>(dst_base, bq, &pc, red[0], red[1], red[2]);
             }
+        }
 
-            if OVERWRITE {
-                _mm_sfence();
-            }
-        },
-    );
+        if OVERWRITE {
+            _mm_sfence();
+        }
+    });
 
     if OVERWRITE {
         let active_cols = col_max.saturating_sub(limb_offset);
@@ -808,11 +804,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_ifma<E: TaskExecutor>(
             process_bq(x_pm, bq);
         }
     } else {
-        E::for_each_init(
-            n_blk_quads,
-            || vec![0u64; 3 * 8 * row_max_all],
-            |x_pm, bq| process_bq(x_pm, bq),
-        );
+        E::for_each_chunked(n_blk_quads, tmp, 3 * 8 * row_max_all, process_bq);
     }
 }
 
@@ -940,11 +932,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma<E: TaskExecutor>(
             process_bq(x_pm, bq);
         }
     } else {
-        E::for_each_init(
-            n_blk_quads,
-            || vec![0u64; 3 * 8 * row_max_all],
-            |x_pm, bq| process_bq(x_pm, bq),
-        );
+        E::for_each_chunked(n_blk_quads, tmp, 3 * 8 * row_max_all, process_bq);
     }
 }
 

@@ -181,8 +181,6 @@ compile_error!("feature `enable-avx` requires FMA. Build with RUSTFLAGS=\"-C tar
 mod ckks_impl;
 #[cfg(feature = "enable-avx")]
 mod core_impl;
-#[cfg(feature = "enable-rayon")]
-mod execution;
 #[cfg(feature = "enable-avx")]
 #[cfg(feature = "enable-avx")]
 mod fft64;
@@ -210,3 +208,5 @@ pub use ntt4x30::NTT4x30AvxRayon;
 
 #[cfg(feature = "enable-avx")]
 mod layout_compat;
+
+pub mod capabilities;

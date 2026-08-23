@@ -60,33 +60,29 @@ fn convolution_prepare<R, BE>(
 
     let res_raw: &mut [f64] = res.raw_mut();
 
-    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 {
+    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 && tmp.size() > 0 {
         let res_addr = res_raw.as_mut_ptr() as usize;
-        BE::TaskExecutor::for_each_init(
-            cols * res_size,
-            || vec![0.0; n],
-            |limb, task| {
-                let col = task / res_size;
-                let j = task % res_size;
+        BE::TaskExecutor::for_each_chunked(cols * res_size, tmp.raw_mut(), n, |limb, task| {
+            let col = task / res_size;
+            let j = task % res_size;
+            if j < min_size {
+                if j + 1 == min_size {
+                    BE::reim_from_znx_masked(limb, a.at(col, j), mask);
+                } else {
+                    BE::reim_from_znx(limb, a.at(col, j));
+                }
+                BE::reim_dft_execute(table, limb);
+            }
+            for blk_i in 0..m / 4 {
+                let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
+                let dst = unsafe { std::slice::from_raw_parts_mut((res_addr as *mut f64).add(off), 8) };
                 if j < min_size {
-                    if j + 1 == min_size {
-                        BE::reim_from_znx_masked(limb, a.at(col, j), mask);
-                    } else {
-                        BE::reim_from_znx(limb, a.at(col, j));
-                    }
-                    BE::reim_dft_execute(table, limb);
+                    BE::reim4_extract_1blk_contiguous(m, 1, blk_i, dst, limb);
+                } else {
+                    dst.fill(0.0);
                 }
-                for blk_i in 0..m / 4 {
-                    let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
-                    let dst = unsafe { std::slice::from_raw_parts_mut((res_addr as *mut f64).add(off), 8) };
-                    if j < min_size {
-                        BE::reim4_extract_1blk_contiguous(m, 1, blk_i, dst, limb);
-                    } else {
-                        dst.fill(0.0);
-                    }
-                }
-            },
-        );
+            }
+        });
         return;
     }
 
@@ -142,37 +138,33 @@ pub fn convolution_prepare_self<BE>(
     let left_raw: &mut [f64] = left.raw_mut();
     let right_raw: &mut [f64] = right.raw_mut();
 
-    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 {
+    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 && tmp.size() > 0 {
         let left_addr = left_raw.as_mut_ptr() as usize;
         let right_addr = right_raw.as_mut_ptr() as usize;
-        BE::TaskExecutor::for_each_init(
-            cols * res_size,
-            || vec![0.0; n],
-            |limb, task| {
-                let col = task / res_size;
-                let j = task % res_size;
+        BE::TaskExecutor::for_each_chunked(cols * res_size, tmp.raw_mut(), n, |limb, task| {
+            let col = task / res_size;
+            let j = task % res_size;
+            if j < min_size {
+                if j + 1 == min_size {
+                    BE::reim_from_znx_masked(limb, a.at(col, j), mask);
+                } else {
+                    BE::reim_from_znx(limb, a.at(col, j));
+                }
+                BE::reim_dft_execute(table, limb);
+            }
+            for blk_i in 0..m / 4 {
+                let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
+                let left_dst = unsafe { std::slice::from_raw_parts_mut((left_addr as *mut f64).add(off), 8) };
                 if j < min_size {
-                    if j + 1 == min_size {
-                        BE::reim_from_znx_masked(limb, a.at(col, j), mask);
-                    } else {
-                        BE::reim_from_znx(limb, a.at(col, j));
-                    }
-                    BE::reim_dft_execute(table, limb);
+                    BE::reim4_extract_1blk_contiguous(m, 1, blk_i, left_dst, limb);
+                } else {
+                    left_dst.fill(0.0);
                 }
-                for blk_i in 0..m / 4 {
-                    let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
-                    let left_dst = unsafe { std::slice::from_raw_parts_mut((left_addr as *mut f64).add(off), 8) };
-                    if j < min_size {
-                        BE::reim4_extract_1blk_contiguous(m, 1, blk_i, left_dst, limb);
-                    } else {
-                        left_dst.fill(0.0);
-                    }
-                    unsafe {
-                        std::ptr::copy_nonoverlapping(left_dst.as_ptr(), (right_addr as *mut f64).add(off), 8);
-                    }
+                unsafe {
+                    std::ptr::copy_nonoverlapping(left_dst.as_ptr(), (right_addr as *mut f64).add(off), 8);
                 }
-            },
-        );
+            }
+        });
         return;
     }
 
@@ -403,10 +395,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
     let a_size: usize = a.size();
     let b_size: usize = b.size();
 
-    assert_eq!(
-        tmp.len(),
-        convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size) / size_of::<f64>()
-    );
+    assert!(tmp.len() >= convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size) / size_of::<f64>());
 
     let bound: usize = a_size + b_size - 1;
     let min_size: usize = res_size.min(bound);

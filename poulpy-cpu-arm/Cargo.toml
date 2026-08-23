@@ -14,7 +14,7 @@ doctest = false
 
 [features]
 enable-neon = []
-enable-rayon = ["enable-neon", "dep:rayon"]
+enable-rayon = ["enable-neon", "dep:rayon", "dep:poulpy-cpu-rayon"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
 
 [dependencies]
@@ -23,6 +23,7 @@ poulpy-ckks = {workspace = true, optional = true}
 poulpy-core = {workspace = true}
 poulpy-hal = {workspace = true}
 poulpy-cpu-ref = {workspace = true}
+poulpy-cpu-rayon = {workspace = true, optional = true}
 itertools = {workspace = true}
 rand = {workspace = true}
 rand_distr = {workspace = true}

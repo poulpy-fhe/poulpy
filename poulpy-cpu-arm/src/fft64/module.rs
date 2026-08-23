@@ -20,6 +20,8 @@ pub struct FFT64NeonHandle {
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
+impl poulpy_hal::execution::ScratchWorkers for FFT64Neon {}
+
 impl Backend for FFT64Neon {
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;

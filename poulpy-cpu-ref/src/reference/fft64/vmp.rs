@@ -151,7 +151,7 @@ where
     let mut res_ref = res.to_backend_mut();
     let nrows: usize = pmat.cols_in() * pmat.rows();
     let ncols: usize = pmat.cols_out() * pmat.size();
-    vmp_apply_dft_to_dft_core::<true, BE>(
+    vmp_apply_dft_to_dft_core::<true, BE, BE::TaskExecutor>(
         n,
         res_ref.raw_mut(),
         a_dft.raw(),
@@ -159,7 +159,6 @@ where
         0,
         nrows,
         ncols,
-        usize::MAX,
         tmp_bytes,
     );
 }
@@ -189,11 +188,11 @@ pub fn vmp_apply_dft_to_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    vmp_apply_dft_to_dft_with_kernel::<BE, BE>(res, a, pmat, limb_offset, tmp_bytes);
+    vmp_apply_dft_to_dft_with_kernel::<BE, BE, BE::TaskExecutor>(res, a, pmat, limb_offset, tmp_bytes);
 }
 
 #[inline(always)]
-pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL>(
+pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL, E>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     a: &VecZnxDftBackendRef<'_, BE>,
     pmat: &VmpPMatBackendRef<'_, BE>,
@@ -201,24 +200,8 @@ pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL>(
     tmp_bytes: &mut [f64],
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64>,
-    KERNEL: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec,
-    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
-{
-    vmp_apply_dft_to_dft_with_kernel_and_parallelism::<BE, KERNEL>(res, a, pmat, limb_offset, usize::MAX, tmp_bytes);
-}
-
-#[inline(always)]
-pub fn vmp_apply_dft_to_dft_with_kernel_and_parallelism<BE, KERNEL>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    pmat: &VmpPMatBackendRef<'_, BE>,
-    limb_offset: usize,
-    parallelism: usize,
-    tmp_bytes: &mut [f64],
-) where
-    BE: Backend<DftWord = f64, ZnxWord = i64>,
-    KERNEL: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec,
+    KERNEL: ReimArith + Reim4BlkMatVec,
+    E: TaskExecutor,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -242,9 +225,9 @@ pub fn vmp_apply_dft_to_dft_with_kernel_and_parallelism<BE, KERNEL>(
     // the runtime expression `limb_offset * pmat.cols_out()`. Blind rotation
     // always calls this with `limb_offset == 0`.
     if limb_offset == 0 {
-        vmp_apply_dft_to_dft_core::<true, KERNEL>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, parallelism, tmp_bytes)
+        vmp_apply_dft_to_dft_core::<true, KERNEL, E>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, tmp_bytes)
     } else {
-        vmp_apply_dft_to_dft_core::<true, KERNEL>(
+        vmp_apply_dft_to_dft_core::<true, KERNEL, E>(
             n,
             res_raw,
             a_raw,
@@ -252,7 +235,6 @@ pub fn vmp_apply_dft_to_dft_with_kernel_and_parallelism<BE, KERNEL>(
             limb_offset * pmat.cols_out(),
             nrows,
             ncols,
-            parallelism,
             tmp_bytes,
         )
     }
@@ -329,7 +311,7 @@ unsafe fn vmp_apply_dft_to_dft_block<const OVERWRITE: bool, REIM>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM>(
+fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
     n: usize,
     res: &mut [f64],
     a: &[f64],
@@ -337,10 +319,10 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM>(
     limb_offset: usize,
     nrows: usize,
     ncols: usize,
-    parallelism: usize,
     tmp_bytes: &mut [f64],
 ) where
-    REIM: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec,
+    REIM: ReimArith + Reim4BlkMatVec,
+    E: TaskExecutor,
 {
     #[cfg(debug_assertions)]
     {
@@ -375,29 +357,24 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM>(
     let block_count = m >> 2;
     let task_tmp_len = 16 + 8 * row_max;
     let res_addr = res.as_mut_ptr() as usize;
-    if REIM::TaskExecutor::is_parallel() && block_count > 1 && parallelism > 1 {
-        REIM::TaskExecutor::for_each_init_with_parallelism(
-            block_count,
-            parallelism,
-            || vec![0.0; task_tmp_len],
-            |tmp, blk_i| unsafe {
-                vmp_apply_dft_to_dft_block::<OVERWRITE, REIM>(
-                    n,
-                    m,
-                    res_addr,
-                    a,
-                    pmat,
-                    limb_offset,
-                    nrows,
-                    ncols,
-                    row_start,
-                    row_max,
-                    col_max,
-                    blk_i,
-                    tmp,
-                );
-            },
-        );
+    if E::is_parallel() && block_count > 1 {
+        E::for_each_chunked(block_count, tmp_bytes, task_tmp_len, |tmp, blk_i| unsafe {
+            vmp_apply_dft_to_dft_block::<OVERWRITE, REIM>(
+                n,
+                m,
+                res_addr,
+                a,
+                pmat,
+                limb_offset,
+                nrows,
+                ncols,
+                row_start,
+                row_max,
+                col_max,
+                blk_i,
+                tmp,
+            );
+        });
     } else {
         for blk_i in 0..block_count {
             unsafe {

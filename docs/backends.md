@@ -105,9 +105,14 @@ let module = Module::<BackendImpl>::new(n as u64);
 The backend fixes the maximum limb size `base2k` you can use.
 `FFT64` allows up to 19 bits per limb, while `NTT4x30` allows up to 52.
 A larger `base2k` represents the same precision in fewer limbs, at the cost of more expensive elementary operations.
-This tradeoff usually pays off for leveled schemes such as BFV, BGV, and CKKS, but not for TFHE.
-So use `FFT64` for gate-level and TFHE-style work, especially at small ring dimensions.
-Use `NTT4x30` or `NTT3x42` for the leveled schemes, where the larger limbs cut the limb count.
+
+Use `FFT64` for gate-level and TFHE-style work, especially at small ring dimensions: there the limb count is already low, so the wider NTT limbs cannot pay for their extra transforms.
+
+For the leveled schemes, use `NTT3x42` where the CPU has AVX-512-IFMA — it is the fastest leveled backend by a clear margin.
+Without IFMA there is no general winner between `NTT4x30` and `FFT64`: the first is faster on coefficient-domain work, where the limb count decides, and the second on key-switch-dominated work, where the size of the prepared key decides.
+Which one wins therefore depends on the mix of operations in your circuit, so test both.
+See [Performance](performance.md) for the reasoning and for the diagnostics that answer it on your hardware.
+
 Within a chosen subfamily, prefer the most accelerated backend your CPU and build flags allow.
 Choose a `*Rayon` variant when one operation should use several CPU cores, especially for large dimensions or batches.
 Choose its serial counterpart when the application already parallelizes independent operations or when the workload is too small to repay scheduling overhead.

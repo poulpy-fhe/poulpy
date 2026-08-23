@@ -435,7 +435,7 @@ where
         A: GLWEInfos,
         B: BDDKeyInfos,
     {
-        crate::parallel::worker_scratch_bytes::<BE>(
+        poulpy_hal::execution::worker_scratch_bytes::<BE>(
             self.circuit_bootstrapping_execute_tmp_bytes(block_size, extension_factor, res_infos, &bdd_infos.cbt_infos())
                 + self.ggsw_bytes_of_from_infos(res_infos)
                 + self.lwe_bytes_of_from_infos(bits_infos),
@@ -459,7 +459,7 @@ where
 
         assert!(bit_end <= T::BITS as usize);
 
-        let workers = crate::parallel::worker_count::<BE::TaskExecutor>(threads, bit_count);
+        let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(threads, bit_count);
         let scratch_thread_size = self.fhe_uint_prepare_tmp_bytes(cbt.block_size(), 1, res, bits, key);
         let needed = workers
             .checked_mul(scratch_thread_size)
@@ -485,7 +485,7 @@ where
         }
 
         let (worker_scratch, _) = scratch.borrow().split(workers, scratch_thread_size);
-        crate::parallel::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
+        poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
             &mut res.bits[bit_start..bit_end],
             bit_start,
             worker_scratch,

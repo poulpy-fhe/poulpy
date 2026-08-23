@@ -43,6 +43,8 @@ pub struct NTT4x30RefHandle {
     table_cache: crate::table_cache::ModuleTableCache,
 }
 
+impl poulpy_hal::execution::ScratchWorkers for NTT4x30Ref {}
+
 impl Backend for NTT4x30Ref {
     const DFT_IS_EXACT: bool = true;
 

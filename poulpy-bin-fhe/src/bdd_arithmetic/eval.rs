@@ -221,8 +221,8 @@ where
             return;
         }
 
-        let workers = crate::parallel::worker_count::<BE::TaskExecutor>(threads, output_size);
-        let scratch_thread_size = crate::parallel::worker_scratch_bytes::<BE>(self.execute_bdd_circuit_tmp_bytes(
+        let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(threads, output_size);
+        let scratch_thread_size = poulpy_hal::execution::worker_scratch_bytes::<BE>(self.execute_bdd_circuit_tmp_bytes(
             &out[0],
             circuit.max_state_size(),
             inputs.get_bit(0),
@@ -237,7 +237,7 @@ where
         );
         let (worker_scratch, _) = scratch.borrow().split(workers, scratch_thread_size);
 
-        crate::parallel::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
+        poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
             &mut out[..output_size],
             0,
             worker_scratch,

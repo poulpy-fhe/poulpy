@@ -148,8 +148,6 @@ compile_error!(
     "feature `enable-ifma` requires AVX512VL. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl\"."
 );
 
-#[cfg(feature = "enable-rayon")]
-mod execution;
 #[cfg(feature = "enable-avx512f")]
 mod fft64;
 #[cfg(feature = "enable-avx512f")]
@@ -211,3 +209,5 @@ mod tests;
 
 #[cfg(feature = "enable-avx512f")]
 mod layout_compat;
+
+pub mod capabilities;

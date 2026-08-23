@@ -39,6 +39,8 @@ pub struct NTT4x30Avx512Handle {
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
+impl poulpy_hal::execution::ScratchWorkers for NTT4x30Avx512 {}
+
 impl Backend for NTT4x30Avx512 {
     const DFT_IS_EXACT: bool = true;
 

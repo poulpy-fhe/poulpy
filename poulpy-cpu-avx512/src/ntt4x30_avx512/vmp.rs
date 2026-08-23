@@ -345,39 +345,35 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool, E: TaskExecutor>(
         }
     } else {
         let res_ptr = SendU64Ptr(res_u64.as_mut_ptr());
-        E::for_each_init(
-            n_block_pairs,
-            || vec![0u64; 16 + 16 * row_max],
-            |task_tmp, bp| {
-                let (blkpair_output, x_pm) = task_tmp.split_at_mut(16);
-                unsafe { extract_blk_pair_prime_major_avx512(n, row_max, bp, a_u64, x_pm) };
+        E::for_each_chunked(n_block_pairs, tmp, 16 + 16 * row_max, |task_tmp, bp| {
+            let (blkpair_output, x_pm) = task_tmp.split_at_mut(16);
+            unsafe { extract_blk_pair_prime_major_avx512(n, row_max, bp, a_u64, x_pm) };
 
-                for col_pmat in limb_offset..col_max {
-                    let col_res = col_pmat - limb_offset;
-                    let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
-                    unsafe {
-                        vec_mat1col_product_blkpair_bbc_pm_avx512(
-                            meta,
-                            row_max,
-                            blkpair_output,
-                            x_pm,
-                            &pmat_u64[y_off..],
-                            plane_stride,
-                        );
-                        let base = col_res * 4 * n;
-                        let dst0 = std::slice::from_raw_parts_mut(res_ptr.get().add(base + 16 * bp), 8);
-                        let dst1 = std::slice::from_raw_parts_mut(res_ptr.get().add(base + 16 * bp + 8), 8);
-                        if OVERWRITE {
-                            save_blk_overwrite(0, dst0, &blkpair_output[0..8]);
-                            save_blk_overwrite(0, dst1, &blkpair_output[8..16]);
-                        } else {
-                            save_blk_add(2, 0, dst0, &blkpair_output[0..8]);
-                            save_blk_add(2, 0, dst1, &blkpair_output[8..16]);
-                        }
+            for col_pmat in limb_offset..col_max {
+                let col_res = col_pmat - limb_offset;
+                let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
+                unsafe {
+                    vec_mat1col_product_blkpair_bbc_pm_avx512(
+                        meta,
+                        row_max,
+                        blkpair_output,
+                        x_pm,
+                        &pmat_u64[y_off..],
+                        plane_stride,
+                    );
+                    let base = col_res * 4 * n;
+                    let dst0 = std::slice::from_raw_parts_mut(res_ptr.get().add(base + 16 * bp), 8);
+                    let dst1 = std::slice::from_raw_parts_mut(res_ptr.get().add(base + 16 * bp + 8), 8);
+                    if OVERWRITE {
+                        save_blk_overwrite(0, dst0, &blkpair_output[0..8]);
+                        save_blk_overwrite(0, dst1, &blkpair_output[8..16]);
+                    } else {
+                        save_blk_add(2, 0, dst0, &blkpair_output[0..8]);
+                        save_blk_add(2, 0, dst1, &blkpair_output[8..16]);
                     }
                 }
-            },
-        );
+            }
+        });
     }
 
     if OVERWRITE {
@@ -598,11 +594,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx<E: TaskExecutor>(
 
     if E::is_parallel() && n_block_pairs > 1 {
         let max_row_max = row_maxs.iter().copied().max().unwrap_or(0) as usize;
-        E::for_each_init(
-            n_block_pairs,
-            || vec![0u64; 16 + 16 * max_row_max],
-            |task_tmp, bp| process_block_pair(task_tmp, bp),
-        );
+        E::for_each_chunked(n_block_pairs, tmp, 16 + 16 * max_row_max, process_block_pair);
     } else {
         for bp in 0..n_block_pairs {
             process_block_pair(tmp, bp);
