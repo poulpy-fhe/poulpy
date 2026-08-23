@@ -498,50 +498,58 @@ where
         // the broadcast, `b_col` is shared by every output column.
         let broadcast_b_cols: [usize; 2] = [0, 1];
         for store in [CnvDftStore::Overwrite, CnvDftStore::Accumulate] {
-            let terms: Vec<CnvDftAccTerm<'_, BE>> = broadcast_b_cols
-                .iter()
-                .map(|&b_col| CnvDftAccTerm {
-                    a: a_prep.to_backend_ref(),
-                    a_col: 0,
-                    b: b_prep.to_backend_ref(),
-                    b_col,
-                })
-                .collect();
-            module.cnv_accumulate_dft_columns(
-                cnv_offset,
-                store,
-                &mut res_fused.to_backend_mut(),
-                0,
-                cols,
-                &terms,
-                &mut scratch.arena(),
-            );
+            // The comparison below consumes both destinations
+            // (`vec_znx_idft_apply_tmpa` is destructive), so every pass rebuilds
+            // its own `Overwrite` baseline before optionally accumulating on top.
+            for pass in [CnvDftStore::Overwrite, store] {
+                let terms: Vec<CnvDftAccTerm<'_, BE>> = broadcast_b_cols
+                    .iter()
+                    .map(|&b_col| CnvDftAccTerm {
+                        a: a_prep.to_backend_ref(),
+                        a_col: 0,
+                        b: b_prep.to_backend_ref(),
+                        b_col,
+                    })
+                    .collect();
+                module.cnv_accumulate_dft_columns(
+                    cnv_offset,
+                    pass,
+                    &mut res_fused.to_backend_mut(),
+                    0,
+                    cols,
+                    &terms,
+                    &mut scratch.arena(),
+                );
 
-            for col in 0..cols {
-                for (idx, &b_col) in broadcast_b_cols.iter().enumerate() {
-                    if idx == 0 && store == CnvDftStore::Overwrite {
-                        module.cnv_apply_dft(
-                            cnv_offset,
-                            &mut res_ref.to_backend_mut(),
-                            col,
-                            &a_prep.to_backend_ref(),
-                            col,
-                            &b_prep.to_backend_ref(),
-                            b_col,
-                            &mut scratch.arena(),
-                        );
-                    } else {
-                        module.cnv_apply_dft_accumulate(
-                            cnv_offset,
-                            &mut res_ref.to_backend_mut(),
-                            col,
-                            &a_prep.to_backend_ref(),
-                            col,
-                            &b_prep.to_backend_ref(),
-                            b_col,
-                            &mut scratch.arena(),
-                        );
+                for col in 0..cols {
+                    for (idx, &b_col) in broadcast_b_cols.iter().enumerate() {
+                        if idx == 0 && pass == CnvDftStore::Overwrite {
+                            module.cnv_apply_dft(
+                                cnv_offset,
+                                &mut res_ref.to_backend_mut(),
+                                col,
+                                &a_prep.to_backend_ref(),
+                                col,
+                                &b_prep.to_backend_ref(),
+                                b_col,
+                                &mut scratch.arena(),
+                            );
+                        } else {
+                            module.cnv_apply_dft_accumulate(
+                                cnv_offset,
+                                &mut res_ref.to_backend_mut(),
+                                col,
+                                &a_prep.to_backend_ref(),
+                                col,
+                                &b_prep.to_backend_ref(),
+                                b_col,
+                                &mut scratch.arena(),
+                            );
+                        }
                     }
+                }
+                if pass == CnvDftStore::Overwrite && store == CnvDftStore::Overwrite {
+                    break;
                 }
             }
 

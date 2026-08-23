@@ -170,9 +170,12 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_accumulate_dft`](Convolution::cnv_accumulate_dft).
+    /// Returns scratch bytes required for [`cnv_accumulate_dft`](Convolution::cnv_accumulate_dft)
+    /// and [`cnv_accumulate_dft_columns`](Convolution::cnv_accumulate_dft_columns).
     ///
     /// `a_size` and `b_size` are upper bounds over the sizes of the term operands.
+    /// The budget also covers the per-term `cnv_apply_dft{,_accumulate}` fallback
+    /// those methods may take, so one number sizes the whole family.
     fn cnv_accumulate_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
     /// Evaluates a sum of bivariate convolutions: `res[res_col] = Σ_t a_t ⊛ b_t`,

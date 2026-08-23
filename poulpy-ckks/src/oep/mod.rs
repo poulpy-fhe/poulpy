@@ -6,9 +6,9 @@
 //! # Wiring patterns
 //!
 //! Most families follow the **opt-in marker** pattern: the family's blanket `unsafe impl<BE> CKKS*Impl<BE> for BE` is gated on `Module<BE>: CKKS*Default<BE>`, and a backend opts in with the family's one-line `impl_ckks_*_defaults!` macro (or bypasses the reference chain entirely by implementing the OEP trait natively).
+//! `CKKS*Default` carries a default body per method, so a backend can also write that impl itself and override a single kernel while inheriting the rest — that, not the OEP trait, is the per-method override surface ([`CKKSEvalModImpl`]'s paired EvalMod and the whole-bootstrap [`CKKSBootstrapImpl`] included).
 //! Three kinds of family are deliberate exceptions:
 //!
-//! - **Unconditional blankets** — [`CKKSEvalModImpl`]: pure compositions of already-wired families, so they blanket over any backend whose constituent families are wired; there is no per-backend macro because there is nothing backend-specific to opt into.
 //! - **Scalar-generic encoding seams** — [`CKKSEncodingImpl<BE, F>`], [`DFTMatrixImpl<BE, F>`], and [`CKKSPaCoCoeffEncodingImpl`]: parameterized by the encoding scalar and tied to the backend's FFT/codec plumbing, they are wired by backend-crate-side macros (e.g. `impl_ckks_encoding_*!` in the CPU backends) rather than by crate-side default markers, keeping host/FFT bounds out of this crate's API per the no-host-bounds rule.
 //! - **Narrow protocol seam** — [`CKKSEncapsulatedModUpImpl`] lets backends optimize bootstrapping's dense-to-sparse → ModUp → sparse-to-dense stage.
 //! - **No-OEP families** — the remaining composite ops (`CKKSMulAddOps`, `CKKSMulSubOps`, `CKKSAffineOps`, `CKKSAddManyOps`, `CKKSDotProductOps`, linear transformations): pure api-level compositions of other families' ops, implemented directly on `Module<BE>` in the delegates layer with no override seam of their own — overriding their constituents overrides them.
@@ -36,7 +36,9 @@ mod sub;
 
 pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_defaults;
-pub use bootstrapping::{CKKSEncapsulatedModUpImpl, impl_ckks_encapsulated_mod_up_default};
+pub use bootstrapping::{
+    CKKSBootstrapImpl, CKKSEncapsulatedModUpImpl, impl_ckks_bootstrap_defaults, impl_ckks_encapsulated_mod_up_default,
+};
 pub use ckks_impl::CKKSImpl;
 pub use conjugate::CKKSConjugateImpl;
 pub use conjugate::impl_ckks_conjugate_defaults;
@@ -46,7 +48,7 @@ pub use dft::{DFTDefault, DFTImpl, DFTMatrixDefault, DFTMatrixImpl, impl_ckks_df
 pub use encoding::CKKSEncodingImpl;
 pub use encryption::CKKSEncryptionImpl;
 pub use encryption::impl_ckks_encryption_defaults;
-pub use eval_mod::CKKSEvalModImpl;
+pub use eval_mod::{CKKSEvalModImpl, impl_ckks_eval_mod_defaults};
 pub use imag::CKKSImagImpl;
 pub use imag::impl_ckks_imag_defaults;
 pub use mul::CKKSMulImpl;

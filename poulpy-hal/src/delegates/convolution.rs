@@ -151,7 +151,12 @@ impl_convolution_delegate!(
         <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_accumulate(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     },
     fn cnv_accumulate_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
+        // One budget for the whole accumulation family: `cnv_accumulate_dft_columns`
+        // falls back to per-term `cnv_apply_dft{,_accumulate}` calls, whose scratch a
+        // backend's fused `cnv_accumulate_dft` bound need not cover on its own.
+        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size).max(
+            <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size),
+        )
     },
     fn cnv_accumulate_dft<'a>(
         &self,

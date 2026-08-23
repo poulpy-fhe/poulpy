@@ -20,7 +20,8 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformations,
-    LinearTransformationBabySteps,
+    LinearTransformation, LinearTransformationBabySteps, LinearTransformationGiantStep, LinearTransformationLayout,
+    LinearTransformationPrepared, LinearTransformationStrategy,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
         GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
@@ -231,4 +232,130 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             );
         }
     }
+}
+
+/// **Empty giant-step buckets are inert.** A transform carrying an empty bucket
+/// at a nonzero rotation must evaluate exactly like the pruned transform and
+/// must not consult the key map: with no key for that rotation, any lookup (or
+/// the `automorphism_key_infos()` the planner would reach for) panics.
+pub fn test_glwe_eval_linear_transformation_skips_empty_giant_steps<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: GLWEAutomorphism<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + CnvPVecAlloc<BE>
+        + Convolution<BE>
+        + GLWECopy<BE>
+        + GLWEEncryptSk<BE>
+        + GLWELinearTransformations<BE>
+        + GLWESecretPreparedFactory<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + VecZnxAlloc<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxDftAlloc<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxFillUniformSourceBackend<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let n = module.n();
+    let base2k = params.base2k;
+    let k_in = 2 * base2k + 1;
+    let dsize = 2;
+    let dnum = k_in.div_ceil(base2k * dsize);
+
+    let ct_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: k_in.into(),
+        rank: 1usize.into(),
+    })
+    .unwrap();
+    let atk_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        dnum: dnum.into(),
+        k_aux: (dsize * base2k + module.log_n()).into(),
+        rank: 1usize.into(),
+        dsize: dsize.into(),
+    })
+    .unwrap();
+
+    let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_infos);
+    let mut source_xs = Source::new([11u8; 32]);
+    let mut source_xe = Source::new([12u8; 32]);
+    let mut source_xa = Source::new([13u8; 32]);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
+            | module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &ct_infos, &atk_infos)
+            | module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
+            | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos),
+    );
+
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
+    let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    module.glwe_secret_prepare(&mut sk_prepared, &sk);
+    module.vec_znx_fill_uniform_source_backend(base2k, &mut vec_znx_backend_mut::<BE>(&mut pt.data), 0, &mut source_xa);
+    module.glwe_encrypt_sk(
+        &mut ct,
+        &pt,
+        &sk_prepared,
+        &ct_infos,
+        &mut source_xe,
+        &mut source_xa,
+        &mut scratch.borrow(),
+    );
+
+    // Identity-only transform: one diagonal at index 0, so neither the baby
+    // preparation nor the giant loop legitimately needs a key.
+    let layout = LinearTransformationLayout {
+        indexes: vec![0],
+        slots: n,
+        strategy: LinearTransformationStrategy::Direct,
+    };
+    let mut lt: LinearTransformationPrepared<BE> = LinearTransformation::alloc_prepared(module, &layout, &pt);
+    {
+        let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
+        for gs in &mut lt.giant_steps {
+            for d in &mut gs.diagonals {
+                module.cnv_prepare_right(
+                    &mut d.plaintext.cnv_mut().to_backend_mut(),
+                    &pt_ref.data,
+                    !0i64,
+                    &mut scratch.borrow(),
+                );
+            }
+        }
+    }
+
+    // No keys at all: `automorphism_key_infos()` panics on an empty map, so any
+    // planning step that counts the empty bucket as a live rotation aborts here.
+    let keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
+    let mut babies = LinearTransformationBabySteps::alloc(module, lt.baby_steps(), &ct);
+    module.glwe_prepare_linear_transformation_baby_steps(&mut babies, &ct, &keys, &mut scratch.borrow());
+
+    let mut pruned: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+    module.glwe_eval_linear_transformation_into(0, &mut pruned, &babies, &lt, &keys, &mut scratch.borrow());
+
+    // Same transform plus an empty bucket at a nonzero rotation.
+    lt.giant_steps.push(LinearTransformationGiantStep {
+        rot: 3,
+        diagonals: Vec::new(),
+    });
+    let mut with_empty: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+    module.glwe_eval_linear_transformation_into(0, &mut with_empty, &babies, &lt, &keys, &mut scratch.borrow());
+
+    assert_eq!(
+        pruned, with_empty,
+        "an empty giant-step bucket changed the linear transformation result"
+    );
 }

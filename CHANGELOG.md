@@ -5,16 +5,27 @@
 ### `poulpy-hal`
 
 - Add `Convolution::cnv_accumulate_dft_columns`, the multi-column form of `cnv_accumulate_dft`: `res[res_col + c] (=|+=) Σ_t a_t[a_col + c] ⊛ b_t[b_col]` for every `c < cols`, the right operand broadcast across the columns and the store selected by the new `CnvDftStore`. One call per BSGS giant step at any rank. The default loops the single-column ops (so a fused `cnv_accumulate_dft` is still used); `CnvDftAccTerm::at_column` reborrows a term at a column offset.
+- `Convolution::cnv_accumulate_dft_tmp_bytes` now also covers the per-term `cnv_apply_dft{,_accumulate}` fallback `cnv_accumulate_dft_columns` takes, so one budget sizes the whole accumulation family (a backend's fused bound alone did not cover the `Accumulate` store).
+- Add `vec_znx_backend_ref_with_size`, the read-only counterpart of `vec_znx_backend_mut_with_size`.
 
 ### `poulpy-core`
 
 - The linear-transformation PROD block hands each giant step to `cnv_accumulate_dft_columns` (one term list per giant step instead of one per output column), on both the resident and the streamed diagonal path.
 - Add `LinearTransformationBabySteps::baby_step_mut` / `baby_steps_mut`, so a backend can retire a fused rotation/keyswitch straight into prepared storage.
+- Add `glwe_backend_ref_with_size` / `glwe_backend_mut_with_size`, which narrow only a GLWE backend view's `VecZnx` data view. Bare `GLWEToBackendRef`/`GLWEToBackendMut` semantics are unchanged: capacity-aware core code still sees the allocation.
+- The BSGS giant-step loop skips empty diagonal buckets instead of panicking on them, and the planner applies the same filter, so a pruned bucket no longer claims a giant rotation (and demands an automorphism key) that no evaluated bucket needs. A transform still needs at least one non-empty bucket.
 
 ### `poulpy-ckks`
 
 - The homomorphic (I)DFT chain ping-pongs the running ciphertext between `ct` and one scratch ciphertext through `ckks_eval_linear_transformation_into` instead of every factor evaluating into scratch and copying back; only the leading factor of an odd-length chain still copies (6 copies saved across the 5-factor C2S and 3-factor S2C chains). Scratch is unchanged, and `CKKSLinearTransformationOps::ckks_dft_evaluate_tmp_bytes` now states the whole-chain budget.
 - Add `LinearTransformationEvalParams`: the validated per-transform `cnv_offset` (and its limb split), PROD width and result `log_budget`/`log_delta`, used by `ckks_eval_linear_transformation_into` and available to external chain evaluators.
+- **Breaking:** every CKKS ciphertext backend view (owned, scratch-backed `CKKSCiphertextViewMut`, unnormalized write view, and the inherent `to_ref`/`to_mut`) exposes the logical width `size()` rather than the physical `max_size()` capacity, so a backend never reads or writes the inactive tail. `CKKSCiphertext::{to_ref, to_mut}` and the `Deref`/`DerefMut` impls are restricted to `Normalized`: derefing to the wrapped `GLWE` also exposed *its* capacity-wide, unsealed conversions, which let an unnormalized ciphertext hand out a DFT-usable view. Plaintext conversion is unchanged: plaintexts expose their whole `encoded_k()` allocation.
+- The homomorphic (I)DFT chain realigns the destination's metadata and width with the source before evaluating a factor, so the ping-pong buffer never carries the previous factor's logical state into the next one.
+- Add `CKKSEvalModOps::ckks_eval_mod_pair` / `ckks_eval_mod_pair_tmp_bytes` with `CKKSEvalModImpl` hooks: one call evaluating `x mod 1` on two inputs, holding both inputs, both outputs, the tensor key and one scratch lifetime for the whole operation so a backend sees both DAGs at once. Branches may be independently shaped, so the sizing method takes all four layouts. The default is sequential (routed through the single-op hook), so no other backend needs a change. The bootstrap's real/imaginary branches call it, and `ckks_bootstrap_tmp_bytes` sizes off the paired budget; the C2S-first pipeline carves one extra working ciphertext for the imaginary output.
+- Add the whole-bootstrap `CKKSBootstrapImpl` OEP (with `CKKSBootstrapDefault` as the reference composition ModUp → C2S → paired EvalMod → S2C), so a backend can own the bootstrap's scratch lifetime, temporary ciphertexts, private intermediate representations, and stage transitions. No public ciphertext representation change.
+- **Breaking:** `CKKSEvalModOpsDefault` and `CKKSBootstrapDefault` are opt-in surfaces rather than blanket impls, wired by the new `impl_ckks_eval_mod_defaults!` / `impl_ckks_bootstrap_defaults!` (the in-tree CPU backends invoke both). The `CKKSEvalModImpl` / `CKKSBootstrapImpl` blankets are keyed on them, so a backend that omits the macro can implement either hook by hand without an overlapping-impl error. Both surfaces carry a default body per method, so a backend can instead write the impl itself and substitute one kernel — the paired EvalMod, say — while inheriting the rest; the paired methods live there rather than on the OEP for exactly that reason.
+- `ckks_all_ops_with_atk_tmp_bytes` includes the whole-chain `ckks_dft_evaluate_tmp_bytes`.
+- `LinearTransformationEvalParams` derives its PROD width with checked arithmetic.
 - `DFTMatrix::factors()` is public (read-only), replacing the crate-private `factor_operands()`.
 
 ## [0.8.2] - 2026-08-22

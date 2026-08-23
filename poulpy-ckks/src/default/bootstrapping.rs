@@ -8,6 +8,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use std::borrow::Borrow;
 use std::ops::Deref;
 
 use crate::{
@@ -121,7 +122,9 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             3 * boot_ct_bytes
         };
         let mut carved = match ctx.pipeline() {
-            BootstrappingPipeline::C2SFirst => post_mod_up,
+            // C2S-first carves one extra working ciphertext for the paired
+            // EvalMod's imaginary output; S2C-first reuses its raise buffer.
+            BootstrappingPipeline::C2SFirst => post_mod_up + boot_ct_bytes,
             BootstrappingPipeline::S2CFirst => post_mod_up.max(boot_ct_bytes + in_ct_bytes),
         };
 
@@ -138,7 +141,17 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                 &keys_layout.automorphism_key,
                 &coeffs_layout,
             ))
-            .max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
+            // Both forms: the real-slot path runs a single EvalMod, every other
+            // path runs the pair (which a fused backend may size differently).
+            .max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key))
+            .max(self.ckks_eval_mod_pair_tmp_bytes(
+                &boot_layout,
+                &boot_layout,
+                &boot_layout,
+                &boot_layout,
+                ctx.eval_mod(),
+                &keys_layout.tensor_key,
+            ));
 
         if ctx.pipeline() == BootstrappingPipeline::C2SFirst {
             carved += in_ct_bytes;
@@ -200,8 +213,16 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                 ));
         }
         if luts.iter().any(EncodedLut::requires_eval_mod) {
-            nested =
-                nested.max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
+            nested = nested
+                .max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key))
+                .max(self.ckks_eval_mod_pair_tmp_bytes(
+                    &boot_layout,
+                    &boot_layout,
+                    &boot_layout,
+                    &boot_layout,
+                    ctx.eval_mod(),
+                    &keys_layout.tensor_key,
+                ));
         }
         base.max(carved + nested)
     }
@@ -421,9 +442,10 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     {
-        self.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
-        self.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
-        Ok(())
+        // Paired: the two branches share the tensor key and the scratch lifetime,
+        // so a backend can see both EvalMod DAGs at once. The default runs them
+        // sequentially.
+        self.ckks_eval_mod_pair(res_real, res_imag, r0, i0, ctx.eval_mod(), keys.tensor_key(), scratch)
     }
 
     fn ckks_bootstrap_s2c_first<F, K>(
@@ -641,13 +663,15 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             match ctx.coeffs_to_slots_bypass() {
                 // Standard: EvalMod's clean residue goes straight to SlotsToCoeffs.
                 None => {
-                    self.ckks_eval_mod(&mut ct, &r0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
-                    r0.set_k(k_boot);
-                    self.ckks_eval_mod(&mut r0, &i0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+                    // The imaginary result gets its own buffer (rather than
+                    // reusing `r0`, still live as the real branch's input) so
+                    // both branches are borrowed for the whole paired call.
+                    let (mut im, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta());
+                    self.ckks_bootstrap_eval_mod_halves(&r0, &i0, &mut ct, &mut im, ctx, keys, &mut scratch_local)?;
                     self.ckks_slots_to_coeffs_split(
                         ct_out,
                         &ct,
-                        &r0,
+                        &im,
                         ctx.slots_to_coeffs(),
                         keys.rotation_keys(),
                         &mut scratch_local,
@@ -678,16 +702,18 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                     );
                     let log2_k = ctx.eval_mod().plan.f_mod_interval.trailing_zeros() as usize;
 
-                    self.ckks_eval_mod(&mut ct, &r0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+                    // As in the standard branch: a dedicated imaginary output
+                    // keeps both branches borrowed across the paired EvalMod.
+                    let (mut im, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta());
+                    self.ckks_bootstrap_eval_mod_halves(&r0, &i0, &mut ct, &mut im, ctx, keys, &mut scratch_local)?;
+
                     self.ckks_mul_pow2_assign(&mut r0, log2_k, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut r0_hp, &r0, &mut scratch_local)?;
                     self.ckks_add_assign(&mut r0_hp, &ct, &mut scratch_local)?;
 
-                    r0.set_k(k_boot);
-                    self.ckks_eval_mod(&mut r0, &i0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
                     self.ckks_mul_pow2_assign(&mut i0, log2_k, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut i0_hp, &i0, &mut scratch_local)?;
-                    self.ckks_add_assign(&mut i0_hp, &r0, &mut scratch_local)?;
+                    self.ckks_add_assign(&mut i0_hp, &im, &mut scratch_local)?;
 
                     self.ckks_slots_to_coeffs_split(
                         ct_out,
@@ -1130,4 +1156,69 @@ where
         "functional bootstrap LUT requires log_msg_ratio {expected}, got {actual}"
     );
     Ok(())
+}
+
+/// Whole-bootstrap reference composition, as an opt-in marker on [`Module`].
+///
+/// The methods are the composition the public
+/// [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps) trait exposes
+/// (ModUp → CoeffsToSlots → paired EvalMod → SlotsToCoeffs). A backend inherits
+/// them by invoking
+/// [`impl_ckks_bootstrap_defaults`](crate::oep::impl_ckks_bootstrap_defaults);
+/// the [`CKKSBootstrapImpl`](crate::oep::CKKSBootstrapImpl) blanket impl is
+/// keyed on this marker, so a backend that wants to own the whole bootstrap
+/// (its scratch lifetime, temporary ciphertexts, backend-private intermediate
+/// representations, and the transitions between stages) omits the macro and
+/// implements that OEP by hand without an overlapping-impl error.
+pub trait CKKSBootstrapDefault<BE: Backend> {
+    /// Reference scratch budget for [`Self::ckks_bootstrap_default`].
+    fn ckks_bootstrap_tmp_bytes_default<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+        Self: Borrow<Module<BE>>,
+        BE: CKKSEncapsulatedModUpImpl<BE>,
+        Module<BE>: GLWEBytesOf<BE> + CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE> + GLWEShift<BE>,
+        CKKSCiphertextOwned<BE>: CKKSCtBounds,
+    {
+        BootstrappingDefault::new(self.borrow()).ckks_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, keys_layout)
+    }
+
+    /// Reference bootstrap; the pipeline variant is selected from `ctx`.
+    fn ckks_bootstrap_default<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+        Self: Borrow<Module<BE>>,
+        BE: CKKSEncapsulatedModUpImpl<BE>,
+        Module<BE>: GLWEBytesOf<BE>
+            + GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + CKKSCopyOps<BE>
+            + CKKSPow2Ops<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSImagOps<BE>
+            + CKKSDFTOps<BE>
+            + CKKSEvalModOps<BE>,
+        CKKSCiphertextOwned<BE>:
+            GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        BootstrappingDefault::new(self.borrow()).ckks_bootstrap_default(ct_out, ct_in, ctx, keys, scratch)
+    }
 }

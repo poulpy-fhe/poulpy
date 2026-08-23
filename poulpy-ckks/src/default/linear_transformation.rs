@@ -339,11 +339,21 @@ impl LinearTransformationEvalParams {
         let (log_budget, log_delta, cnv_offset) =
             mul_pt_params_raw(dst_k, src.log_delta(), src.log_budget(), pt_log_scale, 0, pt_max_k)?;
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, first.base2k().as_usize());
+        let baby_size = babies.size();
+        let diagonal_size = first.size();
+        let prod_size = baby_size
+            .checked_add(diagonal_size)
+            .and_then(|width| width.checked_sub(cnv_offset_hi))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "linear transformation PROD width underflows: baby size {baby_size} + diagonal size {diagonal_size} - cnv_offset_hi {cnv_offset_hi}"
+                )
+            })?;
         Ok(Self {
             cnv_offset,
             cnv_offset_hi,
             cnv_offset_lo,
-            prod_size: babies.size() + first.size() - cnv_offset_hi,
+            prod_size,
             log_budget,
             log_delta,
         })

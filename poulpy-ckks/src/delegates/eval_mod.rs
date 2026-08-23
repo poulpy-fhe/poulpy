@@ -1,59 +1,16 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Degree, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-    SetBSGSMeta, TorusPrecision,
-};
+use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 use poulpy_hal::api::CnvPVecBytesOf;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::SlotsKind;
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSSubOps, PolynomialInputTransform},
-    layouts::eval_mod::{EvalMod, EvalModBsgs},
+    CKKSCtBounds, SetCKKSInfos,
+    api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSSubOps},
+    default::eval_mod::ckks_eval_mod_tmp_bytes_default,
+    layouts::eval_mod::EvalMod,
     oep::CKKSEvalModImpl,
 };
-
-#[derive(Clone, Copy)]
-struct EvalModWorkCtInfos {
-    n: Degree,
-    base2k: Base2K,
-    rank: Rank,
-    max_size: usize,
-    k: TorusPrecision,
-    meta: CKKSMeta,
-}
-
-impl LWEInfos for EvalModWorkCtInfos {
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn n(&self) -> Degree {
-        self.n
-    }
-
-    fn max_size(&self) -> usize {
-        self.max_size
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
-}
-
-impl GLWEInfos for EvalModWorkCtInfos {
-    fn rank(&self) -> Rank {
-        self.rank
-    }
-}
-
-impl CKKSInfos for EvalModWorkCtInfos {
-    fn meta(&self) -> CKKSMeta {
-        self.meta
-    }
-}
 
 impl<BE: Backend + CKKSEvalModImpl<BE>> CKKSEvalModOps<BE> for Module<BE>
 where
@@ -66,56 +23,27 @@ where
         P: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        let work_k = ct.k().as_usize().max(ct.log_budget() + params.plan.f_mod_log_delta);
-        let work = EvalModWorkCtInfos {
-            n: ct.n(),
-            base2k: ct.base2k(),
-            rank: ct.rank(),
-            max_size: work_k.div_ceil(ct.base2k().as_usize()).max(1),
-            // Total torus width = budget carried into eval_mod + the plan scale.
-            k: (ct.log_budget() + params.plan.f_mod_log_delta).into(),
-            meta: CKKSMeta {
-                log_sparsity: ct.log_sparsity(),
-                log_delta: params.plan.f_mod_log_delta,
-                slots: SlotsKind::Complex,
-            },
-        };
+        ckks_eval_mod_tmp_bytes_default(self, res, ct, params, tsk)
+    }
 
-        let cols: usize = (work.rank() + 1).into();
-        let compact_work = BE::bytes_of_vec_znx(work.n().into(), cols, work.max_size());
-        // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
-        // across the baby-step pairs that share it.
-        let hoisted_right = self.bytes_of_cnv_pvec_right(cols, work.max_size());
-        let bsgs_giant = self
-            .ckks_mul_tmp_bytes(&work, &work, &work, tsk)
-            .max(self.ckks_add_tmp_bytes())
-            + 3 * compact_work
-            + hoisted_right;
-        let square_scope = (self.ckks_square_tmp_bytes(&work, &work, tsk) + compact_work).max(
-            // Scratch is a physical working-set budget: size the square-scope
-            // copy off `res`'s allocated capacity, the upper bound on the limbs
-            // any runtime re-expansion can expose.
-            self.ckks_square_tmp_bytes(res, res, tsk)
-                + BE::bytes_of_vec_znx(res.n().into(), (res.rank() + 1).into(), res.max_size()),
-        );
-        // Identity base polynomials transfer an owned, relabelled input directly
-        // into the power basis. Scratch only needs a full working ciphertext for
-        // a transformed base or for the optional inverse composition.
-        let needs_work_copy = params.f_mod_inv_bsgs.is_some()
-            || match &params.f_mod_bsgs {
-                EvalModBsgs::Real(poly) => poly.input_transform() != PolynomialInputTransform::Identity,
-                EvalModBsgs::Complex(poly) => {
-                    poly.re.input_transform() != PolynomialInputTransform::Identity
-                        || poly.im.input_transform() != PolynomialInputTransform::Identity
-                }
-            };
-        usize::from(needs_work_copy) * compact_work
-            + self
-                .ckks_copy_tmp_bytes()
-                .max(self.ckks_add_pt_const_tmp_bytes())
-                .max(self.ckks_sub_pt_const_tmp_bytes())
-                .max(bsgs_giant)
-                .max(square_scope)
+    fn ckks_eval_mod_pair_tmp_bytes<R0, R1, C0, C1, P, F, T>(
+        &self,
+        res_0: &R0,
+        res_1: &R1,
+        ct_0: &C0,
+        ct_1: &C1,
+        params: &EvalMod<F, P>,
+        tsk: &T,
+    ) -> usize
+    where
+        R0: CKKSCtBounds,
+        R1: CKKSCtBounds,
+        C0: CKKSCtBounds,
+        C1: CKKSCtBounds,
+        P: CKKSCtBounds,
+        T: GGLWEInfos,
+    {
+        BE::ckks_eval_mod_pair_tmp_bytes_impl(self, res_0, res_1, ct_0, ct_1, params, tsk)
     }
 
     fn ckks_eval_mod<R, C, P, F>(
@@ -132,5 +60,25 @@ where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
     {
         BE::ckks_eval_mod_impl::<R, C, P, F>(self, res, ct, params, tsk, scratch)
+    }
+
+    fn ckks_eval_mod_pair<R0, R1, C0, C1, P, F>(
+        &self,
+        res_0: &mut R0,
+        res_1: &mut R1,
+        ct_0: &C0,
+        ct_1: &C1,
+        params: &EvalMod<F, P>,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R0: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C0: GLWEToBackendRef<BE> + CKKSCtBounds,
+        C1: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+    {
+        BE::ckks_eval_mod_pair_impl::<R0, R1, C0, C1, P, F>(self, res_0, res_1, ct_0, ct_1, params, tsk, scratch)
     }
 }

@@ -51,6 +51,8 @@ macro_rules! core_backend_test_suite {
                 glwe_trace_assign => $crate::test_suite::noise::test_glwe_trace_assign,
                 glwe_hoisted_baby_rotations_match_automorphism =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,
+                glwe_eval_linear_transformation_skips_empty_giant_steps =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_eval_linear_transformation_skips_empty_giant_steps,
                 glwe_packing => $crate::test_suite::noise::test_glwe_packing,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_switching_key_encrypt_sk,
                 gglwe_switching_key_compressed_encrypt_sk =>

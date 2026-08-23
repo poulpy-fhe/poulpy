@@ -188,7 +188,14 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     let prod_size = baby_size + diagonal_size - cnv_offset_hi;
 
     let num_giant_steps = rhs.giant_steps.len();
-    let nonzero_giant_rotations = rhs.giant_steps.iter().filter(|gs| gs.rot != 0).count();
+    // Same filter as the evaluation loops below: an empty bucket is skipped, so
+    // it must not make the planner claim a rotation (and demand a key) that no
+    // evaluated bucket needs.
+    let nonzero_giant_rotations = rhs
+        .giant_steps
+        .iter()
+        .filter(|gs| gs.rot != 0 && !gs.diagonals.is_empty())
+        .count();
     let has_nonzero_giant_rotation = nonzero_giant_rotations != 0;
     // `automorphism_key_infos()` panics on an empty key map (legitimate for
     // an identity-only transform), so only consult it when at least one giant
@@ -233,6 +240,10 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
 
         let mut res_initialized = false;
         for g in 0..num_giant_steps {
+            // A pruned bucket contributes nothing; PROD would panic on it.
+            if rhs.giant_steps[g].diagonals.is_empty() {
+                continue;
+            }
             {
                 let mut prod_dft_backend = prod_dft.to_backend_mut();
                 P::accumulate_giant_prod(
@@ -317,6 +328,9 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     let mut res_initialized = false;
 
     for g in 0..num_giant_steps {
+        if rhs.giant_steps[g].diagonals.is_empty() {
+            continue;
+        }
         {
             let mut prod_dft_backend = prod_dft.to_backend_mut();
             P::accumulate_giant_prod(

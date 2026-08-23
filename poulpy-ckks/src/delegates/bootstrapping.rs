@@ -20,10 +20,10 @@ use crate::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSModuleAlloc,
         CKKSPlaintextOwned, EncodedLut,
     },
-    oep::CKKSEncapsulatedModUpImpl,
+    oep::{CKKSBootstrapImpl, CKKSEncapsulatedModUpImpl},
 };
 
-impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> CKKSBootstrappingOps<BE> for Module<BE>
+impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE> + CKKSBootstrapImpl<BE>> CKKSBootstrappingOps<BE> for Module<BE>
 where
     Module<BE>: GLWEBytesOf<BE>
         + GLWECopy<BE>
@@ -60,7 +60,7 @@ where
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
     {
-        BootstrappingDefault::new(self).ckks_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, keys_layout)
+        BE::ckks_bootstrap_tmp_bytes_impl(self, ct_out, ct_in, ctx, keys_layout)
     }
 
     fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
@@ -126,7 +126,7 @@ where
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
-        BootstrappingDefault::new(self).ckks_bootstrap_default(ct_out, ct_in, ctx, keys, scratch)
+        BE::ckks_bootstrap_impl(self, ct_out, ct_in, ctx, keys, scratch)
     }
 
     fn ckks_functional_bootstrap<F, K>(

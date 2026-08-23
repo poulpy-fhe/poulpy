@@ -1,10 +1,11 @@
 use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, ZnxView},
     source::Source,
 };
 
@@ -275,6 +276,152 @@ fn run_eval_mod_case<BE, F, E>(
                 stats_im.worst_got,
                 stats_im.worst_want
             );
+        }
+    }
+}
+
+/// **Paired EvalMod equals two singles.** Runs the same plan on two different
+/// inputs through `ckks_eval_mod` twice and through `ckks_eval_mod_pair` once,
+/// inside a scratch arena sized by `ckks_eval_mod_pair_tmp_bytes`, and requires
+/// both branches to agree bit-for-bit on metadata and on every active limb.
+pub fn test_eval_mod_pair_matches_singles<BE, F, E>(
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let mut lit = EvalModPlan {
+        eval_mod_type: EvalModType::SinCheby,
+        log_msg_ratio: 8,
+        f_mod_degree: 63,
+        f_mod_interval: 14,
+        f_mod_log_interval_reduction: 0,
+        f_mod_inv_degree: None,
+        scaling: None,
+        split_strategy: SplitStrategy::MinDepth,
+        coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
+        f_mod_log_delta: 60,
+    };
+    lit.coeffs_meta = CoeffsMeta::from_delta_budget(lit.f_mod_log_delta, params.base2k);
+
+    let mut compile_scratch =
+        ScratchOwned::<BE>::alloc(CKKSEncodingHostOps::<BE, F>::ckks_reim_tmp_bytes(module, module.n() / 2));
+    let params_be =
+        compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, &mut compile_scratch.borrow()).expect("compile_eval_mod");
+
+    let input_log_delta = 40;
+    let dsize = 2;
+    let test_params = CKKSTestParams {
+        n: params.n,
+        base2k: params.base2k,
+        k: (lit.consumed_bits() + input_log_delta + 2 * params.base2k).next_multiple_of(dsize * params.base2k),
+        hw: 192,
+        prec_meta: CKKSMeta {
+            log_sparsity: 0,
+            log_delta: input_log_delta,
+            slots: SlotsKind::Complex,
+        },
+        prec_log_budget: 10,
+        dsize,
+        rank: 1,
+    };
+
+    let slots = test_params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
+    let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
+    let res_k = test_params.k + lit.f_mod_log_delta.saturating_sub(input_log_delta);
+    let mut scratch = alloc_scratch_eval_mod(&test_params, module, &params_be, res_k);
+    let tsk = gen_tsk(&test_params, module, &sk_raw, &mut scratch.borrow());
+
+    // Two distinct inputs, so a pair that silently evaluated one branch twice
+    // (or crossed its operands) cannot pass.
+    let mr = (1u64 << lit.log_msg_ratio) as f64;
+    let interval = lit.f_mod_interval as f64;
+    let mut source = Source::new([3u8; 32]);
+    let sample = |source: &mut Source| -> Vec<F> {
+        let k = (lit.f_mod_interval - 1) as f64;
+        (0..slots)
+            .map(|_| {
+                let value = source.next_f64(-k, k).round() * mr + source.next_f64(-1.0, 1.0);
+                F::from_f64(value / (mr * interval)).unwrap()
+            })
+            .collect()
+    };
+    let zeros = vec![F::zero(); slots];
+    let inputs: Vec<CKKSCiphertextOwned<BE>> = (0..2)
+        .map(|_| {
+            let x = sample(&mut source);
+            ckks_encrypt_with_prec(
+                &test_params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                test_params.k,
+                &x,
+                &zeros,
+                test_params.prec(),
+                &mut scratch.borrow(),
+            )
+        })
+        .collect();
+
+    let alloc_res = || {
+        let mut ct = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
+        ct.set_meta(test_params.prec().meta);
+        ct
+    };
+    let (mut single_0, mut single_1) = (alloc_res(), alloc_res());
+    module
+        .ckks_eval_mod(&mut single_0, &inputs[0], &params_be, &tsk, &mut scratch.borrow())
+        .expect("ckks_eval_mod");
+    module
+        .ckks_eval_mod(&mut single_1, &inputs[1], &params_be, &tsk, &mut scratch.borrow())
+        .expect("ckks_eval_mod");
+
+    // The pair runs inside exactly the budget it advertises.
+    let (mut pair_0, mut pair_1) = (alloc_res(), alloc_res());
+    let pair_bytes = module.ckks_eval_mod_pair_tmp_bytes(
+        &pair_0,
+        &pair_1,
+        &inputs[0],
+        &inputs[1],
+        &params_be,
+        &test_params.tsk_layout(),
+    );
+    let mut pair_scratch = ScratchOwned::<BE>::alloc(pair_bytes);
+    module
+        .ckks_eval_mod_pair(
+            &mut pair_0,
+            &mut pair_1,
+            &inputs[0],
+            &inputs[1],
+            &params_be,
+            &tsk,
+            &mut pair_scratch.borrow(),
+        )
+        .expect("ckks_eval_mod_pair");
+
+    for (branch, (single, pair)) in [(&single_0, &pair_0), (&single_1, &pair_1)].into_iter().enumerate() {
+        assert_eq!(single.meta(), pair.meta(), "eval_mod_pair branch {branch}: metadata differs");
+        assert_eq!(single.k(), pair.k(), "eval_mod_pair branch {branch}: torus width differs");
+        let cols = single.rank().as_usize() + 1;
+        let n = single.n().as_usize();
+        for col in 0..cols {
+            for limb in 0..single.size() {
+                assert_eq!(
+                    &single.data().at(col, limb)[..n],
+                    &pair.data().at(col, limb)[..n],
+                    "eval_mod_pair branch {branch}: limb ({col}, {limb}) differs from the single op"
+                );
+            }
         }
     }
 }

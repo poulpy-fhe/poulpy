@@ -1,8 +1,9 @@
 use crate::{
     CKKSCtBounds, CKKSInfos,
     api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecryptOps, CKKSEncryptOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
-        CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecryptOps, CKKSEncryptOps, CKKSImagOps,
+        CKKSLinearTransformationOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps,
+        CKKSSubOps,
     },
 };
 use poulpy_core::{
@@ -35,6 +36,7 @@ where
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWELinearTransformations<BE>
+        + CKKSLinearTransformationOps<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + ModuleN
         + GLWEShift<BE>
@@ -101,6 +103,9 @@ where
             .max(self.ckks_conjugate_tmp_bytes(ct_infos, atk_infos))
             .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
             .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
+            // The chained (homomorphic-DFT) form keeps one ciphertext live across
+            // factors on top of the per-factor budget.
+            .max(self.ckks_dft_evaluate_tmp_bytes(ct_infos, atk_infos))
             .max(self.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos))
             .max(self.glwe_automorphism_key_prepare_tmp_bytes(atk_infos))
     }

@@ -297,6 +297,11 @@ where
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
+    // `dst` is the previous factor's buffer: its logical metadata and width still
+    // describe that factor's output. Realign it with `src` before anything reads
+    // `dst.k()` (the eval parameters) or sizes work off it.
+    dst.set_meta(src.meta());
+    dst.set_k(src.k());
     let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), src);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, scratch)?;
     module.ckks_eval_linear_transformation_into(dst, src, &babies, factor, keys, scratch)

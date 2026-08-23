@@ -567,6 +567,19 @@ pub fn vec_znx_backend_mut<'a, B: Backend>(vec: &'a mut VecZnx<B::OwnedBuf, B::Z
     <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(vec)
 }
 
+/// Read-only counterpart of [`vec_znx_backend_mut_with_size`].
+///
+/// # Panics
+///
+/// Panics if `size > vec.size()`.
+pub fn vec_znx_backend_ref_with_size<'a, B: Backend>(vec: VecZnxBackendRef<'a, B>, size: usize) -> VecZnxBackendRef<'a, B> {
+    VecZnx {
+        data: vec.data,
+        shape: vec.shape.with_size(size),
+        _phantom: PhantomData,
+    }
+}
+
 /// # Panics
 ///
 /// Panics if `size > vec.size()`.

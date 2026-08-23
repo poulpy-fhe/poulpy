@@ -626,6 +626,22 @@ macro_rules! ckks_backend_test_suite {
                 dft_plan_helpers_match_compiled,
                 $crate::test_suite::dft::test_dft_plan_helpers_match_compiled
             );
+            run_test!(
+                eval_mod_pair_matches_singles,
+                $crate::test_suite::eval_mod::test_eval_mod_pair_matches_singles
+            );
+            run_test!(
+                backend_views_expose_logical_width,
+                $crate::test_suite::logical_width::test_backend_views_expose_logical_width
+            );
+            run_test!(
+                inactive_capacity_does_not_change_results,
+                $crate::test_suite::logical_width::test_inactive_capacity_does_not_change_results
+            );
+            run_test!(
+                dft_ping_pong_matches_assign_chain,
+                $crate::test_suite::logical_width::test_dft_ping_pong_matches_assign_chain
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
             run_test!(mul_ct_delta_a_lt_b, $crate::test_suite::mul::test_mul_ct_delta_a_lt_b);
@@ -976,6 +992,7 @@ pub mod functional_bootstrapping;
 pub mod helpers;
 pub mod imag;
 pub mod linear_transformation;
+pub mod logical_width;
 pub mod mul;
 pub mod mul_add;
 pub mod mul_pow2;
