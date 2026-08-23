@@ -220,6 +220,36 @@ pub trait Convolution<BE: Backend> {
     ) where
         BE: 'a;
 
+    /// Batched variant of [`cnv_accumulate_dft_columns`](Convolution::cnv_accumulate_dft_columns):
+    /// evaluates `results.len()` independent multi-column accumulations, one per
+    /// term set, so a backend can share a prepared left operand appearing in
+    /// several sets across their launches.
+    ///
+    /// `results[g][res_col + c] (=|+=) Σ_t a_t[a_col + c] ⊛ b_t[b_col]` over
+    /// `term_sets[g]`, for every `g` and every `c < cols`. `results.len()` must
+    /// equal `term_sets.len()`; the sets are independent and may differ in
+    /// length, order, and left operands. `store` applies to each result
+    /// independently, exactly as in
+    /// [`cnv_accumulate_dft_columns`](Convolution::cnv_accumulate_dft_columns):
+    /// an empty set zeroes its result under `Overwrite` and is a no-op under
+    /// `Accumulate`. An empty batch is a no-op, a one-result batch is one
+    /// ordinary call. Results must be pairwise non-overlapping; their sizes may
+    /// differ. Scratch requirement is
+    /// [`cnv_accumulate_dft_tmp_bytes`](Convolution::cnv_accumulate_dft_tmp_bytes)
+    /// taken over the batch maxima.
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_accumulate_dft_columns_batch<'a>(
+        &self,
+        cnv_offset: usize,
+        store: CnvDftStore,
+        results: &mut [VecZnxDftBackendMut<'_, BE>],
+        res_col: usize,
+        cols: usize,
+        term_sets: &[&[CnvDftAccTerm<'a, BE>]],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a;
+
     /// Returns scratch bytes required for [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft).
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 

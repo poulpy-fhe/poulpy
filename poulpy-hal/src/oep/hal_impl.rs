@@ -1269,6 +1269,33 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         }
     }
 
+    /// Computes `results.len()` independent multi-column accumulations, one per
+    /// term set.
+    ///
+    /// The default runs the ordinary per-result call in result-index order over
+    /// the same scratch, which also carries the empty-term-set store semantics.
+    /// Backends should override it with a kernel that loads a left operand
+    /// shared by several sets once; an override that only fuses some shapes must
+    /// run the ordinary calls for the rest rather than reject them.
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_accumulate_dft_columns_batch<'a>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        store: crate::layouts::CnvDftStore,
+        results: &mut [crate::layouts::VecZnxDftBackendMut<'_, BE>],
+        res_col: usize,
+        cols: usize,
+        term_sets: &[&[crate::layouts::CnvDftAccTerm<'a, BE>]],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: HalVecZnxDftImpl<BE> + 'a,
+    {
+        assert_eq!(results.len(), term_sets.len());
+        for (result, terms) in results.iter_mut().zip(term_sets.iter()) {
+            Self::cnv_accumulate_dft_columns(module, cnv_offset, store, result, res_col, cols, terms, scratch);
+        }
+    }
+
     fn cnv_pairwise_apply_dft_tmp_bytes(
         module: &Module<BE>,
         cnv_offset: usize,

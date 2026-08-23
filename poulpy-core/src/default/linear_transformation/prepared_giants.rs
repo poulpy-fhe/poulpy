@@ -25,7 +25,10 @@ use crate::{
     default::{
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
-            inner_product::{glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_unprepared_baby_steps_dft},
+            inner_product::{
+                glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_prepared_baby_steps_dft_batch,
+                glwe_accumulate_unprepared_baby_steps_dft,
+            },
             lazy::{
                 glwe_dft_add_dft_assign, glwe_dft_copy_dft, glwe_idft_dft_into_big, glwe_lazy_giant_automorphism_from_dft,
                 glwe_normalize_big_into,
@@ -73,6 +76,33 @@ pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: CnvPVecBytesOf + Convolution<BE> + ModuleN;
+
+    /// Runs the PROD inner products of a batch of giant steps into as many
+    /// distinct destinations.
+    ///
+    /// The default is the ordered per-giant call, so a diagonal representation
+    /// only ever has to implement
+    /// [`accumulate_giant_prod`](Self::accumulate_giant_prod). Overrides may
+    /// share a prepared baby step across the giants that use it; they must keep
+    /// destination `i` associated with `giant_steps[i]`, and must not rotate,
+    /// key-switch, or otherwise consume any product. `giant_steps` is a slice of
+    /// references because filtering pruned empty buckets breaks contiguity;
+    /// every giant step in it must be non-empty. An empty batch is a no-op.
+    fn accumulate_giant_prods<M>(
+        module: &M,
+        cnv_offset_hi: usize,
+        prod_dfts: &mut [VecZnxDftBackendMut<'_, BE>],
+        lhs: &LinearTransformationBabySteps<BE>,
+        giant_steps: &[&LinearTransformationGiantStep<Self>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    {
+        assert_eq!(prod_dfts.len(), giant_steps.len());
+        for (prod_dft, gs) in prod_dfts.iter_mut().zip(giant_steps) {
+            Self::accumulate_giant_prod(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+        }
+    }
 }
 
 impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
@@ -87,6 +117,19 @@ impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
         M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
     {
         glwe_accumulate_prepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+    }
+
+    fn accumulate_giant_prods<M>(
+        module: &M,
+        cnv_offset_hi: usize,
+        prod_dfts: &mut [VecZnxDftBackendMut<'_, BE>],
+        lhs: &LinearTransformationBabySteps<BE>,
+        giant_steps: &[&LinearTransformationGiantStep<Self>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    {
+        glwe_accumulate_prepared_baby_steps_dft_batch(module, cnv_offset_hi, prod_dfts, lhs, giant_steps, scratch);
     }
 }
 

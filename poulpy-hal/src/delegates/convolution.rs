@@ -184,6 +184,22 @@ impl_convolution_delegate!(
     {
         <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_columns(self, cnv_offset, store, res, res_col, cols, terms, scratch)
     },
+    fn cnv_accumulate_dft_columns_batch<'a>(
+        &self,
+        cnv_offset: usize,
+        store: CnvDftStore,
+        results: &mut [VecZnxDftBackendMut<'_, BE>],
+        res_col: usize,
+        cols: usize,
+        term_sets: &[&[CnvDftAccTerm<'a, BE>]],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a,
+    {
+        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_columns_batch(
+            self, cnv_offset, store, results, res_col, cols, term_sets, scratch,
+        )
+    },
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_pairwise_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
     },

@@ -39,6 +39,22 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     M: Convolution<BE>,
 {
     let cols = lhs.cols();
+    let terms = prepared_giant_terms(cnv_offset_hi, prod_dft, lhs, gs);
+    module.cnv_accumulate_dft_columns(cnv_offset_hi, CnvDftStore::Overwrite, prod_dft, 0, cols, &terms, scratch);
+}
+
+/// Validates one giant step against its destination and builds its term list.
+///
+/// One term list for the whole giant step: the diagonal (RHS) is broadcast
+/// across the `cols` output columns, so the backend sees every column of every
+/// term in a single call. The returned terms borrow only `lhs` and `gs`.
+fn prepared_giant_terms<'t, BE: Backend>(
+    cnv_offset_hi: usize,
+    prod_dft: &VecZnxDftBackendMut<'_, BE>,
+    lhs: &'t LinearTransformationBabySteps<BE>,
+    gs: &'t LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE>>,
+) -> Vec<CnvDftAccTerm<'t, BE>> {
+    let cols = lhs.cols();
     let diagonal_size = gs
         .diagonals
         .first()
@@ -50,11 +66,7 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     assert_eq!(prod_dft.cols(), cols);
     assert_eq!(prod_dft.size(), res_dft_size);
 
-    // One term list for the whole giant step: the diagonal (RHS) is broadcast
-    // across the `cols` output columns, so the backend sees every column of
-    // every term in a single call.
-    let terms: Vec<CnvDftAccTerm<'_, BE>> = gs
-        .diagonals
+    gs.diagonals
         .iter()
         .map(|d| {
             let diagonal = d.plaintext.cnv();
@@ -68,8 +80,39 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
                 b_col: 0,
             }
         })
+        .collect()
+}
+
+/// Batched [`glwe_accumulate_prepared_baby_steps_dft`]: runs every giant step's
+/// PROD block in one HAL call, so a backend can share a prepared baby step
+/// appearing in several of them.
+///
+/// The term sets stay independent, so the giants' baby subsets, diagonal order
+/// and duplicate babies are all preserved as-is. Every set is validated and
+/// built before any slice of it is taken, and nothing borrowed outlives the call.
+pub(super) fn glwe_accumulate_prepared_baby_steps_dft_batch<BE, M>(
+    module: &M,
+    cnv_offset_hi: usize,
+    prod_dfts: &mut [VecZnxDftBackendMut<'_, BE>],
+    lhs: &LinearTransformationBabySteps<BE>,
+    giant_steps: &[&LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE>>],
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: Convolution<BE>,
+{
+    assert_eq!(prod_dfts.len(), giant_steps.len());
+    if giant_steps.is_empty() {
+        return;
+    }
+    let cols = lhs.cols();
+    let terms: Vec<Vec<CnvDftAccTerm<'_, BE>>> = prod_dfts
+        .iter()
+        .zip(giant_steps)
+        .map(|(prod_dft, gs)| prepared_giant_terms(cnv_offset_hi, prod_dft, lhs, gs))
         .collect();
-    module.cnv_accumulate_dft_columns(cnv_offset_hi, CnvDftStore::Overwrite, prod_dft, 0, cols, &terms, scratch);
+    let term_sets: Vec<&[CnvDftAccTerm<'_, BE>]> = terms.iter().map(Vec::as_slice).collect();
+    module.cnv_accumulate_dft_columns_batch(cnv_offset_hi, CnvDftStore::Overwrite, prod_dfts, 0, cols, &term_sets, scratch);
 }
 
 /// Scratch bytes required by [`glwe_accumulate_prepared_baby_steps_dft`].

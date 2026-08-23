@@ -7,12 +7,14 @@
 - Add `Convolution::cnv_accumulate_dft_columns`, the multi-column form of `cnv_accumulate_dft`: `res[res_col + c] (=|+=) Σ_t a_t[a_col + c] ⊛ b_t[b_col]` for every `c < cols`, the right operand broadcast across the columns and the store selected by the new `CnvDftStore`. One call per BSGS giant step at any rank. The default loops the single-column ops (so a fused `cnv_accumulate_dft` is still used); `CnvDftAccTerm::at_column` reborrows a term at a column offset.
 - `Convolution::cnv_accumulate_dft_tmp_bytes` now also covers the per-term `cnv_apply_dft{,_accumulate}` fallback `cnv_accumulate_dft_columns` takes, so one budget sizes the whole accumulation family (a backend's fused bound alone did not cover the `Accumulate` store).
 - Add `vec_znx_backend_ref_with_size`, the read-only counterpart of `vec_znx_backend_mut_with_size`.
+- Add `Convolution::cnv_accumulate_dft_columns_batch`: a batch of independent multi-column accumulations, one per term set, so a backend can share a prepared left operand appearing in several sets across their launches. No new descriptor: separate term sets keep sparse, reordered and duplicated operands representable. Same store contract and scratch budget as `cnv_accumulate_dft_columns`, applied per result; the default runs the ordinary calls in result-index order, so no backend needs an override.
 
 ### `poulpy-core`
 
 - The linear-transformation PROD block hands each giant step to `cnv_accumulate_dft_columns` (one term list per giant step instead of one per output column), on both the resident and the streamed diagonal path.
 - Add `LinearTransformationBabySteps::baby_step_mut` / `baby_steps_mut`, so a backend can retire a fused rotation/keyswitch straight into prepared storage.
 - Add `glwe_backend_ref_with_size` / `glwe_backend_mut_with_size`, which narrow only a GLWE backend view's `VecZnx` data view. Bare `GLWEToBackendRef`/`GLWEToBackendMut` semantics are unchanged: capacity-aware core code still sees the allocation.
+- Add `DiagonalProd::accumulate_giant_prods`, the batched PROD block, with an ordered sequential default on the trait so a diagonal representation defining only `accumulate_giant_prod` stays valid. Its `giant_steps` is a slice of references, since filtering pruned buckets breaks contiguity. `PreparedDiagonal` overrides it with one `cnv_accumulate_dft_columns_batch` call. The default evaluator is unchanged; the hook is for an external whole-transform override holding several product buffers.
 - The BSGS giant-step loop skips empty diagonal buckets instead of panicking on them, and the planner applies the same filter, so a pruned bucket no longer claims a giant rotation (and demands an automorphism key) that no evaluated bucket needs. A transform still needs at least one non-empty bucket.
 
 ### `poulpy-ckks`
