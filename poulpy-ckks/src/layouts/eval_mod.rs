@@ -237,7 +237,8 @@ impl EvalModPlan {
     /// for the [`SplitStrategy`], so this is exact for `MinMult` as well as
     /// `MinDepth`); it matches the depth of the compiled [`EvalMod::eval_depth`].
     pub fn eval_depth(&self) -> usize {
-        let base = bsgs_eval_depth(self.base_degree(), self.split_strategy);
+        let (degree, fold) = self.encoded_base_degree();
+        let base = usize::from(fold) + bsgs_eval_depth(degree, self.split_strategy);
         let inv = self.f_mod_inv_degree.map_or(0, |d| bsgs_eval_depth(d, self.split_strategy));
         base + self.f_mod_log_interval_reduction + inv
     }
@@ -256,14 +257,16 @@ impl EvalModPlan {
         // is documentation-only), so no per-family parity is threaded here; the
         // compiled polynomials carry their real parity (`compile_eval_mod` pins
         // Full for the phase-shifted Sin/CosCheby, CosHK keeps auto-detection).
-        let base = bsgs_consumed_bits(
-            self.base_degree(),
-            self.split_strategy,
-            Parity::Full,
-            Basis::Chebyshev,
-            input_log_delta,
-            coeff,
-        );
+        let (degree, fold) = self.encoded_base_degree();
+        let base = usize::from(fold) * input_log_delta
+            + bsgs_consumed_bits(
+                degree,
+                self.split_strategy,
+                Parity::Full,
+                Basis::Chebyshev,
+                input_log_delta,
+                coeff,
+            );
         let range_ext = self.f_mod_log_interval_reduction * input_log_delta;
         let inv = self.f_mod_inv_degree.map_or(0, |d| {
             bsgs_consumed_bits(d, self.split_strategy, Parity::Odd, Basis::Monomial, input_log_delta, coeff)
@@ -308,17 +311,65 @@ impl EvalModPlan {
     pub fn mirrored_clusters(&self) -> usize {
         let dev = (1u64 << self.log_msg_ratio) as f64;
         let full = cosine::approximate_cos_len(self.f_mod_interval, self.f_mod_degree, dev).saturating_sub(1);
-        let depth_budget = bsgs_eval_depth(full, self.split_strategy);
-        let (ct_ct_budget, _) = bsgs_op_counts(full, self.split_strategy, Parity::Full, Basis::Chebyshev);
         (0..=cosine::MAX_MIRRORED_CLUSTERS)
             .rev()
             .find(|&m| {
                 let degree =
                     cosine::approximate_cos_centered_len(self.f_mod_interval, self.f_mod_degree, dev, m).saturating_sub(1);
-                bsgs_eval_depth(degree, self.split_strategy) <= depth_budget
-                    && bsgs_op_counts(degree, self.split_strategy, Parity::Even, Basis::Chebyshev).0 < ct_ct_budget
+                self.even_base_fits(degree, full)
             })
             .unwrap_or(0)
+    }
+
+    /// Whether the even base of degree `degree`, folded through `T₂`, stays
+    /// inside the [`EvalModType::CosHK`] budget of degree `full`: never a level
+    /// or a `ct×ct` more.
+    fn even_base_fits(&self, degree: usize, full: usize) -> bool {
+        let strategy = self.split_strategy;
+        let folded = degree / 2;
+        if folded < 2 {
+            return false;
+        }
+        let (input, coeff) = (self.f_mod_log_delta, self.coeffs_meta.meta.log_delta);
+        bsgs_eval_depth(folded, strategy) < bsgs_eval_depth(full, strategy)
+            && bsgs_consumed_bits(folded, strategy, Parity::Full, Basis::Chebyshev, input, coeff) + input
+                <= bsgs_consumed_bits(full, strategy, Parity::Full, Basis::Chebyshev, input, coeff)
+            && bsgs_op_counts(folded, strategy, Parity::Full, Basis::Chebyshev).0 + 1
+                < bsgs_op_counts(full, strategy, Parity::Full, Basis::Chebyshev).0
+    }
+
+    /// Whether [`EvalModType::CosHKEven`]'s even base is folded through `T₂`.
+    ///
+    /// Always, for that variant: `T_2j(x) = T_j(T₂(x))` is exact, so an even
+    /// polynomial is really a dense one of half the degree in `T₂(x)`, and that
+    /// is the form worth encoding. The extra squaring is repaid by the halved
+    /// degree — under [`SplitStrategy::MinDepth`] at every degree, so the fold is
+    /// unconditionally level-free there. [`SplitStrategy::MinMult`] picks its
+    /// split by multiplication count, so its depth is not `ceil(log2(d+1))` and a
+    /// few degrees do not repay the squaring; [`Self::mirrored_clusters`] shifts
+    /// the degree to dodge them, and [`compile_eval_mod`] rejects the plan when
+    /// none fits.
+    pub fn folds_even_base(&self) -> bool {
+        self.eval_mod_type == EvalModType::CosHKEven && self.base_degree() / 2 >= 2
+    }
+
+    /// Degree of the polynomial actually encoded, and whether it went through a
+    /// quadratic input transform (see [`Self::folds_even_base`]).
+    fn encoded_base_degree(&self) -> (usize, bool) {
+        if self.folds_even_base() {
+            (self.base_degree() / 2, true)
+        } else {
+            (self.base_degree(), false)
+        }
+    }
+
+    /// Whether the [`Self::mirrored_clusters`] the search settled on actually
+    /// fits the [`EvalModType::CosHK`] budget (the search falls back to zero
+    /// mirrors when nothing does).
+    pub(crate) fn even_base_fits_plan(&self) -> bool {
+        let dev = (1u64 << self.log_msg_ratio) as f64;
+        let full = cosine::approximate_cos_len(self.f_mod_interval, self.f_mod_degree, dev).saturating_sub(1);
+        self.even_base_fits(self.base_degree(), full)
     }
 
     /// Constant added to the ciphertext before the base polynomial.
@@ -394,18 +445,6 @@ pub struct EvalMod<F, P> {
     pub f_mod_inv_poly: Option<Polynomial<F>>,
 }
 
-/// Whether the unmirrored [`EvalModType::CosHKEven`] fit still stays inside the
-/// [`EvalModType::CosHK`] cost budget (the floor
-/// [`EvalModPlan::mirrored_clusters`] falls back to).
-fn cos_hk_even_fits(lit: &EvalModPlan) -> bool {
-    let dev = (1u64 << lit.log_msg_ratio) as f64;
-    let full = cosine::approximate_cos_len(lit.f_mod_interval, lit.f_mod_degree, dev).saturating_sub(1);
-    let degree = cosine::approximate_cos_centered_len(lit.f_mod_interval, lit.f_mod_degree, dev, 0).saturating_sub(1);
-    bsgs_eval_depth(degree, lit.split_strategy) <= bsgs_eval_depth(full, lit.split_strategy)
-        && bsgs_op_counts(degree, lit.split_strategy, Parity::Even, Basis::Chebyshev).0
-            < bsgs_op_counts(full, lit.split_strategy, Parity::Full, Basis::Chebyshev).0
-}
-
 fn encode_bsgs_backend<BE, F>(
     polynomial: &Polynomial<F>,
     module: &Module<BE>,
@@ -419,8 +458,28 @@ where
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: CKKSEncodingScalar,
 {
+    encode_bsgs_backend_with(polynomial, false, module, base2k, coeff_meta, strategy, scratch)
+}
+
+/// [`encode_bsgs_backend`], optionally folding an even/odd polynomial through
+/// its quadratic input transform first (halving the encoded degree).
+#[allow(clippy::too_many_arguments)]
+fn encode_bsgs_backend_with<BE, F>(
+    polynomial: &Polynomial<F>,
+    fold: bool,
+    module: &Module<BE>,
+    base2k: Base2K,
+    coeff_meta: CoeffsMeta,
+    strategy: SplitStrategy,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE>>>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
+    F: CKKSEncodingScalar,
+{
     let mut step_idx = 0usize;
-    polynomial.decompose_bsgs_with(strategy, |baby_coeffs| {
+    let encode = |baby_coeffs: &[F]| {
         let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
         pt.set_meta_checked(coeff_meta.meta)?;
         module
@@ -428,7 +487,12 @@ where
             .map_err(|error| anyhow!("encode_bsgs: step {step_idx}: {error}"))?;
         step_idx += 1;
         Ok(pt)
-    })
+    };
+    if fold {
+        polynomial.decompose_bsgs_folded_with(strategy, encode)
+    } else {
+        polynomial.decompose_bsgs_with(strategy, encode)
+    }
 }
 
 fn encode_complex_bsgs_backend<BE, F>(
@@ -495,8 +559,8 @@ where
         "f_mod_log_interval_reduction must be < 31"
     );
     ensure!(
-        lit.eval_mod_type != EvalModType::CosHKEven || lit.mirrored_clusters() > 0 || cos_hk_even_fits(&lit),
-        "CosHKEven cannot beat CosHK's BSGS cost at this plan: raise f_mod_degree or use CosHK"
+        lit.eval_mod_type != EvalModType::CosHKEven || lit.even_base_fits_plan(),
+        "CosHKEven cannot beat CosHK's BSGS cost at this plan: adjust f_mod_degree, or use CosHK"
     );
 
     let f_mod_log_interval_reduction = match lit.eval_mod_type {
@@ -594,7 +658,15 @@ where
         *c = *c * s;
     }
 
-    let f_mod_bsgs = encode_bsgs_backend(&f_mod_poly, module, base2k, coeff_meta, lit.split_strategy, scratch)?;
+    let f_mod_bsgs = encode_bsgs_backend_with(
+        &f_mod_poly,
+        lit.folds_even_base(),
+        module,
+        base2k,
+        coeff_meta,
+        lit.split_strategy,
+        scratch,
+    )?;
 
     // The centred fit expects `t - 1/(4K)`; encode that shift once, applied to
     // the ciphertext before the polynomial's own input transform.

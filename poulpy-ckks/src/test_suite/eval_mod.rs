@@ -570,18 +570,34 @@ pub fn test_eval_mod_cos_discrete_even<BE, F, E>(
         let (EvalModBsgs::Real(full), EvalModBsgs::Real(even)) = (&full.f_mod_bsgs, &even.f_mod_bsgs) else {
             panic!("the CosHK family encodes a real polynomial");
         };
-        assert_eq!(even.parity(), Parity::Even, "CosHKEven must skip the odd basis");
-        assert_eq!(even.input_transform(), PolynomialInputTransform::Identity);
+        let folded = lit.folds_even_base();
+        assert_eq!(
+            even.input_transform() != PolynomialInputTransform::Identity,
+            folded,
+            "encoded transform disagrees with EvalModPlan::folds_even_base"
+        );
+        if folded {
+            // The fold consumes the parity: `T_2j(x) = T_j(T2(x))` leaves a dense
+            // polynomial of half the degree.
+            assert_eq!(even.parity(), Parity::Full);
+            assert!(
+                even.degree() * 2 <= full.degree() + 4,
+                "the T2 fold should roughly halve the degree"
+            );
+        } else {
+            assert_eq!(even.parity(), Parity::Even, "CosHKEven must skip the odd basis");
+        }
         // Hard constraint: the even variant never costs a level or a `ct×ct`
         // more than CosHK at the same plan.
         let mut full_plan = lit;
         full_plan.eval_mod_type = EvalModType::CosHK;
         let cost = |p: &BSGSPolynomial<CKKSPlaintextOwned<BE>>, parity| {
             bsgs_op_counts(p.degree(), lit.split_strategy, parity, p.basis()).0
+                + usize::from(p.input_transform() != PolynomialInputTransform::Identity)
         };
-        let (even_ct_ct, full_ct_ct) = (cost(even, Parity::Even), cost(full, Parity::Full));
+        let (even_ct_ct, full_ct_ct) = (cost(even, even.parity()), cost(full, Parity::Full));
         println!(
-            "CosHKEven: mirrors={} deg={} depth={} ct_ct={even_ct_ct} vs CosHK deg={} depth={} ct_ct={full_ct_ct}",
+            "CosHKEven: mirrors={} fold={folded} deg={} depth={} ct_ct={even_ct_ct} vs CosHK deg={} depth={} ct_ct={full_ct_ct}",
             lit.mirrored_clusters(),
             even.degree(),
             even.eval_depth(),
