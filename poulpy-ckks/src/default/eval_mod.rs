@@ -215,9 +215,11 @@ where
         slots: ct.slots(),
     };
 
+    let offset = params.f_mod_input_offset.as_ref();
+
     match &params.f_mod_bsgs {
         EvalModBsgs::Real(bsgs) => {
-            if bsgs.input_transform() == PolynomialInputTransform::Identity {
+            if bsgs.input_transform() == PolynomialInputTransform::Identity && offset.is_none() {
                 // The generic one-shot evaluator would copy this input again
                 // before building its power basis. Hand ownership over directly.
                 let x1 = eval_mod_input(module, ct, &work_layout, work_meta);
@@ -228,6 +230,11 @@ where
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
                     module.glwe_copy(&mut input, ct);
+                    // Centring shift, applied before the polynomial's own input
+                    // transform (see `EvalModPlan::input_offset`).
+                    if let Some(offset) = offset {
+                        module.ckks_add_pt_const_assign(&mut input, 0, offset, 0, &mut nested)?;
+                    }
                     module.ckks_eval_poly_real_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;
             }
@@ -253,6 +260,7 @@ where
         EvalModBsgs::Complex(bsgs) => {
             if bsgs.re.input_transform() == PolynomialInputTransform::Identity
                 && bsgs.im.input_transform() == PolynomialInputTransform::Identity
+                && offset.is_none()
             {
                 let x1 = eval_mod_input(module, ct, &work_layout, work_meta);
                 let mut power_basis = PowerBasis::new(bsgs.re.basis(), x1);
@@ -262,6 +270,9 @@ where
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
                     module.glwe_copy(&mut input, ct);
+                    if let Some(offset) = offset {
+                        module.ckks_add_pt_const_assign(&mut input, 0, offset, 0, &mut nested)?;
+                    }
                     module.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;
             }
@@ -397,6 +408,7 @@ where
     // into the power basis. Scratch only needs a full working ciphertext for
     // a transformed base or for the optional inverse composition.
     let needs_work_copy = params.f_mod_inv_bsgs.is_some()
+        || params.f_mod_input_offset.is_some()
         || match &params.f_mod_bsgs {
             EvalModBsgs::Real(poly) => poly.input_transform() != PolynomialInputTransform::Identity,
             EvalModBsgs::Complex(poly) => {

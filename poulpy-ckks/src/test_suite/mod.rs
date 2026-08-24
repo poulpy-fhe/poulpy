@@ -867,6 +867,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::eval_mod::test_eval_mod_cos_discrete
             );
             run_test!(
+                eval_mod_cos_discrete_even,
+                $crate::test_suite::eval_mod::test_eval_mod_cos_discrete_even
+            );
+            run_test!(
                 eval_mod_cos_continuous,
                 $crate::test_suite::eval_mod::test_eval_mod_cos_continuous
             );

@@ -1,6 +1,6 @@
 use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    BSGSPolynomial, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, bsgs_op_counts,
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
@@ -11,12 +11,12 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
-    api::{CKKSAllOpsTmpBytes, CKKSEncodingHostOps, CKKSEvalModOps},
+    api::{CKKSAllOpsTmpBytes, CKKSEncodingHostOps, CKKSEvalModOps, PolynomialInputTransform},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
-        eval_mod::{EvalMod, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod},
+        eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod},
     },
-    polynomial::SplitStrategy,
+    polynomial::{Parity, SplitStrategy},
     test_suite::CKKSTestParams,
     test_suite::reference_encoder::ReferenceEncoder,
 };
@@ -82,6 +82,9 @@ where
     F: TestScalar,
 {
     let two = F::one() + F::one();
+    // The circuit shifts its input by this before the polynomial; a centred fit
+    // is only correct at the shifted argument.
+    let t = t + params.plan.input_offset::<F>().unwrap_or_else(F::zero);
     match &params.f_mod_poly {
         EvalModPoly::Complex(poly) => {
             let (mut re, mut im) = poly.evaluate(t);
@@ -153,6 +156,19 @@ fn run_eval_mod_case<BE, F, E>(
     let params_be =
         compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, &mut compile_scratch.borrow()).expect("compile_eval_mod");
 
+    // The analytic plan estimate is the public sizing contract: it must match
+    // what the compiled polynomials actually cost.
+    assert_eq!(
+        lit.consumed_bits(),
+        params_be.consumed_bits(),
+        "{label}: EvalModPlan::consumed_bits disagrees with the compiled EvalMod"
+    );
+    assert_eq!(
+        lit.eval_depth(),
+        params_be.eval_depth(),
+        "{label}: EvalModPlan::eval_depth disagrees with the compiled EvalMod"
+    );
+
     // Input message scale, below the plan scale so EvalMod's internal raise to
     // `f_mod_log_delta` is exercised.
     let input_log_delta = 40;
@@ -191,8 +207,10 @@ fn run_eval_mod_case<BE, F, E>(
             F::from_f64(value / (mr * interval)).unwrap()
         })
         .collect();
-    // Worst-case slot: largest integer multiple plus a half-message.
+    // Worst-case slots, both signs: largest integer multiple plus a half-message.
+    // Both bands matter for a centred fit, whose node set is asymmetric.
     x_re_raw[0] = F::from_f64((k * mr + 0.5) / (mr * interval)).unwrap();
+    x_re_raw[1] = F::from_f64(-(k * mr + 0.5) / (mr * interval)).unwrap();
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
 
     let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
@@ -508,6 +526,89 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", lit, 18.0);
+}
+
+/// **`CosHKEven`.** The centred discrete cosine, end to end against both the
+/// circuit's own polynomial and the ideal `x mod 1`. Also pins the encoding:
+/// `Parity::Even` (so the odd basis is skipped), no input transform, no extra
+/// level over [`EvalModType::CosHK`], and a `-1/(4K)` input offset.
+pub fn test_eval_mod_cos_discrete_even<BE, F, E>(
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let mut lit = EvalModPlan {
+        eval_mod_type: EvalModType::CosHKEven,
+        log_msg_ratio: 8,
+        f_mod_degree: 30,
+        f_mod_interval: 16,
+        f_mod_log_interval_reduction: 3,
+        f_mod_inv_degree: None,
+        f_mod_log_delta: 60,
+        scaling: None,
+        split_strategy: SplitStrategy::MinDepth,
+        coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
+    };
+
+    {
+        lit.coeffs_meta = CoeffsMeta::from_delta_budget(lit.f_mod_log_delta, params.base2k);
+        let mut scratch = ScratchOwned::<BE>::alloc(CKKSEncodingHostOps::<BE, F>::ckks_reim_tmp_bytes(module, module.n() / 2));
+        let mut full = lit;
+        full.eval_mod_type = EvalModType::CosHK;
+        let full = compile_eval_mod::<BE, F>(params.base2k.into(), full, module, &mut scratch.borrow()).expect("compile CosHK");
+        let even =
+            compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, &mut scratch.borrow()).expect("compile CosHKEven");
+
+        let (EvalModBsgs::Real(full), EvalModBsgs::Real(even)) = (&full.f_mod_bsgs, &even.f_mod_bsgs) else {
+            panic!("the CosHK family encodes a real polynomial");
+        };
+        assert_eq!(even.parity(), Parity::Even, "CosHKEven must skip the odd basis");
+        assert_eq!(even.input_transform(), PolynomialInputTransform::Identity);
+        // Hard constraint: the even variant never costs a level or a `ct×ct`
+        // more than CosHK at the same plan.
+        let mut full_plan = lit;
+        full_plan.eval_mod_type = EvalModType::CosHK;
+        let cost = |p: &BSGSPolynomial<CKKSPlaintextOwned<BE>>, parity| {
+            bsgs_op_counts(p.degree(), lit.split_strategy, parity, p.basis()).0
+        };
+        let (even_ct_ct, full_ct_ct) = (cost(even, Parity::Even), cost(full, Parity::Full));
+        println!(
+            "CosHKEven: mirrors={} deg={} depth={} ct_ct={even_ct_ct} vs CosHK deg={} depth={} ct_ct={full_ct_ct}",
+            lit.mirrored_clusters(),
+            even.degree(),
+            even.eval_depth(),
+            full.degree(),
+            full.eval_depth(),
+        );
+        assert!(
+            even.eval_depth() <= full.eval_depth(),
+            "CosHKEven must not cost a level: {} vs CosHK's {}",
+            even.eval_depth(),
+            full.eval_depth()
+        );
+        assert!(
+            lit.consumed_bits() <= full_plan.consumed_bits(),
+            "CosHKEven must not consume more budget: {} vs CosHK's {}",
+            lit.consumed_bits(),
+            full_plan.consumed_bits()
+        );
+        assert!(
+            even_ct_ct < full_ct_ct,
+            "CosHKEven must reduce ct*ct: {even_ct_ct} vs CosHK's {full_ct_ct}"
+        );
+        let want = -(F::one() / F::from_usize(4 * lit.f_mod_interval).unwrap());
+        assert_eq!(lit.input_offset::<F>(), Some(want), "CosHKEven input offset");
+    }
+
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete_even", lit, 18.0);
 }
 
 pub fn test_eval_mod_cos_continuous<BE, F, E>(

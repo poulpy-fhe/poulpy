@@ -14,6 +14,7 @@
 - The linear-transformation PROD block hands each giant step to `cnv_accumulate_dft_columns` (one term list per giant step instead of one per output column), on both the resident and the streamed diagonal path.
 - Add `LinearTransformationBabySteps::baby_step_mut` / `baby_steps_mut`, so a backend can retire a fused rotation/keyswitch straight into prepared storage.
 - Add `glwe_backend_ref_with_size` / `glwe_backend_mut_with_size`, which narrow only a GLWE backend view's `VecZnx` data view. Bare `GLWEToBackendRef`/`GLWEToBackendMut` semantics are unchanged: capacity-aware core code still sees the allocation.
+- Add `bsgs_op_counts`, the public `(ct×ct, ct×pt)` multiplication count of a BSGS evaluation (the model `MinMult` already used internally to pick its split).
 - Add `DiagonalProd::accumulate_giant_prods`, the batched PROD block, with an ordered sequential default on the trait so a diagonal representation defining only `accumulate_giant_prod` stays valid. Its `giant_steps` is a slice of references, since filtering pruned buckets breaks contiguity. `PreparedDiagonal` overrides it with one `cnv_accumulate_dft_columns_batch` call. The default evaluator is unchanged; the hook is for an external whole-transform override holding several product buffers.
 - The BSGS giant-step loop skips empty diagonal buckets instead of panicking on them, and the planner applies the same filter, so a pruned bucket no longer claims a giant rotation (and demands an automorphism key) that no evaluated bucket needs. A transform still needs at least one non-empty bucket.
 
@@ -29,6 +30,7 @@
 - `ckks_all_ops_with_atk_tmp_bytes` includes the whole-chain `ckks_dft_evaluate_tmp_bytes`.
 - `LinearTransformationEvalParams` derives its PROD width with checked arithmetic.
 - `DFTMatrix::factors()` is public (read-only), replacing the crate-private `factor_operands()`.
+- Add `EvalModType::CosHKEven`: the `CosHK` discrete fit recentred on `x - 1/4`, where its target is even, stamped `Parity::Even` so the evaluator skips the odd half of the power basis and of every baby step. `cosine::approximate_cos_centered` solves in the centred variable; the residual odd coefficients are cleared, and `EvalMod` carries the `-1/(4K)` input offset (`EvalModPlan::input_offset`), added to the ciphertext before the polynomial. An even fit is pinned by the data at `-v` as well as `v`, and the centring pushes the outer negative cluster past the fitted hull, so the outermost clusters are mirrored back in as real interpolation nodes; each costs one degree, and `EvalModPlan::mirrored_clusters` takes the most that keeps the variant at or below `CosHK`'s depth, budget and `ct×ct` count (`compile_eval_mod` rejects a plan where even the unmirrored fit cannot). At `K=16`, degree 30, `r=3`: same 5 levels and 300 bits as `CosHK` with 9 `ct×ct` instead of 11, for 20.4 avg / 14.1 min bits against the ideal `x mod 1` versus `CosHK`'s 21.9 / 16.4.
 
 ## [0.8.2] - 2026-08-22
 
