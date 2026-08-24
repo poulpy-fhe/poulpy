@@ -4,8 +4,8 @@ use poulpy_core::{
     GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
     glwe_prepare_right,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        ModuleCoreAlloc, TorusPrecision,
+        GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        TorusPrecision,
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -201,9 +201,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
 
         tensor_mul_core(
-            self,
             dst,
-            tsk,
             a.k().max(b.k()),
             MulStamp {
                 log_budget: res_log_budget,
@@ -214,7 +212,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             },
             StampOrder::BeforeApply,
             scratch,
-            |tmp, _dst, s| self.glwe_tensor_apply(cnv_offset, tmp, a, b, s),
+            |dst, tensor_layout, s| self.glwe_tensor_apply_relinearize(cnv_offset, dst, tensor_layout, a, b, tsk, s),
         )
     }
 
@@ -228,9 +226,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
 
         tensor_mul_core(
-            self,
             dst,
-            tsk,
             dst.k().max(a.k()),
             MulStamp {
                 log_budget: res_log_budget,
@@ -241,7 +237,12 @@ pub trait CKKSMulDefault<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
-            |tmp, dst_ref, s| self.glwe_tensor_apply(cnv_offset, tmp, dst_ref, a, s),
+            |dst, tensor_layout, s| {
+                let s = s.borrow();
+                let (mut tmp, mut s) = s.take_glwe_tensor_scratch(tensor_layout);
+                self.glwe_tensor_apply(cnv_offset, &mut tmp, &*dst, a, &mut s);
+                self.glwe_tensor_relinearize(dst, &tmp, tsk, &mut s);
+            },
         )
     }
 
@@ -312,9 +313,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         // its full `max_k`: the tensor product only consumes the top `k`
         // limbs (via the prepared operand).
         tensor_mul_core(
-            self,
             dst,
-            tsk,
             dst.k().max(TorusPrecision(prepared.k as u32)),
             MulStamp {
                 log_budget: res_log_budget,
@@ -325,7 +324,17 @@ pub trait CKKSMulDefault<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
-            |tmp, dst_ref, s| self.glwe_tensor_apply_prepared_right(cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s),
+            |dst, tensor_layout, s| {
+                self.glwe_tensor_apply_prepared_right_relinearize_assign(
+                    cnv_offset,
+                    dst,
+                    tensor_layout,
+                    &prepared.prep,
+                    prepared.size,
+                    tsk,
+                    s,
+                )
+            },
         )
     }
 
@@ -365,9 +374,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
 
         tensor_mul_core(
-            self,
             dst,
-            tsk,
             a.k(),
             MulStamp {
                 log_budget: res_log_budget,
@@ -377,7 +384,12 @@ pub trait CKKSMulDefault<BE: Backend> {
             },
             StampOrder::BeforeApply,
             scratch,
-            |tmp, _dst, s| self.glwe_tensor_square_apply(cnv_offset, tmp, a, s),
+            |dst, tensor_layout, s| {
+                let s = s.borrow();
+                let (mut tmp, mut s) = s.take_glwe_tensor_scratch(tensor_layout);
+                self.glwe_tensor_square_apply(cnv_offset, &mut tmp, a, &mut s);
+                self.glwe_tensor_relinearize(dst, &tmp, tsk, &mut s);
+            },
         )
     }
 
@@ -390,9 +402,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
 
         tensor_mul_core(
-            self,
             dst,
-            tsk,
             dst.k(),
             MulStamp {
                 log_budget: res_log_budget,
@@ -404,7 +414,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
-            |tmp, dst_ref, s| self.glwe_tensor_square_apply(cnv_offset, tmp, dst_ref, s),
+            |dst, tensor_layout, s| self.glwe_tensor_square_relinearize_assign(cnv_offset, dst, tensor_layout, tsk, s),
         )
     }
 
@@ -585,27 +595,20 @@ enum StampOrder {
 
 /// Shared body of the five tensor-multiplication variants (`mul_into`,
 /// `mul_assign`, `mul_prepared_assign`, `square_into`, `square_assign`):
-/// stamp (per `order`), carve the tensor intermediate at `tensor_k`, run the
-/// variant's `apply` into it, relinearize into `dst`, stamp the metadata.
-///
-/// `apply` receives the carved tensor, a shared reborrow of `dst` (used by the
-/// `_assign` variants, ignored by `_into`), and the nested scratch arena.
+/// stamp (per `order`), build the tensor layout at `tensor_k`, run the
+/// variant's `fuse` (tensor product then relinearization into `dst`), stamp.
 #[allow(clippy::too_many_arguments)]
-fn tensor_mul_core<BE, M, Dst, T>(
-    module: &M,
+fn tensor_mul_core<'s, BE, Dst>(
     dst: &mut Dst,
-    tsk: &T,
     tensor_k: TorusPrecision,
     stamp: MulStamp,
     order: StampOrder,
-    scratch: &mut ScratchArena<'_, BE>,
-    apply: impl for<'t> FnOnce(&mut GLWETensorViewMut<'t, BE>, &Dst, &mut ScratchArena<'t, BE>),
+    scratch: &'s mut ScratchArena<'_, BE>,
+    fuse: impl FnOnce(&mut Dst, &GLWELayout, &'s mut ScratchArena<'_, BE>),
 ) -> Result<()>
 where
     BE: Backend,
-    M: GLWETensoring<BE> + ?Sized,
     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-    T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let do_stamp = |dst: &mut Dst| {
         dst.set_log_budget(stamp.log_budget);
@@ -627,10 +630,7 @@ where
         k: tensor_k,
         rank: dst.rank(),
     };
-    let scratch_local = scratch.borrow();
-    let (mut tmp, mut scratch_local) = scratch_local.take_glwe_tensor_scratch(&tensor_layout);
-    apply(&mut tmp, &*dst, &mut scratch_local);
-    module.glwe_tensor_relinearize(dst, &tmp, tsk, &mut scratch_local);
+    fuse(dst, &tensor_layout, scratch);
 
     if matches!(order, StampOrder::AfterApply) {
         do_stamp(dst);

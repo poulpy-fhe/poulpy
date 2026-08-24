@@ -175,6 +175,64 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGLWEInfos;
+
+    /// Fused [`Self::glwe_tensor_apply`] + [`Self::glwe_tensor_relinearize`].
+    ///
+    /// `tensor_infos` describes the intermediate the composition materializes;
+    /// it cannot be inferred from `res`, which may be narrower. Scratch:
+    /// `glwe_tensor_bytes_of_from_infos(tensor_infos) + max(apply, relinearize)`,
+    /// i.e. the bound already returned by `ckks_mul_tmp_bytes`.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_apply_relinearize<R, I, A, B, T>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        tensor_infos: &I,
+        a: &A,
+        b: &B,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        I: GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+
+    /// Fused [`Self::glwe_tensor_square_apply`] + [`Self::glwe_tensor_relinearize`],
+    /// with `res` as the implicit source operand. `res` must stay readable
+    /// until the tensor product has consumed it.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_square_relinearize_assign<R, I, T>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        tensor_infos: &I,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        I: GLWEInfos,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+
+    /// Fused [`Self::glwe_tensor_apply_prepared_right`] +
+    /// [`Self::glwe_tensor_relinearize`], with `res` as the implicit left
+    /// operand. `res` must stay readable until the tensor product has consumed it.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_apply_prepared_right_relinearize_assign<R, I, BP, T>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        tensor_infos: &I,
+        b_prep: &BP,
+        b_size: usize,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        I: GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }
 
 pub trait GLWEAdd<BE: Backend> {

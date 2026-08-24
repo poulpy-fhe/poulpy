@@ -229,7 +229,11 @@ fn both_bootstrap_pipelines_invoke_the_paired_hook() {
 // ---------------------------------------------------------------------------
 // Prepared-right tensor apply: hand-written `GLWETensoringImpl`, exactly what a
 // device backend writes. Only `glwe_tensor_apply_prepared_right` is
-// substituted; the required methods forward to the reference defaults.
+// substituted; the required methods forward to the reference defaults. It
+// implements none of the fused `*_relinearize*` composites, so compiling it is
+// the source-compatibility proof, and `PREPARED_RIGHT_CALLS` firing shows their
+// defaults dispatch through `BE::glwe_tensor_*` rather than the suboperation
+// defaults.
 // ---------------------------------------------------------------------------
 
 static PREPARED_RIGHT_CALLS: AtomicUsize = AtomicUsize::new(0);

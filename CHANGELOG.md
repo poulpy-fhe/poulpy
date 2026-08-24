@@ -18,6 +18,8 @@
 - Add `bsgs_op_counts`, the `(ct×ct, ct×pt)` multiplication count of a BSGS evaluation.
 - Add `GLWETensoring::glwe_tensor_apply_prepared_right`, dispatched through `GLWETensoringImpl` (provided) and `GLWETensoringDefault` instead of the free helper; scratch stays within `glwe_tensor_apply_tmp_bytes`.
 - Add `BSGSOps::mul_add_pt_consts`, the ordered ct×pt batch boundary of a BSGS baby step, with a sequential provided default; `eval_baby_step` issues one call for its scheduled terms.
+- Add `GLWETensoring::glwe_tensor_apply_relinearize`, `glwe_tensor_square_relinearize_assign` and `glwe_tensor_apply_prepared_right_relinearize_assign`, fused tensor-product + relinearization taking an explicit `tensor_infos`, with provided `GLWETensoringImpl` methods and materialized defaults.
+- Fix `glwe_tensor_relinearize_tmp_bytes` under-reporting the two unconditional `a_conv` stages.
 - The BSGS giant-step loop and the planner both skip empty diagonal buckets.
 
 ### `poulpy-ckks`
@@ -27,6 +29,7 @@
 - The homomorphic (I)DFT chain ping-pongs `ct` with one scratch ciphertext instead of copying back per factor, and realigns the destination metadata and width with the source before each factor.
 - Add `CKKSLinearTransformationOps::ckks_dft_evaluate_tmp_bytes`, the whole-chain budget; `ckks_all_ops_with_atk_tmp_bytes` includes it.
 - Add `LinearTransformationEvalParams`: validated `cnv_offset`, PROD width and result `log_budget`/`log_delta`, with checked arithmetic.
+- `ckks_mul_into`, `ckks_square_assign` and `ckks_mul_prepared_assign` dispatch through the fused `GLWETensoring` composites.
 - Add `CKKSEvalModOps::ckks_eval_mod_pair` / `ckks_eval_mod_pair_tmp_bytes` and the `CKKSEvalModImpl` hooks; sequential default, taken by the bootstrap's real and imaginary branches.
 - Add the whole-bootstrap `CKKSBootstrapImpl` OEP, with `CKKSBootstrapDefault` as the reference composition.
 - Add `CKKSMulAddOps::ckks_mul_add_pt_consts_into`, the ordered batch of `ckks_mul_add_pt_const_into`, with the `CKKSMulImpl::ckks_mul_add_pt_consts_into_impl` hook (provided) and the `CKKSMulDefault` per-method override; `ckks_mul_add_pt_consts_plan` walks a virtual destination to emit the per-term `CKKSMulAddPtConstPlan` before `dst` is mutated, and scratch is that of one term. `get_mul_pt_params` / `mul_pt_params_raw` are public.

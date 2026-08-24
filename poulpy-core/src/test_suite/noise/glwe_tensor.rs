@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssignBackend},
+    api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssignBackend},
     layouts::{FillUniform, Module, ScratchOwned, VecZnx, ZnxViewMut},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
@@ -12,10 +12,12 @@ use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt,
     GLWETensorKeyEncryptSk, GLWETensoring,
+    api::GLWEBytesOf,
+    default::operations::glwe_prepare_right,
     layouts::{
-        Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory,
-        GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        BackendGLWE, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor,
+        GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey,
+        GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::GLWESecretPrepared,
     },
     log2_std_noise_glwe_tensor,
@@ -649,6 +651,155 @@ where
             let noise_want = -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2);
 
             assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
+        }
+    }
+}
+
+/// Runs `op` over a zeroed and a poisoned arena and requires both results to
+/// equal `want`.
+fn assert_fused<BE, F>(scratch: &mut ScratchOwned<BE>, seed: &BackendGLWE<BE>, want: &BackendGLWE<BE>, label: &str, mut op: F)
+where
+    BE: poulpy_hal::layouts::Backend,
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut + Clone,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
+    F: FnMut(&mut BackendGLWE<BE>, &mut poulpy_hal::layouts::ScratchArena<'_, BE>),
+{
+    // 0x00 then 0xFF: as `i64` the poison is -1, so any limb read before being
+    // written shows up in the comparison.
+    for fill in [0x00u8, 0xFFu8] {
+        <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut scratch.data).fill(fill);
+        let mut have = seed.clone();
+        op(&mut have, &mut scratch.borrow());
+        assert_eq!(want, &have, "{label} (arena filled with {fill:#04x})");
+    }
+}
+
+/// The three fused apply+relinearize composites equal the explicit
+/// materialized composition byte-for-byte, over an intermediate wider than the
+/// result and a non-limb-aligned `cnv_offset`.
+///
+/// Each arena is sized at exactly the documented composite bound
+/// `glwe_tensor_bytes_of_from_infos(tensor) + max(apply, relinearize)`, which is
+/// what `ckks_mul_tmp_bytes` returns, so a composite exceeding it fails here.
+/// Prepared-right is given the *ordinary* apply bound for the equivalent
+/// unprepared layouts, pinning `P <= A`.
+pub fn test_glwe_tensor_fused_relinearize<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEBytesOf<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let n: usize = module.n();
+
+    for rank in 1_usize..=2 {
+        let layout = |limbs: usize| GLWELayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            k: (limbs * base2k).into(),
+            rank: rank.into(),
+        };
+
+        // Operands and intermediate five limbs wide, destination three: the
+        // composite cannot infer `tensor_infos` from `res`.
+        let ab_infos = layout(5);
+        let res_infos = layout(3);
+        let tensor_infos = layout(5);
+
+        let tsk_infos = GLWETensorKeyLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: 5_usize.into(),
+            k_aux: (base2k + module.log_n()).into(),
+            rank: rank.into(),
+            dsize: Dsize(1),
+        };
+
+        let mut source: Source = Source::new([rank as u8; 32]);
+
+        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ab_infos);
+        a.fill_uniform(base2k, &mut source);
+        let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ab_infos);
+        b.fill_uniform(base2k, &mut source);
+        let mut seed: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&res_infos);
+        seed.fill_uniform(base2k, &mut source);
+
+        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+        tsk.fill_uniform(base2k, &mut source);
+
+        let tensor_bytes: usize = module.glwe_tensor_bytes_of_from_infos(&tensor_infos);
+        let apply_bytes: usize = module.glwe_tensor_apply_tmp_bytes(&tensor_infos, &ab_infos, &ab_infos);
+        let square_bytes: usize = module.glwe_tensor_square_apply_tmp_bytes(&tensor_infos, &res_infos);
+        let prepared_bytes: usize = module.glwe_tensor_apply_tmp_bytes(&tensor_infos, &res_infos, &ab_infos);
+        let relin_bytes: usize = module.glwe_tensor_relinearize_tmp_bytes(&res_infos, &tensor_infos, &tsk_infos);
+
+        let mut apply_scratch: ScratchOwned<BE> = ScratchOwned::alloc(tensor_bytes + apply_bytes.max(relin_bytes));
+        let mut square_scratch: ScratchOwned<BE> = ScratchOwned::alloc(tensor_bytes + square_bytes.max(relin_bytes));
+        let mut prepared_scratch: ScratchOwned<BE> = ScratchOwned::alloc(tensor_bytes + prepared_bytes.max(relin_bytes));
+        let mut setup: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .prepare_tensor_key_tmp_bytes(&tsk_infos)
+                .max(apply_bytes)
+                .max(square_bytes)
+                .max(prepared_bytes)
+                .max(relin_bytes),
+        );
+
+        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
+        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut setup.borrow());
+
+        let b_size: usize = ab_infos.size();
+        let mut b_prep = module.cnv_pvec_right_alloc(rank + 1, b_size);
+        glwe_prepare_right(module, &mut b_prep, &b, ab_infos.k().as_usize(), &mut setup.borrow());
+
+        // 0 aligns on a limb, `base2k` on the next, `base2k + 7` on neither.
+        for cnv_offset in [0_usize, base2k, base2k + 7] {
+            let mut tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&tensor_infos);
+
+            let mut want = seed.clone();
+            module.glwe_tensor_apply(cnv_offset, &mut tensor, &a, &b, &mut setup.borrow());
+            module.glwe_tensor_relinearize(&mut want, &tensor, &tsk_prep, &mut setup.borrow());
+            assert_fused(
+                &mut apply_scratch,
+                &seed,
+                &want,
+                &format!("apply_relinearize (rank={rank}, cnv_offset={cnv_offset})"),
+                |res, s| module.glwe_tensor_apply_relinearize(cnv_offset, res, &tensor_infos, &a, &b, &tsk_prep, s),
+            );
+
+            let mut want = seed.clone();
+            module.glwe_tensor_square_apply(cnv_offset, &mut tensor, &want, &mut setup.borrow());
+            module.glwe_tensor_relinearize(&mut want, &tensor, &tsk_prep, &mut setup.borrow());
+            assert_fused(
+                &mut square_scratch,
+                &seed,
+                &want,
+                &format!("square_relinearize_assign (rank={rank}, cnv_offset={cnv_offset})"),
+                |res, s| module.glwe_tensor_square_relinearize_assign(cnv_offset, res, &tensor_infos, &tsk_prep, s),
+            );
+
+            let mut want = seed.clone();
+            module.glwe_tensor_apply_prepared_right(cnv_offset, &mut tensor, &want, &b_prep, b_size, &mut setup.borrow());
+            module.glwe_tensor_relinearize(&mut want, &tensor, &tsk_prep, &mut setup.borrow());
+            assert_fused(
+                &mut prepared_scratch,
+                &seed,
+                &want,
+                &format!("apply_prepared_right_relinearize_assign (rank={rank}, cnv_offset={cnv_offset})"),
+                |res, s| {
+                    module.glwe_tensor_apply_prepared_right_relinearize_assign(
+                        cnv_offset,
+                        res,
+                        &tensor_infos,
+                        &b_prep,
+                        b_size,
+                        &tsk_prep,
+                        s,
+                    )
+                },
+            );
         }
     }
 }
