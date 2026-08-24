@@ -1,13 +1,11 @@
-//! NTT-domain SIMD helpers for [`NTT3x42Ifma`](crate::NTT3x42Ifma).
-//!
-//! Packed `VecZnxDft` layout and SIMD helpers for [`NTT3x42Ifma`](crate::NTT3x42Ifma).
+//! Packed NTT-domain SIMD helpers for [`NTT3x42Ifma`](crate::NTT3x42Ifma).
 
 use crate::NTT3x42Ifma;
 use crate::ntt3x42_ifma::{
+    execution::{SendPtr, for_index_exec, for_index_with},
     kernels::{cond_sub_2q_si512, harvey_modmul_si512, ntt_avx512},
     module::handle,
     primes::{PrimeSetNtt3x42Ifma, Primes42},
-    serial::{for_index, for_index_with},
     tables::Ntt3x42IfmaTableInv,
     traits::{Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64, Ntt3x42IfmaToZnx128},
     vmp::{pack_y, unpack_y},
@@ -266,6 +264,12 @@ fn packed_limb_mut(data: &mut [u64], n: usize, cols: usize, col: usize, j: usize
     &mut data[start..start + 2 * n]
 }
 
+#[inline(always)]
+unsafe fn packed_limb_raw_mut<'a>(data: *mut u64, n: usize, cols: usize, col: usize, j: usize) -> &'a mut [u64] {
+    let start = 2 * n * (j * cols + col);
+    unsafe { std::slice::from_raw_parts_mut(data.add(start), 2 * n) }
+}
+
 /// Load and unpack the x8 group at u64 offset `off` of a packed limb.
 #[inline]
 #[target_feature(enable = "avx512f")]
@@ -515,6 +519,29 @@ pub(crate) fn vec_znx_idft_apply_tmpa_limb_ifma(
     }
 }
 
+/// In-place iNTT of `a[a_col]`'s limbs: each packed limb is replaced by its
+/// `i128` compaction, leaving that column of the buffer in `VecZnxBig` layout.
+pub(crate) fn idft_compact_in_place_ifma<E: poulpy_hal::execution::TaskExecutor>(
+    module: &Module<NTT3x42Ifma>,
+    a: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
+    a_col: usize,
+    tmp: &mut [u64],
+) {
+    let table = &handle(module).table_intt;
+    let n = a.n();
+    let a_cols = a.cols();
+    let a_size = a.size();
+    let data: &mut [u64] = cast_slice_mut(a.data_mut());
+    let data_ptr = SendPtr(data.as_mut_ptr());
+    E::for_each_chunked(a_size, tmp, 3 * n, |scratch, j| {
+        let slot = unsafe { packed_limb_raw_mut(data_ptr.get(), n, a_cols, a_col, j) };
+        unsafe {
+            unpack_limb_3x42(n, scratch, slot);
+            intt_then_compact_ifma(n, 1, scratch.as_mut_ptr(), slot.as_mut_ptr() as *mut i128, table);
+        }
+    });
+}
+
 /// `VecZnxIdftApplyTmpA` packed fast path.
 pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
     module: &Module<crate::NTT3x42Ifma>,
@@ -669,7 +696,7 @@ pub(crate) fn vec_znx_idft_apply(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// DFT-domain add: `res[res_col] = a[a_col] + b[b_col]`.
-pub(crate) fn vec_znx_dft_add_into(
+pub(crate) fn vec_znx_dft_add_into<E: poulpy_hal::execution::TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
@@ -686,10 +713,11 @@ pub(crate) fn vec_znx_dft_add_into(
         (b_size.min(res_size), a_size.min(res_size), false)
     };
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let rp_ptr = SendPtr(rp.as_mut_ptr());
     let ap: &[u64] = cast_slice(a.data());
     let bp: &[u64] = cast_slice(b.data());
-    for_index(res_size, 2 * n * res_size, |j| {
-        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+    for_index_exec::<E>(res_size, 2 * n * res_size, |j| {
+        let dst = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, j) };
         if j < sum_size {
             let av = packed_limb(ap, n, ac, a_col, j);
             let bv = packed_limb(bp, n, bc, b_col, j);
@@ -708,7 +736,7 @@ pub(crate) fn vec_znx_dft_add_into(
 }
 
 /// DFT-domain in-place add: `res[res_col] += a[a_col]`.
-pub(crate) fn vec_znx_dft_add_assign(
+pub(crate) fn vec_znx_dft_add_assign<E: poulpy_hal::execution::TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
@@ -718,16 +746,17 @@ pub(crate) fn vec_znx_dft_add_assign(
     let (rc, ac) = (res.cols(), a.cols());
     let sum_size = res.size().min(a.size());
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let rp_ptr = SendPtr(rp.as_mut_ptr());
     let ap: &[u64] = cast_slice(a.data());
-    for_index(sum_size, 2 * n * sum_size, |j| {
-        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+    for_index_exec::<E>(sum_size, 2 * n * sum_size, |j| {
+        let dst = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, j) };
         let av = packed_limb(ap, n, ac, a_col, j);
         unsafe { packed_add_assign(n, dst, av) };
     });
 }
 
 /// DFT-domain scaled in-place add: `res[res_col] += a[a_col] >> (a_scale * base2k)`.
-pub(crate) fn vec_znx_dft_add_scaled_assign(
+pub(crate) fn vec_znx_dft_add_scaled_assign<E: poulpy_hal::execution::TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
@@ -750,16 +779,17 @@ pub(crate) fn vec_znx_dft_add_scaled_assign(
     };
 
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let rp_ptr = SendPtr(rp.as_mut_ptr());
     let ap: &[u64] = cast_slice(a.data());
-    for_index(sum_size, 2 * n * sum_size, |j| {
-        let dst = packed_limb_mut(rp, n, rc, res_col, j + res_shift);
+    for_index_exec::<E>(sum_size, 2 * n * sum_size, |j| {
+        let dst = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, j + res_shift) };
         let av = packed_limb(ap, n, ac, a_col, j + a_shift);
         unsafe { packed_add_assign(n, dst, av) };
     });
 }
 
 /// DFT-domain sub: `res[res_col] = a[a_col] - b[b_col]`.
-pub(crate) fn vec_znx_dft_sub(
+pub(crate) fn vec_znx_dft_sub<E: poulpy_hal::execution::TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
@@ -776,10 +806,11 @@ pub(crate) fn vec_znx_dft_sub(
         (b_size.min(res_size), a_size.min(res_size), false)
     };
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let rp_ptr = SendPtr(rp.as_mut_ptr());
     let ap: &[u64] = cast_slice(a.data());
     let bp: &[u64] = cast_slice(b.data());
-    for_index(res_size, 2 * n * res_size, |j| {
-        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+    for_index_exec::<E>(res_size, 2 * n * res_size, |j| {
+        let dst = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, j) };
         if j < sum_size {
             let av = packed_limb(ap, n, ac, a_col, j);
             let bv = packed_limb(bp, n, bc, b_col, j);
@@ -799,7 +830,7 @@ pub(crate) fn vec_znx_dft_sub(
 }
 
 /// DFT-domain in-place sub: `res[res_col] -= a[a_col]`.
-pub(crate) fn vec_znx_dft_sub_assign(
+pub(crate) fn vec_znx_dft_sub_assign<E: poulpy_hal::execution::TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
@@ -809,16 +840,17 @@ pub(crate) fn vec_znx_dft_sub_assign(
     let (rc, ac) = (res.cols(), a.cols());
     let sum_size = res.size().min(a.size());
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let rp_ptr = SendPtr(rp.as_mut_ptr());
     let ap: &[u64] = cast_slice(a.data());
-    for_index(sum_size, 2 * n * sum_size, |j| {
-        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+    for_index_exec::<E>(sum_size, 2 * n * sum_size, |j| {
+        let dst = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, j) };
         let av = packed_limb(ap, n, ac, a_col, j);
         unsafe { packed_sub_assign(n, dst, av) };
     });
 }
 
 /// DFT-domain in-place swap-sub: `res[res_col] = a[a_col] - res[res_col]`.
-pub(crate) fn vec_znx_dft_sub_negate_assign(
+pub(crate) fn vec_znx_dft_sub_negate_assign<E: poulpy_hal::execution::TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
@@ -829,9 +861,10 @@ pub(crate) fn vec_znx_dft_sub_negate_assign(
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let rp_ptr = SendPtr(rp.as_mut_ptr());
     let ap: &[u64] = cast_slice(a.data());
-    for_index(res_size, 2 * n * res_size, |j| {
-        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+    for_index_exec::<E>(res_size, 2 * n * res_size, |j| {
+        let dst = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, j) };
         if j < sum_size {
             let av = packed_limb(ap, n, ac, a_col, j);
             unsafe { packed_sub_negate_assign(n, dst, av) };
@@ -842,7 +875,7 @@ pub(crate) fn vec_znx_dft_sub_negate_assign(
 }
 
 /// DFT-domain copy with stride: `res[res_col][j] = a[a_col][offset + j*step]`.
-pub(crate) fn vec_znx_dft_copy(
+pub(crate) fn vec_znx_dft_copy<E: poulpy_hal::execution::TaskExecutor>(
     step: usize,
     offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
@@ -863,9 +896,10 @@ pub(crate) fn vec_znx_dft_copy(
     let min_steps: usize = res_size.min(steps);
 
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let rp_ptr = SendPtr(rp.as_mut_ptr());
     let ap: &[u64] = cast_slice(a.data());
-    for_index(res_size, 2 * n * res_size, |j| {
-        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+    for_index_exec::<E>(res_size, 2 * n * res_size, |j| {
+        let dst = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, j) };
         let limb = offset + j * step;
         if j < min_steps && limb < a_size {
             let av = packed_limb(ap, n, ac, a_col, limb);
@@ -877,19 +911,81 @@ pub(crate) fn vec_znx_dft_copy(
 }
 
 /// Zero all limbs of `res[res_col]`.
-pub(crate) fn vec_znx_dft_zero(res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>, res_col: usize) {
+pub(crate) fn vec_znx_dft_zero<E: poulpy_hal::execution::TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
+    res_col: usize,
+) {
     let n = res.n();
     let rc = res.cols();
     let res_size = res.size();
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
-    for_index(res_size, 2 * n * res_size, |j| {
-        let dst = packed_limb_mut(rp, n, rc, res_col, j);
+    let rp_ptr = SendPtr(rp.as_mut_ptr());
+    for_index_exec::<E>(res_size, 2 * n * res_size, |j| {
+        let dst = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, j) };
         dst.fill(0);
     });
 }
 
+/// Packed-layout NTT3x42 automorphism fused with accumulation: `res += automorphism(a)`.
+pub(crate) fn vec_znx_dft_automorphism_add<E: poulpy_hal::execution::TaskExecutor>(
+    plan: &poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
+    a_col: usize,
+) {
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
+    let n: usize = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
+    let min_size: usize = res.size().min(a.size());
+    let perm: &[u32] = &plan.perm;
+
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let rp_ptr = SendPtr(rp.as_mut_ptr());
+    let ap: &[u64] = cast_slice(a.data());
+    for_index_exec::<E>(min_size, 2 * n * min_size, |limb| {
+        let res_slice = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, limb) };
+        let a_slice = packed_limb(ap, n, ac, a_col, limb);
+        unsafe { automorphism_add_limb(n, perm, res_slice, a_slice) };
+    });
+}
+
+/// One packed limb of `dst += perm(a)`: scalar gather per 8-group, canonical packed add.
+#[target_feature(enable = "avx512f")]
+unsafe fn automorphism_add_limb(n: usize, perm: &[u32], dst: &mut [u64], a: &[u64]) {
+    unsafe {
+        let m42 = _mm512_set1_epi64(MASK42 as i64);
+        let m20 = _mm512_set1_epi64(MASK20 as i64);
+        let m22 = _mm512_set1_epi64(MASK22 as i64);
+        let q = q_vec_512();
+        let mut buf = [0u64; 16];
+        for g in 0..n / 8 {
+            for (l, &p) in perm[8 * g..8 * g + 8].iter().enumerate() {
+                let p = p as usize;
+                let src_off = 16 * (p >> 3) + (p & 7);
+                buf[l] = a[src_off];
+                buf[l + 8] = a[src_off + 8];
+            }
+            let off = 16 * g;
+            let ya = load_group(&buf, 0, m42, m20);
+            let yd = load_group(dst, off, m42, m20);
+            let r = [
+                cond_sub_2q_si512(_mm512_add_epi64(yd[0], ya[0]), q[0]),
+                cond_sub_2q_si512(_mm512_add_epi64(yd[1], ya[1]), q[1]),
+                cond_sub_2q_si512(_mm512_add_epi64(yd[2], ya[2]), q[2]),
+            ];
+            store_group(dst, off, r, m22);
+        }
+    }
+}
+
 /// Packed-layout NTT3x42 automorphism.
-pub(crate) fn vec_znx_dft_automorphism(
+pub(crate) fn vec_znx_dft_automorphism<E: poulpy_hal::execution::TaskExecutor>(
     plan: &poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
@@ -910,9 +1006,10 @@ pub(crate) fn vec_znx_dft_automorphism(
     let perm: &[u32] = &plan.perm;
 
     let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let rp_ptr = SendPtr(rp.as_mut_ptr());
     let ap: &[u64] = cast_slice(a.data());
-    for_index(res_size, 2 * n * res_size, |limb| {
-        let res_slice = packed_limb_mut(rp, n, rc, res_col, limb);
+    for_index_exec::<E>(res_size, 2 * n * res_size, |limb| {
+        let res_slice = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, limb) };
         if limb < min_size {
             let a_slice = packed_limb(ap, n, ac, a_col, limb);
             for (i, &p) in perm.iter().enumerate() {

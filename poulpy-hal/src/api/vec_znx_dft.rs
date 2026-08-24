@@ -1,5 +1,6 @@
 use crate::layouts::{
-    Backend, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftOwned,
+    Backend, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
+    VecZnxDftOwned,
 };
 
 /// Allocates a [`VecZnxDft`](crate::layouts::VecZnxDft).
@@ -60,6 +61,28 @@ pub trait VecZnxIdftApplyTmpA<B: Backend> {
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, B>,
         a_col: usize,
+    );
+}
+
+/// Returns scratch bytes required for [`VecZnxIdftNormalizeConsume`].
+pub trait VecZnxIdftNormalizeConsumeTmpBytes {
+    fn vec_znx_idft_normalize_consume_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
+}
+
+/// Inverse DFT fused with normalization: `res[res_col] = normalize(idft(a[a_col]) + addend)`,
+/// clobbering `a[a_col]`.
+pub trait VecZnxIdftNormalizeConsume<B: Backend> {
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_idft_normalize_consume(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_base2k: usize,
+        res_col: usize,
+        a: &mut VecZnxDftBackendMut<'_, B>,
+        a_col: usize,
+        a_base2k: usize,
+        addend: Option<(&VecZnxBackendRef<'_, B>, usize)>,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }
 
@@ -175,6 +198,17 @@ pub trait VecZnxDftAutomorphismPlan<B: Backend> {
 /// result into `res` (out-of-place).
 pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     fn vec_znx_dft_automorphism_with_plan(
+        &self,
+        plan: &Self::Plan,
+        res: &mut VecZnxDftBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, B>,
+        a_col: usize,
+    );
+
+    /// `res[res_col] += automorphism(a[a_col])` over `min(res.size(), a.size())` limbs.
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_dft_automorphism_add_with_plan(
         &self,
         plan: &Self::Plan,
         res: &mut VecZnxDftBackendMut<'_, B>,

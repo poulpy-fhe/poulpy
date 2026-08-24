@@ -1,6 +1,7 @@
 //! Rayon-scheduled task executor and backend wrappers shared by the CPU backend crates.
 
 pub mod fft64;
+pub mod normalize;
 pub mod tuning;
 
 /// Re-exports for the crate's macros. Not a stable API.
@@ -175,6 +176,28 @@ mod tests {
     }
 }
 
+/// Takes a `len`-element typed slice from the arena.
+pub fn take_scratch<'a, BE, T>(
+    arena: poulpy_hal::layouts::ScratchArena<'a, BE>,
+    len: usize,
+) -> (&'a mut [T], poulpy_hal::layouts::ScratchArena<'a, BE>)
+where
+    BE: poulpy_hal::layouts::Backend + 'a,
+    BE::BufMut<'a>: poulpy_hal::api::HostBufMut<'a>,
+    T: bytemuck::Pod,
+{
+    use poulpy_hal::api::HostBufMut;
+    assert!(BE::SCRATCH_ALIGN.is_multiple_of(std::mem::align_of::<T>()));
+    let byte_len = len
+        .checked_mul(std::mem::size_of::<T>())
+        .expect("typed scratch byte size overflows usize");
+    let (buf, arena) = arena.take_region(byte_len);
+    let bytes: &'a mut [u8] = buf.into_bytes();
+    assert!((bytes.as_mut_ptr() as usize).is_multiple_of(std::mem::align_of::<T>()));
+    let slice = unsafe { std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut T, len) };
+    (slice, arena)
+}
+
 /// Worker slices to size scratch for, capped by the kernel's own bound.
 pub fn workers(cap: usize) -> usize {
     poulpy_hal::execution::scratch_workers::<RayonTaskExecutor>(cap)
@@ -185,14 +208,39 @@ pub fn workers_within(cap: usize, per_worker: usize, available: usize) -> usize 
     poulpy_hal::execution::scratch_workers_within::<RayonTaskExecutor>(cap, per_worker, available)
 }
 
+#[doc(hidden)]
+#[derive(Clone, Copy)]
+pub struct SendPtr<T>(*mut T);
+
+// Dereferencing remains unsafe; users must enforce the pointee's aliasing rules.
+unsafe impl<T> Send for SendPtr<T> {}
+unsafe impl<T> Sync for SendPtr<T> {}
+
+impl<T> SendPtr<T> {
+    pub fn new(ptr: *mut T) -> Self {
+        Self(ptr)
+    }
+
+    pub fn get(self) -> *mut T {
+        self.0
+    }
+}
+
+/// Backend-local thresholds for Rayon scheduling.
+pub trait RayonTuning {
+    const COEFF_MIN_LEN: usize;
+    const COEFF_MIN_TASK: usize;
+    const NORMALIZE_MIN_TASK: usize;
+}
+
 /// Chunk length for coefficient-wise parallel kernels, or `None` when the slice
 /// is too short to repay scheduling.
-pub fn parallel_chunk_len(len: usize) -> Option<usize> {
-    if len < 1 << 15 || ::rayon::current_num_threads() < 2 {
-        None
-    } else {
-        Some(len.div_ceil(::rayon::current_num_threads()).next_multiple_of(64))
+pub fn parallel_chunk_len<B: RayonTuning>(len: usize) -> Option<usize> {
+    if len < B::COEFF_MIN_LEN || ::rayon::current_num_threads() < 2 {
+        return None;
     }
+    let tasks = ::rayon::current_num_threads().min(len / B::COEFF_MIN_TASK).max(1);
+    Some(len.div_ceil(tasks).next_multiple_of(64))
 }
 
 /// Whether a per-limb task split is worth scheduling.

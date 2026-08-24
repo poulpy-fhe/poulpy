@@ -69,14 +69,11 @@ where
         assert_eq!(self.n() as u32, res.n());
         assert_eq!(self.n() as u32, a.n());
 
-        let a_base2k: usize = a.base2k().as_usize();
-        let res_base2k: usize = res.base2k().as_usize();
         let b_size = b.size();
-        let cnv_offset = a.size().max(b_size);
-        let res_size: usize = (res.size() * res_base2k).div_ceil(a_base2k);
-        let res_dft_size: usize = a.size() + b_size - cnv_offset.saturating_sub(1);
+        // Offset-0 maximum of the runtime BIG span `a.size() + b_size - cnv_offset_hi`.
+        let res_dft_size: usize = a.size() + b_size;
         let lvl_0: usize = self.bytes_of_vec_znx_big(1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
-        let lvl_1_cnv: usize = self.cnv_by_const_apply_tmp_bytes(res_size, cnv_offset, a.size(), b_size);
+        let lvl_1_cnv: usize = self.cnv_by_const_apply_tmp_bytes(0, res_dft_size, a.size(), b_size);
         let lvl_1_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1: usize = lvl_1_cnv.max(lvl_1_norm);
 
@@ -115,8 +112,7 @@ where
 
         let res_dft_size = a.size() + b_size - cnv_offset_hi;
 
-        let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(self, 1, res_dft_size);
-        let (mut res_tmp, mut scratch) = scratch.take_vec_znx_scratch(self.n(), 1, res.size());
+        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(self, 1, res_dft_size);
         let b_backend = b.to_backend_ref();
         for i in 0..cols {
             {
@@ -135,22 +131,18 @@ where
                 );
             }
             let res_big_ref = res_big.to_backend_ref();
-            {
-                let mut scratch_iter = scratch.borrow();
-                self.vec_znx_big_normalize(
-                    &mut res_tmp,
-                    res_base2k,
-                    cnv_offset_lo,
-                    0,
-                    &res_big_ref,
-                    a_base2k,
-                    0,
-                    &mut scratch_iter,
-                );
-            }
             let mut res_backend = res.to_backend_mut();
-            let res_tmp_ref = res_tmp.to_backend_ref();
-            self.vec_znx_copy_backend(&mut res_backend.data, i, &res_tmp_ref, 0);
+            let mut scratch_iter = scratch.borrow();
+            self.vec_znx_big_normalize(
+                &mut res_backend.data,
+                res_base2k,
+                cnv_offset_lo,
+                i,
+                &res_big_ref,
+                a_base2k,
+                0,
+                &mut scratch_iter,
+            );
         }
     }
 
@@ -178,8 +170,7 @@ where
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, res_base2k);
 
-        let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(self, 1, res.size());
-        let (mut res_tmp, mut scratch) = scratch.take_vec_znx_scratch(self.n(), 1, res.size());
+        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(self, 1, res.size());
         let b_backend = b.to_backend_ref();
         for i in 0..cols {
             {
@@ -199,22 +190,18 @@ where
                 );
             }
             let res_big_ref = res_big.to_backend_ref();
-            {
-                let mut scratch_iter = scratch.borrow();
-                self.vec_znx_big_normalize(
-                    &mut res_tmp,
-                    res_base2k,
-                    cnv_offset_lo,
-                    0,
-                    &res_big_ref,
-                    res_base2k,
-                    0,
-                    &mut scratch_iter,
-                );
-            }
             let mut res_backend = res.to_backend_mut();
-            let res_tmp_ref = res_tmp.to_backend_ref();
-            self.vec_znx_copy_backend(&mut res_backend.data, i, &res_tmp_ref, 0);
+            let mut scratch_iter = scratch.borrow();
+            self.vec_znx_big_normalize(
+                &mut res_backend.data,
+                res_base2k,
+                cnv_offset_lo,
+                i,
+                &res_big_ref,
+                res_base2k,
+                0,
+                &mut scratch_iter,
+            );
         }
     }
 }
@@ -308,8 +295,6 @@ where
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
         let res_dft_size = a.size() + b.size() - cnv_offset_hi;
-        let (mut res_tmp, mut scratch) = scratch.take_vec_znx_scratch(self.n(), 1, res.size());
-
         for i in 0..cols {
             let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self, 1, res_dft_size);
             {
@@ -332,22 +317,18 @@ where
                 self.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
             let res_big_ref = res_big.to_backend_ref();
-            {
-                let mut scratch_iter = scratch_4.borrow();
-                self.vec_znx_big_normalize(
-                    &mut res_tmp,
-                    res_base2k,
-                    cnv_offset_lo,
-                    0,
-                    &res_big_ref,
-                    ab_base2k,
-                    0,
-                    &mut scratch_iter,
-                );
-            }
+            let mut scratch_iter = scratch_4.borrow();
             let mut res_backend = res.to_backend_mut();
-            let res_tmp_ref = res_tmp.to_backend_ref();
-            self.vec_znx_copy_backend(&mut res_backend.data, i, &res_tmp_ref, 0);
+            self.vec_znx_big_normalize(
+                &mut res_backend.data,
+                res_base2k,
+                cnv_offset_lo,
+                i,
+                &res_big_ref,
+                ab_base2k,
+                0,
+                &mut scratch_iter,
+            );
         }
     }
 
@@ -392,8 +373,6 @@ where
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
         let res_dft_size = a.size() + res.size() - cnv_offset_hi;
-        let (mut res_tmp, mut scratch) = scratch.take_vec_znx_scratch(self.n(), 1, res.size());
-
         for i in 0..cols {
             let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self, 1, res_dft_size);
             {
@@ -416,22 +395,18 @@ where
                 self.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
             let res_big_ref = res_big.to_backend_ref();
-            {
-                let mut scratch_iter = scratch_4.borrow();
-                self.vec_znx_big_normalize(
-                    &mut res_tmp,
-                    ab_base2k,
-                    cnv_offset_lo,
-                    0,
-                    &res_big_ref,
-                    ab_base2k,
-                    0,
-                    &mut scratch_iter,
-                );
-            }
+            let mut scratch_iter = scratch_4.borrow();
             let mut res_backend = res.to_backend_mut();
-            let res_tmp_ref = res_tmp.to_backend_ref();
-            self.vec_znx_copy_backend(&mut res_backend.data, i, &res_tmp_ref, 0);
+            self.vec_znx_big_normalize(
+                &mut res_backend.data,
+                ab_base2k,
+                cnv_offset_lo,
+                i,
+                &res_big_ref,
+                ab_base2k,
+                0,
+                &mut scratch_iter,
+            );
         }
     }
 }
@@ -718,16 +693,20 @@ where
             }
         }
 
-        {
-            let (mut res_tmp, mut scratch_norm) = scratch_3.borrow().take_vec_znx_scratch(self.n(), 1, res.size());
-            for i in 0..(res.rank() + 1).into() {
-                let res_big_ref = res_big.to_backend_ref();
-                let mut scratch_iter = scratch_norm.borrow();
-                self.vec_znx_big_normalize(&mut res_tmp, res_base2k, 0, 0, &res_big_ref, key_base2k, i, &mut scratch_iter);
-                let mut res_backend = res.to_backend_mut();
-                let res_tmp_ref = res_tmp.to_backend_ref();
-                self.vec_znx_copy_backend(&mut res_backend.data, i, &res_tmp_ref, 0);
-            }
+        for i in 0..(res.rank() + 1).into() {
+            let res_big_ref = res_big.to_backend_ref();
+            let mut scratch_iter = scratch_3.borrow();
+            let mut res_backend = res.to_backend_mut();
+            self.vec_znx_big_normalize(
+                &mut res_backend.data,
+                res_base2k,
+                0,
+                i,
+                &res_big_ref,
+                key_base2k,
+                i,
+                &mut scratch_iter,
+            );
         }
     }
 

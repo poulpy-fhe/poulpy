@@ -882,12 +882,51 @@ pub fn ntt4x30_cnv_by_const_apply<BE, E: TaskExecutor>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
+    ntt4x30_cnv_by_const_apply_impl::<BE, E, false>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ntt4x30_cnv_by_const_apply_add<BE, E: TaskExecutor>(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    b_coeff: usize,
+    _tmp: &mut [u8],
+) where
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    ntt4x30_cnv_by_const_apply_impl::<BE, E, true>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool>(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    b_coeff: usize,
+) where
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
     if res_size == 0 || a_size == 0 || b_size == 0 {
-        for j in 0..res_size {
-            res.at_mut(res_col, j).fill(0i128);
+        if !ADD {
+            for j in 0..res_size {
+                res.at_mut(res_col, j).fill(0i128);
+            }
         }
         return;
     }
@@ -898,11 +937,13 @@ pub fn ntt4x30_cnv_by_const_apply<BE, E: TaskExecutor>(
 
     let n = res.n();
     let res_cols = res.cols();
-    let res_addr = res.raw_mut().as_mut_ptr() as usize;
+    let res_ptr = crate::reference::SendPtr::new(res.raw_mut().as_mut_ptr());
     let process = |k: usize| {
-        let res_limb = unsafe { std::slice::from_raw_parts_mut((res_addr as *mut i128).add(n * (k * res_cols + res_col)), n) };
+        let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * res_cols + res_col)), n) };
         if k >= min_size {
-            res_limb.fill(0);
+            if !ADD {
+                res_limb.fill(0);
+            }
             return;
         }
         let k_abs = k + offset;
@@ -914,7 +955,7 @@ pub fn ntt4x30_cnv_by_const_apply<BE, E: TaskExecutor>(
                 let b_j = b.at(b_col, j)[b_coeff];
                 acc += a.at(a_col, k_abs - j)[n_i] as i128 * b_j as i128;
             }
-            *r = acc;
+            *r = if ADD { (*r).wrapping_add(acc) } else { acc };
         }
     };
 

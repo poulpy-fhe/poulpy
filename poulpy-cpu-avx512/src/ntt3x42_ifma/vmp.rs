@@ -17,10 +17,10 @@ use std::mem::size_of;
 
 use crate::ntt3x42_ifma::{
     bbc_meta::Bbc126IfmaMeta,
+    execution::SendPtr,
     kernels::ntt_avx512,
     module::handle,
     primes::Primes42,
-    serial::SendPtr,
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_core::oep::gglwe_product_digit_output_size;
@@ -146,7 +146,7 @@ const MASK22: u64 = (1 << 22) - 1;
 ///
 /// Element `(blk_quad, col, row)` offset in u64:
 ///   `((blk_quad * ncols + col) * nrows + row) * 16`.
-pub(crate) fn vmp_prepare_ifma(
+pub(crate) fn vmp_prepare_ifma<E: TaskExecutor>(
     module: &Module<crate::NTT3x42Ifma>,
     res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>,
     a: &MatZnxBackendRef<'_, crate::NTT3x42Ifma>,
@@ -157,16 +157,17 @@ pub(crate) fn vmp_prepare_ifma(
     let ncols = a.cols_out() * a.size();
     let n_blk_quads = n / 8;
 
-    let (tmp_b, tmp_c_u64) = tmp.split_at_mut(3 * n);
-    let tmp_c_u64 = &mut tmp_c_u64[..3 * n];
     let mat_i64: &[i64] = a.raw();
     let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
+    let pmat_ptr = SendPtr(pmat_u64.as_mut_ptr());
 
     let bq_stride = ncols * nrows * 16;
     let col_stride = nrows * 16;
     let row_stride = 16;
 
-    for row_i in 0..nrows {
+    E::for_each_chunked(nrows, tmp, 6 * n, |tmp, row_i| {
+        let (tmp_b, tmp_c_u64) = tmp.split_at_mut(3 * n);
+        let tmp_c_u64 = &mut tmp_c_u64[..3 * n];
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
             crate::NTT3x42Ifma::ntt3x42_ifma_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
@@ -178,16 +179,17 @@ pub(crate) fn vmp_prepare_ifma(
             for bq in 0..n_blk_quads {
                 let coeff_base = 8 * bq;
                 let dst_base = bq * bq_stride + col_i * col_stride + row_i * row_stride;
+                let dst = unsafe { std::slice::from_raw_parts_mut(pmat_ptr.get().add(dst_base), 16) };
                 for i in 0..8 {
                     let p0 = tmp_c_u64[coeff_base + i];
                     let p1 = tmp_c_u64[n + coeff_base + i];
                     let p2 = tmp_c_u64[2 * n + coeff_base + i];
-                    pmat_u64[dst_base + i] = p0 | (p1 & MASK22) << 42;
-                    pmat_u64[dst_base + 8 + i] = (p1 >> 22) | (p2 << 20);
+                    dst[i] = p0 | (p1 & MASK22) << 42;
+                    dst[8 + i] = (p1 >> 22) | (p2 << 20);
                 }
             }
         }
-    }
+    });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

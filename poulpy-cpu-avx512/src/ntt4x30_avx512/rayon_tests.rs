@@ -2,7 +2,8 @@ use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
-        test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+        test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_by_const_add,
+        test_convolution_pairwise,
     },
 };
 
@@ -105,6 +106,8 @@ cross_backend_test_suite! {
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
         test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
         test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
+        test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
+        test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
     }
 }
 
@@ -193,6 +196,7 @@ fn test_convolution_direct() {
     let module = Module::<NTT4x30Avx512Rayon>::new(1 << 8);
     test_convolution(&module, 50);
     test_convolution_by_const(&module, 50);
+    test_convolution_by_const_add(&module, 50);
     test_convolution_pairwise(&module, 50);
     test_convolution_accumulate(&module, 50);
 }

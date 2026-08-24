@@ -6,7 +6,7 @@ use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
-        test_convolution_pairwise,
+        test_convolution_by_const_add, test_convolution_pairwise,
     },
 };
 
@@ -21,6 +21,7 @@ mod delegating_backend;
 fn test_convolution_by_const_fft64_ref() {
     let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
     test_convolution_by_const(&module, 17);
+    test_convolution_by_const_add(&module, 17);
 }
 
 #[test]
@@ -51,6 +52,7 @@ fn test_convolution_accumulate_fused_fft64_ref() {
 fn test_convolution_by_const_ntt4x30_ref() {
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
     test_convolution_by_const(&module, 50);
+    test_convolution_by_const_add(&module, 50);
 }
 
 #[test]
@@ -192,6 +194,8 @@ cross_backend_test_suite! {
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
         test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
+        test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
+        test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
     }
 }
 cross_backend_test_suite! {

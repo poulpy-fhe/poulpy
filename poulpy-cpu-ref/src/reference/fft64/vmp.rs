@@ -5,9 +5,12 @@ use crate::{
         VecZnxDftToBackendMut, VecZnxToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatToBackendRef, ZnxView,
         ZnxViewMut,
     },
-    reference::fft64::{
-        reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
-        reim4::Reim4BlkMatVec,
+    reference::{
+        SendPtr,
+        fft64::{
+            reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
+            reim4::Reim4BlkMatVec,
+        },
     },
 };
 use poulpy_hal::execution::TaskExecutor;
@@ -61,10 +64,10 @@ pub fn vmp_prepare<BE>(
 
     let nrows: usize = mat.cols_in() * mat.rows();
     let ncols: usize = mat.cols_out() * mat.size();
-    vmp_prepare_core::<BE>(table, pmat.raw_mut(), mat.raw(), nrows, ncols, tmp);
+    vmp_prepare_core::<BE, BE::TaskExecutor>(table, pmat.raw_mut(), mat.raw(), nrows, ncols, tmp);
 }
 
-pub(crate) fn vmp_prepare_core<REIM>(
+pub(crate) fn vmp_prepare_core<REIM, E>(
     table: &ReimFFTTable<f64>,
     pmat: &mut [f64],
     mat: &[i64],
@@ -73,6 +76,7 @@ pub(crate) fn vmp_prepare_core<REIM>(
     tmp: &mut [f64],
 ) where
     REIM: ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+    E: TaskExecutor,
 {
     let m: usize = table.m();
     let n: usize = m << 1;
@@ -82,29 +86,31 @@ pub(crate) fn vmp_prepare_core<REIM>(
         assert!(n >= 8);
         assert_eq!(mat.len(), n * nrows * ncols);
         assert_eq!(pmat.len(), n * nrows * ncols);
-        assert_eq!(tmp.len(), vmp_prepare_tmp_bytes(n) / size_of::<i64>())
+        assert!(tmp.len() >= vmp_prepare_tmp_bytes(n) / size_of::<i64>())
     }
 
     let offset: usize = nrows * ncols * 8;
+    let pmat_ptr = SendPtr::new(pmat.as_mut_ptr());
 
-    for row_i in 0..nrows {
+    E::for_each_chunked(nrows, tmp, n, |tmp, row_i| {
         for col_i in 0..ncols {
             let pos: usize = n * (row_i * ncols + col_i);
 
             REIM::reim_from_znx(tmp, &mat[pos..pos + n]);
             REIM::reim_dft_execute(table, tmp);
 
-            let dst: &mut [f64] = if col_i == (ncols - 1) && !ncols.is_multiple_of(2) {
-                &mut pmat[col_i * nrows * 8 + row_i * 8..]
+            let dst = if col_i == (ncols - 1) && !ncols.is_multiple_of(2) {
+                col_i * nrows * 8 + row_i * 8
             } else {
-                &mut pmat[(col_i / 2) * (nrows * 16) + row_i * 16 + (col_i % 2) * 8..]
+                (col_i / 2) * (nrows * 16) + row_i * 16 + (col_i % 2) * 8
             };
 
             for blk_i in 0..m >> 2 {
-                REIM::reim4_extract_1blk_contiguous(m, 1, blk_i, &mut dst[blk_i * offset..], tmp);
+                let dst = unsafe { std::slice::from_raw_parts_mut(pmat_ptr.get().add(dst + blk_i * offset), 8) };
+                REIM::reim4_extract_1blk_contiguous(m, 1, blk_i, dst, tmp);
             }
         }
-    }
+    });
 }
 
 pub fn vmp_apply_dft_tmp_bytes(n: usize, a_size: usize, prows: usize, pcols_in: usize) -> usize {

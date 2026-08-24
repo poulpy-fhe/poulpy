@@ -6,9 +6,9 @@ use crate::reference::{
     fft64::{
         convolution::{
             I64Ops, convolution_apply_dft, convolution_apply_dft_accumulate, convolution_apply_dft_tmp_bytes,
-            convolution_by_const_apply, convolution_by_const_apply_tmp_bytes, convolution_pairwise_apply_dft,
-            convolution_pairwise_apply_dft_tmp_bytes, convolution_prepare_left, convolution_prepare_right,
-            convolution_prepare_self,
+            convolution_by_const_apply, convolution_by_const_apply_add, convolution_by_const_apply_tmp_bytes,
+            convolution_pairwise_apply_dft, convolution_pairwise_apply_dft_tmp_bytes, convolution_prepare_left,
+            convolution_prepare_right, convolution_prepare_self,
         },
         module::FFTModuleHandle,
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
@@ -19,9 +19,10 @@ use crate::reference::{
         convolution::{
             CNV_ACC_GROUP, ntt4x30_cnv_accumulate_dft, ntt4x30_cnv_accumulate_dft_tmp_bytes, ntt4x30_cnv_apply_dft,
             ntt4x30_cnv_apply_dft_accumulate, ntt4x30_cnv_apply_dft_tmp_bytes, ntt4x30_cnv_by_const_apply,
-            ntt4x30_cnv_by_const_apply_tmp_bytes, ntt4x30_cnv_pairwise_apply_dft, ntt4x30_cnv_pairwise_apply_dft_tmp_bytes,
-            ntt4x30_cnv_prepare_left, ntt4x30_cnv_prepare_left_tmp_bytes, ntt4x30_cnv_prepare_right,
-            ntt4x30_cnv_prepare_right_tmp_bytes, ntt4x30_cnv_prepare_self, ntt4x30_cnv_prepare_self_tmp_bytes,
+            ntt4x30_cnv_by_const_apply_add, ntt4x30_cnv_by_const_apply_tmp_bytes, ntt4x30_cnv_pairwise_apply_dft,
+            ntt4x30_cnv_pairwise_apply_dft_tmp_bytes, ntt4x30_cnv_prepare_left, ntt4x30_cnv_prepare_left_tmp_bytes,
+            ntt4x30_cnv_prepare_right, ntt4x30_cnv_prepare_right_tmp_bytes, ntt4x30_cnv_prepare_self,
+            ntt4x30_cnv_prepare_self_tmp_bytes,
         },
         ntt::NttTable,
         primes::Primes30,
@@ -171,6 +172,31 @@ where
         let bytes = convolution_by_const_apply_tmp_bytes(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<BE, i64>(scratch.borrow(), bytes / size_of::<i64>());
         convolution_by_const_apply::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_by_const_apply_add_default<R>(
+        _module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+        b_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
+        for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
+        for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        R: VecZnxBigToBackendMut<BE>,
+    {
+        let mut res_ref = res.to_backend_mut();
+        let bytes = convolution_by_const_apply_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let (tmp, _) = take_host_typed::<BE, i64>(scratch.borrow(), bytes / size_of::<i64>());
+        convolution_by_const_apply_add::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -445,6 +471,41 @@ where
         let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes(0, 0, 0);
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
         ntt4x30_cnv_by_const_apply::<BE, SerialTaskExecutor>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_by_const_apply_add_default<R>(
+        _module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+        b_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: Backend<BigWord = i128, DftWord = Q120bScalar, ZnxWord = i64> + 'static,
+        for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
+        for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        R: VecZnxBigToBackendMut<BE>,
+    {
+        let mut res_ref = res.to_backend_mut();
+        let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes(0, 0, 0);
+        let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
+        ntt4x30_cnv_by_const_apply_add::<BE, SerialTaskExecutor>(
+            cnv_offset,
+            &mut res_ref,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            b_coeff,
+            tmp,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]

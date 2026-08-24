@@ -196,10 +196,48 @@ pub fn convolution_prepare_self<BE>(
 
 pub fn convolution_by_const_apply_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size - 1);
-    size_of::<i64>() * (min_size + a_size) * 8
+    size_of::<i64>() * ((min_size + a_size) * 8 + b_size)
 }
 
 pub fn convolution_by_const_apply<BE>(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    b_coeff: usize,
+    tmp: &mut [i64],
+) where
+    BE: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    convolution_by_const_apply_impl::<BE, false>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn convolution_by_const_apply_add<BE>(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    b_coeff: usize,
+    tmp: &mut [i64],
+) where
+    BE: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    convolution_by_const_apply_impl::<BE, true>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn convolution_by_const_apply_impl<BE, const ADD: bool>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -234,20 +272,33 @@ pub fn convolution_by_const_apply<BE>(
     let a_idx: usize = n * a_col;
     let res_idx: usize = n * res_col;
 
-    let (res_blk, a_blk) = tmp[..(min_size + a_size) * 8].split_at_mut(min_size * 8);
-    let mut b_digits = vec![0i64; b_size];
+    let staging_size = min_size + a_size;
+    let (blocks, b_digits) = tmp[..staging_size * 8 + b_size].split_at_mut(staging_size * 8);
+    let (res_blk, a_blk) = blocks.split_at_mut(min_size * 8);
     for (j, digit) in b_digits.iter_mut().enumerate() {
         *digit = b.at(b_col, j)[b_coeff];
     }
 
     for blk_i in 0..n / 8 {
         BE::i64_extract_1blk_contiguous(a_sl, a_idx, a_size, blk_i, a_blk, a_raw);
-        BE::i64_convolution_by_const(res_blk, min_size, offset, a_blk, a_size, &b_digits);
+        BE::i64_convolution_by_const(res_blk, min_size, offset, a_blk, a_size, b_digits);
+        if ADD {
+            for start in (0..min_size).step_by(a_size) {
+                let rows = a_size.min(min_size - start);
+                BE::i64_extract_1blk_contiguous(res_sl, res_idx, rows, blk_i, a_blk, &res_raw[start * res_sl..]);
+                res_blk[8 * start..8 * (start + rows)]
+                    .iter_mut()
+                    .zip(a_blk.iter())
+                    .for_each(|(res, &value)| *res = res.wrapping_add(value));
+            }
+        }
         BE::i64_save_1blk_contiguous(res_sl, res_idx, min_size, blk_i, res_raw, res_blk);
     }
 
-    for j in min_size..res_size {
-        res.zero_at(res_col, j);
+    if !ADD {
+        for j in min_size..res_size {
+            res.zero_at(res_col, j);
+        }
     }
 }
 

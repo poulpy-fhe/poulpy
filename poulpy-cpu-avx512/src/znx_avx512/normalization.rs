@@ -8,6 +8,7 @@ use core::arch::x86_64::__m512i;
 ///
 /// Unlike the AVX2 helper, we do **not** need a `top_mask` because AVX-512F
 /// provides `_mm512_srav_epi64` — a native variable arithmetic right shift.
+#[inline]
 #[target_feature(enable = "avx512f")]
 unsafe fn normalize_consts_avx512(base2k: usize) -> (__m512i, __m512i, __m512i) {
     use core::arch::x86_64::_mm512_set1_epi64;
@@ -23,6 +24,7 @@ unsafe fn normalize_consts_avx512(base2k: usize) -> (__m512i, __m512i, __m512i) 
 }
 
 /// AVX-512 `get_digit`:  `digit = ((x & mask_k) ^ sign_k) - sign_k`.
+#[inline]
 #[target_feature(enable = "avx512f")]
 unsafe fn get_digit_avx512(x: __m512i, mask_k: __m512i, sign_k: __m512i) -> __m512i {
     use core::arch::x86_64::{_mm512_and_si512, _mm512_sub_epi64, _mm512_xor_si512};
@@ -35,6 +37,7 @@ unsafe fn get_digit_avx512(x: __m512i, mask_k: __m512i, sign_k: __m512i) -> __m5
 ///
 /// Uses `_mm512_srav_epi64` for a native variable arithmetic right shift,
 /// replacing the 4-instruction workaround needed by AVX2.
+#[inline]
 #[target_feature(enable = "avx512f")]
 unsafe fn get_carry_avx512(x: __m512i, digit: __m512i, base2k: __m512i) -> __m512i {
     use core::arch::x86_64::{_mm512_srav_epi64, _mm512_sub_epi64};
@@ -47,6 +50,7 @@ unsafe fn get_carry_avx512(x: __m512i, digit: __m512i, base2k: __m512i) -> __m51
 // ---------------------------------------------------------------------------
 
 /// `res += digit(src) << lsh;  src = carry(src)`
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_extract_digit_addmul_avx512(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
     debug_assert_eq!(res.len(), src.len());
@@ -88,6 +92,7 @@ pub unsafe fn znx_extract_digit_addmul_avx512(base2k: usize, lsh: usize, res: &m
 }
 
 /// `res = digit(res);  src += carry(res)`
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_digit_avx512(base2k: usize, res: &mut [i64], src: &mut [i64]) {
     debug_assert_eq!(res.len(), src.len());
@@ -128,6 +133,7 @@ pub unsafe fn znx_normalize_digit_avx512(base2k: usize, res: &mut [i64], src: &m
 }
 
 /// `carry = carry_of(x)` (with lsh adjustment).
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_first_step_carry_only_avx512(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
     debug_assert!(x.len() <= carry.len());
@@ -168,6 +174,7 @@ pub unsafe fn znx_normalize_first_step_carry_only_avx512(base2k: usize, lsh: usi
 }
 
 /// `x = digit(x) << lsh;  carry = carry(x)`
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_first_step_assign_avx512(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
     debug_assert!(x.len() <= carry.len());
@@ -224,6 +231,7 @@ pub unsafe fn znx_normalize_first_step_assign_avx512(base2k: usize, lsh: usize, 
 
 /// `x = digit(a) << lsh;  carry = carry(a)` if `OVERWRITE`,
 /// else `x += digit(a) << lsh;  carry = carry(a)`.
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_first_step_avx512<const OVERWRITE: bool>(
     base2k: usize,
@@ -306,6 +314,7 @@ pub unsafe fn znx_normalize_first_step_avx512<const OVERWRITE: bool>(
 /// Step 1: extract digit0/carry0 from input (base2k or base2k-lsh).
 /// Step 2: sum = digit0 (<<lsh if lsh!=0) + carry_in, extract digit1/carry1.
 /// Output: carry_out = carry0 + carry1.
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_middle_step_carry_only_avx512(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
     debug_assert!(x.len() <= carry.len());
@@ -378,6 +387,7 @@ pub unsafe fn znx_normalize_middle_step_carry_only_avx512(base2k: usize, lsh: us
 /// Step 1: extract digit0/carry0 from x (base2k or base2k-lsh).
 /// Step 2: sum = digit0 (<<lsh if lsh!=0) + carry_in, extract digit1/carry1.
 /// Output: x = digit1, carry_out = carry0 + carry1.
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_middle_step_assign_avx512(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
     debug_assert!(x.len() <= carry.len());
@@ -452,6 +462,7 @@ pub unsafe fn znx_normalize_middle_step_assign_avx512(base2k: usize, lsh: usize,
 /// Step 1: extract digit0/carry0 from a (base2k or base2k-lsh).
 /// Step 2: sum = digit0 (<<lsh if lsh!=0) + carry_in, extract digit1/carry1.
 /// Output: x = digit1 (or x += digit1 if !OVERWRITE), carry_out = carry0 + carry1.
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_middle_step_avx512<const OVERWRITE: bool>(
     base2k: usize,
@@ -542,6 +553,7 @@ pub unsafe fn znx_normalize_middle_step_avx512<const OVERWRITE: bool>(
 }
 
 /// Subtractive variant of `znx_normalize_middle_step_avx512`: `x -= digit1`, carry as usual.
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_middle_step_sub_avx512(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
     debug_assert_eq!(x.len(), a.len());
@@ -621,6 +633,7 @@ pub unsafe fn znx_normalize_middle_step_sub_avx512(base2k: usize, lsh: usize, x:
 ///
 /// `x = digit( (digit(x, base2k_eff) << lsh) + carry )`   where base2k_eff = base2k when lsh==0
 /// or base2k-lsh otherwise.
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_final_step_assign_avx512(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
     debug_assert!(x.len() <= carry.len());
@@ -683,6 +696,7 @@ pub unsafe fn znx_normalize_final_step_assign_avx512(base2k: usize, lsh: usize, 
 /// Final step normalization (out-of-place: reads from `a`, writes to `x`).
 ///
 /// `x = digit( (digit(a, base2k_eff) << lsh) + carry )` if `OVERWRITE`, else `x += …`.
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_final_step_avx512<const OVERWRITE: bool>(
     base2k: usize,
@@ -763,6 +777,7 @@ pub unsafe fn znx_normalize_final_step_avx512<const OVERWRITE: bool>(
 }
 
 /// Subtractive variant of `znx_normalize_final_step_avx512`: `x -= digit1`.
+#[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_final_step_sub_avx512(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
     debug_assert_eq!(x.len(), a.len());
@@ -867,6 +882,7 @@ mod tests {
         -1414213562373095048,
     ];
 
+    #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn test_get_digit_ifma_internal() {
         let base2k: usize = 12;
@@ -886,6 +902,7 @@ mod tests {
         }
     }
 
+    #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn test_get_carry_ifma_internal() {
         let base2k: usize = 12;
@@ -911,6 +928,7 @@ mod tests {
         }
     }
 
+    #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn test_znx_normalize_first_step_assign_ifma_internal() {
         let mut y0: [i64; 8] = X_DATA;
@@ -937,6 +955,7 @@ mod tests {
         }
     }
 
+    #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn test_znx_normalize_first_step_ifma_internal() {
         let a: [i64; 8] = X_DATA;
@@ -986,6 +1005,7 @@ mod tests {
         }
     }
 
+    #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn test_znx_normalize_middle_step_assign_ifma_internal() {
         let mut y0: [i64; 8] = X_DATA;
@@ -1012,6 +1032,7 @@ mod tests {
         }
     }
 
+    #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn test_znx_normalize_middle_step_ifma_internal() {
         use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_sub_ref;
@@ -1081,6 +1102,7 @@ mod tests {
         }
     }
 
+    #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn test_znx_normalize_final_step_assign_ifma_internal() {
         let mut y0: [i64; 8] = X_DATA;
@@ -1107,6 +1129,7 @@ mod tests {
         }
     }
 
+    #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn test_znx_normalize_final_step_ifma_internal() {
         use poulpy_cpu_ref::reference::znx::znx_normalize_final_step_sub_ref;
@@ -1176,6 +1199,7 @@ mod tests {
         }
     }
 
+    #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn znx_extract_digit_addmul_ifma_internal() {
         let mut y0: [i64; 8] = X_DATA;
@@ -1202,6 +1226,7 @@ mod tests {
         }
     }
 
+    #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn znx_normalize_digit_ifma_internal() {
         let mut y0: [i64; 8] = X_DATA;

@@ -27,10 +27,15 @@ fn dft_automorphism(
 
 poulpy_cpu_rayon::impl_fft64_rayon_backend!(FFT64NeonRayon, FFT64Neon, dft_automorphism);
 
-/// Inherited from the x86 measurements; not yet measured on AArch64.
+impl poulpy_cpu_rayon::RayonTuning for FFT64NeonRayon {
+    const COEFF_MIN_LEN: usize = 1 << 15;
+    const COEFF_MIN_TASK: usize = 1 << 13;
+    const NORMALIZE_MIN_TASK: usize = 1 << 12;
+}
+
 impl poulpy_hal::execution::ScratchWorkers for FFT64NeonRayon {
-    const PREPARE: usize = 4;
+    const PREPARE: usize = 8;
     const APPLY: usize = 8;
-    const VMP: usize = 4;
+    const VMP: usize = 8;
     const IDFT: usize = 8;
 }

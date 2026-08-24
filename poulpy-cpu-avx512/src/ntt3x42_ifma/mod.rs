@@ -22,6 +22,7 @@
 
 pub(crate) mod bbc_meta;
 pub(crate) mod convolution;
+mod execution;
 pub(crate) mod kernels;
 pub(crate) mod mat_vec_ifma;
 pub(crate) mod module;
@@ -30,7 +31,6 @@ pub(crate) mod primes;
 #[cfg(feature = "enable-rayon")]
 pub(crate) mod rayon;
 pub(crate) mod reference;
-mod serial;
 pub(crate) mod svp;
 pub(crate) mod tables;
 pub(crate) mod traits;

@@ -125,7 +125,8 @@ impl RankOneTensorDft for NTT3x42Ifma {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl RankOneTensorDft for NTT3x42IfmaRayon {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
-        crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
+            * crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn rank_one_tensor_dft(
@@ -136,7 +137,12 @@ impl RankOneTensorDft for NTT3x42IfmaRayon {
         b: &CnvPVecRBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
+        let per_worker = crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
             crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<crate::NTT3x42IfmaRayonExecutor>(
@@ -252,8 +258,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         in_base2k,
         cnv_offset_lo,
     );
-    let (mut diag_terms, scratch) = scratch.borrow().take_vec_znx_scratch(module.n(), 2, res.size());
-    let (mut tensor_dft, mut work) = scratch.take_vec_znx_dft_scratch(module, 3, dft_size);
+    let (mut tensor_dft, mut work) = scratch.borrow().take_vec_znx_dft_scratch(module, 3, dft_size);
     BE::rank_one_tensor_dft(
         module,
         &mut tensor_dft.to_backend_mut(),
@@ -263,7 +268,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         &mut work,
     );
 
-    for (dft_col, diag_col, res_col) in [(0, 0, 0), (2, 1, 2)] {
+    for (dft_col, res_col) in [(0, 0), (2, 2)] {
         let (mut product_big, mut norm_scratch) = work.borrow().take_vec_znx_big_scratch(module, 1, dft_size);
         module.vec_znx_idft_apply_tmpa(
             &mut product_big.to_backend_mut(),
@@ -272,20 +277,14 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
             dft_col,
         );
         module.vec_znx_big_normalize(
-            &mut diag_terms.to_backend_mut(),
+            res.to_backend_mut().data_mut(),
             res_base2k,
             cnv_offset_lo,
-            diag_col,
+            res_col,
             &product_big.to_backend_ref(),
             in_base2k,
             0,
             &mut norm_scratch,
-        );
-        module.vec_znx_copy_backend(
-            res.to_backend_mut().data_mut(),
-            res_col,
-            &diag_terms.to_backend_ref(),
-            diag_col,
         );
     }
 
@@ -304,9 +303,9 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     );
     {
         let mut pairwise = pairwise.to_backend_mut();
-        let diag_terms = diag_terms.to_backend_ref();
-        module.vec_znx_sub_assign_backend(&mut pairwise, 0, &diag_terms, 0);
-        module.vec_znx_sub_assign_backend(&mut pairwise, 0, &diag_terms, 1);
+        let res_ref = res.to_backend_ref();
+        module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 0);
+        module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 2);
     }
     module.vec_znx_copy_backend(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
 }

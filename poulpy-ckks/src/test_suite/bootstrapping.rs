@@ -115,9 +115,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         meta(58, 2),
     )
     .unwrap()
-    .with_optimal_bsgs(LOG_SLOTS + 1)
-    .with_scaling(1. / FMOD_INTERVAL as f64)
-    .unwrap();
+    .with_optimal_bsgs(LOG_SLOTS + 1);
     let slots_to_coeffs = DFTPlan::new(
         DFTType::Decode,
         vec![(3, 4), (3, 4), (2, 4), (2, 4)],
@@ -546,8 +544,6 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         DFTOutputFormat::SplitRealAndImag,
         meta(29, 2),
     )
-    .unwrap()
-    .with_scaling(1. / FMOD_INTERVAL as f64)
     .unwrap();
     let bypass = DFTPlan::new(
         DFTType::Encode,
@@ -916,8 +912,6 @@ where
         DFTOutputFormat::SplitRealAndImag,
         meta(if eval_round_plus { 29 } else { 58 }, 2),
     )
-    .unwrap()
-    .with_scaling(1. / fmod_interval as f64)
     .unwrap();
     let coeffs_to_slots_bypass = eval_round_plus
         .then(|| {

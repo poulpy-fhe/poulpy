@@ -183,6 +183,9 @@ where
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
                     module.glwe_copy(&mut input, ct);
+                    if let Some(shift) = params.input_shift.as_ref() {
+                        module.ckks_sub_pt_const_assign(&mut input, 0, shift, 0, &mut nested)?;
+                    }
                     module.ckks_eval_poly_real_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;
             }

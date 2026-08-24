@@ -208,7 +208,7 @@ The report gives, per probe, the time and speed-up at each pool width, the agree
 
 ```text
 NTT3x42IfmaRayon
-vmp (worker slices capped at 4)
+vmp (worker slices capped at 8)
   threads=1        7.893 ms    1.00x   spread 1.01
   threads=4        5.705 ms    1.38x   spread 1.02
   threads=16       5.854 ms    1.35x   spread 1.00

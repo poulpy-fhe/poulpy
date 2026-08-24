@@ -856,6 +856,10 @@ macro_rules! ckks_backend_test_suite {
             );
             run_test!(eval_mod_exp, $crate::test_suite::eval_mod::test_eval_mod_exp);
             run_test!(
+                eval_mod_even_cheby,
+                $crate::test_suite::eval_mod::test_eval_mod_even_cheby
+            );
+            run_test!(
                 bootstrapping_standard_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_standard_e2e
             );

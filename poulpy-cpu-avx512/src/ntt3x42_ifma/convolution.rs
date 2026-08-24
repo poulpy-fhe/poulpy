@@ -7,10 +7,10 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use std::mem::size_of;
 
 use crate::ntt3x42_ifma::{
+    execution::SendPtr,
     kernels::{cond_sub_2q_si512, ntt_avx512},
     module::handle,
     primes::Primes42,
-    serial::SendPtr,
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_hal::execution::TaskExecutor;
@@ -1260,14 +1260,47 @@ pub(crate) fn cnv_by_const_apply<E: TaskExecutor>(
     b: &VecZnxBackendRef<'_, NTT3x42Ifma>,
     b_col: usize,
     b_coeff: usize,
+    tmp: &mut [u8],
+) {
+    cnv_by_const_apply_impl::<E, false>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
+}
+
+/// `res[res_col] +=` the convolution-by-constant; out-of-range limbs untouched.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cnv_by_const_apply_add<E: TaskExecutor>(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, NTT3x42Ifma>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, NTT3x42Ifma>,
+    b_col: usize,
+    b_coeff: usize,
+    tmp: &mut [u8],
+) {
+    cnv_by_const_apply_impl::<E, true>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cnv_by_const_apply_impl<E: TaskExecutor, const ADD: bool>(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, NTT3x42Ifma>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, NTT3x42Ifma>,
+    b_col: usize,
+    b_coeff: usize,
     _tmp: &mut [u8],
 ) {
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
     if res_size == 0 || a_size == 0 || b_size == 0 {
-        for j in 0..res_size {
-            res.at_mut(res_col, j).fill(0i128);
+        if !ADD {
+            for j in 0..res_size {
+                res.at_mut(res_col, j).fill(0i128);
+            }
         }
         return;
     }
@@ -1287,10 +1320,16 @@ pub(crate) fn cnv_by_const_apply<E: TaskExecutor>(
             let k_abs = k + offset;
             if k < min_size && k_abs < a_size {
                 let a_limb = a.at(a_col, k_abs);
-                for n_i in 0..res_limb.len() {
-                    res_limb[n_i] = (a_limb[n_i] as i128) * b0;
+                if ADD {
+                    for n_i in 0..res_limb.len() {
+                        res_limb[n_i] += (a_limb[n_i] as i128) * b0;
+                    }
+                } else {
+                    for n_i in 0..res_limb.len() {
+                        res_limb[n_i] = (a_limb[n_i] as i128) * b0;
+                    }
                 }
-            } else {
+            } else if !ADD {
                 res_limb.fill(0i128);
             }
         };
@@ -1317,9 +1356,13 @@ pub(crate) fn cnv_by_const_apply<E: TaskExecutor>(
                     let b_j = b.at(b_col, j)[b_coeff];
                     acc += a.at(a_col, k_abs - j)[n_i] as i128 * b_j as i128;
                 }
-                *r = acc;
+                if ADD {
+                    *r += acc;
+                } else {
+                    *r = acc;
+                }
             }
-        } else {
+        } else if !ADD {
             res_limb.fill(0i128);
         }
     };
