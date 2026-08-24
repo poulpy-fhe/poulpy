@@ -151,7 +151,6 @@ compile_error!(
 #[cfg(feature = "enable-avx512f")]
 mod fft64;
 #[cfg(feature = "enable-avx512f")]
-#[cfg(feature = "enable-avx512f")]
 mod hal_impl;
 #[cfg(feature = "enable-avx512f")]
 mod ntt4x30_avx512;

@@ -182,17 +182,11 @@ mod ckks_impl;
 #[cfg(feature = "enable-avx")]
 mod core_impl;
 #[cfg(feature = "enable-avx")]
-#[cfg(feature = "enable-avx")]
 mod fft64;
-#[cfg(feature = "enable-avx")]
-#[cfg(feature = "enable-avx")]
-#[cfg(feature = "enable-avx")]
 #[cfg(feature = "enable-avx")]
 mod hal_impl;
 #[cfg(feature = "enable-avx")]
-#[cfg(feature = "enable-avx")]
 mod ntt4x30;
-#[cfg(feature = "enable-avx")]
 #[cfg(all(test, feature = "enable-avx"))]
 mod tests;
 #[cfg(feature = "enable-avx")]

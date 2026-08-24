@@ -38,8 +38,8 @@ It exists only as an IFMA-accelerated backend, because it relies on IFMA multipl
 
 | Subfamily | Reference | AVX2 / FMA | AVX-512 | NEON |
 |-----------|-----------|------------|---------|------|
-| FFT64  | `FFT64Ref` | `FFT64Avx` | `FFT64Avx512`, `FFT64Avx512Rayon` | `FFT64Neon` |
-| NTT4x30 | `NTT4x30Ref` | `NTT4x30Avx`, `NTT4x30AvxRayon` | `NTT4x30Avx512` | `NTT4x30Neon` |
+| FFT64  | `FFT64Ref` | `FFT64Avx`, `FFT64AvxRayon` | `FFT64Avx512`, `FFT64Avx512Rayon` | `FFT64Neon`, `FFT64NeonRayon` |
+| NTT4x30 | `NTT4x30Ref` | `NTT4x30Avx`, `NTT4x30AvxRayon` | `NTT4x30Avx512`, `NTT4x30Avx512Rayon` | `NTT4x30Neon`, `NTT4x30NeonRayon` |
 | NTT3x42 | none | none | `NTT3x42Ifma`, `NTT3x42IfmaRayon` | none |
 
 The `*Ref` types live in `poulpy-cpu-ref` and are portable across every CPU.
@@ -53,14 +53,18 @@ The `*Rayon` types use the same arithmetic subfamily and storage formats as thei
 |---------|-------|---------|--------------------------|
 | `FFT64Ref` | `poulpy-cpu-ref` | none | none |
 | `FFT64Avx` | `poulpy-cpu-avx` | `enable-avx` | `+avx2,+fma` |
+| `FFT64AvxRayon` | `poulpy-cpu-avx` | `enable-rayon` | `+avx2,+fma` |
 | `FFT64Avx512` | `poulpy-cpu-avx512` | `enable-avx512f` | `+avx512f` |
 | `FFT64Avx512Rayon` | `poulpy-cpu-avx512` | `enable-rayon` | `+avx512f` |
 | `FFT64Neon` | `poulpy-cpu-arm` | `enable-neon` | none |
+| `FFT64NeonRayon` | `poulpy-cpu-arm` | `enable-rayon` | none |
 | `NTT4x30Ref` | `poulpy-cpu-ref` | none | none |
 | `NTT4x30Avx` | `poulpy-cpu-avx` | `enable-avx` | `+avx2,+fma` |
 | `NTT4x30AvxRayon` | `poulpy-cpu-avx` | `enable-rayon` | `+avx2,+fma` |
 | `NTT4x30Avx512` | `poulpy-cpu-avx512` | `enable-avx512f` | `+avx512f` |
+| `NTT4x30Avx512Rayon` | `poulpy-cpu-avx512` | `enable-rayon` | `+avx512f` |
 | `NTT4x30Neon` | `poulpy-cpu-arm` | `enable-neon` | none |
+| `NTT4x30NeonRayon` | `poulpy-cpu-arm` | `enable-rayon` | none |
 | `NTT3x42Ifma` | `poulpy-cpu-avx512` | `enable-ifma` | `+avx512f,+avx512ifma,+avx512vl` |
 | `NTT3x42IfmaRayon` | `poulpy-cpu-avx512` | `enable-ifma`, `enable-rayon` | `+avx512f,+avx512ifma,+avx512vl` |
 
