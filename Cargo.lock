@@ -563,7 +563,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-bench"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "criterion",
  "poulpy-bin-fhe",
@@ -577,7 +577,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-bin-fhe"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-ckks"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "astro-float-num",
@@ -606,7 +606,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-core"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -623,7 +623,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-arm"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-avx"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -673,7 +673,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-avx512"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-rayon"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "bytemuck",
  "poulpy-cpu-ref",
@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-cpu-ref"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -730,7 +730,7 @@ dependencies = [
 
 [[package]]
 name = "poulpy-hal"
-version = "0.8.1"
+version = "0.8.2"
 dependencies = [
  "anyhow",
  "bytemuck",

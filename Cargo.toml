@@ -11,16 +11,16 @@ debug = true
 strip = false
 
 [workspace.dependencies]
-poulpy-hal = {path = "poulpy-hal", version = "0.8.1"}
-poulpy-core = {path = "poulpy-core", version = "0.8.1"}
-poulpy-cpu-avx = {path = "poulpy-cpu-avx", version = "0.8.1"}
-poulpy-cpu-arm = {path = "poulpy-cpu-arm", version = "0.8.1"}
-poulpy-cpu-ref = {path = "poulpy-cpu-ref", version = "0.8.1"}
-poulpy-cpu-avx512 = {path = "poulpy-cpu-avx512", version = "0.8.1"}
-poulpy-cpu-rayon = {path = "poulpy-cpu-rayon", version = "0.8.1"}
+poulpy-hal = {path = "poulpy-hal", version = "0.8.2"}
+poulpy-core = {path = "poulpy-core", version = "0.8.2"}
+poulpy-cpu-avx = {path = "poulpy-cpu-avx", version = "0.8.2"}
+poulpy-cpu-arm = {path = "poulpy-cpu-arm", version = "0.8.2"}
+poulpy-cpu-ref = {path = "poulpy-cpu-ref", version = "0.8.2"}
+poulpy-cpu-avx512 = {path = "poulpy-cpu-avx512", version = "0.8.2"}
+poulpy-cpu-rayon = {path = "poulpy-cpu-rayon", version = "0.8.2"}
 poulpy-bin-fhe = {path = "poulpy-bin-fhe"}
 poulpy-bench = {path = "poulpy-bench"}
-poulpy-ckks = {path = "poulpy-ckks", version = "0.8.1"}
+poulpy-ckks = {path = "poulpy-ckks", version = "0.8.2"}
 dashu-float = "0.6.0"
 astro-float-num = { version = "0.3.7", default-features = false, features = ["std"] }
 # `poulpy-ckks` enables `unstable-float` only for its portable target graph.
