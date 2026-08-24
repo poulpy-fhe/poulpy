@@ -20,6 +20,10 @@
 - Add `BSGSOps::mul_add_pt_consts`, the ordered ct×pt batch boundary of a BSGS baby step, with a sequential provided default; `eval_baby_step` issues one call for its scheduled terms.
 - Add `GLWETensoring::glwe_tensor_apply_relinearize`, `glwe_tensor_square_relinearize_assign` and `glwe_tensor_apply_prepared_right_relinearize_assign`, fused tensor-product + relinearization taking an explicit `tensor_infos`, with provided `GLWETensoringImpl` methods and materialized defaults.
 - Fix `glwe_tensor_relinearize_tmp_bytes` under-reporting the two unconditional `a_conv` stages.
+- Add `GLWETensoring::glwe_tensor_square_apply_relinearize`, the out-of-place fused square + relinearize.
+- Add `glwe_tensor_{apply,square_apply}_relinearize_batch`, `glwe_tensor_square_relinearize_assign_batch`, `glwe_tensor_apply_prepared_right_relinearize_assign_batch` and their `*_tmp_bytes`, with `Tensor*Item` descriptors and provided sequential `GLWETensoringImpl` defaults.
+- Add `giant_step_schedule` / `GiantStepPair`, the giant-step fold schedule shared by the engine and the lockstep EvalMod driver.
+- Add `BSGSOps::mul_prepared_assign_batch` with a sequential provided default; `eval_giant_steps` dispatches each level's ready frontier as one batch.
 - The BSGS giant-step loop and the planner both skip empty diagonal buckets.
 
 ### `poulpy-ckks`
@@ -29,7 +33,10 @@
 - The homomorphic (I)DFT chain ping-pongs `ct` with one scratch ciphertext instead of copying back per factor, and realigns the destination metadata and width with the source before each factor.
 - Add `CKKSLinearTransformationOps::ckks_dft_evaluate_tmp_bytes`, the whole-chain budget; `ckks_all_ops_with_atk_tmp_bytes` includes it.
 - Add `LinearTransformationEvalParams`: validated `cnv_offset`, PROD width and result `log_budget`/`log_delta`, with checked arithmetic.
-- `ckks_mul_into`, `ckks_square_assign` and `ckks_mul_prepared_assign` dispatch through the fused `GLWETensoring` composites.
+- `ckks_mul_into`, `ckks_square_into`, `ckks_square_assign` and `ckks_mul_prepared_assign` dispatch through the fused `GLWETensoring` composites.
+- `PowerBasisGen::{gen_power, gen_power_chebyshev}` use `ckks_square_into` when `split_degree` returns a self-product.
+- Add `CKKSMulOps::{ckks_mul_into_batch, ckks_square_into_batch, ckks_square_assign_batch, ckks_mul_prepared_assign_batch}` and their `*_tmp_bytes`, with `CKKS*Item` descriptors, provided `CKKSMulImpl` defaults and one core tensor batch per call.
+- Add `ckks_eval_mod_pair_lockstep_default` / `ckks_eval_mod_pair_lockstep_tmp_bytes_default`, the two-branch dependency-frontier EvalMod driver.
 - Add `CKKSEvalModOps::ckks_eval_mod_pair` / `ckks_eval_mod_pair_tmp_bytes` and the `CKKSEvalModImpl` hooks; sequential default, taken by the bootstrap's real and imaginary branches.
 - Add the whole-bootstrap `CKKSBootstrapImpl` OEP, with `CKKSBootstrapDefault` as the reference composition.
 - Add `CKKSMulAddOps::ckks_mul_add_pt_consts_into`, the ordered batch of `ckks_mul_add_pt_const_into`, with the `CKKSMulImpl::ckks_mul_add_pt_consts_into_impl` hook (provided) and the `CKKSMulDefault` per-method override; `ckks_mul_add_pt_consts_plan` walks a virtual destination to emit the per-term `CKKSMulAddPtConstPlan` before `dst` is mutated, and scratch is that of one term. `get_mul_pt_params` / `mul_pt_params_raw` are public.

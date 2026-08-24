@@ -706,6 +706,22 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::mul::test_mul_prepared_layout_mismatch_error
             );
             run_test!(
+                mul_batches_match_scalar,
+                $crate::test_suite::mul_batch::test_mul_batches_match_scalar
+            );
+            run_test!(
+                mul_batches_exact_scratch,
+                $crate::test_suite::mul_batch::test_mul_batches_exact_scratch
+            );
+            run_test!(
+                mul_prepared_assign_batch_rejects_layout_mismatch,
+                $crate::test_suite::mul_batch::test_mul_prepared_assign_batch_rejects_layout_mismatch
+            );
+            run_test!(
+                power_basis_self_products_match_generic_mul,
+                $crate::test_suite::polynomial_evaluation::test_power_basis_self_products_match_generic_mul
+            );
+            run_test!(
                 mul_ct_explicit_metadata_error,
                 $crate::test_suite::mul::test_mul_ct_explicit_metadata_error
             );
@@ -1003,6 +1019,7 @@ pub mod linear_transformation;
 pub mod logical_width;
 pub mod mul;
 pub mod mul_add;
+pub mod mul_batch;
 pub mod mul_pow2;
 pub mod mul_sub;
 pub mod neg;

@@ -1952,7 +1952,7 @@ pub fn test_mul_add_pt_consts_matches_ordered_scalar<BE, F, E>(
 }
 
 /// Bit-for-bit equality on metadata, torus width and every active limb.
-fn assert_ct_identical<BE>(label: &str, want: &CKKSCiphertextOwned<BE>, have: &CKKSCiphertextOwned<BE>)
+pub(crate) fn assert_ct_identical<BE>(label: &str, want: &CKKSCiphertextOwned<BE>, have: &CKKSCiphertextOwned<BE>)
 where
     BE: poulpy_hal::layouts::Backend<ZnxWord = i64>,
     BE::OwnedBuf: poulpy_hal::layouts::HostDataRef,
@@ -1969,5 +1969,141 @@ where
                 "{label}: limb ({col}, {limb}) differs"
             );
         }
+    }
+}
+
+/// Power-basis self-products route through `ckks_square_into` and land on the
+/// same value and the same metadata as the generic multiply they replace.
+///
+/// Covers the monomial self-products of the active schedule (`X^2`, `X^4`,
+/// `X^6`, `X^8`, each a `split_degree` fixed point) and Chebyshev `T_2`.
+pub fn test_power_basis_self_products_match_generic_mul<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    use crate::api::{CKKSPow2Ops, CKKSSubOps};
+    use crate::default::carry_verb::ckks_one_pt;
+    use crate::power_basis::mul_ct_k;
+    use poulpy_core::layouts::split_degree;
+
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (x_re_raw, _) = test_vector_1::<F>(m);
+    let x_im_raw = vec![F::zero(); x_re_raw.len()];
+    let (x_re, _) = quantized_slots(
+        host_module,
+        &encoder,
+        params.base2k.into(),
+        params.prec(),
+        &x_re_raw,
+        &x_im_raw,
+    );
+    let zero_im = vec![F::zero(); x_re.len()];
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    macro_rules! encrypt {
+        () => {
+            ckks_encrypt(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                params.k,
+                &x_re_raw,
+                &x_im_raw,
+                &mut scratch.borrow(),
+            )
+        };
+    }
+
+    // ── monomial: every power below is its own `split_degree` fixed point.
+    let mut monomial = PowerBasis::new(Basis::Monomial, encrypt!());
+    monomial
+        .populate(8, 4, Parity::Full, module, &tsk, &mut scratch.borrow())
+        .expect("populate monomial power basis to degree 8");
+
+    for power in [2usize, 4, 6, 8] {
+        let (a, b) = split_degree(power);
+        assert_eq!(a, b, "X^{power} is not a self-product");
+        let root = monomial.get_stored(a).expect("split operand present");
+        let k = mul_ct_k(root, root).expect("self-product width");
+        let mut generic = module.ckks_ciphertext_alloc(root.base2k(), k.into());
+        module
+            .ckks_mul_into(&mut generic, root, root, &tsk, &mut scratch.borrow())
+            .expect("generic multiply");
+
+        let stored = monomial.get_stored(power).expect("power present");
+        assert_eq!(stored.meta(), generic.meta(), "X^{power}: metadata differs");
+        assert_eq!(stored.k(), generic.k(), "X^{power}: torus width differs");
+        assert_eq!(stored.log_budget(), generic.log_budget(), "X^{power}: log_budget differs");
+
+        let want = pointwise_pow(&x_re, power);
+        for (label, ct) in [("square", stored), ("generic_mul", &generic)] {
+            assert_decrypt_precision(
+                &format!("power_basis_x{power}_{label}"),
+                &params,
+                module,
+                &encoder,
+                ct,
+                &sk,
+                &want,
+                &zero_im,
+                &mut scratch.borrow(),
+            );
+        }
+    }
+
+    // ── Chebyshev T2 = 2·T1² − 1.
+    let mut chebyshev = PowerBasis::new(Basis::Chebyshev, encrypt!());
+    chebyshev
+        .gen_power_chebyshev(2, module, &tsk, &mut scratch.borrow())
+        .expect("generate T2");
+
+    let t1 = chebyshev.get_stored(1).expect("T1 present");
+    let k = mul_ct_k(t1, t1).expect("self-product width");
+    let mut generic = module.ckks_ciphertext_alloc(t1.base2k(), k.into());
+    module
+        .ckks_mul_into(&mut generic, t1, t1, &tsk, &mut scratch.borrow())
+        .expect("generic multiply");
+    module
+        .ckks_mul_pow2_assign(&mut generic, 1, &mut scratch.borrow())
+        .expect("double");
+    let one = ckks_one_pt(module, generic.base2k()).expect("encoded one");
+    module
+        .ckks_sub_pt_const_assign(&mut generic, 0, &one, 0, &mut scratch.borrow())
+        .expect("subtract one");
+
+    let stored = chebyshev.get_stored(2).expect("T2 present");
+    assert_eq!(stored.meta(), generic.meta(), "T2: metadata differs");
+    assert_eq!(stored.k(), generic.k(), "T2: torus width differs");
+    assert_eq!(stored.log_budget(), generic.log_budget(), "T2: log_budget differs");
+
+    let want: Vec<F> = x_re.iter().map(|x| F::from_f64(2.0).unwrap() * *x * *x - F::one()).collect();
+    for (label, ct) in [("square", stored), ("generic_mul", &generic)] {
+        assert_decrypt_precision(
+            &format!("power_basis_t2_{label}"),
+            &params,
+            module,
+            &encoder,
+            ct,
+            &sk,
+            &want,
+            &zero_im,
+            &mut scratch.borrow(),
+        );
     }
 }

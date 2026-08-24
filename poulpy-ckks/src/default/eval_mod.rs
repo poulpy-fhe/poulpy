@@ -299,7 +299,7 @@ where
 /// Allocates the single owned EvalMod input that becomes power-basis element 1.
 /// Copying directly from `ct` avoids the scratch copy followed by the generic
 /// polynomial evaluator's second owned copy.
-fn eval_mod_input<BE, C>(module: &Module<BE>, ct: &C, layout: &GLWELayout, meta: CKKSMeta) -> CKKSCiphertextOwned<BE>
+pub(crate) fn eval_mod_input<BE, C>(module: &Module<BE>, ct: &C, layout: &GLWELayout, meta: CKKSMeta) -> CKKSCiphertextOwned<BE>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE>,

@@ -12,7 +12,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use crate::api::CKKSMulOps;
+use crate::api::{CKKSMulIntoItem, CKKSMulOps, CKKSPreparedMulAssignItem, CKKSSquareAssignItem, CKKSSquareIntoItem};
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight, oep::CKKSMulImpl};
 
@@ -167,5 +167,98 @@ where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_pt_const_assign_impl(self, dst, pt, pt_coeff, scratch)
+    }
+    fn ckks_mul_into_batch_tmp_bytes<Dst, A, B, T>(&self, items: &[CKKSMulIntoItem<&Dst, &A, &B>], tsk: &T) -> usize
+    where
+        Dst: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
+        T: GGLWEInfos,
+    {
+        BE::ckks_mul_into_batch_tmp_bytes_impl(self, items, tsk)
+    }
+
+    fn ckks_mul_into_batch<Dst, A, B, T>(
+        &self,
+        items: &mut [CKKSMulIntoItem<&mut Dst, &A, &B>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    {
+        BE::ckks_mul_into_batch_impl(self, items, tsk, scratch)
+    }
+
+    fn ckks_square_into_batch_tmp_bytes<Dst, A, T>(&self, items: &[CKKSSquareIntoItem<&Dst, &A>], tsk: &T) -> usize
+    where
+        Dst: CKKSCtBounds,
+        A: CKKSCtBounds,
+        T: GGLWEInfos,
+    {
+        BE::ckks_square_into_batch_tmp_bytes_impl(self, items, tsk)
+    }
+
+    fn ckks_square_into_batch<Dst, A, T>(
+        &self,
+        items: &mut [CKKSSquareIntoItem<&mut Dst, &A>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    {
+        BE::ckks_square_into_batch_impl(self, items, tsk, scratch)
+    }
+
+    fn ckks_square_assign_batch_tmp_bytes<Dst, T>(&self, items: &[CKKSSquareAssignItem<&Dst>], tsk: &T) -> usize
+    where
+        Dst: CKKSCtBounds,
+        T: GGLWEInfos,
+    {
+        BE::ckks_square_assign_batch_tmp_bytes_impl(self, items, tsk)
+    }
+
+    fn ckks_square_assign_batch<Dst, T>(
+        &self,
+        items: &mut [CKKSSquareAssignItem<&mut Dst>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    {
+        BE::ckks_square_assign_batch_impl(self, items, tsk, scratch)
+    }
+
+    fn ckks_mul_prepared_assign_batch_tmp_bytes<Dst, T>(
+        &self,
+        items: &[CKKSPreparedMulAssignItem<&Dst, &CKKSPreparedRight<BE>>],
+        tsk: &T,
+    ) -> usize
+    where
+        Dst: CKKSCtBounds,
+        T: GGLWEInfos,
+    {
+        BE::ckks_mul_prepared_assign_batch_tmp_bytes_impl(self, items, tsk)
+    }
+
+    fn ckks_mul_prepared_assign_batch<Dst, T>(
+        &self,
+        items: &mut [CKKSPreparedMulAssignItem<&mut Dst, &CKKSPreparedRight<BE>>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    {
+        BE::ckks_mul_prepared_assign_batch_impl(self, items, tsk, scratch)
     }
 }

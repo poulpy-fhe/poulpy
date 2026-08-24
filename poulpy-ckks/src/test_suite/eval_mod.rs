@@ -26,6 +26,9 @@ use super::helpers::{
     gen_tsk, precision_stats,
 };
 use crate::SlotsKind;
+use crate::default::eval_mod_lockstep::{
+    CKKSLockstepOps, ckks_eval_mod_pair_lockstep_default, ckks_eval_mod_pair_lockstep_tmp_bytes_default,
+};
 
 fn alloc_scratch_eval_mod<BE, F>(
     params: &super::CKKSTestParams,
@@ -302,6 +305,9 @@ fn run_eval_mod_case<BE, F, E>(
 /// inputs through `ckks_eval_mod` twice and through `ckks_eval_mod_pair` once,
 /// inside a scratch arena sized by `ckks_eval_mod_pair_tmp_bytes`, and requires
 /// both branches to agree bit-for-bit on metadata and on every active limb.
+/// The paired and lockstep EvalMod agree with two single evaluations, on the
+/// plain `SinCheby` shape and on the active `CosHKEven` shape (input offset,
+/// `T2` fold, range-extension squares).
 pub fn test_eval_mod_pair_matches_singles<BE, F, E>(
     params: super::CKKSTestParams,
     module: &Module<BE>,
@@ -314,19 +320,61 @@ pub fn test_eval_mod_pair_matches_singles<BE, F, E>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    Module<BE>: CKKSLockstepOps<BE>,
 {
-    let mut lit = EvalModPlan {
-        eval_mod_type: EvalModType::SinCheby,
-        log_msg_ratio: 8,
-        f_mod_degree: 63,
-        f_mod_interval: 14,
-        f_mod_log_interval_reduction: 0,
-        f_mod_inv_degree: None,
-        scaling: None,
-        split_strategy: SplitStrategy::MinDepth,
-        coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
-        f_mod_log_delta: 60,
-    };
+    eval_mod_pair_case::<BE, F, E>(
+        params,
+        module,
+        host_module,
+        "sin_cheby",
+        EvalModPlan {
+            eval_mod_type: EvalModType::SinCheby,
+            log_msg_ratio: 8,
+            f_mod_degree: 63,
+            f_mod_interval: 14,
+            f_mod_log_interval_reduction: 0,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
+            f_mod_log_delta: 60,
+        },
+    );
+    eval_mod_pair_case::<BE, F, E>(
+        params,
+        module,
+        host_module,
+        "cos_hk_even",
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosHKEven,
+            log_msg_ratio: 8,
+            f_mod_degree: 30,
+            f_mod_interval: 16,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
+            f_mod_log_delta: 60,
+        },
+    );
+}
+
+fn eval_mod_pair_case<BE, F, E>(
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    label: &str,
+    mut lit: EvalModPlan,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE> + CKKSLockstepOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
     lit.coeffs_meta = CoeffsMeta::from_delta_budget(lit.f_mod_log_delta, params.base2k);
 
     let mut compile_scratch =
@@ -427,18 +475,57 @@ pub fn test_eval_mod_pair_matches_singles<BE, F, E>(
         )
         .expect("ckks_eval_mod_pair");
 
-    for (branch, (single, pair)) in [(&single_0, &pair_0), (&single_1, &pair_1)].into_iter().enumerate() {
-        assert_eq!(single.meta(), pair.meta(), "eval_mod_pair branch {branch}: metadata differs");
-        assert_eq!(single.k(), pair.k(), "eval_mod_pair branch {branch}: torus width differs");
-        let cols = single.rank().as_usize() + 1;
-        let n = single.n().as_usize();
-        for col in 0..cols {
-            for limb in 0..single.size() {
-                assert_eq!(
-                    &single.data().at(col, limb)[..n],
-                    &pair.data().at(col, limb)[..n],
-                    "eval_mod_pair branch {branch}: limb ({col}, {limb}) differs from the single op"
-                );
+    // The lockstep driver interleaves both DAGs and dispatches every
+    // tensor-product frontier as a batch; the branches are independent, so it
+    // must land on exactly the sequential result.
+    let (mut lock_0, mut lock_1) = (alloc_res(), alloc_res());
+    let lock_bytes = ckks_eval_mod_pair_lockstep_tmp_bytes_default(
+        module,
+        &lock_0,
+        &lock_1,
+        &inputs[0],
+        &inputs[1],
+        &params_be,
+        &test_params.tsk_layout(),
+    );
+    let mut lock_scratch = ScratchOwned::<BE>::alloc(lock_bytes);
+    ckks_eval_mod_pair_lockstep_default(
+        module,
+        &mut lock_0,
+        &mut lock_1,
+        &inputs[0],
+        &inputs[1],
+        &params_be,
+        &tsk,
+        &mut lock_scratch.borrow(),
+    )
+    .expect("ckks_eval_mod_pair_lockstep");
+
+    for (branch, (single, paired, locked)) in [(&single_0, &pair_0, &lock_0), (&single_1, &pair_1, &lock_1)]
+        .into_iter()
+        .enumerate()
+    {
+        for (kind, have) in [("pair", paired), ("lockstep", locked)] {
+            assert_eq!(
+                single.meta(),
+                have.meta(),
+                "{label}: eval_mod_{kind} branch {branch}: metadata differs"
+            );
+            assert_eq!(
+                single.k(),
+                have.k(),
+                "{label}: eval_mod_{kind} branch {branch}: torus width differs"
+            );
+            let cols = single.rank().as_usize() + 1;
+            let n = single.n().as_usize();
+            for col in 0..cols {
+                for limb in 0..single.size() {
+                    assert_eq!(
+                        &single.data().at(col, limb)[..n],
+                        &have.data().at(col, limb)[..n],
+                        "{label}: eval_mod_{kind} branch {branch}: limb ({col}, {limb}) differs from the single op"
+                    );
+                }
             }
         }
     }

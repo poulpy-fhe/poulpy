@@ -6,6 +6,7 @@ pub mod copy;
 pub mod dft;
 pub mod encryption;
 pub mod eval_mod;
+pub mod eval_mod_lockstep;
 pub mod imag;
 pub mod linear_transformation;
 pub mod linear_transformation_diagonals;

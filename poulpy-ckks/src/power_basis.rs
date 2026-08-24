@@ -140,7 +140,11 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
             let b_val = self.get_stored(b).expect("gen_power(b) just succeeded");
             let k = mul_ct_k(a_val, b_val)?;
             let mut r = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
-            module.ckks_mul_into(&mut r, a_val, b_val, tsk, scratch)?;
+            if a == b {
+                module.ckks_square_into(&mut r, a_val, tsk, scratch)?;
+            } else {
+                module.ckks_mul_into(&mut r, a_val, b_val, tsk, scratch)?;
+            }
             r
         };
         self.set_power(n, result);
@@ -187,7 +191,11 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
             // `2·T_a·T_b − T_c`: compute the product directly into the owned result and
             // double it in place, rather than into a separate scratch buffer then copying.
             let mut doubled = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
-            module.ckks_mul_into(&mut doubled, a_val, b_val, tsk, &mut scratch)?;
+            if a == b {
+                module.ckks_square_into(&mut doubled, a_val, tsk, &mut scratch)?;
+            } else {
+                module.ckks_mul_into(&mut doubled, a_val, b_val, tsk, &mut scratch)?;
+            }
             module.ckks_mul_pow2_assign(&mut doubled, 1, &mut scratch)?;
 
             if c == 0 {
@@ -261,7 +269,7 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
     }
 }
 
-fn mul_ct_k<A, B>(a: &A, b: &B) -> Result<usize>
+pub(crate) fn mul_ct_k<A, B>(a: &A, b: &B) -> Result<usize>
 where
     A: GLWEInfos + CKKSInfos,
     B: GLWEInfos + CKKSInfos,
