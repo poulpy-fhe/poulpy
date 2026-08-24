@@ -1,7 +1,7 @@
 use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, Module, ScratchArena};
 
 use crate::{
     api::{
@@ -235,6 +235,21 @@ impl_operations_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_tensor_square_apply(self, cnv_offset, res, a, scratch)
+    },
+    fn glwe_tensor_apply_prepared_right<R, A, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b_prep: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        BE::glwe_tensor_apply_prepared_right(self, cnv_offset, res, a, b_prep, b_size, scratch)
     },
     fn glwe_tensor_relinearize<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
     where

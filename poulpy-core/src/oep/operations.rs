@@ -1,7 +1,7 @@
 use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, Module, ScratchArena};
 
 use crate::{
     default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
@@ -127,6 +127,35 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
+
+    /// Tensor apply against a caller-prepared right operand.
+    ///
+    /// Provided, so an existing explicit `GLWETensoringImpl` keeps compiling:
+    /// the default forwards to
+    /// [`GLWETensoringDefault::glwe_tensor_apply_prepared_right_default`](crate::default::operations::GLWETensoringDefault::glwe_tensor_apply_prepared_right_default),
+    /// which prepares only `a` and runs the ordinary tensor loop. An override
+    /// must stay within
+    /// [`Self::glwe_tensor_apply_tmp_bytes`] for the equivalent unprepared
+    /// layouts.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_apply_prepared_right<R, A, BP>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b_prep: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        Module<BE>: crate::default::operations::GLWETensoringDefault<BE>,
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        <Module<BE> as crate::default::operations::GLWETensoringDefault<BE>>::glwe_tensor_apply_prepared_right_default(
+            module, cnv_offset, res, a, b_prep, b_size, scratch,
+        )
+    }
 
     fn glwe_tensor_relinearize<R, A, T>(module: &Module<BE>, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
     where

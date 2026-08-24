@@ -855,6 +855,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_fold
             );
             run_test!(
+                mul_add_pt_consts_matches_ordered_scalar,
+                $crate::test_suite::polynomial_evaluation::test_mul_add_pt_consts_matches_ordered_scalar
+            );
+            run_test!(
                 eval_mod_sin_continuous_minimal,
                 $crate::test_suite::eval_mod::test_eval_mod_sin_continuous_minimal
             );

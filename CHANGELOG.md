@@ -16,6 +16,8 @@
 - Add `LinearTransformationBabySteps::baby_step_mut` / `baby_steps_mut`.
 - Add `glwe_backend_ref_with_size` / `glwe_backend_mut_with_size`; bare `GLWEToBackendRef`/`GLWEToBackendMut` are unchanged.
 - Add `bsgs_op_counts`, the `(ct×ct, ct×pt)` multiplication count of a BSGS evaluation.
+- Add `GLWETensoring::glwe_tensor_apply_prepared_right`, dispatched through `GLWETensoringImpl` (provided) and `GLWETensoringDefault` instead of the free helper; scratch stays within `glwe_tensor_apply_tmp_bytes`.
+- Add `BSGSOps::mul_add_pt_consts`, the ordered ct×pt batch boundary of a BSGS baby step, with a sequential provided default; `eval_baby_step` issues one call for its scheduled terms.
 - The BSGS giant-step loop and the planner both skip empty diagonal buckets.
 
 ### `poulpy-ckks`
@@ -27,6 +29,7 @@
 - Add `LinearTransformationEvalParams`: validated `cnv_offset`, PROD width and result `log_budget`/`log_delta`, with checked arithmetic.
 - Add `CKKSEvalModOps::ckks_eval_mod_pair` / `ckks_eval_mod_pair_tmp_bytes` and the `CKKSEvalModImpl` hooks; sequential default, taken by the bootstrap's real and imaginary branches.
 - Add the whole-bootstrap `CKKSBootstrapImpl` OEP, with `CKKSBootstrapDefault` as the reference composition.
+- Add `CKKSMulAddOps::ckks_mul_add_pt_consts_into`, the ordered batch of `ckks_mul_add_pt_const_into`, with the `CKKSMulImpl::ckks_mul_add_pt_consts_into_impl` hook (provided) and the `CKKSMulDefault` per-method override; `ckks_mul_add_pt_consts_plan` walks a virtual destination to emit the per-term `CKKSMulAddPtConstPlan` before `dst` is mutated, and scratch is that of one term. `get_mul_pt_params` / `mul_pt_params_raw` are public.
 - Add `EvalModType::CosHKEven`: the `CosHK` fit recentred on `x - 1/4` and `T₂`-folded, via `cosine::approximate_cos_centered` and `EvalModPlan::{input_offset, mirrored_clusters, folds_even_base}`. `compile_eval_mod` rejects a plan the variant cannot evaluate below `CosHK`'s cost.
 - `DFTMatrix::factors()` is public, replacing `factor_operands()`.
 

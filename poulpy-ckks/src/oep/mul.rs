@@ -1,5 +1,6 @@
 use crate::CKKSResult as Result;
-use crate::default::mul::CKKSMulDefault;
+use crate::api::{CKKSAddOps, CKKSMulOps};
+use crate::default::mul::{CKKSMulAddPtConstPlan, CKKSMulDefault, ckks_mul_add_pt_consts_into_ordered};
 use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::{
@@ -150,6 +151,31 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds;
+
+    /// Ordered batch of `dst += a·coeffs[idx]` over `terms`.
+    ///
+    /// Provided, so an existing explicit `CKKSMulImpl` keeps compiling: the
+    /// default is the ordered scalar composition
+    /// ([`ckks_mul_add_pt_consts_into_ordered`]). An override may fuse the terms
+    /// but must reproduce each one's convolution offset, rounding, budget
+    /// alignment, carry normalization and metadata step, in order.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_mul_add_pt_consts_into_impl<Dst, A, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        terms: &[(&A, usize)],
+        plans: &[CKKSMulAddPtConstPlan],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: CKKSMulOps<BE> + CKKSAddOps<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+    {
+        ckks_mul_add_pt_consts_into_ordered(module, dst, terms, plans, coeffs, scratch)
+    }
 }
 
 unsafe impl<BE: Backend> CKKSMulImpl<BE> for BE
@@ -341,6 +367,24 @@ where
         P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_const_assign_default(dst, pt, pt_coeff, scratch)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_mul_add_pt_consts_into_impl<Dst, A, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        terms: &[(&A, usize)],
+        plans: &[CKKSMulAddPtConstPlan],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: CKKSMulOps<BE> + CKKSAddOps<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+    {
+        module.ckks_mul_add_pt_consts_into_default(dst, terms, plans, coeffs, scratch)
     }
 }
 

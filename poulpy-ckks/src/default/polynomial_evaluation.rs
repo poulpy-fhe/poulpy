@@ -117,6 +117,19 @@ where
             .map_err(::anyhow::Error::from)
     }
 
+    fn mul_add_pt_consts(
+        &self,
+        module: &Module<BE>,
+        res: &mut V,
+        terms: &[(&A, usize)],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> anyhow::Result<()> {
+        module
+            .ckks_mul_add_pt_consts_into(res, terms, coeffs, scratch)
+            .map_err(::anyhow::Error::from)
+    }
+
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> anyhow::Result<Self::Prepared> {
         module.ckks_prepare_right(a, scratch).map_err(::anyhow::Error::from)
     }

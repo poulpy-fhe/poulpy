@@ -1,6 +1,6 @@
 use poulpy_core::{
     layouts::GLWETensorKeyPrepared,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
@@ -9,8 +9,8 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
-    api::{CKKSMulOps, CKKSPolynomialEvaluationOps},
-    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec},
+    api::{CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSPolynomialEvaluationOps},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec},
     polynomial::{
         BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial,
         PolynomialInputTransform, SplitStrategy,
@@ -1828,6 +1828,145 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
                 bsgs_host.consumed_bits(in_ld, coeff_log_delta),
                 "degree {degree} {strategy:?}: consumed-bits mismatch (depth={})",
                 bsgs_host.eval_depth(),
+            );
+        }
+    }
+}
+
+/// **The ordered batch equals the ordered scalar loop.**
+///
+/// `ckks_mul_add_pt_consts_into` must be bit-identical to running
+/// `ckks_mul_add_pt_const_into` over the same terms in the same order, on every
+/// active limb and on the CKKS metadata. Covers empty / singleton / three-term
+/// slices, heterogeneous source budgets (`x`, `x²`, `x³`), duplicate terms, a
+/// reordered slice, and an invalid late term, which must leave `dst` untouched.
+///
+/// The `Full` / `Even` / `Odd` schedules and the live convolution offsets are
+/// covered by the `eval_poly_*` cases above: `eval_baby_step` routes every
+/// scheduled term through this batch.
+pub fn test_mul_add_pt_consts_matches_ordered_scalar<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let quarter = F::from_f64(0.25).unwrap();
+    let (re1, _) = test_vector_1::<F>(m);
+    let x_re_raw: Vec<F> = re1.iter().copied().map(|x| x * quarter).collect();
+    let x_im_raw = vec![F::zero(); x_re_raw.len()];
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    // Heterogeneous source budgets: each squaring/multiply spends more.
+    let x = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &x_re_raw,
+        &x_im_raw,
+        &mut scratch.borrow(),
+    );
+    let mut x2 = alloc_ct(&params, module, params.k);
+    module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
+    let mut x3 = alloc_ct(&params, module, params.k);
+    module.ckks_mul_into(&mut x3, &x2, &x, &tsk, &mut scratch.borrow()).unwrap();
+    assert!(
+        x.log_budget() > x2.log_budget() && x2.log_budget() > x3.log_budget(),
+        "the three sources must carry different budgets"
+    );
+
+    let n_coeffs = 4usize;
+    let mut host_pt = host_module.ckks_pt_coeffs_alloc(n_coeffs, params.base2k.into(), PT_PREC.k());
+    host_pt.set_meta(PT_PREC.meta());
+    let raw = [0.125f64, -0.25, 0.0625, 0.03125];
+    let packed: Vec<F> = raw
+        .iter()
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
+        .collect();
+    host_pt.encode_host_floats(&packed).unwrap();
+    let coeffs: CKKSPlaintextOwned<BE> = upload_pt(module, &host_pt);
+
+    // The accumulator starts populated, as `eval_baby_step` leaves it.
+    let seed = |module: &Module<BE>, scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>| {
+        let mut dst = alloc_ct(&params, module, params.k);
+        module.ckks_copy(&mut dst, &x3, scratch).unwrap();
+        dst
+    };
+
+    type Case<'a, BE> = (&'a str, Vec<(&'a CKKSCiphertextOwned<BE>, usize)>);
+    let cases: Vec<Case<'_, BE>> = vec![
+        ("empty", vec![]),
+        ("singleton", vec![(&x, 1)]),
+        ("three terms", vec![(&x, 1), (&x2, 2), (&x3, 3)]),
+        ("duplicate terms", vec![(&x, 1), (&x, 1), (&x2, 2)]),
+        ("reordered", vec![(&x3, 3), (&x, 1), (&x2, 2)]),
+        // The three BSGS schedules, exactly as `eval_baby_step` builds them.
+        ("Full schedule", vec![(&x, 1), (&x2, 2), (&x3, 3)]),
+        ("Even schedule", vec![(&x2, 2)]),
+        ("Odd schedule", vec![(&x, 1), (&x3, 3)]),
+    ];
+
+    for (label, terms) in &cases {
+        let mut batch = seed(module, &mut scratch.borrow());
+        module
+            .ckks_mul_add_pt_consts_into(&mut batch, terms, &coeffs, &mut scratch.borrow())
+            .unwrap_or_else(|e| panic!("{label}: batch failed: {e}"));
+
+        let mut scalar = seed(module, &mut scratch.borrow());
+        for &(a, idx) in terms {
+            module
+                .ckks_mul_add_pt_const_into(&mut scalar, a, &coeffs, idx, &mut scratch.borrow())
+                .unwrap_or_else(|e| panic!("{label}: scalar failed: {e}"));
+        }
+        assert_ct_identical::<BE>(label, &scalar, &batch);
+    }
+
+    // Validation before mutation: the invalid coefficient index is the last
+    // term, so a loop that ran eagerly would already have mutated `dst`.
+    let mut guarded = seed(module, &mut scratch.borrow());
+    let untouched = seed(module, &mut scratch.borrow());
+    let bad: Vec<(&CKKSCiphertextOwned<BE>, usize)> = vec![(&x, 1), (&x2, 2), (&x3, n_coeffs)];
+    assert!(
+        module
+            .ckks_mul_add_pt_consts_into(&mut guarded, &bad, &coeffs, &mut scratch.borrow())
+            .is_err(),
+        "an out-of-range coefficient index must be rejected"
+    );
+    assert_ct_identical::<BE>("invalid late term", &untouched, &guarded);
+}
+
+/// Bit-for-bit equality on metadata, torus width and every active limb.
+fn assert_ct_identical<BE>(label: &str, want: &CKKSCiphertextOwned<BE>, have: &CKKSCiphertextOwned<BE>)
+where
+    BE: poulpy_hal::layouts::Backend<ZnxWord = i64>,
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataRef,
+{
+    use poulpy_hal::layouts::ZnxView;
+    assert_eq!(want.meta(), have.meta(), "{label}: metadata differs");
+    assert_eq!(want.k(), have.k(), "{label}: torus width differs");
+    let n = want.n().as_usize();
+    for col in 0..want.rank().as_usize() + 1 {
+        for limb in 0..want.size() {
+            assert_eq!(
+                &want.data().at(col, limb)[..n],
+                &have.data().at(col, limb)[..n],
+                "{label}: limb ({col}, {limb}) differs"
             );
         }
     }

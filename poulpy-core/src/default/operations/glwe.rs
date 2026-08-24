@@ -498,6 +498,20 @@ pub trait GLWETensoringDefault<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos;
+
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_apply_prepared_right_default<R, A, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b_prep: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>;
 }
 
 impl<BE: Backend> GLWETensoringDefault<BE> for Module<BE>
@@ -833,6 +847,22 @@ where
             ab_base2k,
             &mut scratch,
         );
+    }
+
+    fn glwe_tensor_apply_prepared_right_default<R, A, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b_prep: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        glwe_tensor_apply_prepared_right(self, cnv_offset, res, a, b_prep, b_size, scratch);
     }
 }
 

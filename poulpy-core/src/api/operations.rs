@@ -1,7 +1,7 @@
 use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyHelper,
@@ -141,6 +141,28 @@ pub trait GLWETensoring<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
+
+    /// [`Self::glwe_tensor_apply`] against a caller-prepared right operand:
+    /// only `a` is prepared, `b_prep` is reused as-is. `b_size` is the limb
+    /// count of the operand `b_prep` was prepared from.
+    ///
+    /// Scratch: no more than
+    /// [`glwe_tensor_apply_tmp_bytes`](Self::glwe_tensor_apply_tmp_bytes) for
+    /// the equivalent unprepared layouts, since the right operand is not
+    /// prepared here. An override must respect that bound.
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_apply_prepared_right<R, A, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b_prep: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>;
 
     fn glwe_tensor_relinearize<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
     where

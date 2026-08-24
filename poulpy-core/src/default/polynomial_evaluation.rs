@@ -113,6 +113,28 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>;
 
+    /// Computes `res += Σ a·coeffs[idx]` over `terms`, in order, each step
+    /// identical to [`Self::mul_add_pt_const`].
+    ///
+    /// One ordered batch boundary, not a dot product: every term keeps its own
+    /// convolution offset, rounding, budget alignment and carry normalization,
+    /// and `res`'s metadata evolves term by term. A backend may fuse the steps
+    /// but not reassociate them. An empty slice is a no-op; a singleton is one
+    /// [`Self::mul_add_pt_const`].
+    fn mul_add_pt_consts(
+        &self,
+        module: &Module<BE>,
+        res: &mut V,
+        terms: &[(&A, usize)],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()> {
+        for &(a, idx) in terms {
+            self.mul_add_pt_const(module, res, a, coeffs, idx, scratch)?;
+        }
+        Ok(())
+    }
+
     /// Prepares `a` as a reusable right operand for [`Self::mul_prepared_assign`].
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<Self::Prepared>;
 
@@ -173,10 +195,11 @@ where
         ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
     }
 
-    for i in (first..=degree).step_by(step) {
-        let xpow = power_basis.get(i)?;
-        ops.mul_add_pt_const(module, res, xpow, coeffs, i, scratch)?;
-    }
+    let terms: Vec<(&A, usize)> = (first..=degree)
+        .step_by(step)
+        .map(|i| power_basis.get(i).map(|xpow| (xpow, i)))
+        .collect::<Result<_>>()?;
+    ops.mul_add_pt_consts(module, res, &terms, coeffs, scratch)?;
 
     Ok(())
 }
