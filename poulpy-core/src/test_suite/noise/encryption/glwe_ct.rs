@@ -174,6 +174,7 @@ where
 
         let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
         module.decompress_glwe(&mut ct, &ct_compressed);
+        assert_canonical(&ct);
 
         let noise_have: f64 = module
             .glwe_noise(&ct, &pt_want, &sk_prepared, &mut scratch.borrow())

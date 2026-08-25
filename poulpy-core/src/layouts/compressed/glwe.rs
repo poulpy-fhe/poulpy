@@ -1,14 +1,17 @@
 use poulpy_hal::{
-    api::VecZnxCopyBackend,
+    api::{
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxCopyBackend, VecZnxLshAssignBackend, VecZnxLshTmpBytes,
+        VecZnxRshAssignBackend, VecZnxRshTmpBytes,
+    },
     layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
-        WriterTo,
+        Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchArena, ScratchOwned, VecZnx,
+        VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
     },
     source::Source,
 };
 
 use crate::{
-    encryption::glwe::GLWEMaskFillDefault,
+    encryption::glwe::{GLWEMaskFillDefault, round_glwe_columns_to_k_assign},
     layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetBase2k, TorusPrecision},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -286,12 +289,31 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWECompressed<D, W> {
 /// the mask polynomials from the stored PRNG seed.
 pub trait GLWEDecompress
 where
-    Self: GetDegree + GLWEMaskFillDefault<Self::Backend> + VecZnxCopyBackend<Self::Backend>,
+    Self: GetDegree
+        + GLWEMaskFillDefault<Self::Backend>
+        + VecZnxCopyBackend<Self::Backend>
+        + VecZnxRshTmpBytes
+        + VecZnxLshTmpBytes
+        + VecZnxRshAssignBackend<Self::Backend>
+        + VecZnxLshAssignBackend<Self::Backend>,
 {
     type Backend: Backend;
 
+    fn decompress_glwe_tmp_bytes(&self) -> usize {
+        self.vec_znx_rsh_tmp_bytes().max(self.vec_znx_lsh_tmp_bytes())
+    }
+
     /// Decompresses `other` into `res` by copying the stored data and regenerating the mask.
     fn decompress_glwe<R, O>(&self, res: &mut R, other: &O)
+    where
+        R: GLWEToBackendMut<Self::Backend> + SetBase2k,
+        O: GLWECompressedToBackendRef<Self::Backend> + GLWEInfos,
+    {
+        let mut scratch = ScratchOwned::<Self::Backend>::alloc(self.decompress_glwe_tmp_bytes());
+        self.decompress_glwe_with_scratch(res, other, &mut scratch.borrow());
+    }
+
+    fn decompress_glwe_with_scratch<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, Self::Backend>)
     where
         R: GLWEToBackendMut<Self::Backend> + SetBase2k,
         O: GLWECompressedToBackendRef<Self::Backend> + GLWEInfos,
@@ -313,13 +335,24 @@ where
         }
         self.fill_glwe_mask_from_seed_default(other.base2k.into(), res, 1, other.rank().as_usize(), other.seed);
 
+        {
+            let res_backend = &mut res.to_backend_mut();
+            round_glwe_columns_to_k_assign(self, res_backend, 1..other.rank().as_usize() + 1, scratch);
+        }
+
         res.set_base2k(other.base2k());
     }
 }
 
 impl<B: Backend> GLWEDecompress for Module<B>
 where
-    Self: GetDegree + GLWEMaskFillDefault<B> + VecZnxCopyBackend<B>,
+    Self: GetDegree
+        + GLWEMaskFillDefault<B>
+        + VecZnxCopyBackend<B>
+        + VecZnxRshTmpBytes
+        + VecZnxLshTmpBytes
+        + VecZnxRshAssignBackend<B>
+        + VecZnxLshAssignBackend<B>,
 {
     type Backend = B;
 }

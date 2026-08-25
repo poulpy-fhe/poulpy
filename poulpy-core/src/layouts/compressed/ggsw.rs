@@ -1,7 +1,8 @@
 use poulpy_hal::{
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, Module, ReaderFrom,
-        WriterTo, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut,
+        ScratchOwned, WriterTo, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut,
         mat_znx_backend_ref_from_mut,
     },
     source::Source,
@@ -408,12 +409,13 @@ where
         assert_eq!(res.rank(), other.rank());
         let dnum: usize = res.dnum().into();
         let rank: usize = res.rank().into();
+        let mut scratch = ScratchOwned::<Self::Backend>::alloc(self.decompress_glwe_tmp_bytes());
 
         for row_i in 0..dnum {
             for col_j in 0..rank + 1 {
                 let mut dst = res.at_view_mut(row_i, col_j);
                 let src = other.at_view(row_i, col_j);
-                self.decompress_glwe(&mut dst, &src);
+                self.decompress_glwe_with_scratch(&mut dst, &src, &mut scratch.borrow());
             }
         }
     }

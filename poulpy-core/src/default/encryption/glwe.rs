@@ -16,14 +16,14 @@ use poulpy_hal::{
     source::Source,
 };
 
-fn round_glwe_columns_to_k_assign<BE, M>(
+pub(crate) fn round_glwe_columns_to_k_assign<BE, M>(
     module: &M,
     res: &mut crate::layouts::GLWEBackendMut<'_, BE>,
     cols: std::ops::Range<usize>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: VecZnxRshAssignBackend<BE> + VecZnxLshAssignBackend<BE>,
+    M: VecZnxRshAssignBackend<BE> + VecZnxLshAssignBackend<BE> + ?Sized,
 {
     let padding = res
         .max_k()
