@@ -4,8 +4,9 @@ use poulpy_hal::{
         ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend, ScratchArenaTakeBasic, SvpApplyDftToDft,
         SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssignBackend, VecZnxAddNormalSourceBackend,
         VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssignBackend,
-        VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
+        VecZnxDftBytesOf, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxLshAssignBackend, VecZnxLshTmpBytes,
+        VecZnxNormalize, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxRshAssignBackend, VecZnxRshTmpBytes,
+        VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
         Backend, Module, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
@@ -14,6 +15,31 @@ use poulpy_hal::{
     },
     source::Source,
 };
+
+fn round_glwe_columns_to_k_assign<BE, M>(
+    module: &M,
+    res: &mut crate::layouts::GLWEBackendMut<'_, BE>,
+    cols: std::ops::Range<usize>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: VecZnxRshAssignBackend<BE> + VecZnxLshAssignBackend<BE>,
+{
+    let padding = res
+        .max_k()
+        .as_usize()
+        .checked_sub(res.k().as_usize())
+        .expect("GLWE precision exceeds its allocation");
+    if padding == 0 {
+        return;
+    }
+
+    let base2k = res.base2k().as_usize();
+    for col in cols {
+        module.vec_znx_rsh_assign_backend(base2k, padding, &mut res.data, col, scratch);
+        module.vec_znx_lsh_assign_backend(base2k, padding, &mut res.data, col, scratch);
+    }
+}
 
 use crate::{
     EncryptionInfos, GetDistribution,
@@ -115,9 +141,13 @@ where
     Self: Sized
         + ModuleN
         + VecZnxNormalizeTmpBytes
+        + VecZnxRshTmpBytes
+        + VecZnxLshTmpBytes
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
         + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxRshAssignBackend<BE>
+        + VecZnxLshAssignBackend<BE>
         + GLWEEncryptSkInternal<BE>,
 {
     fn glwe_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
@@ -129,9 +159,13 @@ where
 
         let lvl_0: usize = BE::bytes_of_vec_znx(self.n(), 1, size);
         let lvl_1: usize = BE::bytes_of_vec_znx(self.n(), 1, size);
-        let lvl_2: usize = self.vec_znx_normalize_tmp_bytes().max(
-            self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + self.vec_znx_big_normalize_tmp_bytes(),
-        );
+        let lvl_2: usize = self
+            .vec_znx_normalize_tmp_bytes()
+            .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.vec_znx_lsh_tmp_bytes())
+            .max(
+                self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + self.vec_znx_big_normalize_tmp_bytes(),
+            );
 
         lvl_0 + lvl_1 + lvl_2
     }
@@ -173,6 +207,7 @@ where
             let mut res_ref = &mut *res;
             self.fill_glwe_mask_from_source_default(base2k, &mut res_ref, 1, rank, source_xa);
         }
+        round_glwe_columns_to_k_assign(self, res, 1..rank + 1, scratch);
         self.glwe_encrypt_sk_internal(
             res.base2k().into(),
             &mut res.data,
@@ -182,6 +217,7 @@ where
             source_xe,
             scratch,
         );
+        round_glwe_columns_to_k_assign(self, res, 0..1, scratch);
     }
 
     fn glwe_encrypt_zero_sk_default<R, E, S>(
@@ -216,7 +252,9 @@ where
             let mut res_ref = &mut *res;
             self.fill_glwe_mask_from_source_default(base2k, &mut res_ref, 1, rank, source_xa);
         }
+        round_glwe_columns_to_k_assign(self, res, 1..rank + 1, scratch);
         self.glwe_encrypt_sk_internal(res.base2k().into(), &mut res.data, None, sk, enc_infos, source_xe, scratch);
+        round_glwe_columns_to_k_assign(self, res, 0..1, scratch);
     }
 }
 
@@ -262,7 +300,11 @@ where
         + SvpPPolBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxZeroBackend<BE>,
+        + VecZnxZeroBackend<BE>
+        + VecZnxRshTmpBytes
+        + VecZnxLshTmpBytes
+        + VecZnxRshAssignBackend<BE>
+        + VecZnxLshAssignBackend<BE>,
 {
     fn glwe_encrypt_pk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -277,7 +319,9 @@ where
             * (self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + BE::bytes_of_vec_znx(self.n(), 1, size));
         let lvl_3: usize = self.vec_znx_big_normalize_tmp_bytes();
 
-        lvl_0 + lvl_1 + lvl_2 + lvl_3
+        (lvl_0 + lvl_1 + lvl_2 + lvl_3)
+            .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.vec_znx_lsh_tmp_bytes())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -310,7 +354,10 @@ where
             source_xu,
             source_xe,
             scratch,
-        )
+        );
+        let mut res = res.to_backend_mut();
+        let cols = res.rank().as_usize() + 1;
+        round_glwe_columns_to_k_assign(self, &mut res, 0..cols, scratch);
     }
 
     fn glwe_encrypt_zero_pk_default<R, K, E>(
@@ -332,7 +379,10 @@ where
             scratch.available(),
             self.glwe_encrypt_pk_tmp_bytes_default(res)
         );
-        self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch)
+        self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch);
+        let mut res = res.to_backend_mut();
+        let cols = res.rank().as_usize() + 1;
+        round_glwe_columns_to_k_assign(self, &mut res, 0..cols, scratch);
     }
 }
 

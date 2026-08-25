@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
-    layouts::{Module, ScratchOwned},
+    layouts::{Module, ScratchOwned, ZnxView},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -11,11 +11,23 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPreparedFactory, GLWEPublicKey, GLWEPublicKeyPreparedFactory,
-        GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
         compressed::{GLWECompressed, GLWEDecompress},
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
 };
+
+fn assert_canonical(ct: &GLWE<Vec<u8>, i64>) {
+    let padding = ct.max_k().as_usize() - ct.k().as_usize();
+    if padding == 0 {
+        return;
+    }
+
+    let low_mask = (1i64 << padding) - 1;
+    for col in 0..ct.data().cols() {
+        assert!(ct.data().at(col, ct.max_size() - 1).iter().all(|value| value & low_mask == 0));
+    }
+}
 
 pub fn test_glwe_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -77,6 +89,7 @@ where
             &mut source_xa,
             &mut scratch.borrow(),
         );
+        assert_canonical(&ct);
 
         let noise_have: f64 = module
             .glwe_noise(&ct, &pt_want, &sk_prepared, &mut scratch.borrow())
@@ -225,6 +238,7 @@ where
             &mut source_xa,
             &mut scratch.borrow(),
         );
+        assert_canonical(&ct);
 
         let noise_have: f64 = module.glwe_noise(&ct, &pt, &sk_prepared, &mut scratch.borrow()).std().log2();
         let noise_want: f64 = DEFAULT_SIGMA_XE.log2() - (k_ct as f64) + 0.5;
@@ -302,6 +316,7 @@ where
             &mut source_xe,
             &mut scratch.borrow(),
         );
+        assert_canonical(&ct);
 
         let noise_have: f64 = module
             .glwe_noise(&ct, &pt_want, &sk_prepared, &mut scratch.borrow())
