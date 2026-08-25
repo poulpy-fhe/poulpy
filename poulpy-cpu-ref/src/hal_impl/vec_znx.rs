@@ -650,6 +650,16 @@ macro_rules! hal_impl_vec_znx {
             );
         }
 
+        fn vec_znx_canonicalize_to_k_assign_backend(
+            _module: &Module<Self>,
+            base2k: usize,
+            k: usize,
+            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            a_col: usize,
+        ) {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_canonicalize_to_k_assign_backend_default(base2k, k, a, a_col);
+        }
+
         fn vec_znx_rsh_assign_backend(
             module: &Module<Self>,
             base2k: usize,

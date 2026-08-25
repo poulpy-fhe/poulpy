@@ -506,6 +506,11 @@ pub trait VecZnxRshAssignBackend<B: Backend> {
     );
 }
 
+pub trait VecZnxCanonicalizeToKAssignBackend<B: Backend> {
+    /// Truncates a column to the canonical `k`-bit representation used by convolution.
+    fn vec_znx_canonicalize_to_k_assign_backend(&self, base2k: usize, k: usize, a: &mut VecZnxBackendMut<'_, B>, a_col: usize);
+}
+
 pub trait VecZnxRotateBackend<B: Backend> {
     /// Multiplies the selected column of `a` by X^k and stores the result in `res_col` of `res`.
     fn vec_znx_rotate_backend(

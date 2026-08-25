@@ -1,19 +1,16 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{VecZnxCopyBackend, VecZnxFillUniformSourceBackend, VecZnxLshAssignBackend, VecZnxRshAssignBackend},
-    layouts::{Backend, Module, ScratchArena, vec_znx_backend_ref_from_mut},
+    api::{VecZnxCopyBackend, VecZnxLshAssignBackend, VecZnxRshAssignBackend},
+    layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
 
 use crate::{
     EncryptionInfos, ScratchArenaTakeCore,
-    encryption::{
-        GLWEEncryptSk, GLWEEncryptSkInternal,
-        glwe::{GLWEMaskFillDefault, round_glwe_columns_to_k_assign},
-    },
+    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, glwe::GLWEMaskFillDefault},
     layouts::{
-        GLWECompressedSeedMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, compressed::GLWECompressedToBackendMut,
+        GLWECompressedSeedMut, GLWEInfos, GLWEToBackendRef, LWEInfos, compressed::GLWECompressedToBackendMut,
         prepared::GLWESecretPreparedToBackendRef,
     },
 };
@@ -44,8 +41,8 @@ impl<BE: Backend> GLWECompressedEncryptSkDefault<BE> for Module<BE>
 where
     Self: GLWEEncryptSkInternal<BE>
         + GLWEEncryptSk<BE>
+        + GLWEMaskFillDefault<BE>
         + VecZnxCopyBackend<BE>
-        + VecZnxFillUniformSourceBackend<BE>
         + VecZnxRshAssignBackend<BE>
         + VecZnxLshAssignBackend<BE>,
 {
@@ -93,21 +90,18 @@ where
                 res_backend.rank().as_usize(),
                 seed_xa,
             );
-            let rank = res_backend.rank().as_usize();
-            let full_ct_backend = &mut full_ct.to_backend_mut();
-            round_glwe_columns_to_k_assign(self, full_ct_backend, 1..rank + 1, &mut scratch_1);
             self.glwe_encrypt_sk_internal(
                 res_backend.base2k().into(),
-                &mut full_ct_backend.data,
+                &mut full_ct.data,
                 Some((pt.to_backend_ref(), 0)),
                 sk,
                 enc_infos,
                 source_xe,
                 &mut scratch_1,
             );
-            round_glwe_columns_to_k_assign(self, full_ct_backend, 0..1, &mut scratch_1);
-            let full_ct_data = vec_znx_backend_ref_from_mut::<BE>(&full_ct_backend.data);
-            self.vec_znx_copy_backend(&mut res_backend.data, 0, &full_ct_data, 0);
+            crate::default::encryption::glwe::round_glwe_columns_to_k(self, &mut full_ct, 0..1, &mut scratch_1);
+            let full_ct_ref = full_ct.to_backend_ref();
+            self.vec_znx_copy_backend(&mut res_backend.data, 0, &full_ct_ref.data, 0);
         }
     }
 }

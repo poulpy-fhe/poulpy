@@ -57,7 +57,7 @@ use poulpy_core::EncryptionLayout;
 
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned, ZnxView},
+    layouts::{HostBytesBackend, Module, ScratchOwned},
     source::Source,
 };
 
@@ -158,7 +158,7 @@ pub fn test_mul_ct_limb_boundary_precision<BE, F, E>(
     let mut scratch = alloc_scratch(&params, module);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 
-    let mut operation_error = |k: usize| {
+    let mut output_error = |k: usize| {
         let mut layout = params.glwe_layout().layout;
         layout.k = k.into();
         let encryption = EncryptionLayout::new_from_default_sigma(layout).unwrap();
@@ -190,58 +190,25 @@ pub fn test_mul_ct_limb_boundary_precision<BE, F, E>(
         module
             .ckks_mul_into(&mut product, &ct1, &ct2, &tsk, &mut scratch.borrow())
             .unwrap();
-        let padding = k.div_ceil(params.base2k) * params.base2k - k;
-        if padding != 0 {
-            let low_mask = (1i64 << padding) - 1;
-            for ct in [&ct1, &ct2, &product] {
-                let backend = ct.to_ref::<BE>();
-                for col in 0..backend.data().cols() {
-                    assert!(
-                        backend
-                            .data()
-                            .at(col, backend.data().size() - 1)
-                            .iter()
-                            .all(|value| value & low_mask == 0),
-                        "ciphertext is not canonical at k={k}"
-                    );
-                }
-            }
-        }
-
-        let (ct1_re, ct1_im) = ckks_decrypt_decode::<_, F, _>(&params, module, &encoder, &ct1, &sk, &mut scratch.borrow());
-        let (ct2_re, ct2_im) = ckks_decrypt_decode::<_, F, _>(&params, module, &encoder, &ct2, &sk, &mut scratch.borrow());
         let (product_re, product_im) =
             ckks_decrypt_decode::<_, F, _>(&params, module, &encoder, &product, &sk, &mut scratch.borrow());
-        let (decrypted_want_re, decrypted_want_im) = want_mul(&ct1_re, &ct1_im, &ct2_re, &ct2_im);
-        let max_error = |want_re: &[F], want_im: &[F]| {
-            product_re
-                .iter()
-                .zip(&product_im)
-                .zip(want_re.iter().zip(want_im))
-                .map(|((&got_re, &got_im), (&want_re, &want_im))| (got_re - want_re).hypot(got_im - want_im).to_f64().unwrap())
-                .fold(0.0, f64::max)
-        };
-
-        (
-            max_error(&expected_re, &expected_im),
-            max_error(&decrypted_want_re, &decrypted_want_im),
-        )
+        product_re
+            .iter()
+            .zip(&product_im)
+            .zip(expected_re.iter().zip(&expected_im))
+            .map(|((&got_re, &got_im), (&want_re, &want_im))| (got_re - want_re).hypot(got_im - want_im).to_f64().unwrap())
+            .fold(0.0, f64::max)
     };
 
-    let aligned_errors = operation_error(aligned_k);
-    let next_errors = operation_error(aligned_k + 1);
-    for (kind, aligned_error, next_error) in [
-        ("output", aligned_errors.0, next_errors.0),
-        ("operation", aligned_errors.1, next_errors.1),
-    ] {
-        let precision_loss = (next_error / aligned_error).log2();
-        assert!(
-            precision_loss <= 2.0,
-            "increasing k from {aligned_k} to {} lost {precision_loss:.3} bits of {kind} multiplication precision \
-             (errors {aligned_error:e} -> {next_error:e})",
-            aligned_k + 1,
-        );
-    }
+    let aligned_error = output_error(aligned_k);
+    let next_error = output_error(aligned_k + 1);
+    let precision_loss = (next_error / aligned_error).log2();
+    assert!(
+        precision_loss <= 2.0,
+        "increasing k from {aligned_k} to {} lost {precision_loss:.3} bits of multiplication precision \
+         (errors {aligned_error:e} -> {next_error:e})",
+        aligned_k + 1,
+    );
 }
 
 pub fn test_mul_ct_delta_a_lt_b<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)

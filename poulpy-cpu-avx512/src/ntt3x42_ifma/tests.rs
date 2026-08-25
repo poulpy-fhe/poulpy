@@ -43,6 +43,7 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_sub_negate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_negate_assign,
             test_vec_znx_sub_scalar => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_scalar,
             test_vec_znx_sub_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_scalar_assign,
+            test_vec_znx_canonicalize_to_k_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_canonicalize_to_k_assign,
             test_vec_znx_rsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh,
             test_vec_znx_rsh_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_assign,
             test_vec_znx_lsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh,

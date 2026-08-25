@@ -1,9 +1,8 @@
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, Module, ReaderFrom,
-        ScratchOwned, WriterTo, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut,
+        WriterTo, mat_znx_at_backend_mut_from_mut, mat_znx_at_backend_ref_from_ref, mat_znx_backend_mut_from_mut,
         mat_znx_backend_ref_from_mut,
     },
     source::Source,
@@ -373,12 +372,11 @@ where
 
         let rank_in: usize = res.rank_in().into();
         let dnum: usize = res.dnum().into();
-        let mut scratch = ScratchOwned::<Self::Backend>::alloc(self.decompress_glwe_tmp_bytes());
         for col_i in 0..rank_in {
             for row_i in 0..dnum {
                 let mut dst = res.at_view_mut(row_i, col_i);
                 let src = other.at_view(row_i, col_i);
-                self.decompress_glwe_with_scratch(&mut dst, &src, &mut scratch.borrow());
+                self.decompress_glwe(&mut dst, &src);
             }
         }
     }
