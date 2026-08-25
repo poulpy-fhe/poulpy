@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### `poulpy-core`
+
+- Fix precision loss at non-`base2k`-aligned ciphertext widths by canonicalizing the unused low bits after GLWE secret- and public-key encryption and across seed-compressed GLWE, GGLWE and GGSW encryption/decompression. This prevents sub-`k` randomness from contaminating CKKS multiplication immediately past a radix-limb boundary.
+
 ## [0.8.2] - 2026-08-22
 
 ### `poulpy-hal`
