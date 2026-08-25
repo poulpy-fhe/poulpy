@@ -7,7 +7,10 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
+use crate::{
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    layouts::{CKKSPreparedRight, CKKSPreparedRightInfos},
+};
 
 /// Ciphertext–ciphertext and ciphertext–plaintext multiplication.
 ///
@@ -340,13 +343,18 @@ pub trait CKKSMulOps<BE: Backend> {
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 
     /// Scratch bytes for [`Self::ckks_mul_prepared_assign_batch`].
-    fn ckks_mul_prepared_assign_batch_tmp_bytes<Dst, T>(
+    ///
+    /// The prepared operands enter as [`CKKSPreparedRightInfos`], so a caller
+    /// planning a frontier can describe operands it has not built with
+    /// [`CKKSPreparedRightLayout`](crate::layouts::CKKSPreparedRightLayout).
+    fn ckks_mul_prepared_assign_batch_tmp_bytes<Dst, PR, T>(
         &self,
-        items: &[CKKSPreparedMulAssignItem<&Dst, &CKKSPreparedRight<BE>>],
+        items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
         tsk: &T,
     ) -> usize
     where
         Dst: CKKSCtBounds,
+        PR: CKKSPreparedRightInfos,
         T: GGLWEInfos;
 
     /// A dependency frontier of independent [`Self::ckks_mul_prepared_assign`]

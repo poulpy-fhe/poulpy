@@ -23,7 +23,7 @@ use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSMulIntoItem, CKKSMulOps, CKKSPreparedMulAssignItem, CKKSSquareAssignItem, CKKSSquareIntoItem},
     checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ckks_ensure,
-    layouts::{CKKSPreparedRight, ScratchArenaTakeCKKS},
+    layouts::{CKKSPreparedRight, CKKSPreparedRightInfos, ScratchArenaTakeCKKS},
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -630,14 +630,15 @@ pub trait CKKSMulDefault<BE: Backend> {
         ckks_mul_prepared_assign_batch_ordered(self, items, tsk, scratch)
     }
 
-    fn ckks_mul_prepared_assign_batch_tmp_bytes_default<Dst, T>(
+    fn ckks_mul_prepared_assign_batch_tmp_bytes_default<Dst, PR, T>(
         &self,
-        items: &[CKKSPreparedMulAssignItem<&Dst, &CKKSPreparedRight<BE>>],
+        items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
         tsk: &T,
     ) -> usize
     where
         Self: GLWETensoring<BE> + Sized,
         Dst: GLWEInfos,
+        PR: CKKSPreparedRightInfos,
         T: GGLWEInfos,
     {
         ckks_mul_prepared_assign_batch_tmp_bytes_ordered(self, items, tsk)
@@ -749,7 +750,7 @@ fn stamp_meta<Dst: SetCKKSInfos>(dst: &mut Dst, stamp: &MulStamp) {
     }
 }
 
-fn get_mul_ct_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
+pub(crate) fn get_mul_ct_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
 where
     R: CKKSInfos,
     A: CKKSInfos,
@@ -1144,30 +1145,33 @@ where
 }
 
 /// Scratch for [`ckks_mul_prepared_assign_batch_ordered`].
-pub fn ckks_mul_prepared_assign_batch_tmp_bytes_ordered<BE, M, Dst, T>(
+pub fn ckks_mul_prepared_assign_batch_tmp_bytes_ordered<BE, M, Dst, PR, T>(
     module: &M,
-    items: &[CKKSPreparedMulAssignItem<&Dst, &CKKSPreparedRight<BE>>],
+    items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
     tsk: &T,
 ) -> usize
 where
     BE: Backend,
     M: GLWETensoring<BE> + ?Sized,
     Dst: GLWEInfos,
+    PR: CKKSPreparedRightInfos,
     T: GGLWEInfos,
 {
     let layouts: Vec<GLWELayout> = items
         .iter()
-        .map(|item| tensor_layout(item.dst, item.dst.k().max(TorusPrecision(item.prepared.k as u32))))
+        .map(|item| tensor_layout(item.dst, item.dst.k().max(TorusPrecision(item.prepared.prepared_k() as u32))))
         .collect();
-    let core: Vec<TensorPreparedRightRelinearizeAssignItem<&Dst, &GLWELayout, &CnvPVecROwned<BE>>> = items
+    // The core query reads only `res`, `tensor_infos` and the limb count, so the
+    // prepared operand itself never has to exist.
+    let core: Vec<TensorPreparedRightRelinearizeAssignItem<&Dst, &GLWELayout, &()>> = items
         .iter()
         .zip(layouts.iter())
         .map(|(item, layout)| TensorPreparedRightRelinearizeAssignItem {
             cnv_offset: 0,
             res: item.dst,
             tensor_infos: layout,
-            prepared_right: &item.prepared.prep,
-            prepared_right_size: item.prepared.size,
+            prepared_right: &(),
+            prepared_right_size: item.prepared.prepared_size(),
         })
         .collect();
     module.glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes(&core, tsk)

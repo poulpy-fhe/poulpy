@@ -710,6 +710,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::mul_batch::test_mul_batches_match_scalar
             );
             run_test!(
+                mul_prepared_assign_matches_mul_assign,
+                $crate::test_suite::mul_batch::test_mul_prepared_assign_matches_mul_assign
+            );
+            run_test!(
                 mul_batches_exact_scratch,
                 $crate::test_suite::mul_batch::test_mul_batches_exact_scratch
             );

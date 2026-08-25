@@ -20,7 +20,10 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use crate::{CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, layouts::CKKSPreparedRight};
+use crate::{
+    CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
+    layouts::{CKKSPreparedRight, CKKSPreparedRightInfos},
+};
 
 /// # Safety
 ///
@@ -291,14 +294,15 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         ckks_mul_prepared_assign_batch_ordered(module, items, tsk, scratch)
     }
 
-    fn ckks_mul_prepared_assign_batch_tmp_bytes_impl<Dst, T>(
+    fn ckks_mul_prepared_assign_batch_tmp_bytes_impl<Dst, PR, T>(
         module: &Module<BE>,
-        items: &[CKKSPreparedMulAssignItem<&Dst, &CKKSPreparedRight<BE>>],
+        items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
         tsk: &T,
     ) -> usize
     where
         Module<BE>: GLWETensoring<BE>,
         Dst: GLWEInfos,
+        PR: CKKSPreparedRightInfos,
         T: GGLWEInfos,
     {
         ckks_mul_prepared_assign_batch_tmp_bytes_ordered(module, items, tsk)
@@ -615,14 +619,15 @@ where
         module.ckks_mul_prepared_assign_batch_default(items, tsk, scratch)
     }
 
-    fn ckks_mul_prepared_assign_batch_tmp_bytes_impl<Dst, T>(
+    fn ckks_mul_prepared_assign_batch_tmp_bytes_impl<Dst, PR, T>(
         module: &Module<BE>,
-        items: &[CKKSPreparedMulAssignItem<&Dst, &CKKSPreparedRight<BE>>],
+        items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
         tsk: &T,
     ) -> usize
     where
         Module<BE>: GLWETensoring<BE>,
         Dst: GLWEInfos,
+        PR: CKKSPreparedRightInfos,
         T: GGLWEInfos,
     {
         module.ckks_mul_prepared_assign_batch_tmp_bytes_default(items, tsk)

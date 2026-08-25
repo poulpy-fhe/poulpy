@@ -14,7 +14,11 @@ use poulpy_hal::{
 
 use crate::api::{CKKSMulIntoItem, CKKSMulOps, CKKSPreparedMulAssignItem, CKKSSquareAssignItem, CKKSSquareIntoItem};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight, oep::CKKSMulImpl};
+use crate::{
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    layouts::{CKKSPreparedRight, CKKSPreparedRightInfos},
+    oep::CKKSMulImpl,
+};
 
 impl<BE: Backend + CKKSMulImpl<BE>> CKKSMulOps<BE> for Module<BE>
 where
@@ -237,13 +241,14 @@ where
         BE::ckks_square_assign_batch_impl(self, items, tsk, scratch)
     }
 
-    fn ckks_mul_prepared_assign_batch_tmp_bytes<Dst, T>(
+    fn ckks_mul_prepared_assign_batch_tmp_bytes<Dst, PR, T>(
         &self,
-        items: &[CKKSPreparedMulAssignItem<&Dst, &CKKSPreparedRight<BE>>],
+        items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
         tsk: &T,
     ) -> usize
     where
         Dst: CKKSCtBounds,
+        PR: CKKSPreparedRightInfos,
         T: GGLWEInfos,
     {
         BE::ckks_mul_prepared_assign_batch_tmp_bytes_impl(self, items, tsk)

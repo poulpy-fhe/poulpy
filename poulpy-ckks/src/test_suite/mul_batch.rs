@@ -409,3 +409,68 @@ where
 {
     source.clone()
 }
+
+/// `ckks_mul_prepared_assign` against a freshly prepared operand is the same
+/// operation as `ckks_mul_assign` against that operand, limb for limb: same
+/// parameters, same tensor width, same stamp.
+///
+/// The lockstep `*TimesInput` tail relies on this to issue its two multiplies as
+/// one prepared-right frontier.
+pub fn test_mul_prepared_assign_matches_mul_assign<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<ZnxWord = i64>,
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re, im) = super::helpers::test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    for step in WIDTH_STEPS {
+        let dst = ckks_encrypt(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k,
+            &re,
+            &im,
+            &mut scratch.borrow(),
+        );
+        let other = ckks_encrypt(
+            &params,
+            module,
+            host_module,
+            &encoder,
+            &sk,
+            params.k - step * params.base2k,
+            &im,
+            &re,
+            &mut scratch.borrow(),
+        );
+
+        let mut want = clone_ct::<BE>(&dst);
+        module
+            .ckks_mul_assign(&mut want, &other, &tsk, &mut scratch.borrow())
+            .unwrap();
+
+        let prepared = module.ckks_prepare_right(&other, &mut scratch.borrow()).unwrap();
+        let mut have = clone_ct::<BE>(&dst);
+        module
+            .ckks_mul_prepared_assign(&mut have, &prepared, &tsk, &mut scratch.borrow())
+            .unwrap();
+
+        assert_ct_identical::<BE>(&format!("mul_prepared_assign vs mul_assign (step={step})"), &want, &have);
+    }
+}

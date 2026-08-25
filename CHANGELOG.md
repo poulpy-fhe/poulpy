@@ -36,7 +36,9 @@
 - `ckks_mul_into`, `ckks_square_into`, `ckks_square_assign` and `ckks_mul_prepared_assign` dispatch through the fused `GLWETensoring` composites.
 - `PowerBasisGen::{gen_power, gen_power_chebyshev}` use `ckks_square_into` when `split_degree` returns a self-product.
 - Add `CKKSMulOps::{ckks_mul_into_batch, ckks_square_into_batch, ckks_square_assign_batch, ckks_mul_prepared_assign_batch}` and their `*_tmp_bytes`, with `CKKS*Item` descriptors, provided `CKKSMulImpl` defaults and one core tensor batch per call.
-- Add `ckks_eval_mod_pair_lockstep_default` / `ckks_eval_mod_pair_lockstep_tmp_bytes_default`, the two-branch dependency-frontier EvalMod driver.
+- Add `ckks_eval_mod_pair_lockstep_default` / `ckks_eval_mod_pair_lockstep_tmp_bytes_default`, the two-branch dependency-frontier EvalMod driver; the query replays the exact per-item layout DAG through the four batch scratch queries and accounts for the doubled working set.
+- Add `CKKSPreparedRightInfos` / `CKKSPreparedRightLayout`; `ckks_mul_prepared_assign_batch_tmp_bytes` takes them, so a frontier can be priced without an allocated operand.
+- The lockstep `SquareTimesInput`/`ChebyshevT2TimesInput` tail issues one prepared-right frontier instead of two scalar multiplies.
 - Add `CKKSEvalModOps::ckks_eval_mod_pair` / `ckks_eval_mod_pair_tmp_bytes` and the `CKKSEvalModImpl` hooks; sequential default, taken by the bootstrap's real and imaginary branches.
 - Add the whole-bootstrap `CKKSBootstrapImpl` OEP, with `CKKSBootstrapDefault` as the reference composition.
 - Add `CKKSMulAddOps::ckks_mul_add_pt_consts_into`, the ordered batch of `ckks_mul_add_pt_const_into`, with the `CKKSMulImpl::ckks_mul_add_pt_consts_into_impl` hook (provided) and the `CKKSMulDefault` per-method override; `ckks_mul_add_pt_consts_plan` walks a virtual destination to emit the per-term `CKKSMulAddPtConstPlan` before `dst` is mutated, and scratch is that of one term. `get_mul_pt_params` / `mul_pt_params_raw` are public.

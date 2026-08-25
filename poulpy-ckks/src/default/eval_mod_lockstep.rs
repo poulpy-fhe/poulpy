@@ -9,9 +9,14 @@
 //!
 //! Independence is what makes this exact: interleaving cannot change either
 //! branch's own operation sequence, so every result is byte-for-byte what two
-//! sequential [`CKKSEvalModOps::ckks_eval_mod`] calls produce. The cost is
-//! heap, not scratch: both power bases and both baby-step vectors are live at
-//! once.
+//! sequential [`CKKSEvalModOps::ckks_eval_mod`] calls produce. The cost is a
+//! doubled working set: both power bases and both baby-step vectors are live at
+//! once, which
+//! [`ckks_eval_mod_pair_lockstep_tmp_bytes_default`] accounts for.
+//!
+//! The frontier sequence is derived from the plan alone, so the scratch query
+//! replays it without any ciphertext and prices every frontier through the
+//! public batch queries; see [`lockstep_frontier_shapes`].
 //!
 //! [`CKKSEvalModOps::ckks_eval_mod_pair`]: crate::api::CKKSEvalModOps::ckks_eval_mod_pair
 //! [`CKKSEvalModOps::ckks_eval_mod`]: crate::api::CKKSEvalModOps::ckks_eval_mod
@@ -21,12 +26,14 @@ use poulpy_core::{
     GLWECopy, GLWEPolynomialEvaluation, GLWEZero,
     default::polynomial_evaluation::giant_step_schedule,
     layouts::{
-        BSGSMeta, BSGSPolynomial, BSGSPolynomialInfos, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared,
+        BSGSMeta, BSGSPolynomial, BSGSPolynomialInfos, Base2K, Degree, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared,
         GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, Parity, PowerBasis, PowerBasisHelper, Rank, SetBSGSMeta,
-        prepared::GLWETensorKeyPreparedToBackendRef, split_degree,
+        TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef, split_degree,
     },
 };
+use poulpy_hal::api::CnvPVecBytesOf;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
@@ -36,7 +43,7 @@ use crate::{
     },
     default::{carry_verb::ckks_one_pt, polynomial_evaluation::CKKSBSGSOps},
     layouts::{
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedRight,
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedRight, CKKSPreparedRightLayout,
         eval_mod::{EvalMod, EvalModBsgs},
     },
     polynomial::ComplexBSGSPolynomial,
@@ -85,167 +92,112 @@ struct BabyStepPair<BE: Backend> {
     value: Ct<BE>,
 }
 
-/// Monomial `X^n` for both branches, batching the one tensor product.
-fn gen_power_pair<BE>(
+/// One product of a power-basis generation plan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PowerProduct {
+    /// Power this product stores.
     n: usize,
-    basis: &mut [PowerBasis<Ct<BE>>; 2],
-    module: &Module<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: Backend,
-    Module<BE>: CKKSLockstepOps<BE>,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-{
-    if basis[0].contains_power(n) {
-        return Ok(());
-    }
-    ckks_ensure!(n >= 2, "gen_power_pair: n={n} < 2; X^1 must be provided at construction");
-
-    let (a, b) = split_degree(n);
-    gen_power_pair(a, basis, module, tsk, scratch)?;
-    gen_power_pair(b, basis, module, tsk, scratch)?;
-
-    let [basis_0, basis_1] = basis;
-    let (mut r0, mut r1) = {
-        let a0 = basis_0.get_stored(a).expect("gen_power_pair(a) just succeeded");
-        let b0 = basis_0.get_stored(b).expect("gen_power_pair(b) just succeeded");
-        let a1 = basis_1.get_stored(a).expect("gen_power_pair(a) just succeeded");
-        let b1 = basis_1.get_stored(b).expect("gen_power_pair(b) just succeeded");
-        (
-            module.ckks_ciphertext_alloc(a0.base2k(), mul_ct_k(a0, b0)?.into()),
-            module.ckks_ciphertext_alloc(a1.base2k(), mul_ct_k(a1, b1)?.into()),
-        )
-    };
-
-    {
-        let a0 = basis_0.get_stored(a).expect("stored above");
-        let a1 = basis_1.get_stored(a).expect("stored above");
-        if a == b {
-            let mut items = [
-                CKKSSquareIntoItem { dst: &mut r0, a: a0 },
-                CKKSSquareIntoItem { dst: &mut r1, a: a1 },
-            ];
-            module.ckks_square_into_batch(&mut items, tsk, scratch)?;
-        } else {
-            let b0 = basis_0.get_stored(b).expect("stored above");
-            let b1 = basis_1.get_stored(b).expect("stored above");
-            let mut items = [
-                CKKSMulIntoItem {
-                    dst: &mut r0,
-                    a: a0,
-                    b: b0,
-                },
-                CKKSMulIntoItem {
-                    dst: &mut r1,
-                    a: a1,
-                    b: b1,
-                },
-            ];
-            module.ckks_mul_into_batch(&mut items, tsk, scratch)?;
-        }
-    }
-
-    basis_0.set_power(n, r0);
-    basis_1.set_power(n, r1);
-    Ok(())
+    /// Split operands; `a == b` is a self-product and goes to the square batch.
+    a: usize,
+    b: usize,
+    /// Chebyshev tail `2·T_a·T_b − T_c`; `None` subtracts one instead.
+    c: Option<usize>,
 }
 
-/// Chebyshev `T_n` for both branches: the product is batched, the
-/// `2·T_a·T_b − T_c` tail stays per branch (no tensor product).
-fn gen_power_chebyshev_pair<BE>(
-    n: usize,
-    basis: &mut [PowerBasis<Ct<BE>>; 2],
-    module: &Module<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    BE: Backend,
-    Module<BE>: CKKSLockstepOps<BE>,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-{
-    if basis[0].contains_power(n) {
+/// The products a power-basis stage issues, in order.
+///
+/// Derived from the polynomial alone, so the executor and the scratch replay
+/// walk the same frontier sequence and cannot drift.
+#[derive(Clone, Debug)]
+struct PowerPlan {
+    basis: Basis,
+    products: Vec<PowerProduct>,
+}
+
+fn plan_power(basis: Basis, n: usize, seen: &mut HashSet<usize>, out: &mut Vec<PowerProduct>) -> Result<()> {
+    if seen.contains(&n) {
         return Ok(());
     }
     ckks_ensure!(
         n >= 2,
-        "gen_power_chebyshev_pair: n={n} < 2; T_1 must be provided at construction"
+        "power_basis_plan: n={n} < 2; the degree-one power is provided at construction"
     );
 
     let (a, b) = split_degree(n);
-    gen_power_chebyshev_pair(a, basis, module, tsk, scratch)?;
-    gen_power_chebyshev_pair(b, basis, module, tsk, scratch)?;
-    let c = a.abs_diff(b);
-    if c != 0 {
-        gen_power_chebyshev_pair(c, basis, module, tsk, scratch)?;
-    }
-
-    let [basis_0, basis_1] = basis;
-    let (mut r0, mut r1) = {
-        let a0 = basis_0.get_stored(a).expect("gen_power_chebyshev_pair(a) just succeeded");
-        let b0 = basis_0.get_stored(b).expect("gen_power_chebyshev_pair(b) just succeeded");
-        let a1 = basis_1.get_stored(a).expect("gen_power_chebyshev_pair(a) just succeeded");
-        let b1 = basis_1.get_stored(b).expect("gen_power_chebyshev_pair(b) just succeeded");
-        (
-            module.ckks_ciphertext_alloc(a0.base2k(), mul_ct_k(a0, b0)?.into()),
-            module.ckks_ciphertext_alloc(a1.base2k(), mul_ct_k(a1, b1)?.into()),
-        )
+    plan_power(basis, a, seen, out)?;
+    plan_power(basis, b, seen, out)?;
+    let c = match basis {
+        Basis::Monomial => None,
+        Basis::Chebyshev => {
+            let c = a.abs_diff(b);
+            if c != 0 {
+                plan_power(basis, c, seen, out)?;
+                Some(c)
+            } else {
+                None
+            }
+        }
     };
-
-    {
-        let a0 = basis_0.get_stored(a).expect("stored above");
-        let a1 = basis_1.get_stored(a).expect("stored above");
-        if a == b {
-            let mut items = [
-                CKKSSquareIntoItem { dst: &mut r0, a: a0 },
-                CKKSSquareIntoItem { dst: &mut r1, a: a1 },
-            ];
-            module.ckks_square_into_batch(&mut items, tsk, scratch)?;
-        } else {
-            let b0 = basis_0.get_stored(b).expect("stored above");
-            let b1 = basis_1.get_stored(b).expect("stored above");
-            let mut items = [
-                CKKSMulIntoItem {
-                    dst: &mut r0,
-                    a: a0,
-                    b: b0,
-                },
-                CKKSMulIntoItem {
-                    dst: &mut r1,
-                    a: a1,
-                    b: b1,
-                },
-            ];
-            module.ckks_mul_into_batch(&mut items, tsk, scratch)?;
-        }
-    }
-
-    for (r, source) in [(&mut r0, &*basis_0), (&mut r1, &*basis_1)] {
-        module.ckks_mul_pow2_assign(r, 1, scratch)?;
-        if c == 0 {
-            let one = ckks_one_pt(module, r.base2k())?;
-            module.ckks_sub_pt_const_assign(r, 0, &one, 0, scratch)?;
-        } else {
-            let c_val = source.get_stored(c).expect("gen_power_chebyshev_pair(c) just succeeded");
-            module.ckks_sub_assign(r, c_val, scratch)?;
-        }
-    }
-
-    basis_0.set_power(n, r0);
-    basis_1.set_power(n, r1);
+    seen.insert(n);
+    out.push(PowerProduct { n, a, b, c });
     Ok(())
 }
 
-/// [`crate::power_basis::PowerBasisGen::populate`] for both branches, in the
-/// same order, with each product issued as one two-item frontier.
-fn populate_pair<BE>(
-    degree: usize,
-    log_split: usize,
-    parity: Parity,
+/// [`crate::power_basis::PowerBasisGen::populate`]'s generation order.
+fn power_basis_plan(basis: Basis, degree: usize, log_split: usize, parity: Parity) -> Result<PowerPlan> {
+    ckks_ensure!(degree >= 1, "power_basis_plan: degree must be >= 1");
+
+    let log_degree = (usize::BITS - degree.leading_zeros()) as usize;
+    let largest_pow2 = 1usize << (log_degree - 1);
+    let base = 1usize << log_split;
+    let mut seen: HashSet<usize> = HashSet::from([1usize]);
+    let mut products: Vec<PowerProduct> = Vec::new();
+
+    if largest_pow2 >= 2 {
+        plan_power(basis, largest_pow2, &mut seen, &mut products)?;
+    }
+    let baby_limit = base.min(degree + 1);
+    match parity {
+        Parity::Even => {
+            for i in (4..baby_limit).step_by(2) {
+                plan_power(basis, i, &mut seen, &mut products)?;
+            }
+        }
+        Parity::Odd => {
+            for i in (3..baby_limit).step_by(2) {
+                plan_power(basis, i, &mut seen, &mut products)?;
+            }
+        }
+        Parity::Full => {
+            for i in (3..baby_limit).rev() {
+                plan_power(basis, i, &mut seen, &mut products)?;
+            }
+        }
+    }
+    Ok(PowerPlan { basis, products })
+}
+
+/// The single degree-two product a polynomial input transform performs.
+fn transform_plan(transform: PolynomialInputTransform) -> Option<PowerPlan> {
+    let basis = match transform {
+        PolynomialInputTransform::Identity => return None,
+        PolynomialInputTransform::Square | PolynomialInputTransform::SquareTimesInput => Basis::Monomial,
+        PolynomialInputTransform::ChebyshevT2 | PolynomialInputTransform::ChebyshevT2TimesInput => Basis::Chebyshev,
+    };
+    Some(PowerPlan {
+        basis,
+        products: vec![PowerProduct {
+            n: 2,
+            a: 1,
+            b: 1,
+            c: None,
+        }],
+    })
+}
+
+/// Runs a [`PowerPlan`] on both branches, each product one two-item frontier.
+fn execute_power_plan<BE>(
+    plan: &PowerPlan,
     basis: &mut [PowerBasis<Ct<BE>>; 2],
     module: &Module<BE>,
     tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
@@ -257,42 +209,66 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    ckks_ensure!(degree >= 1, "populate_pair: degree must be >= 1");
+    for product in &plan.products {
+        let [basis_0, basis_1] = &mut *basis;
+        let (mut r0, mut r1) = {
+            let a0 = basis_0.get_stored(product.a).expect("plan generates operands first");
+            let b0 = basis_0.get_stored(product.b).expect("plan generates operands first");
+            let a1 = basis_1.get_stored(product.a).expect("plan generates operands first");
+            let b1 = basis_1.get_stored(product.b).expect("plan generates operands first");
+            (
+                module.ckks_ciphertext_alloc(a0.base2k(), mul_ct_k(a0, b0)?.into()),
+                module.ckks_ciphertext_alloc(a1.base2k(), mul_ct_k(a1, b1)?.into()),
+            )
+        };
 
-    let log_degree = (usize::BITS - degree.leading_zeros()) as usize;
-    let largest_pow2 = 1usize << (log_degree - 1);
-    let base = 1usize << log_split;
-    let chebyshev = basis[0].basis() == Basis::Chebyshev;
-
-    let generate = |n: usize, basis: &mut [PowerBasis<Ct<BE>>; 2], scratch: &mut ScratchArena<'_, BE>| -> Result<()> {
-        if chebyshev {
-            gen_power_chebyshev_pair(n, basis, module, tsk, scratch)
-        } else {
-            gen_power_pair(n, basis, module, tsk, scratch)
-        }
-    };
-
-    if largest_pow2 >= 2 {
-        generate(largest_pow2, basis, scratch)?;
-    }
-
-    let baby_limit = base.min(degree + 1);
-    match parity {
-        Parity::Even => {
-            for i in (4..baby_limit).step_by(2) {
-                generate(i, basis, scratch)?;
+        {
+            let a0 = basis_0.get_stored(product.a).expect("stored above");
+            let a1 = basis_1.get_stored(product.a).expect("stored above");
+            if product.a == product.b {
+                let mut items = [
+                    CKKSSquareIntoItem { dst: &mut r0, a: a0 },
+                    CKKSSquareIntoItem { dst: &mut r1, a: a1 },
+                ];
+                module.ckks_square_into_batch(&mut items, tsk, scratch)?;
+            } else {
+                let b0 = basis_0.get_stored(product.b).expect("stored above");
+                let b1 = basis_1.get_stored(product.b).expect("stored above");
+                let mut items = [
+                    CKKSMulIntoItem {
+                        dst: &mut r0,
+                        a: a0,
+                        b: b0,
+                    },
+                    CKKSMulIntoItem {
+                        dst: &mut r1,
+                        a: a1,
+                        b: b1,
+                    },
+                ];
+                module.ckks_mul_into_batch(&mut items, tsk, scratch)?;
             }
         }
-        Parity::Odd => {
-            for i in (3..baby_limit).step_by(2) {
-                generate(i, basis, scratch)?;
+
+        if plan.basis == Basis::Chebyshev {
+            // `2·T_a·T_b − T_c`, no tensor product.
+            for (r, source) in [(&mut r0, &*basis_0), (&mut r1, &*basis_1)] {
+                module.ckks_mul_pow2_assign(r, 1, scratch)?;
+                match product.c {
+                    None => {
+                        let one = ckks_one_pt(module, r.base2k())?;
+                        module.ckks_sub_pt_const_assign(r, 0, &one, 0, scratch)?;
+                    }
+                    Some(c) => {
+                        let c_val = source.get_stored(c).expect("plan generates T_c first");
+                        module.ckks_sub_assign(r, c_val, scratch)?;
+                    }
+                }
             }
         }
-        Parity::Full => {
-            for i in (3..baby_limit).rev() {
-                generate(i, basis, scratch)?;
-            }
-        }
+
+        basis_0.set_power(product.n, r0);
+        basis_1.set_power(product.n, r1);
     }
     Ok(())
 }
@@ -321,27 +297,16 @@ where
     }
 
     let [x0, x1] = inputs;
-    match transform {
-        PolynomialInputTransform::Identity => Ok([x0, x1]),
-        PolynomialInputTransform::Square | PolynomialInputTransform::SquareTimesInput => {
-            let mut basis = [PowerBasis::new(Basis::Monomial, x0), PowerBasis::new(Basis::Monomial, x1)];
-            gen_power_pair(2, &mut basis, module, tsk, scratch)?;
-            let [b0, b1] = &mut basis;
-            Ok([
-                b0.take_power(2).expect("generating x^2 must store the degree-two power"),
-                b1.take_power(2).expect("generating x^2 must store the degree-two power"),
-            ])
-        }
-        PolynomialInputTransform::ChebyshevT2 | PolynomialInputTransform::ChebyshevT2TimesInput => {
-            let mut basis = [PowerBasis::new(Basis::Chebyshev, x0), PowerBasis::new(Basis::Chebyshev, x1)];
-            gen_power_chebyshev_pair(2, &mut basis, module, tsk, scratch)?;
-            let [b0, b1] = &mut basis;
-            Ok([
-                b0.take_power(2).expect("generating T2 must store the degree-two power"),
-                b1.take_power(2).expect("generating T2 must store the degree-two power"),
-            ])
-        }
-    }
+    let Some(plan) = transform_plan(transform) else {
+        return Ok([x0, x1]);
+    };
+    let mut basis = [PowerBasis::new(plan.basis, x0), PowerBasis::new(plan.basis, x1)];
+    execute_power_plan(&plan, &mut basis, module, tsk, scratch)?;
+    let [b0, b1] = &mut basis;
+    Ok([
+        b0.take_power(2).expect("the transform plan stores the degree-two power"),
+        b1.take_power(2).expect("the transform plan stores the degree-two power"),
+    ])
 }
 
 /// Giant-step fold of both branches, level by level.
@@ -715,8 +680,9 @@ where
             BSGSPolynomialInfos::<BE>::parity(&poly.re),
         ),
     };
+    let plan = power_basis_plan(poly_basis, degree, log_split, parity)?;
     let mut basis = [PowerBasis::new(poly_basis, x0), PowerBasis::new(poly_basis, x1)];
-    populate_pair(degree, log_split, parity, &mut basis, module, tsk, scratch)?;
+    execute_power_plan(&plan, &mut basis, module, tsk, scratch)?;
 
     match bsgs {
         StageBsgs::Real(poly) => eval_poly_real_pair(acc, *poly, &basis, module, tsk, scratch),
@@ -749,20 +715,772 @@ where
         transform,
         PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput
     ) {
-        for (branch, input) in inputs.iter().enumerate() {
-            module.ckks_mul_assign(&mut acc[branch], input, tsk, scratch)?;
-        }
+        // `acc *= input`, as one frontier. `ckks_mul_prepared_assign` against a
+        // freshly prepared `input` is the same operation as `ckks_mul_assign`
+        // against `input`: same parameters, same tensor width, same stamp (see
+        // `test_mul_prepared_assign_matches_mul_assign`).
+        let prepared = [
+            module.ckks_prepare_right(&inputs[0], scratch)?,
+            module.ckks_prepare_right(&inputs[1], scratch)?,
+        ];
+        let (first, second) = acc.split_at_mut(1);
+        let mut items = [
+            CKKSPreparedMulAssignItem {
+                dst: &mut first[0],
+                prepared: &prepared[0],
+            },
+            CKKSPreparedMulAssignItem {
+                dst: &mut second[0],
+                prepared: &prepared[1],
+            },
+        ];
+        module.ckks_mul_prepared_assign_batch(&mut items, tsk, scratch)?;
     }
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Scratch replay.
+//
+// The driver's frontier sequence and every item's layout are functions of
+// `params` alone, so the query replays the whole metadata DAG on layout-only
+// stand-ins and hands each frontier's *actual* item layouts to the matching
+// public batch scratch query. A backend that picks a fused path for one layout
+// and a fallback for another is therefore priced on the layouts it will really
+// see.
+//
+// The mirror below reproduces the metadata rule of every step the driver takes.
+// It is pinned end to end: the lockstep acceptance test records the layouts the
+// backend actually receives and compares them against the ones priced here, so
+// a rule that drifts fails the test rather than silently under-reporting.
+// ---------------------------------------------------------------------------
+
+/// Layout-only stand-in for a lockstep ciphertext: everything a batch scratch
+/// query reads, and nothing else.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CtLayout {
+    n: Degree,
+    base2k: Base2K,
+    rank: Rank,
+    /// Allocation width, fixed at construction.
+    max_size: usize,
+    /// Effective width `log_delta + log_budget`.
+    k: TorusPrecision,
+    meta: CKKSMeta,
+}
+
+impl LWEInfos for CtLayout {
+    fn n(&self) -> Degree {
+        self.n
+    }
+
+    fn base2k(&self) -> Base2K {
+        self.base2k
+    }
+
+    fn max_size(&self) -> usize {
+        self.max_size
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
+    }
+}
+
+impl GLWEInfos for CtLayout {
+    fn rank(&self) -> Rank {
+        self.rank
+    }
+}
+
+impl CKKSInfos for CtLayout {
+    fn meta(&self) -> CKKSMeta {
+        self.meta
+    }
+}
+
+impl SetCKKSInfos for CtLayout {
+    fn set_meta(&mut self, meta: CKKSMeta) {
+        self.meta = meta;
+    }
+
+    fn set_k(&mut self, k: TorusPrecision) {
+        self.k = k;
+    }
+}
+
+impl CtLayout {
+    /// `ckks_ciphertext_alloc(base2k, k)`: default metadata, buffer sized to `k`.
+    fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self {
+        Self {
+            n,
+            base2k,
+            rank,
+            max_size: k.as_usize().div_ceil(base2k.as_usize()),
+            k,
+            meta: CKKSMeta::default(),
+        }
+    }
+
+    /// `ckks_ciphertext_alloc_from_infos(infos)`: `glwe_alloc_from_infos` sizes
+    /// the buffer from `infos.k()`, not from its capacity.
+    fn alloc_from_infos<A: GLWEInfos + CKKSInfos>(infos: &A) -> Self {
+        let mut out = Self::alloc(infos.n(), infos.base2k(), infos.k(), infos.rank());
+        out.meta = infos.meta();
+        out
+    }
+
+    /// `ckks_copy_default`: both branches stamp `src`'s metadata and charge the
+    /// unary offset against its budget.
+    fn copy_from(&mut self, src: &Self) {
+        let offset = crate::ckks_offset_unary(self, src);
+        self.meta = src.meta;
+        self.set_log_budget(src.log_budget().saturating_sub(offset));
+    }
+
+    /// The metadata half of `ckks_{add,sub}_assign_unnormalized_default`.
+    fn add_assign_from(&mut self, a: &Self) {
+        self.set_log_budget(self.log_budget().min(a.log_budget()));
+        self.set_log_delta(self.log_delta().min(a.log_delta()));
+        self.set_log_sparsity(self.log_sparsity().min(a.log_sparsity()));
+        self.set_slots(self.slots().join(a.slots()));
+    }
+
+    /// `CKKSBSGSOps::init_accumulator`.
+    fn init_accumulator_from(&mut self, seed: &Self) {
+        self.set_log_delta(seed.log_delta());
+        self.set_log_budget(seed.log_budget());
+        self.set_slots(seed.slots());
+    }
+
+    /// `stamp_meta`, the result metadata of every tensor multiply.
+    fn stamp(&mut self, log_budget: usize, log_delta: usize, log_sparsity: Option<usize>, slots: Option<crate::SlotsKind>) {
+        self.set_log_budget(log_budget);
+        self.set_log_delta(log_delta);
+        if let Some(log_sparsity) = log_sparsity {
+            self.set_log_sparsity(log_sparsity);
+        }
+        if let Some(slots) = slots {
+            self.set_slots(slots);
+        }
+    }
+
+    /// `ckks_{add,sub}_pt_const_assign` at coefficient zero: the constant is
+    /// real, so only the slot kind moves.
+    fn join_real_slots(&mut self) {
+        self.set_slots(self.slots().join(crate::SlotsKind::Real));
+    }
+
+    /// `ckks_mul_i_assign`.
+    fn mul_i(&mut self) {
+        self.set_slots(crate::SlotsKind::Complex);
+    }
+
+    /// The ordered `ckks_mul_add_pt_consts_into` chain's final state.
+    fn mul_add_pt_consts<P>(&mut self, terms: &[(&Self, usize)], coeffs: &P) -> Result<()>
+    where
+        P: IntPolyInfos + CKKSCtBounds,
+    {
+        let plans = crate::default::mul::ckks_mul_add_pt_consts_plan(self, terms, coeffs)?;
+        if let Some(last) = plans.last() {
+            self.set_meta(last.dst_meta);
+            self.set_log_budget(last.dst_log_budget);
+        }
+        Ok(())
+    }
+}
+
+/// One frontier, with the exact layout of every item.
+#[derive(Clone, Debug)]
+enum Frontier {
+    MulInto(Vec<(CtLayout, CtLayout, CtLayout)>),
+    SquareInto(Vec<(CtLayout, CtLayout)>),
+    SquareAssign(Vec<CtLayout>),
+    PreparedAssign(Vec<(CtLayout, CKKSPreparedRightLayout)>),
+}
+
+impl Frontier {
+    fn kind(&self) -> &'static str {
+        match self {
+            Frontier::MulInto(_) => "mul_into",
+            Frontier::SquareInto(_) => "square_into",
+            Frontier::SquareAssign(_) => "square_assign",
+            Frontier::PreparedAssign(_) => "prepared_assign",
+        }
+    }
+
+    /// `(destination k, destination capacity, left operand k, right operand
+    /// limbs)` per item: the layout quantities the batch queries read.
+    fn item_shapes(&self) -> Vec<(u32, usize, u32, usize)> {
+        match self {
+            Frontier::MulInto(items) => items
+                .iter()
+                .map(|(res, a, b)| (res.k.as_u32(), res.max_size, a.k.as_u32(), b.size()))
+                .collect(),
+            Frontier::SquareInto(items) => items
+                .iter()
+                .map(|(res, a)| (res.k.as_u32(), res.max_size, a.k.as_u32(), a.size()))
+                .collect(),
+            Frontier::SquareAssign(items) => items
+                .iter()
+                .map(|res| (res.k.as_u32(), res.max_size, res.k.as_u32(), res.size()))
+                .collect(),
+            Frontier::PreparedAssign(items) => items
+                .iter()
+                .map(|(res, prepared)| (res.k.as_u32(), res.max_size, res.k.as_u32(), prepared.size))
+                .collect(),
+        }
+    }
+
+    /// The advertised scratch of this frontier, queried through the public
+    /// batch API with the item layouts the driver will really pass.
+    fn tmp_bytes<BE, T>(&self, module: &Module<BE>, tsk: &T) -> usize
+    where
+        BE: Backend,
+        Module<BE>: CKKSMulOps<BE>,
+        T: GGLWEInfos,
+    {
+        match self {
+            Frontier::MulInto(items) => {
+                let batch: Vec<CKKSMulIntoItem<&CtLayout, &CtLayout, &CtLayout>> =
+                    items.iter().map(|(res, a, b)| CKKSMulIntoItem { dst: res, a, b }).collect();
+                module.ckks_mul_into_batch_tmp_bytes(&batch, tsk)
+            }
+            Frontier::SquareInto(items) => {
+                let batch: Vec<CKKSSquareIntoItem<&CtLayout, &CtLayout>> =
+                    items.iter().map(|(res, a)| CKKSSquareIntoItem { dst: res, a }).collect();
+                module.ckks_square_into_batch_tmp_bytes(&batch, tsk)
+            }
+            Frontier::SquareAssign(items) => {
+                let batch: Vec<CKKSSquareAssignItem<&CtLayout>> =
+                    items.iter().map(|res| CKKSSquareAssignItem { dst: res }).collect();
+                module.ckks_square_assign_batch_tmp_bytes(&batch, tsk)
+            }
+            Frontier::PreparedAssign(items) => {
+                let batch: Vec<CKKSPreparedMulAssignItem<&CtLayout, &CKKSPreparedRightLayout>> = items
+                    .iter()
+                    .map(|(res, prepared)| CKKSPreparedMulAssignItem { dst: res, prepared })
+                    .collect();
+                module.ckks_mul_prepared_assign_batch_tmp_bytes(&batch, tsk)
+            }
+        }
+    }
+}
+
+/// A stage's power-basis plan.
+fn stage_plan<BE, P>(bsgs: &StageBsgs<'_, P>) -> Result<PowerPlan>
+where
+    BE: Backend,
+    P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+{
+    let poly = match bsgs {
+        StageBsgs::Real(poly) => *poly,
+        StageBsgs::Complex(poly) => &poly.re,
+    };
+    power_basis_plan(
+        BSGSPolynomialInfos::<BE>::basis(poly),
+        BSGSPolynomialInfos::<BE>::degree(poly),
+        BSGSPolynomialInfos::<BE>::log_split(poly),
+        BSGSPolynomialInfos::<BE>::parity(poly),
+    )
+}
+
+/// The mirror of the executing driver: it walks the same plan, applies the same
+/// metadata rule at every step, and emits one [`Frontier`] per batch call.
+struct Replay {
+    frontiers: Vec<Frontier>,
+    /// Peak per-branch count of simultaneously live ciphertexts.
+    live_ciphertexts: usize,
+    /// Peak count of distinct hoisted `X^{gsp}` operands in one level.
+    hoisted_operands: usize,
+}
+
+type Powers = HashMap<usize, CtLayout>;
+
+fn power(basis: &Powers, n: usize) -> Result<CtLayout> {
+    basis
+        .get(&n)
+        .copied()
+        .ok_or_else(|| crate::CKKSError::from(anyhow::anyhow!("lockstep scratch replay: power {n} is not in the basis")))
+}
+
+impl Replay {
+    fn new() -> Self {
+        Self {
+            frontiers: Vec::new(),
+            live_ciphertexts: 0,
+            hoisted_operands: 0,
+        }
+    }
+
+    /// `execute_power_plan` on layouts. The destinations are priced *before*
+    /// their stamp, which is what the batch operation receives.
+    fn power_plan(&mut self, plan: &PowerPlan, basis: &mut [Powers; 2]) -> Result<()> {
+        for product in &plan.products {
+            let mut before: Vec<CtLayout> = Vec::with_capacity(2);
+            let mut after: Vec<CtLayout> = Vec::with_capacity(2);
+            for entries in basis.iter() {
+                let a = power(entries, product.a)?;
+                let b = power(entries, product.b)?;
+                let pre = CtLayout::alloc(a.n(), a.base2k(), (mul_ct_k(&a, &b)?).into(), a.rank());
+                let (log_budget, log_delta, _) = crate::default::mul::get_mul_ct_params(&pre, &a, &b)?;
+                let mut post = pre;
+                post.stamp(
+                    log_budget,
+                    log_delta,
+                    Some(a.log_sparsity().min(b.log_sparsity())),
+                    Some(a.slots().join(b.slots())),
+                );
+                before.push(pre);
+                after.push(post);
+            }
+
+            self.frontiers.push(if product.a == product.b {
+                Frontier::SquareInto(
+                    (0..2)
+                        .map(|branch| Ok((before[branch], power(&basis[branch], product.a)?)))
+                        .collect::<Result<Vec<_>>>()?,
+                )
+            } else {
+                Frontier::MulInto(
+                    (0..2)
+                        .map(|branch| {
+                            Ok((
+                                before[branch],
+                                power(&basis[branch], product.a)?,
+                                power(&basis[branch], product.b)?,
+                            ))
+                        })
+                        .collect::<Result<Vec<_>>>()?,
+                )
+            });
+
+            if plan.basis == Basis::Chebyshev {
+                // `ckks_mul_pow2_assign` leaves the metadata alone; the tail is
+                // `− 1` or `− T_c`.
+                for (branch, entries) in basis.iter().enumerate() {
+                    match product.c {
+                        None => after[branch].join_real_slots(),
+                        Some(c) => {
+                            let c_val = power(entries, c)?;
+                            after[branch].add_assign_from(&c_val);
+                        }
+                    }
+                }
+            }
+
+            for (branch, entries) in basis.iter_mut().enumerate() {
+                entries.insert(product.n, after[branch]);
+            }
+        }
+        Ok(())
+    }
+
+    /// `polynomial_input_pair` on layouts.
+    fn polynomial_input(&mut self, srcs: [CtLayout; 2], transform: PolynomialInputTransform) -> Result<[CtLayout; 2]> {
+        let mut inputs = [CtLayout::alloc_from_infos(&srcs[0]), CtLayout::alloc_from_infos(&srcs[1])];
+        for branch in 0..2 {
+            inputs[branch].copy_from(&srcs[branch]);
+        }
+        let Some(plan) = transform_plan(transform) else {
+            return Ok(inputs);
+        };
+        let mut basis: [Powers; 2] = [Powers::from([(1, inputs[0])]), Powers::from([(1, inputs[1])])];
+        self.power_plan(&plan, &mut basis)?;
+        Ok([power(&basis[0], 2)?, power(&basis[1], 2)?])
+    }
+
+    /// `eval_baby_step` on layouts: seed from the highest scheduled power, then
+    /// the ordered `ct×pt` chain, whose exact evolution comes from the shared
+    /// planner.
+    fn baby_step<P>(&self, basis: &Powers, parity: Parity, coeffs: &P) -> Result<CtLayout>
+    where
+        P: IntPolyInfos + CKKSCtBounds,
+    {
+        let degree = coeffs.n().as_usize() - 1;
+        let (first, step) = match parity {
+            Parity::Even => (2, 2),
+            Parity::Odd => (1, 2),
+            Parity::Full => (1, 1),
+        };
+        let mut value = CtLayout::alloc_from_infos(&power(basis, 1)?);
+        let init_power = (first..=degree).step_by(step).last().unwrap_or(1);
+        value.init_accumulator_from(&power(basis, init_power)?);
+        if parity != Parity::Odd {
+            value.join_real_slots();
+        }
+        let powers: Vec<CtLayout> = (first..=degree)
+            .step_by(step)
+            .map(|i| power(basis, i))
+            .collect::<Result<_>>()?;
+        let terms: Vec<(&CtLayout, usize)> = powers.iter().zip((first..=degree).step_by(step)).collect();
+        value.mul_add_pt_consts(&terms, coeffs)?;
+        Ok(value)
+    }
+
+    /// `eval_giant_steps_pair` on layouts, including the interleaving.
+    fn giant_steps(&mut self, steps: &mut [Vec<(usize, CtLayout)>; 2], basis: &[Powers; 2]) -> Result<()> {
+        let levels = [
+            giant_step_schedule(&steps[0].iter().map(|(d, _)| *d).collect::<Vec<_>>()),
+            giant_step_schedule(&steps[1].iter().map(|(d, _)| *d).collect::<Vec<_>>()),
+        ];
+        for (pairs_0, pairs_1) in levels[0].iter().zip(levels[1].iter()) {
+            let pairs = [pairs_0, pairs_1];
+            if pairs_0.is_empty() && pairs_1.is_empty() {
+                continue;
+            }
+            for branch_pairs in pairs.iter() {
+                let mut distinct: Vec<usize> = Vec::new();
+                for pair in branch_pairs.iter() {
+                    if !distinct.contains(&pair.gsp) {
+                        distinct.push(pair.gsp);
+                    }
+                }
+                self.hoisted_operands = self.hoisted_operands.max(distinct.len());
+            }
+
+            // Branch 0 pair 0, branch 1 pair 0, branch 0 pair 1, ...
+            let mut items: Vec<(CtLayout, CKKSPreparedRightLayout)> = Vec::new();
+            for position in 0..pairs_0.len().max(pairs_1.len()) {
+                for branch in 0..2 {
+                    if let Some(pair) = pairs[branch].get(position) {
+                        let source = power(&basis[branch], pair.gsp)?;
+                        items.push((steps[branch][pair.high].1, CKKSPreparedRightLayout::of(&source)));
+                    }
+                }
+            }
+            self.frontiers.push(Frontier::PreparedAssign(items));
+
+            for branch in 0..2 {
+                for pair in pairs[branch].iter() {
+                    let source = power(&basis[branch], pair.gsp)?;
+                    let dst = steps[branch][pair.high].1;
+                    let (log_budget, log_delta, _) = crate::default::mul::mul_ct_params_raw(
+                        dst.k().as_usize(),
+                        dst.log_delta(),
+                        dst.k().into(),
+                        source.log_delta(),
+                        source.k().into(),
+                    )?;
+                    steps[branch][pair.high].1.stamp(
+                        log_budget,
+                        log_delta,
+                        Some(dst.log_sparsity().min(source.log_sparsity())),
+                        Some(dst.slots().join(source.slots())),
+                    );
+                }
+            }
+
+            for branch in 0..2 {
+                for pair in pairs[branch].iter() {
+                    let low = steps[branch][pair.low].1;
+                    steps[branch][pair.high].1.add_assign_from(&low);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// `eval_poly_real_pair` / `eval_poly_complex_pair` on layouts.
+    fn eval_poly<BE, P>(&mut self, acc: &mut [CtLayout; 2], bsgs: &StageBsgs<'_, P>, basis: &[Powers; 2]) -> Result<()>
+    where
+        BE: Backend,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+    {
+        let poly = match bsgs {
+            StageBsgs::Real(poly) => *poly,
+            StageBsgs::Complex(poly) => &poly.re,
+        };
+        let n_baby = BSGSPolynomialInfos::<BE>::baby_steps(poly);
+        ckks_ensure!(n_baby > 0, "lockstep scratch replay: polynomial has no baby step");
+        let last = BSGSPolynomialInfos::<BE>::baby_step(poly, n_baby - 1);
+        let fold_power = BSGSPolynomialInfos::<BE>::degree(poly);
+        let can_fold = n_baby >= 2 && last.n().as_usize() == 1 && basis[0].contains_key(&fold_power);
+        let n_to_process = if can_fold { n_baby - 1 } else { n_baby };
+        let parity = BSGSPolynomialInfos::<BE>::parity(poly);
+
+        let mut steps: [Vec<(usize, CtLayout)>; 2] = [Vec::with_capacity(n_to_process), Vec::with_capacity(n_to_process)];
+        for branch in 0..2 {
+            for i in 0..n_to_process {
+                let coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly, i);
+                let degree = coeffs.n().as_usize() - 1;
+                let mut value = self.baby_step(&basis[branch], parity, coeffs)?;
+                if let StageBsgs::Complex(complex) = bsgs {
+                    let im_coeffs = BSGSPolynomialInfos::<BE>::baby_step(&complex.im, i);
+                    let mut im = self.baby_step(&basis[branch], parity, im_coeffs)?;
+                    im.mul_i();
+                    value.add_assign_from(&im);
+                }
+                steps[branch].push((degree, value));
+            }
+        }
+
+        self.giant_steps(&mut steps, basis)?;
+
+        for branch in 0..2 {
+            let evaluated = steps[branch].last().expect("non-empty baby step vector").1;
+            acc[branch].copy_from(&evaluated);
+        }
+
+        if can_fold {
+            for branch in 0..2 {
+                let xpow = power(&basis[branch], fold_power)?;
+                acc[branch].mul_add_pt_consts(&[(&xpow, 0)], last)?;
+                if let StageBsgs::Complex(complex) = bsgs {
+                    let last_im = BSGSPolynomialInfos::<BE>::baby_step(&complex.im, n_baby - 1);
+                    let mut im_fold = CtLayout::alloc_from_infos(&acc[branch]);
+                    let (log_budget, log_delta, _) = crate::default::mul::get_mul_pt_params(&im_fold, &xpow, last_im)?;
+                    im_fold.stamp(log_budget, log_delta, Some(xpow.log_sparsity()), Some(xpow.slots()));
+                    im_fold.mul_i();
+                    acc[branch].add_assign_from(&im_fold);
+                }
+            }
+        }
+
+        // Power basis, evaluated baby steps, the stage's working input and the
+        // accumulator, all live at once.
+        self.live_ciphertexts = self.live_ciphertexts.max(basis[0].len() + n_to_process + 2);
+        Ok(())
+    }
+
+    /// `eval_stage_from_roots_pair` on layouts.
+    fn stage_from_roots<BE, P>(&mut self, acc: &mut [CtLayout; 2], roots: [CtLayout; 2], bsgs: &StageBsgs<'_, P>) -> Result<()>
+    where
+        BE: Backend,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+    {
+        let plan = stage_plan::<BE, P>(bsgs)?;
+        let mut basis: [Powers; 2] = [Powers::from([(1, roots[0])]), Powers::from([(1, roots[1])])];
+        self.power_plan(&plan, &mut basis)?;
+        self.eval_poly::<BE, P>(acc, bsgs, &basis)
+    }
+
+    /// `eval_stage_pair` on layouts.
+    fn stage<BE, P>(&mut self, acc: &mut [CtLayout; 2], inputs: [CtLayout; 2], bsgs: &StageBsgs<'_, P>) -> Result<()>
+    where
+        BE: Backend,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+    {
+        let transform = stage_input_transform::<BE, P>(bsgs)?;
+        let roots = self.polynomial_input(inputs, transform)?;
+        self.stage_from_roots::<BE, P>(acc, roots, bsgs)?;
+
+        if matches!(
+            transform,
+            PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput
+        ) {
+            let prepared = [
+                CKKSPreparedRightLayout::of(&inputs[0]),
+                CKKSPreparedRightLayout::of(&inputs[1]),
+            ];
+            self.frontiers
+                .push(Frontier::PreparedAssign(vec![(acc[0], prepared[0]), (acc[1], prepared[1])]));
+            self.hoisted_operands = self.hoisted_operands.max(1);
+            for branch in 0..2 {
+                let dst = acc[branch];
+                let src = inputs[branch];
+                let (log_budget, log_delta, _) = crate::default::mul::mul_ct_params_raw(
+                    dst.k().as_usize(),
+                    dst.log_delta(),
+                    dst.k().into(),
+                    src.log_delta(),
+                    src.k().into(),
+                )?;
+                acc[branch].stamp(
+                    log_budget,
+                    log_delta,
+                    Some(dst.log_sparsity().min(src.log_sparsity())),
+                    Some(dst.slots().join(src.slots())),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// One range-extension level: both squares as one frontier.
+    fn square_assign_frontier(&mut self, acc: &mut [CtLayout; 2]) -> Result<()> {
+        self.frontiers.push(Frontier::SquareAssign(vec![acc[0], acc[1]]));
+        for value in acc.iter_mut() {
+            let (log_budget, log_delta, _) = crate::default::mul::get_mul_ct_params(value, value, value)?;
+            value.stamp(log_budget, log_delta, None, None);
+        }
+        Ok(())
+    }
+}
+
+/// Replays the whole lockstep pipeline on layout stand-ins.
+fn replay_lockstep<BE, P, F>(
+    acc: [CtLayout; 2],
+    work_layout: [GLWELayout; 2],
+    work_meta: [CKKSMeta; 2],
+    params: &EvalMod<F, P>,
+) -> Result<Replay>
+where
+    BE: Backend,
+    P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+{
+    let mut replay = Replay::new();
+    let mut acc = acc;
+
+    // `eval_mod_input`: an owned copy at the working layout, relabelled to the
+    // plan scale.
+    let inputs: [CtLayout; 2] = std::array::from_fn(|branch| {
+        let mut input = CtLayout::alloc(
+            work_layout[branch].n,
+            work_layout[branch].base2k,
+            work_layout[branch].k,
+            work_layout[branch].rank,
+        );
+        input.set_meta(work_meta[branch]);
+        input
+    });
+
+    let base = StageBsgs::from(&params.f_mod_bsgs);
+    let transform = stage_input_transform::<BE, P>(&base)?;
+    let offset = params.f_mod_input_offset.as_ref();
+
+    if transform == PolynomialInputTransform::Identity && offset.is_none() {
+        replay.stage_from_roots::<BE, P>(&mut acc, inputs, &base)?;
+    } else {
+        let mut inputs = inputs;
+        if offset.is_some() {
+            for input in inputs.iter_mut() {
+                input.join_real_slots();
+            }
+        }
+        replay.stage::<BE, P>(&mut acc, inputs, &base)?;
+    }
+
+    match &params.f_mod_bsgs {
+        EvalModBsgs::Real(_) => {
+            if params.range_extension_consts.is_some() {
+                for _ in 0..params.plan.f_mod_log_interval_reduction {
+                    replay.square_assign_frontier(&mut acc)?;
+                    for value in acc.iter_mut() {
+                        // `ckks_mul_pow2_assign` leaves the metadata alone.
+                        value.join_real_slots();
+                    }
+                }
+            }
+            if let Some(inv) = params.f_mod_inv_bsgs.as_ref() {
+                let inputs: [CtLayout; 2] = std::array::from_fn(|branch| {
+                    let mut input = CtLayout::alloc(
+                        work_layout[branch].n,
+                        work_layout[branch].base2k,
+                        work_layout[branch].k,
+                        work_layout[branch].rank,
+                    );
+                    input.set_meta(work_meta[branch]);
+                    input.copy_from(&acc[branch]);
+                    input
+                });
+                replay.stage::<BE, P>(&mut acc, inputs, &StageBsgs::Real(inv))?;
+            }
+        }
+        EvalModBsgs::Complex(_) => {
+            for _ in 0..params.plan.f_mod_log_interval_reduction {
+                replay.square_assign_frontier(&mut acc)?;
+            }
+        }
+    }
+
+    Ok(replay)
+}
+
+/// The `(batch operation, per-item layout)` sequence
+/// [`ckks_eval_mod_pair_lockstep_default`] issues for these operands.
+///
+/// Each item is reported as `(destination k, destination capacity, left operand
+/// k, right operand limbs)`. Exposed so a backend test can assert that what it
+/// observed is what the scratch query priced.
+#[doc(hidden)]
+#[allow(clippy::type_complexity)]
+pub fn lockstep_frontier_shapes<BE, R0, R1, C0, C1, P, F>(
+    res_0: &R0,
+    res_1: &R1,
+    ct_0: &C0,
+    ct_1: &C1,
+    params: &EvalMod<F, P>,
+) -> Result<Vec<(&'static str, Vec<(u32, usize, u32, usize)>)>>
+where
+    BE: Backend,
+    R0: CKKSCtBounds,
+    R1: CKKSCtBounds,
+    C0: CKKSCtBounds,
+    C1: CKKSCtBounds,
+    P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+{
+    let (acc, work_layout, work_meta) = lockstep_entry_layouts(res_0, res_1, ct_0, ct_1, params);
+    let replay = replay_lockstep::<BE, P, F>(acc, work_layout, work_meta, params)?;
+    Ok(replay
+        .frontiers
+        .iter()
+        .map(|frontier| (frontier.kind(), frontier.item_shapes()))
+        .collect())
+}
+
+/// The accumulator and working-ciphertext layouts the driver starts from.
+fn lockstep_entry_layouts<R0, R1, C0, C1, P, F>(
+    res_0: &R0,
+    res_1: &R1,
+    ct_0: &C0,
+    ct_1: &C1,
+    params: &EvalMod<F, P>,
+) -> ([CtLayout; 2], [GLWELayout; 2], [CKKSMeta; 2])
+where
+    R0: CKKSCtBounds,
+    R1: CKKSCtBounds,
+    C0: CKKSCtBounds,
+    C1: CKKSCtBounds,
+{
+    let s_eval = params.plan.f_mod_log_delta;
+    let work_layout = [
+        GLWELayout {
+            n: ct_0.n(),
+            base2k: ct_0.base2k(),
+            k: (ct_0.log_budget() + s_eval).into(),
+            rank: Rank(1),
+        },
+        GLWELayout {
+            n: ct_1.n(),
+            base2k: ct_1.base2k(),
+            k: (ct_1.log_budget() + s_eval).into(),
+            rank: Rank(1),
+        },
+    ];
+    let work_meta = [
+        CKKSMeta {
+            log_delta: s_eval,
+            log_sparsity: ct_0.log_sparsity(),
+            slots: ct_0.slots(),
+        },
+        CKKSMeta {
+            log_delta: s_eval,
+            log_sparsity: ct_1.log_sparsity(),
+            slots: ct_1.slots(),
+        },
+    ];
+    let acc = [CtLayout::alloc_from_infos(res_0), CtLayout::alloc_from_infos(res_1)];
+    (acc, work_layout, work_meta)
+}
+
 /// Scratch for [`ckks_eval_mod_pair_lockstep_default`].
 ///
-/// The lockstep keeps its extra state (both power bases, both baby-step
-/// vectors, both working inputs) on the heap, and every batch it issues carries
-/// the sequential default's per-item bound, so the arena requirement is the
-/// larger of the two single-branch budgets: the same value
-/// `ckks_eval_mod_pair_tmp_bytes` returns.
+/// Three terms:
+///
+/// 1. the working set both branches hold at once (power bases, evaluated baby
+///    steps, working inputs, accumulators and the hoisted `X^{gsp}` operands);
+/// 2. the largest single-branch stage budget, covering every step the driver
+///    runs outside a batch (copies, `ct×pt` baby steps, adds, the `pow2`/`sub`
+///    tails);
+/// 3. the largest of the frontiers, each queried through its public batch
+///    `*_tmp_bytes` with the *exact* item layouts the driver will pass, so a
+///    backend that selects a fused path for some layouts and a fallback for
+///    others is priced on what it will really see.
+///
+/// The reference driver keeps term 1 on the heap and therefore runs inside
+/// terms 2 and 3 alone; a backend that carves its working set from the arena is
+/// covered by the full number.
 #[allow(clippy::too_many_arguments)]
 pub fn ckks_eval_mod_pair_lockstep_tmp_bytes_default<BE, R0, R1, C0, C1, P, F, T>(
     module: &Module<BE>,
@@ -775,17 +1493,47 @@ pub fn ckks_eval_mod_pair_lockstep_tmp_bytes_default<BE, R0, R1, C0, C1, P, F, T
 ) -> usize
 where
     BE: Backend,
-    Module<BE>: CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + poulpy_hal::api::CnvPVecBytesOf,
+    Module<BE>: CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CnvPVecBytesOf,
     R0: CKKSCtBounds,
     R1: CKKSCtBounds,
     C0: CKKSCtBounds,
     C1: CKKSCtBounds,
-    P: CKKSCtBounds,
+    P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
     T: GGLWEInfos,
 {
-    super::eval_mod::ckks_eval_mod_tmp_bytes_default(module, res_0, ct_0, params, tsk).max(
+    let stages = super::eval_mod::ckks_eval_mod_tmp_bytes_default(module, res_0, ct_0, params, tsk).max(
         super::eval_mod::ckks_eval_mod_tmp_bytes_default(module, res_1, ct_1, params, tsk),
-    )
+    );
+
+    let (acc, work_layout, work_meta) = lockstep_entry_layouts(res_0, res_1, ct_0, ct_1, params);
+    let Ok(replay) = replay_lockstep::<BE, P, F>(acc, work_layout, work_meta, params) else {
+        // A malformed plan: the driver rejects it before allocating, so the
+        // sequential budget is a sound answer.
+        return stages;
+    };
+
+    let batches = replay
+        .frontiers
+        .iter()
+        .map(|frontier| frontier.tmp_bytes(module, tsk))
+        .max()
+        .unwrap_or(0);
+
+    // The working set is sized from the widest ciphertext either branch holds.
+    let cols: usize = (ct_0.rank() + 1).into();
+    let work_size = work_layout[0]
+        .k
+        .as_usize()
+        .div_ceil(work_layout[0].base2k.as_usize())
+        .max(work_layout[1].k.as_usize().div_ceil(work_layout[1].base2k.as_usize()))
+        .max(res_0.max_size())
+        .max(res_1.max_size())
+        .max(1);
+    let live_ct = BE::bytes_of_vec_znx(ct_0.n().as_usize(), cols, work_size);
+    let hoisted = module.bytes_of_cnv_pvec_right(cols, work_size);
+    let live = 2 * (replay.live_ciphertexts * live_ct + replay.hoisted_operands * hoisted);
+
+    live + stages.max(batches)
 }
 
 /// Runs two EvalMod DAGs in lockstep on one thread and one module, advancing

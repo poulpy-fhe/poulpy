@@ -312,13 +312,13 @@ where
 }
 
 #[derive(Clone, Copy)]
-struct EvalModWorkCtInfos {
-    n: Degree,
-    base2k: Base2K,
-    rank: Rank,
-    max_size: usize,
-    k: TorusPrecision,
-    meta: CKKSMeta,
+pub(crate) struct EvalModWorkCtInfos {
+    pub(crate) n: Degree,
+    pub(crate) base2k: Base2K,
+    pub(crate) rank: Rank,
+    pub(crate) max_size: usize,
+    pub(crate) k: TorusPrecision,
+    pub(crate) meta: CKKSMeta,
 }
 
 impl LWEInfos for EvalModWorkCtInfos {

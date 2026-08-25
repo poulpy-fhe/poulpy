@@ -9,7 +9,8 @@
 //! - the bootstrap budget includes it;
 //! - both bootstrap pipelines actually invoke the paired hook.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use poulpy_ckks::{
     CKKSCtBounds, CKKSResult, SetCKKSInfos,
@@ -36,7 +37,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecBytesOf, ScratchArenaTakeBasic, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, Module, ScratchArena, ScratchOwned},
 };
 
@@ -290,6 +291,10 @@ unsafe impl poulpy_core::oep::GLWETensoringImpl<BE> for BE {
         A: GLWEToBackendRef<BE> + GLWEInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
     {
+        // Every tensor product ends in exactly one relinearization, whichever
+        // composite ran it. Counting here is how the lockstep test proves no
+        // product bypassed a priced frontier.
+        SCALAR_TENSOR_CALLS.fetch_add(1, Ordering::Relaxed);
         module.glwe_tensor_relinearize_default(res, a, tsk, scratch)
     }
 
@@ -326,6 +331,45 @@ unsafe impl poulpy_core::oep::GLWETensoringImpl<BE> for BE {
 // `CKKSMulDefault`, overriding only the new provided method.
 // ---------------------------------------------------------------------------
 
+/// Extra scratch this backend charges every frontier batch, in limbs, so its
+/// batch requirement genuinely exceeds the scalar default.
+const PAD_LIMBS: usize = 8192;
+
+/// Off by default: the other suites in this file size their arenas from the
+/// generic budgets, which do not know about the pad.
+static BATCH_PAD: AtomicBool = AtomicBool::new(false);
+type FrontierShape = (&'static str, Vec<(u32, usize, u32, usize)>);
+static FRONTIERS: Mutex<Vec<FrontierShape>> = Mutex::new(Vec::new());
+static SCALAR_TENSOR_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+fn pad_bytes(module: &Module<BE>) -> usize {
+    if BATCH_PAD.load(Ordering::Relaxed) {
+        <BE as Backend>::bytes_of_vec_znx(module.n(), 1, PAD_LIMBS)
+    } else {
+        0
+    }
+}
+
+/// Records `(destination k, destination capacity, left operand k, right operand
+/// limbs)` per item, matching what the lockstep scratch query priced.
+fn record_frontier(kind: &'static str, shapes: Vec<(u32, usize, u32, usize)>) {
+    if BATCH_PAD.load(Ordering::Relaxed) {
+        FRONTIERS.lock().unwrap().push((kind, shapes));
+    }
+}
+
+/// Runs `body` after reserving the pad, so the batch really consumes what
+/// [`pad_bytes`] advertises.
+fn with_pad<R>(module: &Module<BE>, scratch: &mut ScratchArena<'_, BE>, body: impl FnOnce(&mut ScratchArena<'_, BE>) -> R) -> R {
+    if BATCH_PAD.load(Ordering::Relaxed) {
+        let arena = scratch.borrow();
+        let (_pad, mut arena) = arena.take_vec_znx_scratch(module.n(), 1, PAD_LIMBS);
+        body(&mut arena)
+    } else {
+        body(scratch)
+    }
+}
+
 static BABY_BATCH_CALLS: AtomicUsize = AtomicUsize::new(0);
 static BABY_BATCH_TERMS: AtomicUsize = AtomicUsize::new(0);
 
@@ -348,6 +392,271 @@ impl poulpy_ckks::default::mul::CKKSMulDefault<BE> for Module<BE> {
         BABY_BATCH_TERMS.fetch_add(terms.len(), Ordering::Relaxed);
         poulpy_ckks::default::mul::ckks_mul_add_pt_consts_into_ordered(self, dst, terms, plans, coeffs, scratch)
     }
+
+    // ── Frontier batches ────────────────────────────────────────────────────
+    //
+    // Each one records its `(kind, length)`, then takes `PAD_LIMBS` of scratch
+    // *before* running the reference batch, so this backend genuinely needs
+    // more than the scalar default. The matching `*_tmp_bytes` adds the same
+    // amount, so a caller that sized from the batch query fits and a caller
+    // that priced only the scalar path does not.
+
+    fn ckks_mul_into_batch_default<Dst, A, B, T>(
+        &self,
+        items: &mut [poulpy_ckks::api::CKKSMulIntoItem<&mut Dst, &A, &B>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> CKKSResult<()>
+    where
+        Self: poulpy_core::GLWETensoring<BE> + Sized,
+        Dst: GLWEToBackendMut<BE> + poulpy_ckks::CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + poulpy_ckks::CKKSInfos + GLWEInfos,
+        B: GLWEToBackendRef<BE> + poulpy_ckks::CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        record_frontier(
+            "mul_into",
+            items
+                .iter()
+                .map(|item| (item.dst.k().as_u32(), item.dst.max_size(), item.a.k().as_u32(), item.b.size()))
+                .collect(),
+        );
+        with_pad(self, scratch, |s| {
+            poulpy_ckks::default::mul::ckks_mul_into_batch_ordered(self, items, tsk, s)
+        })
+    }
+
+    fn ckks_mul_into_batch_tmp_bytes_default<Dst, A, B, T>(
+        &self,
+        items: &[poulpy_ckks::api::CKKSMulIntoItem<&Dst, &A, &B>],
+        tsk: &T,
+    ) -> usize
+    where
+        Self: poulpy_core::GLWETensoring<BE> + Sized,
+        Dst: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        T: GGLWEInfos,
+    {
+        poulpy_ckks::default::mul::ckks_mul_into_batch_tmp_bytes_ordered(self, items, tsk) + pad_bytes(self)
+    }
+
+    fn ckks_square_into_batch_default<Dst, A, T>(
+        &self,
+        items: &mut [poulpy_ckks::api::CKKSSquareIntoItem<&mut Dst, &A>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> CKKSResult<()>
+    where
+        Self: poulpy_core::GLWETensoring<BE> + Sized,
+        Dst: GLWEToBackendMut<BE> + poulpy_ckks::CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + poulpy_ckks::CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        record_frontier(
+            "square_into",
+            items
+                .iter()
+                .map(|item| (item.dst.k().as_u32(), item.dst.max_size(), item.a.k().as_u32(), item.a.size()))
+                .collect(),
+        );
+        with_pad(self, scratch, |s| {
+            poulpy_ckks::default::mul::ckks_square_into_batch_ordered(self, items, tsk, s)
+        })
+    }
+
+    fn ckks_square_into_batch_tmp_bytes_default<Dst, A, T>(
+        &self,
+        items: &[poulpy_ckks::api::CKKSSquareIntoItem<&Dst, &A>],
+        tsk: &T,
+    ) -> usize
+    where
+        Self: poulpy_core::GLWETensoring<BE> + Sized,
+        Dst: GLWEInfos,
+        A: GLWEInfos,
+        T: GGLWEInfos,
+    {
+        poulpy_ckks::default::mul::ckks_square_into_batch_tmp_bytes_ordered(self, items, tsk) + pad_bytes(self)
+    }
+
+    fn ckks_square_assign_batch_default<Dst, T>(
+        &self,
+        items: &mut [poulpy_ckks::api::CKKSSquareAssignItem<&mut Dst>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> CKKSResult<()>
+    where
+        Self: poulpy_core::GLWETensoring<BE> + Sized,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + poulpy_ckks::CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        record_frontier(
+            "square_assign",
+            items
+                .iter()
+                .map(|item| {
+                    (
+                        item.dst.k().as_u32(),
+                        item.dst.max_size(),
+                        item.dst.k().as_u32(),
+                        item.dst.size(),
+                    )
+                })
+                .collect(),
+        );
+        with_pad(self, scratch, |s| {
+            poulpy_ckks::default::mul::ckks_square_assign_batch_ordered(self, items, tsk, s)
+        })
+    }
+
+    fn ckks_square_assign_batch_tmp_bytes_default<Dst, T>(
+        &self,
+        items: &[poulpy_ckks::api::CKKSSquareAssignItem<&Dst>],
+        tsk: &T,
+    ) -> usize
+    where
+        Self: poulpy_core::GLWETensoring<BE> + Sized,
+        Dst: GLWEInfos,
+        T: GGLWEInfos,
+    {
+        poulpy_ckks::default::mul::ckks_square_assign_batch_tmp_bytes_ordered(self, items, tsk) + pad_bytes(self)
+    }
+
+    fn ckks_mul_prepared_assign_batch_default<Dst, T>(
+        &self,
+        items: &mut [poulpy_ckks::api::CKKSPreparedMulAssignItem<&mut Dst, &poulpy_ckks::layouts::CKKSPreparedRight<BE>>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> CKKSResult<()>
+    where
+        Self: poulpy_core::GLWETensoring<BE> + Sized,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + poulpy_ckks::CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        record_frontier(
+            "prepared_assign",
+            items
+                .iter()
+                .map(|item| {
+                    (
+                        item.dst.k().as_u32(),
+                        item.dst.max_size(),
+                        item.dst.k().as_u32(),
+                        poulpy_ckks::layouts::CKKSPreparedRightInfos::prepared_size(item.prepared),
+                    )
+                })
+                .collect(),
+        );
+        with_pad(self, scratch, |s| {
+            poulpy_ckks::default::mul::ckks_mul_prepared_assign_batch_ordered(self, items, tsk, s)
+        })
+    }
+
+    fn ckks_mul_prepared_assign_batch_tmp_bytes_default<Dst, PR, T>(
+        &self,
+        items: &[poulpy_ckks::api::CKKSPreparedMulAssignItem<&Dst, &PR>],
+        tsk: &T,
+    ) -> usize
+    where
+        Self: poulpy_core::GLWETensoring<BE> + Sized,
+        Dst: GLWEInfos,
+        PR: poulpy_ckks::layouts::CKKSPreparedRightInfos,
+        T: GGLWEInfos,
+    {
+        poulpy_ckks::default::mul::ckks_mul_prepared_assign_batch_tmp_bytes_ordered(self, items, tsk) + pad_bytes(self)
+    }
+}
+
+/// The lockstep EvalMod dispatches every tensor product as a priced frontier,
+/// and runs inside exactly the bytes its scratch query advertises.
+///
+/// This backend charges every frontier batch `PAD_LIMBS` of scratch on top of
+/// the scalar default and actually consumes it, so a query that priced only the
+/// scalar path would hand the driver too small an arena.
+#[test]
+fn lockstep_batches_every_frontier_inside_the_advertised_scratch() {
+    let params = poulpy_ckks::test_suite::FFT64_PARAMS_F64;
+    let (module, host_module) = (
+        Module::<BE>::new(params.n as u64),
+        Module::<HostBytesBackend>::new(params.n as u64),
+    );
+    // The active bootstrap shape: `CosHKEven` folded through `T2`, three
+    // range-extension squares, at the EvalMod digit size.
+    let plan = poulpy_ckks::layouts::EvalModPlan {
+        eval_mod_type: poulpy_ckks::layouts::EvalModType::CosHKEven,
+        log_msg_ratio: 8,
+        f_mod_degree: 30,
+        f_mod_interval: 16,
+        f_mod_log_interval_reduction: 3,
+        f_mod_inv_degree: None,
+        scaling: None,
+        split_strategy: poulpy_ckks::polynomial::SplitStrategy::MinDepth,
+        coeffs_meta: poulpy_ckks::CoeffsMeta::from_delta_budget(0, 0),
+        f_mod_log_delta: 60,
+    };
+
+    let predicted = poulpy_ckks::test_suite::eval_mod::run_eval_mod_pair_case::<BE, f64, crate::FFT64ReimTable<f64>>(
+        params,
+        &module,
+        &host_module,
+        "coshk_even_dsize8",
+        plan,
+        8,
+        None,
+        // The pad is switched on only for the lockstep leg, so the two singles
+        // and the sequential pair that precede it keep their own budgets.
+        &|| {
+            FRONTIERS.lock().unwrap().clear();
+            SCALAR_TENSOR_CALLS.store(0, Ordering::Relaxed);
+            BATCH_PAD.store(true, Ordering::Relaxed);
+        },
+    );
+    BATCH_PAD.store(false, Ordering::Relaxed);
+
+    let observed = FRONTIERS.lock().unwrap().clone();
+    check(&observed, &predicted);
+
+    // Again with a destination narrower than the evaluated result, so the final
+    // copy charges a unary offset and every downstream layout shifts.
+    let narrow = poulpy_ckks::test_suite::eval_mod::run_eval_mod_pair_case::<BE, f64, crate::FFT64ReimTable<f64>>(
+        params,
+        &module,
+        &host_module,
+        "coshk_even_dsize8_narrow_res",
+        plan,
+        8,
+        Some(300),
+        &|| {
+            FRONTIERS.lock().unwrap().clear();
+            SCALAR_TENSOR_CALLS.store(0, Ordering::Relaxed);
+            BATCH_PAD.store(true, Ordering::Relaxed);
+        },
+    );
+    BATCH_PAD.store(false, Ordering::Relaxed);
+    check(&FRONTIERS.lock().unwrap().clone(), &narrow);
+}
+
+/// The observed frontiers must be exactly the priced ones, must include a `B=2`
+/// and a `B=4`, and must account for every tensor product that ran.
+fn check(observed: &[FrontierShape], predicted: &[FrontierShape]) {
+    assert_eq!(
+        observed, predicted,
+        "the lockstep issued frontiers, or item layouts, the scratch query did not price"
+    );
+    assert!(
+        observed.iter().any(|(_, items)| items.len() == 2),
+        "no B=2 frontier was dispatched: {observed:?}"
+    );
+    assert!(
+        observed.iter().any(|(_, items)| items.len() == 4),
+        "no B=4 frontier was dispatched: {observed:?}"
+    );
+    let batched: usize = observed.iter().map(|(_, items)| items.len()).sum();
+    assert_eq!(
+        SCALAR_TENSOR_CALLS.load(Ordering::Relaxed),
+        batched,
+        "a tensor product ran outside a batch frontier (scalar fallback)"
+    );
 }
 
 /// Both new seams dispatch to a backend override: the BSGS baby loop reaches the

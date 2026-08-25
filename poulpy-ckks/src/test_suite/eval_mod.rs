@@ -27,7 +27,7 @@ use super::helpers::{
 };
 use crate::SlotsKind;
 use crate::default::eval_mod_lockstep::{
-    CKKSLockstepOps, ckks_eval_mod_pair_lockstep_default, ckks_eval_mod_pair_lockstep_tmp_bytes_default,
+    CKKSLockstepOps, ckks_eval_mod_pair_lockstep_default, ckks_eval_mod_pair_lockstep_tmp_bytes_default, lockstep_frontier_shapes,
 };
 
 fn alloc_scratch_eval_mod<BE, F>(
@@ -322,7 +322,7 @@ pub fn test_eval_mod_pair_matches_singles<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     Module<BE>: CKKSLockstepOps<BE>,
 {
-    eval_mod_pair_case::<BE, F, E>(
+    run_eval_mod_pair_case::<BE, F, E>(
         params,
         module,
         host_module,
@@ -339,8 +339,11 @@ pub fn test_eval_mod_pair_matches_singles<BE, F, E>(
             coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
             f_mod_log_delta: 60,
         },
+        2,
+        None,
+        &|| {},
     );
-    eval_mod_pair_case::<BE, F, E>(
+    run_eval_mod_pair_case::<BE, F, E>(
         params,
         module,
         host_module,
@@ -357,16 +360,39 @@ pub fn test_eval_mod_pair_matches_singles<BE, F, E>(
             coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
             f_mod_log_delta: 60,
         },
+        2,
+        None,
+        &|| {},
     );
 }
 
-fn eval_mod_pair_case<BE, F, E>(
+/// One frontier the lockstep scratch query priced: the batch operation and,
+/// per item, `(destination k, destination capacity, left operand k, right
+/// operand limbs)`.
+pub type LockstepFrontierShape = (&'static str, Vec<(u32, usize, u32, usize)>);
+
+/// Runs one EvalMod plan through two singles, the pair and the lockstep, all
+/// three compared limb for limb, with the lockstep on an arena of exactly
+/// `ckks_eval_mod_pair_lockstep_tmp_bytes_default`.
+///
+/// Returns the frontier sequence the lockstep scratch query priced, item
+/// layouts included, so a backend test can check it against what it observed.
+#[allow(clippy::too_many_arguments)]
+pub fn run_eval_mod_pair_case<BE, F, E>(
     params: super::CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     label: &str,
     mut lit: EvalModPlan,
-) where
+    dsize: usize,
+    // Destination width; `None` takes the natural one. A narrower destination
+    // makes the final copy charge a unary offset.
+    res_k: Option<usize>,
+    // Called immediately before the lockstep run, so a backend test can reset
+    // its counters and observe only that pipeline.
+    before_lockstep: &dyn Fn(),
+) -> Vec<LockstepFrontierShape>
+where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE> + CKKSLockstepOps<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -383,7 +409,6 @@ fn eval_mod_pair_case<BE, F, E>(
         compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, &mut compile_scratch.borrow()).expect("compile_eval_mod");
 
     let input_log_delta = 40;
-    let dsize = 2;
     let test_params = CKKSTestParams {
         n: params.n,
         base2k: params.base2k,
@@ -402,7 +427,7 @@ fn eval_mod_pair_case<BE, F, E>(
     let slots = test_params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
-    let res_k = test_params.k + lit.f_mod_log_delta.saturating_sub(input_log_delta);
+    let res_k = res_k.unwrap_or(test_params.k + lit.f_mod_log_delta.saturating_sub(input_log_delta));
     let mut scratch = alloc_scratch_eval_mod(&test_params, module, &params_be, res_k);
     let tsk = gen_tsk(&test_params, module, &sk_raw, &mut scratch.borrow());
 
@@ -479,6 +504,11 @@ fn eval_mod_pair_case<BE, F, E>(
     // tensor-product frontier as a batch; the branches are independent, so it
     // must land on exactly the sequential result.
     let (mut lock_0, mut lock_1) = (alloc_res(), alloc_res());
+    // Priced against the *fresh* destinations, exactly as a caller sizing its
+    // arena would.
+    let shapes = lockstep_frontier_shapes::<BE, _, _, _, _, _, F>(&lock_0, &lock_1, &inputs[0], &inputs[1], &params_be)
+        .expect("frontier shapes");
+    before_lockstep();
     let lock_bytes = ckks_eval_mod_pair_lockstep_tmp_bytes_default(
         module,
         &lock_0,
@@ -529,6 +559,8 @@ fn eval_mod_pair_case<BE, F, E>(
             }
         }
     }
+
+    shapes
 }
 
 pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
