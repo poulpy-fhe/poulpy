@@ -1,16 +1,22 @@
 use poulpy_core::{
     layouts::GLWETensorKeyPrepared,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef},
+    layouts::{
+        BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+    },
 };
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module},
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{HostBytesBackend, Module, ScratchOwned},
 };
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
-    api::{CKKSMulOps, CKKSPolynomialEvaluationOps},
-    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec},
+    api::{CKKSApproximationOps, CKKSMulOps, CKKSPolynomialEvaluationOps},
+    layouts::{
+        AdaptivePolynomialApproximation, AdaptivePolynomialEvaluationMode, AdaptiveScalePolicy, CKKSCiphertextOwned,
+        CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, PolynomialApproximation,
+    },
     polynomial::{
         BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial,
         PolynomialInputTransform, SplitStrategy,
@@ -21,9 +27,9 @@ use crate::{
 };
 
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
-    ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1,
-    upload_pt,
+    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision,
+    assert_decrypt_precision_at_log_delta, ckks_decrypt_decode, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw,
+    gen_tsk, precision_at, precision_stats, quantized_const, quantized_slots, test_vector_1, upload_pt,
 };
 use crate::SlotsKind;
 
@@ -168,6 +174,48 @@ where
     Module<BE>: TestContextModule<BE>,
 {
     poly.map_baby_steps_ref(|pt| upload_pt(module, pt))
+}
+
+fn upload_adaptive_approximation<BE>(
+    module: &Module<BE>,
+    approximation: AdaptivePolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>>,
+) -> AdaptivePolynomialApproximation<CKKSPlaintextOwned<BE>>
+where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+{
+    approximation.map_plaintexts(|pt| upload_pt(module, pt))
+}
+
+fn eval_encoded_adaptive<F: TestScalar>(
+    approximation: &AdaptivePolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>>,
+    input: F,
+) -> F {
+    let two = F::one() + F::one();
+    let normalized = if let Some(affine) = &approximation.affine {
+        let mut coefficients = [F::zero(); 2];
+        affine.decode_host_floats(&mut coefficients).unwrap();
+        let scale = approximation
+            .scale_pow2
+            .map_or(coefficients[1], |exponent| two.powi(exponent));
+        coefficients[0] + scale * input
+    } else {
+        input
+    };
+    let transformed = match approximation.input_transform {
+        PolynomialInputTransform::Identity => normalized,
+        PolynomialInputTransform::Square | PolynomialInputTransform::SquareTimesInput => normalized * normalized,
+        PolynomialInputTransform::ChebyshevT2 | PolynomialInputTransform::ChebyshevT2TimesInput => {
+            two * normalized * normalized - F::one()
+        }
+    };
+    let value = eval_encoded_bsgs(&approximation.low, transformed) + eval_encoded_bsgs(&approximation.high, transformed);
+    match approximation.input_transform {
+        PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput => normalized * value,
+        _ => value,
+    }
 }
 
 fn upload_complex_bsgs<BE>(
@@ -1830,5 +1878,575 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
                 bsgs_host.eval_depth(),
             );
         }
+    }
+}
+
+/// Checks both adaptive modes and split strategies on a degree-31 polynomial.
+pub fn test_eval_adaptive_approximation_modes<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSApproximationOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let quarter = F::from_f64(0.25).unwrap();
+    let (input, _) = test_vector_1::<F>(m);
+    let input_re: Vec<F> = input.iter().map(|&x| x * quarter).collect();
+    let input_im = vec![F::zero(); m];
+    let input_meta = precision_at(&params, params.prec().log_delta().min(20));
+    let (quantized_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), input_meta, &input_re, &input_im);
+
+    let coeffs: Vec<F> = (0usize..=31)
+        .map(|i| {
+            let sign: f64 = if i.is_multiple_of(2) { 1.0 } else { -1.0 };
+            F::from_f64(sign / (4.0 * (i + 1) as f64)).unwrap()
+        })
+        .collect();
+    let four = F::from_f64(4.0).unwrap();
+    let polynomial = Polynomial::new_with_parity(Basis::Chebyshev, coeffs, Parity::Full).with_interval(-four, four);
+    let coeff_meta = ckks_spec(params.n, params.base2k, PT_PREC.log_delta(), PT_PREC.log_budget());
+    let scale = AdaptiveScalePolicy::uniform(3);
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let input_ct = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &input_re,
+        &input_im,
+        input_meta,
+        &mut scratch.borrow(),
+    );
+    let input_log_budget = input_ct.log_budget();
+
+    for strategy in [SplitStrategy::MinDepth, SplitStrategy::MinMult] {
+        for mode in [
+            AdaptivePolynomialEvaluationMode::ReuseFullScaleBabyPowers,
+            AdaptivePolynomialEvaluationMode::RecomputeReducedScalePowers,
+        ] {
+            let host_approximation = AdaptivePolynomialApproximation::from_polynomial(
+                &polynomial,
+                params.base2k.into(),
+                coeff_meta,
+                strategy,
+                scale,
+                mode,
+                host_module,
+            )
+            .expect("prepare direct adaptive approximation");
+            let want_re: Vec<F> = quantized_re
+                .iter()
+                .map(|&x| eval_encoded_adaptive(&host_approximation, x))
+                .collect();
+            let expected_consumption = host_approximation.consumed_bits(input_ct.log_delta());
+            let approximation = upload_adaptive_approximation(module, host_approximation);
+            let mut res = alloc_ct(&params, module, params.k);
+            let exact_scratch_bytes = module.ckks_adaptive_approximation_tmp_bytes(&res, &input_ct, &tsk, &approximation);
+            let mut exact_scratch = ScratchOwned::<BE>::alloc(exact_scratch_bytes);
+            module
+                .ckks_eval_adaptive_approximation(&mut res, &input_ct, &approximation, &tsk, &mut exact_scratch.borrow())
+                .unwrap_or_else(|err| panic!("adaptive {strategy:?} {mode:?}: {err}"));
+
+            assert_eq!(res.log_delta(), approximation.output_log_delta(input_ct.log_delta()));
+            assert_eq!(
+                input_log_budget - res.log_budget(),
+                expected_consumption,
+                "adaptive {strategy:?} {mode:?}: consumed-bits mismatch"
+            );
+            assert_decrypt_precision(
+                &format!("adaptive_{strategy:?}_{mode:?}"),
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &want_re,
+                &input_im,
+                &mut scratch.borrow(),
+            );
+        }
+    }
+}
+
+/// Checks even and odd folds in both bases and adaptive modes.
+pub fn test_eval_adaptive_approximation_parity_folds<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSApproximationOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let quarter = F::from_f64(0.25).unwrap();
+    let (input, _) = test_vector_1::<F>(m);
+    let input_re: Vec<F> = input.iter().map(|&x| x * quarter).collect();
+    let input_im = vec![F::zero(); m];
+    let input_meta = precision_at(&params, params.prec().log_delta().min(20));
+    let (quantized_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), input_meta, &input_re, &input_im);
+    let coeff_meta = ckks_spec(params.n, params.base2k, PT_PREC.log_delta(), PT_PREC.log_budget());
+    let scale = AdaptiveScalePolicy::uniform(3);
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [1u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let input_ct = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &input_re,
+        &input_im,
+        input_meta,
+        &mut scratch.borrow(),
+    );
+    let input_log_budget = input_ct.log_budget();
+
+    for (basis, parity, degree, expected_transform, strategy) in [
+        (
+            Basis::Chebyshev,
+            Parity::Even,
+            30,
+            PolynomialInputTransform::ChebyshevT2,
+            SplitStrategy::MinDepth,
+        ),
+        (
+            Basis::Chebyshev,
+            Parity::Odd,
+            31,
+            PolynomialInputTransform::ChebyshevT2TimesInput,
+            SplitStrategy::MinMult,
+        ),
+        (
+            Basis::Monomial,
+            Parity::Even,
+            30,
+            PolynomialInputTransform::Square,
+            SplitStrategy::MinMult,
+        ),
+        (
+            Basis::Monomial,
+            Parity::Odd,
+            31,
+            PolynomialInputTransform::SquareTimesInput,
+            SplitStrategy::MinDepth,
+        ),
+    ] {
+        let coeffs: Vec<F> = (0usize..=degree)
+            .map(|i| {
+                let has_degree = match parity {
+                    Parity::Full => true,
+                    Parity::Even => i.is_multiple_of(2),
+                    Parity::Odd => !i.is_multiple_of(2),
+                };
+                if has_degree {
+                    F::from_f64(1.0 / (4.0 * (i + 1) as f64)).unwrap()
+                } else {
+                    F::zero()
+                }
+            })
+            .collect();
+        let polynomial = if basis == Basis::Chebyshev && parity == Parity::Even {
+            Polynomial::new_with_parity(basis, coeffs, parity).with_interval(-F::one(), F::one() + F::one())
+        } else {
+            Polynomial::new_with_parity(basis, coeffs, parity)
+        };
+        for mode in [
+            AdaptivePolynomialEvaluationMode::ReuseFullScaleBabyPowers,
+            AdaptivePolynomialEvaluationMode::RecomputeReducedScalePowers,
+        ] {
+            let host_approximation = AdaptivePolynomialApproximation::from_polynomial_folded(
+                &polynomial,
+                params.base2k.into(),
+                coeff_meta,
+                strategy,
+                scale,
+                mode,
+                host_module,
+            )
+            .expect("prepare folded adaptive approximation");
+            assert_eq!(host_approximation.input_transform, expected_transform);
+            assert_eq!(host_approximation.low.parity(), Parity::Full);
+            assert_eq!(host_approximation.high.parity(), Parity::Full);
+            let want_re: Vec<F> = quantized_re
+                .iter()
+                .map(|&x| eval_encoded_adaptive(&host_approximation, x))
+                .collect();
+            let expected_consumption = host_approximation.consumed_bits(input_ct.log_delta());
+            let approximation = upload_adaptive_approximation(module, host_approximation);
+            let mut res = alloc_ct(&params, module, params.k);
+            let exact_scratch_bytes = module.ckks_adaptive_approximation_tmp_bytes(&res, &input_ct, &tsk, &approximation);
+            let mut exact_scratch = ScratchOwned::<BE>::alloc(exact_scratch_bytes);
+            module
+                .ckks_eval_adaptive_approximation(&mut res, &input_ct, &approximation, &tsk, &mut exact_scratch.borrow())
+                .unwrap_or_else(|err| panic!("adaptive folded {basis:?} {parity:?} {mode:?}: {err}"));
+
+            assert_eq!(res.log_delta(), approximation.output_log_delta(input_ct.log_delta()));
+            assert_eq!(
+                input_log_budget - res.log_budget(),
+                expected_consumption,
+                "adaptive folded {basis:?} {parity:?} {mode:?}: consumed-bits mismatch"
+            );
+            assert_decrypt_precision(
+                &format!("adaptive_folded_{basis:?}_{parity:?}_{mode:?}"),
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &want_re,
+                &input_im,
+                &mut scratch.borrow(),
+            );
+        }
+    }
+}
+
+/// Compares predicted and actual costs across adaptive plan shapes.
+pub fn test_eval_adaptive_consumed_bits_sweep<BE, F, E>(
+    _params: CKKSTestParams,
+    _module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSApproximationOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let n = 16usize;
+    let base2k = 16usize;
+    let m = n / 2;
+    let (input_log_delta, coeff_log_delta) = (6usize, 3usize);
+    let module = Module::<BE>::new(n as u64);
+    let host_module = Module::<HostBytesBackend>::new(n as u64);
+    let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
+    let k = 96usize;
+    let params = CKKSTestParams {
+        n,
+        base2k,
+        k,
+        prec_meta: CKKSMeta {
+            log_sparsity: 0,
+            log_delta: input_log_delta,
+            slots: SlotsKind::Complex,
+        },
+        prec_log_budget: 10,
+        hw: m,
+        dsize: 1,
+        rank: 1,
+    };
+    let input_meta = ckks_spec(n, base2k, input_log_delta, 10);
+    let coeff_meta = ckks_spec(n, base2k, coeff_log_delta, 10);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [2u8; 32]);
+    let mut scratch = alloc_scratch(&params, &module);
+    let tsk = gen_tsk(&params, &module, &sk_raw, &mut scratch.borrow());
+    let (input_re, input_im) = test_vector_1::<F>(m);
+    let input = ckks_encrypt_with_prec(
+        &params,
+        &module,
+        &host_module,
+        &encoder,
+        &sk,
+        k,
+        &input_re,
+        &input_im,
+        input_meta,
+        &mut scratch.borrow(),
+    );
+
+    for basis in [Basis::Monomial, Basis::Chebyshev] {
+        for parity in [Parity::Full, Parity::Even, Parity::Odd] {
+            for strategy in [SplitStrategy::MinDepth, SplitStrategy::MinMult] {
+                for degree in 4usize..=35 {
+                    if (parity == Parity::Even && !degree.is_multiple_of(2))
+                        || (parity == Parity::Odd && degree.is_multiple_of(2))
+                    {
+                        continue;
+                    }
+                    let coefficients: Vec<F> = (0..=degree)
+                        .map(|i| {
+                            let has_degree = match parity {
+                                Parity::Full => true,
+                                Parity::Even => i.is_multiple_of(2),
+                                Parity::Odd => !i.is_multiple_of(2),
+                            };
+                            if has_degree {
+                                F::from_f64(((i % 5) + 1) as f64 / 16.0).unwrap()
+                            } else {
+                                F::zero()
+                            }
+                        })
+                        .collect();
+                    let polynomial = Polynomial::new_with_parity(basis, coefficients, parity);
+                    let log_split = polynomial.bsgs_log_split(strategy).expect("degree is at least four");
+                    if (1usize << log_split) > degree {
+                        continue;
+                    }
+                    for scale in [
+                        AdaptiveScalePolicy::new(1, 0),
+                        AdaptiveScalePolicy::new(0, 1),
+                        AdaptiveScalePolicy::new(1, 1),
+                        AdaptiveScalePolicy::new(2, 1),
+                    ] {
+                        for mode in [
+                            AdaptivePolynomialEvaluationMode::ReuseFullScaleBabyPowers,
+                            AdaptivePolynomialEvaluationMode::RecomputeReducedScalePowers,
+                        ] {
+                            let host_approximation = AdaptivePolynomialApproximation::from_polynomial(
+                                &polynomial,
+                                base2k.into(),
+                                coeff_meta,
+                                strategy,
+                                scale,
+                                mode,
+                                &host_module,
+                            )
+                            .unwrap_or_else(|err| {
+                                panic!("prepare degree={degree} {basis:?} {parity:?} {strategy:?} {scale:?} {mode:?}: {err}")
+                            });
+                            let expected = host_approximation.consumed_bits(input_log_delta);
+                            let approximation = upload_adaptive_approximation(&module, host_approximation);
+                            let mut res = alloc_ct(&params, &module, k);
+                            module
+                                .ckks_eval_adaptive_approximation(&mut res, &input, &approximation, &tsk, &mut scratch.borrow())
+                                .unwrap_or_else(|err| {
+                                    panic!("eval degree={degree} {basis:?} {parity:?} {strategy:?} {scale:?} {mode:?}: {err}")
+                                });
+                            assert_eq!(
+                                input.log_budget() - res.log_budget(),
+                                expected,
+                                "degree={degree} {basis:?} {parity:?} {strategy:?} {scale:?} {mode:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Measures precision and modulus savings across scale policies.
+pub fn test_eval_adaptive_precision_tradeoff<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSApproximationOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let half = F::from_f64(0.5).unwrap();
+    let (source, _) = test_vector_1::<F>(m);
+    let input_re: Vec<F> = source.iter().map(|&x| x * half).collect();
+    let input_im = vec![F::zero(); m];
+    let log_delta = params.prec().log_delta().min(20);
+    let input_meta = precision_at(&params, log_delta);
+    let (quantized_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), input_meta, &input_re, &input_im);
+
+    let degree = 16usize;
+    let coefficient = F::from_f64(1.0 / 3.0).unwrap();
+    let mut coefficients = vec![F::zero(); degree + 1];
+    coefficients[degree] = coefficient;
+    let polynomial = Polynomial::new_with_parity(Basis::Chebyshev, coefficients, Parity::Even);
+    let want_re: Vec<F> = quantized_re
+        .iter()
+        .map(|&x| coefficient * chebyshev_value(x, degree))
+        .collect();
+    let coeff_meta = ckks_spec(params.n, params.base2k, log_delta, 10);
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [3u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let input = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &input_re,
+        &input_im,
+        input_meta,
+        &mut scratch.borrow(),
+    );
+
+    let baseline_host = PolynomialApproximation::from_polynomial(
+        &polynomial,
+        params.base2k.into(),
+        coeff_meta,
+        SplitStrategy::MinDepth,
+        host_module,
+    )
+    .unwrap();
+    let baseline_consumption = baseline_host.consumed_bits(input.log_delta());
+    let baseline = baseline_host.map_plaintexts(|pt| upload_pt(module, pt));
+    let mut baseline_res = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_approximation(&mut baseline_res, &input, &baseline, &tsk, &mut scratch.borrow())
+        .unwrap();
+    assert_eq!(input.log_budget() - baseline_res.log_budget(), baseline_consumption);
+    assert_decrypt_precision(
+        "adaptive_tradeoff_baseline",
+        &params,
+        module,
+        &encoder,
+        &baseline_res,
+        &sk,
+        &want_re,
+        &input_im,
+        &mut scratch.borrow(),
+    );
+    let (baseline_re, _) = ckks_decrypt_decode(&params, module, &encoder, &baseline_res, &sk, &mut scratch.borrow());
+    let baseline_precision = precision_stats(&baseline_re, &want_re, log_delta).avg_log2_prec;
+
+    for mode in [
+        AdaptivePolynomialEvaluationMode::ReuseFullScaleBabyPowers,
+        AdaptivePolynomialEvaluationMode::RecomputeReducedScalePowers,
+    ] {
+        let mut previous_consumption = baseline_consumption;
+        let mut uniform_three = None;
+        for drop_bits in 1usize..=8 {
+            let host_approximation = AdaptivePolynomialApproximation::from_polynomial(
+                &polynomial,
+                params.base2k.into(),
+                coeff_meta,
+                SplitStrategy::MinDepth,
+                AdaptiveScalePolicy::uniform(drop_bits),
+                mode,
+                host_module,
+            )
+            .unwrap();
+            let expected_consumption = host_approximation.consumed_bits(input.log_delta());
+            assert!(
+                expected_consumption < previous_consumption,
+                "{mode:?} drop={drop_bits}: modulus consumption did not decrease"
+            );
+            previous_consumption = expected_consumption;
+            let approximation = upload_adaptive_approximation(module, host_approximation);
+            let mut res = alloc_ct(&params, module, params.k);
+            module
+                .ckks_eval_adaptive_approximation(&mut res, &input, &approximation, &tsk, &mut scratch.borrow())
+                .unwrap();
+            assert_eq!(input.log_budget() - res.log_budget(), expected_consumption);
+            assert_decrypt_precision_at_log_delta(
+                &format!("adaptive_tradeoff_{mode:?}_{drop_bits}"),
+                &params,
+                module,
+                &encoder,
+                &res,
+                &sk,
+                &want_re,
+                &input_im,
+                log_delta - drop_bits,
+                &mut scratch.borrow(),
+            );
+            let (got_re, _) = ckks_decrypt_decode(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+            let precision = precision_stats(&got_re, &want_re, log_delta).avg_log2_prec;
+            if drop_bits == 3 {
+                uniform_three = Some((expected_consumption, precision));
+            }
+            eprintln!(
+                "adaptive precision: mode={mode:?} drop={drop_bits} saved={} bits, avg_precision={precision:.2} (baseline={baseline_precision:.2})",
+                baseline_consumption - expected_consumption,
+            );
+            assert!(
+                precision + drop_bits as f64 + 3.0 >= baseline_precision,
+                "{mode:?} drop={drop_bits}: precision loss {:.2} exceeds drop plus guard",
+                baseline_precision - precision,
+            );
+        }
+
+        let optimized_scale = match mode {
+            AdaptivePolynomialEvaluationMode::ReuseFullScaleBabyPowers => AdaptiveScalePolicy::new(0, 6),
+            AdaptivePolynomialEvaluationMode::RecomputeReducedScalePowers => AdaptiveScalePolicy::new(2, 7),
+        };
+        let host_approximation = AdaptivePolynomialApproximation::from_polynomial(
+            &polynomial,
+            params.base2k.into(),
+            coeff_meta,
+            SplitStrategy::MinDepth,
+            optimized_scale,
+            mode,
+            host_module,
+        )
+        .unwrap();
+        let optimized_consumption = host_approximation.consumed_bits(input.log_delta());
+        let approximation = upload_adaptive_approximation(module, host_approximation);
+        let mut res = alloc_ct(&params, module, params.k);
+        module
+            .ckks_eval_adaptive_approximation(&mut res, &input, &approximation, &tsk, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(input.log_budget() - res.log_budget(), optimized_consumption);
+        assert_decrypt_precision_at_log_delta(
+            &format!("adaptive_tradeoff_optimized_{mode:?}"),
+            &params,
+            module,
+            &encoder,
+            &res,
+            &sk,
+            &want_re,
+            &input_im,
+            log_delta - optimized_scale.power_drop_bits,
+            &mut scratch.borrow(),
+        );
+        let (got_re, _) = ckks_decrypt_decode(&params, module, &encoder, &res, &sk, &mut scratch.borrow());
+        let optimized_precision = precision_stats(&got_re, &want_re, log_delta).avg_log2_prec;
+        let (uniform_consumption, uniform_precision) = uniform_three.expect("uniform drop-three measurement");
+        assert_eq!(
+            optimized_consumption, uniform_consumption,
+            "{mode:?}: policies must have equal cost"
+        );
+        assert!(
+            optimized_precision >= uniform_precision + 0.5,
+            "{mode:?}: mixed policy precision {optimized_precision:.2} did not improve on uniform {uniform_precision:.2}"
+        );
+        if mode == AdaptivePolynomialEvaluationMode::ReuseFullScaleBabyPowers {
+            assert!(
+                optimized_precision + 0.5 >= baseline_precision,
+                "coefficient-only policy lost more than 0.5 bit"
+            );
+        }
+        eprintln!(
+            "adaptive optimized: mode={mode:?} scale={optimized_scale:?} saved={} bits, avg_precision={optimized_precision:.2}",
+            baseline_consumption - optimized_consumption,
+        );
     }
 }

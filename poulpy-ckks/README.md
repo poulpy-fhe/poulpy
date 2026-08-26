@@ -246,6 +246,17 @@ precision/depth-based degree selection, composite sign coefficients, and
 `PolynomialApproximation`. The latter owns both the prepared BSGS polynomial
 and its interval map; `CKKSApproximationOps::ckks_eval_approximation` applies
 that map and evaluates the polynomial in one reusable operation.
+`AdaptivePolynomialApproximation` additionally splits the polynomial at its
+BSGS baby-step boundary: low terms retain the coefficient scale, while high
+terms use an `AdaptiveScalePolicy` with independent power and coefficient
+reductions. This lets callers spend coefficient precision before lowering the
+power basis, which usually gives a better precision/modulus trade-off.
+`ReuseFullScaleBabyPowers` favors latency; `RecomputeReducedScalePowers`
+usually saves more modulus. The reduction is bit-granular—physical limb
+savings occur whenever the resulting `k` crosses a `base2k` boundary—and
+`consumed_bits(input_log_delta)` reports the exact arithmetic cost of the
+prepared plan. `from_polynomial_folded` composes the same mechanism with even
+or odd monomial/Chebyshev parity folding.
 The `_with` selectors accept explicit `RemezOptions` for downstream planners.
 Composite-sign generation can propagate a CKKS error margin between factors.
 `minimax_multi_interval` and the matching degree/depth selectors fit a single
@@ -317,7 +328,7 @@ Leveled operations are invoked through traits implemented on
 | `CKKSConjugateOps` | homomorphic conjugation |
 | `CKKSPow2Ops` | multiplication and division by powers of two |
 | `CKKSPlaintextVecOps` | plaintext ZNX operations |
-| `CKKSApproximationOps` | interval mapping and evaluation of a prepared `PolynomialApproximation` |
+| `CKKSApproximationOps` | interval mapping and evaluation of prepared standard or adaptive polynomial approximations |
 | `CKKSPolynomialEvaluationOps` | Baby-Step Giant-Step polynomial evaluation (monomial and Chebyshev bases) |
 | `CKKSLinearTransformationOps` | homomorphic matrix-vector product over the slots (BSGS diagonal method) |
 | `CKKSDFTOps` / `CKKSDFTMatrixOps` | homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) and its compiled plaintext matrices |

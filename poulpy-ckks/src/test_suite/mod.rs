@@ -819,6 +819,22 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_consumed_bits_sweep
             );
             run_test!(
+                eval_adaptive_approximation_modes,
+                $crate::test_suite::polynomial_evaluation::test_eval_adaptive_approximation_modes
+            );
+            run_test!(
+                eval_adaptive_approximation_parity_folds,
+                $crate::test_suite::polynomial_evaluation::test_eval_adaptive_approximation_parity_folds
+            );
+            run_test!(
+                eval_adaptive_consumed_bits_sweep,
+                $crate::test_suite::polynomial_evaluation::test_eval_adaptive_consumed_bits_sweep
+            );
+            run_test!(
+                eval_adaptive_precision_tradeoff,
+                $crate::test_suite::polynomial_evaluation::test_eval_adaptive_precision_tradeoff
+            );
+            run_test!(
                 eval_poly_const_coeffs_complex_cubic,
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_cubic
             );

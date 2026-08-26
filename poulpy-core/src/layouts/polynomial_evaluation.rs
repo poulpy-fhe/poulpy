@@ -13,7 +13,7 @@ use std::fmt::Debug;
 use anyhow::{Result, anyhow, ensure};
 use poulpy_hal::layouts::Backend;
 
-use crate::layouts::IntPolyInfos;
+use crate::layouts::{IntPolyInfos, LWEInfos};
 use rand_distr::num_traits::{Float, FloatConst, FromPrimitive};
 
 use crate::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
@@ -624,6 +624,12 @@ where
         self.coeffs.len().saturating_sub(1)
     }
 
+    /// Returns the BSGS split selected for this polynomial by `strategy`.
+    pub fn bsgs_log_split(&self, strategy: SplitStrategy) -> Result<usize> {
+        ensure!(self.degree() >= 1, "polynomial must have degree ≥ 1");
+        Ok(split_for_strategy(strategy, self.degree(), self.parity, self.basis))
+    }
+
     /// Evaluates the polynomial at `x`.
     ///
     /// Uses Horner's method (monomial) or Clenshaw's algorithm (Chebyshev).
@@ -752,6 +758,7 @@ where
         Ok(BSGSPolynomial {
             basis: self.basis,
             degree,
+            source_degree: degree,
             base,
             baby_steps,
             parity: self.parity,
@@ -777,6 +784,7 @@ where
         let (folded, input_transform) = self.fold_parity()?;
         let mut bsgs = folded.decompose_bsgs_with(split_strategy, encode)?;
         bsgs.input_transform = input_transform;
+        bsgs.source_degree = self.degree();
         // The public interval still describes the source input. Evaluation first
         // applies its change of basis, then the attached quadratic transform.
         bsgs.a = self.a.to_f64().expect("interval lower bound must convert to f64");
@@ -881,6 +889,7 @@ where
 pub struct BSGSPolynomial<C> {
     basis: Basis,
     degree: usize,
+    source_degree: usize,
     base: usize,
     baby_steps: Vec<C>,
     parity: Parity,
@@ -946,6 +955,11 @@ impl<C> BSGSPolynomial<C> {
         self.degree
     }
 
+    /// Returns the degree before an optional quadratic parity fold.
+    pub fn source_degree(&self) -> usize {
+        self.source_degree
+    }
+
     /// Returns the baby-step base used by this decomposition.
     pub fn base(&self) -> usize {
         self.base
@@ -992,6 +1006,74 @@ impl<C> BSGSPolynomial<C> {
         ) + self.input_transform.extra_depth() * input_log_delta
     }
 
+    /// Replays the BSGS graph with caller-supplied power costs.
+    pub fn consumed_bits_with_power_cost(
+        &self,
+        multiplication_log_delta: usize,
+        coeff_log_delta: usize,
+        mut power_cost: impl FnMut(usize) -> usize,
+    ) -> usize
+    where
+        C: LWEInfos,
+    {
+        let baby_weight = |degree: usize, power_cost: &mut dyn FnMut(usize) -> usize| -> usize {
+            if degree == 0 {
+                return 0;
+            }
+            let highest = match self.parity {
+                Parity::Full => degree,
+                Parity::Odd => degree - (degree + 1) % 2,
+                Parity::Even => degree - degree % 2,
+            };
+            if highest == 0 {
+                0
+            } else {
+                power_cost(highest) + coeff_log_delta
+            }
+        };
+
+        let baby_degrees: Vec<usize> = self
+            .baby_steps
+            .iter()
+            .map(|coefficients| coefficients.n().as_usize() - 1)
+            .collect();
+        let trailing_constant = baby_degrees.len() >= 2 && baby_degrees.last() == Some(&0);
+        let can_fold = trailing_constant && self.degree.is_power_of_two();
+        let process_len = baby_degrees.len() - usize::from(can_fold);
+        let mut active: Vec<(usize, usize)> = baby_degrees[..process_len]
+            .iter()
+            .map(|&degree| (degree, baby_weight(degree, &mut power_cost)))
+            .collect();
+
+        while active.len() > 1 {
+            let mut next = Vec::with_capacity(active.len().div_ceil(2));
+            let mut i = 0;
+            while i < active.len() {
+                let is_last = i + 1 == active.len();
+                if !is_last && active[i].0 == active[i + 1].0 {
+                    let giant_power = (active[i].0 + 1).next_power_of_two();
+                    let combined = (power_cost(giant_power).max(active[i + 1].1) + multiplication_log_delta).max(active[i].1);
+                    next.push((2 * giant_power - 1, combined));
+                    i += 2;
+                } else if is_last && i > 0 {
+                    let carried_degree = next.last().map_or(active[i].0, |&(degree, _)| degree);
+                    next.push((carried_degree, active[i].1));
+                    i += 1;
+                } else {
+                    next.push(active[i]);
+                    i += 1;
+                }
+            }
+            active = next;
+        }
+
+        let mut consumed = active.first().map_or(0, |&(_, cost)| cost);
+        if can_fold {
+            consumed = consumed.max(power_cost(self.degree) + coeff_log_delta);
+        }
+        consumed + self.input_transform.extra_depth() * multiplication_log_delta
+    }
+
     /// Returns all encoded baby-step coefficient polynomials.
     pub fn baby_steps(&self) -> &[C] {
         &self.baby_steps
@@ -1030,6 +1112,7 @@ impl<C> BSGSPolynomial<C> {
         BSGSPolynomial {
             basis: self.basis,
             degree: self.degree,
+            source_degree: self.source_degree,
             base: self.base,
             baby_steps: self.baby_steps.iter().map(&mut f).collect(),
             parity: self.parity,
@@ -1165,6 +1248,14 @@ mod tests {
         })
         .unwrap();
         degrees
+    }
+
+    #[test]
+    fn bsgs_log_split_rejects_constant_polynomials() {
+        let polynomial = Polynomial::new(Basis::Monomial, vec![1.0_f64]);
+        for strategy in [SplitStrategy::MinDepth, SplitStrategy::MinMult] {
+            assert!(polynomial.bsgs_log_split(strategy).is_err());
+        }
     }
 
     /// The closed-form [`bsgs_consumed_bits`] must equal the structure-exact

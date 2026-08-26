@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### `poulpy-ckks`
+
+- Add bit-granular adaptive polynomial approximation plans. Independent high-power and high-coefficient reductions improve the precision/modulus trade-off; plans include exact cost reporting, optional full-scale baby-power reuse, interval mapping, and monomial/Chebyshev parity folding.
+
 ## [0.8.2] - 2026-08-22
 
 ### `poulpy-hal`

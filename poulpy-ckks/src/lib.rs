@@ -88,7 +88,8 @@ pub mod prelude {
         CKKSSubOps,
     };
     pub use crate::layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation, UnnormalizedCKKSCiphertext,
+        AdaptivePolynomialApproximation, AdaptivePolynomialEvaluationMode, AdaptiveScalePolicy, CKKSCiphertext, CKKSModuleAlloc,
+        CKKSPlaintext, PolynomialApproximation, UnnormalizedCKKSCiphertext,
     };
     pub use crate::{
         CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult, CoeffsMeta, Quad, SetCKKSInfos, SlotsKind,

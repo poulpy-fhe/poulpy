@@ -4,13 +4,17 @@
 //! polynomials over one interval or a disjoint union, selects degrees against
 //! precision or homomorphic-depth goals, and builds composite sign
 //! approximations. Prepared ciphertext evaluation is exposed through
-//! [`CKKSApproximationOps`] and [`PolynomialApproximation`].
+//! [`CKKSApproximationOps`], [`PolynomialApproximation`], and
+//! [`AdaptivePolynomialApproximation`].
 
 mod remez;
 mod select;
 mod sign;
 
-pub use crate::{api::CKKSApproximationOps, layouts::PolynomialApproximation};
+pub use crate::{
+    api::CKKSApproximationOps,
+    layouts::{AdaptivePolynomialApproximation, AdaptivePolynomialEvaluationMode, AdaptiveScalePolicy, PolynomialApproximation},
+};
 pub use remez::{Minimax, Parity, RemezOptions, minimax, minimax_multi_interval, minimax_multi_interval_with, minimax_with};
 pub use select::{
     DegreeChoice, degree_for_precision, degree_for_precision_multi_interval, degree_for_precision_multi_interval_with,

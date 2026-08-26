@@ -132,7 +132,9 @@ pub mod ship;
 pub(crate) mod validation;
 
 pub use alloc::CKKSModuleAlloc;
-pub use approximation::PolynomialApproximation;
+pub use approximation::{
+    AdaptivePolynomialApproximation, AdaptivePolynomialEvaluationMode, AdaptiveScalePolicy, PolynomialApproximation,
+};
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus,
     SparseSecretEncapsulation,
