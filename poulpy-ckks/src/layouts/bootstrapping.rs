@@ -468,36 +468,17 @@ mod tests {
         .unwrap();
         assert_eq!(plan.coeffs_to_slots().scaling(), Some(1.0 / 16.0));
 
-        let mut even = eval_mod(16);
-        even.eval_mod_type = EvalModType::EvenCheby { input_range_margin: 0.5 };
-        even.f_mod_log_interval_reduction = 0;
+        let mut centered = eval_mod(16);
+        centered.eval_mod_type = EvalModType::CosHKEven;
         let plan = BootstrappingPlan::new(
             BootstrappingPipeline::S2CFirst,
             BootstrappingTechniques::default(),
             dft(DFTType::Encode),
-            even,
+            centered,
             dft(DFTType::Decode),
         )
         .unwrap();
-        assert_eq!(plan.coeffs_to_slots().scaling(), Some(0.25));
-    }
-
-    #[test]
-    fn recipe_rejects_invalid_eval_mod_input_scaling() {
-        let mut even = eval_mod(16);
-        even.eval_mod_type = EvalModType::EvenCheby {
-            input_range_margin: f64::INFINITY,
-        };
-        even.f_mod_log_interval_reduction = 0;
-        let err = BootstrappingPlan::new(
-            BootstrappingPipeline::C2SFirst,
-            BootstrappingTechniques::default(),
-            dft(DFTType::Encode),
-            even,
-            dft(DFTType::Decode),
-        )
-        .unwrap_err();
-        assert!(err.to_string().contains("input_range_margin"));
+        assert_eq!(plan.coeffs_to_slots().scaling(), Some(1.0 / 16.0));
     }
 
     #[test]

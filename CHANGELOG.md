@@ -31,7 +31,7 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 
 ### `poulpy-ckks`
 
-- **Breaking:** add `EvalModType::EvenCheby { input_range_margin }`, an even Chebyshev EvalMod approximation folded through `T₂`; `EvalModType` consequently no longer implements `Eq`. Compilation validates the margin and unsupported range-extension/inverse combinations and accounts for the fold in depth and modulus consumption.
+- Add `EvalModType::CosHKEven`, a centred Han–Ki approximation folded through `T₂` when it reduces multiplication cost without increasing the modulus budget.
 - **Breaking:** `BootstrappingPlan::new` now validates the EvalMod plan and derives the CoeffsToSlots input scaling from it, replacing any scaling already present on the supplied CoeffsToSlots plan.
 - Fuse each BSGS baby-step linear combination into one accumulator and use constant-convolution accumulation to avoid repeated ciphertext temporaries.
 - Run the real and imaginary EvalMod halves concurrently on parallel backends, with per-half scratch arenas; serial backends retain the existing order.

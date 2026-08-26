@@ -42,7 +42,7 @@
 //! [`crate::default::eval_mod`] for the evaluation itself).
 
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth};
+use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -82,7 +82,7 @@ fn scalar_from_i64<F: CKKSScalar>(name: &'static str, v: i64) -> Result<F> {
 /// scaled by `1/(2π)` (times the optional `scaling`), with that factor folded into
 /// the polynomial coefficients and the range-extension constants rather than applied
 /// separately, so the recovered value sits at amplitude `scaling/(2π)`.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EvalModType {
     /// Discrete cosine approximation following Han & Ki method (*Better Bootstrapping
     /// for Approximate Homomorphic Encryption*). Targets `1/(2π)·cos(2π·(x − 1/4)/2^r)`
@@ -93,6 +93,9 @@ pub enum EvalModType {
     /// it as `K` grows due to the requirement `f_mod_degree ≥ 2·(K − 1)`.
     /// Can be paired with `f_mod_log_interval_reduction`.
     CosHK,
+    /// [`CosHK`](Self::CosHK) fitted in the centred variable
+    /// `(x - 1/4)/K`, making the base polynomial even and foldable through `T₂`.
+    CosHKEven,
     /// Continuous Chebyshev approximation of `1/(2π)·sin(2π·x)` over `[−K, K]`.
     /// Implemented as the equivalent shifted cosine
     /// `cos(2π·(x − 1/4))`, which keeps the same target while using the full
@@ -126,24 +129,6 @@ pub enum EvalModType {
     /// and the `r` complex squarings (`exp(iθ)² = exp(2iθ)`) extend it to the
     /// full-range `(scaling/(2π))·exp(2πi·x)`.
     ExpCmplx,
-    /// Even Chebyshev approximation evaluated through `u = T_2(t) = 2t² - 1`.
-    /// `f_mod_degree = d` is the folded degree in `u`; the generated even
-    /// polynomial has support up to `T_{2d}(t)`. Requires
-    /// `f_mod_log_interval_reduction = 0`.
-    EvenCheby {
-        /// Input margin ε; the preceding transform must scale by `2/(εK)`.
-        input_range_margin: f64,
-    },
-}
-
-impl EvalModType {
-    /// Input margin ε for [`Self::EvenCheby`].
-    fn even_cheby_input_range_margin(self) -> Option<f64> {
-        match self {
-            Self::EvenCheby { input_range_margin } => Some(input_range_margin),
-            _ => None,
-        }
-    }
 }
 
 /// User-facing recipe for an `x mod 1` evaluation. Compiled into the encoded
@@ -244,24 +229,16 @@ impl EvalModPlan {
     /// for the [`SplitStrategy`], so this is exact for `MinMult` as well as
     /// `MinDepth`); it matches the depth of the compiled [`EvalMod::eval_depth`].
     pub fn eval_depth(&self) -> usize {
-        let base = bsgs_eval_depth(self.base_degree(), self.split_strategy);
+        let (degree, fold) = self.encoded_base_degree();
+        let base = usize::from(fold) + bsgs_eval_depth(degree, self.split_strategy);
         let inv = self.f_mod_inv_degree.map_or(0, |d| bsgs_eval_depth(d, self.split_strategy));
-        let pre = usize::from(self.eval_mod_type.even_cheby_input_range_margin().is_some());
-        base + self.f_mod_log_interval_reduction + inv + pre
+        base + self.f_mod_log_interval_reduction + inv
     }
 
     /// Scaling of the transform feeding this EvalMod plan.
     pub fn input_scaling(&self) -> Result<f64> {
         ensure!(self.f_mod_interval > 0, "EvalModPlan: f_mod_interval must be > 0");
-        let scaling = if let Some(input_range_margin) = self.eval_mod_type.even_cheby_input_range_margin() {
-            ensure!(
-                input_range_margin.is_finite() && input_range_margin > 0.0,
-                "EvalModPlan: EvenCheby input_range_margin must be finite and > 0"
-            );
-            2.0 / (input_range_margin * self.f_mod_interval as f64)
-        } else {
-            1.0 / self.f_mod_interval as f64
-        };
+        let scaling = 1.0 / self.f_mod_interval as f64;
         ensure!(
             scaling.is_finite() && scaling > 0.0,
             "EvalModPlan: input scaling must be finite and > 0"
@@ -284,7 +261,7 @@ impl EvalModPlan {
             ensure!(!degree.is_multiple_of(2), "f_mod_inv_degree must be odd");
         }
         match self.eval_mod_type {
-            EvalModType::CosHK => {
+            EvalModType::CosHK | EvalModType::CosHKEven => {
                 let minimum_degree = self
                     .f_mod_interval
                     .saturating_sub(1)
@@ -297,19 +274,12 @@ impl EvalModPlan {
                 "SinCheby requires f_mod_log_interval_reduction = 0"
             ),
             EvalModType::ExpCmplx => ensure!(self.f_mod_inv_degree.is_none(), "ExpCmplx does not compose an inverse"),
-            EvalModType::EvenCheby { input_range_margin } => {
-                ensure!(
-                    input_range_margin.is_finite() && input_range_margin > 0.0,
-                    "EvenCheby input_range_margin must be finite and > 0"
-                );
-                ensure!(
-                    self.f_mod_log_interval_reduction == 0,
-                    "EvenCheby requires f_mod_log_interval_reduction = 0"
-                );
-                ensure!(self.f_mod_inv_degree.is_none(), "EvenCheby does not compose an inverse");
-            }
             EvalModType::CosCheby => {}
         }
+        ensure!(
+            self.eval_mod_type != EvalModType::CosHKEven || self.even_base_fits_plan(),
+            "CosHKEven cannot beat CosHK's BSGS cost at this plan: adjust f_mod_degree, or use CosHK"
+        );
         Ok(())
     }
 
@@ -327,42 +297,102 @@ impl EvalModPlan {
         // is documentation-only), so no per-family parity is threaded here; the
         // compiled polynomials carry their real parity (`compile_eval_mod` pins
         // Full for the phase-shifted Sin/CosCheby, CosHK keeps auto-detection).
-        let base = bsgs_consumed_bits(
-            self.base_degree(),
-            self.split_strategy,
-            Parity::Full,
-            Basis::Chebyshev,
-            input_log_delta,
-            coeff,
-        );
+        let (degree, fold) = self.encoded_base_degree();
+        let base = usize::from(fold) * input_log_delta
+            + bsgs_consumed_bits(
+                degree,
+                self.split_strategy,
+                Parity::Full,
+                Basis::Chebyshev,
+                input_log_delta,
+                coeff,
+            );
         let range_ext = self.f_mod_log_interval_reduction * input_log_delta;
         let inv = self.f_mod_inv_degree.map_or(0, |d| {
             bsgs_consumed_bits(d, self.split_strategy, Parity::Odd, Basis::Monomial, input_log_delta, coeff)
         });
-        let pre = if self.eval_mod_type.even_cheby_input_range_margin().is_some() {
-            input_log_delta
-        } else {
-            0
-        };
-        base + range_ext + inv + pre
+        base + range_ext + inv
     }
 
     /// Degree of the base `f` polynomial actually encoded, so its BSGS depth can
-    /// be derived without building it. For `CosHK` this is the minimax degree
-    /// chosen by [`cosine::approximate_cos`]; otherwise the interpolation degree
-    /// `f_mod_degree`.
+    /// be derived without building it. The Han–Ki variants derive it from their
+    /// fitted node sets; the others use `f_mod_degree`.
     fn base_degree(&self) -> usize {
         match self.eval_mod_type {
-            EvalModType::CosHK => {
+            EvalModType::CosHK | EvalModType::CosHKEven => {
                 // Clear preconditions instead of a usize underflow inside the
                 // Han–Ki degree table / a shift overflow on the message ratio;
                 // `compile_eval_mod` enforces the same bounds with typed errors.
                 assert!(self.f_mod_interval > 0, "EvalModPlan: f_mod_interval must be > 0");
                 assert!(self.log_msg_ratio < 64, "EvalModPlan: log_msg_ratio must be < 64");
-                cosine::approximate_cos_len(self.f_mod_interval, self.f_mod_degree, (1u64 << self.log_msg_ratio) as f64)
-                    .saturating_sub(1)
+                let dev = (1u64 << self.log_msg_ratio) as f64;
+                let len = if self.eval_mod_type == EvalModType::CosHKEven {
+                    cosine::approximate_cos_centered_len(self.f_mod_interval, self.f_mod_degree, dev, self.mirrored_clusters())
+                } else {
+                    cosine::approximate_cos_len(self.f_mod_interval, self.f_mod_degree, dev)
+                };
+                len.saturating_sub(1)
             }
             _ => self.f_mod_degree,
+        }
+    }
+
+    /// Number of outer Han–Ki clusters mirrored by the centred fit.
+    pub fn mirrored_clusters(&self) -> usize {
+        let dev = (1u64 << self.log_msg_ratio) as f64;
+        let full = cosine::approximate_cos_len(self.f_mod_interval, self.f_mod_degree, dev).saturating_sub(1);
+        (0..=cosine::MAX_MIRRORED_CLUSTERS)
+            .rev()
+            .find(|&mirrors| {
+                let degree =
+                    cosine::approximate_cos_centered_len(self.f_mod_interval, self.f_mod_degree, dev, mirrors).saturating_sub(1);
+                self.even_base_fits(degree, full)
+            })
+            .unwrap_or(0)
+    }
+
+    fn even_base_fits(&self, degree: usize, full: usize) -> bool {
+        let folded = degree / 2;
+        if folded < 2 {
+            return false;
+        }
+        let strategy = self.split_strategy;
+        let input = self.f_mod_log_delta;
+        let coeff = self.coeffs_meta.meta.log_delta;
+        bsgs_eval_depth(folded, strategy) < bsgs_eval_depth(full, strategy)
+            && bsgs_consumed_bits(folded, strategy, Parity::Full, Basis::Chebyshev, input, coeff) + input
+                <= bsgs_consumed_bits(full, strategy, Parity::Full, Basis::Chebyshev, input, coeff)
+            && bsgs_op_counts(folded, strategy, Parity::Full, Basis::Chebyshev).0 + 1
+                < bsgs_op_counts(full, strategy, Parity::Full, Basis::Chebyshev).0
+    }
+
+    /// Whether the centred even base is encoded after an exact `T₂` fold.
+    pub fn folds_even_base(&self) -> bool {
+        self.eval_mod_type == EvalModType::CosHKEven && self.base_degree() / 2 >= 2
+    }
+
+    fn encoded_base_degree(&self) -> (usize, bool) {
+        if self.folds_even_base() {
+            (self.base_degree() / 2, true)
+        } else {
+            (self.base_degree(), false)
+        }
+    }
+
+    fn even_base_fits_plan(&self) -> bool {
+        let dev = (1u64 << self.log_msg_ratio) as f64;
+        let full = cosine::approximate_cos_len(self.f_mod_interval, self.f_mod_degree, dev).saturating_sub(1);
+        self.even_base_fits(self.base_degree(), full)
+    }
+
+    /// Constant added before evaluating the centred base polynomial.
+    pub fn input_offset<F: CKKSScalar>(&self) -> Option<F> {
+        match self.eval_mod_type {
+            EvalModType::CosHKEven => {
+                let four_k = self.f_mod_interval.checked_mul(4).and_then(F::from_usize)?;
+                Some(-(F::one() / four_k))
+            }
+            _ => None,
         }
     }
 }
@@ -406,8 +436,8 @@ pub struct EvalMod<F, P> {
     /// when no per-step constant is needed (no range extension, or the complex
     /// [`EvalModType::ExpCmplx`] path, whose squaring is exact).
     pub range_extension_consts: Option<P>,
-    /// Encoded constant subtracted before evaluating the base polynomial.
-    pub input_shift: Option<P>,
+    /// Encoded offset added before evaluating the centred base polynomial.
+    pub f_mod_input_offset: Option<P>,
     /// BSGS-encoded base polynomial actually evaluated on the ciphertext.
     pub f_mod_bsgs: EvalModBsgs<P>,
     /// BSGS-encoded inverse `f⁻¹` post-composition (the arcsine for the
@@ -514,10 +544,8 @@ where
     F: CKKSEncodingScalar,
 {
     lit.validate()?;
-    match lit.eval_mod_type {
-        EvalModType::ExpCmplx => return compile_eval_mod_exp(base2k, lit, module, scratch),
-        EvalModType::EvenCheby { .. } => return compile_eval_mod_even_cheby(base2k, lit, module, scratch),
-        _ => {}
+    if lit.eval_mod_type == EvalModType::ExpCmplx {
+        return compile_eval_mod_exp(base2k, lit, module, scratch);
     }
     let coeff_meta = lit.coeffs_meta;
 
@@ -582,21 +610,51 @@ where
             // the odd-degree Chebyshev coefficients in BSGS evaluation.
             Polynomial::new_with_parity(Basis::Chebyshev, coeffs, Parity::Full)
         }
-        EvalModType::ExpCmplx | EvalModType::EvenCheby { .. } => unreachable!(),
+        EvalModType::CosHKEven => {
+            let coeffs = cosine::approximate_cos_centered::<F>(
+                lit.f_mod_interval,
+                lit.f_mod_degree,
+                (1u64 << lit.log_msg_ratio) as f64,
+                f_mod_log_interval_reduction,
+                lit.mirrored_clusters(),
+            );
+            Polynomial::new_with_parity(Basis::Chebyshev, coeffs, Parity::Even)
+        }
+        EvalModType::ExpCmplx => unreachable!(),
     };
     match lit.eval_mod_type {
         EvalModType::SinCheby => f_mod_poly.parity = Parity::Full,
         // The phase-shifted cosine is not even, so keep all coefficients.
         EvalModType::CosCheby => f_mod_poly.parity = Parity::Full,
         EvalModType::CosHK => {}
-        EvalModType::ExpCmplx | EvalModType::EvenCheby { .. } => unreachable!(),
+        EvalModType::CosHKEven => {
+            for coeff in f_mod_poly.coeffs.iter_mut().skip(1).step_by(2) {
+                *coeff = F::zero();
+            }
+        }
+        EvalModType::ExpCmplx => unreachable!(),
     }
 
     for c in f_mod_poly.coeffs.iter_mut() {
         *c = *c * s;
     }
 
-    let f_mod_bsgs = encode_bsgs_backend(&f_mod_poly, module, base2k, coeff_meta, lit.split_strategy, scratch)?;
+    let f_mod_bsgs = if lit.folds_even_base() {
+        encode_bsgs_folded_backend(&f_mod_poly, module, base2k, coeff_meta, lit.split_strategy, scratch)?
+    } else {
+        encode_bsgs_backend(&f_mod_poly, module, base2k, coeff_meta, lit.split_strategy, scratch)?
+    };
+    let f_mod_input_offset = match lit.input_offset::<F>() {
+        Some(offset) => {
+            let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, coeff_meta.k);
+            pt.set_meta_checked(coeff_meta.meta)?;
+            module
+                .ckks_encode_coeffs_host_into(&mut pt, &[offset], scratch)
+                .map_err(|e| anyhow!("f_mod_input_offset: {e}"))?;
+            Some(pt)
+        }
+        None => None,
+    };
     let f_mod_inv_bsgs = f_mod_inv_poly_opt
         .as_ref()
         .map(|p| encode_bsgs_backend(p, module, base2k, coeff_meta, lit.split_strategy, scratch))
@@ -620,7 +678,7 @@ where
     Ok(EvalMod {
         plan: lit,
         range_extension_consts,
-        input_shift: None,
+        f_mod_input_offset,
         f_mod_bsgs: EvalModBsgs::Real(f_mod_bsgs),
         f_mod_inv_bsgs,
         f_mod_poly: EvalModPoly::Real(f_mod_poly),
@@ -662,58 +720,10 @@ where
     Ok(EvalMod {
         plan: lit,
         range_extension_consts: None,
-        input_shift: None,
+        f_mod_input_offset: None,
         f_mod_bsgs: EvalModBsgs::Complex(exp_bsgs),
         f_mod_inv_bsgs: None,
         f_mod_poly: EvalModPoly::Complex(exp_poly),
-        f_mod_inv_poly: None,
-    })
-}
-
-/// Compiles [`EvalModType::EvenCheby`] through the `u = T_2(t)` parity fold.
-fn compile_eval_mod_even_cheby<BE, F>(
-    base2k: Base2K,
-    lit: EvalModPlan,
-    module: &Module<BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, CKKSPlaintextOwned<BE>>>
-where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-    F: CKKSEncodingScalar,
-{
-    let coeff_meta = lit.coeffs_meta;
-    let EvalModType::EvenCheby { input_range_margin } = lit.eval_mod_type else {
-        unreachable!()
-    };
-
-    let scaling_f64 = lit.scaling.unwrap_or(1.0);
-    let coeffs = cosine::even_cheby_cos_coeffs(lit.f_mod_interval, input_range_margin, lit.f_mod_degree)?;
-    let cf: Vec<F> = coeffs
-        .iter()
-        .map(|&c| scalar_from_f64("even_cheby coeff", c * scaling_f64))
-        .collect::<Result<_>>()?;
-    let f_mod_poly_full = Polynomial::new_with_parity(Basis::Chebyshev, cf, Parity::Even);
-    let f_mod_bsgs = encode_bsgs_folded_backend(&f_mod_poly_full, module, base2k, coeff_meta, lit.split_strategy, scratch)?;
-    let (f_mod_poly, _) = f_mod_poly_full.fold_parity()?;
-
-    let shift_val = scalar_from_f64::<F>(
-        "even_cheby_shift",
-        1.0 / (2.0 * input_range_margin * lit.f_mod_interval as f64),
-    )?;
-    let mut shift_pt = module.ckks_pt_coeffs_alloc(1, base2k, coeff_meta.k);
-    shift_pt.set_meta_checked(coeff_meta.meta)?;
-    module
-        .ckks_encode_coeffs_host_into(&mut shift_pt, &[shift_val], scratch)
-        .map_err(|e| anyhow!("even_cheby_shift: {e}"))?;
-
-    Ok(EvalMod {
-        plan: lit,
-        range_extension_consts: None,
-        input_shift: Some(shift_pt),
-        f_mod_bsgs: EvalModBsgs::Real(f_mod_bsgs),
-        f_mod_inv_bsgs: None,
-        f_mod_poly: EvalModPoly::Real(f_mod_poly),
         f_mod_inv_poly: None,
     })
 }
@@ -774,7 +784,7 @@ impl<F, P> EvalMod<F, P> {
         let Self {
             plan,
             range_extension_consts,
-            input_shift,
+            f_mod_input_offset,
             f_mod_bsgs,
             f_mod_inv_bsgs,
             f_mod_poly,
@@ -783,7 +793,7 @@ impl<F, P> EvalMod<F, P> {
         EvalMod {
             plan,
             range_extension_consts: range_extension_consts.as_ref().map(&mut f),
-            input_shift: input_shift.as_ref().map(&mut f),
+            f_mod_input_offset: f_mod_input_offset.as_ref().map(&mut f),
             f_mod_bsgs: match f_mod_bsgs {
                 EvalModBsgs::Real(p) => EvalModBsgs::Real(p.map_baby_steps_ref(&mut f)),
                 EvalModBsgs::Complex(p) => EvalModBsgs::Complex(p.map_baby_steps_ref(&mut f)),

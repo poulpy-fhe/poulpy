@@ -9,6 +9,14 @@ homepage = "https://github.com/poulpy-fhe/poulpy"
 publish = false
 readme = "README.md"
 
+[features]
+bootstrapping-avx512 = [
+    "dep:poulpy-cpu-avx512",
+    "dep:rayon",
+    "poulpy-cpu-avx512/enable-ifma",
+    "poulpy-cpu-avx512/enable-ckks",
+    "poulpy-cpu-avx512/enable-rayon",
+]
 
 [dependencies]
 criterion = {workspace = true}
@@ -18,4 +26,11 @@ serde_json = {workspace = true}
 poulpy-hal = {workspace = true}
 poulpy-core = {workspace = true}
 poulpy-bin-fhe = {workspace = true}
-poulpy-ckks = {workspace = true}
+poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-cpu-avx512 = {workspace = true, optional = true}
+rayon = {workspace = true, optional = true}
+
+[[bench]]
+name = "bootstrapping"
+harness = false
+required-features = ["bootstrapping-avx512"]

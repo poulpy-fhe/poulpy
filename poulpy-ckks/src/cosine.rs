@@ -9,7 +9,6 @@
 
 #![allow(clippy::needless_range_loop)]
 
-use anyhow::{Result, anyhow, ensure};
 use dashu_float::{Context, DBig, FBig, round::mode::HalfEven};
 use num_traits::{Float, FromPrimitive};
 
@@ -253,8 +252,7 @@ fn gen_degrees(degree: usize, k: usize, dev: f64) -> (Vec<usize>, usize) {
     (deg, totdeg as usize)
 }
 
-fn gen_nodes(deg: &[usize], dev: f64, totdeg: usize, k: usize, scnum: usize) -> (Vec<FBig<HalfEven>>, Vec<FBig<HalfEven>>) {
-    let scfac = from_f64((1u64 << scnum) as f64);
+fn gen_node_abscissas(deg: &[usize], dev: f64, totdeg: usize, k: usize) -> Vec<FBig<HalfEven>> {
     let intersize = div(&from_i64(1), &from_f64(dev));
     let pi = pi_big();
 
@@ -291,21 +289,10 @@ fn gen_nodes(deg: &[usize], dev: f64, totdeg: usize, k: usize, scnum: usize) -> 
         cnt += 1;
     }
 
-    let mut y = vec![FBig::<HalfEven>::ZERO; totdeg];
-    for i in 0..totdeg {
-        y[i] = cos2pi_x_minus_quarter_over_r(&nodes[i], &scfac);
-    }
-
-    (nodes, y)
+    nodes
 }
 
-fn solve(
-    totdeg_in: usize,
-    k: usize,
-    _scnum: usize,
-    nodes: Vec<FBig<HalfEven>>,
-    mut y: Vec<FBig<HalfEven>>,
-) -> Vec<FBig<HalfEven>> {
+fn solve(totdeg_in: usize, norm: &FBig<HalfEven>, nodes: Vec<FBig<HalfEven>>, mut y: Vec<FBig<HalfEven>>) -> Vec<FBig<HalfEven>> {
     let totdeg = totdeg_in;
 
     for j in 1..totdeg {
@@ -318,10 +305,7 @@ fn solve(
 
     let totdeg_p1 = totdeg + 1;
 
-    // Coefficients are emitted in the standard Chebyshev basis on [-k, k]
-    // (variable u = x/k), so callers can evaluate via the standard
-    // T_n(v) recurrence on the ciphertext value directly.
-    let k_big = from_i64(k as i64);
+    let k_big = norm.clone();
 
     let pi = pi_big();
     let mut x = vec![FBig::<HalfEven>::ZERO; totdeg_p1];
@@ -438,78 +422,45 @@ pub fn approximate_cos_len(k: usize, degree: usize, dev: f64) -> usize {
 /// precision.
 pub fn approximate_cos<F: Float + FromPrimitive>(k: usize, degree: usize, dev: f64, scnum: usize) -> Vec<F> {
     let (deg, totdeg) = gen_degrees(degree, k, dev);
-    let (nodes, y) = gen_nodes(&deg, dev, totdeg, k, scnum);
-    let coeffs = solve(totdeg, k, scnum, nodes, y);
+    let scfac = from_f64((1u64 << scnum) as f64);
+    let nodes = gen_node_abscissas(&deg, dev, totdeg, k);
+    let y: Vec<FBig<HalfEven>> = nodes.iter().map(|x| cos2pi_x_minus_quarter_over_r(x, &scfac)).collect();
+    let coeffs = solve(totdeg, &from_i64(k as i64), nodes, y);
     // solve returns totdeg+1 coefficients; the trailing one is outside the target polynomial degree.
     coeffs.iter().take(totdeg).map(|c| fbig_to_scalar(c)).collect()
 }
 
-pub(crate) fn even_cheby_cos_coeffs(k: usize, eps: f64, degree: usize) -> Result<Vec<f64>> {
-    ensure!(k > 0, "even Chebyshev interval must be positive");
-    ensure!(
-        eps.is_finite() && eps > 0.0,
-        "even Chebyshev margin must be finite and positive"
-    );
-    ensure!(degree > 0, "even Chebyshev degree must be positive");
-
-    let beta = std::f64::consts::PI * eps * k as f64;
-    ensure!(beta.is_finite(), "even Chebyshev frequency must be finite");
-    const TAIL_TERMS: usize = 32;
-    let max_order = degree
-        .checked_add(2 * TAIL_TERMS)
-        .and_then(|order| order.checked_mul(2))
-        .ok_or_else(|| anyhow!("even Chebyshev degree overflow"))?;
-    let bessel = bessel_j_all(beta, max_order)?;
-    let coefficient = |j: usize| {
-        if j == 0 {
-            bessel[0]
-        } else {
-            let sign = if j.is_multiple_of(2) { 1.0 } else { -1.0 };
-            2.0 * sign * bessel[2 * j]
-        }
-    };
-
-    let mut coeffs = vec![0.0; 2 * degree + 1];
-    let scale = std::f64::consts::TAU.recip();
-    for j in 0..=degree {
-        coeffs[2 * j] = scale * coefficient(j);
-    }
-    coeffs[2 * degree] += scale * (1..=TAIL_TERMS).map(|i| coefficient(degree + 2 * i)).sum::<f64>();
-    ensure!(
-        coeffs.iter().all(|coefficient| coefficient.is_finite()),
-        "even Chebyshev coefficients must be finite"
-    );
-    Ok(coeffs)
+pub fn approximate_cos_centered_len(k: usize, degree: usize, dev: f64, mirrored_clusters: usize) -> usize {
+    let (deg, totdeg) = gen_degrees(degree, k, dev);
+    totdeg + deg[k.saturating_sub(mirrored_clusters)..k].iter().sum::<usize>()
 }
 
-fn bessel_j_all(x: f64, max_order: usize) -> Result<Vec<f64>> {
-    ensure!(x.is_finite() && x > 0.0, "Bessel argument must be finite and positive");
-    ensure!(x.ceil() <= usize::MAX as f64, "Bessel argument is too large");
-    let start = max_order
-        .checked_add(20)
-        .and_then(|order| order.checked_add(x.ceil() as usize))
-        .ok_or_else(|| anyhow!("Bessel order overflow"))?;
-    let mut next = 0.0;
-    let mut current = 1e-300;
-    let mut values = vec![0.0; max_order + 1];
-    for n in (1..=start).rev() {
-        let previous = (2.0 * n as f64 / x) * current - next;
-        if n - 1 <= max_order {
-            values[n - 1] = previous;
-        }
-        next = current;
-        current = previous;
-        if current.abs() > 1e250 {
-            current *= 1e-250;
-            next *= 1e-250;
-            values.iter_mut().for_each(|value| *value *= 1e-250);
-        }
-    }
+pub const MAX_MIRRORED_CLUSTERS: usize = 2;
 
-    let norm = values[0] + 2.0 * values.iter().skip(2).step_by(2).sum::<f64>();
-    ensure!(norm.is_finite() && norm != 0.0, "Bessel normalization failed");
-    values.iter_mut().for_each(|value| *value /= norm);
-    Ok(values)
+/// Returns the even Han–Ki fit in the centred variable `(x - 1/4)/2^scnum`.
+pub fn approximate_cos_centered<F: Float + FromPrimitive>(
+    k: usize,
+    degree: usize,
+    dev: f64,
+    scnum: usize,
+    mirrored_clusters: usize,
+) -> Vec<F> {
+    let (deg, totdeg) = gen_degrees(degree, k, dev);
+    let scfac = from_f64((1u64 << scnum) as f64);
+    let quarter = div(&from_i64(1), &from_i64(4));
+    let two_pi = two_pi_big();
+
+    let raw = gen_node_abscissas(&deg, dev, totdeg, k);
+    let outermost = from_f64(-(k as f64 - 0.5 - mirrored_clusters as f64));
+    let centered = |x: &FBig<HalfEven>| div(&sub(x, &quarter), &scfac);
+    let mut nodes: Vec<FBig<HalfEven>> = raw.iter().map(centered).collect();
+    nodes.extend(raw.iter().filter(|x| **x < outermost).map(|x| neg(&centered(x))));
+    debug_assert_eq!(nodes.len(), approximate_cos_centered_len(k, degree, dev, mirrored_clusters));
+
+    let len = nodes.len();
+    let y: Vec<FBig<HalfEven>> = nodes.iter().map(|v| cos_big(&mul(&two_pi, v))).collect();
+    let coeffs = solve(len, &div(&from_i64(k as i64), &scfac), nodes, y);
+    coeffs.iter().take(len).map(|c| fbig_to_scalar(c)).collect()
 }
 
 #[cfg(test)]
@@ -642,19 +593,6 @@ mod tests {
             let got = clenshaw(&coeffs, u);
             let want = target(u);
             assert!((got - want).abs() < 1e-2, "u={u:.4}: got={got}, want={want}");
-        }
-    }
-
-    #[test]
-    fn even_cheby_matches_cosine() {
-        let (k, eps, degree) = (16, 0.25, 31);
-        let coeffs = even_cheby_cos_coeffs(k, eps, degree).unwrap();
-        let beta = std::f64::consts::PI * eps * k as f64;
-        for i in 0..=128 {
-            let t = -1.0 + i as f64 / 64.0;
-            let got = clenshaw(&coeffs, t);
-            let expected = (beta * t).cos() / std::f64::consts::TAU;
-            assert!((got - expected).abs() < 1e-12, "t={t}: got={got}, expected={expected}");
         }
     }
 }
