@@ -5,12 +5,11 @@
 //! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
 //! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
 
-use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
-    layouts::{Base2K, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation},
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -45,7 +44,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
-    fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H, K>(
+    fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
         &self,
         ct: &mut Dst,
         dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
@@ -55,11 +54,10 @@ pub trait CKKSDFTOps<BE: Backend> {
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, `Standard` format (in place).
-    fn ckks_coeffs_to_slots<P, Dst, H, K>(
+    fn ckks_coeffs_to_slots<P, Dst, H>(
         &self,
         ct: &mut Dst,
         dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
@@ -69,11 +67,10 @@ pub trait CKKSDFTOps<BE: Backend> {
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, `Standard` format (in place).
-    fn ckks_slots_to_coeffs<P, Dst, H, K>(
+    fn ckks_slots_to_coeffs<P, Dst, H>(
         &self,
         ct: &mut Dst,
         dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
@@ -83,8 +80,7 @@ pub trait CKKSDFTOps<BE: Backend> {
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, `SplitRealAndImag` — real/imag in two ciphertexts.
     #[allow(clippy::too_many_arguments)]
@@ -102,11 +98,11 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>,
+        K: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, `SplitRealAndImag` — combine two ciphertexts then Decode.
-    fn ckks_slots_to_coeffs_split<P, Dst, Src, H, K>(
+    fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
         &self,
         op_out: &mut Dst,
         ct_real: &Src,
@@ -119,8 +115,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, sparse `RepackImagAsReal` — imag packed into the right half.
     #[allow(clippy::too_many_arguments)]
@@ -137,11 +132,11 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>,
+        K: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, sparse `RepackImagAsReal` — inverse of [`Self::ckks_coeffs_to_slots_repack`].
-    fn ckks_slots_to_coeffs_repack<P, Dst, Src, H, K>(
+    fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(
         &self,
         op_out: &mut Dst,
         ct_in: &Src,
@@ -153,8 +148,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 }
 
 /// Homomorphic DFT matrix generation at scalar precision `F`.

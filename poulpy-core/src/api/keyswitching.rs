@@ -5,7 +5,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
     GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
-    prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
+    prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
 pub trait GLWEKeyswitch<BE: Backend> {
@@ -15,16 +15,14 @@ pub trait GLWEKeyswitch<BE: Backend> {
         A: GLWEInfos,
         B: GGLWEInfos;
 
-    fn glwe_keyswitch<R, A, K>(&self, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_keyswitch<R, A>(&self, res: &mut R, a: &A, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_keyswitch_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_keyswitch_assign<R>(&self, res: &mut R, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+        R: GLWEToBackendMut<BE> + GLWEInfos;
 }
 
 pub trait GGLWEKeyswitch<BE: Backend> {

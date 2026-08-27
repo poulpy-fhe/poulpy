@@ -1,11 +1,9 @@
 use crate::{CKKSResult as Result, ckks_bail, ckks_ensure};
+use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWENormalize, GLWETensoring,
-    layouts::{
-        GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        TorusPrecision,
-    },
+    layouts::{GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -131,21 +129,19 @@ where
         self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
     }
 
-    fn ckks_mul_add_ct_into<Dst, A, B, T>(
+    fn ckks_mul_add_ct_into<Dst, A, B, H>(
         &self,
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos
-            + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>
-            + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
         mul_then_combine(
             dst,
@@ -361,21 +357,19 @@ where
         self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_sub_tmp_bytes())
     }
 
-    fn ckks_mul_sub_ct_into<Dst, A, B, T>(
+    fn ckks_mul_sub_ct_into<Dst, A, B, H>(
         &self,
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos
-            + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>
-            + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
         mul_then_combine(
             dst,
@@ -516,20 +510,19 @@ where
         self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
     }
 
-    fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, T: Data>(
+    fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, H>(
         &self,
         dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
         a: &[&CKKSCiphertext<D, BE::ZnxWord>],
         b: &[&CKKSCiphertext<E, BE::ZnxWord>],
-        tsk: &GLWETensorKeyPrepared<T, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
         CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWETensorKeyPrepared<T, BE>: poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>
-            + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
         let n: usize = a.len();

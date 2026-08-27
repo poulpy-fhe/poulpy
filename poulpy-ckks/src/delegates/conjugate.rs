@@ -1,5 +1,5 @@
-use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
@@ -22,26 +22,27 @@ where
         BE::ckks_conjugate_tmp_bytes_impl(self, ct_infos, key_infos)
     }
 
-    fn ckks_conjugate_into<Dst, Src, K>(
+    fn ckks_conjugate_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        key: &K,
+        p: i64,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: CKKSAtkBounds<BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_conjugate_into_impl(self, dst, src, key, scratch)
+        BE::ckks_conjugate_into_impl(self, dst, src, p, keys, scratch)
     }
 
-    fn ckks_conjugate_assign<Dst, K>(&self, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, p: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_conjugate_assign_impl(self, dst, key, scratch)
+        BE::ckks_conjugate_assign_impl(self, dst, p, keys, scratch)
     }
 }

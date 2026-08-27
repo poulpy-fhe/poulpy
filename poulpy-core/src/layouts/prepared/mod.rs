@@ -10,7 +10,7 @@
 //! Prepared layouts are created from their standard counterparts
 //! via `prepare` / `prepare_*` methods.
 
-mod gglwe;
+pub(crate) mod gglwe;
 mod gglwe_to_ggsw_key;
 mod ggsw;
 mod glwe;

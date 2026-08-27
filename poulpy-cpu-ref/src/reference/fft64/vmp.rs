@@ -11,6 +11,7 @@ use crate::{
             reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
             reim4::Reim4BlkMatVec,
         },
+        vmp_select::vmp_extract_selected_rows_core,
     },
 };
 use poulpy_hal::execution::TaskExecutor;
@@ -166,6 +167,40 @@ where
         nrows,
         ncols,
         tmp_bytes,
+    );
+}
+
+/// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
+/// limbs, into rows `i` of `res`.
+pub fn vmp_extract_selected_rows<BE>(
+    res: &mut VmpPMatBackendMut<'_, BE>,
+    a: &VmpPMatBackendRef<'_, BE>,
+    first_row: usize,
+    row_step: usize,
+) where
+    BE: Backend<DftWord = f64, ZnxWord = i64>,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+{
+    assert_eq!(res.n(), a.n());
+    assert_eq!(res.cols_in(), a.cols_in());
+    assert_eq!(res.cols_out(), a.cols_out());
+    assert!(res.size() <= a.size(), "res.size(): {} > a.size(): {}", res.size(), a.size());
+
+    let (res_ncols, a_ncols) = (res.cols_out() * res.size(), a.cols_out() * a.size());
+    let (res_rows, a_rows, cols_in, blocks) = (res.rows(), a.rows(), a.cols_in(), a.n() >> 3);
+    vmp_extract_selected_rows_core(
+        res.raw_mut(),
+        res_rows,
+        res_ncols,
+        a.raw(),
+        a_rows,
+        a_ncols,
+        cols_in,
+        blocks,
+        8,
+        first_row,
+        row_step,
     );
 }
 

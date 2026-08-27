@@ -2,16 +2,20 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft,
-        VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes,
+        VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows,
+        VmpPMatBytesOf,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef},
+    layouts::{
+        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef,
+        VmpPMatBackendRef, VmpPMatToBackendRef,
+    },
 };
 
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, GadgetProductOutputSizeParams, LWEInfos,
-        gadget_product_limbs, gadget_product_output_size, prepared::GGLWEPreparedToBackendRef,
+        gadget_product_limbs, gadget_product_output_size,
     },
     oep::{GGLWEProductDigitsStridedImpl, gglwe_product_digit_output_size},
 };
@@ -53,18 +57,16 @@ where
         self.glwe_keyswitch_internal_tmp_bytes_from_sizes(a_infos.rank().as_usize(), res_infos.size(), a_infos.size(), key_infos)
     }
 
-    fn glwe_keyswitch_internal<'r, A, K>(
+    fn glwe_keyswitch_internal<'r, A>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, BE>,
         a: &A,
-        key: &K,
+        key: &GGLWEPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
-        glwe_keyswitch_dft_fill(self, res, a, &key, scratch);
+        glwe_keyswitch_dft_fill(self, res, a, key, scratch);
     }
 }
 
@@ -78,7 +80,9 @@ where
         + VmpApplyDftToDftAccumulateTmpBytes
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAccumulate<BE>
-        + VecZnxDftCopy<BE>,
+        + VecZnxDftCopy<BE>
+        + VmpExtractSelectedRows<BE>
+        + VmpPMatBytesOf,
 {
     fn gglwe_product_dft_tmp_bytes_default<K>(&self, res_size: usize, a_size: usize, key_infos: &K) -> usize
     where
@@ -89,10 +93,15 @@ where
         let cols_in: usize = key_infos.rank_in().into();
         let cols_out: usize = (key_infos.rank_out() + 1).into();
         let key_size: usize = key_infos.size();
-        if dsize == 1 {
+        let product: usize = if dsize == 1 {
             self.vmp_apply_dft_to_dft_tmp_bytes(res_size, a_size, dnum, cols_in, cols_out, key_size)
         } else {
             BE::gglwe_product_digits_strided_tmp_bytes(self, res_size, cols_in, a_size, dsize, dnum, cols_in, cols_out, key_size)
+        };
+        if key_infos.stride() == 1 {
+            product
+        } else {
+            self.bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size) + product
         }
     }
 
@@ -111,22 +120,64 @@ where
             scratch.available(),
             self.gglwe_product_dft_tmp_bytes_default(res.size(), a_size, key)
         );
-        // One limb per digit is a plain VMP, not a strided gather; the hook
-        // below is only ever entered with `dsize >= 2`.
-        let dsize: usize = key.dsize().into();
-        if dsize == 1 {
-            self.vmp_apply_dft_to_dft(res, a, &key.data, 0, scratch);
-        } else {
-            let product_terms = key
-                .n()
-                .as_usize()
-                .saturating_mul(key.dnum().as_usize())
-                .saturating_mul(dsize)
-                .saturating_mul(key.rank_in().as_usize().max(1))
-                .saturating_mul(term_count.max(1));
-            let product_limbs = gadget_product_limbs(key.base2k(), product_terms);
-            BE::gglwe_product_digits_strided(self, res, a, dsize, product_limbs, &key.data, scratch);
+        // A view reading one row out of every `stride` is gathered into a dense
+        // matrix first, so the kernels below never see the row map.
+        let stride: usize = key.stride();
+        if stride == 1 {
+            gglwe_product_pmat(self, res, a, key, &key.data, term_count, scratch);
+            return;
         }
+        let (rows, cols_in, cols_out) = (
+            key.dnum().as_usize(),
+            key.rank_in().as_usize(),
+            (key.rank_out() + 1).as_usize(),
+        );
+        let key_size: usize = key.size();
+        scratch.scope(|scratch_phase| {
+            let (mut dense, mut scratch_1) = scratch_phase.take_vmp_pmat_scratch(self, rows, cols_in, cols_out, key_size);
+            self.vmp_extract_selected_rows(&mut dense, &key.data, stride - 1, stride);
+            gglwe_product_pmat(
+                self,
+                res,
+                a,
+                key,
+                &dense.to_backend_ref(),
+                term_count,
+                &mut scratch_1.borrow(),
+            );
+        });
+    }
+}
+
+/// One GGLWE product against an already dense matrix, with the key's own
+/// layout supplying the digit geometry.
+fn gglwe_product_pmat<BE>(
+    module: &Module<BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    pmat: &VmpPMatBackendRef<'_, BE>,
+    term_count: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend + GGLWEProductDigitsStridedImpl<BE>,
+    Module<BE>: VmpApplyDftToDft<BE>,
+{
+    // One limb per digit is a plain VMP, not a strided gather; the hook below
+    // is only ever entered with `dsize >= 2`.
+    let dsize: usize = key.dsize().into();
+    if dsize == 1 {
+        module.vmp_apply_dft_to_dft(res, a, pmat, 0, scratch);
+    } else {
+        let product_terms = key
+            .n()
+            .as_usize()
+            .saturating_mul(key.dnum().as_usize())
+            .saturating_mul(dsize)
+            .saturating_mul(key.rank_in().as_usize().max(1))
+            .saturating_mul(term_count.max(1));
+        let product_limbs = gadget_product_limbs(key.base2k(), product_terms);
+        BE::gglwe_product_digits_strided(module, res, a, dsize, product_limbs, pmat, scratch);
     }
 }
 
@@ -143,7 +194,9 @@ where
         + VmpApplyDftToDftAccumulateTmpBytes
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAccumulate<BE>
-        + VecZnxDftCopy<BE>,
+        + VecZnxDftCopy<BE>
+        + VmpExtractSelectedRows<BE>
+        + VmpPMatBytesOf,
 {
     fn gglwe_product_dft_tmp_bytes_default<K>(&self, res_size: usize, a_size: usize, key_infos: &K) -> usize
     where
@@ -401,8 +454,13 @@ where
     lvl_0 + lvl_2
 }
 
-pub fn glwe_keyswitch_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_keyswitch_default<BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEKeyswitchDefault<BE>
@@ -414,7 +472,6 @@ where
         + VecZnxNormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     assert_eq!(
         a.rank(),
@@ -448,7 +505,6 @@ where
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
     let cols: usize = (res.rank() + 1).into();
-    let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
 
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
 
@@ -462,10 +518,10 @@ where
                 rank: a.rank(),
             });
             module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2.borrow());
-            glwe_keyswitch_dft_fill(module, &mut res_dft, &a_conv, &key, &mut scratch_2);
+            glwe_keyswitch_dft_fill(module, &mut res_dft, &a_conv, key, &mut scratch_2);
         });
     } else {
-        glwe_keyswitch_dft_fill(module, &mut res_dft, a, &key, &mut scratch.borrow());
+        glwe_keyswitch_dft_fill(module, &mut res_dft, a, key, &mut scratch.borrow());
     }
 
     let mut res_ref = res.to_backend_mut();
@@ -513,8 +569,12 @@ where
     }
 }
 
-pub fn glwe_keyswitch_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_keyswitch_assign_default<BE, M, R>(
+    module: &M,
+    res: &mut R,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEKeyswitchDefault<BE>
@@ -529,7 +589,6 @@ where
         + VecZnxNormalize<BE>
         + VecZnxNormalizeAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     assert_eq!(
         res.rank(),

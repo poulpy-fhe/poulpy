@@ -93,7 +93,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
             | module.glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
             | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
-            | module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &ct_infos, &atk_infos)
+            | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
             | module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
             | module.cnv_apply_dft_tmp_bytes(0, product_size, ct_infos.size(), pt.size())
             | module.vec_znx_big_normalize_tmp_bytes(),
@@ -158,8 +158,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         if rot == 0 {
             module.glwe_copy(&mut expected, &ct);
         } else {
-            let key = atks.get(&module.galois_element(rot)).unwrap();
-            module.glwe_automorphism(&mut expected, &ct, key, &mut scratch.borrow());
+            module.glwe_automorphism(&mut expected, &ct, module.galois_element(rot), &atks, &mut scratch.borrow());
         }
 
         let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size());

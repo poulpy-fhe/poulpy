@@ -113,6 +113,7 @@ cross_backend_test_suite! {
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
+        test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
     }
 }
 

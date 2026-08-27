@@ -1,8 +1,7 @@
-use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef},
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
 };
 use poulpy_hal::layouts::{Backend, GaloisElement, Module, ScratchArena};
 
@@ -22,7 +21,7 @@ where
         BE::ckks_rotate_tmp_bytes_impl(self, ct_infos, key_infos)
     }
 
-    fn ckks_rotate_into<Dst, Src, H, K>(
+    fn ckks_rotate_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -31,32 +30,30 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        let key = keys
-            .get_automorphism_key(self.galois_element(k))
-            .ok_or(CKKSCompositionError::MissingAutomorphismKey {
+        keys.get_automorphism_key(self.galois_element(k), src.k())
+            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
                 op: "rotate",
                 rotation: k,
+                k: src.k().into(),
             })?;
-        BE::ckks_rotate_into_impl(self, dst, src, key, scratch)
+        BE::ckks_rotate_into_impl(self, dst, src, self.galois_element(k), keys, scratch)
     }
 
-    fn ckks_rotate_assign<Dst, H, K>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        let key = keys
-            .get_automorphism_key(self.galois_element(k))
-            .ok_or(CKKSCompositionError::MissingAutomorphismKey {
+        keys.get_automorphism_key(self.galois_element(k), dst.k())
+            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
                 op: "rotate_assign",
                 rotation: k,
+                k: dst.k().into(),
             })?;
-        BE::ckks_rotate_assign_impl(self, dst, key, scratch)
+        BE::ckks_rotate_assign_impl(self, dst, self.galois_element(k), keys, scratch)
     }
 }

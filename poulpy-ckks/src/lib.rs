@@ -136,25 +136,6 @@ pub trait CKKSCtBounds: GLWEInfos + CKKSInfos {}
 
 impl<T: GLWEInfos + CKKSInfos> CKKSCtBounds for T {}
 
-/// Marker bound for prepared Galois/automorphism-key type parameters.
-///
-/// Names the four-trait cluster every automorphism-consuming op requires of its key type (backend-resident automorphism key, GGLWE view, Galois element, and GGLWE layout info), collapsing the repeated spelled-out bound found throughout the DFT, linear-transformation, and PaCo APIs into a single constraint.
-pub trait CKKSAtkBounds<BE: Backend>:
-    poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<BE>
-    + poulpy_core::layouts::GGLWEPreparedToBackendRef<BE>
-    + poulpy_core::layouts::GetGaloisElement
-    + poulpy_core::layouts::GGLWEInfos
-{
-}
-
-impl<BE: Backend, T> CKKSAtkBounds<BE> for T where
-    T: poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<BE>
-        + poulpy_core::layouts::GGLWEPreparedToBackendRef<BE>
-        + poulpy_core::layouts::GetGaloisElement
-        + poulpy_core::layouts::GGLWEInfos
-{
-}
-
 /// Which subfield the encoded slots are known to live in.
 ///
 /// The reals are a subring of the complexes, so the two variants are ordered

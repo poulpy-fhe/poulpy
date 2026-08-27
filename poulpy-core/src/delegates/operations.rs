@@ -10,9 +10,8 @@ use crate::{
     },
     default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
     layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyHelper,
-        GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
+        GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
     },
     oep::{
         GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
@@ -236,11 +235,11 @@ impl_operations_delegate!(
     {
         BE::glwe_tensor_square_apply(self, cnv_offset, res, a, scratch)
     },
-    fn glwe_tensor_relinearize<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_tensor_relinearize<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
         BE::glwe_tensor_relinearize(self, res, a, tsk, scratch)
     },
@@ -396,20 +395,18 @@ impl_operations_delegate!(
     {
         BE::glwe_trace_tmp_bytes(self, res_infos, a_infos, key_infos)
     },
-    fn glwe_trace<R, A, K, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_trace<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::glwe_trace(self, res, skip, a, keys, scratch)
     },
-    fn glwe_trace_assign<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_trace_assign<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::glwe_trace_assign(self, res, skip, keys, scratch)
     }
@@ -429,7 +426,7 @@ impl_operations_delegate!(
     {
         BE::glwe_pack_tmp_bytes(self, res, key)
     },
-    fn glwe_pack<R, A, K, H>(
+    fn glwe_pack<R, A, H>(
         &self,
         res: &mut R,
         a: HashMap<usize, &mut A>,
@@ -439,8 +436,7 @@ impl_operations_delegate!(
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::glwe_pack(self, res, a, log_gap_out, keys, scratch)
     }

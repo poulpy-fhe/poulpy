@@ -47,7 +47,7 @@ where
         assert_eq!(
             infos.rank_in(),
             infos.rank_out(),
-            "rank_in != rank_out is not supported for GGLWEAutomorphismKey"
+            "rank_in != rank_out is not supported for GLWEAutomorphismKey"
         );
         assert_eq!(self.n() as u32, infos.n());
 

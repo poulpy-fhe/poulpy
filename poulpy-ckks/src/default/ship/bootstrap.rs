@@ -1,6 +1,7 @@
 //! Backend-generic SHIP half-bootstrap circuit (Algorithm 1).
 
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
     default::keyswitching::glwe::GGLWEProductDefault,
@@ -137,7 +138,7 @@ where
     // Encapsulation: switch the bottom ciphertext from the dense to the
     // sparse secret at the bottom modulus.
     let mut a_sparse = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(base2k as u32));
-    module.glwe_keyswitch(&mut a_sparse, input, keys.dense_to_sparse(), scratch);
+    module.glwe_keyswitch(&mut a_sparse, input, &keys.dense_to_sparse().to_backend_ref(), scratch);
     a_sparse.set_meta_checked(input.meta())?;
 
     let enc = BE::ckks_ship_coeff_encodings_impl::<F, _>(module, &a_sparse, &plan, b2k_t, complex, scratch)?;
@@ -263,7 +264,7 @@ where
 
     let root = roots.pop().expect("real bootstrap has one root");
     let mut conj = module.ckks_ciphertext_alloc(base2k, root.k());
-    module.ckks_conjugate_into(&mut conj, &root, keys.conjugation_key(), scratch)?;
+    module.ckks_conjugate_into(&mut conj, &root, -1, keys.conjugation_key(), scratch)?;
     module.ckks_add_into(output, &root, &conj, scratch)?;
     // `root + conj(root) = 2·Re(root)`.
     output.set_slots(SlotsKind::Real);
@@ -323,7 +324,7 @@ where
     let mut w_minus = module.ckks_ciphertext_alloc(base2k, k_eff);
     module.ckks_sub_into(&mut w_minus, &v1, &iv2, scratch)?;
     let mut conj = module.ckks_ciphertext_alloc(base2k, w_minus.k());
-    module.ckks_conjugate_into(&mut conj, &w_minus, keys.conjugation_key(), scratch)?;
+    module.ckks_conjugate_into(&mut conj, &w_minus, -1, keys.conjugation_key(), scratch)?;
     module.ckks_add_into(output, &w_plus, &conj, scratch)?;
     Ok(())
 }

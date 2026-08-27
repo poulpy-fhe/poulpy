@@ -8,8 +8,8 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
     layouts::{
-        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GetGaloisElement,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
+        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GetAutomorphismKey,
+        prepared::GGLWEToGGSWKeyPreparedToBackendRef,
     },
     oep::{ConversionDefault, GGSWAutomorphismDefault, GLWEAutomorphismDefault},
 };
@@ -35,11 +35,12 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ggsw_automorphism_default<BE, M, R, A, K, T>(
+pub fn ggsw_automorphism_default<BE, M, R, A, H, T>(
     module: &M,
     res: &mut R,
     a: &A,
-    key: &K,
+    p: i64,
+    keys: &H,
     tsk: &T,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -47,7 +48,7 @@ pub fn ggsw_automorphism_default<BE, M, R, A, K, T>(
     M: GGSWAutomorphismDefault<BE> + GLWEAutomorphismDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     A: GGSWToBackendRef<BE> + GGSWInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GetAutomorphismKey<BE>,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     {
@@ -57,23 +58,24 @@ pub fn ggsw_automorphism_default<BE, M, R, A, K, T>(
         for row in 0..rows {
             let mut res_at = res_backend.at_view_mut(row, 0);
             let a_at = a_backend.at_view(row, 0);
-            module.glwe_automorphism_default(&mut res_at, &a_at, key, scratch);
+            module.glwe_automorphism_default(&mut res_at, &a_at, p, keys, scratch);
         }
     }
     module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, scratch);
 }
 
-pub fn ggsw_automorphism_assign_default<BE, M, R, K, T>(
+pub fn ggsw_automorphism_assign_default<BE, M, R, H, T>(
     module: &M,
     res: &mut R,
-    key: &K,
+    p: i64,
+    keys: &H,
     tsk: &T,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GGSWAutomorphismDefault<BE> + GLWEAutomorphismDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GetAutomorphismKey<BE>,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     {
@@ -81,7 +83,7 @@ pub fn ggsw_automorphism_assign_default<BE, M, R, K, T>(
         let mut res_backend = res.to_backend_mut();
         for row in 0..rows {
             let mut res_at = res_backend.at_view_mut(row, 0);
-            module.glwe_automorphism_assign_default(&mut res_at, key, &mut scratch.borrow());
+            module.glwe_automorphism_assign_default(&mut res_at, p, keys, &mut scratch.borrow());
         }
     }
     module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, scratch);

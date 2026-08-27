@@ -1,7 +1,7 @@
 use crate::{
     api::{
         VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
+        VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
     layouts::{
         Backend, MatZnxBackendRef, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -134,6 +134,61 @@ impl_vmp_delegate!(
         B::vmp_apply_dft_to_dft_accumulate(self, res, a, b, limb_offset, scratch);
     }
 );
+
+impl_vmp_delegate!(
+    VmpExtractSelectedRows<B>,
+    fn vmp_extract_selected_rows(
+        &self,
+        res: &mut VmpPMatBackendMut<'_, B>,
+        a: &VmpPMatBackendRef<'_, B>,
+        first_row: usize,
+        row_step: usize,
+    ) {
+        assert_extractable(res, a, first_row, row_step);
+        B::vmp_extract_selected_rows(self, res, a, first_row, row_step);
+    }
+);
+
+/// Rejects a selection the backend kernel must not be handed: mismatched
+/// prepared shapes, a truncation that widens, or a last row that is outside
+/// `a` or whose index overflows.
+///
+/// Enforced here rather than per backend so a kernel may index without bounds
+/// checks in release, and so a new backend inherits the contract.
+fn assert_extractable<B: Backend>(
+    res: &VmpPMatBackendMut<'_, B>,
+    a: &VmpPMatBackendRef<'_, B>,
+    first_row: usize,
+    row_step: usize,
+) {
+    assert!(row_step > 0, "row_step must be positive");
+    assert_eq!(res.n(), a.n(), "res.n(): {} != a.n(): {}", res.n(), a.n());
+    assert_eq!(
+        res.cols_in(),
+        a.cols_in(),
+        "res.cols_in(): {} != a.cols_in(): {}",
+        res.cols_in(),
+        a.cols_in()
+    );
+    assert_eq!(
+        res.cols_out(),
+        a.cols_out(),
+        "res.cols_out(): {} != a.cols_out(): {}",
+        res.cols_out(),
+        a.cols_out()
+    );
+    assert!(res.size() <= a.size(), "res.size(): {} > a.size(): {}", res.size(), a.size());
+    let Some(rows) = res.rows().checked_sub(1) else {
+        return;
+    };
+    let last_row: Option<usize> = rows.checked_mul(row_step).and_then(|o| o.checked_add(first_row));
+    assert!(
+        last_row.is_some_and(|last| last < a.rows()),
+        "selected rows {first_row}..={:?} step {row_step} exceed a.rows(): {}",
+        last_row,
+        a.rows()
+    );
+}
 
 impl_vmp_delegate!(
     VmpZero<B>,

@@ -8,6 +8,7 @@
 pub mod fft64;
 pub mod ntt4x30;
 pub mod vec_znx;
+pub mod vmp_select;
 
 #[derive(Clone, Copy)]
 pub(crate) struct SendPtr<T>(*mut T);

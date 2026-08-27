@@ -6,7 +6,6 @@
 //! [`GLWELinearTransformations`](trait@poulpy_core::GLWELinearTransformations), and stamps the
 //! CKKS metadata onto the result. See `docs/linear_transformation.md`.
 
-use crate::CKKSAtkBounds;
 use crate::SlotsKind;
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
@@ -14,7 +13,9 @@ use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
     default::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::PreparedDiagonal},
+    layouts::{
+        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::PreparedDiagonal,
+    },
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN},
@@ -136,7 +137,7 @@ where
         self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps<Src, H, K>(
+    fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
         &self,
         babies: &mut LinearTransformationBabySteps<BE>,
         src: &Src,
@@ -145,18 +146,19 @@ where
     ) -> Result<()>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         let cyclotomic_order = self.cyclotomic_order();
+        let src_k = src.k();
         for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
             if keys
-                .get_automorphism_key(galois_element(rotation, cyclotomic_order))
-                .is_none()
+                .get_automorphism_key(galois_element(rotation, cyclotomic_order), src_k)
+                .is_err()
             {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
                     op: "linear_transformation",
                     rotation,
+                    k: src_k.into(),
                 }
                 .into());
             }
@@ -167,7 +169,7 @@ where
 
     // ---------- eval (caller-supplied baby cache) ----------
 
-    fn ckks_eval_linear_transformation_into<Dst, Src, P, H, K>(
+    fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -180,10 +182,11 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        check_required_keys(lt, babies, keys, self.cyclotomic_order())?;
+        // Giant rotations act on the post-product accumulator, so the preflight
+        // must resolve them at the destination precision the evaluation will.
+        check_required_keys(lt, babies, keys, self.cyclotomic_order(), dst.k())?;
 
         let first = lt
             .first_diagonal_plaintext()
@@ -215,7 +218,7 @@ where
         Ok(())
     }
 
-    fn ckks_eval_linear_transformation_assign<Dst, P, H, K>(
+    fn ckks_eval_linear_transformation_assign<Dst, P, H>(
         &self,
         dst: &mut Dst,
         babies: &LinearTransformationBabySteps<BE>,
@@ -226,8 +229,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         // The dst-shaped working copy is carved from scratch (accounted for by
         // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
@@ -242,7 +244,7 @@ where
 
     // ---------- eval (self-allocated baby cache) ----------
 
-    fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H, K>(
+    fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -254,8 +256,7 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         // Only the (small) input baby cache is materialized here; with a plaintext
         // `lt` the matrix RHS itself is streamed inside the eval.
@@ -264,7 +265,7 @@ where
         self.ckks_eval_linear_transformation_into(dst, src, &babies, lt, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_self_assign<Dst, P, H, K>(
+    fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(
         &self,
         dst: &mut Dst,
         lt: &LinearTransformation<P>,
@@ -274,8 +275,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         // The dst-shaped working copy is carved from scratch (accounted for by
         // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
@@ -291,15 +291,15 @@ where
 
 /// Verifies that all automorphism keys required by `lt` are present (keyed by
 /// Galois element) and that `babies` covers every baby rotation `lt` needs.
-fn check_required_keys<BE: Backend, P, H, K>(
+fn check_required_keys<BE: Backend, P, H>(
     lt: &LinearTransformation<P>,
     babies: &LinearTransformationBabySteps<BE>,
     keys: &H,
     cyclotomic_order: i64,
+    giant_k: TorusPrecision,
 ) -> Result<()>
 where
-    K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     for rotation in lt.baby_steps().iter().copied() {
         ckks_ensure!(
@@ -315,13 +315,12 @@ where
         .filter(|&r| r != 0)
     {
         let gal_el = galois_element(rotation, cyclotomic_order);
-        if keys.get_automorphism_key(gal_el).is_none() {
-            return Err(CKKSCompositionError::MissingAutomorphismKey {
+        keys.get_automorphism_key(gal_el, giant_k)
+            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
                 op: "linear_transformation",
                 rotation,
-            }
-            .into());
-        }
+                k: giant_k.into(),
+            })?;
     }
     Ok(())
 }

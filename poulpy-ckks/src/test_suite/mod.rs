@@ -561,6 +561,10 @@ macro_rules! ckks_backend_test_suite {
                 linear_transformation,
                 $crate::test_suite::linear_transformation::test_linear_transformation
             );
+            run_test!(
+                linear_transformation_pins_operation_precisions,
+                $crate::test_suite::linear_transformation::test_linear_transformation_pins_operation_precisions
+            );
             run_test!(paco_partial_c2s, $crate::test_suite::paco_lt::test_paco_partial_c2s);
             run_test!(paco_packing, $crate::test_suite::paco_lt::test_paco_packing);
             run_test!(

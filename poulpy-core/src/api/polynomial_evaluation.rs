@@ -1,12 +1,10 @@
+use crate::layouts::GetTensorKey;
 use anyhow::Result;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
     BSGSOps,
-    layouts::{
-        BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
-    },
+    layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
 };
 
 /// Baby-Step / Giant-Step polynomial-evaluation phases.
@@ -33,13 +31,13 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         G: PowerBasisHelper<BE, A>;
 
     /// Folds the evaluated baby steps into `res` using the giant-step schedule.
-    fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, T>(
+    fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, H>(
         &self,
         ops: &Ops,
         res: &mut R,
         baby_steps: &mut [B],
         power_basis: &G,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -50,5 +48,5 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GetTensorKey<BE>;
 }

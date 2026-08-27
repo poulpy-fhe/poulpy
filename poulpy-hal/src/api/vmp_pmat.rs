@@ -125,6 +125,28 @@ pub trait VmpApplyDftToDftAccumulate<B: Backend> {
     );
 }
 
+/// Copies selected rows and the leading limbs of a
+/// [`VmpPMat`](crate::layouts::VmpPMat) into a smaller one.
+///
+/// Row `i` of `res` is row `first_row + i * row_step` of `a`, truncated to
+/// `res.size()` limbs. Only the selected rows and limbs are read, so the result
+/// is a dense prepared matrix over exactly the material a coarsened gadget
+/// decomposition uses.
+///
+/// The delegate validates the selection before dispatch: matching `n` and both
+/// column counts, `res.size() <= a.size()`, `row_step > 0`, and a last row that
+/// is inside `a` without overflowing. An implementation may index on those
+/// facts without re-checking them.
+pub trait VmpExtractSelectedRows<B: Backend> {
+    fn vmp_extract_selected_rows(
+        &self,
+        res: &mut VmpPMatBackendMut<'_, B>,
+        a: &VmpPMatBackendRef<'_, B>,
+        first_row: usize,
+        row_step: usize,
+    );
+}
+
 /// Zeroes all entries of a [`VmpPMat`](crate::layouts::VmpPMat).
 pub trait VmpZero<B: Backend> {
     fn vmp_zero(&self, res: &mut VmpPMatBackendMut<'_, B>);

@@ -448,6 +448,8 @@ impl<'a, BE: Backend + 'a> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMu
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
+            dnum: self.inner.dnum,
+            stride: self.inner.stride,
             data: self.inner.data.reborrow_backend_ref(),
         }
     }
@@ -459,6 +461,8 @@ impl<'a, BE: Backend + 'a> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMu
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
+            dnum: self.inner.dnum,
+            stride: self.inner.stride,
             data: self.inner.data.reborrow_backend_mut(),
         }
     }

@@ -17,6 +17,7 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 - **Breaking:** `Backend` gains the required `TaskExecutor` associated type. Add `TaskExecutor`, `SerialTaskExecutor` and backend-declared `ScratchWorkers` limits, so default algorithms can schedule independent work without depending on Rayon.
 - Add aligned per-worker scratch sizing and arena splitting helpers. Scratch reservations depend on the backend's fixed worker caps rather than the ambient pool width, keeping `*_tmp_bytes` stable across Rayon pools.
 - **Breaking:** `HalConvolutionImpl` and `HalVecZnxDftImpl` gain fused constant-convolution accumulation, DFT automorphism accumulation, and consuming IDFT-plus-normalization operations. The public HAL API exposes the same primitives and every CPU backend implements them.
+- Add `VmpExtractSelectedRows`: copies rows `first_row + i * row_step` of a `VmpPMat` into a smaller one, reading only the selected cells. The delegate validates the selection before dispatch.
 
 ### CPU backends
 
@@ -32,6 +33,16 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 
 - Refactor GLWE key switching to consume inverse-DFT results directly into normalized outputs, and use DFT automorphism accumulation in lazy/prepared-giant linear transformations. These paths avoid temporary big-polynomial copies while preserving the serial/reference behavior.
 - Add an optional one-pass baby-step linear-combination hook to generic polynomial evaluation, falling back to the existing multiply-add sequence when an operation family does not override it. Extend the HAL parity suites for the new fused operations.
+- Add `GGLWEInfos::stride`, the row map a key is read through: digit `i` is stored row `(i + 1) * stride - 1`. Defaults to 1, so a key used as stored is unaffected.
+- `GGLWEPrepared` carries its own `dnum` and `stride`, and `with_dsize` re-tags a prepared key as one read at a coarser `dsize`, deriving the digits and guard that decomposition leaves. It returns the same backend view every operation already takes; no new key type.
+- A GGLWE product over a view gathers the selected rows once, then runs the ordinary kernels on them; its scratch query adds that gather. Query it with the key the operation will run through, coarsened or not.
+- Add `GetAutomorphismKey` and `GetTensorKey`: a caller names a function and the precision it will use the key at, and the source answers with the backend view of a prepared key. A map and a bare key implement them as stored, so which key and which decomposition a precision gets is entirely the source's rule.
+- **Breaking:** every operation that consumes an evaluation key takes the source and the Galois element rather than the key: `glwe_automorphism*(res, a, p, keys, scratch)`, `ggsw_automorphism*`, `glwe_tensor_relinearize(res, a, tsk, scratch)`. A bare key is a source of itself, so a single-key caller only adds `p`.
+- **Breaking:** `GLWEAutomorphismKeyHelper` and its `automorphism_key_infos()` are removed, along with the key type parameter every automorphism-consuming signature carried: no single layout describes a key set whose rotations resolve independently.
+- **Breaking:** `glwe_keyswitch{,_assign}` take `&GGLWEPreparedBackendRef` (`&key.to_backend_ref()` at the call site), the same backend view the products already take.
+- Linear-transformation baby rotations resolve their key at the source precision and giant rotations at the post-product destination precision, the values each actually rotates.
+- Fix cross-radix tensor relinearization: the DFT operand width came from the storage precision rounded to the key's radix instead of from `a.k()`, handing the product one limb too many.
+- `error` is now a module of the crate; `CoreError`/`Result` were previously unreachable.
 
 ### `poulpy-bin-fhe`
 
@@ -45,6 +56,13 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 - **Breaking:** `BootstrappingPlan::new` now validates the EvalMod plan and derives the CoeffsToSlots input scaling from it, replacing any scaling already present on the supplied CoeffsToSlots plan.
 - Fuse each BSGS baby-step linear combination into one accumulator and use constant-convolution accumulation to avoid repeated ciphertext temporaries.
 - Run the real and imaginary EvalMod halves concurrently on parallel backends, with per-half scratch arenas; serial backends retain the existing order.
+- **Breaking:** the ciphertext-ciphertext operations (`ckks_mul_*`, `ckks_square_*`, the `mul_add`/`mul_sub`/`dot_product` composites, polynomial evaluation, approximation, EvalMod and the PaCo slot product) take a tensor-key source rather than one key, and resolve it at the precision they work at.
+- **Breaking:** `ckks_conjugate_{into,assign}` take the Galois element and a key source. `p = -1` is the plain conjugation; PaCo's fused conjugate-and-rotate passes its own element.
+- **Breaking:** `CKKSAtkBounds` is removed: a key type is now constrained as `GetAutomorphismKey<BE>`.
+- **Breaking:** `CKKSCompositionError::MissingAutomorphismKey` carries the precision the lookup was made at; add `MissingRelinearizationKey`.
+- `ckks_mul_tmp_bytes` sizes its tensor intermediate from the operands' precision; `res`'s pre-call precision no longer widens it.
+- Linear-transformation and PaCo preflight resolve giant rotations at the destination precision the evaluation uses.
+
 
 ## [0.8.2] - 2026-08-22
 

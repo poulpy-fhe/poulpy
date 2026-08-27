@@ -405,7 +405,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         self.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
-        self.ckks_conjugate_into(conjugate, &*ct, keys.conjugation_key(), scratch)?;
+        self.ckks_conjugate_into(conjugate, &*ct, -1, keys.conjugation_key(), scratch)?;
         self.ckks_add_assign(ct, &*conjugate, scratch)?;
         // `z + conj(z) = 2·Re(z)` holds the input polynomial's coefficients.
         ct.set_slots(SlotsKind::Real);
@@ -981,11 +981,11 @@ where
     D2S: poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     S2D: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    module.glwe_keyswitch_assign(src, dense_to_sparse, scratch);
+    module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     // The lift is fused into ModUp, so the message is already at its final scale
     // when sparse-to-dense adds its noise.
     BootstrappingDefault::new(module).ckks_mod_up_into_default(dst, src, scale_up, scratch)?;
-    module.glwe_keyswitch_assign(dst, sparse_to_dense, scratch);
+    module.glwe_keyswitch_assign(dst, &sparse_to_dense.to_backend_ref(), scratch);
     Ok(())
 }
 

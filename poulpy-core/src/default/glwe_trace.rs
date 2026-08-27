@@ -24,10 +24,7 @@ use poulpy_hal::{
 
 use crate::{
     GLWEAutomorphism, GLWECopy, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
-        GetGaloisElement, LWEInfos, prepared::GGLWEPreparedToBackendRef,
-    },
+    layouts::{GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
 };
 
 #[inline(always)]
@@ -43,13 +40,8 @@ pub fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
         .collect()
 }
 
-fn trace_assign_internal<M, K, H, R, BE: Backend>(
-    module: &M,
-    res: &mut R,
-    skip: usize,
-    keys: &H,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+fn trace_assign_internal<M, H, R, BE: Backend>(module: &M, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+where
     M: GLWEBytesOf<BE>
         + ModuleLogN
         + GaloisElement
@@ -60,23 +52,30 @@ fn trace_assign_internal<M, K, H, R, BE: Backend>(
         + GLWENormalize<BE>
         + GLWETraceDefault<BE>
         + ?Sized,
-    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
-    let ksk_infos: &GGLWELayout = &keys.automorphism_key_infos();
     let log_n: usize = module.log_n();
 
     assert_eq!(res.n(), module.n() as u32);
-    assert_eq!(ksk_infos.n(), module.n() as u32);
     assert!(skip <= log_n);
+    // Keys may differ per rotation, so the radix and the scratch bound are read
+    // off the first one the source resolves, as on any path sized from a single
+    // key layout.
+    let Some(first) = trace_rotations(module, skip).next() else {
+        return;
+    };
+    let ksk_infos = keys
+        .get_automorphism_key(first, res.k())
+        .unwrap_or_else(|e| panic!("trace rotation {first}: {e}"));
+    assert_eq!(ksk_infos.n(), module.n() as u32);
     assert_eq!(ksk_infos.rank_in(), res.rank());
     assert_eq!(ksk_infos.rank_out(), res.rank());
     assert!(
-        scratch.available() >= module.glwe_trace_assign_tmp_bytes_default(res, ksk_infos),
+        scratch.available() >= module.glwe_trace_assign_tmp_bytes_default(res, &ksk_infos),
         "scratch.available(): {} < GLWETrace::glwe_trace_assign_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_trace_assign_tmp_bytes_default(res, ksk_infos)
+        module.glwe_trace_assign_tmp_bytes_default(res, &ksk_infos)
     );
 
     if res.base2k() != ksk_infos.base2k() {
@@ -95,7 +94,7 @@ fn trace_assign_internal<M, K, H, R, BE: Backend>(
         });
 
         scratch_1 = scratch_1.apply_mut(|scratch| {
-            trace_assign_internal::<M, K, H, _, BE>(module, &mut res_conv, skip, keys, scratch);
+            trace_assign_internal::<M, H, _, BE>(module, &mut res_conv, skip, keys, scratch);
         });
 
         scratch_1.apply_mut(|scratch| {
@@ -104,15 +103,18 @@ fn trace_assign_internal<M, K, H, R, BE: Backend>(
         return;
     }
 
-    for i in skip..log_n {
-        let p: i64 = if i == 0 { -1 } else { module.galois_element(1 << (i - 1)) };
+    for p in trace_rotations(module, skip) {
         module.glwe_rsh(1, res, scratch);
-        if let Some(key) = keys.get_automorphism_key(p) {
-            module.glwe_automorphism_add_assign(res, key, scratch);
-        } else {
-            panic!("keys[{p}] is empty")
-        }
+        module.glwe_automorphism_add_assign(res, p, keys, scratch);
     }
+}
+
+/// Rotations the trace loop visits, in order.
+fn trace_rotations<M>(module: &M, skip: usize) -> impl Iterator<Item = i64> + use<'_, M>
+where
+    M: ModuleLogN + GaloisElement + ?Sized,
+{
+    (skip..module.log_n()).map(|i| if i == 0 { -1 } else { module.galois_element(1 << (i - 1)) })
 }
 
 #[doc(hidden)]
@@ -130,18 +132,16 @@ pub trait GLWETraceDefault<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace_default<R, A, K, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_trace_default<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
-    fn glwe_trace_assign_default<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_trace_assign_default<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 }
 
 /// Reference implementations of the [`GLWETraceDefault`] methods.
@@ -235,7 +235,7 @@ pub mod glwe_trace_defaults_impl {
         lvl_0 + lvl_1.max(lvl_2).max(lvl_3)
     }
 
-    pub fn glwe_trace_default<BE, M, R, A, K, H>(
+    pub fn glwe_trace_default<BE, M, R, A, H>(
         module: &M,
         res: &mut R,
         skip: usize,
@@ -255,15 +255,19 @@ pub mod glwe_trace_defaults_impl {
             + GLWENormalize<BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        let atk_layout: &GGLWELayout = &keys.automorphism_key_infos();
+        let Some(first) = trace_rotations(module, skip).next() else {
+            return;
+        };
+        let atk_layout = keys
+            .get_automorphism_key(first, a.k().max(res.k()))
+            .unwrap_or_else(|e| panic!("trace rotation {first}: {e}"));
         assert!(
-            scratch.available() >= module.glwe_trace_tmp_bytes_default(res, a, atk_layout),
+            scratch.available() >= module.glwe_trace_tmp_bytes_default(res, a, &atk_layout),
             "scratch.available(): {} < GLWETrace::glwe_trace_tmp_bytes: {}",
             scratch.available(),
-            module.glwe_trace_tmp_bytes_default(res, a, atk_layout)
+            module.glwe_trace_tmp_bytes_default(res, a, &atk_layout)
         );
 
         let scratch_local = scratch.borrow();
@@ -285,7 +289,7 @@ pub mod glwe_trace_defaults_impl {
 
         {
             scratch_1 = scratch_1.apply_mut(|scratch| {
-                trace_assign_internal::<M, K, H, _, BE>(module, &mut tmp, skip, keys, scratch);
+                trace_assign_internal::<M, H, _, BE>(module, &mut tmp, skip, keys, scratch);
             });
         }
 
@@ -302,7 +306,7 @@ pub mod glwe_trace_defaults_impl {
         }
     }
 
-    pub fn glwe_trace_assign_default<BE, M, R, K, H>(
+    pub fn glwe_trace_assign_default<BE, M, R, H>(
         module: &M,
         res: &mut R,
         skip: usize,
@@ -320,9 +324,8 @@ pub mod glwe_trace_defaults_impl {
             + CyclotomicOrder
             + GLWENormalize<BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        trace_assign_internal::<M, K, H, _, BE>(module, res, skip, keys, scratch);
+        trace_assign_internal::<M, H, _, BE>(module, res, skip, keys, scratch);
     }
 }

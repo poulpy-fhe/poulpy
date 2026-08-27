@@ -27,7 +27,6 @@
 //! (lazy / streaming / on-the-fly-prepared) can implement [`BootstrappingKeys`]
 //! directly instead of materializing the whole bundle.
 
-use crate::CKKSAtkBounds;
 use std::collections::{BTreeSet, HashMap};
 
 use anyhow::Result;
@@ -35,10 +34,10 @@ use poulpy_core::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     layouts::{
         BackendGLWESecret, GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
-        GLWEInfos, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
+        GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecretLayout,
+        GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
         GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
-        GetGaloisElement, LWEInfos, ModuleCoreAlloc,
+        GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -61,16 +60,13 @@ use poulpy_core::{Distribution, GetDistributionMut};
 /// [`BootstrappingKeysPrepared`] is the eager in-memory implementation.
 pub trait BootstrappingKeys<BE: Backend> {
     /// The prepared automorphism-key type returned for rotations and conjugation.
-    type AutomorphismKey: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-        + GGLWEPreparedToBackendRef<BE>
-        + GetGaloisElement
-        + GGLWEInfos;
+    type AutomorphismKey: GetAutomorphismKey<BE>;
 
     /// The rotation-key collection passed to the homomorphic DFT stages.
-    type RotationKeys: GLWEAutomorphismKeyHelper<Self::AutomorphismKey, BE>;
+    type RotationKeys: GetAutomorphismKey<BE>;
 
     /// The prepared tensor (relinearization) key type for EvalMod.
-    type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+    type TensorKey: GetTensorKey<BE>;
 
     /// The prepared key-switching key type for sparse-secret encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
@@ -124,8 +120,8 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
 
 impl<D: Data, BE: Backend> BootstrappingKeys<BE> for BootstrappingKeysPrepared<D, BE>
 where
-    GLWEAutomorphismKeyPrepared<D, BE>: CKKSAtkBounds<BE>,
-    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     type AutomorphismKey = GLWEAutomorphismKeyPrepared<D, BE>;

@@ -6,11 +6,9 @@
 
 use anyhow::{Result, anyhow, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
-use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    GetGaloisElement, LWEInfos, SetBSGSMeta,
-    prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
-};
+use poulpy_core::layouts::GetAutomorphismKey;
+use poulpy_core::layouts::GetTensorKey;
+use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -67,23 +65,23 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn ckks_eval_lut<BE, F, K, C, R>(
+pub(crate) fn ckks_eval_lut<BE, F, K, C, R, H>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
     eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
     lut: &ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>,
     conj_key: &K,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSEvalModOps<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
-    K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    K: GetAutomorphismKey<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GetTensorKey<BE>,
 {
     // Work at the destination's effective width. `res` may reuse a wider
     // allocation after being relabelled with a smaller `k`; using `max_k()`
@@ -103,7 +101,7 @@ where
     })?;
     scratch.scope(|scratch| {
         let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
-        module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
+        module.ckks_conjugate_into(&mut conj, &*res, -1, conj_key, &mut scratch)?;
         module.ckks_add_assign(res, &conj, &mut scratch)
     })?;
     // `T + conj(T) = 2·Re(T)` interpolates the (real) table.
@@ -118,13 +116,13 @@ where
 /// Equal-arity LUTs have the same message ratio, but their coefficient parity
 /// (and, for some split strategies, their BSGS split) can still differ, so the
 /// populated schedule must not depend on which LUT happens to be first.
-pub(crate) fn ckks_lut_power_basis<BE, F, C>(
+pub(crate) fn ckks_lut_power_basis<BE, F, C, H>(
     module: &Module<BE>,
     ct: &C,
     layout: &GLWELayout,
     eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
     luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<PowerBasis<CKKSCiphertextOwned<BE>>>
 where
@@ -138,7 +136,7 @@ where
         + CKKSSubOps<BE>
         + CKKSModuleAlloc<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GetTensorKey<BE>,
 {
     let series = luts
         .iter()
@@ -166,21 +164,21 @@ where
 }
 
 /// Evaluates one general LUT against a [`ckks_lut_power_basis`] result.
-pub(crate) fn ckks_eval_lut_from_basis<BE, K, R>(
+pub(crate) fn ckks_eval_lut_from_basis<BE, K, R, H>(
     module: &Module<BE>,
     res: &mut R,
     lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     power_basis: &PowerBasis<CKKSCiphertextOwned<BE>>,
     conj_key: &K,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
-    K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    K: GetAutomorphismKey<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GetTensorKey<BE>,
 {
     let series = lut
         .general_series()
@@ -200,7 +198,7 @@ where
     };
     scratch.scope(|scratch| {
         let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
-        module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
+        module.ckks_conjugate_into(&mut conj, &*res, -1, conj_key, &mut scratch)?;
         module.ckks_add_assign(res, &conj, &mut scratch)
     })?;
     // `T + conj(T) = 2·Re(T)` interpolates the (real) table.
@@ -233,14 +231,14 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn ckks_eval_lut_binary<BE, C, R>(
+pub(crate) fn ckks_eval_lut_binary<BE, C, R, H>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
     cos_bsgs: &BSGSPolynomial<CKKSPlaintextOwned<BE>>,
     log_interval_reduction: usize,
     affine: &CKKSPlaintextOwned<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -248,7 +246,7 @@ where
     Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSAffineOps<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GetTensorKey<BE>,
 {
     module.ckks_eval_poly_real_const_coeffs(res, ct, cos_bsgs, tsk, scratch)?;
 

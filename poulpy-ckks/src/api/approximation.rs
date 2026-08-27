@@ -1,9 +1,7 @@
 //! Evaluation of prepared polynomial approximations.
 
-use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta,
-    prepared::GLWETensorKeyPrepared,
-};
+use poulpy_core::layouts::GetTensorKey;
+use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos, layouts::PolynomialApproximation};
@@ -26,16 +24,17 @@ pub trait CKKSApproximationOps<BE: Backend> {
 
     /// Applies the approximation's interval map, then evaluates its BSGS
     /// polynomial.
-    fn ckks_eval_approximation<R, I, P>(
+    fn ckks_eval_approximation<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         approximation: &PolynomialApproximation<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        H: GetTensorKey<BE>;
 }

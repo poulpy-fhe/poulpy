@@ -1130,3 +1130,36 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
 pub(crate) fn vmp_zero(res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>) {
     res.data_mut().as_mut().fill(0);
 }
+
+/// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
+/// limbs, into rows `i` of `res`, in the packed block-quad prepared layout.
+pub(crate) fn vmp_extract_selected_rows_ifma(
+    res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    first_row: usize,
+    row_step: usize,
+) {
+    let n: usize = a.n();
+
+    let cols_in: usize = a.cols_in();
+    let (res_rows, res_nrows, res_ncols) = (res.rows(), res.rows() * cols_in, res.cols_out() * res.size());
+    let (a_nrows, a_ncols) = (a.rows() * cols_in, a.cols_out() * a.size());
+    let n_blk_quads: usize = n / 8;
+    // Same strides as the prepare kernel above, per matrix shape.
+    let (res_bq, res_col) = (res_ncols * res_nrows * 16, res_nrows * 16);
+    let (a_bq, a_col) = (a_ncols * a_nrows * 16, a_nrows * 16);
+    let span: usize = cols_in * 16;
+
+    let src: &[u64] = cast_slice(a.raw());
+    let dst: &mut [u64] = cast_slice_mut(res.data_mut());
+    for bq in 0..n_blk_quads {
+        for col in 0..res_ncols {
+            let dst_base: usize = bq * res_bq + col * res_col;
+            let src_base: usize = bq * a_bq + col * a_col;
+            for i in 0..res_rows {
+                let (d, s) = (dst_base + i * span, src_base + (first_row + i * row_step) * span);
+                dst[d..d + span].copy_from_slice(&src[s..s + span]);
+            }
+        }
+    }
+}

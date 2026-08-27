@@ -12,8 +12,8 @@ use crate::{
 use anyhow::Result;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPrepared, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout,
-    GLWESwitchingKeyPrepared, ModuleCoreAlloc,
+    GGLWEInfos, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GetAutomorphismKey,
+    ModuleCoreAlloc,
 };
 use poulpy_core::{DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWESwitchingKeyEncryptSk};
 use poulpy_core::{
@@ -382,15 +382,13 @@ impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepare
     }
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>, BE>
-    for BDDKeyPrepared<BE::OwnedBuf, BRA, BE>
-{
-    fn automorphism_key_infos(&self) -> poulpy_core::layouts::GGLWELayout {
-        self.cbt.automorphism_key_infos()
-    }
-
-    fn get_automorphism_key(&self, k: i64) -> Option<&GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> {
-        self.cbt.get_automorphism_key(k)
+impl<BRA: BlindRotationAlgo, BE: Backend> GetAutomorphismKey<BE> for BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
+    fn get_automorphism_key(
+        &self,
+        p: i64,
+        k: poulpy_core::layouts::TorusPrecision,
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.cbt.get_automorphism_key(p, k)
     }
 }
 

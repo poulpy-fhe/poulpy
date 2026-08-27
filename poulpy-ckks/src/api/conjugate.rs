@@ -1,6 +1,6 @@
-use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GGLWEInfos;
+use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -34,22 +34,25 @@ pub trait CKKSConjugateOps<BE: Backend> {
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
-    /// Computes `dst = conj(src)`: takes the complex conjugate of every slot.
-    fn ckks_conjugate_into<Dst, Src, K>(
+    /// Computes `dst = phi_p(src)`: the automorphism of Galois element `p`, with
+    /// conjugation metadata. `p = -1` is the plain complex conjugation; a fused
+    /// conjugate-and-rotate element is the other use.
+    fn ckks_conjugate_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        key: &K,
+        p: i64,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: CKKSAtkBounds<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// Computes `dst = conj(dst)` in-place.  Metadata is unchanged.
-    fn ckks_conjugate_assign<Dst, K>(&self, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, p: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>;
+        H: GetAutomorphismKey<BE>;
 }

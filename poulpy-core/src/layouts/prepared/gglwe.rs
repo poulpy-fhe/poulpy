@@ -1,3 +1,4 @@
+use crate::{error::Result, layouts::GGLWELayout};
 use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
@@ -23,6 +24,10 @@ pub struct GGLWEPrepared<D: Data, B: Backend> {
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
+    /// Digits reachable at `dsize`: the stored rows, or fewer for a view.
+    pub(crate) dnum: Dnum,
+    /// Rows to skip between digits: 1 as stored, `dsize / stored dsize` for a view.
+    pub(crate) stride: usize,
 }
 
 pub type GGLWEPreparedBackendRef<'a, B> = GGLWEPrepared<<B as Backend>::BufRef<'a>, B>;
@@ -73,7 +78,11 @@ impl<D: Data, B: Backend> GGLWEInfos for GGLWEPrepared<D, B> {
     }
 
     fn dnum(&self) -> Dnum {
-        Dnum(self.data.rows() as u32)
+        self.dnum
+    }
+
+    fn stride(&self) -> usize {
+        self.stride
     }
 }
 
@@ -102,6 +111,8 @@ where
             base2k,
             dsize,
             k_aux,
+            dnum,
+            stride: 1,
         }
     }
 
@@ -208,6 +219,24 @@ impl<D: Data, B: Backend> GGLWEPrepared<D, B> {
     }
 }
 
+impl<D: Data, B: Backend> GGLWEPrepared<D, B> {
+    /// This key read through a coarser `dsize`. No row is copied, only the
+    /// scalars change; see [`GGLWEInfos::gglwe_layout_at_dsize`] for the rule
+    /// and [`GGLWEInfos::valid_dsizes`] for what a key admits.
+    pub fn with_dsize(&self, dsize: Dsize) -> Result<GGLWEPreparedBackendRef<'_, B>>
+    where
+        Self: GGLWEPreparedToBackendRef<B>,
+    {
+        let mut key: GGLWEPreparedBackendRef<'_, B> = self.to_backend_ref();
+        let coarse: GGLWELayout = key.gglwe_layout_at_dsize(dsize)?;
+        key.stride *= dsize.as_usize() / key.dsize.as_usize();
+        key.dsize = coarse.dsize;
+        key.dnum = coarse.dnum;
+        key.k_aux = coarse.k_aux;
+        Ok(key)
+    }
+}
+
 pub trait GGLWEPreparedToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B>;
 }
@@ -218,6 +247,8 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,
+            dnum: self.dnum,
+            stride: self.stride,
             data: self.data.to_backend_ref(),
         }
     }
@@ -233,6 +264,8 @@ impl<B: Backend> GGLWEPreparedToBackendMut<B> for GGLWEPrepared<B::OwnedBuf, B> 
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,
+            dnum: self.dnum,
+            stride: self.stride,
             data: self.data.to_backend_mut(),
         }
     }

@@ -4,10 +4,7 @@ use poulpy_core::layouts::{
     Base2K, Dnum, Dsize, GGSWInfos, GGSWPreparedFactory, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     prepared::{GGSWPrepared, GGSWPreparedBackendMut},
 };
-use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GGSW, GGSWLayout, GGSWPreparedToBackendMut, GGSWToBackendMut,
-    GLWEAutomorphismKeyHelper, GetGaloisElement,
-};
+use poulpy_core::layouts::{GGSW, GGSWLayout, GGSWPreparedToBackendMut, GGSWToBackendMut, GetAutomorphismKey};
 use poulpy_core::{EncryptionInfos, GLWECopy, GLWEDecrypt, GLWEKeyswitch, GLWEPacking, LWEFromGLWE, ScratchArenaTakeCore};
 
 use poulpy_core::{GGSWEncryptSk, layouts::GLWESecretPreparedToBackendRef};
@@ -280,7 +277,7 @@ impl<T: UnsignedInteger + FromBits, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i6
 where
     BE::OwnedBuf: HostDataRef,
 {
-    pub fn decrypt<M, S, H, K>(&self, module: &M, sk: &S, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> T
+    pub fn decrypt<M, S, H>(&self, module: &M, sk: &S, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> T
     where
         M: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ModuleLogN
@@ -289,8 +286,7 @@ where
             + GLWEPacking<BE>
             + GLWECopy<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
         BE: 'static,
         BE::OwnedBuf: HostDataRef + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,

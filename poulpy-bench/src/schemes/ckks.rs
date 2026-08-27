@@ -182,7 +182,7 @@ pub fn runner_ckks_conjugate_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>
 
     bencher.iter(|| {
         module
-            .ckks_conjugate_into(&mut ct_dst, &ct_a, &conjugate_key, &mut scratch.borrow())
+            .ckks_conjugate_into(&mut ct_dst, &ct_a, -1, &conjugate_key, &mut scratch.borrow())
             .unwrap();
         black_box(());
     });

@@ -10,6 +10,7 @@
 //! Both tests run the operation twice over the same arena, once filled with
 //! `0x00` and once with `0xFF`, and require bit-identical results.
 
+use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
     layouts::{DigestU64, Module, ScalarZnx, ScratchOwned, ZnxViewMut},
@@ -144,10 +145,20 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
         // 0x00 then 0xFF: as `f64` the poison is NaN and as `i64` it is -1, so any
         // limb read before being written shows up in the digest.
         <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut scratch.data).fill(0x00);
-        module.glwe_keyswitch(&mut over_zeroed, &glwe_in, &ksk_prepared, &mut scratch.borrow());
+        module.glwe_keyswitch(
+            &mut over_zeroed,
+            &glwe_in,
+            &ksk_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
 
         <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut scratch.data).fill(0xFF);
-        module.glwe_keyswitch(&mut over_poisoned, &glwe_in, &ksk_prepared, &mut scratch.borrow());
+        module.glwe_keyswitch(
+            &mut over_poisoned,
+            &glwe_in,
+            &ksk_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
 
         assert_eq!(
             over_zeroed.data().digest_u64(),

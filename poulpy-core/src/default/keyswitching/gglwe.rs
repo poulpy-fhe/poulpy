@@ -66,7 +66,7 @@ where
         for col in 0..res.rank_in().into() {
             let mut res_at = res.at_view_mut(row, col);
             let a_at = a.at_view(row, col);
-            module.glwe_keyswitch_default(&mut res_at, &a_at, b, &mut scratch.borrow());
+            module.glwe_keyswitch_default(&mut res_at, &a_at, &b.to_backend_ref(), &mut scratch.borrow());
         }
     }
 }
@@ -97,7 +97,7 @@ where
     for row in 0..res.dnum().into() {
         for col in 0..res.rank_in().into() {
             let mut res_at = res.at_view_mut(row, col);
-            module.glwe_keyswitch_assign_default(&mut res_at, a, &mut scratch.borrow());
+            module.glwe_keyswitch_assign_default(&mut res_at, &a.to_backend_ref(), &mut scratch.borrow());
         }
     }
 }

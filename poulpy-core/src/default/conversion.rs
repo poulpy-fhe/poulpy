@@ -343,7 +343,7 @@ where
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
-    module.glwe_keyswitch_default(&mut res_view, &glwe_view, ksk, &mut scratch_1)
+    module.glwe_keyswitch_default(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
 }
 
 pub fn lwe_from_glwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
@@ -414,7 +414,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A, K>(
     let (mut tmp_glwe_rank_1, mut scratch_1) = scratch.take_glwe_scratch(&glwe_layout);
 
     let a_backend_view = &a_backend;
-    module.glwe_keyswitch_default(&mut tmp_glwe_rank_1, &a_backend_view, key, &mut scratch_1);
+    module.glwe_keyswitch_default(&mut tmp_glwe_rank_1, &a_backend_view, &key.to_backend_ref(), &mut scratch_1);
     if a_idx != 0 {
         module.glwe_rotate_assign(-(a_idx as i64), &mut tmp_glwe_rank_1, &mut scratch_1);
     }

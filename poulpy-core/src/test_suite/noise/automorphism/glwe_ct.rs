@@ -130,7 +130,7 @@ where
                 module.glwe_automorphism_key_prepared_alloc_from_infos(&autokey_infos);
             module.glwe_automorphism_key_prepare(&mut autokey_prepared, &autokey, &mut scratch.borrow());
 
-            module.glwe_automorphism(&mut ct_out, &ct_in, &autokey_prepared, &mut scratch.borrow());
+            module.glwe_automorphism(&mut ct_out, &ct_in, p, &autokey_prepared, &mut scratch.borrow());
 
             let max_noise: f64 = autokey_infos.log2_std_noise_keyswitch(
                 &ct_in_infos,
@@ -261,7 +261,7 @@ where
                 module.glwe_automorphism_key_prepared_alloc_from_infos(&autokey);
             module.glwe_automorphism_key_prepare(&mut autokey_prepared, &autokey, &mut scratch.borrow());
 
-            module.glwe_automorphism_assign(&mut ct, &autokey_prepared, &mut scratch.borrow());
+            module.glwe_automorphism_assign(&mut ct, p, &autokey_prepared, &mut scratch.borrow());
 
             let max_noise: f64 = autokey_infos.log2_std_noise_keyswitch(
                 &ct_out_infos,

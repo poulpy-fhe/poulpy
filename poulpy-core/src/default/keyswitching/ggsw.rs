@@ -75,7 +75,7 @@ pub fn ggsw_keyswitch_default<BE, M, R, A, K, T>(
     for row in 0..a_backend.dnum().into() {
         let mut res_at = res_backend.at_view_mut(row, 0);
         let a_at = a_backend.at_view(row, 0);
-        module.glwe_keyswitch_default(&mut res_at, &a_at, key, &mut scratch.borrow());
+        module.glwe_keyswitch_default(&mut res_at, &a_at, &key.to_backend_ref(), &mut scratch.borrow());
     }
 
     module.ggsw_expand_row_default(&mut res_backend, tsk, scratch)
@@ -105,7 +105,7 @@ pub fn ggsw_keyswitch_assign_default<BE, M, R, K, T>(
 
     for row in 0..res_backend.dnum().into() {
         let mut res_at = res_backend.at_view_mut(row, 0);
-        module.glwe_keyswitch_assign_default(&mut res_at, key, &mut scratch.borrow());
+        module.glwe_keyswitch_assign_default(&mut res_at, &key.to_backend_ref(), &mut scratch.borrow());
     }
 
     module.ggsw_expand_row_default(&mut res_backend, tsk, scratch)

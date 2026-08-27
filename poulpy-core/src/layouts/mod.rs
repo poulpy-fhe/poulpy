@@ -44,6 +44,7 @@ mod glwe_switching_key;
 mod glwe_tensor;
 mod glwe_tensor_key;
 mod glwe_to_lwe_key;
+mod key_helpers;
 mod linear_transformation;
 mod lwe;
 mod lwe_matrix;
@@ -82,6 +83,7 @@ pub use glwe_switching_key::*;
 pub use glwe_tensor::*;
 pub use glwe_tensor_key::*;
 pub use glwe_to_lwe_key::*;
+pub use key_helpers::*;
 pub use linear_transformation::*;
 #[cfg(test)]
 pub(crate) use linear_transformation::{linear_transformation_plan, normalize_linear_transform_diagonal};

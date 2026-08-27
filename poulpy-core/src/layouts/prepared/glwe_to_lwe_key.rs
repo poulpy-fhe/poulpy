@@ -61,6 +61,10 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWEToLWEKeyPrepared<D, B> {
     fn dnum(&self) -> Dnum {
         self.0.dnum()
     }
+
+    fn stride(&self) -> usize {
+        self.0.stride()
+    }
 }
 
 pub trait GLWEToLWEKeyPreparedFactory<B: Backend>

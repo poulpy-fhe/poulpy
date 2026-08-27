@@ -107,8 +107,8 @@ pub fn test_glwe_automorphism_parity<BR, BT>(
                 let mut key_test = module_test.glwe_automorphism_key_prepared_alloc_from_infos(&key_infos);
                 module_test.glwe_automorphism_key_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
 
-                module_ref.glwe_automorphism(&mut res_ref, &a_ref, &key_ref, &mut scratch_ref.borrow());
-                module_test.glwe_automorphism(&mut res_test, &a_test, &key_test, &mut scratch_test.borrow());
+                module_ref.glwe_automorphism(&mut res_ref, &a_ref, p, &key_ref, &mut scratch_ref.borrow());
+                module_test.glwe_automorphism(&mut res_test, &a_test, p, &key_test, &mut scratch_test.borrow());
 
                 let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
                 res_test.transfer_into(&mut have);

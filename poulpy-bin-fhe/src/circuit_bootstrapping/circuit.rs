@@ -8,9 +8,9 @@ use poulpy_hal::{
 use poulpy_core::{
     GGSWExpandRows, GGSWFromGGLWE, GLWECopy, GLWEDecrypt, GLWENormalize, GLWEPacking, GLWERotate, GLWETrace,
     layouts::{
-        Dsize, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
-        GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWEToBackendMut, GLWEToBackendRef,
-        GetGaloisElement, LWEInfos, LWEToBackendRef, ModuleCoreAlloc, Rank,
+        Dsize, GGLWELayout, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout,
+        GLWESecretPreparedFactory, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendRef,
+        ModuleCoreAlloc, Rank,
     },
 };
 
@@ -331,11 +331,15 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
         rank: key.brk.rank(),
     };
 
-    let atk_layout: &GGLWELayout = &key.atk.automorphism_key_infos();
-
+    // Every rotation's key shares the radix; read it off the first one.
+    let atk_base2k = key
+        .atk
+        .get_automorphism_key(-1, glwe_brk_layout.k())
+        .map(|layout| layout.base2k())
+        .unwrap_or_else(|e| panic!("{e}"));
     let glwe_atk_layout: &GLWELayout = &GLWELayout {
         n: glwe_brk_layout.n(),
-        base2k: atk_layout.base2k(),
+        base2k: atk_base2k,
         k: glwe_brk_layout.k(),
         rank: glwe_brk_layout.rank(),
     };
@@ -403,7 +407,7 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn post_process<R, A, M, H, K, BE>(
+fn post_process<R, A, M, H, BE>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -416,8 +420,7 @@ fn post_process<R, A, M, H, K, BE>(
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
-    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    H: GetAutomorphismKey<BE>,
     M: ModuleLogN
         + GLWETrace<BE>
         + GLWEPacking<BE>

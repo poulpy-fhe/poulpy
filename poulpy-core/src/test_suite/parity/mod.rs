@@ -27,11 +27,13 @@
 //! transfer, which is what lets a device backend run this suite.
 
 mod automorphism;
+mod coarsened;
 mod external_product;
 mod keyswitch;
 mod operations;
 
 pub use automorphism::*;
+pub use coarsened::*;
 pub use external_product::*;
 pub use keyswitch::*;
 pub use operations::*;

@@ -71,9 +71,9 @@ For a runnable end-to-end example using a concrete backend, see
 
 This crate defines three categories of layouts for `LWE`, `GLWE`, `GGLWE`, and `GGSW` objects (and their derivatives), all instantiated using **`poulpy-hal`** layouts. Each serves a distinct purpose:
 
-* **Standard** → Front-end, serializable layouts. These are backend-agnostic and act as inputs/outputs of computations (e.g., `GGLWEAutomorphismKey`).
-* **Compressed** → Compact serializable variants of the standard layouts. They are not usable for computation but significantly reduce storage size (e.g., `GGLWEAutomorphismKeyCompressed`).
-* **Prepared** → Backend-optimized, opaque layouts used only for computation (write-only). These store preprocessed data for efficient execution on a specific backend (e.g., `GGLWEAutomorphismKeyPrepared`).
+* **Standard** → Front-end, serializable layouts. These are backend-agnostic and act as inputs/outputs of computations (e.g., `GLWEAutomorphismKey`).
+* **Compressed** → Compact serializable variants of the standard layouts. They are not usable for computation but significantly reduce storage size (e.g., `GLWEAutomorphismKeyCompressed`).
+* **Prepared** → Backend-optimized, opaque layouts used only for computation (write-only). These store preprocessed data for efficient execution on a specific backend (e.g., `GLWEAutomorphismKeyPrepared`).
 
 All **standard** and **compressed** layouts implement the `WriterTo` and `ReaderFrom` traits, enabling straightforward serialization/deserialization with any type implementing `Write` or `Read`:
 
@@ -91,16 +91,16 @@ pub trait ReaderFrom {
 
 ```mermaid
 flowchart TD
-    A[GGLWEAutomorphismKeyCompressed]-->|decompress|B[GGLWEAutomorphismKey]-->|prepare|C[GGLWEAutomorphismKeyPrepared]
+    A[GLWEAutomorphismKeyCompressed]-->|decompress|B[GLWEAutomorphismKey]-->|prepare|C[GLWEAutomorphismKeyPrepared]
 ```
 
 Equivalent Rust:
 
 ```rust
-let mut atk_compressed: GGLWEAutomorphismKeyCompressed<Vec<u8>> = 
-    GGLWEAutomorphismKeyCompressed::alloc(...);
-let mut atk: GGLWEAutomorphismKey<Vec<u8>> = 
-    GGLWEAutomorphismKey::alloc(...);
+let mut atk_compressed: GLWEAutomorphismKeyCompressed<Vec<u8>> = 
+    GLWEAutomorphismKeyCompressed::alloc(...);
+let mut atk: GLWEAutomorphismKey<Vec<u8>> = 
+    GLWEAutomorphismKey::alloc(...);
     module.decompress_automorphism_key(&mut atk, &atk_compressed);
 let mut atk_prep = atk.prepare_alloc(module);
 ```
@@ -114,15 +114,15 @@ let mut atk_prep = atk.prepare_alloc(module);
   However, it remains naturally usable on `GGLWE` and `GGSW` objects, since these are vectors/matrices of `GLWECiphertext`.
 
 ```rust
-let mut atk: GGLWEAutomorphismKey<Vec<u8>> =
-        GGLWEAutomorphismKey::alloc(...);
+let mut atk: GLWEAutomorphismKey<Vec<u8>> =
+        GLWEAutomorphismKey::alloc(...);
 module.glwe_automorphism_key_encrypt_sk(&mut atk, ...);
 module.glwe_decrypt(&atk.at(row, 0), ...);
 ```
 ## Keyswitching, Automorphism & External Product
 
 Keyswitching, automorphisms and external products are supported for all ciphertext types where they are well-defined.
-This includes subtypes such as `GGLWEAutomorphismKey`.
+This includes subtypes such as `GLWEAutomorphismKey`.
 
 For example:
 
