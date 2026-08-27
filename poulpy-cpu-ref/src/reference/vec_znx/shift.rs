@@ -866,24 +866,3 @@ pub fn vec_znx_rsh_sub<'r, 'a, BE>(
         }
     }
 }
-
-/// Truncates a column to its canonical `k`-bit representation.
-pub fn vec_znx_canonicalize_to_k_assign<'r, BE>(base2k: usize, k: usize, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
-where
-    BE: Backend<ZnxWord = i64> + ZnxZero,
-    BE::BufMut<'r>: HostDataMut,
-{
-    let alloc_size: usize = res.size();
-    let size: usize = k.div_ceil(base2k);
-    assert!(size <= alloc_size, "k ({k}) exceeds the allocation ({alloc_size} limbs)");
-
-    let r: usize = k % base2k;
-    if r != 0 {
-        let mask: i64 = (!0i64) << (base2k - r);
-        res.at_mut(res_col, size - 1).iter_mut().for_each(|x| *x &= mask);
-    }
-
-    for j in size..alloc_size {
-        BE::znx_zero(res.at_mut(res_col, j));
-    }
-}

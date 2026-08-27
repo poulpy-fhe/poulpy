@@ -10,7 +10,7 @@ use crate::{
     EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWENoise, GLWENormalize,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
+        GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
         ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
@@ -87,6 +87,7 @@ where
             // Random input plaintext
             module.vec_znx_fill_uniform_source_backend(
                 in_base2k,
+                pt_in.k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
                 0,
                 &mut source_xa,
@@ -232,6 +233,7 @@ where
             // Random input plaintext
             module.vec_znx_fill_uniform_source_backend(
                 out_base2k,
+                pt_want.k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
                 0,
                 &mut source_xa,

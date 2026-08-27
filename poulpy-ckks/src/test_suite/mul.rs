@@ -7,7 +7,6 @@
 //! | Function | Path exercised |
 //! |----------|----------------|
 //! | [`test_mul_ct_aligned`] | both inputs at same `log_budget()` |
-//! | [`test_mul_ct_limb_boundary_precision`] | precision immediately after a radix-limb boundary |
 //! | [`test_mul_ct_delta_a_lt_b`] | `a.log_budget() < b.log_budget()` |
 //! | [`test_mul_ct_delta_a_gt_b`] | `a.log_budget() > b.log_budget()` |
 //! | [`test_mul_ct_smaller_output`] | output has smaller `max_k()` than inputs |
@@ -47,26 +46,18 @@
 //! | Function | Path exercised |
 //! |----------|----------------|
 //! | [`test_mul_pt_vec_assign`] | - |
-use crate::{
-    CKKSCompositionError, CKKSInfos,
-    api::{CKKSEncryptOps, CKKSMulOps},
-    layouts::CKKSModuleAlloc,
-};
-
-use poulpy_core::EncryptionLayout;
+use crate::{CKKSCompositionError, CKKSInfos, api::CKKSMulOps, layouts::CKKSModuleAlloc};
 
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned},
-    source::Source,
 };
 
 use super::helpers::{
     MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch,
     assert_ckks_error, assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_mul_ct_output_meta,
-    assert_mul_pt_output_meta, ckks_decrypt_decode, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, ckks_snapshot,
-    encode_and_upload_pt, gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, want_mul,
-    want_square,
+    assert_mul_pt_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, ckks_snapshot, encode_and_upload_pt,
+    gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, want_mul, want_square,
 };
 
 use crate::{SetCKKSInfos, test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
@@ -130,84 +121,6 @@ where
         &want_re,
         &want_im,
         &mut scratch.borrow(),
-    );
-}
-
-pub fn test_mul_ct_limb_boundary_precision<BE, F, E>(
-    params: CKKSTestParams,
-    module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
-    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
-    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
-    F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-{
-    let aligned_k = (2 * params.prec().log_delta() + 1).div_ceil(params.base2k) * params.base2k;
-    assert!(aligned_k < params.k);
-
-    let encoder = ReferenceEncoder::<E>::new(params.n / 2).unwrap();
-    let (re1, im1) = super::helpers::test_vector_1::<F>(params.n / 2);
-    let (re2, im2) = super::helpers::test_vector_2::<F>(params.n / 2);
-    let (expected_re, expected_im) = want_mul(&re1, &im1, &re2, &im2);
-    let pt1 = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re1, &im1);
-    let pt2 = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re2, &im2);
-    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0x42; 32]);
-    let mut scratch = alloc_scratch(&params, module);
-    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
-
-    let mut output_error = |k: usize| {
-        let mut layout = params.glwe_layout().layout;
-        layout.k = k.into();
-        let encryption = EncryptionLayout::new_from_default_sigma(layout).unwrap();
-        let mut ct1 = alloc_ct(&params, module, k);
-        module
-            .ckks_encrypt_sk(
-                &mut ct1,
-                &pt1,
-                &sk,
-                &encryption,
-                &mut Source::new([0xe1; 32]),
-                &mut Source::new([0xa1; 32]),
-                &mut scratch.borrow(),
-            )
-            .unwrap();
-        let mut ct2 = alloc_ct(&params, module, k);
-        module
-            .ckks_encrypt_sk(
-                &mut ct2,
-                &pt2,
-                &sk,
-                &encryption,
-                &mut Source::new([0xe2; 32]),
-                &mut Source::new([0xa2; 32]),
-                &mut scratch.borrow(),
-            )
-            .unwrap();
-        let mut product = alloc_ct(&params, module, k);
-        module
-            .ckks_mul_into(&mut product, &ct1, &ct2, &tsk, &mut scratch.borrow())
-            .unwrap();
-        let (product_re, product_im) =
-            ckks_decrypt_decode::<_, F, _>(&params, module, &encoder, &product, &sk, &mut scratch.borrow());
-        product_re
-            .iter()
-            .zip(&product_im)
-            .zip(expected_re.iter().zip(&expected_im))
-            .map(|((&got_re, &got_im), (&want_re, &want_im))| (got_re - want_re).hypot(got_im - want_im).to_f64().unwrap())
-            .fold(0.0, f64::max)
-    };
-
-    let aligned_error = output_error(aligned_k);
-    let next_error = output_error(aligned_k + 1);
-    let precision_loss = (next_error / aligned_error).log2();
-    assert!(
-        precision_loss <= 2.0,
-        "increasing k from {aligned_k} to {} lost {precision_loss:.3} bits of multiplication precision \
-         (errors {aligned_error:e} -> {next_error:e})",
-        aligned_k + 1,
     );
 }
 

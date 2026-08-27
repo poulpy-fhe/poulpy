@@ -438,15 +438,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Truncates a column to its canonical `k`-bit representation.
-    fn vec_znx_canonicalize_to_k_assign_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        a: &mut VecZnxBackendMut<'_, BE>,
-        a_col: usize,
-    );
-
     fn vec_znx_rotate_backend(
         module: &Module<BE>,
         k: i64,
@@ -580,6 +571,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
     fn vec_znx_fill_uniform_backend(
         module: &Module<BE>,
         base2k: usize,
+        k: usize,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
         seed: [u8; 32],

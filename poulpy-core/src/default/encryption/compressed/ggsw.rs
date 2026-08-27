@@ -1,20 +1,14 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{
-        ModuleN, VecZnxAddScalarAssignBackend, VecZnxCopyBackend, VecZnxLshAssignBackend, VecZnxNormalizeAssignBackend,
-        VecZnxRshAssignBackend, VecZnxZeroBackend,
-    },
+    api::{ModuleN, VecZnxAddScalarAssignBackend, VecZnxCopyBackend, VecZnxNormalizeAssignBackend, VecZnxZeroBackend},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
     source::Source,
 };
 
 use crate::{
     EncryptionInfos, GGSWNoise, ScratchArenaTakeCore,
-    encryption::{
-        GGSWEncryptSk, GLWEEncryptSkInternal,
-        glwe::{GLWEMaskFillDefault, round_glwe_columns_to_k},
-    },
+    encryption::{GGSWEncryptSk, GLWEEncryptSkInternal, glwe::GLWEMaskFillDefault},
     layouts::{
         GGSWCompressedSeedMut, GGSWInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, compressed::GGSWCompressedToBackendMut,
         prepared::GLWESecretPreparedToBackendRef,
@@ -53,9 +47,7 @@ where
         + VecZnxCopyBackend<BE>
         + VecZnxAddScalarAssignBackend<BE>
         + VecZnxNormalizeAssignBackend<BE>
-        + VecZnxZeroBackend<BE>
-        + VecZnxRshAssignBackend<BE>
-        + VecZnxLshAssignBackend<BE>,
+        + VecZnxZeroBackend<BE>,
 {
     fn ggsw_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -143,6 +135,7 @@ where
                     self.fill_glwe_mask_from_seed_default(base2k, &mut full_ct, 1, rank, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
+                        full_ct.k().as_usize(),
                         &mut full_ct.data,
                         Some((tmp_pt_backend, col_j)),
                         sk,
@@ -150,7 +143,6 @@ where
                         source_xe,
                         &mut scratch_2,
                     );
-                    round_glwe_columns_to_k(self, &mut full_ct, 0..1, &mut scratch_2);
                     let full_ct_ref = full_ct.to_backend_ref();
                     let mut ct = res.at_view_mut(row_i, col_j);
                     self.vec_znx_copy_backend(&mut ct.data, 0, &full_ct_ref.data, 0);

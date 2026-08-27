@@ -13,17 +13,17 @@ use crate::{
         ScalarZnxFillTernaryProbSourceBackend, ScratchOwnedAlloc, VecZnxAddAssignBackend, VecZnxAddConstAssignBackend,
         VecZnxAddConstIntoBackend, VecZnxAddIntoBackend, VecZnxAddNormalSourceBackend, VecZnxAddScalarAssignBackend,
         VecZnxAddScalarIntoBackend, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend,
-        VecZnxCanonicalizeToKAssignBackend, VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend,
-        VecZnxFillNormalBackend, VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend,
-        VecZnxLshAddCoeffIntoBackend, VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAssignBackend, VecZnxLshBackend,
-        VecZnxLshCoeffBackend, VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend,
-        VecZnxMergeRingsTmpBytes, VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneAssignTmpBytes,
-        VecZnxMulXpMinusOneBackend, VecZnxNegateAssignBackend, VecZnxNegateBackend, VecZnxNormalize,
-        VecZnxNormalizeAssignBackend, VecZnxNormalizeCoeffAssignBackend, VecZnxNormalizeCoeffBackend, VecZnxNormalizeTmpBytes,
-        VecZnxRotateAssignBackend, VecZnxRotateAssignTmpBytes, VecZnxRotateBackend, VecZnxRshAddCoeffIntoBackend,
-        VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshCoeffBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes,
-        VecZnxSplitRingBackend, VecZnxSplitRingTmpBytes, VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend,
-        VecZnxSubScalarAssignBackend, VecZnxSubScalarBackend, VecZnxSwitchRingBackend, VecZnxZeroBackend,
+        VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend, VecZnxFillNormalBackend,
+        VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend, VecZnxLshAddCoeffIntoBackend,
+        VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAssignBackend, VecZnxLshBackend, VecZnxLshCoeffBackend,
+        VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend, VecZnxMergeRingsTmpBytes,
+        VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxMulXpMinusOneBackend,
+        VecZnxNegateAssignBackend, VecZnxNegateBackend, VecZnxNormalize, VecZnxNormalizeAssignBackend,
+        VecZnxNormalizeCoeffAssignBackend, VecZnxNormalizeCoeffBackend, VecZnxNormalizeTmpBytes, VecZnxRotateAssignBackend,
+        VecZnxRotateAssignTmpBytes, VecZnxRotateBackend, VecZnxRshAddCoeffIntoBackend, VecZnxRshAssignBackend, VecZnxRshBackend,
+        VecZnxRshCoeffBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes, VecZnxSplitRingBackend, VecZnxSplitRingTmpBytes,
+        VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxSubScalarAssignBackend,
+        VecZnxSubScalarBackend, VecZnxSwitchRingBackend, VecZnxZeroBackend,
     },
     layouts::{
         DigestU64, FillUniform, HostBytesBackend, Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendMut, ScratchOwned, VecZnx,
@@ -2253,12 +2253,13 @@ where
     let size: usize = 5;
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
+    let k = base2k * size;
     let zero: Vec<i64> = vec![0; n];
     let one_12_sqrt: f64 = 0.28867513459481287;
     (0..cols).for_each(|col_i| {
         let host_init = VecZnx::alloc(module.n(), cols, size);
         let mut a = upload_vec_znx::<B>(&host_init);
-        module.vec_znx_fill_uniform_source_backend(base2k, &mut vec_znx_backend_mut::<B>(&mut a), col_i, &mut source);
+        module.vec_znx_fill_uniform_source_backend(base2k, k, &mut vec_znx_backend_mut::<B>(&mut a), col_i, &mut source);
         let a = download_vec_znx::<B>(&a);
         (0..cols).for_each(|col_j| {
             if col_j != col_i {
@@ -2271,6 +2272,19 @@ where
             }
         })
     });
+
+    let k = 3 * base2k + 1;
+    let live_size = k.div_ceil(base2k);
+    let low_mask = (1i64 << (base2k - k % base2k)) - 1;
+    let mut host_init = VecZnx::alloc(module.n(), cols, size);
+    host_init.raw_mut().fill(0xff);
+    let mut a = upload_vec_znx::<B>(&host_init);
+    module.vec_znx_fill_uniform_source_backend(base2k, k, &mut vec_znx_backend_mut::<B>(&mut a), 0, &mut source);
+    let a = download_vec_znx::<B>(&a);
+    assert!(a.at(0, live_size - 1).iter().all(|value| value & low_mask == 0));
+    for limb in live_size..size {
+        assert_eq!(a.at(0, limb), zero);
+    }
 }
 
 pub fn test_vec_znx_seed_sampling_matches_source_wrappers<B: crate::test_suite::TestBackend>(
@@ -2287,6 +2301,7 @@ pub fn test_vec_znx_seed_sampling_matches_source_wrappers<B: crate::test_suite::
     let size: usize = 5;
     let cols: usize = 2;
     let col_i: usize = 1;
+    let k = 3 * base2k + 1;
 
     let mut seed_source = Source::new([0u8; 32]);
     let seed = seed_source.new_seed();
@@ -2297,11 +2312,12 @@ pub fn test_vec_znx_seed_sampling_matches_source_wrappers<B: crate::test_suite::
     let mut backend_uniform = upload_vec_znx::<B>(&host_init);
     module.vec_znx_fill_uniform_source_backend(
         base2k,
+        k,
         &mut vec_znx_backend_mut::<B>(&mut wrapper_uniform),
         col_i,
         &mut wrapper_source,
     );
-    module.vec_znx_fill_uniform_backend(base2k, &mut vec_znx_backend_mut::<B>(&mut backend_uniform), col_i, seed);
+    module.vec_znx_fill_uniform_backend(base2k, k, &mut vec_znx_backend_mut::<B>(&mut backend_uniform), col_i, seed);
     assert_eq!(
         download_vec_znx::<B>(&wrapper_uniform),
         download_vec_znx::<B>(&backend_uniform)
@@ -2715,70 +2731,6 @@ pub fn test_vec_znx_lsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
                 download_vec_znx::<BR>(&res_ref_backend),
                 download_vec_znx::<BT>(&res_test_backend)
             );
-        }
-    }
-}
-
-pub fn test_vec_znx_canonicalize_to_k_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
-    params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
-    module_ref: &Module<BR>,
-    module_test: &Module<BT>,
-) where
-    Module<BR>: VecZnxCanonicalizeToKAssignBackend<BR>,
-    Module<BT>: VecZnxCanonicalizeToKAssignBackend<BT>,
-{
-    let base2k = params.base2k;
-    assert_eq!(module_ref.n(), module_test.n());
-
-    let mut source: Source = Source::new([0u8; 32]);
-    let cols: usize = 2;
-
-    for alloc_size in [1, 2, 3, 4] {
-        for k in 1..=base2k * alloc_size {
-            let mut res_ref = module_host.vec_znx_alloc(cols, alloc_size);
-            let mut res_test = module_host.vec_znx_alloc(cols, alloc_size);
-
-            res_ref.fill_uniform(base2k, &mut source);
-            res_test.raw_mut().copy_from_slice(res_ref.raw());
-            let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
-            let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
-
-            for i in 0..cols {
-                module_ref.vec_znx_canonicalize_to_k_assign_backend(
-                    base2k,
-                    k,
-                    &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
-                    i,
-                );
-                module_test.vec_znx_canonicalize_to_k_assign_backend(
-                    base2k,
-                    k,
-                    &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
-                    i,
-                );
-            }
-
-            let have = download_vec_znx::<BR>(&res_ref_backend);
-            assert_eq!(have, download_vec_znx::<BT>(&res_test_backend));
-
-            let size = k.div_ceil(base2k);
-            let mask: i64 = match k % base2k {
-                0 => !0i64,
-                r => (!0i64) << (base2k - r),
-            };
-            for i in 0..cols {
-                for j in 0..alloc_size {
-                    let want: Vec<i64> = if j < size - 1 {
-                        res_ref.at(i, j).to_vec()
-                    } else if j == size - 1 {
-                        res_ref.at(i, j).iter().map(|v| v & mask).collect()
-                    } else {
-                        vec![0i64; module_host.n()]
-                    };
-                    assert_eq!(have.at(i, j), &want[..], "k={k} alloc_size={alloc_size} col={i} limb={j}");
-                }
-            }
         }
     }
 }

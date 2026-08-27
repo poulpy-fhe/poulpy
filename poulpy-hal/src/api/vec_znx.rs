@@ -506,11 +506,6 @@ pub trait VecZnxRshAssignBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxCanonicalizeToKAssignBackend<B: Backend> {
-    /// Truncates a column to the canonical `k`-bit representation used by convolution.
-    fn vec_znx_canonicalize_to_k_assign_backend(&self, base2k: usize, k: usize, a: &mut VecZnxBackendMut<'_, B>, a_col: usize);
-}
-
 pub trait VecZnxRotateBackend<B: Backend> {
     /// Multiplies the selected column of `a` by X^k and stores the result in `res_col` of `res`.
     fn vec_znx_rotate_backend(
@@ -791,10 +786,13 @@ pub trait ScalarZnxFillBinaryBlockBackend<B: Backend> {
 }
 
 pub trait VecZnxFillUniformSourceBackend<B: Backend> {
-    /// Fills the first `size` size with uniform values in \[-2^{base2k-1}, 2^{base2k-1}\]
+    /// Fills a column with a uniform `k`-bit torus value in base `2^base2k`.
+    ///
+    /// Unused low bits in the last live limb and limbs above `k` are zeroed.
     fn vec_znx_fill_uniform_source_backend(
         &self,
         base2k: usize,
+        k: usize,
         res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
         source: &mut Source,
@@ -802,8 +800,15 @@ pub trait VecZnxFillUniformSourceBackend<B: Backend> {
 }
 
 pub trait VecZnxFillUniformBackend<B: Backend> {
-    /// Fills the selected backend-native column from a backend-defined uniform sampler seeded by `seed`.
-    fn vec_znx_fill_uniform_backend(&self, base2k: usize, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, seed: [u8; 32]);
+    /// Seeded counterpart of [`VecZnxFillUniformSourceBackend`].
+    fn vec_znx_fill_uniform_backend(
+        &self,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_col: usize,
+        seed: [u8; 32],
+    );
 }
 
 #[allow(clippy::too_many_arguments)]

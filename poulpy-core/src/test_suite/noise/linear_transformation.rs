@@ -103,7 +103,13 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-    module.vec_znx_fill_uniform_source_backend(in_base2k, &mut vec_znx_backend_mut::<BE>(&mut pt.data), 0, &mut source_xa);
+    module.vec_znx_fill_uniform_source_backend(
+        in_base2k,
+        pt.k().as_usize(),
+        &mut vec_znx_backend_mut::<BE>(&mut pt.data),
+        0,
+        &mut source_xa,
+    );
     module.glwe_encrypt_sk(
         &mut ct,
         &pt,

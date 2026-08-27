@@ -69,6 +69,7 @@ fn main() {
     // Fill the second column with random values: ct = (0, a)
     module.vec_znx_fill_uniform_source_backend(
         base2k,
+        base2k * ct_size,
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
         1,
         &mut source,

@@ -3,10 +3,10 @@ use poulpy_hal::{
         ModuleN, ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwSourceBackend, ScalarZnxFillBinaryProbSourceBackend,
         ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend, ScratchArenaTakeBasic, SvpApplyDftToDft,
         SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssignBackend, VecZnxAddNormalSourceBackend,
-        VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCanonicalizeToKAssignBackend,
-        VecZnxCopyBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA,
-        VecZnxLshAssignBackend, VecZnxLshTmpBytes, VecZnxNormalize, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
-        VecZnxRshAssignBackend, VecZnxRshTmpBytes, VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
+        VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftApply,
+        VecZnxDftBytesOf, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxLshAssignBackend, VecZnxLshTmpBytes,
+        VecZnxNormalize, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxRshAssignBackend, VecZnxRshTmpBytes,
+        VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
         Backend, Module, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
@@ -16,27 +16,28 @@ use poulpy_hal::{
     source::Source,
 };
 
-pub(crate) fn round_glwe_columns_to_k<BE, M>(
+fn round_vec_znx_columns_to_k<BE, M>(
     module: &M,
-    res: &mut crate::layouts::GLWEBackendMut<'_, BE>,
+    base2k: usize,
+    k: usize,
+    res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
     cols: std::ops::Range<usize>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: VecZnxRshAssignBackend<BE> + VecZnxLshAssignBackend<BE>,
 {
-    let padding = res
-        .max_k()
-        .as_usize()
-        .checked_sub(res.k().as_usize())
-        .expect("GLWE precision exceeds its allocation");
+    let max_k = res
+        .size()
+        .checked_mul(base2k)
+        .expect("VecZnx allocation precision overflows usize");
+    let padding = max_k.checked_sub(k).expect("VecZnx precision exceeds its allocation");
     if padding == 0 {
         return;
     }
-    let base2k = res.base2k().as_usize();
     for col in cols {
-        module.vec_znx_rsh_assign_backend(base2k, padding, &mut res.data, col, scratch);
-        module.vec_znx_lsh_assign_backend(base2k, padding, &mut res.data, col, scratch);
+        module.vec_znx_rsh_assign_backend(base2k, padding, res, col, scratch);
+        module.vec_znx_lsh_assign_backend(base2k, padding, res, col, scratch);
     }
 }
 
@@ -68,7 +69,7 @@ pub trait GLWEMaskFillDefault<BE: Backend> {
 
 impl<BE: Backend> GLWEMaskFillDefault<BE> for Module<BE>
 where
-    Self: VecZnxFillUniformSourceBackend<BE> + VecZnxCanonicalizeToKAssignBackend<BE>,
+    Self: VecZnxFillUniformSourceBackend<BE>,
 {
     fn fill_glwe_mask_from_source_default<R>(
         &self,
@@ -86,11 +87,9 @@ where
             "fill_glwe_mask_from_source: res_col ({res_col}) + rank ({rank}) > GLWE data cols ({})",
             res.data.cols()
         );
-        // Seeded decompression regenerates this same canonical mask.
         let k = res.k().as_usize();
         for col in res_col..res_col + rank {
-            self.vec_znx_fill_uniform_source_backend(base2k, &mut res.data, col, source_xa);
-            self.vec_znx_canonicalize_to_k_assign_backend(base2k, k, &mut res.data, col);
+            self.vec_znx_fill_uniform_source_backend(base2k, k, &mut res.data, col, source_xa);
         }
     }
 
@@ -147,8 +146,6 @@ where
         + VecZnxLshTmpBytes
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
-        + VecZnxRshAssignBackend<BE>
-        + VecZnxLshAssignBackend<BE>
         + GLWEMaskFillDefault<BE>
         + GLWEEncryptSkInternal<BE>,
 {
@@ -211,6 +208,7 @@ where
         }
         self.glwe_encrypt_sk_internal(
             res.base2k().into(),
+            res.k().into(),
             &mut res.data,
             Some((pt_backend, 0)),
             sk,
@@ -218,7 +216,6 @@ where
             source_xe,
             scratch,
         );
-        round_glwe_columns_to_k(self, res, 0..1, scratch);
     }
 
     fn glwe_encrypt_zero_sk_default<R, E, S>(
@@ -253,8 +250,16 @@ where
             let mut res_ref = &mut *res;
             self.fill_glwe_mask_from_source_default(base2k, &mut res_ref, 1, rank, source_xa);
         }
-        self.glwe_encrypt_sk_internal(res.base2k().into(), &mut res.data, None, sk, enc_infos, source_xe, scratch);
-        round_glwe_columns_to_k(self, res, 0..1, scratch);
+        self.glwe_encrypt_sk_internal(
+            res.base2k().into(),
+            res.k().into(),
+            &mut res.data,
+            None,
+            sk,
+            enc_infos,
+            source_xe,
+            scratch,
+        );
     }
 }
 
@@ -302,9 +307,7 @@ where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxZeroBackend<BE>
         + VecZnxRshTmpBytes
-        + VecZnxLshTmpBytes
-        + VecZnxRshAssignBackend<BE>
-        + VecZnxLshAssignBackend<BE>,
+        + VecZnxLshTmpBytes,
 {
     fn glwe_encrypt_pk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -355,9 +358,6 @@ where
             source_xe,
             scratch,
         );
-        let mut res = res.to_backend_mut();
-        let cols = res.rank().as_usize() + 1;
-        round_glwe_columns_to_k(self, &mut res, 0..cols, scratch);
     }
 
     fn glwe_encrypt_zero_pk_default<R, K, E>(
@@ -380,9 +380,6 @@ where
             self.glwe_encrypt_pk_tmp_bytes_default(res)
         );
         self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch);
-        let mut res = res.to_backend_mut();
-        let cols = res.rank().as_usize() + 1;
-        round_glwe_columns_to_k(self, &mut res, 0..cols, scratch);
     }
 }
 
@@ -418,6 +415,8 @@ where
         + ScalarZnxFillBinaryHwSourceBackend<BE>
         + ScalarZnxFillBinaryProbSourceBackend<BE>
         + ScalarZnxFillBinaryBlockSourceBackend<BE>
+        + VecZnxRshAssignBackend<BE>
+        + VecZnxLshAssignBackend<BE>
         + SvpPPolBytesOf
         + ModuleN
         + VecZnxDftBytesOf,
@@ -530,6 +529,8 @@ where
                 self.vec_znx_copy_backend(&mut res.data, i, &ci_ref, 0);
             }
         }
+        let k = res.k().as_usize();
+        round_vec_znx_columns_to_k(self, base2k, k, &mut res.data, 0..cols, &mut scratch_1);
     }
 }
 
@@ -538,6 +539,7 @@ pub(crate) trait GLWEEncryptSkInternal<BE: Backend> {
     fn glwe_encrypt_sk_internal<'pt, S, E>(
         &self,
         base2k: usize,
+        k: usize,
         res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
         pt: GLWEEncryptSkPlaintext<'pt, BE>,
         sk: &S,
@@ -569,11 +571,14 @@ where
         + VecZnxNormalize<BE>
         + VecZnxSubAssignBackend<BE>
         + VecZnxSubNegateAssignBackend<BE>
+        + VecZnxRshAssignBackend<BE>
+        + VecZnxLshAssignBackend<BE>
         + VecZnxBigNormalizeTmpBytes,
 {
     fn glwe_encrypt_sk_internal<'pt, S, E>(
         &self,
         base2k: usize,
+        k: usize,
         res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
         pt: GLWEEncryptSkPlaintext<'pt, BE>,
         sk: &S,
@@ -652,5 +657,6 @@ where
             self.vec_znx_normalize_assign_backend(base2k, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
         }
         self.vec_znx_copy_backend(res, 0, &c0.to_backend_ref(), 0);
+        round_vec_znx_columns_to_k(self, base2k, k, res, 0..1, &mut scratch_2);
     }
 }

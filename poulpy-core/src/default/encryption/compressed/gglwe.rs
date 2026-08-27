@@ -2,8 +2,8 @@
 
 use poulpy_hal::{
     api::{
-        ModuleN, VecZnxAddScalarAssignBackend, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxLshAssignBackend,
-        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxRshAssignBackend, VecZnxZeroBackend,
+        ModuleN, VecZnxAddScalarAssignBackend, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxNormalizeAssignBackend,
+        VecZnxNormalizeTmpBytes, VecZnxZeroBackend,
     },
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
     source::Source,
@@ -12,10 +12,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::{
     EncryptionInfos, ScratchArenaTakeCore,
-    encryption::{
-        GLWEEncryptSk, GLWEEncryptSkInternal,
-        glwe::{GLWEMaskFillDefault, round_glwe_columns_to_k},
-    },
+    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, glwe::GLWEMaskFillDefault},
     layouts::{
         GGLWECompressedSeedMut, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         compressed::GGLWECompressedToBackendMut, prepared::GLWESecretPreparedToBackendRef,
@@ -55,9 +52,7 @@ where
         + VecZnxNormalizeAssignBackend<BE>
         + VecZnxAddScalarAssignBackend<BE>
         + VecZnxNormalizeTmpBytes
-        + VecZnxZeroBackend<BE>
-        + VecZnxRshAssignBackend<BE>
-        + VecZnxLshAssignBackend<BE>,
+        + VecZnxZeroBackend<BE>,
 {
     fn gglwe_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -167,6 +162,7 @@ where
                     self.fill_glwe_mask_from_seed_default(base2k, &mut full_ct, 1, rank_out, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
+                        full_ct.k().as_usize(),
                         &mut full_ct.data,
                         Some((tmp_pt_backend, 0)),
                         sk,
@@ -174,7 +170,6 @@ where
                         source_xe,
                         &mut scratch_2,
                     );
-                    round_glwe_columns_to_k(self, &mut full_ct, 0..1, &mut scratch_2);
                     let full_ct_ref = full_ct.to_backend_ref();
                     let mut ct = res.at_view_mut(row_i, col_j);
                     self.vec_znx_copy_backend(&mut ct.data, 0, &full_ct_ref.data, 0);

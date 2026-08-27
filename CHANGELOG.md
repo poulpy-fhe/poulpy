@@ -2,9 +2,13 @@
 
 ## [Unreleased]
 
+### `poulpy-hal`
+
+- **Breaking:** uniform `VecZnx` sampling now takes the target precision `k`; the sampler masks the unused low bits of the last live limb and clears limbs above `k`.
+
 ### `poulpy-core`
 
-- Fix precision loss at non-`base2k`-aligned ciphertext widths by canonicalizing the unused low bits after GLWE secret- and public-key encryption and across seed-compressed GLWE, GGLWE and GGSW encryption/decompression. This prevents sub-`k` randomness from contaminating CKKS multiplication immediately past a radix-limb boundary.
+- Fix precision loss at non-`base2k`-aligned ciphertext widths. GLWE/LWE masks are sampled directly at `k`-bit precision, and computed GLWE bodies are rounded once inside the shared secret- and public-key encryption internals, including seed-compressed GLWE, GGLWE and GGSW paths.
 
 ## [0.8.2] - 2026-08-22
 
