@@ -40,6 +40,7 @@ use crate::{
 };
 
 use crate::reference::ntt4x30::types::Q_SHIFTED;
+use crate::reference::vmp_select::vmp_extract_selected_rows_core;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Prepare
@@ -346,6 +347,39 @@ pub fn ntt4x30_vmp_apply_dft_to_dft<BE>(
         ncols,
         meta,
         tmp,
+    );
+}
+
+/// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
+/// limbs, into rows `i` of `res`.
+pub fn ntt4x30_vmp_extract_selected_rows<BE: Backend<ZnxWord = i64>>(
+    res: &mut VmpPMatBackendMut<'_, BE>,
+    a: &VmpPMatBackendRef<'_, BE>,
+    first_row: usize,
+    row_step: usize,
+) where
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+{
+    assert_eq!(res.n(), a.n());
+    assert_eq!(res.cols_in(), a.cols_in());
+    assert_eq!(res.cols_out(), a.cols_out());
+    assert!(res.size() <= a.size(), "res.size(): {} > a.size(): {}", res.size(), a.size());
+
+    let (res_ncols, a_ncols) = (res.cols_out() * res.size(), a.cols_out() * a.size());
+    let (res_rows, a_rows, cols_in, blocks) = (res.rows(), a.rows(), a.cols_in(), a.n() >> 1);
+    vmp_extract_selected_rows_core(
+        cast_slice_mut::<u8, u32>(res.data_mut().as_mut()),
+        res_rows,
+        res_ncols,
+        cast_slice::<_, u32>(a.raw()),
+        a_rows,
+        a_ncols,
+        cols_in,
+        blocks,
+        16,
+        first_row,
+        row_step,
     );
 }
 

@@ -17,10 +17,12 @@ use poulpy_hal::{
 use crate::{
     GGLWEKeyswitch, GLWEKeyswitch,
     api::TransferInto,
+    default::keyswitching::GGLWEProductDefault,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, gadget_product_limbs,
-        prepared::GGLWEPreparedFactory,
+        Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        gadget_product_limbs, prepared::GGLWEPreparedFactory,
     },
+    layouts::{GGLWEPrepared, resolve_gglwe_key_use},
     oep::GGLWEProductDigitsStridedImpl,
     test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe},
 };
@@ -132,6 +134,139 @@ where
         assert_eq!(
             have, want,
             "strided VMP mismatch for dsize={dsize}, a_size={a_size}, sparse={sparse}"
+        );
+    }
+}
+
+/// The selected product on a fine parent equals the plain product on a key
+/// built from exactly the selected rows and limb prefixes.
+///
+/// This is the coarsening oracle: it pins the row map `(i + 1) * s - 1`, the
+/// `logical_work_size` limb bound, and the derived `k_aux`.
+pub fn test_gglwe_product_dft_selected<BE>(module: &Module<BE>, base2k: usize)
+where
+    BE: poulpy_hal::test_suite::TestBackend,
+    BE::OwnedBuf: HostDataMut,
+    Module<BE>: GGLWEProductDefault<BE>
+        + VecZnxAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftApply<BE>
+        + VmpPMatAlloc<BE>
+        + VmpPrepare<BE>
+        + VmpPrepareTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+{
+    let mut source = Source::new([3u8; 32]);
+    let n: u32 = module.n() as u32;
+    // (parent dsize, parent dnum, coarsening factor, input limbs)
+    let cases: [(u32, u32, u32, usize); 5] = [(1, 8, 2, 4), (1, 12, 4, 6), (2, 8, 2, 5), (2, 6, 3, 6), (4, 4, 2, 8)];
+
+    for (dsize, dnum, s, input_size) in cases {
+        let parent = GGLWELayout {
+            n: Degree(n),
+            base2k: Base2K(base2k as u32),
+            dnum: Dnum(dnum),
+            dsize: Dsize(dsize),
+            k_aux: TorusPrecision(dsize * base2k as u32 + n.ilog2()),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+        };
+        let input_k = TorusPrecision(input_size as u32 * base2k as u32);
+        let effective_dsize = Dsize(dsize * s);
+        let use_ = resolve_gglwe_key_use(&parent, input_k, effective_dsize)
+            .expect("valid layout")
+            .expect("parent realizes the coarsening");
+        let logical = use_.logical_layout;
+        let (cols_in, cols_out) = (parent.rank_in.as_usize(), (parent.rank_out + 1).as_usize());
+        let (rows, size) = (parent.dnum.as_usize(), parent.max_size());
+        let (sel_rows, sel_size) = (logical.dnum.as_usize(), use_.logical_work_size);
+
+        let mut scratch = ScratchOwned::<BE>::alloc(
+            module
+                .gglwe_product_dft_selected_tmp_bytes_default(sel_size, input_size, input_k, &parent, effective_dsize)
+                .max(module.gglwe_product_dft_tmp_bytes_default(sel_size, input_size, &logical))
+                .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size)),
+        );
+
+        let mut a = module.vec_znx_alloc(cols_in, input_size);
+        a.fill_uniform(base2k, &mut source);
+        let mut a_dft = module.vec_znx_dft_alloc(cols_in, input_size);
+        for col in 0..cols_in {
+            let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&a);
+            module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), col, &a, col);
+        }
+
+        let mut mat = module.mat_znx_alloc(rows, cols_in, cols_out, size);
+        mat.fill_uniform(base2k, &mut source);
+
+        // Oracle: the selected rows and limb prefixes, densely prepared.
+        let (mat_ncols, sel_ncols) = (cols_out * size, cols_out * sel_size);
+        let mut sel = module.mat_znx_alloc(sel_rows, cols_in, cols_out, sel_size);
+        for i in 0..sel_rows {
+            for c in 0..cols_in {
+                let src_row: usize = ((i + 1) * s as usize - 1) * cols_in + c;
+                let dst_row: usize = i * cols_in + c;
+                for col in 0..sel_ncols {
+                    let (src, dst) = (
+                        module.n() * (src_row * mat_ncols + col),
+                        module.n() * (dst_row * sel_ncols + col),
+                    );
+                    sel.raw_mut()[dst..dst + module.n()].copy_from_slice(&mat.raw()[src..src + module.n()]);
+                }
+            }
+        }
+
+        let mut parent_pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
+        module.vmp_prepare(
+            &mut parent_pmat.to_backend_mut(),
+            &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat),
+            &mut scratch.borrow(),
+        );
+        let mut sel_pmat = module.vmp_pmat_alloc(sel_rows, cols_in, cols_out, sel_size);
+        module.vmp_prepare(
+            &mut sel_pmat.to_backend_mut(),
+            &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&sel),
+            &mut scratch.borrow(),
+        );
+
+        let parent_key = GGLWEPrepared {
+            data: parent_pmat.to_backend_ref(),
+            k_aux: parent.k_aux,
+            base2k: parent.base2k,
+            dsize: parent.dsize,
+        };
+        let sel_key = GGLWEPrepared {
+            data: sel_pmat.to_backend_ref(),
+            k_aux: logical.k_aux,
+            base2k: logical.base2k,
+            dsize: logical.dsize,
+        };
+
+        let mut want = module.vec_znx_dft_alloc(cols_out, sel_size);
+        module.gglwe_product_dft_default(
+            &mut want.to_backend_mut(),
+            &a_dft.to_backend_ref(),
+            &sel_key,
+            1,
+            &mut scratch.borrow(),
+        );
+        let mut have = module.vec_znx_dft_alloc(cols_out, sel_size);
+        module.gglwe_product_dft_selected(
+            &mut have.to_backend_mut(),
+            &a_dft.to_backend_ref(),
+            input_k,
+            &parent_key,
+            effective_dsize,
+            1,
+            &mut scratch.borrow(),
+        );
+
+        assert_eq!(
+            BE::to_host_bytes(&have.data),
+            BE::to_host_bytes(&want.data),
+            "selected product mismatch for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
         );
     }
 }

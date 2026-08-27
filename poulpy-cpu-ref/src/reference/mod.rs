@@ -8,6 +8,7 @@
 pub mod fft64;
 pub mod ntt4x30;
 pub mod vec_znx;
+pub mod vmp_select;
 
 /// Re-exported from [`poulpy_hal::reference::znx`], where the portable scalar
 /// kernels now live so that every crate can reach them without depending on a

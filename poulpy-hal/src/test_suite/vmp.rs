@@ -9,8 +9,8 @@ use crate::{
     api::{
         ModuleNew, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftAlloc, VecZnxDftApply, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
-        VmpPrepareTmpBytes,
+        VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows,
+        VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned},
     source::Source,
@@ -341,6 +341,92 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let res_small_ref = download_vec_znx::<BR>(&res_small_ref_backend);
                     let res_small_test = download_vec_znx::<BT>(&res_small_test_backend);
                     assert_eq!(res_small_ref, res_small_test);
+                }
+            }
+        }
+    }
+}
+
+/// Extracting rows `first + i * step` of a prepared matrix must be bit-identical
+/// to preparing a matrix built from exactly those rows and limbs.
+pub fn test_vmp_extract_selected_rows<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: VmpPMatAlloc<BR> + VmpPrepare<BR> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BR>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
+    BR::OwnedBuf: crate::layouts::HostDataRef,
+    Module<BT>: VmpPMatAlloc<BT> + VmpPrepare<BT> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BT>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+    BT::OwnedBuf: crate::layouts::HostDataRef,
+{
+    check_extract_selected_rows(params, module_host, module_ref);
+    check_extract_selected_rows(params, module_host, module_test);
+}
+
+fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module: &Module<BE>,
+) where
+    Module<BE>: VmpPMatAlloc<BE> + VmpPrepare<BE> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    BE::OwnedBuf: crate::layouts::HostDataRef,
+{
+    let n: usize = module_host.n();
+    let mut source: Source = Source::new([0u8; 32]);
+    let (max_cols, size, rows) = (2usize, 4usize, 6usize);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vmp_prepare_tmp_bytes(rows, max_cols, max_cols, size));
+
+    for cols_in in 1..max_cols + 1 {
+        for cols_out in 1..max_cols + 1 {
+            let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size);
+            mat.fill_uniform(params.base2k, &mut source);
+            let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
+            module.vmp_prepare(
+                &mut pmat.to_backend_mut(),
+                &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&mat)),
+                &mut scratch.arena(),
+            );
+
+            for step in 1..4usize {
+                for res_rows in 0..rows / step + 1 {
+                    for res_size in 1..size + 1 {
+                        let first: usize = step - 1;
+                        if res_rows > 0 && first + (res_rows - 1) * step >= rows {
+                            continue;
+                        }
+                        // Oracle: the same rows and limb prefix, prepared densely.
+                        let (a_ncols, res_ncols) = (cols_out * size, cols_out * res_size);
+                        let mut sel = module_host.mat_znx_alloc(res_rows, cols_in, cols_out, res_size);
+                        for i in 0..res_rows {
+                            for c in 0..cols_in {
+                                let src_row: usize = (first + i * step) * cols_in + c;
+                                let dst_row: usize = i * cols_in + c;
+                                for col in 0..res_ncols {
+                                    let src: usize = n * (src_row * a_ncols + col);
+                                    let dst: usize = n * (dst_row * res_ncols + col);
+                                    sel.raw_mut()[dst..dst + n].copy_from_slice(&mat.raw()[src..src + n]);
+                                }
+                            }
+                        }
+                        let mut expected: VmpPMatOwned<BE> = module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size);
+                        module.vmp_prepare(
+                            &mut expected.to_backend_mut(),
+                            &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&sel)),
+                            &mut scratch.arena(),
+                        );
+
+                        let mut got: VmpPMatOwned<BE> = module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size);
+                        module.vmp_extract_selected_rows(&mut got.to_backend_mut(), &pmat.to_backend_ref(), first, step);
+                        assert_eq!(
+                            got.digest_u64(),
+                            expected.digest_u64(),
+                            "cols_in={cols_in} cols_out={cols_out} step={step} rows={res_rows} size={res_size}"
+                        );
+                    }
                 }
             }
         }

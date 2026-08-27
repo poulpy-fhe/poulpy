@@ -1043,6 +1043,14 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    fn vmp_extract_selected_rows(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>,
+        a: &crate::layouts::VmpPMatBackendRef<'_, BE>,
+        first_row: usize,
+        row_step: usize,
+    );
+
     fn vmp_zero(module: &Module<BE>, res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>);
 }
 

@@ -32,6 +32,7 @@ mod macros;
 
 mod diagonals;
 mod gglwe;
+mod gglwe_key_use;
 mod gglwe_to_ggsw_key;
 mod ggsw;
 mod glwe;
@@ -70,6 +71,7 @@ pub use self::compressed::{
 };
 pub use diagonals::*;
 pub use gglwe::*;
+pub use gglwe_key_use::*;
 pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
 pub use glwe::*;

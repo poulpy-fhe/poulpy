@@ -1,17 +1,22 @@
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft,
-        VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VmpApplyDftToDft,
+        VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows,
+        VmpPMatBytesOf,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef},
+    layouts::{
+        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef,
+        VmpPMatToBackendRef,
+    },
 };
 
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, GadgetProductOutputSizeParams, LWEInfos,
-        gadget_product_limbs, gadget_product_output_size, prepared::GGLWEPreparedToBackendRef,
+        Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, GadgetProductOutputSizeParams,
+        LWEInfos, ResolvedGGLWEUse, TorusPrecision, gadget_product_limbs, gadget_product_output_size,
+        prepared::GGLWEPreparedToBackendRef, resolve_gglwe_key_use,
     },
     oep::{GGLWEProductDigitsStridedImpl, gglwe_product_digit_output_size},
 };
@@ -78,7 +83,10 @@ where
         + VmpApplyDftToDftAccumulateTmpBytes
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAccumulate<BE>
-        + VecZnxDftCopy<BE>,
+        + VecZnxDftCopy<BE>
+        + VecZnxDftZero<BE>
+        + VmpExtractSelectedRows<BE>
+        + VmpPMatBytesOf,
 {
     fn gglwe_product_dft_tmp_bytes_default<K>(&self, res_size: usize, a_size: usize, key_infos: &K) -> usize
     where
@@ -128,6 +136,97 @@ where
             BE::gglwe_product_digits_strided(self, res, a, dsize, product_limbs, &key.data, scratch);
         }
     }
+
+    fn gglwe_product_dft_selected_tmp_bytes_default<K>(
+        &self,
+        res_size: usize,
+        input_size: usize,
+        input_k: TorusPrecision,
+        key_infos: &K,
+        effective_dsize: Dsize,
+    ) -> usize
+    where
+        K: GGLWEInfos,
+    {
+        let use_: ResolvedGGLWEUse = resolved_use(key_infos, input_k, effective_dsize);
+        let Some(_) = use_.first_physical_row else {
+            return 0;
+        };
+        let product: usize = self.gglwe_product_dft_tmp_bytes_default(res_size, input_size, &use_.logical_layout);
+        if use_.physical_row_step.get() == 1 {
+            return product;
+        }
+        // Selected rows are gathered into a dense prepared matrix first.
+        // ponytail: one extra pass over the selected material; a strided VMP
+        // kernel would drop it.
+        self.bytes_of_vmp_pmat(
+            use_.logical_layout.dnum().as_usize(),
+            use_.logical_layout.rank_in().as_usize(),
+            (use_.logical_layout.rank_out() + 1).as_usize(),
+            use_.logical_work_size,
+        ) + product
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn gglwe_product_dft_selected<'r, 'a>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'r, BE>,
+        input: &VecZnxDftBackendRef<'a, BE>,
+        input_k: TorusPrecision,
+        key: &GGLWEPreparedBackendRef<'_, BE>,
+        effective_dsize: Dsize,
+        term_count: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        let use_: ResolvedGGLWEUse = resolved_use(key, input_k, effective_dsize);
+        assert_eq!(
+            input.size(),
+            input_k.div_ceil(key.base2k()) as usize,
+            "input.size() must be ceil(input_k / base2k) for input_k={input_k}"
+        );
+
+        // Zero precision reads no key material and launches no kernel.
+        let Some(first_physical_row) = use_.first_physical_row else {
+            for col in 0..res.cols() {
+                self.vec_znx_dft_zero(res, col);
+            }
+            return;
+        };
+
+        let step: usize = use_.physical_row_step.get();
+        if step == 1 {
+            self.gglwe_product_dft_default(res, input, key, term_count, scratch);
+            return;
+        }
+
+        let (rows, cols_in, cols_out) = (
+            use_.logical_layout.dnum().as_usize(),
+            use_.logical_layout.rank_in().as_usize(),
+            (use_.logical_layout.rank_out() + 1).as_usize(),
+        );
+        scratch.scope(|scratch_phase| {
+            let (mut selected, mut scratch_1) =
+                scratch_phase.take_vmp_pmat_scratch(self, rows, cols_in, cols_out, use_.logical_work_size);
+            self.vmp_extract_selected_rows(&mut selected, &key.data, first_physical_row, step);
+            let key: GGLWEPreparedBackendRef<'_, BE> = GGLWEPrepared {
+                data: selected.to_backend_ref(),
+                k_aux: use_.logical_layout.k_aux(),
+                base2k: key.base2k(),
+                dsize: effective_dsize,
+            };
+            self.gglwe_product_dft_default(res, input, &key, term_count, &mut scratch_1.borrow());
+        });
+    }
+}
+
+/// Resolves a selected use or fails loudly: the seam never falls back to the
+/// physical key's native decomposition.
+fn resolved_use<K: GGLWEInfos>(key_infos: &K, input_k: TorusPrecision, effective_dsize: Dsize) -> ResolvedGGLWEUse {
+    match resolve_gglwe_key_use(key_infos, input_k, effective_dsize) {
+        Ok(Some(use_)) => use_,
+        Ok(None) => panic!("key cannot realize dsize={effective_dsize} at input_k={input_k}"),
+        Err(e) => panic!("{e}"),
+    }
 }
 
 /// Default DFT-domain gadget product used by key-switching and external products.
@@ -143,7 +242,10 @@ where
         + VmpApplyDftToDftAccumulateTmpBytes
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAccumulate<BE>
-        + VecZnxDftCopy<BE>,
+        + VecZnxDftCopy<BE>
+        + VecZnxDftZero<BE>
+        + VmpExtractSelectedRows<BE>
+        + VmpPMatBytesOf,
 {
     fn gglwe_product_dft_tmp_bytes_default<K>(&self, res_size: usize, a_size: usize, key_infos: &K) -> usize
     where
@@ -156,6 +258,32 @@ where
         res: &mut VecZnxDftBackendMut<'r, BE>,
         a: &VecZnxDftBackendRef<'a, BE>,
         key: &GGLWEPreparedBackendRef<'_, BE>,
+        term_count: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    /// Scratch bound of [`Self::gglwe_product_dft_selected`].
+    fn gglwe_product_dft_selected_tmp_bytes_default<K>(
+        &self,
+        res_size: usize,
+        input_size: usize,
+        input_k: TorusPrecision,
+        key_infos: &K,
+        effective_dsize: Dsize,
+    ) -> usize
+    where
+        K: GGLWEInfos;
+
+    /// Gadget product reading only the rows and limb prefixes that
+    /// `effective_dsize` selects out of `key` at exact precision `input_k`.
+    #[allow(clippy::too_many_arguments)]
+    fn gglwe_product_dft_selected<'r, 'a>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'r, BE>,
+        input: &VecZnxDftBackendRef<'a, BE>,
+        input_k: TorusPrecision,
+        key: &GGLWEPreparedBackendRef<'_, BE>,
+        effective_dsize: Dsize,
         term_count: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );

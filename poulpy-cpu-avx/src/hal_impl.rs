@@ -205,6 +205,16 @@ unsafe impl HalVmpImpl<NTT4x30Avx> for NTT4x30Avx {
         crate::ntt4x30::vmp::vmp_apply_dft_to_dft_accumulate_avx(module, res, a, b, limb_offset, tmp);
     }
 
+    fn vmp_extract_selected_rows(
+        _module: &Module<Self>,
+        res: &mut VmpPMatBackendMut<'_, Self>,
+        a: &VmpPMatBackendRef<'_, Self>,
+        first_row: usize,
+        row_step: usize,
+    ) {
+        crate::ntt4x30::vmp::vmp_extract_selected_rows_avx_pm(res, a, first_row, row_step)
+    }
+
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
         <Self as NTT4x30VmpDefault<Self>>::vmp_zero_default(module, res)
     }

@@ -1,7 +1,7 @@
 use crate::{
     api::{
         VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
+        VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
     layouts::{
         Backend, MatZnxBackendRef, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -132,6 +132,19 @@ impl_vmp_delegate!(
         scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vmp_apply_dft_to_dft_accumulate(self, res, a, b, limb_offset, scratch);
+    }
+);
+
+impl_vmp_delegate!(
+    VmpExtractSelectedRows<B>,
+    fn vmp_extract_selected_rows(
+        &self,
+        res: &mut VmpPMatBackendMut<'_, B>,
+        a: &VmpPMatBackendRef<'_, B>,
+        first_row: usize,
+        row_step: usize,
+    ) {
+        B::vmp_extract_selected_rows(self, res, a, first_row, row_step);
     }
 );
 

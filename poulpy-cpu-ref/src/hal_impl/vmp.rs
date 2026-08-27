@@ -116,6 +116,16 @@ macro_rules! hal_impl_vmp {
             <Self as $defaults<Self>>::vmp_apply_dft_to_dft_accumulate_default(module, res, a, b, limb_offset, &mut scratch);
         }
 
+        fn vmp_extract_selected_rows(
+            module: &Module<Self>,
+            res: &mut poulpy_hal::layouts::VmpPMatBackendMut<'_, Self>,
+            a: &poulpy_hal::layouts::VmpPMatBackendRef<'_, Self>,
+            first_row: usize,
+            row_step: usize,
+        ) {
+            <Self as $defaults<Self>>::vmp_extract_selected_rows_default(module, res, a, first_row, row_step)
+        }
+
         fn vmp_zero(module: &Module<Self>, res: &mut poulpy_hal::layouts::VmpPMatBackendMut<'_, Self>) {
             <Self as $defaults<Self>>::vmp_zero_default(module, res)
         }
