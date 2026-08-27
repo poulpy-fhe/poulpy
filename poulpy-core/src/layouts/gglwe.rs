@@ -30,6 +30,10 @@ where
     fn dsize(&self) -> Dsize;
     fn rank_in(&self) -> Rank;
     fn rank_out(&self) -> Rank;
+    /// Number of limb polynomials stored: `dnum * rank_in * (rank_out + 1) * max_size`.
+    fn limb_count(&self) -> usize {
+        self.dnum().as_usize() * self.rank_in().as_usize() * (self.rank_out() + 1).as_usize() * self.max_size()
+    }
     fn gglwe_layout(&self) -> GGLWELayout {
         GGLWELayout {
             n: self.n(),

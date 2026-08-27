@@ -18,19 +18,20 @@ fn err(op: &'static str, detail: String) -> CoreError {
     CoreError::GGLWEKeyUse { op, detail }
 }
 
-/// Gadget scalars of a physical key, widened so every product below is exact.
+/// Gadget scalars of a physical key, widened out of the saturating newtypes so
+/// every product below is exact.
 struct Gadget {
-    base2k: u128,
-    dsize: u128,
-    dnum: u128,
-    k_aux: u128,
+    base2k: usize,
+    dsize: usize,
+    dnum: usize,
+    k_aux: usize,
     /// `dnum * dsize * base2k + k_aux`: the total torus precision the key spans.
-    total_k: u128,
+    total_k: usize,
 }
 
 fn gadget<P: GGLWEInfos>(key: &P, op: &'static str) -> Result<Gadget> {
-    let (base2k, dsize) = (key.base2k().as_u32() as u128, key.dsize().as_u32() as u128);
-    let (dnum, k_aux) = (key.dnum().as_u32() as u128, key.k_aux().as_u32() as u128);
+    let (base2k, dsize) = (key.base2k().as_usize(), key.dsize().as_usize());
+    let (dnum, k_aux) = (key.dnum().as_usize(), key.k_aux().as_usize());
     if base2k == 0 || dsize == 0 {
         return Err(err(op, format!("base2k={base2k} and dsize={dsize} must both be non-zero")));
     }
@@ -49,21 +50,17 @@ fn gadget<P: GGLWEInfos>(key: &P, op: &'static str) -> Result<Gadget> {
     })
 }
 
-fn narrow(v: u128, what: &str, op: &'static str) -> Result<u32> {
+/// Narrows back into the `u32`-backed layout newtypes.
+fn narrow(v: usize, what: &str, op: &'static str) -> Result<u32> {
     u32::try_from(v).map_err(|_| err(op, format!("{what}={v} exceeds u32")))
 }
 
-/// `dnum * rank_in * (rank_out + 1) * max_size`: material a physical key holds.
-fn physical_material<P: GGLWEInfos>(key: &P) -> u128 {
-    key.dnum().as_u32() as u128 * key.rank_in().as_u32() as u128 * (key.rank_out().as_u32() as u128 + 1) * key.max_size() as u128
-}
-
 /// Tie-break tuple shared by registration and dispatch selection.
-type PhysicalOrder = (u128, u32, u32, u32, u32, usize, usize);
+type PhysicalOrder = (usize, u32, u32, u32, u32, usize, usize);
 
 fn physical_order<P: GGLWEInfos>(key: &P, index: usize) -> PhysicalOrder {
     (
-        physical_material(key),
+        key.limb_count(),
         key.k().as_u32(),
         key.dsize().as_u32(),
         key.dnum().as_u32(),
@@ -91,8 +88,8 @@ pub fn gglwe_is_whole_row_subset<P: GGLWEInfos, Q: GGLWEInfos>(parent: &P, reque
     {
         return Ok(false);
     }
-    let s: u128 = q.dsize / p.dsize;
-    let consumed: u128 = q.dnum * q.dsize * p.base2k;
+    let s: usize = q.dsize / p.dsize;
+    let consumed: usize = q.dnum * q.dsize * p.base2k;
     Ok(s * q.dnum <= p.dnum && p.total_k >= consumed && p.total_k - consumed >= q.k_aux)
 }
 
@@ -167,23 +164,23 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
 ) -> Result<Option<ResolvedGGLWEUse>> {
     const OP: &str = "resolve_gglwe_key_use";
     let p: Gadget = gadget(physical, OP)?;
-    let d: u128 = effective_dsize.as_u32() as u128;
+    let d: usize = effective_dsize.as_usize();
     if d == 0 {
         return Err(err(OP, "effective_dsize must be non-zero".to_string()));
     }
     if !d.is_multiple_of(p.dsize) {
         return Ok(None);
     }
-    let s: u128 = d / p.dsize;
-    let digit: u128 = d * p.base2k;
+    let s: usize = d / p.dsize;
+    let digit: usize = d * p.base2k;
     if p.total_k < digit {
         return Ok(None);
     }
     // Largest complete effective decomposition rows and padding both allow; the
     // remaining precision stays as auxiliary padding rather than being dropped.
-    let r_eff: u128 = (p.dnum / s).min(p.total_k / digit - 1);
-    let a_eff: u128 = p.total_k - r_eff * digit;
-    let r_active: u128 = (input_k.as_u32() as u128).div_ceil(digit);
+    let r_eff: usize = (p.dnum / s).min(p.total_k / digit - 1);
+    let a_eff: usize = p.total_k - r_eff * digit;
+    let r_active: usize = input_k.as_usize().div_ceil(digit);
     if r_active > r_eff {
         return Ok(None);
     }
@@ -197,11 +194,11 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
         rank_out: physical.rank_out(),
         dsize: effective_dsize,
     };
-    let logical_work_size: usize = narrow(r_active * d + a_eff.div_ceil(p.base2k), "logical work size", OP)? as usize;
+    let logical_work_size: usize = r_active * d + a_eff.div_ceil(p.base2k);
     debug_assert_eq!(logical_layout.max_size(), logical_work_size);
     debug_assert_eq!(logical_layout.size(), logical_work_size);
 
-    let step: NonZeroUsize = NonZeroUsize::new(narrow(s, "row step", OP)? as usize).expect("row step is a positive quotient");
+    let step: NonZeroUsize = NonZeroUsize::new(s).expect("row step is a positive quotient");
     Ok(Some(ResolvedGGLWEUse {
         logical_layout,
         first_physical_row: (r_active > 0).then(|| step.get() - 1),
@@ -303,7 +300,7 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWEKeyRegistryBuilder<Id, K> {
             }
             let mut row: Vec<Option<usize>> = Vec::with_capacity(policy.sizes());
             for size in 0..policy.sizes() {
-                row.push(match u32::try_from(size as u128 * policy.base2k().as_u32() as u128) {
+                row.push(match u32::try_from(size * policy.base2k().as_usize()) {
                     // No `k` has this size, so the cell is unreachable.
                     Err(_) => None,
                     Ok(k) => self.select(id, TorusPrecision(k), policy.dsize_by_size[size])?,
@@ -321,7 +318,7 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWEKeyRegistryBuilder<Id, K> {
 
     /// Least-material key of `id` able to realize `d` at exact precision `k`.
     fn select(&self, id: &Id, k: TorusPrecision, d: Dsize) -> Result<Option<usize>> {
-        let mut best: Option<((u128, PhysicalOrder), usize)> = None;
+        let mut best: Option<((usize, PhysicalOrder), usize)> = None;
         for (i, (entry_id, key)) in self.entries.iter().enumerate() {
             if entry_id != id {
                 continue;
@@ -329,11 +326,7 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWEKeyRegistryBuilder<Id, K> {
             let Some(use_) = resolve_gglwe_key_use(key, k, d)? else {
                 continue;
             };
-            let unique: u128 = use_.logical_layout.dnum().as_u32() as u128
-                * key.rank_in().as_u32() as u128
-                * (key.rank_out().as_u32() as u128 + 1)
-                * use_.logical_work_size as u128;
-            let order: (u128, PhysicalOrder) = (unique, physical_order(key, i));
+            let order: (usize, PhysicalOrder) = (use_.logical_layout.limb_count(), physical_order(key, i));
             if best.as_ref().is_none_or(|(b, _)| order < *b) {
                 best = Some((order, i));
             }
