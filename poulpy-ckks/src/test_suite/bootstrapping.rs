@@ -421,7 +421,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut res_real,
             &ct_real,
             ctx.eval_mod(),
-            bsk.tensor_key(),
+            bsk.relinearization_keys(),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -432,7 +432,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut res_imag,
             &ct_imag,
             ctx.eval_mod(),
-            bsk.tensor_key(),
+            bsk.relinearization_keys(),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -797,10 +797,22 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let now = Instant::now();
     module
-        .ckks_eval_mod(&mut res_real, &r0_lp, ctx.eval_mod(), bsk.tensor_key(), &mut scratch.borrow())
+        .ckks_eval_mod(
+            &mut res_real,
+            &r0_lp,
+            ctx.eval_mod(),
+            bsk.relinearization_keys(),
+            &mut scratch.borrow(),
+        )
         .unwrap();
     module
-        .ckks_eval_mod(&mut res_imag, &i0_lp, ctx.eval_mod(), bsk.tensor_key(), &mut scratch.borrow())
+        .ckks_eval_mod(
+            &mut res_imag,
+            &i0_lp,
+            ctx.eval_mod(),
+            bsk.relinearization_keys(),
+            &mut scratch.borrow(),
+        )
         .unwrap();
     println!("[evalround] eval_mod x2: {:?}", now.elapsed());
 

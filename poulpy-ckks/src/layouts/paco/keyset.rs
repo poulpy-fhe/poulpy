@@ -8,6 +8,8 @@
 //! directly to prepare or stream keys on demand.
 
 use crate::CKKSAtkBounds;
+use poulpy_core::layouts::GLWERelinearizationKeyHelper;
+use poulpy_core::layouts::GLWERelinearizationKeyLayoutHelper;
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, ensure};
@@ -114,6 +116,10 @@ pub trait PaCoKeys<BE: Backend> {
     /// Prepared tensor (relinearization) key used by the product fold.
     type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
+    /// The relinearization-key source queried by the product fold.
+    type RelinearizationKeys: GLWERelinearizationKeyHelper<Key = Self::TensorKey>
+        + GLWERelinearizationKeyLayoutHelper<Layout = Self::TensorKey>;
+
     /// Prepared dense-to-PaCo switching key used by optional encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees;
 
@@ -128,6 +134,9 @@ pub trait PaCoKeys<BE: Backend> {
 
     /// Relinearization key for the ciphertext product fold.
     fn tensor_key(&self) -> &Self::TensorKey;
+
+    /// Relinearization keys, resolved per product at its exact precision.
+    fn relinearization_keys(&self) -> &Self::RelinearizationKeys;
 
     /// Optional dense-to-PaCo encapsulation key.
     fn encapsulation_key(&self) -> Option<&Self::SwitchingKey>;
@@ -521,6 +530,7 @@ where
     type AutomorphismKey = GLWEAutomorphismKeyPrepared<D, BE>;
     type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
     type TensorKey = GLWETensorKeyPrepared<D, BE>;
+    type RelinearizationKeys = GLWETensorKeyPrepared<D, BE>;
     type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
 
     fn parameters(&self) -> PaCoKeyParameters {
@@ -536,6 +546,10 @@ where
     }
 
     fn tensor_key(&self) -> &Self::TensorKey {
+        &self.tensor_key
+    }
+
+    fn relinearization_keys(&self) -> &Self::RelinearizationKeys {
         &self.tensor_key
     }
 

@@ -1,8 +1,9 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::GLWERelinearizationKeyHelper;
 use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -28,18 +29,20 @@ use crate::{
 /// associated method signatures.
 pub unsafe trait CKKSEvalModImpl<BE: Backend>: Backend {
     /// See [`CKKSEvalModOps::ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod).
-    fn ckks_eval_mod_impl<R, C, P, F>(
+    fn ckks_eval_mod_impl<R, C, P, F, H>(
         module: &Module<BE>,
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }
 
 unsafe impl<BE: Backend> CKKSEvalModImpl<BE> for BE
@@ -52,20 +55,21 @@ where
         + CKKSModuleAlloc<BE>
         + CKKSEvalModOpsDefault<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn ckks_eval_mod_impl<R, C, P, F>(
+    fn ckks_eval_mod_impl<R, C, P, F, H>(
         module: &Module<BE>,
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         module.ckks_eval_mod_default(res, ct, params, tsk, scratch)
     }

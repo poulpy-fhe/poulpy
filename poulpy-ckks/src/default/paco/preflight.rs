@@ -169,7 +169,7 @@ where
     let bsk = canonical;
     let mut required = module
         .ckks_mul_pt_vec_tmp_bytes(&branch_layout, bsk, &beta_layout)
-        .max(module.ckks_mul_tmp_bytes(&branch_layout, &branch_layout, &branch_layout, keys.tensor_key()))
+        .max(module.ckks_mul_tmp_bytes(&branch_layout, &branch_layout, &branch_layout, keys.relinearization_keys()))
         .max(module.ckks_add_tmp_bytes())
         .max(module.ckks_sub_tmp_bytes())
         .max(module.ckks_copy_tmp_bytes())

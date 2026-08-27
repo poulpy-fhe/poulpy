@@ -1,10 +1,13 @@
 //! Composite evaluation of prepared polynomial approximations.
 
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::GLWERelinearizationKeyHelper;
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta,
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
+use poulpy_core::layouts::{GLWERelinearizationKeyLayoutHelper, WithEffectiveDsize};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -29,20 +32,24 @@ where
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn ckks_approximation_tmp_bytes<R, I, T, P>(
+    fn ckks_approximation_tmp_bytes<R, I, H, P>(
         &self,
         res: &R,
         input: &I,
-        tsk: &T,
+        tsk: &H,
         approximation: &PolynomialApproximation<P>,
     ) -> usize
     where
         R: CKKSCtBounds,
         I: CKKSCtBounds,
-        T: GGLWEInfos,
+        H: GLWERelinearizationKeyLayoutHelper,
         P: CKKSInfos + LWEInfos,
     {
         let coeffs = approximation.poly.baby_step(0);
+        let (tsk, dsize) = tsk
+            .get_relinearization_key_layout_for(res.k().max(input.k()))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let tsk = &tsk.with_dsize(dsize);
         let eval = self
             .ckks_all_ops_tmp_bytes(res, tsk, coeffs)
             .max(self.ckks_all_ops_tmp_bytes(input, tsk, coeffs));
@@ -60,18 +67,20 @@ where
         }
     }
 
-    fn ckks_eval_approximation<R, I, P>(
+    fn ckks_eval_approximation<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         approximation: &PolynomialApproximation<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         let required = approximation.consumed_bits(input.log_delta());
         ckks_ensure!(

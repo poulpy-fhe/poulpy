@@ -33,6 +33,7 @@
 
 use crate::CKKSAtkBounds;
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::GLWERelinearizationKeyHelper;
 use poulpy_core::{
     GLWEAutomorphism,
     layouts::{
@@ -108,20 +109,21 @@ pub trait PaCoSlotOps<BE: Backend> {
     /// `Pr_{a→b}` in place: slot `i` becomes `Π_j ct[i + j·b]` for
     /// `j ∈ [0, a/b)` (indices mod `N/2`). Rotate-and-multiply with
     /// relinearization via `tsk`; consumes `log(a/b) · log_delta` budget bits.
-    fn ckks_slot_product_assign<Dst, H, K, T>(
+    fn ckks_slot_product_assign<Dst, H, K, TH>(
         &self,
         ct: &mut Dst,
         a: usize,
         b: usize,
         keys: &H,
-        tsk: &T,
+        tsk: &TH,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        TH: GLWERelinearizationKeyHelper,
+        TH::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }
 
 impl<BE: Backend> PaCoSlotOps<BE> for Module<BE>
@@ -155,20 +157,21 @@ where
         Ok(())
     }
 
-    fn ckks_slot_product_assign<Dst, H, K, T>(
+    fn ckks_slot_product_assign<Dst, H, K, TH>(
         &self,
         ct: &mut Dst,
         a: usize,
         b: usize,
         keys: &H,
-        tsk: &T,
+        tsk: &TH,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        TH: GLWERelinearizationKeyHelper,
+        TH::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         let rotations = checked_fold_rotations(self, a, b)?;
         let mut tmp = self.ckks_ciphertext_alloc_from_infos(ct);

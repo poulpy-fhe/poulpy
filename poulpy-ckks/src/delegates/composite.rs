@@ -1,11 +1,9 @@
 use crate::{CKKSResult as Result, ckks_bail, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{GLWERelinearizationKeyHelper, GLWERelinearizationKeyLayoutHelper, WithEffectiveDsize};
 use poulpy_core::{
     GLWENormalize, GLWETensoring,
-    layouts::{
-        GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        TorusPrecision,
-    },
+    layouts::{GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -103,12 +101,12 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSMulAddOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE>,
 {
-    fn ckks_mul_add_ct_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    fn ckks_mul_add_ct_tmp_bytes<R, A, B, H>(&self, res: &R, a: &A, b: &B, tsk: &H) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
-        T: GGLWEInfos,
+        H: GLWERelinearizationKeyLayoutHelper,
     {
         self.glwe_bytes_of_from_infos(res) + self.ckks_mul_tmp_bytes(res, a, b, tsk).max(self.ckks_add_tmp_bytes())
     }
@@ -131,19 +129,20 @@ where
         self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
     }
 
-    fn ckks_mul_add_ct_into<Dst, A, B, T>(
+    fn ckks_mul_add_ct_into<Dst, A, B, H>(
         &self,
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos
             + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>
             + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
     {
@@ -333,12 +332,12 @@ impl<BE: Backend> CKKSMulSubOps<BE> for Module<BE>
 where
     Module<BE>: CKKSMulOps<BE> + CKKSSubOps<BE>,
 {
-    fn ckks_mul_sub_ct_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    fn ckks_mul_sub_ct_tmp_bytes<R, A, B, H>(&self, res: &R, a: &A, b: &B, tsk: &H) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
-        T: GGLWEInfos,
+        H: GLWERelinearizationKeyLayoutHelper,
     {
         self.glwe_bytes_of_from_infos(res) + self.ckks_mul_tmp_bytes(res, a, b, tsk).max(self.ckks_sub_tmp_bytes())
     }
@@ -361,19 +360,20 @@ where
         self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_sub_tmp_bytes())
     }
 
-    fn ckks_mul_sub_ct_into<Dst, A, B, T>(
+    fn ckks_mul_sub_ct_into<Dst, A, B, H>(
         &self,
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos
             + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>
             + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
     {
@@ -468,12 +468,12 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSDotProductOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + GLWENormalize<BE> + GLWETensoring<BE>,
 {
-    fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    fn ckks_dot_product_ct_tmp_bytes<R, A, B, H>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &H) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
-        T: GGLWEInfos,
+        H: GLWERelinearizationKeyLayoutHelper,
     {
         // `a`/`b` describe the widest input pair; the internal tensor
         // intermediate and the apply scratch scale with the operand widths, not
@@ -491,9 +491,12 @@ where
             rank: res.rank(),
         };
         let tensor_bytes: usize = self.glwe_tensor_bytes_of_from_infos(&tensor_layout);
+        let (rlk, dsize) = tsk
+            .get_relinearization_key_layout_for(tensor_layout.k)
+            .unwrap_or_else(|e| panic!("{e}"));
         let inner: usize = self
             .glwe_tensor_apply_tmp_bytes(&tensor_layout, a, b)
-            .max(self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk));
+            .max(self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, &rlk.with_dsize(dsize)));
         let fast: usize = 2 * n * ct_bytes + tensor_bytes + inner;
         fallback.max(fast)
     }
@@ -516,19 +519,21 @@ where
         self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
     }
 
-    fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, T: Data>(
+    fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, H>(
         &self,
         dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
         a: &[&CKKSCiphertext<D, BE::ZnxWord>],
         b: &[&CKKSCiphertext<E, BE::ZnxWord>],
-        tsk: &GLWETensorKeyPrepared<T, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
         CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWETensorKeyPrepared<T, BE>: poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos
+            + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>
             + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
     {
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;

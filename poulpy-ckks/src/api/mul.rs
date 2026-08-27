@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEToBackendRef,
+    GGLWEInfos, GLWERelinearizationKeyHelper, GLWERelinearizationKeyLayoutHelper, GLWEToBackendRef,
     prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
@@ -100,20 +100,20 @@ pub trait CKKSMulOps<BE: Backend> {
     /// (a supported call) needs more scratch than `res` alone describes. For
     /// `_assign` pass `dst` as both `res` and `a`; for `_prepared_assign` pass
     /// the operand the [`CKKSPreparedRight`] was prepared from.
-    fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    fn ckks_mul_tmp_bytes<R, A, B, H>(&self, res: &R, a: &A, b: &B, tsk: &H) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
-        T: GGLWEInfos;
+        H: GLWERelinearizationKeyLayoutHelper;
 
     /// Scratch bytes for [`Self::ckks_square_into`] / [`Self::ckks_square_assign`]
     /// with result `res` and operand `a` (pass `dst` twice for `_assign`).
-    fn ckks_square_tmp_bytes<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
+    fn ckks_square_tmp_bytes<R, A, H>(&self, res: &R, a: &A, tsk: &H) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        T: GGLWEInfos;
+        H: GLWERelinearizationKeyLayoutHelper;
 
     fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
@@ -131,19 +131,21 @@ pub trait CKKSMulOps<BE: Backend> {
     ///
     /// See the trait-level documentation for the exact metadata rule including
     /// the capacity offset.
-    fn ckks_mul_into<Dst, A, B, T>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_into<Dst, A, B, H>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 
     /// Computes `dst *= a` in-place using tensor-product keyswitching via `tsk`.
-    fn ckks_mul_assign<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_assign<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 
     /// Prepares `a` as a reusable right operand for [`Self::ckks_mul_prepared_assign`].
     ///
@@ -162,31 +164,34 @@ pub trait CKKSMulOps<BE: Backend> {
     /// Equivalent to [`Self::ckks_mul_assign`] with `a` pre-prepared by
     /// [`Self::ckks_prepare_right`]; same metadata rule and scratch bound
     /// ([`Self::ckks_mul_tmp_bytes`]).
-    fn ckks_mul_prepared_assign<Dst, T>(
+    fn ckks_mul_prepared_assign<Dst, H>(
         &self,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<BE>,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 
     /// Computes `dst = a * a` (squaring) using tensor-product keyswitching.
     ///
     /// Equivalent to `ckks_mul_into(dst, a, a, tsk)` with the same metadata rule.
-    fn ckks_square_into<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_into<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 
     /// Computes `dst = dst * dst` (squaring in-place) using tensor-product keyswitching.
-    fn ckks_square_assign<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_assign<Dst, H>(&self, dst: &mut Dst, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 
     /// Computes `dst = a * pt` where `pt` is a full plaintext polynomial.
     ///

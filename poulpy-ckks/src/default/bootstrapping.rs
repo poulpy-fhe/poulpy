@@ -421,8 +421,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     {
-        self.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
-        self.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
+        self.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.relinearization_keys(), scratch)?;
+        self.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.relinearization_keys(), scratch)?;
         Ok(())
     }
 
@@ -641,9 +641,9 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             match ctx.coeffs_to_slots_bypass() {
                 // Standard: EvalMod's clean residue goes straight to SlotsToCoeffs.
                 None => {
-                    self.ckks_eval_mod(&mut ct, &r0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+                    self.ckks_eval_mod(&mut ct, &r0, ctx.eval_mod(), keys.relinearization_keys(), &mut scratch_local)?;
                     r0.set_k(k_boot);
-                    self.ckks_eval_mod(&mut r0, &i0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+                    self.ckks_eval_mod(&mut r0, &i0, ctx.eval_mod(), keys.relinearization_keys(), &mut scratch_local)?;
                     self.ckks_slots_to_coeffs_split(
                         ct_out,
                         &ct,
@@ -678,13 +678,13 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                     );
                     let log2_k = ctx.eval_mod().plan.f_mod_interval.trailing_zeros() as usize;
 
-                    self.ckks_eval_mod(&mut ct, &r0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+                    self.ckks_eval_mod(&mut ct, &r0, ctx.eval_mod(), keys.relinearization_keys(), &mut scratch_local)?;
                     self.ckks_mul_pow2_assign(&mut r0, log2_k, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut r0_hp, &r0, &mut scratch_local)?;
                     self.ckks_add_assign(&mut r0_hp, &ct, &mut scratch_local)?;
 
                     r0.set_k(k_boot);
-                    self.ckks_eval_mod(&mut r0, &i0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+                    self.ckks_eval_mod(&mut r0, &i0, ctx.eval_mod(), keys.relinearization_keys(), &mut scratch_local)?;
                     self.ckks_mul_pow2_assign(&mut i0, log2_k, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut i0_hp, &i0, &mut scratch_local)?;
                     self.ckks_add_assign(&mut i0_hp, &r0, &mut scratch_local)?;
@@ -741,7 +741,13 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             let (mut r0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
             self.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
             self.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
-            self.ckks_eval_mod(ct_out, &ct_raised, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+            self.ckks_eval_mod(
+                ct_out,
+                &ct_raised,
+                ctx.eval_mod(),
+                keys.relinearization_keys(),
+                &mut scratch_local,
+            )?;
             ct_out.set_meta(CKKSMeta {
                 log_sparsity: ct_in.log_sparsity(),
                 log_delta: ct_in.log_delta(),
@@ -867,7 +873,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                     &boot_layout,
                     ctx.eval_mod(),
                     luts,
-                    keys.tensor_key(),
+                    keys.relinearization_keys(),
                     &mut scratch_local,
                 )?;
                 for (ct_out, lut) in ct_outs.iter_mut().zip(luts) {
@@ -879,7 +885,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                         lut,
                         &basis,
                         keys.conjugation_key(),
-                        keys.tensor_key(),
+                        keys.relinearization_keys(),
                         &mut scratch_local,
                     )?;
                     self.recombine_halves(ct_out, &mut ct_raised, &mut scratch_local)?;
@@ -1044,7 +1050,7 @@ where
             ctx.eval_mod(),
             series,
             keys.conjugation_key(),
-            keys.tensor_key(),
+            keys.relinearization_keys(),
             scratch,
         )?,
         EncodedLutKind::Binary {
@@ -1058,7 +1064,7 @@ where
             cos,
             *log_interval_reduction,
             affine,
-            keys.tensor_key(),
+            keys.relinearization_keys(),
             scratch,
         )?,
     }
@@ -1103,9 +1109,25 @@ where
             k: outs[0].k(),
             rank: outs[0].rank(),
         };
-        let basis = ckks_lut_power_basis(module, ct, &layout, ctx.eval_mod(), luts, keys.tensor_key(), scratch)?;
+        let basis = ckks_lut_power_basis(
+            module,
+            ct,
+            &layout,
+            ctx.eval_mod(),
+            luts,
+            keys.relinearization_keys(),
+            scratch,
+        )?;
         for (out, lut) in outs.iter_mut().zip(luts) {
-            ckks_eval_lut_from_basis(module, out, lut, &basis, keys.conjugation_key(), keys.tensor_key(), scratch)?;
+            ckks_eval_lut_from_basis(
+                module,
+                out,
+                lut,
+                &basis,
+                keys.conjugation_key(),
+                keys.relinearization_keys(),
+                scratch,
+            )?;
         }
         return Ok(());
     }

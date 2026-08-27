@@ -3,7 +3,8 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring,
     layouts::{
-        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc,
+        GGLWEInfos, GLWERelinearizationKeyHelper, GLWERelinearizationKeyLayoutHelper, GLWEToBackendMut, GLWEToBackendRef,
+        LWEInfos, ModuleCoreAlloc, TorusPrecision, WithEffectiveDsize,
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -14,7 +15,7 @@ use poulpy_hal::{
 
 use crate::api::CKKSMulOps;
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight, oep::CKKSMulImpl};
+use crate::{CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight, oep::CKKSMulImpl};
 
 impl<BE: Backend + CKKSMulImpl<BE>> CKKSMulOps<BE> for Module<BE>
 where
@@ -28,23 +29,29 @@ where
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxCopyBackend<BE>,
 {
-    fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
+    fn ckks_mul_tmp_bytes<R, A, B, H>(&self, res: &R, a: &A, b: &B, tsk: &H) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
         B: CKKSCtBounds,
-        T: GGLWEInfos,
+        H: GLWERelinearizationKeyLayoutHelper,
     {
-        BE::ckks_mul_tmp_bytes_impl(self, res, a, b, tsk)
+        let (tsk, dsize) = tsk
+            .get_relinearization_key_layout_for(a.k().max(b.k()))
+            .unwrap_or_else(|e| panic!("{e}"));
+        BE::ckks_mul_tmp_bytes_impl(self, res, a, b, &tsk.with_dsize(dsize))
     }
 
-    fn ckks_square_tmp_bytes<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
+    fn ckks_square_tmp_bytes<R, A, H>(&self, res: &R, a: &A, tsk: &H) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        T: GGLWEInfos,
+        H: GLWERelinearizationKeyLayoutHelper,
     {
-        BE::ckks_square_tmp_bytes_impl(self, res, a, tsk)
+        let (tsk, dsize) = tsk
+            .get_relinearization_key_layout_for(a.k())
+            .unwrap_or_else(|e| panic!("{e}"));
+        BE::ckks_square_tmp_bytes_impl(self, res, a, &tsk.with_dsize(dsize))
     }
 
     fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -65,23 +72,37 @@ where
         BE::ckks_mul_pt_const_tmp_bytes_impl(self, res, a, b.k())
     }
 
-    fn ckks_mul_into<Dst, A, B, T>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_into<Dst, A, B, H>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        BE::ckks_mul_into_impl(self, dst, a, b, tsk, scratch)
+        let (tsk, dsize) =
+            tsk.get_relinearization_key_for(a.k().max(b.k()))
+                .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                    op: "ckks_mul_into",
+                    k: a.k().max(b.k()).into(),
+                })?;
+        BE::ckks_mul_into_impl(self, dst, a, b, &tsk.with_dsize(dsize), scratch)
     }
 
-    fn ckks_mul_assign<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_assign<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        BE::ckks_mul_assign_impl(self, dst, a, tsk, scratch)
+        let (tsk, dsize) =
+            tsk.get_relinearization_key_for(dst.k().max(a.k()))
+                .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                    op: "ckks_mul_assign",
+                    k: dst.k().max(a.k()).into(),
+                })?;
+        BE::ckks_mul_assign_impl(self, dst, a, &tsk.with_dsize(dsize), scratch)
     }
 
     fn ckks_prepare_right<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
@@ -91,35 +112,56 @@ where
         BE::ckks_prepare_right_impl(self, a, scratch)
     }
 
-    fn ckks_mul_prepared_assign<Dst, T>(
+    fn ckks_mul_prepared_assign<Dst, H>(
         &self,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<BE>,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        BE::ckks_mul_prepared_assign_impl(self, dst, prepared, tsk, scratch)
+        let (tsk, dsize) = tsk
+            .get_relinearization_key_for(dst.k().max(TorusPrecision(prepared.k as u32)))
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_prepared_assign",
+                k: dst.k().max(TorusPrecision(prepared.k as u32)).into(),
+            })?;
+        BE::ckks_mul_prepared_assign_impl(self, dst, prepared, &tsk.with_dsize(dsize), scratch)
     }
 
-    fn ckks_square_into<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_into<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        BE::ckks_square_into_impl(self, dst, a, tsk, scratch)
+        let (tsk, dsize) =
+            tsk.get_relinearization_key_for(a.k())
+                .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                    op: "ckks_square_into",
+                    k: a.k().into(),
+                })?;
+        BE::ckks_square_into_impl(self, dst, a, &tsk.with_dsize(dsize), scratch)
     }
 
-    fn ckks_square_assign<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_assign<Dst, H>(&self, dst: &mut Dst, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        BE::ckks_square_assign_impl(self, dst, tsk, scratch)
+        let (tsk, dsize) =
+            tsk.get_relinearization_key_for(dst.k())
+                .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                    op: "ckks_square_assign",
+                    k: dst.k().into(),
+                })?;
+        BE::ckks_square_assign_impl(self, dst, &tsk.with_dsize(dsize), scratch)
     }
 
     fn ckks_mul_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

@@ -35,6 +35,8 @@ macro_rules! core_backend_test_suite {
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 test_glwe_tensoring => $crate::test_suite::noise::glwe_tensor::test_glwe_tensoring,
                 test_glwe_tensor_square => $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_square,
+                test_glwe_tensor_relinearize_selected =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_relinearize_selected,
                 test_glwe_mul_plain => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain,
                 test_glwe_mul_const => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_const,
                 glwe_keyswitch => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch,

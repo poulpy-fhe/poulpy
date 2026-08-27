@@ -131,6 +131,8 @@ pub enum CKKSCompositionError {
     },
     /// A requested rotation/conjugation key is not present in the provided key map.
     MissingAutomorphismKey { op: &'static str, rotation: i64 },
+    /// No relinearization key covers the exact precision the operation works at.
+    MissingRelinearizationKey { op: &'static str, k: u32 },
     /// A plaintext cannot be aligned into the requested destination precision.
     PlaintextAlignmentImpossible {
         op: &'static str,
@@ -211,6 +213,12 @@ impl fmt::Display for CKKSCompositionError {
                 write!(
                     f,
                     "{op} requires an automorphism key for rotation {rotation}, but none was provided"
+                )
+            }
+            Self::MissingRelinearizationKey { op, k } => {
+                write!(
+                    f,
+                    "{op} requires a relinearization key at precision k={k}, but none was provided"
                 )
             }
             Self::PlaintextAlignmentImpossible {

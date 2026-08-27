@@ -16,7 +16,15 @@
 - **Breaking:** the previous `GLWEAutomorphismKeyHelper` (lookup by Galois element, one common layout) is renamed `GLWEAutomorphismKeyMap`, freeing the name for the precision-driven helper.
 - **Breaking:** `GLWEAutomorphismKeyMap` is removed. Operations taking a key set now bound `GLWEAutomorphismKeyHelper` / `GLWEAutomorphismKeyLayoutHelper`, resolve each rotation's key and effective `dsize` at the exact precision of the operand, and size scratch as the maximum over the rotations visited. `HashMap<i64, K>` implements both, answering with each key's own decomposition, so existing callers are unaffected; a bare layout implements the layout helper, so `*_tmp_bytes` callers passing one keep working.
 - **Breaking:** `glwe_trace{,_assign}_tmp_bytes` and `glwe_pack_tmp_bytes` take the key set rather than a single layout, since no one layout describes it.
+- `glwe_tensor_relinearize{,_tmp_bytes}` honour the key's effective `dsize`, routing through the selected gadget product.
+- **Breaking:** the polynomial-evaluation engine (`glwe_eval_giant_steps`, `BSGSOps::mul_prepared_assign`) takes a relinearization-key source rather than one key. A bare key implements the helper, so existing callers are unaffected.
 - `error` is now a module of the crate; `CoreError`/`Result` were previously unreachable.
+
+### `poulpy-ckks`
+
+- **Breaking:** the ciphertext-ciphertext operations (`ckks_mul_*`, `ckks_square_*`, the `mul_add`/`mul_sub`/`dot_product` composites, polynomial evaluation, approximation, EvalMod and the PaCo slot product) take a relinearization-key source rather than one tensor key, and resolve it at the exact precision the operation works at (`max(a.k(), b.k())` and its variants). A bare tensor key implements the helper, so existing callers are unaffected.
+- Add `CKKSCompositionError::MissingRelinearizationKey`.
+- Add `BootstrappingKeys::relinearization_keys` / `PaCoKeys::relinearization_keys` and their `RelinearizationKeys` associated type, so a key manager can answer with a registry rather than one key.
 
 ## [0.8.2] - 2026-08-22
 

@@ -28,6 +28,8 @@
 //! directly instead of materializing the whole bundle.
 
 use crate::CKKSAtkBounds;
+use poulpy_core::layouts::GLWERelinearizationKeyHelper;
+use poulpy_core::layouts::GLWERelinearizationKeyLayoutHelper;
 use std::collections::{BTreeSet, HashMap};
 
 use anyhow::Result;
@@ -72,6 +74,10 @@ pub trait BootstrappingKeys<BE: Backend> {
     /// The prepared tensor (relinearization) key type for EvalMod.
     type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
+    /// The relinearization-key source queried by every `ct x ct` product.
+    type RelinearizationKeys: GLWERelinearizationKeyHelper<Key = Self::TensorKey>
+        + GLWERelinearizationKeyLayoutHelper<Layout = Self::TensorKey>;
+
     /// The prepared key-switching key type for sparse-secret encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
@@ -83,6 +89,9 @@ pub trait BootstrappingKeys<BE: Backend> {
 
     /// Relinearization (tensor) key for EvalMod's `ct×ct` squaring.
     fn tensor_key(&self) -> &Self::TensorKey;
+
+    /// Relinearization keys, resolved per product at its exact precision.
+    fn relinearization_keys(&self) -> &Self::RelinearizationKeys;
 
     /// Sparse-secret encapsulation keys `(denseToSparse, sparseToDense)`, or
     /// `None` when the trick is disabled.
@@ -131,6 +140,7 @@ where
     type AutomorphismKey = GLWEAutomorphismKeyPrepared<D, BE>;
     type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
     type TensorKey = GLWETensorKeyPrepared<D, BE>;
+    type RelinearizationKeys = GLWETensorKeyPrepared<D, BE>;
     type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
 
     fn rotation_keys(&self) -> &Self::RotationKeys {
@@ -142,6 +152,10 @@ where
     }
 
     fn tensor_key(&self) -> &Self::TensorKey {
+        &self.tensor_key
+    }
+
+    fn relinearization_keys(&self) -> &Self::RelinearizationKeys {
         &self.tensor_key
     }
 

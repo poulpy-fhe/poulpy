@@ -1,8 +1,12 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::GLWERelinearizationKeyHelper;
+use poulpy_core::layouts::GLWERelinearizationKeyLayoutHelper;
 use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
+use poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
+use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 
@@ -18,12 +22,12 @@ pub trait CKKSEvalModOps<BE: Backend> {
     /// shaped like `res` for input `ct` with relinearization key `tsk`.
     /// Pass the same `res`/`ct`/`params`/`tsk` you will evaluate with, since
     /// EvalMod raises the input to `params.plan.f_mod_log_delta` internally.
-    fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
+    fn ckks_eval_mod_tmp_bytes<R, C, P, F, H>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &H) -> usize
     where
         R: CKKSCtBounds,
         C: CKKSCtBounds,
         P: CKKSCtBounds,
-        T: GGLWEInfos;
+        H: GLWERelinearizationKeyLayoutHelper;
 
     /// Evaluates the configured `x mod 1` approximation of `ct` into `res`.
     ///
@@ -31,16 +35,18 @@ pub trait CKKSEvalModOps<BE: Backend> {
     /// `ct` has insufficient remaining capacity. `tsk` is the tensor
     /// (relinearization) key used by the squaring steps, and `scratch` must hold
     /// at least [`Self::ckks_eval_mod_tmp_bytes`] bytes.
-    fn ckks_eval_mod<R, C, P, F>(
+    fn ckks_eval_mod<R, C, P, F, H>(
         &self,
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }

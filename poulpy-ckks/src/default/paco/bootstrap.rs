@@ -399,7 +399,7 @@ where
         plan.slots(),
         plan.c().checked_mul(2).context("PaCo product target overflows usize")?,
         keys.rotation_keys(),
-        keys.tensor_key(),
+        keys.relinearization_keys(),
         scratch,
     )?;
 

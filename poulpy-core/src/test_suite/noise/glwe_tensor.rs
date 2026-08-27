@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssignBackend},
-    layouts::{FillUniform, Module, ScratchOwned, VecZnx, ZnxViewMut},
+    layouts::{FillUniform, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -13,10 +13,10 @@ use crate::{
     EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt,
     GLWETensorKeyEncryptSk, GLWETensoring,
     layouts::{
-        Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory,
-        GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
-        prepared::GLWESecretPrepared,
+        Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor,
+        GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey,
+        GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        WithEffectiveDsize, prepared::GLWESecretPrepared,
     },
     log2_std_noise_glwe_tensor,
 };
@@ -651,4 +651,136 @@ where
             assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
         }
     }
+}
+
+/// Relinearization honours the effective `dsize` carried on the key.
+///
+/// The selected product's own oracle (bit-identical to a dense copy of the same
+/// rows) is [`test_gglwe_product_dft_selected`](crate::test_suite::parity::test_gglwe_product_dft_selected);
+/// here the point is that `glwe_tensor_relinearize` routes through it, so the
+/// coarsened result must differ from the native one and still decrypt.
+pub fn test_glwe_tensor_relinearize_selected<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWETensoring<BE>
+        + GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESub<BE>
+        + VecZnxNormalizeAssignBackend<BE>
+        + GLWESecretTensorFactory<BE>
+        + VecZnxNormalize<BE>
+        + GLWETensorKeyEncryptSk<BE>
+        + GLWETensorKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let k: usize = 8 * base2k + 1;
+    let rank: usize = 1;
+    let n: usize = module.n();
+    let effective_dsize: Dsize = Dsize(2);
+
+    let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: k.into(),
+        rank: rank.into(),
+    })
+    .unwrap();
+
+    // `dnum` exceeds what `k` needs, which is what leaves room for a coarser
+    // decomposition to be carved out of the stored rows.
+    let tsk_infos = EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        dnum: Dnum(12),
+        k_aux: (base2k + module.log_n()).into(),
+        rank: rank.into(),
+        dsize: Dsize(1),
+    })
+    .unwrap();
+
+    let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut res_tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&glwe_infos);
+    let mut res_native: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut res_selected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .glwe_encrypt_sk_tmp_bytes(&glwe_infos)
+            .max(module.glwe_decrypt_tmp_bytes(&glwe_infos))
+            .max(module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &a))
+            .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
+            .max(module.glwe_tensor_relinearize_tmp_bytes(&res_native, &res_tensor, &tsk_infos))
+            .max(module.glwe_tensor_relinearize_tmp_bytes(&res_selected, &res_tensor, &tsk_infos.with_dsize(effective_dsize))),
+    );
+
+    let mut source_xs: Source = Source::new([0u8; 32]);
+    let mut source_xe: Source = Source::new([1u8; 32]);
+    let mut source_xa: Source = Source::new([2u8; 32]);
+
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
+
+    let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    module.glwe_secret_prepare(&mut sk_dft, &sk);
+
+    let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+    module.glwe_tensor_key_encrypt_sk(
+        &mut tsk,
+        &sk,
+        &tsk_infos,
+        &mut source_xe,
+        &mut source_xa,
+        &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+    );
+
+    let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
+    module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+
+    let scale: usize = 2 * base2k;
+    let mut data = vec![0i64; n];
+    for i in data.iter_mut() {
+        *i = (source_xa.next_i64() & 7) - 4;
+    }
+    pt_in.encode_vec_i64(&data, TorusPrecision(scale as u32));
+
+    module.glwe_encrypt_sk(
+        &mut a,
+        &pt_in,
+        &sk_dft,
+        &glwe_infos,
+        &mut source_xe,
+        &mut source_xa,
+        &mut scratch.borrow(),
+    );
+    module.glwe_tensor_apply(scale, &mut res_tensor, &a, &a, &mut scratch.borrow());
+
+    module.glwe_tensor_relinearize(&mut res_native, &res_tensor, &tsk_prep, &mut scratch.borrow());
+    module.glwe_tensor_relinearize(
+        &mut res_selected,
+        &res_tensor,
+        &tsk_prep.with_dsize(effective_dsize),
+        &mut scratch.borrow(),
+    );
+
+    assert_ne!(
+        res_native.data.raw(),
+        res_selected.data.raw(),
+        "the effective dsize was ignored: the coarsened relinearization reproduced the native one"
+    );
+
+    // The message survives the coarser decomposition; only the key-switching
+    // noise grows, and it stays far under the tensoring noise it is added to.
+    let mut want = vec![0i64; n];
+    module.glwe_decrypt(&res_native, &mut pt_have, &sk_dft, &mut scratch.borrow());
+    pt_have.decode_vec_i64(&mut want, TorusPrecision(scale as u32));
+    let mut have = vec![0i64; n];
+    module.glwe_decrypt(&res_selected, &mut pt_have, &sk_dft, &mut scratch.borrow());
+    pt_have.decode_vec_i64(&mut have, TorusPrecision(scale as u32));
+    assert_eq!(have, want, "coarsened relinearization lost the message");
 }

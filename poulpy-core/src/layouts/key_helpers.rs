@@ -21,7 +21,8 @@ use crate::{
     layouts::gglwe_key_use::err,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEKeyRegistry, GGLWEPreparedBackendRef, GLWEInfos, GetGaloisElement,
-        LWEInfos, Rank, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+        LWEInfos, Rank, TorusPrecision,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
 
@@ -36,13 +37,19 @@ pub trait GLWEAutomorphismKeyLayoutHelper<L: GGLWEInfos> {
 }
 
 /// Relinearization key at exact precision `k`.
-pub trait GLWERelinearizationKeyHelper<K> {
-    fn get_relinearization_key_for(&self, k: TorusPrecision) -> Result<(&K, Dsize)>;
+///
+/// The key type is associated rather than a parameter: a source answers with
+/// one kind of key, and a bare key is a source of itself, so a parameter would
+/// leave it ambiguous at every call site.
+pub trait GLWERelinearizationKeyHelper {
+    type Key;
+    fn get_relinearization_key_for(&self, k: TorusPrecision) -> Result<(&Self::Key, Dsize)>;
 }
 
 /// Backend-free twin of [`GLWERelinearizationKeyHelper`] for scratch planning.
-pub trait GLWERelinearizationKeyLayoutHelper<L: GGLWEInfos> {
-    fn get_relinearization_key_layout_for(&self, k: TorusPrecision) -> Result<(&L, Dsize)>;
+pub trait GLWERelinearizationKeyLayoutHelper {
+    type Layout: GGLWEInfos;
+    fn get_relinearization_key_layout_for(&self, k: TorusPrecision) -> Result<(&Self::Layout, Dsize)>;
 }
 
 impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for GGLWEKeyRegistry<i64, K> {
@@ -57,13 +64,17 @@ impl<L: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<L> for GGLWEKeyRegistry<i64,
     }
 }
 
-impl<K: GGLWEInfos> GLWERelinearizationKeyHelper<K> for GGLWEKeyRegistry<(), K> {
+impl<K: GGLWEInfos> GLWERelinearizationKeyHelper for GGLWEKeyRegistry<(), K> {
+    type Key = K;
+
     fn get_relinearization_key_for(&self, k: TorusPrecision) -> Result<(&K, Dsize)> {
         self.key_for(&(), k)
     }
 }
 
-impl<L: GGLWEInfos> GLWERelinearizationKeyLayoutHelper<L> for GGLWEKeyRegistry<(), L> {
+impl<L: GGLWEInfos> GLWERelinearizationKeyLayoutHelper for GGLWEKeyRegistry<(), L> {
+    type Layout = L;
+
     fn get_relinearization_key_layout_for(&self, k: TorusPrecision) -> Result<(&L, Dsize)> {
         self.key_for(&(), k)
     }
@@ -96,7 +107,9 @@ impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for GGLWESingleKey<i64, K> {
     }
 }
 
-impl<K: GGLWEInfos> GLWERelinearizationKeyHelper<K> for GGLWESingleKey<(), K> {
+impl<K: GGLWEInfos> GLWERelinearizationKeyHelper for GGLWESingleKey<(), K> {
+    type Key = K;
+
     fn get_relinearization_key_for(&self, k: TorusPrecision) -> Result<(&K, Dsize)> {
         self.registry.key_for(&(), k)
     }
@@ -123,6 +136,24 @@ impl<K: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<K> for HashMap<i64, K> {
 /// which is what scratch sizing assumed before keys could differ per rotation.
 impl<L: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<L> for L {
     fn get_automorphism_key_layout_for(&self, _p: i64, _k: TorusPrecision) -> Result<(&L, Dsize)> {
+        Ok((self, self.effective_dsize()))
+    }
+}
+
+/// A bare key is its own source, used through its own decomposition, which is
+/// what callers holding no policy expect.
+impl<K: GGLWEInfos> GLWERelinearizationKeyHelper for K {
+    type Key = K;
+
+    fn get_relinearization_key_for(&self, _k: TorusPrecision) -> Result<(&K, Dsize)> {
+        Ok((self, self.effective_dsize()))
+    }
+}
+
+impl<L: GGLWEInfos> GLWERelinearizationKeyLayoutHelper for L {
+    type Layout = L;
+
+    fn get_relinearization_key_layout_for(&self, _k: TorusPrecision) -> Result<(&L, Dsize)> {
         Ok((self, self.effective_dsize()))
     }
 }
@@ -207,7 +238,13 @@ impl<K: GetGaloisElement> GetGaloisElement for GGLWEKeyUse<'_, K> {
 
 impl<BE: Backend, K: GGLWEPreparedToBackendRef<BE>> GGLWEPreparedToBackendRef<BE> for GGLWEKeyUse<'_, K> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, BE> {
-        self.key.to_backend_ref()
+        GGLWEPreparedToBackendRef::to_backend_ref(self.key)
+    }
+}
+
+impl<BE: Backend, K: GLWETensorKeyPreparedToBackendRef<BE>> GLWETensorKeyPreparedToBackendRef<BE> for GGLWEKeyUse<'_, K> {
+    fn to_backend_ref(&self) -> GLWETensorKeyPreparedBackendRef<'_, BE> {
+        GLWETensorKeyPreparedToBackendRef::to_backend_ref(self.key)
     }
 }
 
