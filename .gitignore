@@ -5,3 +5,6 @@
 /ci-local.md
 
 *.patch
+
+# Client API request drafts, kept out of the tree.
+API_REQUEST.md
