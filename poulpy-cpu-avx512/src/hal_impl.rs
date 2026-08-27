@@ -677,7 +677,7 @@ mod ifma_impl {
         api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
         execution::SerialTaskExecutor,
         layouts::{
-            Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, SvpPPolBackendMut,
+            Backend, CnvDftAccTerm, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, SvpPPolBackendMut,
             SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
             VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
         },
@@ -1256,6 +1256,37 @@ mod ifma_impl {
             unsafe {
                 crate::ntt3x42_ifma::convolution::cnv_apply_dft_accumulate_ifma::<SerialTaskExecutor>(
                     res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
+                );
+            }
+        }
+
+        fn cnv_accumulate_dft_tmp_bytes(
+            _module: &Module<Self>,
+            _cnv_offset: usize,
+            res_size: usize,
+            a_size: usize,
+            b_size: usize,
+        ) -> usize {
+            crate::ntt3x42_ifma::convolution::cnv_accumulate_dft_ifma_tmp_bytes(res_size, a_size, b_size)
+        }
+
+        fn cnv_accumulate_dft<'a>(
+            _module: &Module<Self>,
+            cnv_offset: usize,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            res_col: usize,
+            terms: &[CnvDftAccTerm<'a, Self>],
+            scratch: &mut ScratchArena<'_, Self>,
+        ) where
+            Self: HalVecZnxDftImpl<Self> + 'a,
+        {
+            let a_size = terms.iter().map(|term| term.a.size()).max().unwrap_or(0);
+            let b_size = terms.iter().map(|term| term.b.size()).max().unwrap_or(0);
+            let bytes = crate::ntt3x42_ifma::convolution::cnv_accumulate_dft_ifma_tmp_bytes(res.size(), a_size, b_size);
+            let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+            unsafe {
+                crate::ntt3x42_ifma::convolution::cnv_accumulate_dft_ifma::<SerialTaskExecutor>(
+                    res, cnv_offset, res_col, terms, tmp,
                 );
             }
         }

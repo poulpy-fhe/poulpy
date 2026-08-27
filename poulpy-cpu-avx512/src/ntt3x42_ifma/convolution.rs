@@ -14,7 +14,6 @@ use crate::ntt3x42_ifma::{
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_hal::execution::TaskExecutor;
-#[cfg(feature = "enable-rayon")]
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
@@ -55,6 +54,11 @@ fn cached_overwrite_stores(n: usize, size: usize) -> bool {
 pub(crate) fn cnv_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let staged = res_size.min(a_size + b_size).div_ceil(TILE) * TILE;
     (3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + 3 * 8 * staged) * size_of::<u64>()
+}
+
+pub(crate) fn cnv_accumulate_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    let staged = res_size.min(a_size + b_size).div_ceil(TILE) * TILE;
+    (3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + 6 * 8 * staged) * size_of::<u64>()
 }
 
 /// Scratch bytes for pairwise packed apply.
@@ -813,7 +817,176 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma<E: TaskExecutor>(
     }
 }
 
-#[cfg(feature = "enable-rayon")]
+struct PreparedAccTerm<'a> {
+    a_col: &'a [u64],
+    a_size: usize,
+    b_col: &'a [u64],
+    b_size: usize,
+    offset: usize,
+    min_size: usize,
+}
+
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn conv_accumulate_terms_group(
+    res_ptr: SendPtr<u64>,
+    res_col: usize,
+    n: usize,
+    res_cols: usize,
+    max_size: usize,
+    max_a_size: usize,
+    max_b_size: usize,
+    group: usize,
+    terms: &[PreparedAccTerm<'_>],
+    cached_overwrite: bool,
+    tmp: &mut [u64],
+) {
+    let pad = TILE - 1;
+    let max_win_rows = max_a_size + 2 * pad;
+    let staged = max_size.div_ceil(TILE) * TILE;
+    let (win, rest) = tmp.split_at_mut(3 * 8 * max_win_rows);
+    let (b_pl, rest) = rest.split_at_mut(3 * 8 * max_b_size);
+    let (acc_lo, acc_hi) = rest.split_at_mut(3 * 8 * staged);
+    let acc_hi = &mut acc_hi[..3 * 8 * staged];
+    acc_lo.fill(0);
+    acc_hi.fill(0);
+
+    unsafe {
+        let pc = [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)];
+        let m42 = _mm512_set1_epi64(((1u64 << 42) - 1) as i64);
+        let m20 = _mm512_set1_epi64(((1u64 << 20) - 1) as i64);
+        let m22 = _mm512_set1_epi64(((1u64 << 22) - 1) as i64);
+        let zero = _mm512_setzero_si512();
+
+        for term in terms {
+            let win_rows = term.a_size + 2 * pad;
+            for p in 0..3 {
+                let wp = win.as_mut_ptr().add(p * 8 * win_rows);
+                for r in 0..pad {
+                    _mm512_storeu_si512(wp.add(8 * r) as *mut __m512i, zero);
+                    _mm512_storeu_si512(wp.add(8 * (term.a_size + pad + r)) as *mut __m512i, zero);
+                }
+            }
+
+            let a_base = term.a_col.as_ptr().add(packed_row_offset(term.a_size, 0, group));
+            for r in 0..term.a_size {
+                let y = unpack_y(
+                    _mm512_loadu_si512(a_base.add(16 * r) as *const __m512i),
+                    _mm512_loadu_si512(a_base.add(16 * r + 8) as *const __m512i),
+                    m42,
+                    m20,
+                );
+                for (p, value) in y.iter().enumerate() {
+                    _mm512_storeu_si512(win.as_mut_ptr().add(p * 8 * win_rows + 8 * (pad + r)) as *mut __m512i, *value);
+                }
+            }
+
+            let b_base = term.b_col.as_ptr().add(packed_row_offset(term.b_size, 0, group));
+            for r in 0..term.b_size {
+                let y = unpack_y(
+                    _mm512_loadu_si512(b_base.add(16 * r) as *const __m512i),
+                    _mm512_loadu_si512(b_base.add(16 * r + 8) as *const __m512i),
+                    m42,
+                    m20,
+                );
+                for (p, value) in y.iter().enumerate() {
+                    _mm512_storeu_si512(b_pl.as_mut_ptr().add(p * 8 * term.b_size + 8 * r) as *mut __m512i, *value);
+                }
+            }
+
+            let n_tiles = term.min_size.div_ceil(TILE);
+            for prime in 0..3 {
+                let win_p = win.as_ptr().add(prime * 8 * win_rows);
+                let b_p = b_pl.as_ptr().add(prime * 8 * term.b_size);
+                let lo_p = acc_lo.as_mut_ptr().add(prime * 8 * staged);
+                let hi_p = acc_hi.as_mut_ptr().add(prime * 8 * staged);
+
+                for tile in 0..n_tiles {
+                    let k0 = term.offset + TILE * tile;
+                    let j_lo = (k0 + 1).saturating_sub(term.a_size).min(term.b_size);
+                    let j_hi = (k0 + TILE).min(term.b_size);
+                    let out = 8 * TILE * tile;
+                    let mut lo0 = _mm512_loadu_si512(lo_p.add(out) as *const __m512i);
+                    let mut lo1 = _mm512_loadu_si512(lo_p.add(out + 8) as *const __m512i);
+                    let mut lo2 = _mm512_loadu_si512(lo_p.add(out + 16) as *const __m512i);
+                    let mut lo3 = _mm512_loadu_si512(lo_p.add(out + 24) as *const __m512i);
+                    let mut hi0 = _mm512_loadu_si512(hi_p.add(out) as *const __m512i);
+                    let mut hi1 = _mm512_loadu_si512(hi_p.add(out + 8) as *const __m512i);
+                    let mut hi2 = _mm512_loadu_si512(hi_p.add(out + 16) as *const __m512i);
+                    let mut hi3 = _mm512_loadu_si512(hi_p.add(out + 24) as *const __m512i);
+
+                    if j_lo < j_hi {
+                        let r_start = term.b_size - j_hi;
+                        let r_end = term.b_size - j_lo;
+                        let mut w_ptr = win_p.add(8 * ((k0 + pad + 1) - j_hi));
+                        let mut y_ptr = b_p.add(8 * r_start);
+                        let mut w0 = _mm512_loadu_si512(w_ptr as *const __m512i);
+                        let mut w1 = _mm512_loadu_si512(w_ptr.add(8) as *const __m512i);
+                        let mut w2 = _mm512_loadu_si512(w_ptr.add(16) as *const __m512i);
+                        let mut w3 = _mm512_loadu_si512(w_ptr.add(24) as *const __m512i);
+                        let mut r = r_start;
+                        loop {
+                            let y = _mm512_loadu_si512(y_ptr as *const __m512i);
+                            lo0 = _mm512_madd52lo_epu64(lo0, w0, y);
+                            hi0 = _mm512_madd52hi_epu64(hi0, w0, y);
+                            lo1 = _mm512_madd52lo_epu64(lo1, w1, y);
+                            hi1 = _mm512_madd52hi_epu64(hi1, w1, y);
+                            lo2 = _mm512_madd52lo_epu64(lo2, w2, y);
+                            hi2 = _mm512_madd52hi_epu64(hi2, w2, y);
+                            lo3 = _mm512_madd52lo_epu64(lo3, w3, y);
+                            hi3 = _mm512_madd52hi_epu64(hi3, w3, y);
+                            r += 1;
+                            if r == r_end {
+                                break;
+                            }
+                            w0 = w1;
+                            w1 = w2;
+                            w2 = w3;
+                            w_ptr = w_ptr.add(8);
+                            w3 = _mm512_loadu_si512(w_ptr.add(24) as *const __m512i);
+                            y_ptr = y_ptr.add(8);
+                        }
+                    }
+
+                    _mm512_storeu_si512(lo_p.add(out) as *mut __m512i, lo0);
+                    _mm512_storeu_si512(lo_p.add(out + 8) as *mut __m512i, lo1);
+                    _mm512_storeu_si512(lo_p.add(out + 16) as *mut __m512i, lo2);
+                    _mm512_storeu_si512(lo_p.add(out + 24) as *mut __m512i, lo3);
+                    _mm512_storeu_si512(hi_p.add(out) as *mut __m512i, hi0);
+                    _mm512_storeu_si512(hi_p.add(out + 8) as *mut __m512i, hi1);
+                    _mm512_storeu_si512(hi_p.add(out + 16) as *mut __m512i, hi2);
+                    _mm512_storeu_si512(hi_p.add(out + 24) as *mut __m512i, hi3);
+                }
+            }
+        }
+
+        for k in 0..max_size {
+            let mut reduced = [_mm512_setzero_si512(); 3];
+            for prime in 0..3 {
+                let off = prime * 8 * staged + 8 * k;
+                reduced[prime] = reduce_bbc_single_prime_512(
+                    _mm512_loadu_si512(acc_lo.as_ptr().add(off) as *const __m512i),
+                    _mm512_loadu_si512(acc_hi.as_ptr().add(off) as *const __m512i),
+                    pc[prime].q,
+                    pc[prime].q2,
+                    pc[prime].pow42,
+                    pc[prime].pow52,
+                    pc[prime].pow52_quot,
+                );
+            }
+            let [w0, w1] = pack_y(reduced, m22);
+            let dst = res_ptr.get().add((k * res_cols + res_col) * 2 * n + 16 * group);
+            if cached_overwrite {
+                _mm512_storeu_si512(dst as *mut __m512i, w0);
+                _mm512_storeu_si512(dst.add(8) as *mut __m512i, w1);
+            } else {
+                _mm512_stream_si512(dst as *mut __m512i, w0);
+                _mm512_stream_si512(dst.add(8) as *mut __m512i, w1);
+            }
+        }
+    }
+}
+
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_accumulate_dft_ifma<'a, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
@@ -822,20 +995,12 @@ pub(crate) unsafe fn cnv_accumulate_dft_ifma<'a, E: TaskExecutor>(
     terms: &[CnvDftAccTerm<'a, NTT3x42Ifma>],
     tmp: &mut [u8],
 ) {
-    struct PreparedTerm<'a> {
-        a_col: &'a [u64],
-        a_size: usize,
-        b_col: &'a [u64],
-        b_size: usize,
-        offset: usize,
-        min_size: usize,
-    }
-
     let n = res.n();
     let res_size = res.size();
     let n_groups = n / 8;
-    let mut task_tmp_len = 0;
     let mut max_size = 0;
+    let mut max_a_size = 0;
+    let mut max_b_size = 0;
     let prepared: Vec<_> = terms
         .iter()
         .filter(|term| term.a.size() != 0 && term.b.size() != 0)
@@ -845,10 +1010,10 @@ pub(crate) unsafe fn cnv_accumulate_dft_ifma<'a, E: TaskExecutor>(
             let bound = a_size + b_size - 1;
             let offset = cnv_offset.min(bound);
             let min_size = res_size.min((bound + 1).saturating_sub(offset));
-            task_tmp_len =
-                task_tmp_len.max(3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + 3 * 8 * min_size.div_ceil(TILE) * TILE);
             max_size = max_size.max(min_size);
-            PreparedTerm {
+            max_a_size = max_a_size.max(a_size);
+            max_b_size = max_b_size.max(b_size);
+            PreparedAccTerm {
                 a_col: col_slice(cast_slice(term.a.data()), n, a_size, term.a_col),
                 a_size,
                 b_col: col_slice(cast_slice(term.b.data()), n, b_size, term.b_col),
@@ -866,6 +1031,10 @@ pub(crate) unsafe fn cnv_accumulate_dft_ifma<'a, E: TaskExecutor>(
         return;
     }
 
+    let staged = max_size.div_ceil(TILE) * TILE;
+    let task_tmp_len = 3 * 8 * (max_a_size + 2 * (TILE - 1)) + 3 * 8 * max_b_size + 6 * 8 * staged;
+    let fused = prepared.iter().map(|term| term.a_size.min(term.b_size)).sum::<usize>() < (1 << 12);
+
     for j in prepared[0].min_size..max_size {
         zero_res_limb(res, res_col, j);
     }
@@ -874,6 +1043,27 @@ pub(crate) unsafe fn cnv_accumulate_dft_ifma<'a, E: TaskExecutor>(
     let res_ptr = SendPtr(cast_slice_mut::<_, u64>(res.data_mut()).as_mut_ptr());
     let cached_overwrite = cached_overwrite_stores(n, max_size);
     let run_group = |local_tmp: &mut [u64], group: usize| {
+        if fused {
+            unsafe {
+                conv_accumulate_terms_group(
+                    res_ptr,
+                    res_col,
+                    n,
+                    res_cols,
+                    max_size,
+                    max_a_size,
+                    max_b_size,
+                    group,
+                    &prepared,
+                    cached_overwrite,
+                    local_tmp,
+                );
+            }
+            if !cached_overwrite {
+                _mm_sfence();
+            }
+            return;
+        }
         for (index, term) in prepared.iter().enumerate() {
             unsafe {
                 if index == 0 {

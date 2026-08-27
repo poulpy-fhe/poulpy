@@ -1,6 +1,6 @@
 use poulpy_bench::schemes::bootstrapping;
 
-const THREADS: usize = 16;
+const DEFAULT_THREADS: usize = 16;
 
 fn main() {
     let repeats = std::env::var("POULPY_BTS_REPEATS")
@@ -16,14 +16,18 @@ fn main() {
             repeats,
         ),
         Some("multi-thread") => {
+            let threads = std::env::var("POULPY_BTS_THREADS")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(DEFAULT_THREADS);
+            assert!(threads > 0, "POULPY_BTS_THREADS must be nonzero");
             rayon::ThreadPoolBuilder::new()
-                .num_threads(THREADS)
+                .num_threads(threads)
                 .build_global()
-                .expect("initialize the 16-thread Rayon pool");
+                .expect("initialize the Rayon pool");
+            let name = format!("multi_thread_{threads}");
             bootstrapping::run::<poulpy_cpu_avx512::NTT3x42IfmaRayon, poulpy_cpu_avx512::FFT64Avx512ReimTable>(
-                "multi_thread_16",
-                THREADS,
-                repeats,
+                &name, threads, repeats,
             );
         }
         _ => panic!("usage: bootstrapping single-thread|multi-thread"),

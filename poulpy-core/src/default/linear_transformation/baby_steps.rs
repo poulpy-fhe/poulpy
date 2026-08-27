@@ -19,11 +19,10 @@ use std::collections::BTreeMap;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxBigAddSmallAssign,
-        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes,
+        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxDftApply,
+        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
-    layouts::{Backend, GaloisElement, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef},
+    layouts::{Backend, GaloisElement, ScratchArena, VecZnxDftBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{
@@ -87,10 +86,9 @@ where
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
         + VecZnxAutomorphismAssignBackend<BE>
-        + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftApplyTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
@@ -102,10 +100,9 @@ where
 
     let hoisted_a_dft = module.bytes_of_vec_znx_dft(cols - 1, a_size);
     let hoisted_rot = module.bytes_of_vec_znx_dft(cols, key_size)
-        + module.bytes_of_vec_znx_big(cols, key_size)
         + module
             .gglwe_product_dft_tmp_bytes_default(key_size, a_size, key_infos)
-            .max(module.vec_znx_idft_apply_tmp_bytes());
+            .max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size));
     let hoisted = hoisted_a_dft + baby + hoisted_rot.max(prepare);
 
     let fallback = baby + module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos).max(prepare);
@@ -129,12 +126,9 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
         + GaloisElement
         + GGLWEProductDefault<BE>
         + VecZnxAutomorphismAssignBackend<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>,
+        + VecZnxIdftNormalizeConsume<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
@@ -154,35 +148,25 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
     }
     module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, &key_ref, 1, &mut scratch_1.borrow());
 
-    let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module, cols, key_size);
-    let res_dft_ref = res_dft.to_backend_ref();
-    for col in 0..cols {
-        module.vec_znx_idft_apply(&mut res_big, col, &res_dft_ref, col, &mut scratch_2.borrow());
-    }
-    {
-        let a_ref = a.to_backend_ref();
-        module.vec_znx_big_add_small_assign(&mut res_big, 0, &a_ref.data, 0);
-    }
-
-    let res_big_ref = res_big.to_backend_ref();
     let baby_base2k = baby.base2k().as_usize();
     let a_base2k = a.base2k().as_usize();
     {
+        let a_ref = a.to_backend_ref();
         let mut baby_ref = baby.to_backend_mut();
         for col in 0..cols {
-            module.vec_znx_big_normalize(
+            module.vec_znx_idft_normalize_consume(
                 &mut baby_ref.data,
                 baby_base2k,
-                0,
                 col,
-                &res_big_ref,
+                &mut res_dft,
+                col,
                 a_base2k,
-                col,
-                &mut scratch_2.borrow(),
+                (col == 0).then_some((&a_ref.data, 0)),
+                &mut scratch_1.borrow(),
             );
         }
         for col in 0..cols {
-            module.vec_znx_automorphism_assign_backend(key.p(), &mut baby_ref.data, col, &mut scratch_2.borrow());
+            module.vec_znx_automorphism_assign_backend(key.p(), &mut baby_ref.data, col, &mut scratch_1.borrow());
         }
     }
 }
@@ -211,13 +195,10 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
         + GGLWEProductDefault<BE>
         + ModuleN
         + VecZnxAutomorphismAssignBackend<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>,
+        + VecZnxIdftNormalizeConsume<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,

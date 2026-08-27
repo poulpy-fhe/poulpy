@@ -650,7 +650,11 @@ where
 
         let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(self, pairs, a_dft_size);
 
-        {
+        if a_base2k == key_base2k {
+            for i in 0..pairs {
+                self.vec_znx_dft_apply(1, 0, &mut a_dft, i, &a_backend.data, cols + i);
+            }
+        } else {
             let (mut a_conv, mut scratch_norm) = scratch.borrow().take_vec_znx_scratch(self.n(), 1, a_dft_size);
             for i in 0..pairs {
                 let mut scratch_iter = scratch_norm.borrow();
@@ -683,7 +687,11 @@ where
             }
         }
 
-        {
+        if a_base2k == key_base2k {
+            for i in 0..cols {
+                self.vec_znx_big_add_small_assign(&mut res_big, i, &a_backend.data, i);
+            }
+        } else {
             let (mut a_conv, mut scratch_norm) = scratch_3.borrow().take_vec_znx_scratch(self.n(), 1, a_dft_size);
             for i in 0..cols {
                 let mut scratch_iter = scratch_norm.borrow();

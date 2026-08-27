@@ -1253,20 +1253,14 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     }
 
     fn cnv_accumulate_dft_tmp_bytes(
-        module: &Module<Self>,
-        cnv_offset: usize,
+        _module: &Module<Self>,
+        _cnv_offset: usize,
         res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
-            * <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_accumulate_dft_tmp_bytes(
-                base_module(module),
-                cnv_offset,
-                res_size,
-                a_size,
-                b_size,
-            )
+            * super::convolution::cnv_accumulate_dft_ifma_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_accumulate_dft<'a>(
@@ -1288,11 +1282,9 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
                 b_col: term.b_col,
             })
             .collect();
-        let per_worker = base_terms
-            .iter()
-            .map(|term| super::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), term.a.size(), term.b.size()))
-            .max()
-            .unwrap_or(0);
+        let a_size = base_terms.iter().map(|term| term.a.size()).max().unwrap_or(0);
+        let b_size = base_terms.iter().map(|term| term.b.size()).max().unwrap_or(0);
+        let per_worker = super::convolution::cnv_accumulate_dft_ifma_tmp_bytes(res.size(), a_size, b_size);
         let bytes = poulpy_cpu_rayon::workers_within(
             <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
             per_worker,
