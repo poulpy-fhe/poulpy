@@ -348,6 +348,8 @@ where
         let logical = resolve_gglwe_key_use(infos, glwe_out_infos.k(), effective_dsize)
             .unwrap()
             .expect("every registered shape realizes the policy")
+            .active()
+            .expect("positive precision")
             .logical_layout;
         noise_want = noise_want.max(logical.var_noise_keyswitch(
             &glwe_out_infos,

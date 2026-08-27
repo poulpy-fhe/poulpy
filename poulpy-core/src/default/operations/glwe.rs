@@ -15,10 +15,10 @@ use poulpy_hal::{
 };
 
 use crate::{
-    default::keyswitching::glwe::{resolved_use, selection_of},
+    default::keyswitching::glwe::bound_for,
     default::keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
     layouts::{
-        Base2K, Dsize, GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
+        Base2K, GGLWEInfos, GGLWELayout, GGLWEUse, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
@@ -621,10 +621,10 @@ where
 
         let a_dft_size: usize = (a.size() * a_base2k).div_ceil(key_base2k);
         let input_k: TorusPrecision = TorusPrecision((a_dft_size * key_base2k) as u32);
-        let selected: Option<Dsize> = selection_of(tsk);
-        let layout: GGLWELayout = match selected {
-            None => tsk.gglwe_layout(),
-            Some(effective_dsize) => resolved_use(tsk, input_k, effective_dsize).logical_layout,
+        let use_: GGLWEUse = bound_for(tsk, input_k);
+        let layout: GGLWELayout = match &use_ {
+            GGLWEUse::Empty => tsk.gglwe_layout(),
+            GGLWEUse::Active(active) => active.logical_layout,
         };
         let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, &layout);
 
@@ -636,11 +636,9 @@ where
             0
         };
         let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(cols, output_size);
-        let lvl_1_gglwe_product: usize = match selected {
-            None => self.gglwe_product_dft_tmp_bytes_default(output_size, a_dft_size, &layout),
-            Some(effective_dsize) => {
-                self.gglwe_product_dft_selected_tmp_bytes_default(output_size, a_dft_size, input_k, tsk, effective_dsize)
-            }
+        let lvl_1_gglwe_product: usize = match use_.active() {
+            None => 0,
+            Some(active) => self.gglwe_product_dft_tmp_bytes_default(output_size, a_dft_size, active),
         };
         let lvl_1_post_conv: usize = if res_base2k != key_base2k {
             BE::bytes_of_vec_znx(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
@@ -683,13 +681,12 @@ where
 
         let a_dft_size: usize = (a.size() * a_base2k).div_ceil(key_base2k);
         let input_k: TorusPrecision = TorusPrecision((a_dft_size * key_base2k) as u32);
-        let selected: Option<Dsize> = selection_of(tsk);
-        let output_size = match selected {
-            None => gglwe_product_output_size::<BE, _, _, _>(res, a, &tsk.gglwe_layout()),
-            Some(effective_dsize) => {
-                gglwe_product_output_size::<BE, _, _, _>(res, a, &resolved_use(tsk, input_k, effective_dsize).logical_layout)
-            }
+        let use_: GGLWEUse = bound_for(tsk, input_k);
+        let logical: GGLWELayout = match &use_ {
+            GGLWEUse::Empty => tsk.gglwe_layout(),
+            GGLWEUse::Active(active) => active.logical_layout,
         };
+        let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, &logical);
 
         let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(self, pairs, a_dft_size);
 
@@ -716,11 +713,8 @@ where
         let tsk = tsk.to_backend_ref();
 
         let a_dft_ref = a_dft.to_backend_ref();
-        match selected {
-            None => self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2),
-            Some(effective_dsize) => {
-                self.gglwe_product_dft_selected(&mut res_dft, &a_dft_ref, input_k, &tsk.0, effective_dsize, 1, &mut scratch_2)
-            }
+        if let GGLWEUse::Active(active) = &use_ {
+            self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, &tsk.0, active, 1, &mut scratch_2);
         }
         let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self, cols, output_size);
         {

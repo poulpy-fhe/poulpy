@@ -362,9 +362,11 @@ where
         })
         .unwrap();
 
-        let use_ = resolve_gglwe_key_use(&autokey_infos, TorusPrecision(k_in as u32), effective_dsize)
+        let use_ = *resolve_gglwe_key_use(&autokey_infos, TorusPrecision(k_in as u32), effective_dsize)
             .expect("valid layout")
-            .expect("parent realizes the coarsening");
+            .expect("parent realizes the coarsening")
+            .active()
+            .expect("positive precision");
         assert_eq!(use_.logical_layout.dnum.as_usize(), r_active);
         assert_eq!(use_.physical_row_step.get(), s);
 

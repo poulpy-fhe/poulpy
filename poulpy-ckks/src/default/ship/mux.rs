@@ -1,6 +1,9 @@
 //! Hoisted base-B mux blind rotation (SHIP §5.1, Algorithm 5).
 
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::default::keyswitching::glwe::bound_for;
+use poulpy_core::layouts::GGLWEUse;
+use poulpy_core::layouts::TorusPrecision;
 use poulpy_core::{
     default::keyswitching::glwe::{GGLWEProductDefault, gglwe_product_accumulation_output_size},
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GGLWEPreparedToBackendRef},
@@ -55,7 +58,11 @@ where
 {
     let a_size = ct.size();
     let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
-    let product = module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, key);
+    let input_k: TorusPrecision = TorusPrecision((a_size * key.base2k().as_usize()) as u32);
+    let product = match bound_for(key, input_k) {
+        GGLWEUse::Empty => 0,
+        GGLWEUse::Active(active) => module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, &active),
+    };
     let mux = 2 * module.bytes_of_vec_znx_dft(2, output_size) + product;
     let finalize = module.bytes_of_vec_znx_big(2, output_size) + module.vec_znx_big_normalize_tmp_bytes();
     module.bytes_of_vec_znx_dft(2, a_size) + module.bytes_of_vec_znx_dft(2, output_size) + mux.max(finalize)
@@ -118,13 +125,17 @@ where
             ckks_ensure!(key.key.size() == key_size, "{OP}: inconsistent key sizes in group");
             {
                 let mut prod_dft_mut = prod_dft.to_backend_mut();
-                module.gglwe_product_dft_default(
-                    &mut prod_dft_mut,
-                    &a_dft_ref,
-                    &key.key.to_backend_ref(),
-                    keys.len(),
-                    &mut scratch_4.borrow(),
-                );
+                let input_k: TorusPrecision = TorusPrecision((a_dft_ref.size() * key.key.base2k().as_usize()) as u32);
+                if let GGLWEUse::Active(active) = bound_for(&key.key, input_k) {
+                    module.gglwe_product_dft_default(
+                        &mut prod_dft_mut,
+                        &a_dft_ref,
+                        &key.key.to_backend_ref(),
+                        &active,
+                        keys.len(),
+                        &mut scratch_4.borrow(),
+                    );
+                }
             }
             if key.gal_el == 1 {
                 let prod_ref = prod_dft.to_backend_ref();

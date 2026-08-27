@@ -21,13 +21,14 @@ use poulpy_hal::{
 use crate::{
     GLWERotate, ScratchArenaTakeCore,
     default::{
+        keyswitching::glwe::bound_for,
         keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
         operations::GLWECopyDefault,
     },
     layouts::{
-        GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut,
-        GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut,
-        LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
+        GGLWEInfos, GGLWEToBackendRef, GGLWEUse, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout,
+        GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut,
+        LWEToBackendMut, LWEToBackendRef, Rank, TorusPrecision, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
     oep::{ConversionDefault, GLWEKeyswitchDefault},
@@ -502,7 +503,11 @@ where
 
     let lvl_0: usize = module.bytes_of_vec_znx_dft(cols - 1, a_size) + BE::bytes_of_vec_znx(module.n(), 1, a_size);
     let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(cols, output_size);
-    let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, tsk_infos);
+    let input_k: TorusPrecision = TorusPrecision((a_size * tsk_base2k) as u32);
+    let lvl_1_gglwe_prod: usize = match bound_for(tsk_infos, input_k) {
+        GGLWEUse::Empty => 0,
+        GGLWEUse::Active(active) => module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, &active),
+    };
     let lvl_1_big: usize = module.bytes_of_vec_znx_big(cols, output_size)
         + module
             .vec_znx_idft_apply_tmp_bytes()
@@ -628,7 +633,11 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
         let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(module, cols, output_size);
         {
             let mut scratch_prod = scratch_1.borrow();
-            module.gglwe_product_dft_default(&mut res_dft, a_dft, tsk.at(col - 1), 1, &mut scratch_prod);
+            let key = tsk.at(col - 1);
+            let input_k: TorusPrecision = TorusPrecision((a_dft.size() * key.base2k().as_usize()) as u32);
+            if let GGLWEUse::Active(active) = bound_for(key, input_k) {
+                module.gglwe_product_dft_default(&mut res_dft, a_dft, key, &active, 1, &mut scratch_prod);
+            }
         }
 
         let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module, cols, res_dft.size());

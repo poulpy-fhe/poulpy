@@ -30,13 +30,13 @@ use crate::{
     GLWEAutomorphism, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     default::{
-        keyswitching::glwe::resolved_use,
+        keyswitching::glwe::{bound_for, resolved_use},
         keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
         operations::msb_mask_bottom_limb,
     },
     layouts::{
-        GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut,
-        GLWEToBackendRef, GetGaloisElement, LWEInfos, WithEffectiveDsize, prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GGLWELayout, GGLWEUse, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos,
+        GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, WithEffectiveDsize, prepared::GGLWEPreparedToBackendRef,
     },
 };
 
@@ -97,16 +97,23 @@ where
 {
     let cols = a_infos.rank().as_usize() + 1;
     let a_size = a_infos.size();
-    let key_size = gglwe_product_output_size::<BE, _, _, _>(a_infos, a_infos, key_infos);
+    let use_: GGLWEUse = bound_for(key_infos, a_infos.k());
+    let logical: GGLWELayout = match &use_ {
+        GGLWEUse::Empty => key_infos.gglwe_layout(),
+        GGLWEUse::Active(active) => active.logical_layout,
+    };
+    let key_size = gglwe_product_output_size::<BE, _, _, _>(a_infos, a_infos, &logical);
     let baby = module.glwe_bytes_of_from_infos(a_infos);
     let prepare = module.cnv_prepare_left_tmp_bytes(a_infos.size(), a_infos.size());
 
     let hoisted_a_dft = module.bytes_of_vec_znx_dft(cols - 1, a_size);
+    let product: usize = match use_.active() {
+        None => 0,
+        Some(active) => module.gglwe_product_dft_tmp_bytes_default(key_size, a_size, active),
+    };
     let hoisted_rot = module.bytes_of_vec_znx_dft(cols, key_size)
         + module.bytes_of_vec_znx_big(cols, key_size)
-        + module
-            .gglwe_product_dft_tmp_bytes_default(key_size, a_size, key_infos)
-            .max(module.vec_znx_idft_apply_tmp_bytes());
+        + product.max(module.vec_znx_idft_apply_tmp_bytes());
     let hoisted = hoisted_a_dft + baby + hoisted_rot.max(prepare);
 
     let fallback = baby + module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos).max(prepare);
@@ -153,15 +160,10 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
         // See `glwe_hoisted_baby_rotations`: multi-digit VMP accumulates into
         // top limbs that must not contain stale scratch contents.
     }
-    module.gglwe_product_dft_selected(
-        &mut res_dft,
-        a_dft_ref,
-        a.k(),
-        &key_ref,
-        effective_dsize,
-        1,
-        &mut scratch_1.borrow(),
-    );
+    let use_: GGLWEUse = resolved_use(key, a.k(), effective_dsize);
+    if let GGLWEUse::Active(active) = &use_ {
+        module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, &key_ref, active, 1, &mut scratch_1.borrow());
+    }
 
     let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module, cols, key_size);
     let res_dft_ref = res_dft.to_backend_ref();
@@ -252,7 +254,10 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
             key_base2k = Some(layout.base2k());
             // Sizing reads the resolved logical `dnum`/`k_aux`, not the physical
             // ones a `with_dsize` wrapper still forwards.
-            let logical: GGLWELayout = resolved_use(layout, a.k(), effective_dsize).logical_layout;
+            let logical: GGLWELayout = match resolved_use(layout, a.k(), effective_dsize) {
+                GGLWEUse::Empty => layout.gglwe_layout(),
+                GGLWEUse::Active(active) => active.logical_layout,
+            };
             key_size = key_size.max(gglwe_product_output_size::<BE, _, _, _>(a, a, &logical));
         }
         (a.base2k() == key_base2k.expect("at least one nonzero rotation"), key_size)

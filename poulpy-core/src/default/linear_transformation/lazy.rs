@@ -20,8 +20,12 @@ use poulpy_hal::{
 };
 
 use crate::{
+    default::keyswitching::glwe::bound_for,
     default::keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetGaloisElement, prepared::GGLWEPreparedToBackendRef},
+    layouts::{
+        GGLWEInfos, GGLWEUse, GLWEInfos, GLWEToBackendMut, GetGaloisElement, LWEInfos, TorusPrecision,
+        prepared::GGLWEPreparedToBackendRef,
+    },
 };
 
 pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(module: &M, a_infos: &R, key_infos: &K) -> usize
@@ -61,7 +65,11 @@ where
     let mask_dft = module.bytes_of_vec_znx_dft(rank, mask_small_size);
     let mask_small = mask_small_size * core::mem::size_of::<i64>() * module.n();
     let ks_dft = module.bytes_of_vec_znx_dft(cols, key_size);
-    let inner = module.gglwe_product_dft_tmp_bytes_default(key_size, mask_small_size, key_infos);
+    let input_k: TorusPrecision = TorusPrecision((mask_small_size * key_infos.base2k().as_usize()) as u32);
+    let inner = match bound_for(key_infos, input_k) {
+        GGLWEUse::Empty => 0,
+        GGLWEUse::Active(active) => module.gglwe_product_dft_tmp_bytes_default(key_size, mask_small_size, &active),
+    };
 
     mask_dft + mask_big + mask_small + module.vec_znx_idft_apply_tmp_bytes() + ks_dft + inner
 }
@@ -129,13 +137,17 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
 
     let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols, output_size);
     let key_ref = key.to_backend_ref();
-    module.gglwe_product_dft_default(
-        &mut ks_dft,
-        &a_dft.to_backend_ref(),
-        &key_ref,
-        term_count,
-        &mut scratch_2.borrow(),
-    );
+    let input_k: TorusPrecision = TorusPrecision((a_dft.size() * key_ref.base2k().as_usize()) as u32);
+    if let GGLWEUse::Active(active) = bound_for(key, input_k) {
+        module.gglwe_product_dft_default(
+            &mut ks_dft,
+            &a_dft.to_backend_ref(),
+            &key_ref,
+            &active,
+            term_count,
+            &mut scratch_2.borrow(),
+        );
+    }
 
     // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `output_size`,
     // matching the existing BIG lazy path's rotated contribution size.

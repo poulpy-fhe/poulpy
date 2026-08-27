@@ -174,18 +174,27 @@ where
         };
         let input_k = TorusPrecision(input_size as u32 * base2k as u32);
         let effective_dsize = Dsize(dsize * s);
-        let use_ = resolve_gglwe_key_use(&parent, input_k, effective_dsize)
+        let use_ = *resolve_gglwe_key_use(&parent, input_k, effective_dsize)
             .expect("valid layout")
-            .expect("parent realizes the coarsening");
+            .expect("parent realizes the coarsening")
+            .active()
+            .expect("positive precision");
         let logical = use_.logical_layout;
         let (cols_in, cols_out) = (parent.rank_in.as_usize(), (parent.rank_out + 1).as_usize());
         let (rows, size) = (parent.dnum.as_usize(), parent.max_size());
         let (sel_rows, sel_size) = (logical.dnum.as_usize(), use_.logical_work_size);
+        // The oracle runs the same product over a dense key holding exactly the
+        // selected rows, so its bound is that key used natively.
+        let dense_use = *resolve_gglwe_key_use(&logical, input_k, logical.dsize)
+            .expect("valid layout")
+            .expect("a dense key realizes its own decomposition")
+            .active()
+            .expect("positive precision");
 
         let mut scratch = ScratchOwned::<BE>::alloc(
             module
-                .gglwe_product_dft_selected_tmp_bytes_default(sel_size, input_size, input_k, &parent, effective_dsize)
-                .max(module.gglwe_product_dft_tmp_bytes_default(sel_size, input_size, &logical))
+                .gglwe_product_dft_tmp_bytes_default(sel_size, input_size, &use_)
+                .max(module.gglwe_product_dft_tmp_bytes_default(sel_size, input_size, &dense_use))
                 .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size)),
         );
 
@@ -250,16 +259,16 @@ where
             &mut want.to_backend_mut(),
             &a_dft.to_backend_ref(),
             &sel_key,
+            &dense_use,
             1,
             &mut scratch.borrow(),
         );
         let mut have = module.vec_znx_dft_alloc(cols_out, sel_size);
-        module.gglwe_product_dft_selected(
+        module.gglwe_product_dft_default(
             &mut have.to_backend_mut(),
             &a_dft.to_backend_ref(),
-            input_k,
             &parent_key,
-            effective_dsize,
+            &use_,
             1,
             &mut scratch.borrow(),
         );

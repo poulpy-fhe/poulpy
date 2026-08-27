@@ -140,17 +140,91 @@ impl GGLWEKeyUsePolicy {
     }
 }
 
-/// Effective metadata for one use of a physical key. Product, scratch and
-/// output calculations read this, never the physical `dnum`/`dsize`/`k_aux`.
+/// One key use resolved for an exact input precision.
+///
+/// Sizing and execution both read this, never the physical `dnum`, `dsize` or
+/// `k_aux`, which a [`GGLWEKeyUse`](super::GGLWEKeyUse) wrapper still forwards.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ResolvedGGLWEUse {
-    /// `(dnum, dsize, k_aux) = (r_active, D, a_eff)`, physical degree/base2k/ranks.
-    pub(crate) logical_layout: GGLWELayout,
-    /// `None` iff `r_active == 0`.
-    pub(crate) first_physical_row: Option<usize>,
-    pub(crate) physical_row_step: NonZeroUsize,
-    pub(crate) logical_work_size: usize,
+pub enum GGLWEUse {
+    /// Zero precision: no row is active, so no key material is read and no
+    /// product runs. Not an error.
+    Empty,
+    Active(GGLWEActiveUse),
 }
+
+/// A positive-precision use: which physical rows are read, and the logical
+/// layout the product and its sizing are carried out in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GGLWEActiveUse {
+    /// Exact input precision this use was resolved for.
+    pub input_k: TorusPrecision,
+    /// `(dnum, dsize, k_aux) = (r_active, D, a_eff)`, physical degree/base2k/ranks.
+    pub logical_layout: GGLWELayout,
+    /// Logical row `i` is physical row `first_physical_row + i * physical_row_step`.
+    pub first_physical_row: usize,
+    pub physical_row_step: NonZeroUsize,
+    /// Readable limb prefix within each selected physical polynomial.
+    pub logical_work_size: usize,
+    /// Rows the physical key stores.
+    pub physical_rows: usize,
+    /// Storage pitch: limbs each physical polynomial occupies.
+    pub physical_size: usize,
+    /// Whether the key has enough digits for the whole input precision. A use
+    /// that does not cover it is still valid: the product decomposes the digits
+    /// the key has. Policy dispatch refuses such a key; execution does not.
+    pub covers_input: bool,
+}
+
+impl GGLWEActiveUse {
+    /// Limbs the product input must carry.
+    pub fn input_size(&self) -> usize {
+        self.input_k.div_ceil(self.logical_layout.base2k()) as usize
+    }
+
+    /// Whether the use covers the whole stored key, so a dense kernel reads it
+    /// as-is with no row map and no prefix.
+    pub fn is_dense(&self) -> bool {
+        self.physical_row_step.get() == 1
+            && self.logical_layout.dnum().as_usize() == self.physical_rows
+            && self.logical_work_size == self.physical_size
+    }
+}
+
+impl GGLWEUse {
+    /// The active geometry, or `None` at zero precision.
+    pub fn active(&self) -> Option<&GGLWEActiveUse> {
+        match self {
+            Self::Empty => None,
+            Self::Active(use_) => Some(use_),
+        }
+    }
+}
+
+/// Resolves a key for one exact input precision.
+///
+/// The default resolves [`GGLWEInfos::effective_dsize`], so a stored key binds
+/// through its own decomposition and a
+/// [`WithEffectiveDsize::with_dsize`](super::WithEffectiveDsize::with_dsize)
+/// wrapper binds through the one it requests. Binding must happen before the
+/// wrapper is converted to a concrete prepared reference, since that conversion
+/// carries the physical `dsize`.
+pub trait GGLWEBind: GGLWEInfos {
+    fn bind_for(&self, input_k: TorusPrecision) -> Result<GGLWEUse>
+    where
+        Self: Sized,
+    {
+        let effective_dsize: Dsize = self.effective_dsize();
+        match resolve_gglwe_key_use(self, input_k, effective_dsize)? {
+            Some(use_) => Ok(use_),
+            None => Err(err(
+                "bind_for",
+                format!("key cannot realize dsize={effective_dsize} at input_k={input_k}"),
+            )),
+        }
+    }
+}
+
+impl<T: GGLWEInfos> GGLWEBind for T {}
 
 /// Resolves how `physical` realizes `effective_dsize` at exact precision
 /// `input_k`.
@@ -161,7 +235,7 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
     physical: &P,
     input_k: TorusPrecision,
     effective_dsize: Dsize,
-) -> Result<Option<ResolvedGGLWEUse>> {
+) -> Result<Option<GGLWEUse>> {
     const OP: &str = "resolve_gglwe_key_use";
     let p: Gadget = gadget(physical, OP)?;
     let d: usize = effective_dsize.as_usize();
@@ -176,14 +250,24 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
     if p.total_k < digit {
         return Ok(None);
     }
-    // Largest complete effective decomposition rows and padding both allow; the
-    // remaining precision stays as auxiliary padding rather than being dropped.
-    let r_eff: usize = (p.dnum / s).min(p.total_k / digit - 1);
-    let a_eff: usize = p.total_k - r_eff * digit;
-    let r_active: usize = input_k.as_usize().div_ceil(digit);
-    if r_active > r_eff {
-        return Ok(None);
-    }
+    // The stored decomposition is realized as stored: every row is available and
+    // the guard is exactly `k_aux`, which may be narrower than one digit.
+    // Coarsening is what has to reserve a full coarse digit of padding, so the
+    // capacity rule below applies only when rows are actually being skipped.
+    let (r_eff, a_eff): (usize, usize) = if s == 1 {
+        (p.dnum, p.k_aux)
+    } else {
+        // Largest complete effective decomposition rows and padding both allow;
+        // the remaining precision stays as auxiliary padding, never dropped.
+        let r: usize = (p.dnum / s).min(p.total_k / digit - 1);
+        (r, p.total_k - r * digit)
+    };
+    // A key with fewer digits than the input has decomposes the ones it has;
+    // the dense kernels already stop at `min(rows, a.size())`. Policy dispatch
+    // is what must refuse such a key, through `covers_input`.
+    let requested: usize = input_k.as_usize().div_ceil(digit);
+    let covers_input: bool = requested <= r_eff;
+    let r_active: usize = requested.min(r_eff);
 
     let logical_layout = GGLWELayout {
         n: physical.n(),
@@ -198,13 +282,21 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
     debug_assert_eq!(logical_layout.max_size(), logical_work_size);
     debug_assert_eq!(logical_layout.size(), logical_work_size);
 
+    if r_active == 0 {
+        return Ok(Some(GGLWEUse::Empty));
+    }
+
     let step: NonZeroUsize = NonZeroUsize::new(s).expect("row step is a positive quotient");
-    Ok(Some(ResolvedGGLWEUse {
+    Ok(Some(GGLWEUse::Active(GGLWEActiveUse {
+        input_k,
         logical_layout,
-        first_physical_row: (r_active > 0).then(|| step.get() - 1),
+        first_physical_row: step.get() - 1,
         physical_row_step: step,
         logical_work_size,
-    }))
+        physical_rows: p.dnum,
+        physical_size: physical.max_size(),
+        covers_input,
+    })))
 }
 
 /// Opaque, stable identifier of a registered physical key.
@@ -326,7 +418,13 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWEKeyRegistryBuilder<Id, K> {
             let Some(use_) = resolve_gglwe_key_use(key, k, d)? else {
                 continue;
             };
-            let order: (usize, PhysicalOrder) = (use_.logical_layout.limb_count(), physical_order(key, i));
+            // Dispatch only picks keys wide enough for the whole precision.
+            if use_.active().is_some_and(|a| !a.covers_input) {
+                continue;
+            }
+            // Zero precision reads nothing, so every candidate ties at zero.
+            let material: usize = use_.active().map_or(0, |a| a.logical_layout.limb_count());
+            let order: (usize, PhysicalOrder) = (material, physical_order(key, i));
             if best.as_ref().is_none_or(|(b, _)| order < *b) {
                 best = Some((order, i));
             }
@@ -359,7 +457,11 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWEKeyRegistry<Id, K> {
             .ok_or_else(|| err(OP, format!("no key registered for this function (k={k})")))?;
         let index: usize = row[size].ok_or_else(|| err(OP, format!("no key covers k={k} at dsize={d} (size={size})")))?;
         let key: &K = &self.keys[index];
-        if resolve_gglwe_key_use(key, k, d)?.is_none() {
+        let covers: bool = match resolve_gglwe_key_use(key, k, d)? {
+            None => false,
+            Some(use_) => use_.active().is_none_or(|a| a.covers_input),
+        };
+        if !covers {
             return Err(err(OP, format!("dispatched key cannot realize dsize={d} at k={k}")));
         }
         Ok((key, d))
@@ -433,9 +535,12 @@ mod tests {
         let input_k: TorusPrecision = TorusPrecision(16 * K);
         let effective: Dsize = Dsize(16);
 
-        let use_: ResolvedGGLWEUse = resolve_gglwe_key_use(&physical, input_k, effective)
+        let use_: GGLWEActiveUse = resolve_gglwe_key_use(&physical, input_k, effective)
             .expect("valid layout")
-            .expect("the parent realizes the coarsening");
+            .expect("the parent realizes the coarsening")
+            .active()
+            .copied()
+            .expect("positive precision");
 
         assert_eq!(use_.logical_layout.k_aux, TorusPrecision(16 * K + 1));
         assert_eq!(use_.logical_work_size, 33);
@@ -478,12 +583,15 @@ mod tests {
         let requested: GGLWELayout = layout(16, 1, TorusPrecision(24 * K + N.log2() as u32));
         assert!(gglwe_is_whole_row_subset(&parent, &requested).unwrap());
 
-        let use_: ResolvedGGLWEUse = resolve_gglwe_key_use(&parent, TorusPrecision(16 * K), Dsize(16))
+        let use_: GGLWEActiveUse = resolve_gglwe_key_use(&parent, TorusPrecision(16 * K), Dsize(16))
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .active()
+            .copied()
+            .expect("positive precision");
         assert_eq!(use_.logical_layout.k_aux, requested.k_aux);
         assert_eq!(use_.logical_layout.dnum, Dnum(1));
-        assert_eq!(use_.first_physical_row, Some(1));
+        assert_eq!(use_.first_physical_row, 1);
     }
 
     // Acceptance 3.
@@ -503,23 +611,27 @@ mod tests {
     // Acceptance 3: zero precision resolves with no row to read.
     #[test]
     fn zero_precision_selects_no_row() {
-        let use_: ResolvedGGLWEUse = resolve_gglwe_key_use(&normal(8, 3), TorusPrecision(0), Dsize(16))
+        let use_: GGLWEUse = resolve_gglwe_key_use(&normal(8, 3), TorusPrecision(0), Dsize(16))
             .unwrap()
             .unwrap();
-        assert_eq!(use_.first_physical_row, None);
-        assert_eq!(use_.logical_layout.dnum, Dnum(0));
-        assert_eq!(use_.logical_work_size, use_.logical_layout.max_size());
+        assert_eq!(use_, GGLWEUse::Empty, "zero precision is a valid use, not an error");
+        assert!(use_.active().is_none());
     }
 
     // Acceptance 4: a native-dsize use is a step-1 identity over r_active rows.
     #[test]
     fn native_dsize_reads_active_rows_only() {
         let parent: GGLWELayout = normal(8, 4);
-        let use_: ResolvedGGLWEUse = resolve_gglwe_key_use(&parent, TorusPrecision(16 * K), Dsize(8))
+        let use_: GGLWEActiveUse = resolve_gglwe_key_use(&parent, TorusPrecision(16 * K), Dsize(8))
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .active()
+            .copied()
+            .expect("positive precision");
         assert_eq!(use_.physical_row_step.get(), 1);
-        assert_eq!(use_.first_physical_row, Some(0));
+        assert_eq!(use_.first_physical_row, 0);
+        // Native, but not dense: fewer active rows and a shorter prefix.
+        assert!(!use_.is_dense());
         // Two active digits out of four capacity rows.
         assert_eq!(use_.logical_layout.dnum, Dnum(2));
         assert_eq!(use_.logical_layout.dsize, parent.dsize);
@@ -530,21 +642,29 @@ mod tests {
     #[test]
     fn coarsened_rows_are_odd_indexed() {
         let rows = |dnum: u32, k: u32| -> Vec<usize> {
-            let use_: ResolvedGGLWEUse = resolve_gglwe_key_use(&normal(8, dnum), TorusPrecision(k * K), Dsize(16))
+            let use_: GGLWEActiveUse = resolve_gglwe_key_use(&normal(8, dnum), TorusPrecision(k * K), Dsize(16))
                 .unwrap()
-                .unwrap();
+                .unwrap()
+                .active()
+                .copied()
+                .expect("positive precision");
             (0..use_.logical_layout.dnum.as_usize())
-                .map(|i| use_.first_physical_row.unwrap() + i * use_.physical_row_step.get())
+                .map(|i| use_.first_physical_row + i * use_.physical_row_step.get())
                 .collect()
         };
         assert_eq!(rows(3, 16), vec![1]);
         assert_eq!(rows(6, 32), vec![1, 3]);
-        // Row capacity is there but padding is not: one digit short.
-        assert!(
-            resolve_gglwe_key_use(&normal(8, 4), TorusPrecision(32 * K), Dsize(16))
-                .unwrap()
-                .is_none()
-        );
+        // Row capacity is there but padding is not: one digit short. The use is
+        // still valid, it just does not cover the precision, so dispatch skips
+        // this key while execution would decompose the digits it has.
+        let short: GGLWEActiveUse = resolve_gglwe_key_use(&normal(8, 4), TorusPrecision(32 * K), Dsize(16))
+            .unwrap()
+            .unwrap()
+            .active()
+            .copied()
+            .expect("positive precision");
+        assert!(!short.covers_input);
+        assert_eq!(short.logical_layout.dnum, Dnum(1));
     }
 
     // Acceptance 10.

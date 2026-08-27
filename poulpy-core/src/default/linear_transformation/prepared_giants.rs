@@ -35,8 +35,8 @@ use crate::{
         operations::cnv_offset_to_limb_offset,
     },
     layouts::{
-        GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut,
-        GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, WithEffectiveDsize,
+        GGLWEInfos, GGLWELayout, GGLWEUse, GLWE, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos,
+        GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, WithEffectiveDsize,
         prepared::{GGLWEPreparedToBackendRef, PreparedDiagonal},
     },
 };
@@ -203,7 +203,10 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
             key_base2k = Some(layout.base2k());
             // Sizing reads the resolved logical `dnum`/`k_aux`, not the physical
             // ones a `with_dsize` wrapper still forwards.
-            let logical: GGLWELayout = resolved_use(layout, lhs.k(), effective_dsize).logical_layout;
+            let logical: GGLWELayout = match resolved_use(layout, lhs.k(), effective_dsize) {
+                GGLWEUse::Empty => layout.gglwe_layout(),
+                GGLWEUse::Active(active) => active.logical_layout,
+            };
             output_size = output_size.max(
                 crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(
                     res,
