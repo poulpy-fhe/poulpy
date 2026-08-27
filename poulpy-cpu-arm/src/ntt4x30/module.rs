@@ -27,9 +27,12 @@ pub struct NTT4x30NeonHandle {
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
+impl poulpy_hal::execution::ScratchWorkers for NTT4x30Neon {}
+
 impl Backend for NTT4x30Neon {
     const DFT_IS_EXACT: bool = true;
 
+    type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = Q120bScalar;
     type ZnxWord = i64;
     type BigWord = i128;
