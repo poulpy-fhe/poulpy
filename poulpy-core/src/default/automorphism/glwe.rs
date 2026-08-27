@@ -28,11 +28,21 @@ use crate::{
         operations::GLWENormalizeDefault,
     },
     layouts::{
-        GGLWEInfos, GGLWELayout, GGLWEUse, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+        GGLWEInfos, GGLWELayout, GGLWEUse, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, TorusPrecision,
         prepared::GGLWEPreparedToBackendRef,
     },
     oep::{GLWEAutomorphismDefault, GLWEKeyswitchDefault},
 };
+
+/// The layout every size here is computed from: the key as it is bound for the
+/// operation's input precision, never the physical metadata a `with_dsize`
+/// wrapper still forwards.
+fn bound_layout<K: GGLWEInfos>(key: &K, input_k: TorusPrecision) -> GGLWELayout {
+    match bound_for(key, input_k) {
+        GGLWEUse::Empty => key.gglwe_layout(),
+        GGLWEUse::Active(active) => active.logical_layout,
+    }
+}
 
 pub fn glwe_automorphism_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
@@ -148,7 +158,7 @@ where
     let cols: usize = (res.rank() + 1).into();
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &bound_layout(key, a.k()));
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2);
@@ -236,10 +246,7 @@ where
     let cols: usize = (res.rank() + 1).into();
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
-    let key_layout: GGLWELayout = match bound_for(key, res.k()) {
-        GGLWEUse::Empty => key.gglwe_layout(),
-        GGLWEUse::Active(active) => active.logical_layout,
-    };
+    let key_layout: GGLWELayout = bound_layout(key, res.k());
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &key_layout);
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
@@ -307,7 +314,7 @@ where
     let cols: usize = (res.rank() + 1).into();
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &bound_layout(key, a.k()));
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2);
@@ -379,7 +386,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
     let cols: usize = (res.rank() + 1).into();
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &bound_layout(key, a.k()));
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2);
@@ -445,7 +452,7 @@ where
     let cols: usize = (res.rank() + 1).into();
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &bound_layout(key, res.k()));
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
@@ -514,7 +521,7 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R, K>(
     let cols: usize = (res.rank() + 1).into();
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &bound_layout(key, res.k()));
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
