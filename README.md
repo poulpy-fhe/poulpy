@@ -14,6 +14,19 @@
 <img src="docs/img/lib_diagram.png" />
 </p>
 
+## Library Crates
+
+- **`poulpy-hal`**: a crate providing layouts and a trait-based hardware acceleration layer with open extension points, matching the API and types of spqlios-arithmetic. This crate does not provide concrete implementations other than the layouts (e.g. `VecZnx`, `VmpPmat`).
+- **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic Module-LWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-ref`, `poulpy-cpu-avx`).
+- **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
+- **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate; its public APIs have moved to the backend-owned HAL/core surface, while a few host/reference-backend dependencies remain for this release.
+- **`poulpy-cpu-ref`**: the reference CPU implementation of **`poulpy-hal`**, intended for correctness and validation rather than performance-sensitive workloads.
+- **`poulpy-cpu-rayon`**: the shared Rayon task executor and parallel kernels used by the optional multithreaded CPU backend variants.
+- **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx`, `NTT4x30Avx`, and their optional Rayon-scheduled variants (`enable-rayon`).
+- **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma` (`enable-ifma`), plus `FFT64Avx512Rayon` and `NTT4x30Avx512Rayon` (`enable-rayon`) and `NTT3x42IfmaRayon` (`enable-rayon` with `enable-ifma`).
+- **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing `FFT64Neon`, `NTT4x30Neon`, and their optional Rayon-scheduled variants (`enable-rayon`).
+- **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
+
 ## Architecture
 
 ### Crate Dependency Chain
@@ -25,6 +38,7 @@ poulpy-hal                  ← hardware abstraction: layouts and operation trai
     └── poulpy-bin-fhe        ← binary / gate-level FHE
 
 poulpy-cpu-ref              ← portable reference backend
+poulpy-cpu-rayon            ← shared Rayon executor and parallel CPU kernels
 poulpy-cpu-avx              ← AVX2/FMA-accelerated backend
 poulpy-cpu-avx512           ← AVX-512/IFMA-accelerated backend
 poulpy-cpu-arm              ← NEON/ASIMD-accelerated backend (AArch64)
