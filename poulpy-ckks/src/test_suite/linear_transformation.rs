@@ -8,9 +8,13 @@
 //! which the homomorphic engine must match up to CKKS precision.
 
 use crate::api::CKKSEncodingOps;
+use std::cell::RefCell;
 use std::collections::HashMap;
 
-use poulpy_core::layouts::{Diagonals, Evaluate, LinearTransformationStrategy};
+use poulpy_core::layouts::{
+    Diagonals, Dsize, Evaluate, GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, LWEInfos,
+    LinearTransformationStrategy, TorusPrecision,
+};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
     layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchArena},
@@ -213,5 +217,95 @@ where
         &want_right_re,
         &want_right_im,
         &mut scratch.borrow(),
+    );
+}
+
+/// Key set that records the precision each lookup was made at.
+struct QueryLog<K> {
+    keys: HashMap<i64, K>,
+    seen: RefCell<Vec<TorusPrecision>>,
+}
+
+impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for QueryLog<K> {
+    fn get_automorphism_key_for(&self, p: i64, k: TorusPrecision) -> poulpy_core::Result<(&K, Dsize)> {
+        self.seen.borrow_mut().push(k);
+        self.keys.get_automorphism_key_for(p, k)
+    }
+}
+
+impl<K: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<K> for QueryLog<K> {
+    fn get_automorphism_key_layout_for(&self, p: i64, k: TorusPrecision) -> poulpy_core::Result<(&K, Dsize)> {
+        self.seen.borrow_mut().push(k);
+        self.keys.get_automorphism_key_layout_for(p, k)
+    }
+}
+
+/// One factor resolves every rotation, baby and giant, at the same precision.
+///
+/// The destination is narrower than the input, so a giant step that queried
+/// `res.k()` instead of the factor's input `k` would let the effective
+/// decomposition drift mid-factor.
+pub fn test_linear_transformation_pins_one_precision<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (a_re, a_im) = test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let key_params = CKKSTestParams {
+        dsize: params.dsize.max(4),
+        ..params
+    };
+    let mut scratch = alloc_scratch(&key_params, module);
+
+    let n1 = 2;
+    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m);
+    let lt = encode_lt(module, &params, &b, n1, false, &mut scratch.borrow());
+
+    let order = module.cyclotomic_order();
+    let mut keys = HashMap::new();
+    for p in lt.galois_elements(order) {
+        keys.entry(p)
+            .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
+    }
+    let keys = QueryLog {
+        keys,
+        seen: RefCell::new(Vec::new()),
+    };
+
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &a_re,
+        &a_im,
+        &mut scratch.borrow(),
+    );
+
+    let prepared = prepare_lt(module, &lt, &mut scratch.borrow());
+    let mut res = alloc_ct(&params, module, params.k - params.base2k);
+    module
+        .ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, &mut scratch.borrow())
+        .unwrap();
+
+    let seen = keys.seen.borrow();
+    assert!(!seen.is_empty(), "the factor consulted no key");
+    assert!(
+        seen.iter().all(|&k| k == ct.k()),
+        "keys were resolved at {seen:?}, but the factor's input is k={}",
+        ct.k()
     );
 }

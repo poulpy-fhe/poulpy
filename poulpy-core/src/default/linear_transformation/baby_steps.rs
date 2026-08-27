@@ -61,7 +61,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
         for &rot in baby_steps {
             values.entry(rot).or_insert_with(|| module.cnv_pvec_left_alloc(cols, size));
         }
-        Self { values }
+        Self { values, k: a.k() }
     }
 
     /// Convenience: pre-allocates from a [`LinearTransformationLayout`].
@@ -230,6 +230,12 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
+    assert_eq!(
+        cache.k(),
+        a.k(),
+        "the cache pins the factor's key precision, so it must be allocated for the input it is prepared from"
+    );
+
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
     let mask = msb_mask_bottom_limb(a.base2k().as_usize(), a.k().as_usize());

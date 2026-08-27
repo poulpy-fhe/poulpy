@@ -197,7 +197,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
         let mut output_size: usize = 0;
         for gs in rhs.giant_steps.iter().filter(|gs| gs.rot != 0) {
             let (layout, effective_dsize) = keys
-                .get_automorphism_key_layout_for(module.galois_element(gs.rot), res.k())
+                .get_automorphism_key_layout_for(module.galois_element(gs.rot), lhs.k())
                 .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot));
             key_base2k = Some(layout.base2k());
             output_size = output_size.max(
@@ -261,7 +261,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                 }
             } else {
                 let (key, effective_dsize) = keys
-                    .get_automorphism_key_for(module.galois_element(rot), res.k())
+                    .get_automorphism_key_for(module.galois_element(rot), lhs.k())
                     .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
                 let key = &key.with_dsize(effective_dsize);
                 {
@@ -353,7 +353,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
         let rot = rhs.giant_steps[g].rot;
         if rot != 0 {
             let (key, effective_dsize) = keys
-                .get_automorphism_key_for(module.galois_element(rot), res.k())
+                .get_automorphism_key_for(module.galois_element(rot), lhs.k())
                 .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
             module.glwe_automorphism_assign(&mut fallback_acc, &key.with_dsize(effective_dsize), &mut scratch_phase);
         }
