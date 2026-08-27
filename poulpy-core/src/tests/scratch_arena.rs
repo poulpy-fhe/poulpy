@@ -15,6 +15,7 @@ use crate::{
 struct TestBackend;
 
 impl Backend for TestBackend {
+    type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type ZnxWord = i64;
     type BigWord = i64;
     type DftWord = f64;
