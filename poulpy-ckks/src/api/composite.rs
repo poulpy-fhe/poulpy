@@ -140,6 +140,27 @@ pub trait CKKSMulAddOps<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
+    /// Ordered batch of [`Self::ckks_mul_add_pt_const_into`] over `terms`,
+    /// starting from the caller's `dst`.
+    ///
+    /// Exactly `for &(a, i) in terms { ckks_mul_add_pt_const_into(dst, a, coeffs, i) }`:
+    /// each term keeps its own convolution offset, rounding, budget alignment
+    /// and carry normalization, and `dst`'s metadata evolves term by term. A
+    /// backend may fuse the steps but not reassociate them, and needs no more
+    /// scratch than one scalar term. An empty slice is a no-op; the whole slice
+    /// is validated before `dst` is mutated.
+    fn ckks_mul_add_pt_consts_into<Dst, A, P>(
+        &self,
+        dst: &mut Dst,
+        terms: &[(&A, usize)],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+
     /// Computes `dst += a * pt[pt_coeff]` without normalizing `dst`.
     ///
     /// The accumulator `dst` carries un-propagated carries in its limb digits.

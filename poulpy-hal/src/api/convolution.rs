@@ -1,6 +1,6 @@
 use crate::layouts::{
-    Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut, CnvPVecRBackendRef,
-    CnvPVecROwned, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+    Backend, CnvDftAccTerm, CnvDftStore, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut,
+    CnvPVecRBackendRef, CnvPVecROwned, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
 };
 
 /// Allocates prepared convolution operands ([`CnvPVecL`](crate::layouts::CnvPVecL), [`CnvPVecR`](crate::layouts::CnvPVecR)).
@@ -170,9 +170,12 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_accumulate_dft`](Convolution::cnv_accumulate_dft).
+    /// Returns scratch bytes required for [`cnv_accumulate_dft`](Convolution::cnv_accumulate_dft)
+    /// and [`cnv_accumulate_dft_columns`](Convolution::cnv_accumulate_dft_columns).
     ///
     /// `a_size` and `b_size` are upper bounds over the sizes of the term operands.
+    /// The budget also covers the per-term `cnv_apply_dft{,_accumulate}` fallback
+    /// those methods may take, so one number sizes the whole family.
     fn cnv_accumulate_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
     /// Evaluates a sum of bivariate convolutions: `res[res_col] = Σ_t a_t ⊛ b_t`,
@@ -190,6 +193,59 @@ pub trait Convolution<BE: Backend> {
         res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
         terms: &[CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a;
+
+    /// Multi-column variant of [`cnv_accumulate_dft`](Convolution::cnv_accumulate_dft):
+    /// for every output column `c < cols`,
+    /// `res[res_col + c] (=|+=) Σ_t a_t[a_col + c] ⊛ b_t[b_col]`.
+    ///
+    /// The right operand of each term is broadcast across the output columns
+    /// (one GLWE mask/body sweep against one diagonal), so a whole BSGS giant
+    /// step is one call. `store` selects whether the destination columns are
+    /// overwritten or accumulated into; `Overwrite` also zeroes the limbs past
+    /// the convolution bound, `Accumulate` leaves them untouched. Scratch
+    /// requirement is [`cnv_accumulate_dft_tmp_bytes`](Convolution::cnv_accumulate_dft_tmp_bytes).
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_accumulate_dft_columns<'a>(
+        &self,
+        cnv_offset: usize,
+        store: CnvDftStore,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        cols: usize,
+        terms: &[CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a;
+
+    /// Batched variant of [`cnv_accumulate_dft_columns`](Convolution::cnv_accumulate_dft_columns):
+    /// evaluates `results.len()` independent multi-column accumulations, one per
+    /// term set, so a backend can share a prepared left operand appearing in
+    /// several sets across their launches.
+    ///
+    /// `results[g][res_col + c] (=|+=) Σ_t a_t[a_col + c] ⊛ b_t[b_col]` over
+    /// `term_sets[g]`, for every `g` and every `c < cols`. `results.len()` must
+    /// equal `term_sets.len()`; the sets are independent and may differ in
+    /// length, order, and left operands. `store` applies to each result
+    /// independently, exactly as in
+    /// [`cnv_accumulate_dft_columns`](Convolution::cnv_accumulate_dft_columns):
+    /// an empty set zeroes its result under `Overwrite` and is a no-op under
+    /// `Accumulate`. An empty batch is a no-op, a one-result batch is one
+    /// ordinary call. Results must be pairwise non-overlapping; their sizes may
+    /// differ. Scratch requirement is
+    /// [`cnv_accumulate_dft_tmp_bytes`](Convolution::cnv_accumulate_dft_tmp_bytes)
+    /// taken over the batch maxima.
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_accumulate_dft_columns_batch<'a>(
+        &self,
+        cnv_offset: usize,
+        store: CnvDftStore,
+        results: &mut [VecZnxDftBackendMut<'_, BE>],
+        res_col: usize,
+        cols: usize,
+        term_sets: &[&[CnvDftAccTerm<'a, BE>]],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: 'a;

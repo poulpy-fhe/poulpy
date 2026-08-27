@@ -630,6 +630,22 @@ macro_rules! ckks_backend_test_suite {
                 dft_plan_helpers_match_compiled,
                 $crate::test_suite::dft::test_dft_plan_helpers_match_compiled
             );
+            run_test!(
+                eval_mod_pair_matches_singles,
+                $crate::test_suite::eval_mod::test_eval_mod_pair_matches_singles
+            );
+            run_test!(
+                backend_views_expose_logical_width,
+                $crate::test_suite::logical_width::test_backend_views_expose_logical_width
+            );
+            run_test!(
+                inactive_capacity_does_not_change_results,
+                $crate::test_suite::logical_width::test_inactive_capacity_does_not_change_results
+            );
+            run_test!(
+                dft_ping_pong_matches_assign_chain,
+                $crate::test_suite::logical_width::test_dft_ping_pong_matches_assign_chain
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
             run_test!(mul_ct_delta_a_lt_b, $crate::test_suite::mul::test_mul_ct_delta_a_lt_b);
@@ -692,6 +708,26 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 mul_prepared_layout_mismatch_error,
                 $crate::test_suite::mul::test_mul_prepared_layout_mismatch_error
+            );
+            run_test!(
+                mul_batches_match_scalar,
+                $crate::test_suite::mul_batch::test_mul_batches_match_scalar
+            );
+            run_test!(
+                mul_prepared_assign_matches_mul_assign,
+                $crate::test_suite::mul_batch::test_mul_prepared_assign_matches_mul_assign
+            );
+            run_test!(
+                mul_batches_exact_scratch,
+                $crate::test_suite::mul_batch::test_mul_batches_exact_scratch
+            );
+            run_test!(
+                mul_prepared_assign_batch_rejects_layout_mismatch,
+                $crate::test_suite::mul_batch::test_mul_prepared_assign_batch_rejects_layout_mismatch
+            );
+            run_test!(
+                power_basis_self_products_match_generic_mul,
+                $crate::test_suite::polynomial_evaluation::test_power_basis_self_products_match_generic_mul
             );
             run_test!(
                 mul_ct_explicit_metadata_error,
@@ -843,6 +879,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_fold
             );
             run_test!(
+                mul_add_pt_consts_matches_ordered_scalar,
+                $crate::test_suite::polynomial_evaluation::test_mul_add_pt_consts_matches_ordered_scalar
+            );
+            run_test!(
                 eval_mod_sin_continuous_minimal,
                 $crate::test_suite::eval_mod::test_eval_mod_sin_continuous_minimal
             );
@@ -853,6 +893,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 eval_mod_cos_discrete,
                 $crate::test_suite::eval_mod::test_eval_mod_cos_discrete
+            );
+            run_test!(
+                eval_mod_cos_discrete_even,
+                $crate::test_suite::eval_mod::test_eval_mod_cos_discrete_even
             );
             run_test!(
                 eval_mod_cos_continuous,
@@ -980,8 +1024,10 @@ pub mod functional_bootstrapping;
 pub mod helpers;
 pub mod imag;
 pub mod linear_transformation;
+pub mod logical_width;
 pub mod mul;
 pub mod mul_add;
+pub mod mul_batch;
 pub mod mul_pow2;
 pub mod mul_sub;
 pub mod neg;

@@ -33,7 +33,7 @@ pub use encryption::{CKKSDecryptOps, CKKSEncryptOps};
 pub use eval_mod::CKKSEvalModOps;
 pub use imag::CKKSImagOps;
 pub use linear_transformation::*;
-pub use mul::CKKSMulOps;
+pub use mul::{CKKSMulIntoItem, CKKSMulOps, CKKSPreparedMulAssignItem, CKKSSquareAssignItem, CKKSSquareIntoItem};
 pub use neg::CKKSNegOps;
 pub use paco::{CKKSPaCoOps, PaCoScalar};
 pub use plaintext::CKKSPlaintextVecOps;

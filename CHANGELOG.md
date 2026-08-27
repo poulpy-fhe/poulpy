@@ -5,6 +5,10 @@
 ### `poulpy-hal`
 
 - Add `VmpExtractSelectedRows`: copies rows `first_row + i * row_step` of a `VmpPMat`, truncated to `res.size()` limbs, into a smaller one, reading only the selected cells. The delegate validates the selection in release before dispatch (shapes, `row_step > 0`, last row inside `a` without overflow), so an implementation may index on those facts without re-checking them.
+- Add `Convolution::cnv_accumulate_dft_columns` and `CnvDftStore`: multi-column accumulation with the right operand broadcast across the output columns. `CnvDftAccTerm::at_column` reborrows a term at a column offset.
+- Add `Convolution::cnv_accumulate_dft_columns_batch`: independent multi-column accumulations, one per term set, with an ordered sequential default.
+- `Convolution::cnv_accumulate_dft_tmp_bytes` also covers the per-term `cnv_apply_dft{,_accumulate}` fallback.
+- Add `vec_znx_backend_ref_with_size`, the read-only counterpart of `vec_znx_backend_mut_with_size`.
 
 ### `poulpy-core`
 
@@ -25,6 +29,20 @@
 - `LinearTransformationBabySteps` records the input precision it was allocated for, and the giant steps resolve their keys at it rather than at `res.k()`, so one factor cannot use two effective decompositions.
 - **Breaking:** the polynomial-evaluation engine (`glwe_eval_giant_steps`, `BSGSOps::mul_prepared_assign`) takes a relinearization-key source rather than one key. A bare key implements the helper, so existing callers are unaffected.
 - `error` is now a module of the crate; `CoreError`/`Result` were previously unreachable.
+- The linear-transformation PROD block hands each giant step to `cnv_accumulate_dft_columns`, resident and streamed.
+- Add `DiagonalProd::accumulate_giant_prods`, the batched PROD block, with an ordered sequential default; `PreparedDiagonal` overrides it with one `cnv_accumulate_dft_columns_batch` call.
+- Add `LinearTransformationBabySteps::baby_step_mut` / `baby_steps_mut`.
+- Add `glwe_backend_ref_with_size` / `glwe_backend_mut_with_size`; bare `GLWEToBackendRef`/`GLWEToBackendMut` are unchanged.
+- Add `bsgs_op_counts`, the `(ct×ct, ct×pt)` multiplication count of a BSGS evaluation.
+- Add `GLWETensoring::glwe_tensor_apply_prepared_right`, dispatched through `GLWETensoringImpl` (provided) and `GLWETensoringDefault` instead of the free helper; scratch stays within `glwe_tensor_apply_tmp_bytes`.
+- Add `BSGSOps::mul_add_pt_consts`, the ordered ct×pt batch boundary of a BSGS baby step, with a sequential provided default; `eval_baby_step` issues one call for its scheduled terms.
+- Add `GLWETensoring::glwe_tensor_apply_relinearize`, `glwe_tensor_square_relinearize_assign` and `glwe_tensor_apply_prepared_right_relinearize_assign`, fused tensor-product + relinearization taking an explicit `tensor_infos`, with provided `GLWETensoringImpl` methods and materialized defaults.
+- Fix `glwe_tensor_relinearize_tmp_bytes` under-reporting the two unconditional `a_conv` stages.
+- Add `GLWETensoring::glwe_tensor_square_apply_relinearize`, the out-of-place fused square + relinearize.
+- Add `glwe_tensor_{apply,square_apply}_relinearize_batch`, `glwe_tensor_square_relinearize_assign_batch`, `glwe_tensor_apply_prepared_right_relinearize_assign_batch` and their `*_tmp_bytes`, with `Tensor*Item` descriptors and provided sequential `GLWETensoringImpl` defaults.
+- Add `giant_step_schedule` / `GiantStepPair`, the giant-step fold schedule shared by the engine and the lockstep EvalMod driver.
+- Add `BSGSOps::mul_prepared_assign_batch` with a sequential provided default; `eval_giant_steps` dispatches each level's ready frontier as one batch.
+- The BSGS giant-step loop and the planner both skip empty diagonal buckets.
 
 ### `poulpy-ckks`
 
@@ -32,6 +50,22 @@
 - **Breaking:** the ciphertext-ciphertext operations (`ckks_mul_*`, `ckks_square_*`, the `mul_add`/`mul_sub`/`dot_product` composites, polynomial evaluation, approximation, EvalMod and the PaCo slot product) take a relinearization-key source rather than one tensor key, and resolve it at the exact precision the operation works at (`max(a.k(), b.k())` and its variants). A bare tensor key implements the helper, so existing callers are unaffected.
 - Add `CKKSCompositionError::MissingRelinearizationKey`.
 - Add `BootstrappingKeys::relinearization_keys` / `PaCoKeys::relinearization_keys` and their `RelinearizationKeys` associated type, so a key manager can answer with a registry rather than one key.
+- **Breaking:** every CKKS ciphertext backend view exposes the logical `size()` rather than the physical `max_size()`; `CKKSCiphertext::{to_ref, to_mut}` and `Deref`/`DerefMut` are restricted to `Normalized`. Plaintext conversion is unchanged.
+- **Breaking:** `CKKSEvalModOpsDefault` and `CKKSBootstrapDefault` are opt-in, wired by `impl_ckks_eval_mod_defaults!` / `impl_ckks_bootstrap_defaults!`; the matching OEP blankets are keyed on them, and each surface carries a default body per method.
+- The homomorphic (I)DFT chain ping-pongs `ct` with one scratch ciphertext instead of copying back per factor, and realigns the destination metadata and width with the source before each factor.
+- Add `CKKSLinearTransformationOps::ckks_dft_evaluate_tmp_bytes`, the whole-chain budget; `ckks_all_ops_with_atk_tmp_bytes` includes it.
+- Add `LinearTransformationEvalParams`: validated `cnv_offset`, PROD width and result `log_budget`/`log_delta`, with checked arithmetic.
+- `ckks_mul_into`, `ckks_square_into`, `ckks_square_assign` and `ckks_mul_prepared_assign` dispatch through the fused `GLWETensoring` composites.
+- `PowerBasisGen::{gen_power, gen_power_chebyshev}` use `ckks_square_into` when `split_degree` returns a self-product.
+- Add `CKKSMulOps::{ckks_mul_into_batch, ckks_square_into_batch, ckks_square_assign_batch, ckks_mul_prepared_assign_batch}` and their `*_tmp_bytes`, with `CKKS*Item` descriptors, provided `CKKSMulImpl` defaults and one core tensor batch per call.
+- Add `ckks_eval_mod_pair_lockstep_default` / `ckks_eval_mod_pair_lockstep_tmp_bytes_default`, the two-branch dependency-frontier EvalMod driver; the query replays the exact per-item layout DAG through the four batch scratch queries and accounts for the doubled working set.
+- Add `CKKSPreparedRightInfos` / `CKKSPreparedRightLayout`; `ckks_mul_prepared_assign_batch_tmp_bytes` takes them, so a frontier can be priced without an allocated operand.
+- The lockstep `SquareTimesInput`/`ChebyshevT2TimesInput` tail issues one prepared-right frontier instead of two scalar multiplies.
+- Add `CKKSEvalModOps::ckks_eval_mod_pair` / `ckks_eval_mod_pair_tmp_bytes` and the `CKKSEvalModImpl` hooks; sequential default, taken by the bootstrap's real and imaginary branches.
+- Add the whole-bootstrap `CKKSBootstrapImpl` OEP, with `CKKSBootstrapDefault` as the reference composition.
+- Add `CKKSMulAddOps::ckks_mul_add_pt_consts_into`, the ordered batch of `ckks_mul_add_pt_const_into`, with the `CKKSMulImpl::ckks_mul_add_pt_consts_into_impl` hook (provided) and the `CKKSMulDefault` per-method override; `ckks_mul_add_pt_consts_plan` walks a virtual destination to emit the per-term `CKKSMulAddPtConstPlan` before `dst` is mutated, and scratch is that of one term. `get_mul_pt_params` / `mul_pt_params_raw` are public.
+- Add `EvalModType::CosHKEven`: the `CosHK` fit recentred on `x - 1/4` and `T₂`-folded, via `cosine::approximate_cos_centered` and `EvalModPlan::{input_offset, mirrored_clusters, folds_even_base}`. `compile_eval_mod` rejects a plan the variant cannot evaluate below `CosHK`'s cost.
+- `DFTMatrix::factors()` is public, replacing `factor_operands()`.
 
 ## [0.8.2] - 2026-08-22
 
@@ -147,6 +181,7 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - The noise model follows: `GGLWENoiseModel` / `GGSWNoiseModel`, blanket-implemented over the layouts, take the operand and the error variances only (`ksk.log2_std_noise_keyswitch(&ct_in, …)`). Evaluated at the key's real precision, the bounds gain the operand's carried error and the uncovered decomposition residue.
 
 ### `poulpy-ckks`: reusable approximation planning
+
 - Add the `approximation` module with host-side single- and multi-interval Remez minimax fitting, precision/depth-based degree selection, and composite sign coefficient generation. Add `PolynomialApproximation` and `CKKSApproximationOps` for reusable interval mapping and prepared BSGS evaluation, including exact power-of-two scale and modulus-consumption accounting.
 
 ### `poulpy-ckks`: PaCo bootstrapping
@@ -179,10 +214,12 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** `EvalMod::from_literal` is replaced by the free generic `compile_eval_mod` / `compile_eval_mod_exp`, which encode on any backend.
 
 ### `poulpy-core` / `poulpy-ckks`: polynomial evaluation
+
 - Add explicit parity folding for real and complex BSGS polynomials through `Polynomial::fold_parity`, `Polynomial::decompose_bsgs_folded_with`, and `EncodeBSGS::encode_bsgs_folded_with`: even/odd monomial polynomials become `Q(x²)` / `x·Q(x²)`, while even/odd Chebyshev polynomials become `Q(T₂(x))` / `x·Q(T₂(x))`. The encoded degree is halved, the input transform is carried by `BSGSPolynomial`, and depth/budget accounting includes the initial square or `T₂` evaluation and the odd final multiplication. Folding remains opt-in because it can increase multiplicative depth for some degree/split-strategy combinations.
 - Avoid EvalMod's scratch-input → owned-input copy for identity base polynomials by transferring the relabelled owned input directly into the shared power basis. Plans without an inverse no longer reserve a full scratch ciphertext for that copy; inverse plans retain only their post-composition working copy.
 
 ### `poulpy-ckks`: hardening, typed errors, and plan validation
+
 - **Breaking:** every fallible op-trait method across all four layers now returns `CKKSResult<T>` (= `Result<T, CKKSError>`) instead of `anyhow::Result<T>`. `CKKSError` is `#[non_exhaustive]` with `Composition(CKKSCompositionError)` and `Internal(anyhow::Error)` variants, a `composition()` accessor for recoverable conditions, and a downcasting `From<anyhow::Error>` bridge; `CKKSCompositionError` is now `#[non_exhaustive]` and gains `InvalidPlan` and `PreparedOperandLayoutMismatch`. Callers using `?` into `anyhow` keep working; explicit `anyhow::Result` signatures must be updated.
 - **Breaking:** naming sweep on the api layer: `CKKSEncrypt` → `CKKSEncryptOps`, `CKKSDecrypt` → `CKKSDecryptOps`, `DFTOps` → `CKKSDFTOps`, aligning every op family on the `CKKS*Ops` convention.
 - **Breaking:** `ckks_encrypt_sk` (and `BootstrappingContext::generate_keys`) now take the randomness sources in the order `(source_xe, source_xa)` — a positional swap of the two `&mut Source` parameters; call sites must be updated by hand since the types are identical.
@@ -504,17 +541,20 @@ Core and CKKS wiring likewise replaces `CoreImpl` + `impl_core_default_methods!`
 ## [0.4.4] - 2026-02-28
 
 ### `poulpy-hal`
+
 - Add NTT120 reference primitives: primes, types, arithmetic, NTT butterfly, mat-vec, SVP, VMP, `VecZnxBig`, `VecZnxDft`, and convolution.
 - Refactor byte size helpers: centralize scratch/layout size computations into `Module`.
 - Consolidate FFT64 trait implementations to eliminate duplication between ref and AVX.
 
 ### `poulpy-cpu-ref`
+
 - Add `NTT120Ref` backend: scalar Q120 NTT over CRT of four ~30-bit primes.
   - Full OEP coverage: `VecZnx`, `VecZnxBig`, `VecZnxDft`, `SvpPPol`, `VmpPMat`.
 - Reorganize FFT64 sources into `fft64/` submodule.
 - Add NTT120 benchmarks.
 
 ### `poulpy-cpu-avx`
+
 - Add `NTT120Avx` backend: AVX2-accelerated NTT120.
   - AVX2 NTT butterfly with variable-shift accumulation.
   - AVX2 BBC mat-vec (`NttMulBbc`, x2, 2-column variants).
@@ -524,6 +564,7 @@ Core and CKKS wiring likewise replaces `CoreImpl` + `impl_core_default_methods!`
 - Add NTT120 benchmarks and unit tests for all AVX subroutines.
 
 ### `poulpy-core`
+
 - Add NTT120 backend support across all operations: encryption, decryption, automorphisms, external products, keyswitching, and noise analysis.
 - Extend test suite to cover `NTT120Ref` and `NTT120Avx`.
 
@@ -559,6 +600,7 @@ Core and CKKS wiring likewise replaces `CoreImpl` + `impl_core_default_methods!`
 ## [0.4.0] - 2025-11-20
 
 ### Summary
+
 - Full support for base2k operations.
 - Many improvements to BDD arithmetic.
 - Removal of **poulpy-backend** & spqlios backend.
@@ -566,9 +608,11 @@ Core and CKKS wiring likewise replaces `CoreImpl` + `impl_core_default_methods!`
 - Some minor bug fixes.
 
 ### `poulpy-hal`
+
 - Add cross-base2k normalization
 
 ### `poulpy-core`
+
 - Add full support for automatic cross-base2k operations & updated tests accordingly.
 - Updated noise helper API.
 - Fixed many tests that didn't assess noise correctly.
@@ -576,6 +620,7 @@ Core and CKKS wiring likewise replaces `CoreImpl` + `impl_core_default_methods!`
 - Fixed packing to clean values correctly.
 
 ### `poulpy-schemes`
+
 - Renamed `tfhe` crate to `bin_fhe`.
 - Improved support & API for BDD arithmetic, including multi-thread acceleration.
 - Updated crate to support cross-base2k operations.
@@ -585,17 +630,21 @@ Core and CKKS wiring likewise replaces `CoreImpl` + `impl_core_default_methods!`
 - Added `sign` argument to GGSW-based blind rotation, which enables to choose the rotation direction of the test vector.
 
 ### `poulpy-cpu-ref`
+
 - A new crate that provides the reference CPU implementation of **poulpy-hal**. This replaces the previous **poulpy-backend/cpu_ref**.
 
 ### `poulpy-cpu-avx`
+
 - A new crate that provides an AVX/FMA accelerated CPU implementation of **poulpy-hal**. This replaces the previous **poulpy-backend/cpu_avx**.
 
 ## [0.3.2] - 2025-10-27
 
 ### `poulpy-hal`
+
 - Improved convolution functionality
 
 ### `poulpy-core`
+
  - Rename `GLWEToLWESwitchingKey` to `GLWEToLWEKey`.
  - Rename `LWEToGLWESwitchingKey` to `LWEToGLWEKey`.
  - Add `GLWESecretTensor` which stores the flattened upper right of the tensor matrix of the pairs  `sk[i] * sk[j]`.
@@ -605,15 +654,18 @@ Core and CKKS wiring likewise replaces `CoreImpl` + `impl_core_default_methods!`
  - Changed `GLWETensorKey` to be an encryption of `GLWESecretTensor` (preliminary work for `GLWEFromGLWETensor`, a.k.a relinearization). 
 
 ### `poulpy-schemes`
+
  - Add `GLWEBlindRotation`, a `GGSW`-based blind rotation that evaluates `GLWE <- GLWE * X^{((k>>bit_rsh) % 2^bit_mask) << bit_lsh}.` (`k` = `FheUintBlocksPrepared`).
  - Add `GGSWBlindRotation`, a `GGSW`-based blind rotation that evaluates `GGSW <- (GGSW or ScalarZnx) * X^{((k>>bit_rsh) % 2^bit_mask) << bit_lsh}.` (`k` = `FheUintBlocksPrepared`).
 
 ## [0.3.1] - 2025-10-24
 
 ### `poulpy-hal`
+
  - Add bivariate convolution (X, Y) / (X^{N} + 1) with Y = 2^-K
 
 ### `poulpy-core`
+
  - Fix typo in the shared backend-view impl for `GLWEAutomorphismKey` that incorrectly required mutable data.
 
 ## [0.3.0] - 2025-10-23
@@ -621,38 +673,47 @@ Core and CKKS wiring likewise replaces `CoreImpl` + `impl_core_default_methods!`
 - Fixed builds on MACOS
 
 ### Breaking changes
+
  - The changes to `poulpy-core` required to break some of the existing API. For example the API `prepare_alloc` has been removed and the trait `Prepare<...>` has been broken down for each different ciphertext type (e.g. GLWEPrepare). To achieve the same functionality, the user must allocated the prepared ciphertext, and then call prepare on it.
 
 ### `poulpy-hal`
+
  - Added cross-base2k normalization
 
 ### `poulpy-core`
+
  - Added functionality-based traits, which removes the need to import the low-levels traits of `poulpy-hal` and makes backend agnostic code much cleaner. For example instead of having to import each individual traits required for the encryption of a GLWE, only the trait `GLWEEncryptSk` is needed.
 
 ### `poulpy-schemes`
+
  - Added basic framework for binary decision circuit (BDD) arithmetic along with some operations.
 
 ## [0.2.0] - 2025-09-15
 
 ### Breaking changes
+
  - Updated the trait `FillUniform` to take `log_bound`.
 
 ### `poulpy-hal`
+
  - Added pure Rust reference code for `vec_znx` and `fft64` backend.
  - Added cross-backend generic test suite along with macros.
  - Added benchmark generic test suite.
 
 ### `poulpy-backend`
+
  - Added `FFTRef` backend, which provides an implementation relying on the reference code of `poulpy-hal`.
  - Added `FFTAvx` backend, which provides a pure Rust AVX/FMA accelerated implementation of `FFTRef` backend.
  - Added cross-backend tests between `FFTRef` and `FFTAvx`.
  - Added cross-backend tests between `FFTRef` and `FFT64Spqlios`.
 
 ### `poulpy-core`
+
  - Removed unsafe blocks.
  - Added tests suite for `FFTRef` and `FFTAvx` backends.
 
 ### Other
+
  - Fixed a few minor bugs.
 
 ## [0.1.0] - 2025-08-25

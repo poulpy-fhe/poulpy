@@ -237,6 +237,22 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &ctx,
             &keys_layout,
         );
+        // The bootstrap evaluates its real/imaginary branches through the
+        // paired EvalMod, so its budget must cover the paired sizing, not just
+        // the single one.
+        let boot_spec = ckks_spec(n, base2k, log_delta, k_boot - log_delta);
+        assert!(
+            boot_tmp
+                >= module.ckks_eval_mod_pair_tmp_bytes(
+                    &boot_spec,
+                    &boot_spec,
+                    &boot_spec,
+                    &boot_spec,
+                    ctx.eval_mod(),
+                    &keys_layout.tensor_key,
+                ),
+            "ckks_bootstrap_tmp_bytes does not cover ckks_eval_mod_pair_tmp_bytes"
+        );
         if boot_tmp > scratch_size {
             scratch = ScratchOwned::<BE>::alloc(boot_tmp);
         }
@@ -670,6 +686,22 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &ctx,
             &keys_layout,
         );
+        // The bootstrap evaluates its real/imaginary branches through the
+        // paired EvalMod, so its budget must cover the paired sizing, not just
+        // the single one.
+        let boot_spec = ckks_spec(n, base2k, log_delta, k_boot - log_delta);
+        assert!(
+            boot_tmp
+                >= module.ckks_eval_mod_pair_tmp_bytes(
+                    &boot_spec,
+                    &boot_spec,
+                    &boot_spec,
+                    &boot_spec,
+                    ctx.eval_mod(),
+                    &keys_layout.tensor_key,
+                ),
+            "ckks_bootstrap_tmp_bytes does not cover ckks_eval_mod_pair_tmp_bytes"
+        );
         if boot_tmp > scratch_size {
             scratch = ScratchOwned::<BE>::alloc(boot_tmp);
         }
@@ -1049,6 +1081,22 @@ where
             &ckks_spec(n, base2k, log_delta, k_in - log_delta),
             &ctx,
             &keys_layout,
+        );
+        // The bootstrap evaluates its real/imaginary branches through the
+        // paired EvalMod, so its budget must cover the paired sizing, not just
+        // the single one.
+        let boot_spec = ckks_spec(n, base2k, log_delta, k_boot - log_delta);
+        assert!(
+            boot_tmp
+                >= module.ckks_eval_mod_pair_tmp_bytes(
+                    &boot_spec,
+                    &boot_spec,
+                    &boot_spec,
+                    &boot_spec,
+                    ctx.eval_mod(),
+                    &keys_layout.tensor_key,
+                ),
+            "ckks_bootstrap_tmp_bytes does not cover ckks_eval_mod_pair_tmp_bytes"
         );
         if boot_tmp > scratch_size {
             scratch = ScratchOwned::<BE>::alloc(boot_tmp);

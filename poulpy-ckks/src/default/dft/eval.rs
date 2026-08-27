@@ -45,7 +45,7 @@ use crate::{
     default::dft::matrices::{DftScalar, gen_dft_matrices},
     layouts::{
         CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, Decode,
-        DftDirection, DftFormat, Encode, Repack, Split, Standard,
+        DftDirection, DftFormat, Encode, Repack, ScratchArenaTakeCKKS, Split, Standard,
     },
     oep::CKKSEncodingImpl,
 };
@@ -212,7 +212,7 @@ impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransfor
     /// rotation for the sparse path).
     pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         let mut set: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
-        for f in self.factor_operands() {
+        for f in self.factors() {
             set.extend(f.galois_elements(cyclotomic_order));
         }
         if self.is_sparse() {
@@ -238,13 +238,9 @@ impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransfor
 /// `log_delta`, see the module docs). The input `ct.log_budget()` must be at
 /// least `dft.consumed_bits()`.
 ///
-/// ## Progressive compaction
-///
-/// Each factor consumes `factor_log_delta` bits of budget, so after a factor the
-/// running ciphertext's `k` (and therefore the work of the next
-/// factor's baby-step keyswitches, which scale with the operand limb count) is
-/// smaller than its storage. After every factor `ct` is therefore compacted in
-/// place.
+/// The chain alternates between `ct` and a single scratch ciphertext, so no
+/// factor materializes an intermediate copy; an odd factor count evaluates its
+/// first factor in place to land the result back in `ct`.
 pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H, K>(
     module: &Module<BE>,
     ct: &mut Dst,
@@ -260,19 +256,60 @@ where
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
-    // One factor at a time, in place on `ct`; compact `ct` after each so the next
-    // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
-    for factor in dft.factor_operands() {
-        eval_factor(module, ct, factor, keys, scratch)?;
+    // Ping-pong: the factors alternate between `ct` and one scratch ciphertext
+    // through the `_into` eval, so only the (odd-count) leading factor pays for
+    // an intermediate copy instead of every factor doing so.
+    let factors = dft.factors();
+    let (head, rest) = factors.split_at(factors.len() % 2);
+    for factor in head {
+        eval_factor_assign(module, ct, factor, keys, scratch)?;
     }
-    Ok(())
+    if rest.is_empty() {
+        return Ok(());
+    }
+    scratch.scope(|scratch| {
+        let (mut tmp, mut scratch) = scratch.take_ckks_ciphertext_like_scratch(ct);
+        for pair in rest.chunks(2) {
+            eval_factor_into(module, &mut tmp, ct, &pair[0], keys, &mut scratch)?;
+            eval_factor_into(module, ct, &tmp, &pair[1], keys, &mut scratch)?;
+        }
+        Ok(())
+    })
 }
 
-/// Evaluates a single homomorphic-DFT factor in place on `running`: (re)allocates
-/// and prepares the baby rotations of the current operand, then applies the
+/// Evaluates a single homomorphic-DFT factor from `src` into `dst`:
+/// (re)allocates and prepares the baby rotations of `src`, then applies the
 /// unified linear-transformation eval. `P` only decides how the factor's RHS is
 /// materialized inside the eval (resident vs streamed).
-fn eval_factor<BE, P, Dst, H, K>(
+fn eval_factor_into<BE, P, Dst, Src, H, K>(
+    module: &Module<BE>,
+    dst: &mut Dst,
+    src: &Src,
+    factor: &LinearTransformation<P>,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+    Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    K: CKKSAtkBounds<BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
+{
+    // `dst` is the previous factor's buffer: its logical metadata and width still
+    // describe that factor's output. Realign it with `src` before anything reads
+    // `dst.k()` (the eval parameters) or sizes work off it.
+    dst.set_meta(src.meta());
+    dst.set_k(src.k());
+    let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), src);
+    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, scratch)?;
+    module.ckks_eval_linear_transformation_into(dst, src, &babies, factor, keys, scratch)
+}
+
+/// [`eval_factor_into`] in place, for the leading factor of an odd-length chain.
+fn eval_factor_assign<BE, P, Dst, H, K>(
     module: &Module<BE>,
     running: &mut Dst,
     factor: &LinearTransformation<P>,
@@ -289,8 +326,7 @@ where
 {
     let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), running);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
-    module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, scratch)?;
-    Ok(())
+    module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, scratch)
 }
 
 /// Homomorphic encoding (CoeffsToSlots), `Standard` format: evaluates the Encode

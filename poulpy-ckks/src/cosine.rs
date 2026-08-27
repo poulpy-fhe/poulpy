@@ -252,8 +252,10 @@ fn gen_degrees(degree: usize, k: usize, dev: f64) -> (Vec<usize>, usize) {
     (deg, totdeg as usize)
 }
 
-fn gen_nodes(deg: &[usize], dev: f64, totdeg: usize, k: usize, scnum: usize) -> (Vec<FBig<HalfEven>>, Vec<FBig<HalfEven>>) {
-    let scfac = from_f64((1u64 << scnum) as f64);
+/// Han-Ki node abscissas in the message coordinate `x`: `deg[i]` Chebyshev-spaced
+/// points inside each cluster `±i` of radius `1/dev`, ordered as the solve
+/// consumes them.
+fn gen_node_abscissas(deg: &[usize], dev: f64, totdeg: usize, k: usize) -> Vec<FBig<HalfEven>> {
     let intersize = div(&from_i64(1), &from_f64(dev));
     let pi = pi_big();
 
@@ -290,21 +292,10 @@ fn gen_nodes(deg: &[usize], dev: f64, totdeg: usize, k: usize, scnum: usize) -> 
         cnt += 1;
     }
 
-    let mut y = vec![FBig::<HalfEven>::ZERO; totdeg];
-    for i in 0..totdeg {
-        y[i] = cos2pi_x_minus_quarter_over_r(&nodes[i], &scfac);
-    }
-
-    (nodes, y)
+    nodes
 }
 
-fn solve(
-    totdeg_in: usize,
-    k: usize,
-    _scnum: usize,
-    nodes: Vec<FBig<HalfEven>>,
-    mut y: Vec<FBig<HalfEven>>,
-) -> Vec<FBig<HalfEven>> {
+fn solve(totdeg_in: usize, norm: &FBig<HalfEven>, nodes: Vec<FBig<HalfEven>>, mut y: Vec<FBig<HalfEven>>) -> Vec<FBig<HalfEven>> {
     let totdeg = totdeg_in;
 
     for j in 1..totdeg {
@@ -317,10 +308,10 @@ fn solve(
 
     let totdeg_p1 = totdeg + 1;
 
-    // Coefficients are emitted in the standard Chebyshev basis on [-k, k]
-    // (variable u = x/k), so callers can evaluate via the standard
-    // T_n(v) recurrence on the ciphertext value directly.
-    let k_big = from_i64(k as i64);
+    // Coefficients are emitted in the standard Chebyshev basis on
+    // `[-norm, norm]` (variable u = x/norm), so callers can evaluate via the
+    // standard T_n(v) recurrence on the ciphertext value directly.
+    let k_big = norm.clone();
 
     let pi = pi_big();
     let mut x = vec![FBig::<HalfEven>::ZERO; totdeg_p1];
@@ -437,10 +428,65 @@ pub fn approximate_cos_len(k: usize, degree: usize, dev: f64) -> usize {
 /// precision.
 pub fn approximate_cos<F: Float + FromPrimitive>(k: usize, degree: usize, dev: f64, scnum: usize) -> Vec<F> {
     let (deg, totdeg) = gen_degrees(degree, k, dev);
-    let (nodes, y) = gen_nodes(&deg, dev, totdeg, k, scnum);
-    let coeffs = solve(totdeg, k, scnum, nodes, y);
+    let scfac = from_f64((1u64 << scnum) as f64);
+    let nodes = gen_node_abscissas(&deg, dev, totdeg, k);
+    let y: Vec<FBig<HalfEven>> = nodes.iter().map(|x| cos2pi_x_minus_quarter_over_r(x, &scfac)).collect();
+    let coeffs = solve(totdeg, &from_i64(k as i64), nodes, y);
     // solve returns totdeg+1 coefficients; the trailing one is outside the target polynomial degree.
     coeffs.iter().take(totdeg).map(|c| fbig_to_scalar(c)).collect()
+}
+
+/// Number of coefficients [`approximate_cos_centered`] produces for
+/// `(k, degree, dev)`: the [`approximate_cos`] count plus the reflections of the
+/// outermost cluster.
+pub fn approximate_cos_centered_len(k: usize, degree: usize, dev: f64, mirrored_clusters: usize) -> usize {
+    let (deg, totdeg) = gen_degrees(degree, k, dev);
+    totdeg + deg[k.saturating_sub(mirrored_clusters)..k].iter().sum::<usize>()
+}
+
+/// Most outermost clusters worth mirroring: two recovers the outer band, three
+/// measured no better. The caller picks the largest count its BSGS cost budget
+/// allows, so this only caps the search.
+pub const MAX_MIRRORED_CLUSTERS: usize = 2;
+
+/// [`approximate_cos`] recentred so the fit is a function of `v = (x - 1/4)/2^r`
+/// rather than of `x`, and therefore even.
+///
+/// The target `cos(2*pi*v)` is even and the normalizer is `k/2^r`, so the
+/// returned coefficients are in the Chebyshev basis of `u = (x - 1/4)/k`: the
+/// ciphertext value offset by `-1/(4k)`. Only the interpolant's *even* half is
+/// kept (the caller clears the odd residue), and an even polynomial is pinned by
+/// the data at `-v` as well as at `v`. The shift moves every cluster by `-1/4`,
+/// so the cluster at `-(k-1)` reaches further from the origin than any positive
+/// one and its reflection falls outside the fitted hull. Those nodes are
+/// mirrored back in as real interpolation conditions (the target is even, so
+/// they carry the value already fitted on the other side), which is what keeps
+/// the outer band accurate; each costs one degree.
+pub fn approximate_cos_centered<F: Float + FromPrimitive>(
+    k: usize,
+    degree: usize,
+    dev: f64,
+    scnum: usize,
+    mirrored_clusters: usize,
+) -> Vec<F> {
+    let (deg, totdeg) = gen_degrees(degree, k, dev);
+    let scfac = from_f64((1u64 << scnum) as f64);
+    let quarter = div(&from_i64(1), &from_i64(4));
+    let two_pi = two_pi_big();
+
+    let raw = gen_node_abscissas(&deg, dev, totdeg, k);
+    // Cluster members sit within `1/dev < 1/2` of their integer, so this cut
+    // selects exactly the `mirrored_clusters` outermost negative clusters.
+    let outermost = from_f64(-(k as f64 - 0.5 - mirrored_clusters as f64));
+    let centered = |x: &FBig<HalfEven>| div(&sub(x, &quarter), &scfac);
+    let mut nodes: Vec<FBig<HalfEven>> = raw.iter().map(centered).collect();
+    nodes.extend(raw.iter().filter(|x| **x < outermost).map(|x| neg(&centered(x))));
+    debug_assert_eq!(nodes.len(), approximate_cos_centered_len(k, degree, dev, mirrored_clusters));
+
+    let len = nodes.len();
+    let y: Vec<FBig<HalfEven>> = nodes.iter().map(|v| cos_big(&mul(&two_pi, v))).collect();
+    let coeffs = solve(len, &div(&from_i64(k as i64), &scfac), nodes, y);
+    coeffs.iter().take(len).map(|c| fbig_to_scalar(c)).collect()
 }
 
 #[cfg(test)]

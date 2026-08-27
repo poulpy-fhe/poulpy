@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssignBackend},
+    api::{CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssignBackend},
     layouts::{FillUniform, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
@@ -12,8 +12,13 @@ use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt,
     GLWETensorKeyEncryptSk, GLWETensoring,
+    api::{
+        GLWEBytesOf, TensorApplyRelinearizeItem, TensorPreparedRightRelinearizeAssignItem, TensorSquareApplyRelinearizeItem,
+        TensorSquareRelinearizeAssignItem,
+    },
+    default::operations::glwe_prepare_right,
     layouts::{
-        Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor,
+        BackendGLWE, Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor,
         GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey,
         GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         WithEffectiveDsize, prepared::GLWESecretPrepared,
@@ -649,6 +654,401 @@ where
             let noise_want = -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2);
 
             assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
+        }
+    }
+}
+
+/// Runs `op` over a zeroed and a poisoned arena and requires both results to
+/// equal `want`.
+fn assert_fused<BE, F>(scratch: &mut ScratchOwned<BE>, seed: &BackendGLWE<BE>, want: &BackendGLWE<BE>, label: &str, mut op: F)
+where
+    BE: poulpy_hal::layouts::Backend,
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut + Clone,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
+    F: FnMut(&mut BackendGLWE<BE>, &mut poulpy_hal::layouts::ScratchArena<'_, BE>),
+{
+    // 0x00 then 0xFF: as `i64` the poison is -1, so any limb read before being
+    // written shows up in the comparison.
+    for fill in [0x00u8, 0xFFu8] {
+        <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut scratch.data).fill(fill);
+        let mut have = seed.clone();
+        op(&mut have, &mut scratch.borrow());
+        assert_eq!(want, &have, "{label} (arena filled with {fill:#04x})");
+    }
+}
+
+/// The three fused apply+relinearize composites equal the explicit
+/// materialized composition byte-for-byte, over an intermediate wider than the
+/// result and a non-limb-aligned `cnv_offset`.
+///
+/// Each arena is sized at exactly the documented composite bound
+/// `glwe_tensor_bytes_of_from_infos(tensor) + max(apply, relinearize)`, which is
+/// what `ckks_mul_tmp_bytes` returns, so a composite exceeding it fails here.
+/// Prepared-right is given the *ordinary* apply bound for the equivalent
+/// unprepared layouts, pinning `P <= A`.
+pub fn test_glwe_tensor_fused_relinearize<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEBytesOf<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let n: usize = module.n();
+
+    for rank in 1_usize..=2 {
+        let layout = |limbs: usize| GLWELayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            k: (limbs * base2k).into(),
+            rank: rank.into(),
+        };
+
+        // Operands and intermediate five limbs wide, destination three: the
+        // composite cannot infer `tensor_infos` from `res`.
+        let ab_infos = layout(5);
+        let res_infos = layout(3);
+        let tensor_infos = layout(5);
+
+        let tsk_infos = GLWETensorKeyLayout {
+            n: n.into(),
+            base2k: base2k.into(),
+            dnum: 5_usize.into(),
+            k_aux: (base2k + module.log_n()).into(),
+            rank: rank.into(),
+            dsize: Dsize(1),
+        };
+
+        let mut source: Source = Source::new([rank as u8; 32]);
+
+        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ab_infos);
+        a.fill_uniform(base2k, &mut source);
+        let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ab_infos);
+        b.fill_uniform(base2k, &mut source);
+        let mut seed: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&res_infos);
+        seed.fill_uniform(base2k, &mut source);
+
+        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+        tsk.fill_uniform(base2k, &mut source);
+
+        let tensor_bytes: usize = module.glwe_tensor_bytes_of_from_infos(&tensor_infos);
+        let apply_bytes: usize = module.glwe_tensor_apply_tmp_bytes(&tensor_infos, &ab_infos, &ab_infos);
+        let square_bytes: usize = module.glwe_tensor_square_apply_tmp_bytes(&tensor_infos, &res_infos);
+        let prepared_bytes: usize = module.glwe_tensor_apply_tmp_bytes(&tensor_infos, &res_infos, &ab_infos);
+        let relin_bytes: usize = module.glwe_tensor_relinearize_tmp_bytes(&res_infos, &tensor_infos, &tsk_infos);
+
+        let mut apply_scratch: ScratchOwned<BE> = ScratchOwned::alloc(tensor_bytes + apply_bytes.max(relin_bytes));
+        let mut square_scratch: ScratchOwned<BE> = ScratchOwned::alloc(tensor_bytes + square_bytes.max(relin_bytes));
+        let mut prepared_scratch: ScratchOwned<BE> = ScratchOwned::alloc(tensor_bytes + prepared_bytes.max(relin_bytes));
+        let mut setup: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .prepare_tensor_key_tmp_bytes(&tsk_infos)
+                .max(apply_bytes)
+                .max(square_bytes)
+                .max(prepared_bytes)
+                .max(relin_bytes),
+        );
+
+        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
+        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut setup.borrow());
+
+        let b_size: usize = ab_infos.size();
+        let mut b_prep = module.cnv_pvec_right_alloc(rank + 1, b_size);
+        glwe_prepare_right(module, &mut b_prep, &b, ab_infos.k().as_usize(), &mut setup.borrow());
+
+        // 0 aligns on a limb, `base2k` on the next, `base2k + 7` on neither.
+        for cnv_offset in [0_usize, base2k, base2k + 7] {
+            let mut tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&tensor_infos);
+
+            let mut want = seed.clone();
+            module.glwe_tensor_apply(cnv_offset, &mut tensor, &a, &b, &mut setup.borrow());
+            module.glwe_tensor_relinearize(&mut want, &tensor, &tsk_prep, &mut setup.borrow());
+            assert_fused(
+                &mut apply_scratch,
+                &seed,
+                &want,
+                &format!("apply_relinearize (rank={rank}, cnv_offset={cnv_offset})"),
+                |res, s| module.glwe_tensor_apply_relinearize(cnv_offset, res, &tensor_infos, &a, &b, &tsk_prep, s),
+            );
+
+            let mut want = seed.clone();
+            module.glwe_tensor_square_apply(cnv_offset, &mut tensor, &want, &mut setup.borrow());
+            module.glwe_tensor_relinearize(&mut want, &tensor, &tsk_prep, &mut setup.borrow());
+            assert_fused(
+                &mut square_scratch,
+                &seed,
+                &want,
+                &format!("square_relinearize_assign (rank={rank}, cnv_offset={cnv_offset})"),
+                |res, s| module.glwe_tensor_square_relinearize_assign(cnv_offset, res, &tensor_infos, &tsk_prep, s),
+            );
+
+            let mut want = seed.clone();
+            module.glwe_tensor_apply_prepared_right(cnv_offset, &mut tensor, &want, &b_prep, b_size, &mut setup.borrow());
+            module.glwe_tensor_relinearize(&mut want, &tensor, &tsk_prep, &mut setup.borrow());
+            assert_fused(
+                &mut prepared_scratch,
+                &seed,
+                &want,
+                &format!("apply_prepared_right_relinearize_assign (rank={rank}, cnv_offset={cnv_offset})"),
+                |res, s| {
+                    module.glwe_tensor_apply_prepared_right_relinearize_assign(
+                        cnv_offset,
+                        res,
+                        &tensor_infos,
+                        &b_prep,
+                        b_size,
+                        &tsk_prep,
+                        s,
+                    )
+                },
+            );
+        }
+    }
+}
+
+/// The four fused-composite batches equal the ordered scalar composites, item
+/// for item, at lengths 0 through 4.
+///
+/// Each item carries its own `cnv_offset` and tensor layout, read-only operands
+/// and prepared operands repeat across items, and every batch runs on an arena
+/// of exactly the bytes its `*_batch_tmp_bytes` advertises, once zeroed and once
+/// poisoned.
+pub fn test_glwe_tensor_fused_relinearize_batch<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE> + GLWEBytesOf<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let n: usize = module.n();
+    let rank: usize = 1;
+
+    let layout = |limbs: usize| GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: (limbs * base2k).into(),
+        rank: rank.into(),
+    };
+    let ab_infos = layout(5);
+    let res_infos = layout(3);
+    // Two intermediate widths, so items in one batch differ in tensor layout.
+    let tensor_infos = [layout(5), layout(4)];
+    // 0 aligns on a limb, `base2k` on the next, `base2k + 7` on neither.
+    let offsets = [0_usize, base2k, base2k + 7, 0];
+
+    let tsk_infos = GLWETensorKeyLayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        dnum: 5_usize.into(),
+        k_aux: (base2k + module.log_n()).into(),
+        rank: rank.into(),
+        dsize: Dsize(1),
+    };
+
+    let mut source: Source = Source::new([11u8; 32]);
+    let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ab_infos);
+    a.fill_uniform(base2k, &mut source);
+    let mut b: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ab_infos);
+    b.fill_uniform(base2k, &mut source);
+    let mut seed: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&res_infos);
+    seed.fill_uniform(base2k, &mut source);
+    let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
+    tsk.fill_uniform(base2k, &mut source);
+
+    // The scalar reference runs on one arena covering every composite at either
+    // intermediate width.
+    let mut setup_bytes: usize = module.prepare_tensor_key_tmp_bytes(&tsk_infos);
+    for tensor in tensor_infos.iter() {
+        let relin = module.glwe_tensor_relinearize_tmp_bytes(&res_infos, tensor, &tsk_infos);
+        let stage = module
+            .glwe_tensor_apply_tmp_bytes(tensor, &ab_infos, &ab_infos)
+            .max(module.glwe_tensor_square_apply_tmp_bytes(tensor, &ab_infos))
+            .max(module.glwe_tensor_square_apply_tmp_bytes(tensor, &res_infos))
+            .max(module.glwe_tensor_apply_tmp_bytes(tensor, &res_infos, &ab_infos))
+            .max(relin);
+        setup_bytes = setup_bytes.max(module.glwe_tensor_bytes_of_from_infos(tensor) + stage);
+    }
+    let mut setup: ScratchOwned<BE> = ScratchOwned::alloc(setup_bytes);
+    let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
+    module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut setup.borrow());
+
+    let b_size: usize = ab_infos.size();
+    let mut b_prep = module.cnv_pvec_right_alloc(rank + 1, b_size);
+    glwe_prepare_right(module, &mut b_prep, &b, ab_infos.k().as_usize(), &mut setup.borrow());
+
+    let alloc_dst = |len: usize| -> Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> {
+        (0..len)
+            .map(|_| {
+                let mut ct = module.glwe_alloc_from_infos(&res_infos);
+                ct.fill_uniform(base2k, &mut Source::new([13u8; 32]));
+                ct
+            })
+            .collect()
+    };
+    let infos_of = |i: usize| &tensor_infos[i % 2];
+
+    for len in 0..=4usize {
+        // ── apply_relinearize: `a` repeats across every item.
+        let mut want = alloc_dst(len);
+        for (i, dst) in want.iter_mut().enumerate() {
+            module.glwe_tensor_apply_relinearize(offsets[i], dst, infos_of(i), &a, &b, &tsk_prep, &mut setup.borrow());
+        }
+        let query: Vec<TensorApplyRelinearizeItem<&GLWE<_, _>, _, _, _>> = want
+            .iter()
+            .enumerate()
+            .map(|(i, dst)| TensorApplyRelinearizeItem {
+                cnv_offset: offsets[i],
+                res: dst,
+                tensor_infos: infos_of(i),
+                a: &a,
+                b: &b,
+            })
+            .collect();
+        let bytes = module.glwe_tensor_apply_relinearize_batch_tmp_bytes(&query, &tsk_infos);
+        drop(query);
+        for fill in [0x00u8, 0xFFu8] {
+            let mut exact: ScratchOwned<BE> = ScratchOwned::alloc(bytes.max(1));
+            <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut exact.data).fill(fill);
+            let mut have = alloc_dst(len);
+            let mut items: Vec<TensorApplyRelinearizeItem<&mut GLWE<_, _>, _, _, _>> = have
+                .iter_mut()
+                .enumerate()
+                .map(|(i, dst)| TensorApplyRelinearizeItem {
+                    cnv_offset: offsets[i],
+                    res: dst,
+                    tensor_infos: infos_of(i),
+                    a: &a,
+                    b: &b,
+                })
+                .collect();
+            module.glwe_tensor_apply_relinearize_batch(&mut items, &tsk_prep, &mut exact.borrow());
+            drop(items);
+            assert_eq!(want, have, "apply_relinearize_batch len={len} fill={fill:#04x}");
+        }
+
+        // ── square_apply_relinearize
+        let mut want = alloc_dst(len);
+        for (i, dst) in want.iter_mut().enumerate() {
+            module.glwe_tensor_square_apply_relinearize(offsets[i], dst, infos_of(i), &a, &tsk_prep, &mut setup.borrow());
+        }
+        let query: Vec<TensorSquareApplyRelinearizeItem<&GLWE<_, _>, _, _>> = want
+            .iter()
+            .enumerate()
+            .map(|(i, dst)| TensorSquareApplyRelinearizeItem {
+                cnv_offset: offsets[i],
+                res: dst,
+                tensor_infos: infos_of(i),
+                a: &a,
+            })
+            .collect();
+        let bytes = module.glwe_tensor_square_apply_relinearize_batch_tmp_bytes(&query, &tsk_infos);
+        drop(query);
+        for fill in [0x00u8, 0xFFu8] {
+            let mut exact: ScratchOwned<BE> = ScratchOwned::alloc(bytes.max(1));
+            <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut exact.data).fill(fill);
+            let mut have = alloc_dst(len);
+            let mut items: Vec<TensorSquareApplyRelinearizeItem<&mut GLWE<_, _>, _, _>> = have
+                .iter_mut()
+                .enumerate()
+                .map(|(i, dst)| TensorSquareApplyRelinearizeItem {
+                    cnv_offset: offsets[i],
+                    res: dst,
+                    tensor_infos: infos_of(i),
+                    a: &a,
+                })
+                .collect();
+            module.glwe_tensor_square_apply_relinearize_batch(&mut items, &tsk_prep, &mut exact.borrow());
+            drop(items);
+            assert_eq!(want, have, "square_apply_relinearize_batch len={len} fill={fill:#04x}");
+        }
+
+        // ── square_relinearize_assign: each item aliases its own destination.
+        let mut want = alloc_dst(len);
+        for (i, dst) in want.iter_mut().enumerate() {
+            module.glwe_tensor_square_relinearize_assign(offsets[i], dst, infos_of(i), &tsk_prep, &mut setup.borrow());
+        }
+        let query: Vec<TensorSquareRelinearizeAssignItem<&GLWE<_, _>, _>> = want
+            .iter()
+            .enumerate()
+            .map(|(i, dst)| TensorSquareRelinearizeAssignItem {
+                cnv_offset: offsets[i],
+                res: dst,
+                tensor_infos: infos_of(i),
+            })
+            .collect();
+        let bytes = module.glwe_tensor_square_relinearize_assign_batch_tmp_bytes(&query, &tsk_infos);
+        drop(query);
+        for fill in [0x00u8, 0xFFu8] {
+            let mut exact: ScratchOwned<BE> = ScratchOwned::alloc(bytes.max(1));
+            <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut exact.data).fill(fill);
+            let mut have = alloc_dst(len);
+            let mut items: Vec<TensorSquareRelinearizeAssignItem<&mut GLWE<_, _>, _>> = have
+                .iter_mut()
+                .enumerate()
+                .map(|(i, dst)| TensorSquareRelinearizeAssignItem {
+                    cnv_offset: offsets[i],
+                    res: dst,
+                    tensor_infos: infos_of(i),
+                })
+                .collect();
+            module.glwe_tensor_square_relinearize_assign_batch(&mut items, &tsk_prep, &mut exact.borrow());
+            drop(items);
+            assert_eq!(want, have, "square_relinearize_assign_batch len={len} fill={fill:#04x}");
+        }
+
+        // ── apply_prepared_right_relinearize_assign: one prepared operand,
+        // repeated across every item.
+        let mut want = alloc_dst(len);
+        for (i, dst) in want.iter_mut().enumerate() {
+            module.glwe_tensor_apply_prepared_right_relinearize_assign(
+                offsets[i],
+                dst,
+                infos_of(i),
+                &b_prep,
+                b_size,
+                &tsk_prep,
+                &mut setup.borrow(),
+            );
+        }
+        let query: Vec<TensorPreparedRightRelinearizeAssignItem<&GLWE<_, _>, _, _>> = want
+            .iter()
+            .enumerate()
+            .map(|(i, dst)| TensorPreparedRightRelinearizeAssignItem {
+                cnv_offset: offsets[i],
+                res: dst,
+                tensor_infos: infos_of(i),
+                prepared_right: &b_prep,
+                prepared_right_size: b_size,
+            })
+            .collect();
+        let bytes = module.glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes(&query, &tsk_infos);
+        drop(query);
+        for fill in [0x00u8, 0xFFu8] {
+            let mut exact: ScratchOwned<BE> = ScratchOwned::alloc(bytes.max(1));
+            <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut exact.data).fill(fill);
+            let mut have = alloc_dst(len);
+            let mut items: Vec<TensorPreparedRightRelinearizeAssignItem<&mut GLWE<_, _>, _, _>> = have
+                .iter_mut()
+                .enumerate()
+                .map(|(i, dst)| TensorPreparedRightRelinearizeAssignItem {
+                    cnv_offset: offsets[i],
+                    res: dst,
+                    tensor_infos: infos_of(i),
+                    prepared_right: &b_prep,
+                    prepared_right_size: b_size,
+                })
+                .collect();
+            module.glwe_tensor_apply_prepared_right_relinearize_assign_batch(&mut items, &tsk_prep, &mut exact.borrow());
+            drop(items);
+            assert_eq!(
+                want, have,
+                "apply_prepared_right_relinearize_assign_batch len={len} fill={fill:#04x}"
+            );
         }
     }
 }

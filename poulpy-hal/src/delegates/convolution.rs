@@ -1,8 +1,8 @@
 use crate::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
-        Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut, CnvPVecRBackendRef,
-        CnvPVecROwned, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        Backend, CnvDftAccTerm, CnvDftStore, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut,
+        CnvPVecRBackendRef, CnvPVecROwned, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
     },
     oep::{HalConvolutionImpl, HalVecZnxDftImpl},
 };
@@ -151,7 +151,12 @@ impl_convolution_delegate!(
         <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_accumulate(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     },
     fn cnv_accumulate_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
+        // One budget for the whole accumulation family: `cnv_accumulate_dft_columns`
+        // falls back to per-term `cnv_apply_dft{,_accumulate}` calls, whose scratch a
+        // backend's fused `cnv_accumulate_dft` bound need not cover on its own.
+        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size).max(
+            <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size),
+        )
     },
     fn cnv_accumulate_dft<'a>(
         &self,
@@ -164,6 +169,36 @@ impl_convolution_delegate!(
         BE: 'a,
     {
         <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft(self, cnv_offset, res, res_col, terms, scratch)
+    },
+    fn cnv_accumulate_dft_columns<'a>(
+        &self,
+        cnv_offset: usize,
+        store: CnvDftStore,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        cols: usize,
+        terms: &[CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a,
+    {
+        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_columns(self, cnv_offset, store, res, res_col, cols, terms, scratch)
+    },
+    fn cnv_accumulate_dft_columns_batch<'a>(
+        &self,
+        cnv_offset: usize,
+        store: CnvDftStore,
+        results: &mut [VecZnxDftBackendMut<'_, BE>],
+        res_col: usize,
+        cols: usize,
+        term_sets: &[&[CnvDftAccTerm<'a, BE>]],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a,
+    {
+        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_columns_batch(
+            self, cnv_offset, store, results, res_col, cols, term_sets, scratch,
+        )
     },
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_pairwise_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)

@@ -26,7 +26,10 @@ use crate::{
         keyswitching::glwe::resolved_use,
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
-            inner_product::{glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_unprepared_baby_steps_dft},
+            inner_product::{
+                glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_prepared_baby_steps_dft_batch,
+                glwe_accumulate_unprepared_baby_steps_dft,
+            },
             lazy::{
                 glwe_dft_add_dft_assign, glwe_dft_copy_dft, glwe_idft_dft_into_big, glwe_lazy_giant_automorphism_from_dft,
                 glwe_normalize_big_into,
@@ -74,6 +77,33 @@ pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: CnvPVecBytesOf + Convolution<BE> + ModuleN;
+
+    /// Runs the PROD inner products of a batch of giant steps into as many
+    /// distinct destinations.
+    ///
+    /// The default is the ordered per-giant call, so a diagonal representation
+    /// only ever has to implement
+    /// [`accumulate_giant_prod`](Self::accumulate_giant_prod). Overrides may
+    /// share a prepared baby step across the giants that use it; they must keep
+    /// destination `i` associated with `giant_steps[i]`, and must not rotate,
+    /// key-switch, or otherwise consume any product. `giant_steps` is a slice of
+    /// references because filtering pruned empty buckets breaks contiguity;
+    /// every giant step in it must be non-empty. An empty batch is a no-op.
+    fn accumulate_giant_prods<M>(
+        module: &M,
+        cnv_offset_hi: usize,
+        prod_dfts: &mut [VecZnxDftBackendMut<'_, BE>],
+        lhs: &LinearTransformationBabySteps<BE>,
+        giant_steps: &[&LinearTransformationGiantStep<Self>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    {
+        assert_eq!(prod_dfts.len(), giant_steps.len());
+        for (prod_dft, gs) in prod_dfts.iter_mut().zip(giant_steps) {
+            Self::accumulate_giant_prod(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+        }
+    }
 }
 
 impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
@@ -88,6 +118,19 @@ impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
         M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
     {
         glwe_accumulate_prepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+    }
+
+    fn accumulate_giant_prods<M>(
+        module: &M,
+        cnv_offset_hi: usize,
+        prod_dfts: &mut [VecZnxDftBackendMut<'_, BE>],
+        lhs: &LinearTransformationBabySteps<BE>,
+        giant_steps: &[&LinearTransformationGiantStep<Self>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    {
+        glwe_accumulate_prepared_baby_steps_dft_batch(module, cnv_offset_hi, prod_dfts, lhs, giant_steps, scratch);
     }
 }
 
@@ -189,7 +232,14 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     let prod_size = baby_size + diagonal_size - cnv_offset_hi;
 
     let num_giant_steps = rhs.giant_steps.len();
-    let nonzero_giant_rotations = rhs.giant_steps.iter().filter(|gs| gs.rot != 0).count();
+    // Same filter as the evaluation loops below: an empty bucket is skipped, so
+    // it must not make the planner claim a rotation (and demand a key) that no
+    // evaluated bucket needs.
+    let nonzero_giant_rotations = rhs
+        .giant_steps
+        .iter()
+        .filter(|gs| gs.rot != 0 && !gs.diagonals.is_empty())
+        .count();
     let has_nonzero_giant_rotation = nonzero_giant_rotations != 0;
     // Keys may differ per giant rotation, so the sizing is the widest of the
     // rotations actually used. An identity-only transform consults none.
@@ -245,6 +295,10 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
 
         let mut res_initialized = false;
         for g in 0..num_giant_steps {
+            // A pruned bucket contributes nothing; PROD would panic on it.
+            if rhs.giant_steps[g].diagonals.is_empty() {
+                continue;
+            }
             {
                 let mut prod_dft_backend = prod_dft.to_backend_mut();
                 P::accumulate_giant_prod(
@@ -330,6 +384,9 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     let mut res_initialized = false;
 
     for g in 0..num_giant_steps {
+        if rhs.giant_steps[g].diagonals.is_empty() {
+            continue;
+        }
         {
             let mut prod_dft_backend = prod_dft.to_backend_mut();
             P::accumulate_giant_prod(

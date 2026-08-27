@@ -1,21 +1,22 @@
 use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+    BSGSPolynomial, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, bsgs_op_counts,
+    prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{HostBytesBackend, Module, ScratchOwned, ZnxView},
     source::Source,
 };
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
-    api::{CKKSAllOpsTmpBytes, CKKSEncodingHostOps, CKKSEvalModOps},
+    api::{CKKSAllOpsTmpBytes, CKKSEncodingHostOps, CKKSEvalModOps, PolynomialInputTransform},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
-        eval_mod::{EvalMod, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod},
+        eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod},
     },
-    polynomial::SplitStrategy,
+    polynomial::{Parity, SplitStrategy},
     test_suite::CKKSTestParams,
     test_suite::reference_encoder::ReferenceEncoder,
 };
@@ -25,6 +26,9 @@ use super::helpers::{
     gen_tsk, precision_stats,
 };
 use crate::SlotsKind;
+use crate::default::eval_mod_lockstep::{
+    CKKSLockstepOps, ckks_eval_mod_pair_lockstep_default, ckks_eval_mod_pair_lockstep_tmp_bytes_default, lockstep_frontier_shapes,
+};
 
 fn alloc_scratch_eval_mod<BE, F>(
     params: &super::CKKSTestParams,
@@ -81,6 +85,9 @@ where
     F: TestScalar,
 {
     let two = F::one() + F::one();
+    // The circuit shifts its input by this before the polynomial; a centred fit
+    // is only correct at the shifted argument.
+    let t = t + params.plan.input_offset::<F>().unwrap_or_else(F::zero);
     match &params.f_mod_poly {
         EvalModPoly::Complex(poly) => {
             let (mut re, mut im) = poly.evaluate(t);
@@ -152,6 +159,19 @@ fn run_eval_mod_case<BE, F, E>(
     let params_be =
         compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, &mut compile_scratch.borrow()).expect("compile_eval_mod");
 
+    // The analytic plan estimate is the public sizing contract: it must match
+    // what the compiled polynomials actually cost.
+    assert_eq!(
+        lit.consumed_bits(),
+        params_be.consumed_bits(),
+        "{label}: EvalModPlan::consumed_bits disagrees with the compiled EvalMod"
+    );
+    assert_eq!(
+        lit.eval_depth(),
+        params_be.eval_depth(),
+        "{label}: EvalModPlan::eval_depth disagrees with the compiled EvalMod"
+    );
+
     // Input message scale, below the plan scale so EvalMod's internal raise to
     // `f_mod_log_delta` is exercised.
     let input_log_delta = 40;
@@ -190,8 +210,10 @@ fn run_eval_mod_case<BE, F, E>(
             F::from_f64(value / (mr * interval)).unwrap()
         })
         .collect();
-    // Worst-case slot: largest integer multiple plus a half-message.
+    // Worst-case slots, both signs: largest integer multiple plus a half-message.
+    // Both bands matter for a centred fit, whose node set is asymmetric.
     x_re_raw[0] = F::from_f64((k * mr + 0.5) / (mr * interval)).unwrap();
+    x_re_raw[1] = F::from_f64(-(k * mr + 0.5) / (mr * interval)).unwrap();
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
 
     let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
@@ -279,6 +301,268 @@ fn run_eval_mod_case<BE, F, E>(
     }
 }
 
+/// **Paired EvalMod equals two singles.** Runs the same plan on two different
+/// inputs through `ckks_eval_mod` twice and through `ckks_eval_mod_pair` once,
+/// inside a scratch arena sized by `ckks_eval_mod_pair_tmp_bytes`, and requires
+/// both branches to agree bit-for-bit on metadata and on every active limb.
+/// The paired and lockstep EvalMod agree with two single evaluations, on the
+/// plain `SinCheby` shape and on the active `CosHKEven` shape (input offset,
+/// `T2` fold, range-extension squares).
+pub fn test_eval_mod_pair_matches_singles<BE, F, E>(
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    Module<BE>: CKKSLockstepOps<BE>,
+{
+    run_eval_mod_pair_case::<BE, F, E>(
+        params,
+        module,
+        host_module,
+        "sin_cheby",
+        EvalModPlan {
+            eval_mod_type: EvalModType::SinCheby,
+            log_msg_ratio: 8,
+            f_mod_degree: 63,
+            f_mod_interval: 14,
+            f_mod_log_interval_reduction: 0,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
+            f_mod_log_delta: 60,
+        },
+        2,
+        None,
+        &|| {},
+    );
+    run_eval_mod_pair_case::<BE, F, E>(
+        params,
+        module,
+        host_module,
+        "cos_hk_even",
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosHKEven,
+            log_msg_ratio: 8,
+            f_mod_degree: 30,
+            f_mod_interval: 16,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
+            f_mod_log_delta: 60,
+        },
+        2,
+        None,
+        &|| {},
+    );
+}
+
+/// One frontier the lockstep scratch query priced: the batch operation and,
+/// per item, `(destination k, destination capacity, left operand k, right
+/// operand limbs)`.
+pub type LockstepFrontierShape = (&'static str, Vec<(u32, usize, u32, usize)>);
+
+/// Runs one EvalMod plan through two singles, the pair and the lockstep, all
+/// three compared limb for limb, with the lockstep on an arena of exactly
+/// `ckks_eval_mod_pair_lockstep_tmp_bytes_default`.
+///
+/// Returns the frontier sequence the lockstep scratch query priced, item
+/// layouts included, so a backend test can check it against what it observed.
+#[allow(clippy::too_many_arguments)]
+pub fn run_eval_mod_pair_case<BE, F, E>(
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    label: &str,
+    mut lit: EvalModPlan,
+    dsize: usize,
+    // Destination width; `None` takes the natural one. A narrower destination
+    // makes the final copy charge a unary offset.
+    res_k: Option<usize>,
+    // Called immediately before the lockstep run, so a backend test can reset
+    // its counters and observe only that pipeline.
+    before_lockstep: &dyn Fn(),
+) -> Vec<LockstepFrontierShape>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE> + CKKSLockstepOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    lit.coeffs_meta = CoeffsMeta::from_delta_budget(lit.f_mod_log_delta, params.base2k);
+
+    let mut compile_scratch =
+        ScratchOwned::<BE>::alloc(CKKSEncodingHostOps::<BE, F>::ckks_reim_tmp_bytes(module, module.n() / 2));
+    let params_be =
+        compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, &mut compile_scratch.borrow()).expect("compile_eval_mod");
+
+    let input_log_delta = 40;
+    let test_params = CKKSTestParams {
+        n: params.n,
+        base2k: params.base2k,
+        k: (lit.consumed_bits() + input_log_delta + 2 * params.base2k).next_multiple_of(dsize * params.base2k),
+        hw: 192,
+        prec_meta: CKKSMeta {
+            log_sparsity: 0,
+            log_delta: input_log_delta,
+            slots: SlotsKind::Complex,
+        },
+        prec_log_budget: 10,
+        dsize,
+        rank: 1,
+    };
+
+    let slots = test_params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
+    let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
+    let res_k = res_k.unwrap_or(test_params.k + lit.f_mod_log_delta.saturating_sub(input_log_delta));
+    let mut scratch = alloc_scratch_eval_mod(&test_params, module, &params_be, res_k);
+    let tsk = gen_tsk(&test_params, module, &sk_raw, &mut scratch.borrow());
+
+    // Two distinct inputs, so a pair that silently evaluated one branch twice
+    // (or crossed its operands) cannot pass.
+    let mr = (1u64 << lit.log_msg_ratio) as f64;
+    let interval = lit.f_mod_interval as f64;
+    let mut source = Source::new([3u8; 32]);
+    let sample = |source: &mut Source| -> Vec<F> {
+        let k = (lit.f_mod_interval - 1) as f64;
+        (0..slots)
+            .map(|_| {
+                let value = source.next_f64(-k, k).round() * mr + source.next_f64(-1.0, 1.0);
+                F::from_f64(value / (mr * interval)).unwrap()
+            })
+            .collect()
+    };
+    let zeros = vec![F::zero(); slots];
+    let inputs: Vec<CKKSCiphertextOwned<BE>> = (0..2)
+        .map(|_| {
+            let x = sample(&mut source);
+            ckks_encrypt_with_prec(
+                &test_params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                test_params.k,
+                &x,
+                &zeros,
+                test_params.prec(),
+                &mut scratch.borrow(),
+            )
+        })
+        .collect();
+
+    let alloc_res = || {
+        let mut ct = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
+        ct.set_meta(test_params.prec().meta);
+        ct
+    };
+    let (mut single_0, mut single_1) = (alloc_res(), alloc_res());
+    module
+        .ckks_eval_mod(&mut single_0, &inputs[0], &params_be, &tsk, &mut scratch.borrow())
+        .expect("ckks_eval_mod");
+    module
+        .ckks_eval_mod(&mut single_1, &inputs[1], &params_be, &tsk, &mut scratch.borrow())
+        .expect("ckks_eval_mod");
+
+    // The pair runs inside exactly the budget it advertises.
+    let (mut pair_0, mut pair_1) = (alloc_res(), alloc_res());
+    let pair_bytes = module.ckks_eval_mod_pair_tmp_bytes(
+        &pair_0,
+        &pair_1,
+        &inputs[0],
+        &inputs[1],
+        &params_be,
+        &test_params.tsk_layout(),
+    );
+    let mut pair_scratch = ScratchOwned::<BE>::alloc(pair_bytes);
+    module
+        .ckks_eval_mod_pair(
+            &mut pair_0,
+            &mut pair_1,
+            &inputs[0],
+            &inputs[1],
+            &params_be,
+            &tsk,
+            &mut pair_scratch.borrow(),
+        )
+        .expect("ckks_eval_mod_pair");
+
+    // The lockstep driver interleaves both DAGs and dispatches every
+    // tensor-product frontier as a batch; the branches are independent, so it
+    // must land on exactly the sequential result.
+    let (mut lock_0, mut lock_1) = (alloc_res(), alloc_res());
+    // Priced against the *fresh* destinations, exactly as a caller sizing its
+    // arena would.
+    let shapes = lockstep_frontier_shapes::<BE, _, _, _, _, _, F>(&lock_0, &lock_1, &inputs[0], &inputs[1], &params_be)
+        .expect("frontier shapes");
+    before_lockstep();
+    let lock_bytes = ckks_eval_mod_pair_lockstep_tmp_bytes_default(
+        module,
+        &lock_0,
+        &lock_1,
+        &inputs[0],
+        &inputs[1],
+        &params_be,
+        &test_params.tsk_layout(),
+    );
+    let mut lock_scratch = ScratchOwned::<BE>::alloc(lock_bytes);
+    ckks_eval_mod_pair_lockstep_default(
+        module,
+        &mut lock_0,
+        &mut lock_1,
+        &inputs[0],
+        &inputs[1],
+        &params_be,
+        &tsk,
+        &mut lock_scratch.borrow(),
+    )
+    .expect("ckks_eval_mod_pair_lockstep");
+
+    for (branch, (single, paired, locked)) in [(&single_0, &pair_0, &lock_0), (&single_1, &pair_1, &lock_1)]
+        .into_iter()
+        .enumerate()
+    {
+        for (kind, have) in [("pair", paired), ("lockstep", locked)] {
+            assert_eq!(
+                single.meta(),
+                have.meta(),
+                "{label}: eval_mod_{kind} branch {branch}: metadata differs"
+            );
+            assert_eq!(
+                single.k(),
+                have.k(),
+                "{label}: eval_mod_{kind} branch {branch}: torus width differs"
+            );
+            let cols = single.rank().as_usize() + 1;
+            let n = single.n().as_usize();
+            for col in 0..cols {
+                for limb in 0..single.size() {
+                    assert_eq!(
+                        &single.data().at(col, limb)[..n],
+                        &have.data().at(col, limb)[..n],
+                        "{label}: eval_mod_{kind} branch {branch}: limb ({col}, {limb}) differs from the single op"
+                    );
+                }
+            }
+        }
+    }
+
+    shapes
+}
+
 pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
     params: super::CKKSTestParams,
     module: &Module<BE>,
@@ -361,6 +645,105 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", lit, 18.0);
+}
+
+/// **`CosHKEven`.** The centred discrete cosine, end to end against both the
+/// circuit's own polynomial and the ideal `x mod 1`. Also pins the encoding:
+/// `Parity::Even` (so the odd basis is skipped), no input transform, no extra
+/// level over [`EvalModType::CosHK`], and a `-1/(4K)` input offset.
+pub fn test_eval_mod_cos_discrete_even<BE, F, E>(
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let mut lit = EvalModPlan {
+        eval_mod_type: EvalModType::CosHKEven,
+        log_msg_ratio: 8,
+        f_mod_degree: 30,
+        f_mod_interval: 16,
+        f_mod_log_interval_reduction: 3,
+        f_mod_inv_degree: None,
+        f_mod_log_delta: 60,
+        scaling: None,
+        split_strategy: SplitStrategy::MinDepth,
+        coeffs_meta: CoeffsMeta::from_delta_budget(0, 0), // overwritten by run_eval_mod_case
+    };
+
+    {
+        lit.coeffs_meta = CoeffsMeta::from_delta_budget(lit.f_mod_log_delta, params.base2k);
+        let mut scratch = ScratchOwned::<BE>::alloc(CKKSEncodingHostOps::<BE, F>::ckks_reim_tmp_bytes(module, module.n() / 2));
+        let mut full = lit;
+        full.eval_mod_type = EvalModType::CosHK;
+        let full = compile_eval_mod::<BE, F>(params.base2k.into(), full, module, &mut scratch.borrow()).expect("compile CosHK");
+        let even =
+            compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, &mut scratch.borrow()).expect("compile CosHKEven");
+
+        let (EvalModBsgs::Real(full), EvalModBsgs::Real(even)) = (&full.f_mod_bsgs, &even.f_mod_bsgs) else {
+            panic!("the CosHK family encodes a real polynomial");
+        };
+        let folded = lit.folds_even_base();
+        assert_eq!(
+            even.input_transform() != PolynomialInputTransform::Identity,
+            folded,
+            "encoded transform disagrees with EvalModPlan::folds_even_base"
+        );
+        if folded {
+            // The fold consumes the parity: `T_2j(x) = T_j(T2(x))` leaves a dense
+            // polynomial of half the degree.
+            assert_eq!(even.parity(), Parity::Full);
+            assert!(
+                even.degree() * 2 <= full.degree() + 4,
+                "the T2 fold should roughly halve the degree"
+            );
+        } else {
+            assert_eq!(even.parity(), Parity::Even, "CosHKEven must skip the odd basis");
+        }
+        // Hard constraint: the even variant never costs a level or a `ct×ct`
+        // more than CosHK at the same plan.
+        let mut full_plan = lit;
+        full_plan.eval_mod_type = EvalModType::CosHK;
+        let cost = |p: &BSGSPolynomial<CKKSPlaintextOwned<BE>>, parity| {
+            bsgs_op_counts(p.degree(), lit.split_strategy, parity, p.basis()).0
+                + usize::from(p.input_transform() != PolynomialInputTransform::Identity)
+        };
+        let (even_ct_ct, full_ct_ct) = (cost(even, even.parity()), cost(full, Parity::Full));
+        println!(
+            "CosHKEven: mirrors={} fold={folded} deg={} depth={} ct_ct={even_ct_ct} vs CosHK deg={} depth={} ct_ct={full_ct_ct}",
+            lit.mirrored_clusters(),
+            even.degree(),
+            even.eval_depth(),
+            full.degree(),
+            full.eval_depth(),
+        );
+        assert!(
+            even.eval_depth() <= full.eval_depth(),
+            "CosHKEven must not cost a level: {} vs CosHK's {}",
+            even.eval_depth(),
+            full.eval_depth()
+        );
+        assert!(
+            lit.consumed_bits() <= full_plan.consumed_bits(),
+            "CosHKEven must not consume more budget: {} vs CosHK's {}",
+            lit.consumed_bits(),
+            full_plan.consumed_bits()
+        );
+        assert!(
+            even_ct_ct < full_ct_ct,
+            "CosHKEven must reduce ct*ct: {even_ct_ct} vs CosHK's {full_ct_ct}"
+        );
+        let want = -(F::one() / F::from_usize(4 * lit.f_mod_interval).unwrap());
+        assert_eq!(lit.input_offset::<F>(), Some(want), "CosHKEven input offset");
+    }
+
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete_even", lit, 18.0);
 }
 
 pub fn test_eval_mod_cos_continuous<BE, F, E>(

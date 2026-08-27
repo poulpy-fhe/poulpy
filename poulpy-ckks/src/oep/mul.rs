@@ -1,5 +1,11 @@
 use crate::CKKSResult as Result;
-use crate::default::mul::CKKSMulDefault;
+use crate::api::{CKKSAddOps, CKKSMulIntoItem, CKKSMulOps, CKKSPreparedMulAssignItem, CKKSSquareAssignItem, CKKSSquareIntoItem};
+use crate::default::mul::{
+    CKKSMulAddPtConstPlan, CKKSMulDefault, ckks_mul_add_pt_consts_into_ordered, ckks_mul_into_batch_ordered,
+    ckks_mul_into_batch_tmp_bytes_ordered, ckks_mul_prepared_assign_batch_ordered,
+    ckks_mul_prepared_assign_batch_tmp_bytes_ordered, ckks_square_assign_batch_ordered,
+    ckks_square_assign_batch_tmp_bytes_ordered, ckks_square_into_batch_ordered, ckks_square_into_batch_tmp_bytes_ordered,
+};
 use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::{
@@ -14,7 +20,10 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use crate::{CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, layouts::CKKSPreparedRight};
+use crate::{
+    CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
+    layouts::{CKKSPreparedRight, CKKSPreparedRightInfos},
+};
 
 /// # Safety
 ///
@@ -150,6 +159,154 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds;
+
+    /// Ordered batch of `dst += a·coeffs[idx]` over `terms`.
+    ///
+    /// Provided, so an existing explicit `CKKSMulImpl` keeps compiling: the
+    /// default is the ordered scalar composition
+    /// ([`ckks_mul_add_pt_consts_into_ordered`]). An override may fuse the terms
+    /// but must reproduce each one's convolution offset, rounding, budget
+    /// alignment, carry normalization and metadata step, in order.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_mul_add_pt_consts_into_impl<Dst, A, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        terms: &[(&A, usize)],
+        plans: &[CKKSMulAddPtConstPlan],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: CKKSMulOps<BE> + CKKSAddOps<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+    {
+        ckks_mul_add_pt_consts_into_ordered(module, dst, terms, plans, coeffs, scratch)
+    }
+
+    /// Dependency-frontier batch of `ckks_mul_into`.
+    ///
+    /// Provided, so an existing explicit `CKKSMulImpl` keeps compiling: the
+    /// default plans every item, then issues one core tensor batch. An override
+    /// must reproduce each item's parameters, tensor layout and stamp.
+    fn ckks_mul_into_batch_impl<Dst, A, B, T>(
+        module: &Module<BE>,
+        items: &mut [CKKSMulIntoItem<&mut Dst, &A, &B>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        ckks_mul_into_batch_ordered(module, items, tsk, scratch)
+    }
+
+    fn ckks_mul_into_batch_tmp_bytes_impl<Dst, A, B, T>(
+        module: &Module<BE>,
+        items: &[CKKSMulIntoItem<&Dst, &A, &B>],
+        tsk: &T,
+    ) -> usize
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        T: GGLWEInfos,
+    {
+        ckks_mul_into_batch_tmp_bytes_ordered(module, items, tsk)
+    }
+
+    /// Dependency-frontier batch of `ckks_square_into`. Provided.
+    fn ckks_square_into_batch_impl<Dst, A, T>(
+        module: &Module<BE>,
+        items: &mut [CKKSSquareIntoItem<&mut Dst, &A>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        ckks_square_into_batch_ordered(module, items, tsk, scratch)
+    }
+
+    fn ckks_square_into_batch_tmp_bytes_impl<Dst, A, T>(
+        module: &Module<BE>,
+        items: &[CKKSSquareIntoItem<&Dst, &A>],
+        tsk: &T,
+    ) -> usize
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEInfos,
+        A: GLWEInfos,
+        T: GGLWEInfos,
+    {
+        ckks_square_into_batch_tmp_bytes_ordered(module, items, tsk)
+    }
+
+    /// Dependency-frontier batch of `ckks_square_assign`. Provided.
+    fn ckks_square_assign_batch_impl<Dst, T>(
+        module: &Module<BE>,
+        items: &mut [CKKSSquareAssignItem<&mut Dst>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        ckks_square_assign_batch_ordered(module, items, tsk, scratch)
+    }
+
+    fn ckks_square_assign_batch_tmp_bytes_impl<Dst, T>(
+        module: &Module<BE>,
+        items: &[CKKSSquareAssignItem<&Dst>],
+        tsk: &T,
+    ) -> usize
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEInfos,
+        T: GGLWEInfos,
+    {
+        ckks_square_assign_batch_tmp_bytes_ordered(module, items, tsk)
+    }
+
+    /// Dependency-frontier batch of `ckks_mul_prepared_assign`. Provided.
+    fn ckks_mul_prepared_assign_batch_impl<Dst, T>(
+        module: &Module<BE>,
+        items: &mut [CKKSPreparedMulAssignItem<&mut Dst, &CKKSPreparedRight<BE>>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        ckks_mul_prepared_assign_batch_ordered(module, items, tsk, scratch)
+    }
+
+    fn ckks_mul_prepared_assign_batch_tmp_bytes_impl<Dst, PR, T>(
+        module: &Module<BE>,
+        items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
+        tsk: &T,
+    ) -> usize
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEInfos,
+        PR: CKKSPreparedRightInfos,
+        T: GGLWEInfos,
+    {
+        ckks_mul_prepared_assign_batch_tmp_bytes_ordered(module, items, tsk)
+    }
 }
 
 unsafe impl<BE: Backend> CKKSMulImpl<BE> for BE
@@ -341,6 +498,139 @@ where
         P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_const_assign_default(dst, pt, pt_coeff, scratch)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_mul_add_pt_consts_into_impl<Dst, A, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        terms: &[(&A, usize)],
+        plans: &[CKKSMulAddPtConstPlan],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: CKKSMulOps<BE> + CKKSAddOps<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+    {
+        module.ckks_mul_add_pt_consts_into_default(dst, terms, plans, coeffs, scratch)
+    }
+
+    fn ckks_mul_into_batch_impl<Dst, A, B, T>(
+        module: &Module<BE>,
+        items: &mut [CKKSMulIntoItem<&mut Dst, &A, &B>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.ckks_mul_into_batch_default(items, tsk, scratch)
+    }
+
+    fn ckks_mul_into_batch_tmp_bytes_impl<Dst, A, B, T>(
+        module: &Module<BE>,
+        items: &[CKKSMulIntoItem<&Dst, &A, &B>],
+        tsk: &T,
+    ) -> usize
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        T: GGLWEInfos,
+    {
+        module.ckks_mul_into_batch_tmp_bytes_default(items, tsk)
+    }
+
+    fn ckks_square_into_batch_impl<Dst, A, T>(
+        module: &Module<BE>,
+        items: &mut [CKKSSquareIntoItem<&mut Dst, &A>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.ckks_square_into_batch_default(items, tsk, scratch)
+    }
+
+    fn ckks_square_into_batch_tmp_bytes_impl<Dst, A, T>(
+        module: &Module<BE>,
+        items: &[CKKSSquareIntoItem<&Dst, &A>],
+        tsk: &T,
+    ) -> usize
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEInfos,
+        A: GLWEInfos,
+        T: GGLWEInfos,
+    {
+        module.ckks_square_into_batch_tmp_bytes_default(items, tsk)
+    }
+
+    fn ckks_square_assign_batch_impl<Dst, T>(
+        module: &Module<BE>,
+        items: &mut [CKKSSquareAssignItem<&mut Dst>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.ckks_square_assign_batch_default(items, tsk, scratch)
+    }
+
+    fn ckks_square_assign_batch_tmp_bytes_impl<Dst, T>(
+        module: &Module<BE>,
+        items: &[CKKSSquareAssignItem<&Dst>],
+        tsk: &T,
+    ) -> usize
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEInfos,
+        T: GGLWEInfos,
+    {
+        module.ckks_square_assign_batch_tmp_bytes_default(items, tsk)
+    }
+
+    fn ckks_mul_prepared_assign_batch_impl<Dst, T>(
+        module: &Module<BE>,
+        items: &mut [CKKSPreparedMulAssignItem<&mut Dst, &CKKSPreparedRight<BE>>],
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.ckks_mul_prepared_assign_batch_default(items, tsk, scratch)
+    }
+
+    fn ckks_mul_prepared_assign_batch_tmp_bytes_impl<Dst, PR, T>(
+        module: &Module<BE>,
+        items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
+        tsk: &T,
+    ) -> usize
+    where
+        Module<BE>: GLWETensoring<BE>,
+        Dst: GLWEInfos,
+        PR: CKKSPreparedRightInfos,
+        T: GGLWEInfos,
+    {
+        module.ckks_mul_prepared_assign_batch_tmp_bytes_default(items, tsk)
     }
 }
 

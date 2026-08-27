@@ -11,11 +11,12 @@ use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::CKKSCopyOps,
     api::{CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSSubOps},
+    default::mul::ckks_mul_add_pt_consts_plan,
     layouts::{
         CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS, UnnormalizedCKKSCiphertext,
         ciphertext::UnnormalizedCKKSCiphertextRefMut,
     },
-    oep::CKKSAddImpl,
+    oep::{CKKSAddImpl, CKKSMulImpl},
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -97,10 +98,29 @@ where
 
 // --- CKKSMulAddOps ---
 
-impl<BE: Backend + CKKSAddImpl<BE>> CKKSMulAddOps<BE> for Module<BE>
+impl<BE: Backend + CKKSAddImpl<BE> + CKKSMulImpl<BE>> CKKSMulAddOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE>,
 {
+    fn ckks_mul_add_pt_consts_into<Dst, A, P>(
+        &self,
+        dst: &mut Dst,
+        terms: &[(&A, usize)],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
+    {
+        // Planning is the validation: it walks a virtual destination whose
+        // metadata evolves term by term, so a late term's failure is reported
+        // before the first one mutates `dst`.
+        let plans = ckks_mul_add_pt_consts_plan(dst, terms, coeffs)?;
+        <BE as CKKSMulImpl<BE>>::ckks_mul_add_pt_consts_into_impl(self, dst, terms, &plans, coeffs, scratch)
+    }
+
     fn ckks_mul_add_ct_tmp_bytes<R, A, B, H>(&self, res: &R, a: &A, b: &B, tsk: &H) -> usize
     where
         R: CKKSCtBounds,

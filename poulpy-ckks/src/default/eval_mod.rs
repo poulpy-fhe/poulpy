@@ -9,20 +9,22 @@
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
 use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::layouts::GLWERelinearizationKeyHelper;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
+use poulpy_core::layouts::{GLWERelinearizationKeyHelper, GLWERelinearizationKeyLayoutHelper};
 use poulpy_core::{
     GLWECopy,
     layouts::{
-        BSGSMeta, GGLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        BSGSMeta, Base2K, Degree, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+        SetBSGSMeta, TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
+use poulpy_hal::api::CnvPVecBytesOf;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use std::borrow::Borrow;
 
 use crate::{
-    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS,
@@ -31,13 +33,17 @@ use crate::{
     power_basis::{PowerBasis, PowerBasisGen},
 };
 
-/// Backend-generic reference implementation of [`CKKSEvalModOps`].
+/// Backend-generic reference implementation of [`CKKSEvalModOps`], and the
+/// per-method override surface for the family.
 ///
-/// Blanket-implemented for any [`Module<BE>`] whose backend provides the
-/// constituent CKKS ops (polynomial evaluation, add/sub/mul/copy, allocation).
-/// Backends wire this into the public [`CKKSEvalModOps`] trait through the
-/// [`CKKSEvalModImpl`](crate::oep::CKKSEvalModImpl) OEP hook, which by default
-/// forwards to [`Self::ckks_eval_mod_default`].
+/// Opt-in, not blanket: a backend inherits every method by invoking
+/// [`impl_ckks_eval_mod_defaults`](crate::impl_ckks_eval_mod_defaults), which
+/// emits the empty impl. To substitute one kernel — a fused paired EvalMod, say
+/// — the backend writes the impl itself and overrides only that method,
+/// inheriting the rest; the [`CKKSEvalModImpl`](crate::oep::CKKSEvalModImpl)
+/// OEP's blanket impl is keyed on this marker and forwards each hook here. A
+/// backend that owns the whole family instead skips the macro and implements
+/// `CKKSEvalModImpl` directly, without an overlapping-impl error.
 ///
 /// [`CKKSEvalModOps`]: crate::api::CKKSEvalModOps
 pub trait CKKSEvalModOpsDefault<BE: Backend> {
@@ -53,51 +59,89 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSPolynomialEvaluationOps<BE>
+        Self: Borrow<Module<BE>>,
+        Module<BE>: CKKSPolynomialEvaluationOps<BE>
             + CKKSAddOps<BE>
             + CKKSSubOps<BE>
             + CKKSMulOps<BE>
             + CKKSCopyOps<BE>
             + CKKSModuleAlloc<BE>
-            + Sized,
-        BE: Backend,
+            + CKKSPow2Ops<BE>
+            + GLWECopy<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GLWERelinearizationKeyHelper,
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
-}
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        eval_mod(self.borrow(), res, ct, params, tsk, scratch)
+    }
 
-impl<BE: Backend> CKKSEvalModOpsDefault<BE> for Module<BE>
-where
-    Module<BE>: CKKSPolynomialEvaluationOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSModuleAlloc<BE>
-        + CKKSPow2Ops<BE>
-        + GLWECopy<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-{
-    fn ckks_eval_mod_default<R, C, P, F, H>(
+    /// Reference scratch budget for [`Self::ckks_eval_mod_pair_default`]: the
+    /// branches run one after the other, so the larger single budget covers
+    /// both. Branch shapes may differ.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_eval_mod_pair_tmp_bytes_default<R0, R1, C0, C1, P, F, H>(
         &self,
-        res: &mut R,
-        ct: &C,
+        res_0: &R0,
+        res_1: &R1,
+        ct_0: &C0,
+        ct_1: &C1,
+        params: &EvalMod<F, P>,
+        tsk: &H,
+    ) -> usize
+    where
+        Self: Borrow<Module<BE>>,
+        Module<BE>: CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CnvPVecBytesOf,
+        R0: CKKSCtBounds,
+        R1: CKKSCtBounds,
+        C0: CKKSCtBounds,
+        C1: CKKSCtBounds,
+        P: CKKSCtBounds,
+        H: GLWERelinearizationKeyLayoutHelper,
+    {
+        let module = self.borrow();
+        ckks_eval_mod_tmp_bytes_default(module, res_0, ct_0, params, tsk)
+            .max(ckks_eval_mod_tmp_bytes_default(module, res_1, ct_1, params, tsk))
+    }
+
+    /// Reference paired `x mod 1`: sequential by design, since pairing is an
+    /// opportunity for a backend and never a requirement. Routed through
+    /// [`Self::ckks_eval_mod_default`], so a backend overriding only the single
+    /// op gets its own kernel here too.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_eval_mod_pair_default<R0, R1, C0, C1, P, F, H>(
+        &self,
+        res_0: &mut R0,
+        res_1: &mut R1,
+        ct_0: &C0,
+        ct_1: &C1,
         params: &EvalMod<F, P>,
         tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        Self: Borrow<Module<BE>>,
+        Module<BE>: CKKSPolynomialEvaluationOps<BE>
+            + CKKSAddOps<BE>
+            + CKKSSubOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSModuleAlloc<BE>
+            + CKKSPow2Ops<BE>
+            + GLWECopy<BE>,
+        R0: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C0: GLWEToBackendRef<BE> + CKKSCtBounds,
+        C1: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GLWERelinearizationKeyHelper,
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        eval_mod(self, res, ct, params, tsk, scratch)
+        self.ckks_eval_mod_default(res_0, ct_0, params, tsk, scratch)?;
+        self.ckks_eval_mod_default(res_1, ct_1, params, tsk, scratch)
     }
 }
 
@@ -176,9 +220,11 @@ where
         slots: ct.slots(),
     };
 
+    let offset = params.f_mod_input_offset.as_ref();
+
     match &params.f_mod_bsgs {
         EvalModBsgs::Real(bsgs) => {
-            if bsgs.input_transform() == PolynomialInputTransform::Identity {
+            if bsgs.input_transform() == PolynomialInputTransform::Identity && offset.is_none() {
                 // The generic one-shot evaluator would copy this input again
                 // before building its power basis. Hand ownership over directly.
                 let x1 = eval_mod_input(module, ct, &work_layout, work_meta);
@@ -189,6 +235,11 @@ where
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
                     module.glwe_copy(&mut input, ct);
+                    // Centring shift, applied before the polynomial's own input
+                    // transform (see `EvalModPlan::input_offset`).
+                    if let Some(offset) = offset {
+                        module.ckks_add_pt_const_assign(&mut input, 0, offset, 0, &mut nested)?;
+                    }
                     module.ckks_eval_poly_real_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;
             }
@@ -214,6 +265,7 @@ where
         EvalModBsgs::Complex(bsgs) => {
             if bsgs.re.input_transform() == PolynomialInputTransform::Identity
                 && bsgs.im.input_transform() == PolynomialInputTransform::Identity
+                && offset.is_none()
             {
                 let x1 = eval_mod_input(module, ct, &work_layout, work_meta);
                 let mut power_basis = PowerBasis::new(bsgs.re.basis(), x1);
@@ -223,6 +275,9 @@ where
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
                     module.glwe_copy(&mut input, ct);
+                    if let Some(offset) = offset {
+                        module.ckks_add_pt_const_assign(&mut input, 0, offset, 0, &mut nested)?;
+                    }
                     module.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;
             }
@@ -249,7 +304,7 @@ where
 /// Allocates the single owned EvalMod input that becomes power-basis element 1.
 /// Copying directly from `ct` avoids the scratch copy followed by the generic
 /// polynomial evaluator's second owned copy.
-fn eval_mod_input<BE, C>(module: &Module<BE>, ct: &C, layout: &GLWELayout, meta: CKKSMeta) -> CKKSCiphertextOwned<BE>
+pub(crate) fn eval_mod_input<BE, C>(module: &Module<BE>, ct: &C, layout: &GLWELayout, meta: CKKSMeta) -> CKKSCiphertextOwned<BE>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE>,
@@ -259,4 +314,118 @@ where
     module.glwe_copy(&mut input, ct);
     input.set_meta(meta);
     input
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct EvalModWorkCtInfos {
+    pub(crate) n: Degree,
+    pub(crate) base2k: Base2K,
+    pub(crate) rank: Rank,
+    pub(crate) max_size: usize,
+    pub(crate) k: TorusPrecision,
+    pub(crate) meta: CKKSMeta,
+}
+
+impl LWEInfos for EvalModWorkCtInfos {
+    fn base2k(&self) -> Base2K {
+        self.base2k
+    }
+
+    fn n(&self) -> Degree {
+        self.n
+    }
+
+    fn max_size(&self) -> usize {
+        self.max_size
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
+    }
+}
+
+impl GLWEInfos for EvalModWorkCtInfos {
+    fn rank(&self) -> Rank {
+        self.rank
+    }
+}
+
+impl CKKSInfos for EvalModWorkCtInfos {
+    fn meta(&self) -> CKKSMeta {
+        self.meta
+    }
+}
+
+/// Reference scratch budget for [`CKKSEvalModOps::ckks_eval_mod`].
+///
+/// Kept here rather than in the delegate so the paired operation's default can
+/// reuse it without routing back through the public trait.
+///
+/// [`CKKSEvalModOps::ckks_eval_mod`]: crate::api::CKKSEvalModOps::ckks_eval_mod
+pub fn ckks_eval_mod_tmp_bytes_default<BE, R, C, P, F, H>(
+    module: &Module<BE>,
+    res: &R,
+    ct: &C,
+    params: &EvalMod<F, P>,
+    tsk: &H,
+) -> usize
+where
+    BE: Backend,
+    Module<BE>: CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CnvPVecBytesOf,
+    R: CKKSCtBounds,
+    C: CKKSCtBounds,
+    P: CKKSCtBounds,
+    H: GLWERelinearizationKeyLayoutHelper,
+{
+    let work_k = ct.k().as_usize().max(ct.log_budget() + params.plan.f_mod_log_delta);
+    let work = EvalModWorkCtInfos {
+        n: ct.n(),
+        base2k: ct.base2k(),
+        rank: ct.rank(),
+        max_size: work_k.div_ceil(ct.base2k().as_usize()).max(1),
+        // Total torus width = budget carried into eval_mod + the plan scale.
+        k: (ct.log_budget() + params.plan.f_mod_log_delta).into(),
+        meta: CKKSMeta {
+            log_sparsity: ct.log_sparsity(),
+            log_delta: params.plan.f_mod_log_delta,
+            slots: SlotsKind::Complex,
+        },
+    };
+
+    let cols: usize = (work.rank() + 1).into();
+    let compact_work = BE::bytes_of_vec_znx(work.n().into(), cols, work.max_size());
+    // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
+    // across the baby-step pairs that share it.
+    let hoisted_right = module.bytes_of_cnv_pvec_right(cols, work.max_size());
+    let bsgs_giant = module
+        .ckks_mul_tmp_bytes(&work, &work, &work, tsk)
+        .max(module.ckks_add_tmp_bytes())
+        + 3 * compact_work
+        + hoisted_right;
+    let square_scope = (module.ckks_square_tmp_bytes(&work, &work, tsk) + compact_work).max(
+        // Scratch is a physical working-set budget: size the square-scope
+        // copy off `res`'s allocated capacity, the upper bound on the limbs
+        // any runtime re-expansion can expose.
+        module.ckks_square_tmp_bytes(res, res, tsk)
+            + BE::bytes_of_vec_znx(res.n().into(), (res.rank() + 1).into(), res.max_size()),
+    );
+    // Identity base polynomials transfer an owned, relabelled input directly
+    // into the power basis. Scratch only needs a full working ciphertext for
+    // a transformed base or for the optional inverse composition.
+    let needs_work_copy = params.f_mod_inv_bsgs.is_some()
+        || params.f_mod_input_offset.is_some()
+        || match &params.f_mod_bsgs {
+            EvalModBsgs::Real(poly) => poly.input_transform() != PolynomialInputTransform::Identity,
+            EvalModBsgs::Complex(poly) => {
+                poly.re.input_transform() != PolynomialInputTransform::Identity
+                    || poly.im.input_transform() != PolynomialInputTransform::Identity
+            }
+        };
+    usize::from(needs_work_copy) * compact_work
+        + module
+            .ckks_copy_tmp_bytes()
+            .max(module.ckks_add_pt_const_tmp_bytes())
+            .max(module.ckks_sub_pt_const_tmp_bytes())
+            .max(bsgs_giant)
+            .max(square_scope)
 }

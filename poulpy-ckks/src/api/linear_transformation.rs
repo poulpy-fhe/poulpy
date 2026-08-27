@@ -113,6 +113,16 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
+    /// Scratch bytes required by a whole chained transform (homomorphic DFT):
+    /// the widest per-factor budget plus the one ciphertext the chain
+    /// ping-pongs through across factors. Covers a streamed as well as a
+    /// resident RHS, so a custom chain evaluator can size cross-factor
+    /// workspace from it.
+    fn ckks_dft_evaluate_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos;
+
     // ----- populate -----
 
     /// Encodes every diagonal of `lt` into the matching pre-allocated slot

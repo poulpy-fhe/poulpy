@@ -502,6 +502,17 @@ fn power_basis_depth(i: usize) -> usize {
     }
 }
 
+/// `(ct×ct, ct×pt)` multiplication counts of the BSGS evaluation of a degree
+/// `degree` polynomial: power basis + giant-step folds, and the baby-step inner
+/// products. `parity` matters here (unlike for depth): an even or odd polynomial
+/// skips half the power basis and half of each baby step.
+pub fn bsgs_op_counts(degree: usize, strategy: SplitStrategy, parity: Parity, basis: Basis) -> (usize, usize) {
+    if degree == 0 {
+        return (0, 0);
+    }
+    estimate_op_counts(degree, split_for_strategy(strategy, degree, parity, basis), parity, basis)
+}
+
 pub fn bsgs_eval_depth(degree: usize, strategy: SplitStrategy) -> usize {
     if degree == 0 {
         return 0;

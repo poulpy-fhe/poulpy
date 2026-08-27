@@ -49,4 +49,58 @@ pub trait CKKSEvalModOps<BE: Backend> {
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GLWERelinearizationKeyHelper,
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+
+    /// Scratch space, in bytes, required by [`Self::ckks_eval_mod_pair`].
+    ///
+    /// Takes both branches' layouts, since the operation itself accepts
+    /// independently shaped branches: the sequential default is the larger of
+    /// the two single budgets, while a fused backend sizes whatever it holds
+    /// live across both.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_eval_mod_pair_tmp_bytes<R0, R1, C0, C1, P, F, H>(
+        &self,
+        res_0: &R0,
+        res_1: &R1,
+        ct_0: &C0,
+        ct_1: &C1,
+        params: &EvalMod<F, P>,
+        tsk: &H,
+    ) -> usize
+    where
+        R0: CKKSCtBounds,
+        R1: CKKSCtBounds,
+        C0: CKKSCtBounds,
+        C1: CKKSCtBounds,
+        P: CKKSCtBounds,
+        H: GLWERelinearizationKeyLayoutHelper;
+
+    /// Evaluates the same `x mod 1` approximation on two independent inputs:
+    /// `res_0 = f(ct_0)` and `res_1 = f(ct_1)`.
+    ///
+    /// Semantically two [`Self::ckks_eval_mod`] calls, and that is exactly what
+    /// the default does. The point of the paired form is the borrow shape: both
+    /// inputs, both outputs, the tensor key and one scratch lifetime are held
+    /// for the whole operation, so a backend override sees both evaluation DAGs
+    /// at once and can stream the shared key material once, batch the matching
+    /// transforms and normalizations, and schedule the two branches together.
+    /// The two branches must not alias.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_eval_mod_pair<R0, R1, C0, C1, P, F, H>(
+        &self,
+        res_0: &mut R0,
+        res_1: &mut R1,
+        ct_0: &C0,
+        ct_1: &C1,
+        params: &EvalMod<F, P>,
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R0: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C0: GLWEToBackendRef<BE> + CKKSCtBounds,
+        C1: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }

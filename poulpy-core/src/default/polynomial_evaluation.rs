@@ -65,6 +65,12 @@ impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
 {
 }
 
+/// One [`BSGSOps::mul_prepared_assign`] in a dependency-frontier batch.
+pub struct PreparedMulAssignItem<D, P> {
+    pub dst: D,
+    pub prepared: P,
+}
+
 pub trait BSGSOps<BE, V, P, A, R = V>
 where
     BE: Backend,
@@ -114,6 +120,28 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>;
 
+    /// Computes `res += Σ a·coeffs[idx]` over `terms`, in order, each step
+    /// identical to [`Self::mul_add_pt_const`].
+    ///
+    /// One ordered batch boundary, not a dot product: every term keeps its own
+    /// convolution offset, rounding, budget alignment and carry normalization,
+    /// and `res`'s metadata evolves term by term. A backend may fuse the steps
+    /// but not reassociate them. An empty slice is a no-op; a singleton is one
+    /// [`Self::mul_add_pt_const`].
+    fn mul_add_pt_consts(
+        &self,
+        module: &Module<BE>,
+        res: &mut V,
+        terms: &[(&A, usize)],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()> {
+        for &(a, idx) in terms {
+            self.mul_add_pt_const(module, res, a, coeffs, idx, scratch)?;
+        }
+        Ok(())
+    }
+
     /// Prepares `a` as a reusable right operand for [`Self::mul_prepared_assign`].
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<Self::Prepared>;
 
@@ -130,6 +158,29 @@ where
     where
         H: GLWERelinearizationKeyHelper,
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+
+    /// Independent [`Self::mul_prepared_assign`] calls, in item order.
+    ///
+    /// The giant-step engine hands over the whole ready frontier of a level, so
+    /// a scheme can dispatch one batch instead of a call per pair. Destinations
+    /// are distinct (`&mut`); the same prepared operand may repeat, which is the
+    /// common case when a level's sibling pairs share `X^{gsp}`.
+    fn mul_prepared_assign_batch<H>(
+        &self,
+        module: &Module<BE>,
+        items: &mut [PreparedMulAssignItem<&mut V, &Self::Prepared>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    {
+        for item in items.iter_mut() {
+            self.mul_prepared_assign(module, &mut *item.dst, item.prepared, tsk, scratch)?;
+        }
+        Ok(())
+    }
 
     /// Computes `dst += a` with budget alignment, normalizing `dst`.
     fn add_assign(&self, module: &Module<BE>, dst: &mut V, a: &V, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
@@ -175,10 +226,11 @@ where
         ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
     }
 
-    for i in (first..=degree).step_by(step) {
-        let xpow = power_basis.get(i)?;
-        ops.mul_add_pt_const(module, res, xpow, coeffs, i, scratch)?;
-    }
+    let terms: Vec<(&A, usize)> = (first..=degree)
+        .step_by(step)
+        .map(|i| power_basis.get(i).map(|xpow| (xpow, i)))
+        .collect::<Result<_>>()?;
+    ops.mul_add_pt_consts(module, res, &terms, coeffs, scratch)?;
 
     Ok(())
 }
@@ -214,21 +266,112 @@ where
         "eval_giant_steps: polynomial must contain at least one baby step"
     );
 
-    let mut active: Vec<(usize, usize)> = baby_steps
-        .iter()
-        .enumerate()
-        .map(|(index, step)| (step.degree(), index))
-        .collect();
+    let degrees: Vec<usize> = baby_steps.iter().map(|step| step.degree()).collect();
+
+    for pairs in giant_step_schedule(&degrees) {
+        for pair in &pairs {
+            ensure!(pair.low != pair.high, "eval_giant_steps: baby-step pair aliases itself");
+        }
+
+        // The level's pairs are mutually independent: hoist each distinct
+        // `X^{gsp}` once, hand the whole ready frontier to the scheme as one
+        // batch, then fold the `+= a` tail in pair order.
+        let mut prepared: Vec<(usize, Ops::Prepared)> = Vec::new();
+        for pair in &pairs {
+            if !prepared.iter().any(|(g, _)| *g == pair.gsp) {
+                prepared.push((pair.gsp, ops.prepare_right(module, power_basis.get(pair.gsp)?, scratch)?));
+            }
+        }
+
+        // Each baby step is the high operand of at most one pair, so the
+        // destinations are distinct; `rank` restores pair order after the
+        // index-ordered `iter_mut`.
+        let mut rank: Vec<usize> = vec![usize::MAX; baby_steps.len()];
+        for (position, pair) in pairs.iter().enumerate() {
+            rank[pair.high] = position;
+        }
+        let mut frontier: Vec<(usize, PreparedMulAssignItem<&mut V, &Ops::Prepared>)> = baby_steps
+            .iter_mut()
+            .enumerate()
+            .filter(|(index, _)| rank[*index] != usize::MAX)
+            .map(|(index, step)| {
+                let position = rank[index];
+                let gsp = pairs[position].gsp;
+                let prep = &prepared
+                    .iter()
+                    .find(|(g, _)| *g == gsp)
+                    .expect("every pair's giant-step power was prepared")
+                    .1;
+                (
+                    position,
+                    PreparedMulAssignItem {
+                        dst: step.get_mut(),
+                        prepared: prep,
+                    },
+                )
+            })
+            .collect();
+        frontier.sort_by_key(|(position, _)| *position);
+        let mut frontier: Vec<PreparedMulAssignItem<&mut V, &Ops::Prepared>> =
+            frontier.into_iter().map(|(_, item)| item).collect();
+        // `b·Xᵍˢᵖ` (ct×ct, the scheme stamps `b` with the consumed budget).
+        ops.mul_prepared_assign_batch(module, &mut frontier, tsk, scratch)?;
+        drop(frontier);
+
+        for pair in &pairs {
+            let (a, b) = if pair.low < pair.high {
+                let (low_steps, high_steps) = baby_steps.split_at_mut(pair.high);
+                (low_steps[pair.low].get(), high_steps[0].get_mut())
+            } else {
+                let (high_steps, low_steps) = baby_steps.split_at_mut(pair.low);
+                (low_steps[0].get(), high_steps[pair.high].get_mut())
+            };
+            ops.add_assign(module, b, a, scratch)?;
+        }
+    }
+
+    let evaluated = baby_steps.last().expect("non-empty baby step vector");
+    ops.copy(module, res, evaluated.get(), scratch)?;
+
+    Ok(())
+}
+
+fn giant_step_power(degree: usize) -> usize {
+    (degree + 1).next_power_of_two()
+}
+
+/// One giant-step fold: `baby[high] = baby[high]·X^gsp + baby[low]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GiantStepPair {
+    pub gsp: usize,
+    pub low: usize,
+    pub high: usize,
+}
+
+/// Giant-step fold schedule for baby steps of the given degrees: one pair list
+/// per level, outermost first. The pairs within a level are independent, which
+/// is what lets the engine dispatch a level as one batch; the result ends up in
+/// the last baby step.
+///
+/// Shared with the lockstep EvalMod driver, which merges the levels of two
+/// branches into one frontier, so the schedule has exactly one definition.
+pub fn giant_step_schedule(degrees: &[usize]) -> Vec<Vec<GiantStepPair>> {
+    let mut active: Vec<(usize, usize)> = degrees.iter().copied().enumerate().map(|(i, d)| (d, i)).collect();
+    let mut levels: Vec<Vec<GiantStepPair>> = Vec::new();
 
     while active.len() > 1 {
         let mut next = Vec::with_capacity(active.len().div_ceil(2));
-        let mut pairs: Vec<(usize, usize, usize)> = Vec::with_capacity(active.len() / 2);
+        let mut pairs: Vec<GiantStepPair> = Vec::with_capacity(active.len() / 2);
         let mut i = 0;
         while i < active.len() {
             let is_last = i + 1 == active.len();
             if !is_last && active[i].0 == active[i + 1].0 {
                 let gsp = giant_step_power(active[i].0);
-                pairs.push((gsp, active[i].1, active[i + 1].1));
+                pairs.push(GiantStepPair {
+                    gsp,
+                    low: active[i].1,
+                    high: active[i + 1].1,
+                });
                 next.push((2 * gsp - 1, active[i + 1].1));
                 i += 2;
             } else if is_last && i > 0 {
@@ -240,48 +383,11 @@ where
                 i += 1;
             }
         }
-
-        // Process pairs left-to-right, hoisting the prepared `X^{gsp}` across
-        // consecutive pairs that share the same giant-step power: one
-        // `prepare_right` per run, reused across every `mul_prepared_assign`.
-        let mut p = 0;
-        while p < pairs.len() {
-            let gsp = pairs[p].0;
-            let mut run_end = p + 1;
-            while run_end < pairs.len() && pairs[run_end].0 == gsp {
-                run_end += 1;
-            }
-
-            let prepared = ops.prepare_right(module, power_basis.get(gsp)?, scratch)?;
-            for &(_, low_idx, high_idx) in &pairs[p..run_end] {
-                ensure!(low_idx != high_idx, "eval_giant_steps: baby-step pair aliases itself");
-                let (a, b) = if low_idx < high_idx {
-                    let (low_steps, high_steps) = baby_steps.split_at_mut(high_idx);
-                    (low_steps[low_idx].get(), high_steps[0].get_mut())
-                } else {
-                    let (high_steps, low_steps) = baby_steps.split_at_mut(low_idx);
-                    (low_steps[0].get(), high_steps[high_idx].get_mut())
-                };
-
-                // `b·Xᵍˢᵖ` (ct×ct, the scheme stamps `b` with the consumed
-                // budget); then `b += a`.
-                ops.mul_prepared_assign(module, b, &prepared, tsk, scratch)?;
-                ops.add_assign(module, b, a, scratch)?;
-            }
-            p = run_end;
-        }
-
+        levels.push(pairs);
         active = next;
     }
 
-    let evaluated = baby_steps.last().expect("non-empty baby step vector");
-    ops.copy(module, res, evaluated.get(), scratch)?;
-
-    Ok(())
-}
-
-fn giant_step_power(degree: usize) -> usize {
-    (degree + 1).next_power_of_two()
+    levels
 }
 
 impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {

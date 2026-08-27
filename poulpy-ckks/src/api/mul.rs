@@ -7,7 +7,10 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
+use crate::{
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    layouts::{CKKSPreparedRight, CKKSPreparedRightInfos},
+};
 
 /// Ciphertext–ciphertext and ciphertext–plaintext multiplication.
 ///
@@ -91,6 +94,33 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// product at). To trade further budget for precision under `log_delta` — the
 /// closest analogue of an RNS "rescale" — use
 /// [`CKKSPow2Ops::ckks_div_pow2_assign`](crate::api::CKKSPow2Ops::ckks_div_pow2_assign).
+/// One [`CKKSMulOps::ckks_mul_into`] in a batch.
+///
+/// Instantiated with shared references for the `*_tmp_bytes` query and with a
+/// mutable destination for execution.
+pub struct CKKSMulIntoItem<D, A, B> {
+    pub dst: D,
+    pub a: A,
+    pub b: B,
+}
+
+/// One [`CKKSMulOps::ckks_square_into`] in a batch.
+pub struct CKKSSquareIntoItem<D, A> {
+    pub dst: D,
+    pub a: A,
+}
+
+/// One [`CKKSMulOps::ckks_square_assign`] in a batch.
+pub struct CKKSSquareAssignItem<D> {
+    pub dst: D,
+}
+
+/// One [`CKKSMulOps::ckks_mul_prepared_assign`] in a batch.
+pub struct CKKSPreparedMulAssignItem<D, P> {
+    pub dst: D,
+    pub prepared: P,
+}
+
 pub trait CKKSMulOps<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_mul_into`] / [`Self::ckks_mul_assign`] /
     /// [`Self::ckks_mul_prepared_assign`] with result `res` and operands `a`, `b`.
@@ -238,4 +268,113 @@ pub trait CKKSMulOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+
+    /// Scratch bytes for [`Self::ckks_mul_into_batch`].
+    fn ckks_mul_into_batch_tmp_bytes<Dst, A, B, H>(&self, items: &[CKKSMulIntoItem<&Dst, &A, &B>], tsk: &H) -> usize
+    where
+        Dst: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
+        H: GLWERelinearizationKeyLayoutHelper;
+
+    /// A dependency frontier of independent [`Self::ckks_mul_into`] calls.
+    ///
+    /// Every item is validated and planned before any destination is written,
+    /// keeps its own multiplication parameters and tensor layout, and is stamped
+    /// exactly as the scalar operation would. Destinations are `&mut`, so the
+    /// borrow checker rejects cross-item destination aliasing:
+    ///
+    /// ```compile_fail
+    /// # use poulpy_ckks::api::CKKSMulIntoItem;
+    /// # fn f<D, A>(dst: &mut D, a: &A) {
+    /// let _ = [
+    ///     CKKSMulIntoItem { dst: &mut *dst, a, b: a },
+    ///     CKKSMulIntoItem { dst: &mut *dst, a, b: a },
+    /// ];
+    /// # }
+    /// ```
+    ///
+    /// Read-only operands may repeat. An empty slice is a no-op; a singleton is
+    /// exactly the scalar call.
+    fn ckks_mul_into_batch<Dst, A, B, H>(
+        &self,
+        items: &mut [CKKSMulIntoItem<&mut Dst, &A, &B>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+
+    /// Scratch bytes for [`Self::ckks_square_into_batch`].
+    fn ckks_square_into_batch_tmp_bytes<Dst, A, H>(&self, items: &[CKKSSquareIntoItem<&Dst, &A>], tsk: &H) -> usize
+    where
+        Dst: CKKSCtBounds,
+        A: CKKSCtBounds,
+        H: GLWERelinearizationKeyLayoutHelper;
+
+    /// A dependency frontier of independent [`Self::ckks_square_into`] calls.
+    fn ckks_square_into_batch<Dst, A, H>(
+        &self,
+        items: &mut [CKKSSquareIntoItem<&mut Dst, &A>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+
+    /// Scratch bytes for [`Self::ckks_square_assign_batch`].
+    fn ckks_square_assign_batch_tmp_bytes<Dst, H>(&self, items: &[CKKSSquareAssignItem<&Dst>], tsk: &H) -> usize
+    where
+        Dst: CKKSCtBounds,
+        H: GLWERelinearizationKeyLayoutHelper;
+
+    /// A dependency frontier of independent [`Self::ckks_square_assign`] calls.
+    ///
+    /// Each destination stays readable until its own tensor product has consumed
+    /// it, exactly as in the scalar operation.
+    fn ckks_square_assign_batch<Dst, H>(
+        &self,
+        items: &mut [CKKSSquareAssignItem<&mut Dst>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+
+    /// Scratch bytes for [`Self::ckks_mul_prepared_assign_batch`].
+    ///
+    /// The prepared operands enter as [`CKKSPreparedRightInfos`], so a caller
+    /// planning a frontier can describe operands it has not built with
+    /// [`CKKSPreparedRightLayout`](crate::layouts::CKKSPreparedRightLayout).
+    fn ckks_mul_prepared_assign_batch_tmp_bytes<Dst, PR, H>(
+        &self,
+        items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
+        tsk: &H,
+    ) -> usize
+    where
+        Dst: CKKSCtBounds,
+        PR: CKKSPreparedRightInfos,
+        H: GLWERelinearizationKeyLayoutHelper;
+
+    /// A dependency frontier of independent [`Self::ckks_mul_prepared_assign`]
+    /// calls. The same prepared operand may appear in several items.
+    fn ckks_mul_prepared_assign_batch<Dst, H>(
+        &self,
+        items: &mut [CKKSPreparedMulAssignItem<&mut Dst, &CKKSPreparedRight<BE>>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }

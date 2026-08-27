@@ -163,4 +163,17 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
             .get(&rot)
             .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))
     }
+
+    /// Mutable counterpart of [`Self::baby_step`], so a backend can retire a
+    /// fused rotation/keyswitch straight into the prepared slot.
+    pub fn baby_step_mut(&mut self, rot: i64) -> &mut CnvPVecLOwned<BE> {
+        self.values
+            .get_mut(&rot)
+            .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))
+    }
+
+    /// Mutable `(rotation, slot)` iterator over every prepared baby step.
+    pub fn baby_steps_mut(&mut self) -> impl ExactSizeIterator<Item = (i64, &mut CnvPVecLOwned<BE>)> + '_ {
+        self.values.iter_mut().map(|(&rot, prepared)| (rot, prepared))
+    }
 }

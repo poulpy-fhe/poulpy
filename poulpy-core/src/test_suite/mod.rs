@@ -37,6 +37,10 @@ macro_rules! core_backend_test_suite {
                 test_glwe_tensor_square => $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_square,
                 test_glwe_tensor_relinearize_selected =>
                     $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_relinearize_selected,
+                test_glwe_tensor_fused_relinearize =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_fused_relinearize,
+                test_glwe_tensor_fused_relinearize_batch =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_fused_relinearize_batch,
                 test_glwe_mul_plain => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain,
                 test_glwe_mul_const => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_const,
                 glwe_keyswitch => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch,
@@ -55,6 +59,10 @@ macro_rules! core_backend_test_suite {
                 glwe_trace_selected_assign => $crate::test_suite::noise::test_glwe_trace_selected_assign,
                 glwe_hoisted_baby_rotations_match_automorphism =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,
+                glwe_eval_linear_transformation_skips_empty_giant_steps =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_eval_linear_transformation_skips_empty_giant_steps,
+                glwe_prepared_giant_prods_match_sequential =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_prepared_giant_prods_match_sequential,
                 glwe_packing => $crate::test_suite::noise::test_glwe_packing,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_switching_key_encrypt_sk,
                 gglwe_switching_key_compressed_encrypt_sk =>

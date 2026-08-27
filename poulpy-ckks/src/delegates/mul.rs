@@ -13,9 +13,23 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use crate::api::CKKSMulOps;
+use crate::api::{CKKSMulIntoItem, CKKSMulOps, CKKSPreparedMulAssignItem, CKKSSquareAssignItem, CKKSSquareIntoItem};
 
-use crate::{CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight, oep::CKKSMulImpl};
+use crate::{
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    layouts::{CKKSPreparedRight, CKKSPreparedRightInfos},
+    oep::CKKSMulImpl,
+};
+
+/// A batch shares one effective decomposition, resolved at the widest item, so
+/// a frontier issued as one call cannot straddle two of them.
+fn resolve<'a, H>(keys: &'a H, k: TorusPrecision, op: &'static str) -> Result<(&'a H::Key, poulpy_core::layouts::Dsize)>
+where
+    H: GLWERelinearizationKeyHelper,
+{
+    keys.get_relinearization_key_for(k)
+        .map_err(|_| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into() }.into())
+}
 
 impl<BE: Backend + CKKSMulImpl<BE>> CKKSMulOps<BE> for Module<BE>
 where
@@ -209,5 +223,123 @@ where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
     {
         BE::ckks_mul_pt_const_assign_impl(self, dst, pt, pt_coeff, scratch)
+    }
+    fn ckks_mul_into_batch_tmp_bytes<Dst, A, B, H>(&self, items: &[CKKSMulIntoItem<&Dst, &A, &B>], tsk: &H) -> usize
+    where
+        Dst: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
+        H: GLWERelinearizationKeyLayoutHelper,
+    {
+        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.a.k().max(i.b.k())));
+        let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
+        BE::ckks_mul_into_batch_tmp_bytes_impl(self, items, &tsk.with_dsize(dsize))
+    }
+
+    fn ckks_mul_into_batch<Dst, A, B, H>(
+        &self,
+        items: &mut [CKKSMulIntoItem<&mut Dst, &A, &B>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    {
+        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.a.k().max(i.b.k())));
+        let (tsk, dsize) = resolve(tsk, k, "ckks_mul_into_batch")?;
+        BE::ckks_mul_into_batch_impl(self, items, &tsk.with_dsize(dsize), scratch)
+    }
+
+    fn ckks_square_into_batch_tmp_bytes<Dst, A, H>(&self, items: &[CKKSSquareIntoItem<&Dst, &A>], tsk: &H) -> usize
+    where
+        Dst: CKKSCtBounds,
+        A: CKKSCtBounds,
+        H: GLWERelinearizationKeyLayoutHelper,
+    {
+        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.a.k()));
+        let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
+        BE::ckks_square_into_batch_tmp_bytes_impl(self, items, &tsk.with_dsize(dsize))
+    }
+
+    fn ckks_square_into_batch<Dst, A, H>(
+        &self,
+        items: &mut [CKKSSquareIntoItem<&mut Dst, &A>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    {
+        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.a.k()));
+        let (tsk, dsize) = resolve(tsk, k, "ckks_square_into_batch")?;
+        BE::ckks_square_into_batch_impl(self, items, &tsk.with_dsize(dsize), scratch)
+    }
+
+    fn ckks_square_assign_batch_tmp_bytes<Dst, H>(&self, items: &[CKKSSquareAssignItem<&Dst>], tsk: &H) -> usize
+    where
+        Dst: CKKSCtBounds,
+        H: GLWERelinearizationKeyLayoutHelper,
+    {
+        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.dst.k()));
+        let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
+        BE::ckks_square_assign_batch_tmp_bytes_impl(self, items, &tsk.with_dsize(dsize))
+    }
+
+    fn ckks_square_assign_batch<Dst, H>(
+        &self,
+        items: &mut [CKKSSquareAssignItem<&mut Dst>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    {
+        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.dst.k()));
+        let (tsk, dsize) = resolve(tsk, k, "ckks_square_assign_batch")?;
+        BE::ckks_square_assign_batch_impl(self, items, &tsk.with_dsize(dsize), scratch)
+    }
+
+    fn ckks_mul_prepared_assign_batch_tmp_bytes<Dst, PR, H>(
+        &self,
+        items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
+        tsk: &H,
+    ) -> usize
+    where
+        Dst: CKKSCtBounds,
+        PR: CKKSPreparedRightInfos,
+        H: GLWERelinearizationKeyLayoutHelper,
+    {
+        let k = items.iter().fold(TorusPrecision(0), |k, i| {
+            k.max(i.dst.k().max(TorusPrecision(i.prepared.prepared_k() as u32)))
+        });
+        let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
+        BE::ckks_mul_prepared_assign_batch_tmp_bytes_impl(self, items, &tsk.with_dsize(dsize))
+    }
+
+    fn ckks_mul_prepared_assign_batch<Dst, H>(
+        &self,
+        items: &mut [CKKSPreparedMulAssignItem<&mut Dst, &CKKSPreparedRight<BE>>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    {
+        let k = items.iter().fold(TorusPrecision(0), |k, i| {
+            k.max(i.dst.k().max(TorusPrecision(i.prepared.k as u32)))
+        });
+        let (tsk, dsize) = resolve(tsk, k, "ckks_mul_prepared_assign_batch")?;
+        BE::ckks_mul_prepared_assign_batch_impl(self, items, &tsk.with_dsize(dsize), scratch)
     }
 }

@@ -5,8 +5,8 @@ use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
-        test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
-        test_convolution_pairwise,
+        test_convolution, test_convolution_accumulate, test_convolution_accumulate_batch, test_convolution_accumulate_fused,
+        test_convolution_by_const, test_convolution_pairwise,
     },
 };
 
@@ -16,6 +16,8 @@ use crate::{FFT64Ref, NTT4x30Ref};
 mod ckks_tests;
 #[cfg(feature = "enable-core")]
 mod delegating_backend;
+#[cfg(feature = "enable-ckks")]
+mod pair_override;
 
 #[test]
 fn test_convolution_by_const_fft64_ref() {
@@ -48,6 +50,12 @@ fn test_convolution_accumulate_fused_fft64_ref() {
 }
 
 #[test]
+fn test_convolution_accumulate_batch_fft64_ref() {
+    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
+    test_convolution_accumulate_batch(&module, 17);
+}
+
+#[test]
 fn test_convolution_by_const_ntt4x30_ref() {
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
     test_convolution_by_const(&module, 50);
@@ -75,6 +83,12 @@ fn test_convolution_accumulate_ntt4x30_ref() {
 fn test_convolution_accumulate_fused_ntt4x30_ref() {
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
     test_convolution_accumulate_fused(&module, 50);
+}
+
+#[test]
+fn test_convolution_accumulate_batch_ntt4x30_ref() {
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
+    test_convolution_accumulate_batch(&module, 50);
 }
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};

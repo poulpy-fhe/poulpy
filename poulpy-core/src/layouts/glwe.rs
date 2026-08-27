@@ -339,6 +339,36 @@ pub fn glwe_backend_ref_from_mut<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufMut<
     }
 }
 
+/// Narrows a shared GLWE backend view to `size` limbs.
+///
+/// Only the underlying `VecZnx` data view shrinks; `base2k` and `k` are
+/// untouched. Callers that must not see the physical capacity past their
+/// logical width (CKKS ciphertexts) build their views through this.
+///
+/// # Panics
+///
+/// Panics if `size` exceeds the backing capacity.
+pub fn glwe_backend_ref_with_size<'a, BE: Backend>(glwe: GLWEBackendRef<'a, BE>, size: usize) -> GLWEBackendRef<'a, BE> {
+    GLWE {
+        base2k: glwe.base2k,
+        k: glwe.k,
+        data: poulpy_hal::layouts::vec_znx_backend_ref_with_size::<BE>(glwe.data, size),
+    }
+}
+
+/// Mutable counterpart of [`glwe_backend_ref_with_size`].
+///
+/// # Panics
+///
+/// Panics if `size` exceeds the backing capacity.
+pub fn glwe_backend_mut_with_size<'a, BE: Backend>(glwe: GLWEBackendMut<'a, BE>, size: usize) -> GLWEBackendMut<'a, BE> {
+    GLWE {
+        base2k: glwe.base2k,
+        k: glwe.k,
+        data: poulpy_hal::layouts::vec_znx_backend_mut_with_size::<BE>(glwe.data, size),
+    }
+}
+
 pub trait GLWEToBackendMut<BE: Backend>: GLWEToBackendRef<BE> {
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE>;
 }

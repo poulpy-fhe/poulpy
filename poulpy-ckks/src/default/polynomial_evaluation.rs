@@ -5,7 +5,7 @@ use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
     prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
 };
-use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
+use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero, default::polynomial_evaluation::PreparedMulAssignItem};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, ZnxWord};
 
 use crate::CKKSCtBounds;
@@ -13,7 +13,7 @@ use crate::{
     SetCKKSInfos,
     api::{
         BSGSPolynomialInfos, BabyStep as BabyStepInfos, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
-        PowerBasisHelper,
+        CKKSPreparedMulAssignItem, PowerBasisHelper,
     },
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPreparedRight},
     polynomial::ComplexBSGSPolynomial,
@@ -50,7 +50,7 @@ where
 /// Every method is a thin dispatch to the CKKS API ([`CKKSMulOps`], [`CKKSAddOps`],
 /// [`CKKSCopyOps`]); the only non-dispatch bit is the accumulator seed, which
 /// has no single existing API equivalent.
-struct CKKSBSGSOps;
+pub(crate) struct CKKSBSGSOps;
 
 impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
@@ -118,6 +118,19 @@ where
             .map_err(::anyhow::Error::from)
     }
 
+    fn mul_add_pt_consts(
+        &self,
+        module: &Module<BE>,
+        res: &mut V,
+        terms: &[(&A, usize)],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> anyhow::Result<()> {
+        module
+            .ckks_mul_add_pt_consts_into(res, terms, coeffs, scratch)
+            .map_err(::anyhow::Error::from)
+    }
+
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> anyhow::Result<Self::Prepared> {
         module.ckks_prepare_right(a, scratch).map_err(::anyhow::Error::from)
     }
@@ -136,6 +149,29 @@ where
     {
         module
             .ckks_mul_prepared_assign(dst, prepared, tsk, scratch)
+            .map_err(::anyhow::Error::from)
+    }
+
+    fn mul_prepared_assign_batch<H>(
+        &self,
+        module: &Module<BE>,
+        items: &mut [PreparedMulAssignItem<&mut V, &Self::Prepared>],
+        tsk: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> anyhow::Result<()>
+    where
+        H: GLWERelinearizationKeyHelper,
+        H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    {
+        let mut batch: Vec<CKKSPreparedMulAssignItem<&mut V, &CKKSPreparedRight<BE>>> = items
+            .iter_mut()
+            .map(|item| CKKSPreparedMulAssignItem {
+                dst: &mut *item.dst,
+                prepared: item.prepared,
+            })
+            .collect();
+        module
+            .ckks_mul_prepared_assign_batch(&mut batch, tsk, scratch)
             .map_err(::anyhow::Error::from)
     }
 

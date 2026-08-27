@@ -9,6 +9,7 @@
 use crate::CKKSAtkBounds;
 use crate::SlotsKind;
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::default::operations::cnv_offset_to_limb_offset;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
@@ -117,6 +118,20 @@ where
         self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key) + self.glwe_bytes_of_from_infos(ct)
     }
 
+    fn ckks_dft_evaluate_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+    {
+        // The chain carves one ciphertext up front and ping-pongs the running
+        // value through it, so the per-factor budgets (baby prep, then the
+        // widest eval) nest inside it rather than each carving their own.
+        self.glwe_bytes_of_from_infos(ct)
+            + self
+                .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key)
+                .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key))
+    }
+
     // ---------- populate ----------
 
     fn ckks_prepare_linear_transformation_rhs<P>(
@@ -190,30 +205,10 @@ where
     {
         check_required_keys(lt, babies, keys, self.cyclotomic_order(), src.k())?;
 
-        let first = lt
-            .first_diagonal_plaintext()
-            .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
-        // The diagonal scale (`lt_log_scale`) and its effective torus width `k` are
-        // read off the first diagonal. The convolution offset must match the width
-        // the diagonal data was masked/positioned at in `cnv_prepare_right` (its
-        // effective `k`), which can be below the rounded physical `max_k`.
-        let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.encoded_k().as_usize());
-        ensure_uniform_diagonal_scale(lt, pt_log_scale, pt_max_k)?;
-        // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
-        // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
-        // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
-        // (`checked_mul_pt_log_budget` reads the rhs budget only for diagnostics), so 0.
-        let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
-            dst.k().as_usize(),
-            src.log_delta(),
-            src.log_budget(),
-            pt_log_scale,
-            0,
-            pt_max_k,
-        )?;
-        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
-        dst.set_log_budget(res_log_budget);
-        dst.set_log_delta(res_log_delta);
+        let params = LinearTransformationEvalParams::new(dst.k().as_usize(), src, babies, lt)?;
+        self.glwe_eval_linear_transformation_into(params.cnv_offset, dst, babies, lt, keys, scratch);
+        dst.set_log_budget(params.log_budget);
+        dst.set_log_delta(params.log_delta);
         // Diagonals are complex in general, so a transformed value leaves the
         // reals unless the caller can prove otherwise.
         dst.set_slots(SlotsKind::Complex);
@@ -290,6 +285,82 @@ where
             // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
             // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
             self.ckks_copy(dst, &tmp, &mut scratch_local)
+        })
+    }
+}
+
+/// Validated evaluation parameters of one linear transformation.
+///
+/// Everything the BSGS driver derives from the (uniform) diagonal scale before
+/// it touches a limb: the convolution alignment (`cnv_offset` and its limb
+/// split), the PROD product width, and the result metadata. Built once by
+/// [`Self::new`], which rejects a transform with no diagonals or with
+/// non-uniform diagonal scales, so an external chain evaluator can plan a
+/// factor without re-deriving this correctness-sensitive arithmetic.
+#[derive(Clone, Copy, Debug)]
+pub struct LinearTransformationEvalParams {
+    /// Convolution alignment between the input and diagonal scales.
+    pub cnv_offset: usize,
+    /// Limb part of `cnv_offset` in the diagonals' `base2k`.
+    pub cnv_offset_hi: usize,
+    /// Sub-limb part of `cnv_offset` in the diagonals' `base2k`.
+    pub cnv_offset_lo: i64,
+    /// Limb count of the per-giant PROD output.
+    pub prod_size: usize,
+    /// `log_budget` of the result.
+    pub log_budget: usize,
+    /// `log_delta` of the result (the input's).
+    pub log_delta: usize,
+}
+
+impl LinearTransformationEvalParams {
+    /// Derives the parameters for evaluating `lt` on an input described by
+    /// `src` and prepared into `babies`, writing into a destination of width
+    /// `dst_k`.
+    pub fn new<BE, Src, P>(
+        dst_k: usize,
+        src: &Src,
+        babies: &LinearTransformationBabySteps<BE>,
+        lt: &LinearTransformation<P>,
+    ) -> Result<Self>
+    where
+        BE: Backend,
+        Src: CKKSCtBounds,
+        P: LtDiagonalScale + IntPolyInfos + LWEInfos,
+    {
+        let first = lt
+            .first_diagonal_plaintext()
+            .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
+        // The diagonal scale (`lt_log_scale`) and its effective torus width `k` are
+        // read off the first diagonal. The convolution offset must match the width
+        // the diagonal data was masked/positioned at in `cnv_prepare_right` (its
+        // effective `k`), which can be below the rounded physical `max_k`.
+        let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.encoded_k().as_usize());
+        ensure_uniform_diagonal_scale(lt, pt_log_scale, pt_max_k)?;
+        // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
+        // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
+        // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
+        // (`checked_mul_pt_log_budget` reads the rhs budget only for diagnostics), so 0.
+        let (log_budget, log_delta, cnv_offset) =
+            mul_pt_params_raw(dst_k, src.log_delta(), src.log_budget(), pt_log_scale, 0, pt_max_k)?;
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, first.base2k().as_usize());
+        let baby_size = babies.size();
+        let diagonal_size = first.size();
+        let prod_size = baby_size
+            .checked_add(diagonal_size)
+            .and_then(|width| width.checked_sub(cnv_offset_hi))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "linear transformation PROD width underflows: baby size {baby_size} + diagonal size {diagonal_size} - cnv_offset_hi {cnv_offset_hi}"
+                )
+            })?;
+        Ok(Self {
+            cnv_offset,
+            cnv_offset_hi,
+            cnv_offset_lo,
+            prod_size,
+            log_budget,
+            log_delta,
         })
     }
 }

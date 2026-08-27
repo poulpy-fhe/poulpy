@@ -250,6 +250,16 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     }
 }
 
+/// How [`Convolution::cnv_accumulate_dft_columns`](crate::api::Convolution::cnv_accumulate_dft_columns)
+/// combines its result with the destination columns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CnvDftStore {
+    /// Overwrite the destination columns.
+    Overwrite,
+    /// Add into the destination columns.
+    Accumulate,
+}
+
 /// One `(left, right)` operand pair of a fused convolution accumulation.
 ///
 /// Consumed by [`Convolution::cnv_accumulate_dft`](crate::api::Convolution::cnv_accumulate_dft),
@@ -264,6 +274,28 @@ pub struct CnvDftAccTerm<'a, BE: Backend + 'a> {
     pub b: CnvPVecRBackendRef<'a, BE>,
     /// Column of `b` to convolve.
     pub b_col: usize,
+}
+
+impl<'a, BE: Backend + 'a> CnvDftAccTerm<'a, BE> {
+    /// Reborrows this term with the left operand's column shifted by `col`, for
+    /// the per-column fallback of
+    /// [`Convolution::cnv_accumulate_dft_columns`](crate::api::Convolution::cnv_accumulate_dft_columns).
+    pub fn at_column(&self, col: usize) -> CnvDftAccTerm<'_, BE> {
+        CnvDftAccTerm {
+            a: CnvPVecL {
+                data: BE::view_ref(&self.a.data),
+                shape: self.a.shape,
+                _phantom: PhantomData,
+            },
+            a_col: self.a_col + col,
+            b: CnvPVecR {
+                data: BE::view_ref(&self.b.data),
+                shape: self.b.shape,
+                _phantom: PhantomData,
+            },
+            b_col: self.b_col,
+        }
+    }
 }
 
 /// Borrow a `CnvPVecR` as a shared reference view.

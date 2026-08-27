@@ -13,7 +13,7 @@ use std::{
 use anyhow::Result;
 use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank, SetBSGSMeta,
-    SetK, TorusPrecision,
+    SetK, TorusPrecision, glwe_backend_mut_with_size, glwe_backend_ref_with_size,
 };
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, ScratchArena, ZnxWord};
@@ -30,6 +30,43 @@ mod sealed {
 pub struct Normalized;
 
 /// Marker for CKKS ciphertexts whose limb digits may contain unpropagated carries.
+///
+/// The backend conversions are sealed off this state: neither the
+/// `GLWEToBackendRef`/`GLWEToBackendMut` impls nor `Deref` to the wrapped
+/// `GLWE` exist for it, so an unnormalized ciphertext cannot reach a
+/// DFT-domain op or hand out a capacity-wide view.
+///
+/// ```compile_fail,E0599
+/// use poulpy_ckks::layouts::{CKKSCiphertext, Unnormalized};
+/// use poulpy_core::layouts::GLWEToBackendRef;
+///
+/// fn shared_view(ct: &CKKSCiphertext<Vec<u8>, i64, Unnormalized>) {
+///     let _ = ct.to_backend_ref();
+/// }
+/// ```
+///
+/// ```compile_fail,E0599
+/// use poulpy_ckks::layouts::{CKKSCiphertext, Unnormalized};
+/// use poulpy_core::layouts::GLWEToBackendMut;
+///
+/// fn mutable_view(ct: &mut CKKSCiphertext<Vec<u8>, i64, Unnormalized>) {
+///     let _ = ct.to_backend_mut();
+/// }
+/// ```
+///
+/// The same calls resolve on the normalized state, so the failures above are
+/// the typestate seal and not a missing import:
+///
+/// ```
+/// use poulpy_ckks::layouts::CKKSCiphertext;
+/// use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
+/// use poulpy_hal::layouts::HostBytesBackend;
+///
+/// fn views(ct: &mut CKKSCiphertext<Vec<u8>, i64>) {
+///     let _ = GLWEToBackendRef::<HostBytesBackend>::to_backend_ref(ct);
+///     let _ = GLWEToBackendMut::<HostBytesBackend>::to_backend_mut(ct);
+/// }
+/// ```
 pub struct Unnormalized;
 
 impl sealed::Sealed for Normalized {}
@@ -78,20 +115,6 @@ impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> CKKSCiphertext<D, W, S> {
         self.to_host_owned::<BE>().to_string()
     }
 
-    pub fn to_ref<BE: Backend<ZnxWord = W>>(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord>
-    where
-        GLWE<D, W>: GLWEToBackendRef<BE>,
-    {
-        GLWEToBackendRef::to_backend_ref(&self.inner)
-    }
-
-    pub fn to_mut<BE: Backend<ZnxWord = W>>(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>
-    where
-        GLWE<D, W>: GLWEToBackendMut<BE>,
-    {
-        GLWEToBackendMut::to_backend_mut(&mut self.inner)
-    }
-
     /// Replaces the semantic metadata after checking that the current storage
     /// can represent it.
     ///
@@ -130,7 +153,13 @@ where
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> Deref for CKKSCiphertext<D, W, S> {
+// `Normalized` only: derefing to the wrapped `GLWE` also exposes *its*
+// `GLWEToBackendRef`/`GLWEToBackendMut` impls, which are capacity-wide and
+// unsealed. On an unnormalized ciphertext that would defeat both the
+// normalization typestate and the logical-width narrowing, so the unnormalized
+// state reaches its storage through
+// [`UnnormalizedCKKSCiphertext::write_view`] instead.
+impl<D: Data, W: ZnxWord> Deref for CKKSCiphertext<D, W, Normalized> {
     type Target = GLWE<D, W>;
 
     fn deref(&self) -> &Self::Target {
@@ -138,7 +167,7 @@ impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> Deref for CKKSCiphertext<D,
     }
 }
 
-impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> DerefMut for CKKSCiphertext<D, W, S> {
+impl<D: Data, W: ZnxWord> DerefMut for CKKSCiphertext<D, W, Normalized> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
@@ -225,7 +254,7 @@ where
     GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
 {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        GLWEToBackendRef::to_backend_ref(&self.inner)
+        glwe_backend_ref_with_size::<BE>(GLWEToBackendRef::to_backend_ref(&self.inner), self.size())
     }
 }
 
@@ -234,7 +263,28 @@ where
     GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
 {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        GLWEToBackendMut::to_backend_mut(&mut self.inner)
+        let size = self.size();
+        glwe_backend_mut_with_size::<BE>(GLWEToBackendMut::to_backend_mut(&mut self.inner), size)
+    }
+}
+
+// Inherent shorthands for the trait impls above, restricted (like them) to the
+// `Normalized` state so an unnormalized ciphertext cannot hand out a
+// DFT-domain-usable view and bypass its typestate.
+impl<D: Data, W: ZnxWord> CKKSCiphertext<D, W, Normalized> {
+    pub fn to_ref<BE: Backend<ZnxWord = W>>(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord>
+    where
+        GLWE<D, W>: GLWEToBackendRef<BE>,
+    {
+        glwe_backend_ref_with_size::<BE>(GLWEToBackendRef::to_backend_ref(&self.inner), self.size())
+    }
+
+    pub fn to_mut<BE: Backend<ZnxWord = W>>(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>
+    where
+        GLWE<D, W>: GLWEToBackendMut<BE>,
+    {
+        let size = self.size();
+        glwe_backend_mut_with_size::<BE>(GLWEToBackendMut::to_backend_mut(&mut self.inner), size)
     }
 }
 
@@ -275,13 +325,14 @@ crate::impl_ckks_infos!(self_meta CKKSCiphertextViewMut);
 
 impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for CKKSCiphertextViewMut<'a, BE> {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        self.inner.to_backend_ref()
+        glwe_backend_ref_with_size::<BE>(self.inner.to_backend_ref(), self.size())
     }
 }
 
 impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for CKKSCiphertextViewMut<'a, BE> {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        self.inner.to_backend_mut()
+        let size = self.size();
+        glwe_backend_mut_with_size::<BE>(self.inner.to_backend_mut(), size)
     }
 }
 
@@ -516,7 +567,7 @@ where
     GLWE<D, W>: GLWEToBackendRef<BE>,
 {
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
-        GLWEToBackendRef::to_backend_ref(&self.inner.inner)
+        glwe_backend_ref_with_size::<BE>(GLWEToBackendRef::to_backend_ref(&self.inner.inner), self.size())
     }
 }
 
@@ -525,7 +576,8 @@ where
     GLWE<D, W>: GLWEToBackendMut<BE>,
 {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
-        GLWEToBackendMut::to_backend_mut(&mut self.inner.inner)
+        let size = self.size();
+        glwe_backend_mut_with_size::<BE>(GLWEToBackendMut::to_backend_mut(&mut self.inner.inner), size)
     }
 }
 
