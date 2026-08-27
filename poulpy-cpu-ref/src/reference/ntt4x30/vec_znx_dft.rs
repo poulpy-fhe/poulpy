@@ -29,13 +29,16 @@ use crate::{
         Backend, HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
         VecZnxDftBackendRef, ZnxView, ZnxViewMut,
     },
-    reference::ntt4x30::{
-        NttAdd, NttAddAssign, NttCopy, NttDFTExecute, NttFromZnx64, NttNegate, NttNegateAssign, NttSub, NttSubAssign,
-        NttSubNegateAssign, NttToZnx128, NttZero,
-        mat_vec::{BbbMeta, BbcMeta},
-        ntt::{NttTable, NttTableInv, intt_ref},
-        primes::{PrimeSetCrt4, Primes30},
-        types::Q120bScalar,
+    reference::{
+        SendPtr,
+        ntt4x30::{
+            NttAdd, NttAddAssign, NttCopy, NttDFTExecute, NttFromZnx64, NttNegate, NttNegateAssign, NttSub, NttSubAssign,
+            NttSubNegateAssign, NttToZnx128, NttZero,
+            mat_vec::{BbbMeta, BbcMeta},
+            ntt::{NttTable, NttTableInv, intt_ref},
+            primes::{PrimeSetCrt4, Primes30},
+            types::Q120bScalar,
+        },
     },
 };
 
@@ -800,5 +803,39 @@ pub fn ntt4x30_vec_znx_dft_automorphism<BE>(
 
     for limb in min_size..res_size {
         BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, limb));
+    }
+}
+
+pub fn ntt4x30_vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskExecutor>(
+    plan: &NttAutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    a_col: usize,
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+{
+    let n = res.n();
+    let cols = res.cols();
+    let size = res.size().min(a.size());
+    let res_ptr = SendPtr::new(cast_slice_mut::<_, u64>(res.raw_mut()).as_mut_ptr());
+    let apply = |limb: usize| {
+        let a_limb = limb_u64::<_, BE>(a, a_col, limb);
+        let start = 4 * n * (limb * cols + res_col);
+        let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), 4 * n) };
+        for (i, &source) in plan.perm.iter().enumerate().take(n) {
+            let source = source as usize;
+            let value = &a_limb[4 * source..4 * source + 4];
+            BE::ntt_add_assign(&mut res_limb[4 * i..4 * i + 4], value);
+        }
+    };
+    if E::IS_PARALLEL {
+        E::for_each(size, apply);
+    } else {
+        for limb in 0..size {
+            apply(limb);
+        }
     }
 }

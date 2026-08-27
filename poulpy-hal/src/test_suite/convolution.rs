@@ -107,6 +107,118 @@ where
     }
 }
 
+/// Verifies `cnv_by_const_apply_add` against `cnv_by_const_apply` +
+/// `vec_znx_big_add_assign`, including the untouched-limb contract.
+pub fn test_convolution_by_const_add<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
+where
+    M: ModuleN
+        + Convolution<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + crate::api::VecZnxBigAddAssign<BE>
+        + VecZnxBigAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let a_cols: usize = 2;
+    let a_size: usize = 15;
+    let b_size: usize = 3;
+    let res_size: usize = a_size + b_size;
+
+    let mut a = VecZnx::alloc(module.n(), a_cols, a_size);
+    let mut b = VecZnx::alloc(module.n(), 1, b_size);
+    a.fill_uniform(17, &mut source);
+    b.fill_uniform(base2k, &mut source);
+
+    let a_backend = upload_vec_znx::<BE>(&a);
+    let b_backend = upload_vec_znx::<BE>(&b);
+    let mut acc_have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+    let mut acc_want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+    let mut term: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_by_const_apply_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.vec_znx_big_normalize_tmp_bytes()),
+    );
+
+    // `cnv_offset` is a limb count; the tail values are clamped out of range.
+    for base_offset in [0, 1, 2, res_size / 2, res_size - 1] {
+        for add_offset in [0, 1, 2, res_size / 2, res_size - 1, res_size, res_size + 1] {
+            // Fused: apply the first term, accumulate the second in place.
+            module.cnv_by_const_apply(
+                base_offset,
+                &mut acc_have.to_backend_mut(),
+                0,
+                &vec_znx_backend_ref::<BE>(&a_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&b_backend),
+                0,
+                0,
+                &mut scratch.arena(),
+            );
+            module.cnv_by_const_apply_add(
+                add_offset,
+                &mut acc_have.to_backend_mut(),
+                0,
+                &vec_znx_backend_ref::<BE>(&a_backend),
+                1,
+                &vec_znx_backend_ref::<BE>(&b_backend),
+                0,
+                1,
+                &mut scratch.arena(),
+            );
+
+            // Composition: both terms into separate BIG buffers, then added.
+            module.cnv_by_const_apply(
+                base_offset,
+                &mut acc_want.to_backend_mut(),
+                0,
+                &vec_znx_backend_ref::<BE>(&a_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&b_backend),
+                0,
+                0,
+                &mut scratch.arena(),
+            );
+            module.cnv_by_const_apply(
+                add_offset,
+                &mut term.to_backend_mut(),
+                0,
+                &vec_znx_backend_ref::<BE>(&a_backend),
+                1,
+                &vec_znx_backend_ref::<BE>(&b_backend),
+                0,
+                1,
+                &mut scratch.arena(),
+            );
+            module.vec_znx_big_add_assign(&mut acc_want.to_backend_mut(), 0, &term.to_backend_ref(), 0);
+
+            let normalized = |big: &VecZnxBigOwned<BE>, scratch: &mut ScratchOwned<BE>| {
+                let res_host_template = VecZnx::alloc(module.n(), 1, res_size);
+                let mut res_backend = upload_vec_znx::<BE>(&res_host_template);
+                module.vec_znx_big_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut res_backend),
+                    base2k,
+                    0,
+                    0,
+                    &big.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch.arena(),
+                );
+                download_vec_znx::<BE>(&res_backend)
+            };
+            let res_have = normalized(&acc_have, &mut scratch);
+            let res_want = normalized(&acc_want, &mut scratch);
+            assert_eq!(
+                res_want, res_have,
+                "cnv_by_const_apply_add != apply + big add for offsets ({base_offset}, {add_offset})"
+            );
+        }
+    }
+}
+
 pub fn test_convolution<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
 where
     M: ModuleN

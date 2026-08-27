@@ -9,6 +9,7 @@ use crate::{
         vec_znx_dft::vec_znx_dft_apply,
     },
 };
+use poulpy_hal::execution::TaskExecutor;
 
 pub fn convolution_prepare_left<BE>(
     table: &ReimFFTTable<f64>,
@@ -58,6 +59,32 @@ fn convolution_prepare<R, BE>(
     let n: usize = table.m() << 1;
 
     let res_raw: &mut [f64] = res.raw_mut();
+
+    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 && tmp.size() > 0 {
+        let res_addr = res_raw.as_mut_ptr() as usize;
+        BE::TaskExecutor::for_each_chunked(cols * res_size, tmp.raw_mut(), n, |limb, task| {
+            let col = task / res_size;
+            let j = task % res_size;
+            if j < min_size {
+                if j + 1 == min_size {
+                    BE::reim_from_znx_masked(limb, a.at(col, j), mask);
+                } else {
+                    BE::reim_from_znx(limb, a.at(col, j));
+                }
+                BE::reim_dft_execute(table, limb);
+            }
+            for blk_i in 0..m / 4 {
+                let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
+                let dst = unsafe { std::slice::from_raw_parts_mut((res_addr as *mut f64).add(off), 8) };
+                if j < min_size {
+                    BE::reim4_extract_1blk_contiguous(m, 1, blk_i, dst, limb);
+                } else {
+                    dst.fill(0.0);
+                }
+            }
+        });
+        return;
+    }
 
     for i in 0..cols {
         // FFT all limbs (unmasked); the last active limb will be overwritten below.
@@ -111,6 +138,36 @@ pub fn convolution_prepare_self<BE>(
     let left_raw: &mut [f64] = left.raw_mut();
     let right_raw: &mut [f64] = right.raw_mut();
 
+    if BE::TaskExecutor::is_parallel() && cols * res_size > 1 && tmp.size() > 0 {
+        let left_addr = left_raw.as_mut_ptr() as usize;
+        let right_addr = right_raw.as_mut_ptr() as usize;
+        BE::TaskExecutor::for_each_chunked(cols * res_size, tmp.raw_mut(), n, |limb, task| {
+            let col = task / res_size;
+            let j = task % res_size;
+            if j < min_size {
+                if j + 1 == min_size {
+                    BE::reim_from_znx_masked(limb, a.at(col, j), mask);
+                } else {
+                    BE::reim_from_znx(limb, a.at(col, j));
+                }
+                BE::reim_dft_execute(table, limb);
+            }
+            for blk_i in 0..m / 4 {
+                let off = col * n * res_size + blk_i * res_size * 8 + j * 8;
+                let left_dst = unsafe { std::slice::from_raw_parts_mut((left_addr as *mut f64).add(off), 8) };
+                if j < min_size {
+                    BE::reim4_extract_1blk_contiguous(m, 1, blk_i, left_dst, limb);
+                } else {
+                    left_dst.fill(0.0);
+                }
+                unsafe {
+                    std::ptr::copy_nonoverlapping(left_dst.as_ptr(), (right_addr as *mut f64).add(off), 8);
+                }
+            }
+        });
+        return;
+    }
+
     for i in 0..cols {
         // FFT all limbs (unmasked); the last active limb will be overwritten below.
         vec_znx_dft_apply::<BE>(table, 1, 0, tmp, 0, a, i);
@@ -139,10 +196,48 @@ pub fn convolution_prepare_self<BE>(
 
 pub fn convolution_by_const_apply_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size - 1);
-    size_of::<i64>() * (min_size + a_size) * 8
+    size_of::<i64>() * ((min_size + a_size) * 8 + b_size)
 }
 
 pub fn convolution_by_const_apply<BE>(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    b_coeff: usize,
+    tmp: &mut [i64],
+) where
+    BE: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    convolution_by_const_apply_impl::<BE, false>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn convolution_by_const_apply_add<BE>(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    b_coeff: usize,
+    tmp: &mut [i64],
+) where
+    BE: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    convolution_by_const_apply_impl::<BE, true>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn convolution_by_const_apply_impl<BE, const ADD: bool>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -177,20 +272,33 @@ pub fn convolution_by_const_apply<BE>(
     let a_idx: usize = n * a_col;
     let res_idx: usize = n * res_col;
 
-    let (res_blk, a_blk) = tmp[..(min_size + a_size) * 8].split_at_mut(min_size * 8);
-    let mut b_digits = vec![0i64; b_size];
+    let staging_size = min_size + a_size;
+    let (blocks, b_digits) = tmp[..staging_size * 8 + b_size].split_at_mut(staging_size * 8);
+    let (res_blk, a_blk) = blocks.split_at_mut(min_size * 8);
     for (j, digit) in b_digits.iter_mut().enumerate() {
         *digit = b.at(b_col, j)[b_coeff];
     }
 
     for blk_i in 0..n / 8 {
         BE::i64_extract_1blk_contiguous(a_sl, a_idx, a_size, blk_i, a_blk, a_raw);
-        BE::i64_convolution_by_const(res_blk, min_size, offset, a_blk, a_size, &b_digits);
+        BE::i64_convolution_by_const(res_blk, min_size, offset, a_blk, a_size, b_digits);
+        if ADD {
+            for start in (0..min_size).step_by(a_size) {
+                let rows = a_size.min(min_size - start);
+                BE::i64_extract_1blk_contiguous(res_sl, res_idx, rows, blk_i, a_blk, &res_raw[start * res_sl..]);
+                res_blk[8 * start..8 * (start + rows)]
+                    .iter_mut()
+                    .zip(a_blk.iter())
+                    .for_each(|(res, &value)| *res = res.wrapping_add(value));
+            }
+        }
         BE::i64_save_1blk_contiguous(res_sl, res_idx, min_size, blk_i, res_raw, res_blk);
     }
 
-    for j in min_size..res_size {
-        res.zero_at(res_col, j);
+    if !ADD {
+        for j in min_size..res_size {
+            res.zero_at(res_col, j);
+        }
     }
 }
 
@@ -338,10 +446,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
     let a_size: usize = a.size();
     let b_size: usize = b.size();
 
-    assert_eq!(
-        tmp.len(),
-        convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size) / size_of::<f64>()
-    );
+    assert!(tmp.len() >= convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size) / size_of::<f64>());
 
     let bound: usize = a_size + b_size - 1;
     let min_size: usize = res_size.min(bound);
