@@ -159,7 +159,9 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftNormalizeConsume<BE>
-        + GaloisElement,
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + GaloisElement
+        + Sync,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,

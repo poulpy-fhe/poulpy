@@ -52,7 +52,7 @@ fn plan() -> BootstrappingPlan {
         DFTType::Decode,
         vec![(3, 4), (4, 32), (4, 512), (4, 8192)],
         DFTOutputFormat::SplitRealAndImag,
-        meta(31, 2),
+        meta(28, 2),
     )
     .unwrap()
     .with_scaling(0.5)
@@ -61,7 +61,7 @@ fn plan() -> BootstrappingPlan {
         DFTType::Encode,
         vec![(4, 8192), (4, 512), (4, 32), (3, 4)],
         DFTOutputFormat::SplitRealAndImag,
-        meta(52, 2),
+        meta(44, 3),
     )
     .unwrap();
     let eval_mod = EvalModPlan {
