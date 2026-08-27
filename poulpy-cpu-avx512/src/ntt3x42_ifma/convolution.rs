@@ -1050,3 +1050,65 @@ pub(crate) fn cnv_by_const_apply(
         }
     });
 }
+
+/// `res[res_col] +=` the convolution-by-constant; out-of-range limbs are left
+/// untouched. This serial adapter keeps the pre-Rayon backend buildable while
+/// the shared HAL contract is introduced.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cnv_by_const_apply_add(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, NTT3x42Ifma>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, NTT3x42Ifma>,
+    b_col: usize,
+    b_coeff: usize,
+    _tmp: &mut [u8],
+) {
+    let res_size = res.size();
+    let a_size = a.size();
+    let b_size = b.size();
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        return;
+    }
+
+    let bound = a_size + b_size - 1;
+    let min_size = res_size.min(bound);
+    let offset = cnv_offset.min(bound);
+    let n = res.n();
+    let rc = res.cols();
+    let res_raw = res.raw_mut();
+
+    if b_size == 1 {
+        let b0 = b.at(b_col, 0)[b_coeff] as i128;
+        for_index(min_size, 2 * n * min_size, |k| {
+            let k_abs = k + offset;
+            if k_abs < a_size {
+                let start = n * (k * rc + res_col);
+                let res_limb = &mut res_raw[start..start + n];
+                let a_limb = a.at(a_col, k_abs);
+                for n_i in 0..res_limb.len() {
+                    res_limb[n_i] += (a_limb[n_i] as i128) * b0;
+                }
+            }
+        });
+        return;
+    }
+
+    for_index(min_size, 2 * n * min_size * b_size, |k| {
+        let start = n * (k * rc + res_col);
+        let res_limb = &mut res_raw[start..start + n];
+        let k_abs = k + offset;
+        let j_min = k_abs.saturating_sub(a_size - 1);
+        let j_max = (k_abs + 1).min(b_size);
+        for (n_i, r) in res_limb.iter_mut().enumerate() {
+            let mut acc = 0i128;
+            for j in j_min..j_max {
+                let b_j = b.at(b_col, j)[b_coeff];
+                acc += a.at(a_col, k_abs - j)[n_i] as i128 * b_j as i128;
+            }
+            *r += acc;
+        }
+    });
+}

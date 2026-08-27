@@ -6,6 +6,7 @@ use crate::{
         ZnxView, ZnxViewMut,
     },
     reference::{
+        SendPtr,
         fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
         znx::ZnxZero,
     },
@@ -517,5 +518,41 @@ pub fn vec_znx_dft_automorphism<BE>(
 
     for limb in min_size..res_size {
         BE::reim_zero(res.at_mut(res_col, limb));
+    }
+}
+
+pub fn vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskExecutor>(
+    plan: &Fft64AutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    a_col: usize,
+) where
+    BE: Backend<DftWord = f64, ZnxWord = i64>,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+{
+    let n = res.n();
+    let m = n >> 1;
+    let cols = res.cols();
+    let size = res.size().min(a.size());
+    let res_ptr = SendPtr::new(res.raw_mut().as_mut_ptr());
+    let apply = |limb: usize| {
+        let start = n * (limb * cols + res_col);
+        let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), n) };
+        let (res_re, res_im) = res_limb.split_at_mut(m);
+        let (a_re, a_im) = a.at(a_col, limb).split_at(m);
+        for (i, &source) in plan.perm.iter().enumerate() {
+            let source = source as usize;
+            res_re[i] += a_re[source];
+            res_im[i] += if plan.conj { -a_im[source] } else { a_im[source] };
+        }
+    };
+    if E::IS_PARALLEL {
+        E::for_each(size, apply);
+    } else {
+        for limb in 0..size {
+            apply(limb);
+        }
     }
 }

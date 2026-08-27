@@ -292,6 +292,34 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn cnv_by_const_apply_add(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, Self>,
+        b_col: usize,
+        b_coeff: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let mut scratch = scratch.borrow();
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_by_const_apply_add_default(
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            b_coeff,
+            &mut scratch,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft(
         module: &Module<Self>,
         cnv_offset: usize,

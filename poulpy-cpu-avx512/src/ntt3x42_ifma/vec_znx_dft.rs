@@ -531,6 +531,30 @@ pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
     );
 }
 
+/// In-place iNTT of `a[a_col]`'s limbs for the serial compatibility path.
+/// Each packed limb is replaced by its `i128` compaction, leaving that column
+/// in `VecZnxBig` layout.
+pub(crate) fn idft_compact_in_place_ifma(
+    module: &Module<NTT3x42Ifma>,
+    a: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
+    a_col: usize,
+    tmp: &mut [u64],
+) {
+    let table = &handle(module).table_intt;
+    let n = a.n();
+    assert!(tmp.len() >= 3 * n);
+    let a_cols = a.cols();
+    let a_size = a.size();
+    let data: &mut [u64] = cast_slice_mut(a.data_mut());
+    for j in 0..a_size {
+        let slot = packed_limb_mut(data, n, a_cols, a_col, j);
+        unsafe {
+            unpack_limb_3x42(n, tmp, slot);
+            intt_then_compact_ifma(n, 1, tmp.as_mut_ptr(), slot.as_mut_ptr() as *mut i128, table);
+        }
+    }
+}
+
 /// Forward NTT into the packed layout.
 pub(crate) fn vec_znx_dft_apply(
     module: &Module<NTT3x42Ifma>,
@@ -837,6 +861,61 @@ pub(crate) fn vec_znx_dft_zero(res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>, r
         let dst = packed_limb_mut(rp, n, rc, res_col, j);
         dst.fill(0);
     });
+}
+
+/// Packed-layout NTT3x42 automorphism fused with serial accumulation.
+pub(crate) fn vec_znx_dft_automorphism_add(
+    plan: &poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
+    a_col: usize,
+) {
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
+    let min_size = res.size().min(a.size());
+    let perm = &plan.perm;
+    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
+    let ap: &[u64] = cast_slice(a.data());
+    for_index(min_size, 2 * n * min_size, |limb| {
+        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+        let src = packed_limb(ap, n, ac, a_col, limb);
+        unsafe { automorphism_add_limb(n, perm, dst, src) };
+    });
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn automorphism_add_limb(n: usize, perm: &[u32], dst: &mut [u64], a: &[u64]) {
+    unsafe {
+        let m42 = _mm512_set1_epi64(MASK42 as i64);
+        let m20 = _mm512_set1_epi64(MASK20 as i64);
+        let m22 = _mm512_set1_epi64(MASK22 as i64);
+        let q = q_vec_512();
+        let mut buf = [0u64; 16];
+        for g in 0..n / 8 {
+            for (lane, &p) in perm[8 * g..8 * g + 8].iter().enumerate() {
+                let p = p as usize;
+                let src_off = 16 * (p >> 3) + (p & 7);
+                buf[lane] = a[src_off];
+                buf[lane + 8] = a[src_off + 8];
+            }
+            let off = 16 * g;
+            let ya = load_group(&buf, 0, m42, m20);
+            let yd = load_group(dst, off, m42, m20);
+            let sum = [
+                cond_sub_2q_si512(_mm512_add_epi64(yd[0], ya[0]), q[0]),
+                cond_sub_2q_si512(_mm512_add_epi64(yd[1], ya[1]), q[1]),
+                cond_sub_2q_si512(_mm512_add_epi64(yd[2], ya[2]), q[2]),
+            ];
+            store_group(dst, off, sum, m22);
+        }
+    }
 }
 
 /// Packed-layout NTT3x42 automorphism.
