@@ -30,12 +30,13 @@ use crate::{
     GLWEAutomorphism, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     default::{
+        keyswitching::glwe::resolved_use,
         keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
         operations::msb_mask_bottom_limb,
     },
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef,
-        GetGaloisElement, LWEInfos, WithEffectiveDsize, prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut,
+        GLWEToBackendRef, GetGaloisElement, LWEInfos, WithEffectiveDsize, prepared::GGLWEPreparedToBackendRef,
     },
 };
 
@@ -249,11 +250,10 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
                 .get_automorphism_key_layout_for(module.galois_element(rot), a.k())
                 .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
             key_base2k = Some(layout.base2k());
-            key_size = key_size.max(gglwe_product_output_size::<BE, _, _, _>(
-                a,
-                a,
-                &layout.with_dsize(effective_dsize),
-            ));
+            // Sizing reads the resolved logical `dnum`/`k_aux`, not the physical
+            // ones a `with_dsize` wrapper still forwards.
+            let logical: GGLWELayout = resolved_use(layout, a.k(), effective_dsize).logical_layout;
+            key_size = key_size.max(gglwe_product_output_size::<BE, _, _, _>(a, a, &logical));
         }
         (a.base2k() == key_base2k.expect("at least one nonzero rotation"), key_size)
     } else {

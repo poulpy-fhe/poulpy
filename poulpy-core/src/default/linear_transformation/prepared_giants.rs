@@ -23,6 +23,7 @@ use poulpy_hal::{
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation, LinearTransformationGiantStep,
     default::{
+        keyswitching::glwe::resolved_use,
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
             inner_product::{glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_unprepared_baby_steps_dft},
@@ -34,7 +35,7 @@ use crate::{
         operations::cnv_offset_to_limb_offset,
     },
     layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut,
+        GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut,
         GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, WithEffectiveDsize,
         prepared::{GGLWEPreparedToBackendRef, PreparedDiagonal},
     },
@@ -200,11 +201,14 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                 .get_automorphism_key_layout_for(module.galois_element(gs.rot), lhs.k())
                 .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot));
             key_base2k = Some(layout.base2k());
+            // Sizing reads the resolved logical `dnum`/`k_aux`, not the physical
+            // ones a `with_dsize` wrapper still forwards.
+            let logical: GGLWELayout = resolved_use(layout, lhs.k(), effective_dsize).logical_layout;
             output_size = output_size.max(
                 crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(
                     res,
                     res,
-                    &layout.with_dsize(effective_dsize),
+                    &logical,
                     nonzero_giant_rotations,
                     prod_size.saturating_sub(res.size()),
                 ),

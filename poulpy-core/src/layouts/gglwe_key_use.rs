@@ -391,7 +391,7 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWEKeyRegistry<Id, K> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layouts::{Degree, Rank};
+    use crate::layouts::{Degree, Rank, WithEffectiveDsize, key_work_size};
 
     const N: Degree = Degree(1024);
     const K: u32 = 8;
@@ -418,6 +418,45 @@ mod tests {
 
     fn policy(dsizes: &[u32]) -> GGLWEKeyUsePolicy {
         GGLWEKeyUsePolicy::new(Base2K(K), dsizes.iter().map(|d| Dsize(*d)).collect()).unwrap()
+    }
+
+    /// A coarsened use is sized from its resolved `k_aux`, not the physical one
+    /// the `with_dsize` wrapper still forwards.
+    ///
+    /// `dsize=8, dnum=3, k_aux=8K+g` at `D=16` and `input=16K` resolves to
+    /// `k_aux=16K+g` and 33 work limbs; reading the wrapper's physical `k_aux`
+    /// gives 25 and under-sizes every accumulated product built on it.
+    #[test]
+    fn coarsened_use_is_sized_from_its_resolved_aux() {
+        // `g = 1` so the guard costs one limb, matching the request's arithmetic.
+        let physical: GGLWELayout = layout(8, 3, TorusPrecision(8 * K + 1));
+        let input_k: TorusPrecision = TorusPrecision(16 * K);
+        let effective: Dsize = Dsize(16);
+
+        let use_: ResolvedGGLWEUse = resolve_gglwe_key_use(&physical, input_k, effective)
+            .expect("valid layout")
+            .expect("the parent realizes the coarsening");
+
+        assert_eq!(use_.logical_layout.k_aux, TorusPrecision(16 * K + 1));
+        assert_eq!(use_.logical_work_size, 33);
+        assert_eq!(
+            key_work_size(
+                physical.base2k(),
+                input_k,
+                use_.logical_layout.dsize(),
+                use_.logical_layout.k_aux()
+            ),
+            use_.logical_work_size
+        );
+
+        // What the wrapper alone would have produced: the effective `dsize` with
+        // the physical `k_aux`.
+        let wrapper = physical.with_dsize(effective);
+        assert_eq!(
+            key_work_size(wrapper.base2k(), input_k, wrapper.effective_dsize(), wrapper.k_aux()),
+            25,
+            "the regression this pins is the wrapper's physical k_aux reaching a sizing helper"
+        );
     }
 
     // Acceptance 1.
