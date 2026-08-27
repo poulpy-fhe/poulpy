@@ -87,7 +87,6 @@ where
             );
             self.glwe_encrypt_sk_internal(
                 res_backend.base2k().into(),
-                full_ct.k().as_usize(),
                 &mut full_ct.data,
                 Some((pt.to_backend_ref(), 0)),
                 sk,

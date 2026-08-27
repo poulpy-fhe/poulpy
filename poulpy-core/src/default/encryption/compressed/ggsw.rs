@@ -135,7 +135,6 @@ where
                     self.fill_glwe_mask_from_seed_default(base2k, &mut full_ct, 1, rank, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
-                        full_ct.k().as_usize(),
                         &mut full_ct.data,
                         Some((tmp_pt_backend, col_j)),
                         sk,

@@ -16,31 +16,6 @@ use poulpy_hal::{
     source::Source,
 };
 
-fn round_vec_znx_columns_to_k<BE, M>(
-    module: &M,
-    base2k: usize,
-    k: usize,
-    res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
-    cols: std::ops::Range<usize>,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: VecZnxRshAssignBackend<BE> + VecZnxLshAssignBackend<BE>,
-{
-    let max_k = res
-        .size()
-        .checked_mul(base2k)
-        .expect("VecZnx allocation precision overflows usize");
-    let padding = max_k.checked_sub(k).expect("VecZnx precision exceeds its allocation");
-    if padding == 0 {
-        return;
-    }
-    for col in cols {
-        module.vec_znx_rsh_assign_backend(base2k, padding, res, col, scratch);
-        module.vec_znx_lsh_assign_backend(base2k, padding, res, col, scratch);
-    }
-}
-
 use crate::{
     EncryptionInfos, GetDistribution,
     dist::Distribution,
@@ -208,7 +183,6 @@ where
         }
         self.glwe_encrypt_sk_internal(
             res.base2k().into(),
-            res.k().into(),
             &mut res.data,
             Some((pt_backend, 0)),
             sk,
@@ -250,16 +224,7 @@ where
             let mut res_ref = &mut *res;
             self.fill_glwe_mask_from_source_default(base2k, &mut res_ref, 1, rank, source_xa);
         }
-        self.glwe_encrypt_sk_internal(
-            res.base2k().into(),
-            res.k().into(),
-            &mut res.data,
-            None,
-            sk,
-            enc_infos,
-            source_xe,
-            scratch,
-        );
+        self.glwe_encrypt_sk_internal(res.base2k().into(), &mut res.data, None, sk, enc_infos, source_xe, scratch);
     }
 }
 
@@ -447,6 +412,7 @@ where
         }
 
         let base2k: usize = pk.base2k().into();
+        let noise_infos = enc_infos.noise_infos();
         let size_pk: usize = pk.size();
         let cols: usize = (res.rank() + 1).into();
 
@@ -508,7 +474,7 @@ where
                 }
 
                 // ci_big = u * pk[i] + e
-                self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, enc_infos.noise_infos(), source_xe);
+                self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, noise_infos, source_xe);
 
                 let (mut ci, scratch_4) = scratch_3.take_vec_znx_scratch(self.n(), 1, size_pk);
                 let scratch_next = {
@@ -529,8 +495,19 @@ where
                 self.vec_znx_copy_backend(&mut res.data, i, &ci_ref, 0);
             }
         }
-        let k = res.k().as_usize();
-        round_vec_znx_columns_to_k(self, base2k, k, &mut res.data, 0..cols, &mut scratch_1);
+        let padding = res
+            .data
+            .size()
+            .checked_mul(base2k)
+            .expect("GLWE allocation precision overflows usize")
+            .checked_sub(noise_infos.k)
+            .expect("encryption precision exceeds the GLWE allocation");
+        if padding != 0 {
+            for col in 0..cols {
+                self.vec_znx_rsh_assign_backend(base2k, padding, &mut res.data, col, &mut scratch_1);
+                self.vec_znx_lsh_assign_backend(base2k, padding, &mut res.data, col, &mut scratch_1);
+            }
+        }
     }
 }
 
@@ -539,7 +516,6 @@ pub(crate) trait GLWEEncryptSkInternal<BE: Backend> {
     fn glwe_encrypt_sk_internal<'pt, S, E>(
         &self,
         base2k: usize,
-        k: usize,
         res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
         pt: GLWEEncryptSkPlaintext<'pt, BE>,
         sk: &S,
@@ -578,7 +554,6 @@ where
     fn glwe_encrypt_sk_internal<'pt, S, E>(
         &self,
         base2k: usize,
-        k: usize,
         res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
         pt: GLWEEncryptSkPlaintext<'pt, BE>,
         sk: &S,
@@ -590,6 +565,7 @@ where
         S: GLWESecretPreparedToBackendRef<BE>,
     {
         let sk = sk.to_backend_ref();
+        let noise_infos = enc_infos.noise_infos();
 
         assert!(
             sk.dist != Distribution::NONE,
@@ -647,7 +623,7 @@ where
         }
 
         // c[0] += e
-        self.vec_znx_add_normal_source_backend(base2k, &mut c0.to_backend_mut(), 0, enc_infos.noise_infos(), source_xe);
+        self.vec_znx_add_normal_source_backend(base2k, &mut c0.to_backend_mut(), 0, noise_infos, source_xe);
 
         // c[0] += m if col = 0
         if let Some((pt, col)) = &pt
@@ -657,6 +633,15 @@ where
             self.vec_znx_normalize_assign_backend(base2k, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
         }
         self.vec_znx_copy_backend(res, 0, &c0.to_backend_ref(), 0);
-        round_vec_znx_columns_to_k(self, base2k, k, res, 0..1, &mut scratch_2);
+        let padding = res
+            .size()
+            .checked_mul(base2k)
+            .expect("GLWE allocation precision overflows usize")
+            .checked_sub(noise_infos.k)
+            .expect("encryption precision exceeds the GLWE allocation");
+        if padding != 0 {
+            self.vec_znx_rsh_assign_backend(base2k, padding, res, 0, &mut scratch_2);
+            self.vec_znx_lsh_assign_backend(base2k, padding, res, 0, &mut scratch_2);
+        }
     }
 }

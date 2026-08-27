@@ -149,7 +149,6 @@ where
                 self.fill_glwe_mask_from_source_default(base2k, &mut res_view, 1, rank_out, source_xa);
                 self.glwe_encrypt_sk_internal(
                     base2k,
-                    res_view.k().as_usize(),
                     &mut res_view.data,
                     Some((tmp_pt.to_backend_ref(), 0)),
                     sk,
