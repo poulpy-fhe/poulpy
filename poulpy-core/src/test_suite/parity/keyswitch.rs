@@ -7,11 +7,11 @@ use poulpy_hal::{
         VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, VecZnx, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef,
+        FillUniform, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, VecZnx,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef,
     },
     source::Source,
-    test_suite::TestParams,
+    test_suite::{TestParams, upload_mat_znx, upload_vec_znx},
 };
 
 use crate::{
@@ -145,21 +145,20 @@ where
 /// `logical_work_size` limb bound, and the derived `k_aux`.
 pub fn test_gglwe_product_dft_selected<BE>(module: &Module<BE>, base2k: usize)
 where
-    BE: poulpy_hal::test_suite::TestBackend,
-    BE::OwnedBuf: HostDataMut,
+    BE: poulpy_hal::test_suite::TestBackend<ZnxWord = i64>,
     Module<BE>: GGLWEProductDefault<BE>
-        + VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + VmpPMatAlloc<BE>
         + VmpPrepare<BE>
         + VmpPrepareTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let mut source = Source::new([3u8; 32]);
     let n: u32 = module.n() as u32;
+    // Inputs and the oracle are built here and uploaded, so the test does not
+    // require the backend's own buffers to be host-resident.
+    let host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
     // (parent dsize, parent dnum, coarsening factor, input limbs)
     let cases: [(u32, u32, u32, usize); 5] = [(1, 8, 2, 4), (1, 12, 4, 6), (2, 8, 2, 5), (2, 6, 3, 6), (4, 4, 2, 8)];
 
@@ -190,20 +189,22 @@ where
                 .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size)),
         );
 
-        let mut a = module.vec_znx_alloc(cols_in, input_size);
-        a.fill_uniform(base2k, &mut source);
+        // Built on the host and uploaded, so a device backend runs this too.
+        let mut a_host = host.vec_znx_alloc(cols_in, input_size);
+        a_host.fill_uniform(base2k, &mut source);
+        let a = upload_vec_znx::<BE>(&a_host);
         let mut a_dft = module.vec_znx_dft_alloc(cols_in, input_size);
         for col in 0..cols_in {
             let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&a);
             module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), col, &a, col);
         }
 
-        let mut mat = module.mat_znx_alloc(rows, cols_in, cols_out, size);
+        let mut mat = host.mat_znx_alloc(rows, cols_in, cols_out, size);
         mat.fill_uniform(base2k, &mut source);
 
         // Oracle: the selected rows and limb prefixes, densely prepared.
         let (mat_ncols, sel_ncols) = (cols_out * size, cols_out * sel_size);
-        let mut sel = module.mat_znx_alloc(sel_rows, cols_in, cols_out, sel_size);
+        let mut sel = host.mat_znx_alloc(sel_rows, cols_in, cols_out, sel_size);
         for i in 0..sel_rows {
             for c in 0..cols_in {
                 let src_row: usize = ((i + 1) * s as usize - 1) * cols_in + c;
@@ -221,13 +222,13 @@ where
         let mut parent_pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
         module.vmp_prepare(
             &mut parent_pmat.to_backend_mut(),
-            &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat),
+            &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&mat)),
             &mut scratch.borrow(),
         );
         let mut sel_pmat = module.vmp_pmat_alloc(sel_rows, cols_in, cols_out, sel_size);
         module.vmp_prepare(
             &mut sel_pmat.to_backend_mut(),
-            &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&sel),
+            &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&sel)),
             &mut scratch.borrow(),
         );
 

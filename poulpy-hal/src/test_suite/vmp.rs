@@ -1,4 +1,5 @@
 use super::{TestParams, download_vec_znx, upload_mat_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+use crate::layouts::DataView;
 use crate::layouts::VecZnxBigToBackendMut;
 use crate::layouts::VecZnxBigToBackendRef;
 use crate::layouts::VecZnxDftToBackendMut;
@@ -357,10 +358,8 @@ pub fn test_vmp_extract_selected_rows<BR: crate::test_suite::TestBackend, BT: cr
 ) where
     Module<BR>: VmpPMatAlloc<BR> + VmpPrepare<BR> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BR>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    BR::OwnedBuf: crate::layouts::HostDataRef,
     Module<BT>: VmpPMatAlloc<BT> + VmpPrepare<BT> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BT>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
-    BT::OwnedBuf: crate::layouts::HostDataRef,
 {
     check_extract_selected_rows(params, module_host, module_ref);
     check_extract_selected_rows(params, module_host, module_test);
@@ -373,7 +372,6 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
 ) where
     Module<BE>: VmpPMatAlloc<BE> + VmpPrepare<BE> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    BE::OwnedBuf: crate::layouts::HostDataRef,
 {
     let n: usize = module_host.n();
     let mut source: Source = Source::new([0u8; 32]);
@@ -421,9 +419,11 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
 
                         let mut got: VmpPMatOwned<BE> = module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size);
                         module.vmp_extract_selected_rows(&mut got.to_backend_mut(), &pmat.to_backend_ref(), first, step);
+                        // Compared through the backend's host download rather
+                        // than `digest_u64`, which needs host-resident buffers.
                         assert_eq!(
-                            got.digest_u64(),
-                            expected.digest_u64(),
+                            BE::to_host_bytes(DataView::data(&got)),
+                            BE::to_host_bytes(DataView::data(&expected)),
                             "cols_in={cols_in} cols_out={cols_out} step={step} rows={res_rows} size={res_size}"
                         );
                     }
