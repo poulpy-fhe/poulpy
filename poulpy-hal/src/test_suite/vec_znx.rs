@@ -2323,7 +2323,7 @@ pub fn test_vec_znx_seed_sampling_matches_source_wrappers<B: crate::test_suite::
         download_vec_znx::<B>(&backend_uniform)
     );
 
-    let noise_infos = NoiseInfos::new(2 * 17, 3.2, 6.0 * 3.2).unwrap();
+    let noise_infos = NoiseInfos::new(2 * 17 - 3, 3.2, 6.0 * 3.2).unwrap();
     let mut seed_source = Source::new([1u8; 32]);
     let seed = seed_source.new_seed();
     let mut wrapper_source = Source::new([1u8; 32]);
@@ -2533,7 +2533,7 @@ where
     let n: usize = module.n();
     let base2k: usize = 17;
     let size: usize = 5;
-    let noise_infos = NoiseInfos::new(2 * 17, 3.2, 6.0 * 3.2).unwrap();
+    let noise_infos = NoiseInfos::new(2 * 17 - 3, 3.2, 6.0 * 3.2).unwrap();
     let mut source_xe: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
     let zero: Vec<i64> = vec![0; n];
@@ -2557,6 +2557,9 @@ where
             } else {
                 let std: f64 = a.stats(base2k, col_i).std() * k_f64;
                 assert!((std - noise_infos.sigma).abs() < 0.1, "std={std} ~!= {}", noise_infos.sigma);
+                let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
+                let low_mask = (1i64 << shift) - 1;
+                assert!(a.at(col_i, limb).iter().all(|value| value & low_mask == 0));
             }
         })
     });
@@ -2569,7 +2572,7 @@ where
     let n: usize = module.n();
     let base2k: usize = 17;
     let size: usize = 5;
-    let noise_infos = NoiseInfos::new(2 * 17, 3.2, 6.0 * 3.2).unwrap();
+    let noise_infos = NoiseInfos::new(2 * 17 - 3, 3.2, 6.0 * 3.2).unwrap();
     let mut source_xe: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
     let zero: Vec<i64> = vec![0; n];
@@ -2605,6 +2608,9 @@ where
                     "std={std} ~!= {}",
                     noise_infos.sigma * sqrt2
                 );
+                let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
+                let low_mask = (1i64 << shift) - 1;
+                assert!(a.at(col_i, limb).iter().all(|value| value & low_mask == 0));
             }
         })
     });

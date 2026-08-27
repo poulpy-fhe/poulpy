@@ -49,13 +49,8 @@ pub fn vec_znx_fill_normal_ref<'r, BE>(
         (noise_infos.bound.log2().ceil() as i64)
     );
 
-    let (limb, scale) = noise_infos.target_limb_and_scale(base2k);
-    znx_fill_normal_f64_ref(
-        res.at_mut(res_col, limb),
-        noise_infos.sigma * scale,
-        noise_infos.bound * scale,
-        source,
-    )
+    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
+    znx_fill_normal_f64_ref(res.at_mut(res_col, limb), noise_infos.sigma, noise_infos.bound, shift, source)
 }
 
 pub fn vec_znx_add_normal_ref<'r, BE>(
@@ -74,11 +69,6 @@ pub fn vec_znx_add_normal_ref<'r, BE>(
         (noise_infos.bound.log2().ceil() as i64)
     );
 
-    let (limb, scale) = noise_infos.target_limb_and_scale(base2k);
-    znx_add_normal_f64_ref(
-        res.at_mut(res_col, limb),
-        noise_infos.sigma * scale,
-        noise_infos.bound * scale,
-        source,
-    )
+    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
+    znx_add_normal_f64_ref(res.at_mut(res_col, limb), noise_infos.sigma, noise_infos.bound, shift, source)
 }

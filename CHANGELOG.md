@@ -8,7 +8,7 @@
 
 ### `poulpy-core`
 
-- Fix precision loss at non-`base2k`-aligned ciphertext widths. GLWE/LWE masks are sampled directly at `k`-bit precision, and computed GLWE bodies are rounded once inside the shared secret- and public-key encryption internals, including seed-compressed GLWE, GGLWE and GGSW paths.
+- Fix precision loss at non-`base2k`-aligned ciphertext widths. Masks and Gaussian noise are sampled at `k`-bit precision, avoiding redundant secret-key ciphertext rounding; public-key products are still rounded to `k`.
 
 ## [0.8.2] - 2026-08-22
 

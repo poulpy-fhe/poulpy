@@ -641,9 +641,9 @@ impl NoiseInfos {
         Ok(Self { k, sigma, bound })
     }
 
-    pub fn target_limb_and_scale(&self, base2k: usize) -> (usize, f64) {
+    /// Target limb and the number of unused low bits it holds.
+    pub fn target_limb_and_shift(&self, base2k: usize) -> (usize, u32) {
         let limb: usize = self.k.div_ceil(base2k) - 1;
-        let scale: f64 = (((limb + 1) * base2k - self.k) as f64).exp2();
-        (limb, scale)
+        (limb, ((limb + 1) * base2k - self.k) as u32)
     }
 }

@@ -117,8 +117,6 @@ where
     Self: Sized
         + ModuleN
         + VecZnxNormalizeTmpBytes
-        + VecZnxRshTmpBytes
-        + VecZnxLshTmpBytes
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
         + GLWEMaskFillDefault<BE>
@@ -133,13 +131,9 @@ where
 
         let lvl_0: usize = BE::bytes_of_vec_znx(self.n(), 1, size);
         let lvl_1: usize = BE::bytes_of_vec_znx(self.n(), 1, size);
-        let lvl_2: usize = self
-            .vec_znx_normalize_tmp_bytes()
-            .max(self.vec_znx_rsh_tmp_bytes())
-            .max(self.vec_znx_lsh_tmp_bytes())
-            .max(
-                self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + self.vec_znx_big_normalize_tmp_bytes(),
-            );
+        let lvl_2: usize = self.vec_znx_normalize_tmp_bytes().max(
+            self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + self.vec_znx_big_normalize_tmp_bytes(),
+        );
 
         lvl_0 + lvl_1 + lvl_2
     }
@@ -547,8 +541,6 @@ where
         + VecZnxNormalize<BE>
         + VecZnxSubAssignBackend<BE>
         + VecZnxSubNegateAssignBackend<BE>
-        + VecZnxRshAssignBackend<BE>
-        + VecZnxLshAssignBackend<BE>
         + VecZnxBigNormalizeTmpBytes,
 {
     fn glwe_encrypt_sk_internal<'pt, S, E>(
@@ -633,15 +625,5 @@ where
             self.vec_znx_normalize_assign_backend(base2k, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
         }
         self.vec_znx_copy_backend(res, 0, &c0.to_backend_ref(), 0);
-        let padding = res
-            .size()
-            .checked_mul(base2k)
-            .expect("GLWE allocation precision overflows usize")
-            .checked_sub(noise_infos.k)
-            .expect("encryption precision exceeds the GLWE allocation");
-        if padding != 0 {
-            self.vec_znx_rsh_assign_backend(base2k, padding, res, 0, &mut scratch_2);
-            self.vec_znx_lsh_assign_backend(base2k, padding, res, 0, &mut scratch_2);
-        }
     }
 }
