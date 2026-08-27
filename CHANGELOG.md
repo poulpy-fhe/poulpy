@@ -10,6 +10,40 @@
 
 - Fix precision loss at non-`base2k`-aligned ciphertext widths. Masks and Gaussian noise are sampled at `k`-bit precision, avoiding redundant post-encryption rounding for both secret- and public-key ciphertexts.
 
+Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic family, backed by a shared HAL execution and scratch-allocation model. Fused primitives reduce intermediate traffic in core and CKKS paths, bin-FHE gains backend-driven parallel evaluation, and CKKS gains an even-Chebyshev EvalMod variant.
+
+### `poulpy-hal`
+
+- **Breaking:** `Backend` gains the required `TaskExecutor` associated type. Add `TaskExecutor`, `SerialTaskExecutor` and backend-declared `ScratchWorkers` limits, so default algorithms can schedule independent work without depending on Rayon.
+- Add aligned per-worker scratch sizing and arena splitting helpers. Scratch reservations depend on the backend's fixed worker caps rather than the ambient pool width, keeping `*_tmp_bytes` stable across Rayon pools.
+- **Breaking:** `HalConvolutionImpl` and `HalVecZnxDftImpl` gain fused constant-convolution accumulation, DFT automorphism accumulation, and consuming IDFT-plus-normalization operations. The public HAL API exposes the same primitives and every CPU backend implements them.
+
+### CPU backends
+
+- Add `poulpy-cpu-rayon`, which provides the shared Rayon executor, nested-parallelism guard, scheduling thresholds, FFT64 kernels, coefficient normalization, and tuning utilities used by the accelerated CPU crates.
+- Add the opt-in `FFT64AvxRayon`, `NTT4x30AvxRayon`, `FFT64Avx512Rayon`, `NTT4x30Avx512Rayon`, `NTT3x42IfmaRayon`, `FFT64NeonRayon` and `NTT4x30NeonRayon` backends. `enable-rayon` exposes them while retaining the serial backend types.
+- Parallelize the transform, convolution, VMP, normalization and coefficient-domain kernels that scale within one operation. A one-thread pool follows the serial path, and nested Rayon operations serialize their inner level rather than oversubscribing the pool.
+- Declare the Rayon variants layout-compatible with their serial/reference families and wire them into the HAL, core, CKKS and bin-FHE operation surfaces. Backend parity suites cover the parallel types against the corresponding serial/reference result.
+- Add instruction-set and compiled-backend capability reports, plus an ignored thread-scaling diagnostic that measures VMP, convolution, IDFT and coefficient work across pool widths. `docs/performance.md` documents backend selection, key-traffic tradeoffs and thread-count tuning.
+
+### `poulpy-core`
+
+- Refactor GLWE key switching to consume inverse-DFT results directly into normalized outputs, and use DFT automorphism accumulation in lazy/prepared-giant linear transformations. These paths avoid temporary big-polynomial copies while preserving the serial/reference behavior.
+- Add an optional one-pass baby-step linear-combination hook to generic polynomial evaluation, falling back to the existing multiply-add sequence when an operation family does not override it. Extend the HAL parity suites for the new fused operations.
+
+### `poulpy-bin-fhe`
+
+- Make FHE integer preparation and BDD evaluation honor their requested worker count through the backend executor and disjoint scratch arenas; serial backends continue to execute them on one worker.
+- Parallelize the independent VMP contributions in block-binary CGGI blind rotation before deterministic accumulation, with serial-versus-Rayon parity coverage for the accelerated backend families.
+- **Breaking:** multithreaded BDD execution requires its output buffer to implement `Send`.
+
+### `poulpy-ckks`
+
+- Add `EvalModType::CosHKEven`, a centred Han–Ki approximation folded through `T₂` when it reduces multiplication cost without increasing the modulus budget.
+- **Breaking:** `BootstrappingPlan::new` now validates the EvalMod plan and derives the CoeffsToSlots input scaling from it, replacing any scaling already present on the supplied CoeffsToSlots plan.
+- Fuse each BSGS baby-step linear combination into one accumulator and use constant-convolution accumulation to avoid repeated ciphertext temporaries.
+- Run the real and imaginary EvalMod halves concurrently on parallel backends, with per-half scratch arenas; serial backends retain the existing order.
+
 ## [0.8.2] - 2026-08-22
 
 ### `poulpy-hal`
