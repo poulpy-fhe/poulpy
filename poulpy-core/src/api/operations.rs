@@ -4,41 +4,43 @@ use std::collections::HashMap;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyMap, GLWEInfos,
-    GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+    GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyHelper,
+    GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
     prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
 };
 
 pub trait GLWETrace<BE: Backend> {
     fn glwe_trace_galois_elements(&self) -> Vec<i64>;
 
-    fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    fn glwe_trace_tmp_bytes<R, A, L, H>(&self, res_infos: &R, a_infos: &A, keys: &H) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
-        K: GGLWEInfos;
+        L: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<L>;
 
     fn glwe_trace<R, A, K, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>;
 
     fn glwe_trace_assign<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>;
 }
 
 pub trait GLWEPacking<BE: Backend> {
     fn glwe_pack_galois_elements(&self) -> Vec<i64>;
 
-    fn glwe_pack_tmp_bytes<R, K>(&self, res: &R, key: &K) -> usize
+    fn glwe_pack_tmp_bytes<R, L, H>(&self, res: &R, keys: &H) -> usize
     where
         R: GLWEInfos,
-        K: GGLWEInfos;
+        L: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<L>;
 
     fn glwe_pack<R, A, K, H>(
         &self,
@@ -51,7 +53,7 @@ pub trait GLWEPacking<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>;
 }
 
 pub trait GLWEMulConst<BE: Backend> {

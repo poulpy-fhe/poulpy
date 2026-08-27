@@ -1,6 +1,8 @@
 use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{GGLWEInfos, GLWEAutomorphismKeyMap, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_core::layouts::{
+    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEToBackendMut, GLWEToBackendRef,
+};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
@@ -49,7 +51,7 @@ pub trait CKKSRotateOps<BE: Backend> {
     ) -> Result<()>
     where
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -57,6 +59,6 @@ pub trait CKKSRotateOps<BE: Backend> {
     fn ckks_rotate_assign<Dst, H, K>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 }

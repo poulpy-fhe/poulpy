@@ -5,8 +5,8 @@ use poulpy_core::layouts::{
     prepared::{GGSWPrepared, GGSWPreparedBackendMut},
 };
 use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GGSW, GGSWLayout, GGSWPreparedToBackendMut, GLWEAutomorphismKeyMap, GetGaloisElement,
-    LWE,
+    GGLWEInfos, GGLWEPreparedToBackendRef, GGSW, GGSWLayout, GGSWPreparedToBackendMut, GLWEAutomorphismKeyHelper,
+    GLWEAutomorphismKeyLayoutHelper, GetGaloisElement, LWE,
 };
 use poulpy_core::{EncryptionInfos, GLWECopy, GLWEDecrypt, GLWEKeyswitch, GLWEPacking, LWEFromGLWE};
 
@@ -290,7 +290,7 @@ where
             + GLWECopy<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
         BE: 'static,
         BE::OwnedBuf: HostDataRef + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,

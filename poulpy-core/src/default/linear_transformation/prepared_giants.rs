@@ -34,8 +34,8 @@ use crate::{
         operations::cnv_offset_to_limb_offset,
     },
     layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKeyMap, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
-        ModuleCoreAlloc,
+        GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut,
+        GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, WithEffectiveDsize,
         prepared::{GGLWEPreparedToBackendRef, PreparedDiagonal},
     },
 };
@@ -172,7 +172,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k();
@@ -190,23 +190,28 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     let num_giant_steps = rhs.giant_steps.len();
     let nonzero_giant_rotations = rhs.giant_steps.iter().filter(|gs| gs.rot != 0).count();
     let has_nonzero_giant_rotation = nonzero_giant_rotations != 0;
-    // `automorphism_key_infos()` panics on an empty key map (legitimate for
-    // an identity-only transform), so only consult it when at least one giant
-    // rotation actually needs a key.
+    // Keys may differ per giant rotation, so the sizing is the widest of the
+    // rotations actually used. An identity-only transform consults none.
     let (use_lazy_giant_rotation, key_output_size) = if has_nonzero_giant_rotation {
-        let key_infos = keys.automorphism_key_infos();
-        let key_base2k = key_infos.base2k();
+        let mut key_base2k: Option<crate::layouts::Base2K> = None;
+        let mut output_size: usize = 0;
+        for gs in rhs.giant_steps.iter().filter(|gs| gs.rot != 0) {
+            let (layout, effective_dsize) = keys
+                .get_automorphism_key_layout_for(module.galois_element(gs.rot), res.k())
+                .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot));
+            key_base2k = Some(layout.base2k());
+            output_size = output_size.max(
+                crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(
+                    res,
+                    res,
+                    &layout.with_dsize(effective_dsize),
+                    nonzero_giant_rotations,
+                    prod_size.saturating_sub(res.size()),
+                ),
+            );
+        }
+        let key_base2k = key_base2k.expect("at least one nonzero giant rotation");
         let bases_match = res_base2k == key_base2k && prod_base2k == key_base2k;
-        // PROD may carry a partial low limb beyond the destination's live
-        // precision. Preserve the same guard below that wider input while the
-        // sizing helper applies the key's work-region cap.
-        let output_size = crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(
-            res,
-            res,
-            &key_infos,
-            nonzero_giant_rotations,
-            prod_size.saturating_sub(res.size()),
-        );
         (bases_match, output_size)
     } else {
         // No giant rotation: BIG-flow accumulator is always valid (no key required).
@@ -255,9 +260,10 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                     glwe_dft_copy_dft(module, &mut lazy_acc_dft_backend, &prod_dft_ref);
                 }
             } else {
-                let key: &K = keys
-                    .get_automorphism_key(module.galois_element(rot))
-                    .unwrap_or_else(|| panic!("missing automorphism key for giant-step rotation {rot}"));
+                let (key, effective_dsize) = keys
+                    .get_automorphism_key_for(module.galois_element(rot), res.k())
+                    .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
+                let key = &key.with_dsize(effective_dsize);
                 {
                     let (mut rot_dft, mut scratch_rot) =
                         scratch_phase.borrow().take_vec_znx_dft_scratch(module, cols, key_output_size);
@@ -346,10 +352,10 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
 
         let rot = rhs.giant_steps[g].rot;
         if rot != 0 {
-            let key: &K = keys
-                .get_automorphism_key(module.galois_element(rot))
-                .unwrap_or_else(|| panic!("missing automorphism key for giant-step rotation {rot}"));
-            module.glwe_automorphism_assign(&mut fallback_acc, key, &mut scratch_phase);
+            let (key, effective_dsize) = keys
+                .get_automorphism_key_for(module.galois_element(rot), res.k())
+                .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
+            module.glwe_automorphism_assign(&mut fallback_acc, &key.with_dsize(effective_dsize), &mut scratch_phase);
         }
 
         if res_initialized {

@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use poulpy_core::{
     GLWECopy, GLWEPacking,
     layouts::{
-        GGLWEInfos, GGLWEPreparedToBackendRef, GGSWInfos, GLWE, GLWEAutomorphismKeyMap, GLWEInfos, GLWEToBackendMut,
-        GetGaloisElement, ModuleCoreAlloc, prepared::GGSWPrepared,
+        GGLWEInfos, GGLWEPreparedToBackendRef, GGSWInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper,
+        GLWEInfos, GLWEToBackendMut, GetGaloisElement, ModuleCoreAlloc, prepared::GGSWPrepared,
     },
 };
 use poulpy_hal::{
@@ -51,7 +51,7 @@ where
         T: UnsignedInteger,
         C: GetBitCircuitInfo,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
         BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -73,12 +73,11 @@ where
         R: GLWEInfos,
         G: GGSWInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
     {
-        let atk_infos = key.automorphism_key_infos();
         let glwe_slot_bytes = T::BITS as usize * self.glwe_bytes_of_from_infos(res_infos);
         let bdd_bytes = self.execute_bdd_circuit_tmp_bytes(res_infos, circuit.max_state_size(), ggsw_infos);
-        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, &atk_infos);
+        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, key);
         glwe_slot_bytes + bdd_bytes.max(pack_bytes)
     }
 
@@ -97,12 +96,11 @@ where
         R: GLWEInfos,
         G: GGSWInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
     {
-        let atk_infos = key.automorphism_key_infos();
         let glwe_slot_bytes = T::BITS as usize * self.glwe_bytes_of_from_infos(res_infos);
         let bdd_per_thread = self.execute_bdd_circuit_tmp_bytes(res_infos, circuit.max_state_size(), ggsw_infos);
-        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, &atk_infos);
+        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, key);
         glwe_slot_bytes + (threads * bdd_per_thread).max(pack_bytes)
     }
 
@@ -121,7 +119,7 @@ where
         T: UnsignedInteger,
         C: GetBitCircuitInfo,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
         BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -187,7 +185,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyMap<K, BE>,
+                    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
                     Self: GLWEToBackendMut<BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut;
@@ -204,7 +202,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyMap<K, BE>,
+                    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
                     Self: GLWEToBackendMut<BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut;
@@ -221,7 +219,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     R: GLWEInfos,
                     G: GGSWInfos,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyMap<K, BE>,
+                    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>;
 
                 fn [<$method_name _multi_thread_tmp_bytes>]<M, R, G, K, H>(
@@ -237,7 +235,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     R: GLWEInfos,
                     G: GGSWInfos,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyMap<K, BE>,
+                    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>;
             }
         }
@@ -260,7 +258,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyMap<K, BE>,
+                    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
                     for<'a> BE::BufMut<'a>: HostDataMut,
                 {
@@ -278,7 +276,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyMap<K, BE>,
+                    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
                     for<'a> BE::BufMut<'a>: HostDataMut,
                 {
@@ -297,7 +295,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     R: GLWEInfos,
                     G: GGSWInfos,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyMap<K, BE>,
+                    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, $ty, _, _, _, _>(
@@ -321,7 +319,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     R: GLWEInfos,
                     G: GGSWInfos,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyMap<K, BE>,
+                    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes::<_, $ty, _, _, _, _>(

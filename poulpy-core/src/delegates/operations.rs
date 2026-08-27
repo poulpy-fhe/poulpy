@@ -10,8 +10,8 @@ use crate::{
     },
     default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
     layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyMap,
-        GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyHelper,
+        GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
     oep::{
@@ -388,20 +388,21 @@ impl_operations_delegate!(
     fn glwe_trace_galois_elements(&self) -> Vec<i64> {
         BE::glwe_trace_galois_elements(self)
     },
-    fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    fn glwe_trace_tmp_bytes<R, A, L, H>(&self, res_infos: &R, a_infos: &A, keys: &H) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
-        K: GGLWEInfos,
+        L: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<L>,
     {
-        BE::glwe_trace_tmp_bytes(self, res_infos, a_infos, key_infos)
+        BE::glwe_trace_tmp_bytes(self, res_infos, a_infos, keys)
     },
     fn glwe_trace<R, A, K, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
     {
         BE::glwe_trace(self, res, skip, a, keys, scratch)
     },
@@ -409,7 +410,7 @@ impl_operations_delegate!(
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
     {
         BE::glwe_trace_assign(self, res, skip, keys, scratch)
     }
@@ -422,12 +423,13 @@ impl_operations_delegate!(
     fn glwe_pack_galois_elements(&self) -> Vec<i64> {
         BE::glwe_pack_galois_elements(self)
     },
-    fn glwe_pack_tmp_bytes<R, K>(&self, res: &R, key: &K) -> usize
+    fn glwe_pack_tmp_bytes<R, L, H>(&self, res: &R, keys: &H) -> usize
     where
         R: GLWEInfos,
-        K: GGLWEInfos,
+        L: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<L>,
     {
-        BE::glwe_pack_tmp_bytes(self, res, key)
+        BE::glwe_pack_tmp_bytes(self, res, keys)
     },
     fn glwe_pack<R, A, K, H>(
         &self,
@@ -440,7 +442,7 @@ impl_operations_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
     {
         BE::glwe_pack(self, res, a, log_gap_out, keys, scratch)
     }

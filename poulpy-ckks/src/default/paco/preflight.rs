@@ -10,7 +10,7 @@ use anyhow::Context;
 use poulpy_core::{
     GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
     layouts::{
-        Degree, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyMap, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees,
+        Degree, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees,
         GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
     },
 };
@@ -176,9 +176,9 @@ where
         .max(module.glwe_rotate_tmp_bytes());
 
     for &element in context.galois_elements() {
-        let key = keys
+        let (key, _) = keys
             .rotation_keys()
-            .get_automorphism_key(element)
+            .get_automorphism_key_layout_for(element, branch_layout.k())
             .with_context(|| format!("PaCo rotation-key map is missing Galois element {element}"))?;
         required = required
             .max(module.glwe_automorphism_tmp_bytes(&branch_layout, &branch_layout, key))

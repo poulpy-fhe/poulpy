@@ -34,8 +34,8 @@ use crate::{
         },
     },
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyMap, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, ModuleCoreAlloc,
-        prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef,
+        GetGaloisElement, ModuleCoreAlloc, prepared::GGLWEPreparedToBackendRef,
     },
 };
 
@@ -159,7 +159,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
         + GaloisElement,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     glwe_prepare_linear_transformation_baby_steps(module, cache, a, keys, scratch);
 }
@@ -220,7 +220,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     assert!(
         rhs.giant_steps.iter().any(|gs| !gs.diagonals.is_empty()),

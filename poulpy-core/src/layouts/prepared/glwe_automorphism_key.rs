@@ -1,27 +1,10 @@
-use std::collections::HashMap;
-
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
-    GGLWEPreparedFactory, GGLWEToBackendRef, GLWEAutomorphismKeyMap, GLWEInfos, GetGaloisElement, LWEInfos, Rank,
-    SetGaloisElement, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
+    GGLWEPreparedFactory, GGLWEToBackendRef, GLWEInfos, GetGaloisElement, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
 };
-
-impl<K, BE: Backend> GLWEAutomorphismKeyMap<K, BE> for HashMap<i64, K>
-where
-    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-{
-    fn get_automorphism_key(&self, k: i64) -> Option<&K> {
-        self.get(&k)
-    }
-
-    fn automorphism_key_infos(&self) -> GGLWELayout {
-        let first_key = self.keys().min().copied().expect("automorphism key map is empty");
-        self.get(&first_key).unwrap().gglwe_layout()
-    }
-}
 
 #[derive(PartialEq)]
 pub struct GLWEAutomorphismKeyPrepared<D: Data, B: Backend> {

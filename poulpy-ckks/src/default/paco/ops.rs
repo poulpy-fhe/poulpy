@@ -36,7 +36,8 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWEAutomorphism,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyMap, GLWEToBackendMut, GLWEToBackendRef,
+        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEToBackendMut, GLWEToBackendRef,
+        WithEffectiveDsize,
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -102,7 +103,7 @@ pub trait PaCoSlotOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>;
 
     /// `Pr_{a→b}` in place: slot `i` becomes `Π_j ct[i + j·b]` for
     /// `j ∈ [0, a/b)` (indices mod `N/2`). Rotate-and-multiply with
@@ -119,7 +120,7 @@ pub trait PaCoSlotOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }
 
@@ -139,17 +140,17 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
     {
         let order = self.cyclotomic_order();
         for rot in checked_fold_rotations(self, a, b)? {
-            let key =
-                keys.get_automorphism_key(galois_element(rot, order))
-                    .ok_or(CKKSCompositionError::MissingAutomorphismKey {
-                        op: "paco_slot_trace",
-                        rotation: rot,
-                    })?;
-            self.glwe_automorphism_add_assign(ct, key, scratch);
+            let (key, effective_dsize) = keys
+                .get_automorphism_key_for(galois_element(rot, order), ct.k())
+                .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+                    op: "paco_slot_trace",
+                    rotation: rot,
+                })?;
+            self.glwe_automorphism_add_assign(ct, &key.with_dsize(effective_dsize), scratch);
         }
         Ok(())
     }
@@ -166,7 +167,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         let rotations = checked_fold_rotations(self, a, b)?;

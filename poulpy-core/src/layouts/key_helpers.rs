@@ -11,12 +11,14 @@
 //! keeps a layout registry and its prepared registry selecting the same
 //! physical key.
 
+use std::collections::HashMap;
 use std::hash::Hash;
 
 use poulpy_hal::layouts::Backend;
 
 use crate::{
     error::Result,
+    layouts::gglwe_key_use::err,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEKeyRegistry, GGLWEPreparedBackendRef, GLWEInfos, GetGaloisElement,
         LWEInfos, Rank, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
@@ -97,6 +99,31 @@ impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for GGLWESingleKey<i64, K> {
 impl<K: GGLWEInfos> GLWERelinearizationKeyHelper<K> for GGLWESingleKey<(), K> {
     fn get_relinearization_key_for(&self, k: TorusPrecision) -> Result<(&K, Dsize)> {
         self.registry.key_for(&(), k)
+    }
+}
+
+/// A plain map answers with each key used through its own decomposition, which
+/// is what callers holding no policy expect.
+impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for HashMap<i64, K> {
+    fn get_automorphism_key_for(&self, p: i64, _k: TorusPrecision) -> Result<(&K, Dsize)> {
+        let key: &K = self
+            .get(&p)
+            .ok_or_else(|| err("get_automorphism_key_for", format!("no automorphism key for p={p}")))?;
+        Ok((key, key.effective_dsize()))
+    }
+}
+
+impl<K: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<K> for HashMap<i64, K> {
+    fn get_automorphism_key_layout_for(&self, p: i64, k: TorusPrecision) -> Result<(&K, Dsize)> {
+        self.get_automorphism_key_for(p, k)
+    }
+}
+
+/// A bare layout plans as "the same shape for every rotation, used natively",
+/// which is what scratch sizing assumed before keys could differ per rotation.
+impl<L: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<L> for L {
+    fn get_automorphism_key_layout_for(&self, _p: i64, _k: TorusPrecision) -> Result<(&L, Dsize)> {
+        Ok((self, self.effective_dsize()))
     }
 }
 

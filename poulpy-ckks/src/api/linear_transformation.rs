@@ -37,7 +37,9 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyMap, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+    layouts::{
+        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    },
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -142,7 +144,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>;
 
     // ----- eval (caller-supplied baby cache) -----
 
@@ -171,7 +173,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>;
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
     /// [`Self::ckks_eval_linear_transformation_into`]).
@@ -187,7 +189,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>;
 
     // ----- eval (self-allocated baby cache) -----
 
@@ -211,7 +213,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>;
 
     /// In-place `dst = M · dst`, self-allocating the baby cache (see
     /// [`Self::ckks_eval_linear_transformation_self_into`]).
@@ -226,5 +228,5 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyMap<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>;
 }

@@ -12,9 +12,9 @@ use std::collections::HashMap;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyMap,
-    GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyDegrees,
-    GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyPrepared,
+    GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyHelper,
+    GLWEAutomorphismKeyLayoutHelper, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKey,
+    GLWESwitchingKeyDegrees, GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyPrepared,
     GLWETensorKeyPreparedFactory, GLWETensorKeyPreparedToBackendRef, GLWEToBackendRef, GetGaloisElement, LWEInfos,
     ModuleCoreAlloc, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
 };
@@ -109,7 +109,7 @@ pub trait PaCoKeys<BE: Backend> {
         + GGLWEInfos;
 
     /// Collection that resolves automorphism keys by Galois element.
-    type RotationKeys: GLWEAutomorphismKeyMap<Self::AutomorphismKey, BE>;
+    type RotationKeys: GLWEAutomorphismKeyHelper<Self::AutomorphismKey> + GLWEAutomorphismKeyLayoutHelper<Self::AutomorphismKey>;
 
     /// Prepared tensor (relinearization) key used by the product fold.
     type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;

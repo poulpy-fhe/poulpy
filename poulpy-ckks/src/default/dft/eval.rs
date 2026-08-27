@@ -26,7 +26,8 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{
-        Base2K, GLWEAutomorphismKeyMap, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation, LinearTransformationStrategy,
+        Base2K, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEToBackendMut, GLWEToBackendRef,
+        LinearTransformation, LinearTransformationStrategy,
     },
 };
 use poulpy_hal::{
@@ -257,7 +258,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
@@ -284,7 +285,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), running);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
@@ -310,7 +311,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     ckks_dft_evaluate_assign(module, ct, dft, keys, scratch)
 }
@@ -331,7 +332,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     ckks_dft_evaluate_assign(module, ct, dft, keys, scratch)
 }
@@ -370,7 +371,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     // ct_real := z = Encode(ct_in).
     module.ckks_copy(ct_real, ct_in, scratch)?;
@@ -411,7 +412,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     // op_out := ct_real + i·ct_imag, then Decode.
     module.ckks_mul_i_into(op_out, ct_imag, scratch)?;
@@ -451,7 +452,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     let slots = 1i64 << dft.plan().log_slots();
 
@@ -501,7 +502,7 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     module.ckks_copy(op_out, ct_in, scratch)?;
     ckks_dft_evaluate_assign(module, op_out, dft, keys, scratch)?;

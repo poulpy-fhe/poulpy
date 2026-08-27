@@ -14,7 +14,7 @@ use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, GLWEShift, GLWETrace,
     api::GLWEBytesOf,
-    default::{glwe_trace::glwe_trace_defaults_impl, keyswitching::GLWEKeyswitchInternal, operations::GLWENormalizeDefault},
+    default::{keyswitching::GLWEKeyswitchInternal, operations::GLWENormalizeDefault},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         Dsize, GGLWEKeyRegistryBuilder, GGLWEKeyUsePolicy, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout,
@@ -292,9 +292,7 @@ where
     let keys = builder.finish(policy).unwrap();
 
     // Scratch is the maximum over the rotations, resolved from the same registry.
-    let trace_bytes =
-        glwe_trace_defaults_impl::glwe_trace_selected_assign_tmp_bytes::<BE, _, _, _, _>(module, &glwe_out_infos, 0, &keys)
-            .unwrap();
+    let trace_bytes = module.glwe_trace_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &keys);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         (module).glwe_encrypt_sk_tmp_bytes(&glwe_out_infos) | (module).glwe_decrypt_tmp_bytes(&glwe_out_infos) | trace_bytes,
     );
@@ -321,7 +319,7 @@ where
         &mut scratch.borrow(),
     );
 
-    glwe_trace_defaults_impl::glwe_trace_selected_assign(module, &mut glwe_out, 0, &keys, &mut scratch.borrow()).unwrap();
+    module.glwe_trace_assign(&mut glwe_out, 0, &keys, &mut scratch.borrow());
 
     let mut pt_have_backend = upload_glwe_plaintext(module, &pt_template);
     module.glwe_decrypt(&glwe_out, &mut pt_have_backend, &sk_dft, &mut scratch.borrow());

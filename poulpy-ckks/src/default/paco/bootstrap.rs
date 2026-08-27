@@ -9,7 +9,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
-    GLWEAutomorphismKeyMap, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWETensorKeyPreparedToBackendRef,
+    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWETensorKeyPreparedToBackendRef,
     GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
@@ -241,10 +241,10 @@ where
     )?;
 
     for &element in context.galois_elements() {
-        let key = keys
+        let (key, _) = keys
             .rotation_keys()
-            .get_automorphism_key(element)
-            .ok_or(CKKSCompositionError::MissingAutomorphismKey {
+            .get_automorphism_key_for(element, output.k())
+            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
                 op: "ckks_paco_bootstrap",
                 rotation: element,
             })?;
@@ -357,13 +357,12 @@ where
     // Fetched once and reused by both the ψ tail (Pair form) and the
     // imaginary-part extraction (step 7): `conj(·)` via the order `-1`
     // automorphism key.
-    let conjugation_key = keys
-        .rotation_keys()
-        .get_automorphism_key(-1)
-        .ok_or(CKKSCompositionError::MissingAutomorphismKey {
+    let (conjugation_key, _) = keys.rotation_keys().get_automorphism_key_for(-1, output.k()).map_err(|_| {
+        CKKSCompositionError::MissingAutomorphismKey {
             op: "ckks_paco_bootstrap",
             rotation: -1,
-        })?;
+        }
+    })?;
 
     // Step 5 — CoeffsToSlots (ψ tail). The conjugation-augmented final C2S
     // factor, scheduled apart from the body. Either the fused `Pair` form
@@ -378,12 +377,13 @@ where
             module.ckks_add_assign(output, &temporary, scratch)?;
         }
         PaCoPsiTailMaterial::Mask { mu, galois_element } => {
-            let conj_rotate_key = keys.rotation_keys().get_automorphism_key(*galois_element).ok_or(
-                CKKSCompositionError::MissingAutomorphismKey {
+            let (conj_rotate_key, _) = keys
+                .rotation_keys()
+                .get_automorphism_key_for(*galois_element, output.k())
+                .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
                     op: "ckks_paco_bootstrap",
                     rotation: *galois_element,
-                },
-            )?;
+                })?;
             module.ckks_conjugate_into(&mut temporary, output, conj_rotate_key, scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
             module.ckks_mul_pt_vec_assign(output, mu, scratch)?;

@@ -9,8 +9,8 @@ use poulpy_hal::{
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyMap, GLWEInfos, GLWEToBackendMut, GetGaloisElement, ModuleCoreAlloc,
-        prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GetGaloisElement,
+        ModuleCoreAlloc, WithEffectiveDsize, prepared::GGLWEPreparedToBackendRef,
     },
 };
 
@@ -74,10 +74,11 @@ fn pack_internal<M, A, B, K, BE: Backend>(
 pub trait GLWEPackingDefault<BE: Backend> {
     fn glwe_pack_galois_elements_default(&self) -> Vec<i64>;
 
-    fn glwe_pack_tmp_bytes_default<R, K>(&self, res: &R, key: &K) -> usize
+    fn glwe_pack_tmp_bytes_default<R, L, H>(&self, res: &R, keys: &H) -> usize
     where
         R: GLWEInfos,
-        K: GGLWEInfos;
+        L: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<L>;
 
     fn glwe_pack_default<R, A, K, H>(
         &self,
@@ -90,7 +91,7 @@ pub trait GLWEPackingDefault<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>;
 }
 
 /// Reference implementations of the [`GLWEPackingDefault`] methods.
@@ -105,30 +106,49 @@ pub mod glwe_packing_defaults_impl {
         module.glwe_trace_galois_elements()
     }
 
-    pub fn glwe_pack_tmp_bytes_default<BE, M, R, K>(module: &M, res: &R, key: &K) -> usize
+    pub fn glwe_pack_tmp_bytes_default<BE, M, R, L, H>(module: &M, res: &R, keys: &H) -> usize
     where
         BE: Backend,
         M: GLWEBytesOf<BE>
             + GLWEAutomorphism<BE>
+            + GaloisElement
             + ModuleLogN
             + GLWERotate<BE>
             + GLWEShift<BE>
             + GLWENormalize<BE>
             + GLWETrace<BE>,
         R: GLWEInfos,
-        K: GGLWEInfos,
+        L: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<L>,
     {
         assert_eq!(module.n() as u32, res.n());
-        assert_eq!(module.n() as u32, key.n());
+
+        // Each rotation resolves its own key and effective dsize.
+        let mut worst: usize = 0;
+        for p in pack_rotations(module, 0) {
+            let (layout, effective_dsize) = keys
+                .get_automorphism_key_layout_for(p, res.k())
+                .unwrap_or_else(|e| panic!("{e}"));
+            assert_eq!(module.n() as u32, layout.n());
+            worst = worst.max(module.glwe_automorphism_tmp_bytes(res, res, &layout.with_dsize(effective_dsize)));
+        }
 
         let lvl_0: usize = module.glwe_bytes_of_from_infos(res);
         let lvl_1: usize = module
             .glwe_rotate_tmp_bytes()
             .max(module.glwe_shift_tmp_bytes())
             .max(module.glwe_normalize_tmp_bytes())
-            .max(module.glwe_automorphism_tmp_bytes(res, res, key));
+            .max(worst);
 
-        (lvl_0 + lvl_1).max(module.glwe_trace_tmp_bytes(res, res, key))
+        (lvl_0 + lvl_1).max(module.glwe_trace_tmp_bytes(res, res, keys))
+    }
+
+    /// Rotations the packing loop visits, in order.
+    pub fn pack_rotations<M>(module: &M, log_gap_out: usize) -> impl Iterator<Item = i64> + use<'_, M>
+    where
+        M: ModuleLogN + GaloisElement + ?Sized,
+    {
+        (0..module.log_n() - log_gap_out).map(|i| if i == 0 { -1 } else { module.galois_element(1 << (i - 1)) })
     }
 
     pub fn glwe_pack_default<BE, M, R, A, K, H>(
@@ -155,15 +175,14 @@ pub mod glwe_packing_defaults_impl {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyMap<K, BE>,
+        H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
     {
         assert!(*a.keys().max().unwrap() < module.n());
-        let key_infos = keys.automorphism_key_infos();
         assert!(
-            scratch.available() >= glwe_pack_tmp_bytes_default::<BE, _, _, _>(module, res, &key_infos),
+            scratch.available() >= glwe_pack_tmp_bytes_default::<BE, _, _, _, _>(module, res, keys),
             "scratch.available(): {} < GLWEPacking::glwe_pack_tmp_bytes: {}",
             scratch.available(),
-            glwe_pack_tmp_bytes_default::<BE, _, _, _>(module, res, &key_infos)
+            glwe_pack_tmp_bytes_default::<BE, _, _, _, _>(module, res, keys)
         );
 
         let mut scratch_local = scratch.borrow();
@@ -171,11 +190,9 @@ pub mod glwe_packing_defaults_impl {
         for i in 0..(log_n - log_gap_out) {
             let t: usize = (1 << log_n).min(1 << (log_n - 1 - i));
 
-            let key: &K = if i == 0 {
-                keys.get_automorphism_key(-1).unwrap()
-            } else {
-                keys.get_automorphism_key(module.galois_element(1 << (i - 1))).unwrap()
-            };
+            let p: i64 = if i == 0 { -1 } else { module.galois_element(1 << (i - 1)) };
+            let (key, effective_dsize) = keys.get_automorphism_key_for(p, res.k()).unwrap_or_else(|e| panic!("{e}"));
+            let key = &key.with_dsize(effective_dsize);
 
             for j in 0..t {
                 let mut lo: Option<&mut A> = a.remove(&j);

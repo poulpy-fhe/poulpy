@@ -34,8 +34,8 @@ use crate::{
         operations::msb_mask_bottom_limb,
     },
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyMap, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
-        prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef,
+        GetGaloisElement, LWEInfos, WithEffectiveDsize, prepared::GGLWEPreparedToBackendRef,
     },
 };
 
@@ -138,12 +138,12 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     let cols = a.rank().as_usize() + 1;
-    let key: &K = keys
-        .get_automorphism_key(module.galois_element(rot))
-        .unwrap_or_else(|| panic!("missing automorphism key for baby-step rotation {rot}"));
+    let (key, effective_dsize) = keys
+        .get_automorphism_key_for(module.galois_element(rot), a.k())
+        .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
     let key_ref = key.to_backend_ref();
     assert_eq!(key_ref.base2k(), a.base2k());
 
@@ -152,7 +152,15 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
         // See `glwe_hoisted_baby_rotations`: multi-digit VMP accumulates into
         // top limbs that must not contain stale scratch contents.
     }
-    module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, &key_ref, 1, &mut scratch_1.borrow());
+    module.gglwe_product_dft_selected(
+        &mut res_dft,
+        a_dft_ref,
+        a.k(),
+        &key_ref,
+        effective_dsize,
+        1,
+        &mut scratch_1.borrow(),
+    );
 
     let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module, cols, key_size);
     let res_dft_ref = res_dft.to_backend_ref();
@@ -220,18 +228,28 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
         + VecZnxIdftApply<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyMap<K, BE>,
+    H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
     let mask = msb_mask_bottom_limb(a.base2k().as_usize(), a.k().as_usize());
     let has_nonzero_rotation = cache.values.keys().any(|&rot| rot != 0);
     let (use_hoisted, key_size) = if has_nonzero_rotation {
-        let key_infos = keys.automorphism_key_infos();
-        (
-            a.base2k() == key_infos.base2k(),
-            gglwe_product_output_size::<BE, _, _, _>(a, a, &key_infos),
-        )
+        // Widest output any rotation in the cache needs.
+        let mut key_size: usize = 0;
+        let mut key_base2k: Option<crate::layouts::Base2K> = None;
+        for &rot in cache.values.keys().filter(|&&rot| rot != 0) {
+            let (layout, effective_dsize) = keys
+                .get_automorphism_key_layout_for(module.galois_element(rot), a.k())
+                .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
+            key_base2k = Some(layout.base2k());
+            key_size = key_size.max(gglwe_product_output_size::<BE, _, _, _>(
+                a,
+                a,
+                &layout.with_dsize(effective_dsize),
+            ));
+        }
+        (a.base2k() == key_base2k.expect("at least one nonzero rotation"), key_size)
     } else {
         (false, a.size())
     };
@@ -282,11 +300,11 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
                 let a_ref = a.to_backend_ref();
                 module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, scratch);
             } else {
-                let key: &K = keys
-                    .get_automorphism_key(module.galois_element(rot))
-                    .unwrap_or_else(|| panic!("missing automorphism key for baby-step rotation {rot}"));
+                let (key, effective_dsize) = keys
+                    .get_automorphism_key_for(module.galois_element(rot), a.k())
+                    .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
                 let (mut baby, mut baby_scratch) = scratch.borrow().take_glwe_scratch(a);
-                module.glwe_automorphism(&mut baby, a, key, &mut baby_scratch.borrow());
+                module.glwe_automorphism(&mut baby, a, &key.with_dsize(effective_dsize), &mut baby_scratch.borrow());
                 let baby_ref = baby.to_backend_ref();
                 module.cnv_prepare_left(
                     &mut prepared.to_backend_mut(),

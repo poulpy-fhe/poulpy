@@ -14,7 +14,8 @@
 - Add `GGLWEInfos::effective_dsize`, defaulting to `dsize()`, and `GGLWEKeyUse` (via `WithEffectiveDsize::with_dsize`), a borrow plus a scalar that overrides only that accessor. Every operation taking a GGLWE key therefore accepts a coarsened use with no signature of its own to change; a key used natively is unaffected.
 - Add `GLWEAutomorphismKeyHelper` / `GLWERelinearizationKeyHelper` and their layout twins: a caller names a function and its exact precision, the helper answers with a physical key and the effective `dsize`. Implemented by `GGLWEKeyRegistry` and by `GGLWESingleKey`. Unlike the trait they replace, they carry no backend parameter: callers bound `K: GGLWEPreparedToBackendRef<BE>` themselves.
 - **Breaking:** the previous `GLWEAutomorphismKeyHelper` (lookup by Galois element, one common layout) is renamed `GLWEAutomorphismKeyMap`, freeing the name for the precision-driven helper.
-- Add `glwe_trace_selected_assign{,_tmp_bytes}`, which resolve each rotation's key and effective `dsize` at the exact precision of the operand and take the maximum scratch over the rotations visited, rather than assuming one common automorphism-key layout.
+- **Breaking:** `GLWEAutomorphismKeyMap` is removed. Operations taking a key set now bound `GLWEAutomorphismKeyHelper` / `GLWEAutomorphismKeyLayoutHelper`, resolve each rotation's key and effective `dsize` at the exact precision of the operand, and size scratch as the maximum over the rotations visited. `HashMap<i64, K>` implements both, answering with each key's own decomposition, so existing callers are unaffected; a bare layout implements the layout helper, so `*_tmp_bytes` callers passing one keep working.
+- **Breaking:** `glwe_trace{,_assign}_tmp_bytes` and `glwe_pack_tmp_bytes` take the key set rather than a single layout, since no one layout describes it.
 - `error` is now a module of the crate; `CoreError`/`Result` were previously unreachable.
 
 ## [0.8.2] - 2026-08-22

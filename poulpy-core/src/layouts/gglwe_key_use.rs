@@ -14,7 +14,7 @@ use crate::{
     layouts::{Base2K, Dnum, Dsize, GGLWEInfos, GGLWELayout, LWEInfos, TorusPrecision},
 };
 
-fn err(op: &'static str, detail: String) -> CoreError {
+pub(crate) fn err(op: &'static str, detail: String) -> CoreError {
     CoreError::GGLWEKeyUse { op, detail }
 }
 
