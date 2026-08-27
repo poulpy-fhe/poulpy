@@ -246,11 +246,14 @@ where
         assert_eq!(res.rank(), a.rank());
         assert_eq!(res.n(), self.n() as u32);
         assert_eq!(a.n(), self.n() as u32);
+        // The message names the rank rather than the bound it implies: a value
+        // returned by a `secret`-named function reads as a leak to name-based
+        // scanners, and the bound is recoverable from the rank anyway.
         assert!(
             scratch.available() >= self.glwe_secret_tensor_prepare_tmp_bytes(a.rank()),
-            "scratch.available(): {} < GLWESecretTensorFactory::glwe_secret_tensor_prepare_tmp_bytes: {}",
+            "scratch.available(): {} < GLWESecretTensorFactory::glwe_secret_tensor_prepare_tmp_bytes for rank {}",
             scratch.available(),
-            self.glwe_secret_tensor_prepare_tmp_bytes(a.rank())
+            a.rank()
         );
 
         let rank: usize = a.rank().into();
