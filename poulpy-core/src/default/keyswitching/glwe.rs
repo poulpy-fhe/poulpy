@@ -14,9 +14,9 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, GadgetProductOutputSizeParams,
-        LWEInfos, ResolvedGGLWEUse, TorusPrecision, gadget_product_limbs, gadget_product_output_size,
-        prepared::GGLWEPreparedToBackendRef, resolve_gglwe_key_use,
+        Dsize, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef,
+        GadgetProductOutputSizeParams, LWEInfos, ResolvedGGLWEUse, TorusPrecision, gadget_product_limbs,
+        gadget_product_output_size, prepared::GGLWEPreparedToBackendRef, resolve_gglwe_key_use,
     },
     oep::{GGLWEProductDigitsStridedImpl, gglwe_product_digit_output_size},
 };
@@ -49,6 +49,27 @@ where
         lvl_0 + lvl_1
     }
 
+    /// Twin of [`Self::glwe_keyswitch_internal_tmp_bytes_from_sizes`] for a
+    /// selected use: `key_infos` stays the physical key, and the bound covers
+    /// the gathered rows.
+    fn glwe_keyswitch_internal_selected_tmp_bytes_from_sizes<K>(
+        &self,
+        mask_cols: usize,
+        res_size: usize,
+        a_size: usize,
+        input_k: TorusPrecision,
+        key_infos: &K,
+        effective_dsize: Dsize,
+    ) -> usize
+    where
+        K: GGLWEInfos,
+    {
+        let lvl_0: usize = self.bytes_of_vec_znx_dft(mask_cols, a_size);
+        let lvl_1: usize =
+            self.gglwe_product_dft_selected_tmp_bytes_default(res_size, a_size, input_k, key_infos, effective_dsize);
+        lvl_0 + lvl_1
+    }
+
     fn glwe_keyswitch_internal_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -69,7 +90,7 @@ where
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
-        glwe_keyswitch_dft_fill(self, res, a, &key, scratch);
+        glwe_keyswitch_dft_fill(self, res, a, &key, None, scratch);
     }
 }
 
@@ -372,6 +393,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
     res: &mut VecZnxDftBackendMut<'r, BE>,
     a: &A,
     key: &GGLWEPreparedBackendRef<'_, BE>,
+    selected: Option<Dsize>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -396,7 +418,10 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, a_data, col_i + 1);
         }
         let a_dft_ref = a_dft.to_backend_ref();
-        module.gglwe_product_dft_default(res, &a_dft_ref, key, 1, &mut scratch_1.borrow());
+        match selected {
+            None => module.gglwe_product_dft_default(res, &a_dft_ref, key, 1, &mut scratch_1.borrow()),
+            Some(dsize) => module.gglwe_product_dft_selected(res, &a_dft_ref, a.k(), key, dsize, 1, &mut scratch_1.borrow()),
+        }
     });
 }
 
@@ -482,32 +507,103 @@ where
     A: GLWEInfos,
     K: GGLWEInfos,
 {
+    glwe_keyswitch_tmp_bytes_dispatch(module, res_infos, a_infos, key_infos, None)
+}
+
+/// Scratch bound of [`glwe_keyswitch_selected_default`].
+pub fn glwe_keyswitch_selected_tmp_bytes_default<BE, M, R, A, K>(
+    module: &M,
+    res_infos: &R,
+    a_infos: &A,
+    key_infos: &K,
+    effective_dsize: Dsize,
+) -> usize
+where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + ModuleN
+        + GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxNormalizeTmpBytes,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    glwe_keyswitch_tmp_bytes_dispatch(module, res_infos, a_infos, key_infos, Some(effective_dsize))
+}
+
+fn glwe_keyswitch_tmp_bytes_dispatch<BE, M, R, A, K>(
+    module: &M,
+    res_infos: &R,
+    a_infos: &A,
+    key_infos: &K,
+    selected: Option<Dsize>,
+) -> usize
+where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + ModuleN
+        + GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxNormalizeTmpBytes,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
     assert_eq!(module.n() as u32, res_infos.n());
     assert_eq!(module.n() as u32, a_infos.n());
     assert_eq!(module.n() as u32, key_infos.n());
 
-    let output_cols = res_infos.rank().as_usize() + 1;
+    // Sizing follows the decomposition actually used; the product bound keeps
+    // the physical key, since a selected use also gathers its rows.
+    let layout: GGLWELayout = match selected {
+        None => key_infos.gglwe_layout(),
+        Some(effective_dsize) => resolved_use(key_infos, a_infos.k(), effective_dsize).logical_layout,
+    };
     let mask_cols = a_infos.rank().as_usize();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos);
-    let a_dft_size = a_infos.k().div_ceil(key_infos.base2k()) as usize;
+    let product_tmp_bytes = |res_size: usize, a_size: usize| -> usize {
+        match selected {
+            None => module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, res_size, a_size, &layout),
+            Some(effective_dsize) => module.glwe_keyswitch_internal_selected_tmp_bytes_from_sizes(
+                mask_cols,
+                res_size,
+                a_size,
+                a_infos.k(),
+                key_infos,
+                effective_dsize,
+            ),
+        }
+    };
+
+    let output_cols = res_infos.rank().as_usize() + 1;
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, a_infos, &layout);
+    let a_dft_size = a_infos.k().div_ceil(layout.base2k()) as usize;
     let lvl_0: usize = module.bytes_of_vec_znx_dft(output_cols, output_size);
     let lvl_1_big: usize = module.bytes_of_vec_znx_big(output_cols, output_size);
     let lvl_1: usize = lvl_1_big
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
-    let lvl_2: usize = if a_infos.base2k() != key_infos.base2k() {
+    let lvl_2: usize = if a_infos.base2k() != layout.base2k() {
         let small_term_tmp: usize = BE::bytes_of_vec_znx(module.n(), 1, output_size);
         let a_conv_infos: GLWELayout = GLWELayout {
             n: a_infos.n(),
-            base2k: key_infos.base2k(),
+            base2k: layout.base2k(),
             k: a_infos.k(),
             rank: a_infos.rank(),
         };
         let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
             .glwe_normalize_tmp_bytes_default()
-            .max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos));
+            .max(product_tmp_bytes(output_size, a_dft_size));
         let lvl_2_2: usize = lvl_1_big
             + small_term_tmp
             + module
@@ -516,7 +612,7 @@ where
                 .max(module.vec_znx_normalize_tmp_bytes());
         lvl_2_0 + lvl_2_1.max(lvl_2_2)
     } else {
-        lvl_1.max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos))
+        lvl_1.max(product_tmp_bytes(output_size, a_dft_size))
     };
 
     lvl_0 + lvl_2
@@ -524,6 +620,67 @@ where
 
 pub fn glwe_keyswitch_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + GLWEKeyswitchDefault<BE>
+        + ModuleN
+        + GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>
+        + VecZnxNormalize<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    glwe_keyswitch_dispatch(module, res, a, key, None, scratch)
+}
+
+/// Key-switch reading only the rows and limb prefixes that `effective_dsize`
+/// selects out of `key` at the exact precision of `a`.
+///
+/// Sizing follows the resolved logical layout, so the output window is the one
+/// a natively generated key of that decomposition would produce.
+pub fn glwe_keyswitch_selected_default<BE, M, R, A, K>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    key: &K,
+    effective_dsize: Dsize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + GLWEKeyswitchDefault<BE>
+        + ModuleN
+        + GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>
+        + VecZnxNormalize<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    glwe_keyswitch_dispatch(module, res, a, key, Some(effective_dsize), scratch)
+}
+
+/// Shared body: `selected` picks the physical layout (`None`) or a resolved
+/// coarsening of it (`Some`).
+fn glwe_keyswitch_dispatch<BE, M, R, A, K>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    key: &K,
+    selected: Option<Dsize>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEKeyswitchDefault<BE>
@@ -559,14 +716,25 @@ where
     assert_eq!(a.n(), module.n() as u32);
     assert_eq!(key.n(), module.n() as u32);
 
+    // Sizing follows the decomposition actually used: the physical layout, or
+    // the coarsening `selected` resolves to.
+    let layout: GGLWELayout = match selected {
+        None => key.gglwe_layout(),
+        Some(effective_dsize) => resolved_use(key, a.k(), effective_dsize).logical_layout,
+    };
+
+    let required: usize = match selected {
+        None => module.glwe_keyswitch_tmp_bytes_default(res, a, key),
+        Some(effective_dsize) => module.glwe_keyswitch_selected_tmp_bytes_default(res, a, key, effective_dsize),
+    };
     assert!(
-        scratch.available() >= module.glwe_keyswitch_tmp_bytes_default(res, a, key),
+        scratch.available() >= required,
         "scratch.available(): {} < GLWEKeyswitch::glwe_keyswitch_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_keyswitch_tmp_bytes_default(res, a, key)
+        required
     );
 
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, &layout);
 
     let a_base2k: usize = a.base2k().into();
     let key_base2k: usize = key.base2k().into();
@@ -586,10 +754,10 @@ where
                 rank: a.rank(),
             });
             module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2.borrow());
-            glwe_keyswitch_dft_fill(module, &mut res_dft, &a_conv, &key, &mut scratch_2);
+            glwe_keyswitch_dft_fill(module, &mut res_dft, &a_conv, &key, selected, &mut scratch_2);
         });
     } else {
-        glwe_keyswitch_dft_fill(module, &mut res_dft, a, &key, &mut scratch.borrow());
+        glwe_keyswitch_dft_fill(module, &mut res_dft, a, &key, selected, &mut scratch.borrow());
     }
 
     let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, output_size);

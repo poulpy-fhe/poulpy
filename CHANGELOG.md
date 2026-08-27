@@ -8,8 +8,10 @@
 
 ### `poulpy-core`
 
+- Add `GGLWEInfos::limb_count`: `dnum * rank_in * (rank_out + 1) * max_size`, the limb polynomials a key stores.
 - Add `gglwe_is_whole_row_subset`, `GGLWEKeyUsePolicy`, `GGLWEKeyRegistry` and the internal `resolve_gglwe_key_use`: a key with a fine decomposition serves coarser ones through its rows `(i + 1) * s - 1`, chosen by a `size -> dsize` policy.
 - Add `GGLWEProductDefault::gglwe_product_dft_selected{,_tmp_bytes_default}`, the gadget product over a policy-selected coarsening of a physical key.
+- Add `glwe_keyswitch_selected{,_tmp_bytes}_default` and `glwe_automorphism_selected_default`, which size from the resolved logical layout. The native paths are unchanged.
 - `error` is now a module of the crate; `CoreError`/`Result` were previously unreachable.
 
 ## [0.8.2] - 2026-08-22

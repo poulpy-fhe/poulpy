@@ -41,6 +41,7 @@ macro_rules! core_backend_test_suite {
                 glwe_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_assign,
                 glwe_automorphism => $crate::test_suite::noise::automorphism::test_glwe_automorphism,
                 glwe_automorphism_assign => $crate::test_suite::noise::automorphism::test_glwe_automorphism_assign,
+                glwe_automorphism_selected => $crate::test_suite::noise::automorphism::test_glwe_automorphism_selected,
                 glwe_external_product => $crate::test_suite::noise::external_product::test_glwe_external_product,
                 glwe_external_product_assign => $crate::test_suite::noise::external_product::test_glwe_external_product_assign,
                 glwe_keyswitch_ignores_dirty_scratch =>

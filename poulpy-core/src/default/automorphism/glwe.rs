@@ -26,7 +26,9 @@ use crate::{
         keyswitching::{GLWEKeyswitchInternal, gglwe_product_output_size},
         operations::GLWENormalizeDefault,
     },
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, prepared::GGLWEPreparedToBackendRef},
+    layouts::{
+        Dsize, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, prepared::GGLWEPreparedToBackendRef,
+    },
     oep::{GLWEAutomorphismDefault, GLWEKeyswitchDefault},
 };
 
@@ -73,6 +75,30 @@ where
     );
 
     module.glwe_keyswitch_default(res, a, key, scratch);
+    let cols = res.rank().as_usize() + 1;
+    let mut res_ref = res.to_backend_mut();
+    for i in 0..cols {
+        module.vec_znx_automorphism_assign_backend(key.p(), &mut res_ref.data, i, &mut scratch.borrow());
+    }
+}
+
+/// Automorphism reading only the rows and limb prefixes that `effective_dsize`
+/// selects out of `key` at the exact precision of `a`.
+pub fn glwe_automorphism_selected_default<BE, M, R, A, K>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    key: &K,
+    effective_dsize: Dsize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    module.glwe_keyswitch_selected_default(res, a, key, effective_dsize, scratch);
     let cols = res.rank().as_usize() + 1;
     let mut res_ref = res.to_backend_mut();
     for i in 0..cols {
