@@ -13,15 +13,13 @@
 
 use std::hash::Hash;
 
-use poulpy_hal::layouts::Backend;
-
 use crate::{
     error::Result,
     layouts::{Dsize, GGLWEInfos, GGLWEKeyRegistry, TorusPrecision},
 };
 
 /// Automorphism key for Galois element `p` at exact precision `k`.
-pub trait GLWEAutomorphismKeyHelper<K, BE: Backend> {
+pub trait GLWEAutomorphismKeyHelper<K> {
     fn get_automorphism_key_for(&self, p: i64, k: TorusPrecision) -> Result<(&K, Dsize)>;
 }
 
@@ -31,7 +29,7 @@ pub trait GLWEAutomorphismKeyLayoutHelper<L: GGLWEInfos> {
 }
 
 /// Relinearization key at exact precision `k`.
-pub trait GLWERelinearizationKeyHelper<K, BE: Backend> {
+pub trait GLWERelinearizationKeyHelper<K> {
     fn get_relinearization_key_for(&self, k: TorusPrecision) -> Result<(&K, Dsize)>;
 }
 
@@ -40,7 +38,7 @@ pub trait GLWERelinearizationKeyLayoutHelper<L: GGLWEInfos> {
     fn get_relinearization_key_layout_for(&self, k: TorusPrecision) -> Result<(&L, Dsize)>;
 }
 
-impl<K: GGLWEInfos, BE: Backend> GLWEAutomorphismKeyHelper<K, BE> for GGLWEKeyRegistry<i64, K> {
+impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for GGLWEKeyRegistry<i64, K> {
     fn get_automorphism_key_for(&self, p: i64, k: TorusPrecision) -> Result<(&K, Dsize)> {
         self.key_for(&p, k)
     }
@@ -52,7 +50,7 @@ impl<L: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<L> for GGLWEKeyRegistry<i64,
     }
 }
 
-impl<K: GGLWEInfos, BE: Backend> GLWERelinearizationKeyHelper<K, BE> for GGLWEKeyRegistry<(), K> {
+impl<K: GGLWEInfos> GLWERelinearizationKeyHelper<K> for GGLWEKeyRegistry<(), K> {
     fn get_relinearization_key_for(&self, k: TorusPrecision) -> Result<(&K, Dsize)> {
         self.key_for(&(), k)
     }
@@ -85,13 +83,13 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWESingleKey<Id, K> {
     }
 }
 
-impl<K: GGLWEInfos, BE: Backend> GLWEAutomorphismKeyHelper<K, BE> for GGLWESingleKey<i64, K> {
+impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for GGLWESingleKey<i64, K> {
     fn get_automorphism_key_for(&self, p: i64, k: TorusPrecision) -> Result<(&K, Dsize)> {
         self.registry.key_for(&p, k)
     }
 }
 
-impl<K: GGLWEInfos, BE: Backend> GLWERelinearizationKeyHelper<K, BE> for GGLWESingleKey<(), K> {
+impl<K: GGLWEInfos> GLWERelinearizationKeyHelper<K> for GGLWESingleKey<(), K> {
     fn get_relinearization_key_for(&self, k: TorusPrecision) -> Result<(&K, Dsize)> {
         self.registry.key_for(&(), k)
     }
@@ -101,7 +99,6 @@ impl<K: GGLWEInfos, BE: Backend> GLWERelinearizationKeyHelper<K, BE> for GGLWESi
 mod tests {
     use super::*;
     use crate::layouts::{Base2K, Degree, Dnum, GGLWEKeyRegistryBuilder, GGLWEKeyUsePolicy, GGLWELayout, Rank, TorusPrecision};
-    use poulpy_hal::layouts::HostBytesBackend;
 
     const N: Degree = Degree(1024);
     const K: u32 = 8;
@@ -130,22 +127,20 @@ mod tests {
         builder.register(-5, layout(8, 4)).unwrap();
         let registry = builder.finish(policy()).unwrap();
 
-        let helper: &dyn GLWEAutomorphismKeyHelper<GGLWELayout, HostBytesBackend> = &registry;
         // Same physical key, two precisions, two effective decompositions.
-        let (key, d) = helper.get_automorphism_key_for(-5, TorusPrecision(2 * K)).unwrap();
+        let (key, d) = registry.get_automorphism_key_for(-5, TorusPrecision(2 * K)).unwrap();
         assert_eq!((key.dsize, d), (Dsize(8), Dsize(8)));
-        let (key, d) = helper.get_automorphism_key_for(-5, TorusPrecision(4 * K)).unwrap();
+        let (key, d) = registry.get_automorphism_key_for(-5, TorusPrecision(4 * K)).unwrap();
         assert_eq!((key.dsize, d), (Dsize(8), Dsize(16)));
         // An unregistered rotation is an error, not a fallback.
-        assert!(helper.get_automorphism_key_for(-7, TorusPrecision(2 * K)).is_err());
+        assert!(registry.get_automorphism_key_for(-7, TorusPrecision(2 * K)).is_err());
     }
 
     // A single-key adapter applies the policy rather than its native dsize.
     #[test]
     fn single_key_adapter_applies_the_policy() {
         let single: GGLWESingleKey<(), GGLWELayout> = GGLWESingleKey::new((), layout(8, 4), policy()).unwrap();
-        let helper: &dyn GLWERelinearizationKeyHelper<GGLWELayout, HostBytesBackend> = &single;
-        let (key, d) = helper.get_relinearization_key_for(TorusPrecision(4 * K)).unwrap();
+        let (key, d) = single.get_relinearization_key_for(TorusPrecision(4 * K)).unwrap();
         assert_eq!(key.dsize, Dsize(8));
         assert_eq!(d, Dsize(16));
     }
@@ -158,12 +153,10 @@ mod tests {
         builder.register(-5, layout(3, 4)).unwrap();
         let registry = builder.finish(policy()).unwrap();
         let mapped = registry.try_map_values(|_, key| Ok(*key)).unwrap();
-        let keys: &dyn GLWEAutomorphismKeyHelper<GGLWELayout, HostBytesBackend> = &registry;
-        let layouts: &dyn GLWEAutomorphismKeyLayoutHelper<GGLWELayout> = &mapped;
 
         for k in [2 * K, 3 * K, 4 * K] {
-            let (key, d) = keys.get_automorphism_key_for(-5, TorusPrecision(k)).unwrap();
-            let (layout, layout_d) = layouts.get_automorphism_key_layout_for(-5, TorusPrecision(k)).unwrap();
+            let (key, d) = registry.get_automorphism_key_for(-5, TorusPrecision(k)).unwrap();
+            let (layout, layout_d) = mapped.get_automorphism_key_layout_for(-5, TorusPrecision(k)).unwrap();
             assert_eq!((key.gglwe_layout(), d), (layout.gglwe_layout(), layout_d));
         }
     }
