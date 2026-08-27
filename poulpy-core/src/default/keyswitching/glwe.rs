@@ -92,6 +92,23 @@ where
         let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
         glwe_keyswitch_dft_fill(self, res, a, &key, None, scratch);
     }
+
+    /// Twin of [`Self::glwe_keyswitch_internal`] through the coarsening
+    /// `effective_dsize` selects out of `key`.
+    fn glwe_keyswitch_internal_selected<'r, A, K>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'r, BE>,
+        a: &A,
+        key: &K,
+        effective_dsize: Dsize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        A: GLWEToBackendRef<BE>,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
+        glwe_keyswitch_dft_fill(self, res, a, &key, Some(effective_dsize), scratch);
+    }
 }
 
 impl<BE: Backend> GGLWEProductDefault<BE> for Module<BE>
@@ -242,7 +259,7 @@ where
 
 /// Resolves a selected use or fails loudly: the seam never falls back to the
 /// physical key's native decomposition.
-fn resolved_use<K: GGLWEInfos>(key_infos: &K, input_k: TorusPrecision, effective_dsize: Dsize) -> ResolvedGGLWEUse {
+pub(crate) fn resolved_use<K: GGLWEInfos>(key_infos: &K, input_k: TorusPrecision, effective_dsize: Dsize) -> ResolvedGGLWEUse {
     match resolve_gglwe_key_use(key_infos, input_k, effective_dsize) {
         Ok(Some(use_)) => use_,
         Ok(None) => panic!("key cannot realize dsize={effective_dsize} at input_k={input_k}"),

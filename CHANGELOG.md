@@ -11,7 +11,7 @@
 - Add `GGLWEInfos::limb_count`: `dnum * rank_in * (rank_out + 1) * max_size`, the limb polynomials a key stores.
 - Add `gglwe_is_whole_row_subset`, `GGLWEKeyUsePolicy`, `GGLWEKeyRegistry` and the internal `resolve_gglwe_key_use`: a key with a fine decomposition serves coarser ones through its rows `(i + 1) * s - 1`, chosen by a `size -> dsize` policy.
 - Add `GGLWEProductDefault::gglwe_product_dft_selected{,_tmp_bytes_default}`, the gadget product over a policy-selected coarsening of a physical key.
-- Add `glwe_keyswitch_selected{,_tmp_bytes}_default` and `glwe_automorphism_selected_default`, which size from the resolved logical layout. The native paths are unchanged.
+- Add `glwe_keyswitch_selected{,_tmp_bytes}_default`, `glwe_keyswitch_internal_selected`, `glwe_automorphism_selected{,_tmp_bytes}_default` and `glwe_automorphism_add_assign_selected_default`, which size from the resolved logical layout. The native paths are unchanged.
 - Add `GLWEAutomorphismKeyHelper` / `GLWERelinearizationKeyHelper` and their layout twins: a caller names a function and its exact precision, the helper answers with a physical key and the effective `dsize`. Implemented by `GGLWEKeyRegistry` and by `GGLWESingleKey`. Unlike the trait they replace, they carry no backend parameter: callers bound `K: GGLWEPreparedToBackendRef<BE>` themselves.
 - **Breaking:** the previous `GLWEAutomorphismKeyHelper` (lookup by Galois element, one common layout) is renamed `GLWEAutomorphismKeyMap`, freeing the name for the precision-driven helper.
 - `error` is now a module of the crate; `CoreError`/`Result` were previously unreachable.

@@ -3,8 +3,8 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
-    GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
+    Dsize, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos,
+    GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
     prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
@@ -145,6 +145,19 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
 /// the default implementation.
 pub trait GLWEAutomorphismDefault<BE: Backend> {
     fn glwe_automorphism_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos;
+
+    /// Scratch bound of the selected automorphism variants.
+    fn glwe_automorphism_selected_tmp_bytes_default<R, A, K>(
+        &self,
+        res_infos: &R,
+        a_infos: &A,
+        key_infos: &K,
+        effective_dsize: Dsize,
+    ) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -430,6 +443,27 @@ macro_rules! impl_glwe_automorphism_defaults_full {
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_tmp_bytes_default::<$be, _, _, _, _>(
                     self, res_infos, a_infos, key_infos,
+                )
+            }
+
+            fn glwe_automorphism_selected_tmp_bytes_default<R, A, K>(
+                &self,
+                res_infos: &R,
+                a_infos: &A,
+                key_infos: &K,
+                effective_dsize: $crate::layouts::Dsize,
+            ) -> usize
+            where
+                R: $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEInfos,
+                K: $crate::layouts::GGLWEInfos,
+            {
+                $crate::default::automorphism::glwe::glwe_automorphism_selected_tmp_bytes_default::<$be, _, _, _, _>(
+                    self,
+                    res_infos,
+                    a_infos,
+                    key_infos,
+                    effective_dsize,
                 )
             }
 

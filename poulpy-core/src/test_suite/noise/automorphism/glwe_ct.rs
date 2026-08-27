@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
-        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
-        VecZnxFillUniformSourceBackend,
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddAssignBackend, VecZnxAutomorphismAssignBackend,
+        VecZnxAutomorphismAssignTmpBytes, VecZnxFillUniformSourceBackend,
     },
     layouts::{Module, ScratchOwned},
     source::Source,
@@ -12,6 +12,8 @@ use poulpy_hal::{
 use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWENormalize,
+    api::GLWEBytesOf,
+    default::{keyswitching::GLWEKeyswitchInternal, operations::GLWENormalizeDefault},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         Dsize, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
@@ -21,6 +23,9 @@ use crate::{
     },
     noise::GGLWENoiseModel,
     oep::{GLWEAutomorphismDefault, GLWEKeyswitchDefault},
+};
+use poulpy_hal::api::{
+    VecZnxBigAddSmallAssign, VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftBytesOf, VecZnxIdftApply,
 };
 
 pub fn test_glwe_automorphism<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
@@ -310,6 +315,16 @@ where
         + VecZnxAutomorphismAssignBackend<BE>
         + GLWEKeyswitchDefault<BE>
         + GLWEAutomorphismDefault<BE>
+        + VecZnxAddAssignBackend<BE>
+        + GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
+        + VecZnxBigAutomorphismAssign<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>
+        + GLWEBytesOf<BE>
         + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -371,6 +386,12 @@ where
                 | (module).glwe_decrypt_tmp_bytes(&ct_out)
                 | (module).glwe_encrypt_sk_tmp_bytes(&ct_in)
                 | module.glwe_keyswitch_selected_tmp_bytes_default(&ct_out, &ct_in, &autokey_infos, effective_dsize)
+                | module.glwe_automorphism_selected_tmp_bytes_default(
+                    &ct_in_infos,
+                    &ct_in_infos,
+                    &autokey_infos,
+                    effective_dsize,
+                )
                 | module.vec_znx_automorphism_assign_tmp_bytes(),
         );
 
@@ -431,6 +452,44 @@ where
         assert!(
             noise <= max_noise + 1.0,
             "dnum={dnum} s={s} r_active={r_active}: noise {noise} exceeds {max_noise}"
+        );
+
+        // `res += phi(res)`, the variant the trace loop runs, over the same coarsening.
+        let mut ct_acc: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_in_infos);
+        module.glwe_encrypt_sk(
+            &mut ct_acc,
+            &pt_in,
+            &sk_prepared,
+            &ct_in_infos,
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.borrow(),
+        );
+        crate::default::automorphism::glwe::glwe_automorphism_add_assign_selected_default(
+            module,
+            &mut ct_acc,
+            &autokey_prepared,
+            effective_dsize,
+            &mut scratch.borrow(),
+        );
+
+        let mut pt_acc: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_in_infos);
+        module.glwe_normalize(&mut pt_acc, &pt_in, &mut scratch.borrow());
+        module.vec_znx_automorphism_assign_backend(p, &mut vec_znx_backend_mut::<BE>(&mut pt_acc.data), 0, &mut scratch.borrow());
+        module.vec_znx_add_assign_backend(
+            &mut vec_znx_backend_mut::<BE>(&mut pt_acc.data),
+            0,
+            &poulpy_hal::test_suite::vec_znx_backend_ref::<BE>(&pt_in.data),
+            0,
+        );
+
+        let noise = module
+            .glwe_noise(&ct_acc, &pt_acc, &sk_prepared, &mut scratch.borrow())
+            .std()
+            .log2();
+        assert!(
+            noise <= max_noise + 1.0,
+            "add_assign dnum={dnum} s={s} r_active={r_active}: noise {noise} exceeds {max_noise}"
         );
     }
 }
