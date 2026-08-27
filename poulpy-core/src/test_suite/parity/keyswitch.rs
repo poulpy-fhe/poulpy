@@ -278,6 +278,36 @@ where
             BE::to_host_bytes(&want.data),
             "selected product mismatch for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
         );
+
+        // A key whose stored shape disagrees with the bound it was resolved from
+        // is rejected before dispatch. `dense_use` is contiguous, so nothing
+        // extracts and no delegate check stands between this and the kernel:
+        // without the guard the parent's extra rows would silently be read as
+        // if they were the dense key's.
+        let mismatched = GGLWEPrepared {
+            data: parent_pmat.to_backend_ref(),
+            k_aux: logical.k_aux,
+            base2k: logical.base2k,
+            dsize: logical.dsize,
+        };
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut out = module.vec_znx_dft_alloc(cols_out, sel_size);
+            module.gglwe_product_dft_default(
+                &mut out.to_backend_mut(),
+                &a_dft.to_backend_ref(),
+                &mismatched,
+                &dense_use,
+                1,
+                &mut scratch.borrow(),
+            );
+        }));
+        std::panic::set_hook(hook);
+        assert!(
+            caught.is_err(),
+            "a prepared key whose shape disagrees with its bound was accepted"
+        );
     }
 }
 

@@ -6,8 +6,8 @@ use poulpy_hal::{
         VmpPMatBytesOf,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef,
-        VmpPMatToBackendRef,
+        Backend, DataView, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        VecZnxDftToBackendRef, VmpPMatToBackendRef,
     },
 };
 
@@ -143,6 +143,7 @@ where
             "the product input must carry ceil(input_k / base2k) limbs for input_k={}",
             use_.input_k
         );
+        assert_prepared_matches_bound::<BE>(key, use_);
         assert!(
             scratch.available() >= self.gglwe_product_dft_tmp_bytes_default(res.size(), a_size, use_),
             "scratch.available(): {} < GGLWEProductDefault::gglwe_product_dft_tmp_bytes: {}",
@@ -178,6 +179,57 @@ where
             gglwe_product_dft_dense(self, res, a, &gathered, use_, term_count, &mut scratch_1.borrow());
         });
     }
+}
+
+/// Rejects a prepared key that does not match the physical shape its bound was
+/// resolved from, before any of it reaches a backend.
+///
+/// A key reconstructed from storage carries its metadata separately from its
+/// buffer, so a mismatch is a restore bug rather than a caller bug, and it would
+/// otherwise surface as an out-of-range read inside a kernel.
+fn assert_prepared_matches_bound<BE: Backend>(key: &GGLWEPreparedBackendRef<'_, BE>, use_: &GGLWEActiveUse) {
+    let logical: &GGLWELayout = &use_.logical_layout;
+    let data = &key.data;
+    let (rows, cols_in, cols_out, size) = (data.rows(), data.cols_in(), data.cols_out(), data.size());
+
+    assert_eq!(data.n(), logical.n().as_usize(), "prepared degree does not match the bound");
+    assert_eq!(rows, use_.physical_rows, "prepared rows do not match the bound");
+    assert_eq!(
+        cols_in,
+        logical.rank_in().as_usize(),
+        "prepared input columns do not match the bound"
+    );
+    assert_eq!(
+        cols_out,
+        (logical.rank_out() + 1).as_usize(),
+        "prepared output columns do not match the bound"
+    );
+    // A bound is always resolved from a complete key, never from a projection.
+    assert_eq!(size, use_.physical_size, "prepared limb pitch does not match the bound");
+    assert!(
+        use_.logical_work_size <= size,
+        "logical work size {} exceeds the stored pitch {size}",
+        use_.logical_work_size
+    );
+
+    // The last selected row, computed without wrapping.
+    let last_row: Option<usize> = logical
+        .dnum()
+        .as_usize()
+        .checked_sub(1)
+        .and_then(|i| i.checked_mul(use_.physical_row_step.get()))
+        .and_then(|o| o.checked_add(use_.first_physical_row));
+    assert!(
+        last_row.is_some_and(|last| last < rows),
+        "selected rows {}..={last_row:?} step {} exceed the stored {rows}",
+        use_.first_physical_row,
+        use_.physical_row_step
+    );
+
+    assert!(
+        BE::len_bytes_ref(DataView::data(data)) >= BE::bytes_of_vmp_pmat(data.n(), rows, cols_in, cols_out, size),
+        "prepared backing is shorter than its own shape requires"
+    );
 }
 
 /// The product over a key whose rows are contiguous from `first_physical_row`.
