@@ -17,7 +17,7 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         Dsize, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
-        GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc, TorusPrecision,
+        GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc, TorusPrecision, WithEffectiveDsize,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
         resolve_gglwe_key_use,
     },
@@ -385,12 +385,11 @@ where
             (module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&autokey)
                 | (module).glwe_decrypt_tmp_bytes(&ct_out)
                 | (module).glwe_encrypt_sk_tmp_bytes(&ct_in)
-                | module.glwe_keyswitch_selected_tmp_bytes_default(&ct_out, &ct_in, &autokey_infos, effective_dsize)
-                | module.glwe_automorphism_selected_tmp_bytes_default(
+                | module.glwe_automorphism_tmp_bytes_default(&ct_out, &ct_in, &autokey_infos.with_dsize(effective_dsize))
+                | module.glwe_automorphism_tmp_bytes_default(
                     &ct_in_infos,
                     &ct_in_infos,
-                    &autokey_infos,
-                    effective_dsize,
+                    &autokey_infos.with_dsize(effective_dsize),
                 )
                 | module.vec_znx_automorphism_assign_tmp_bytes(),
         );
@@ -423,12 +422,11 @@ where
             module.glwe_automorphism_key_prepared_alloc_from_infos(&autokey_infos);
         module.glwe_automorphism_key_prepare(&mut autokey_prepared, &autokey, &mut scratch.borrow());
 
-        crate::default::automorphism::glwe::glwe_automorphism_selected_default(
+        crate::default::automorphism::glwe::glwe_automorphism_default(
             module,
             &mut ct_out,
             &ct_in,
-            &autokey_prepared,
-            effective_dsize,
+            &autokey_prepared.with_dsize(effective_dsize),
             &mut scratch.borrow(),
         );
 
@@ -465,11 +463,10 @@ where
             &mut source_xa,
             &mut scratch.borrow(),
         );
-        crate::default::automorphism::glwe::glwe_automorphism_add_assign_selected_default(
+        crate::default::automorphism::glwe::glwe_automorphism_add_assign_default(
             module,
             &mut ct_acc,
-            &autokey_prepared,
-            effective_dsize,
+            &autokey_prepared.with_dsize(effective_dsize),
             &mut scratch.borrow(),
         );
 

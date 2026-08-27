@@ -257,6 +257,13 @@ where
     }
 }
 
+/// The coarsening a key is being used through, or `None` when it is used with
+/// the decomposition its rows are stored with.
+#[inline]
+pub(crate) fn selection_of<K: GGLWEInfos>(key: &K) -> Option<Dsize> {
+    (key.effective_dsize() != key.dsize()).then(|| key.effective_dsize())
+}
+
 /// Resolves a selected use or fails loudly: the seam never falls back to the
 /// physical key's native decomposition.
 pub(crate) fn resolved_use<K: GGLWEInfos>(key_infos: &K, input_k: TorusPrecision, effective_dsize: Dsize) -> ResolvedGGLWEUse {
@@ -524,33 +531,7 @@ where
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    glwe_keyswitch_tmp_bytes_dispatch(module, res_infos, a_infos, key_infos, None)
-}
-
-/// Scratch bound of [`glwe_keyswitch_selected_default`].
-pub fn glwe_keyswitch_selected_tmp_bytes_default<BE, M, R, A, K>(
-    module: &M,
-    res_infos: &R,
-    a_infos: &A,
-    key_infos: &K,
-    effective_dsize: Dsize,
-) -> usize
-where
-    BE: Backend,
-    M: GLWEBytesOf<BE>
-        + ModuleN
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalizeDefault<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeTmpBytes,
-    R: GLWEInfos,
-    A: GLWEInfos,
-    K: GGLWEInfos,
-{
-    glwe_keyswitch_tmp_bytes_dispatch(module, res_infos, a_infos, key_infos, Some(effective_dsize))
+    glwe_keyswitch_tmp_bytes_dispatch(module, res_infos, a_infos, key_infos, selection_of(key_infos))
 }
 
 fn glwe_keyswitch_tmp_bytes_dispatch<BE, M, R, A, K>(
@@ -653,39 +634,7 @@ where
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    glwe_keyswitch_dispatch(module, res, a, key, None, scratch)
-}
-
-/// Key-switch reading only the rows and limb prefixes that `effective_dsize`
-/// selects out of `key` at the exact precision of `a`.
-///
-/// Sizing follows the resolved logical layout, so the output window is the one
-/// a natively generated key of that decomposition would produce.
-pub fn glwe_keyswitch_selected_default<BE, M, R, A, K>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    key: &K,
-    effective_dsize: Dsize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: GLWEBytesOf<BE>
-        + GLWEKeyswitchDefault<BE>
-        + ModuleN
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalizeDefault<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>
-        + VecZnxNormalize<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-{
-    glwe_keyswitch_dispatch(module, res, a, key, Some(effective_dsize), scratch)
+    glwe_keyswitch_dispatch(module, res, a, key, selection_of(key), scratch)
 }
 
 /// Shared body: `selected` picks the physical layout (`None`) or a resolved
@@ -740,10 +689,7 @@ fn glwe_keyswitch_dispatch<BE, M, R, A, K>(
         Some(effective_dsize) => resolved_use(key, a.k(), effective_dsize).logical_layout,
     };
 
-    let required: usize = match selected {
-        None => module.glwe_keyswitch_tmp_bytes_default(res, a, key),
-        Some(effective_dsize) => module.glwe_keyswitch_selected_tmp_bytes_default(res, a, key, effective_dsize),
-    };
+    let required: usize = module.glwe_keyswitch_tmp_bytes_default(res, a, key);
     assert!(
         scratch.available() >= required,
         "scratch.available(): {} < GLWEKeyswitch::glwe_keyswitch_tmp_bytes: {}",

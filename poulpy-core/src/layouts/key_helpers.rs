@@ -13,9 +13,14 @@
 
 use std::hash::Hash;
 
+use poulpy_hal::layouts::Backend;
+
 use crate::{
     error::Result,
-    layouts::{Dsize, GGLWEInfos, GGLWEKeyRegistry, TorusPrecision},
+    layouts::{
+        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEKeyRegistry, GGLWEPreparedBackendRef, GLWEInfos, GetGaloisElement,
+        LWEInfos, Rank, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
+    },
 };
 
 /// Automorphism key for Galois element `p` at exact precision `k`.
@@ -94,6 +99,102 @@ impl<K: GGLWEInfos> GLWERelinearizationKeyHelper<K> for GGLWESingleKey<(), K> {
         self.registry.key_for(&(), k)
     }
 }
+
+/// A key together with the decomposition it is being used through.
+///
+/// Forwards every layout accessor to the key it borrows, except
+/// [`GGLWEInfos::effective_dsize`]. Operations therefore take it wherever they
+/// take a key, with no signature of their own to change. It holds a borrow and
+/// a scalar: no rows are copied, projected or materialized.
+pub struct GGLWEKeyUse<'a, K> {
+    key: &'a K,
+    effective_dsize: Dsize,
+}
+
+impl<'a, K> GGLWEKeyUse<'a, K> {
+    pub fn key(&self) -> &'a K {
+        self.key
+    }
+}
+
+impl<K: LWEInfos> LWEInfos for GGLWEKeyUse<'_, K> {
+    fn n(&self) -> Degree {
+        self.key.n()
+    }
+
+    fn base2k(&self) -> Base2K {
+        self.key.base2k()
+    }
+
+    fn max_size(&self) -> usize {
+        self.key.max_size()
+    }
+
+    fn size(&self) -> usize {
+        self.key.size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.key.k()
+    }
+}
+
+impl<K: GLWEInfos> GLWEInfos for GGLWEKeyUse<'_, K> {
+    fn rank(&self) -> Rank {
+        self.key.rank()
+    }
+}
+
+impl<K: GGLWEInfos> GGLWEInfos for GGLWEKeyUse<'_, K> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.key.k_aux()
+    }
+
+    fn dnum(&self) -> Dnum {
+        self.key.dnum()
+    }
+
+    fn dsize(&self) -> Dsize {
+        self.key.dsize()
+    }
+
+    fn rank_in(&self) -> Rank {
+        self.key.rank_in()
+    }
+
+    fn rank_out(&self) -> Rank {
+        self.key.rank_out()
+    }
+
+    /// The only accessor that is not a forward.
+    fn effective_dsize(&self) -> Dsize {
+        self.effective_dsize
+    }
+}
+
+impl<K: GetGaloisElement> GetGaloisElement for GGLWEKeyUse<'_, K> {
+    fn p(&self) -> i64 {
+        self.key.p()
+    }
+}
+
+impl<BE: Backend, K: GGLWEPreparedToBackendRef<BE>> GGLWEPreparedToBackendRef<BE> for GGLWEKeyUse<'_, K> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, BE> {
+        self.key.to_backend_ref()
+    }
+}
+
+/// Pairs any key with an effective `dsize`.
+pub trait WithEffectiveDsize: Sized {
+    fn with_dsize(&self, effective_dsize: Dsize) -> GGLWEKeyUse<'_, Self> {
+        GGLWEKeyUse {
+            key: self,
+            effective_dsize,
+        }
+    }
+}
+
+impl<T: GGLWEInfos> WithEffectiveDsize for T {}
 
 #[cfg(test)]
 mod tests {

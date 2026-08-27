@@ -22,6 +22,7 @@ use poulpy_hal::{
 
 use crate::{
     ScratchArenaTakeCore,
+    default::keyswitching::glwe::selection_of,
     default::{
         keyswitching::glwe::resolved_use,
         keyswitching::{GLWEKeyswitchInternal, gglwe_product_output_size},
@@ -42,34 +43,10 @@ where
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    glwe_automorphism_tmp_bytes_dispatch(module, res_infos, a_infos, key_infos, None)
+    glwe_automorphism_tmp_bytes_body(module, res_infos, a_infos, key_infos)
 }
 
-/// Scratch bound of the selected automorphism variants.
-pub fn glwe_automorphism_selected_tmp_bytes_default<BE, M, R, A, K>(
-    module: &M,
-    res_infos: &R,
-    a_infos: &A,
-    key_infos: &K,
-    effective_dsize: Dsize,
-) -> usize
-where
-    BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignTmpBytes,
-    R: GLWEInfos,
-    A: GLWEInfos,
-    K: GGLWEInfos,
-{
-    glwe_automorphism_tmp_bytes_dispatch(module, res_infos, a_infos, key_infos, Some(effective_dsize))
-}
-
-fn glwe_automorphism_tmp_bytes_dispatch<BE, M, R, A, K>(
-    module: &M,
-    res_infos: &R,
-    a_infos: &A,
-    key_infos: &K,
-    selected: Option<Dsize>,
-) -> usize
+fn glwe_automorphism_tmp_bytes_body<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignTmpBytes,
@@ -90,10 +67,7 @@ where
     } else {
         module.glwe_bytes_of_from_infos(a_infos)
     };
-    let lvl_ks: usize = match selected {
-        None => module.glwe_keyswitch_tmp_bytes_default(res_infos, a_infos, key_infos),
-        Some(effective_dsize) => module.glwe_keyswitch_selected_tmp_bytes_default(res_infos, a_infos, key_infos, effective_dsize),
-    };
+    let lvl_ks: usize = module.glwe_keyswitch_tmp_bytes_default(res_infos, a_infos, key_infos);
     let lvl_auto: usize = module.vec_znx_automorphism_assign_tmp_bytes();
 
     lvl_auto.max(lvl_conv + lvl_ks)
@@ -115,30 +89,6 @@ where
     );
 
     module.glwe_keyswitch_default(res, a, key, scratch);
-    let cols = res.rank().as_usize() + 1;
-    let mut res_ref = res.to_backend_mut();
-    for i in 0..cols {
-        module.vec_znx_automorphism_assign_backend(key.p(), &mut res_ref.data, i, &mut scratch.borrow());
-    }
-}
-
-/// Automorphism reading only the rows and limb prefixes that `effective_dsize`
-/// selects out of `key` at the exact precision of `a`.
-pub fn glwe_automorphism_selected_default<BE, M, R, A, K>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    key: &K,
-    effective_dsize: Dsize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-{
-    module.glwe_keyswitch_selected_default(res, a, key, effective_dsize, scratch);
     let cols = res.rank().as_usize() + 1;
     let mut res_ref = res.to_backend_mut();
     for i in 0..cols {
@@ -254,33 +204,7 @@ where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    glwe_automorphism_add_assign_dispatch(module, res, key, None, scratch)
-}
-
-/// `res += phi(res)` through the coarsening `effective_dsize` selects out of `key`.
-pub fn glwe_automorphism_add_assign_selected_default<BE, M, R, K>(
-    module: &M,
-    res: &mut R,
-    key: &K,
-    effective_dsize: Dsize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: GLWEBytesOf<BE>
-        + GLWEAutomorphismDefault<BE>
-        + GLWEKeyswitchDefault<BE>
-        + GLWEKeyswitchInternal<BE>
-        + GLWENormalizeDefault<BE>
-        + VecZnxBigAutomorphismAssign<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
-        + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-{
-    glwe_automorphism_add_assign_dispatch(module, res, key, Some(effective_dsize), scratch)
+    glwe_automorphism_add_assign_dispatch(module, res, key, selection_of(key), scratch)
 }
 
 fn glwe_automorphism_add_assign_dispatch<BE, M, R, K>(
@@ -305,10 +229,7 @@ fn glwe_automorphism_add_assign_dispatch<BE, M, R, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let required: usize = match selected {
-        None => module.glwe_automorphism_tmp_bytes_default(res, res, key),
-        Some(effective_dsize) => module.glwe_automorphism_selected_tmp_bytes_default(res, res, key, effective_dsize),
-    };
+    let required: usize = module.glwe_automorphism_tmp_bytes_default(res, res, key);
     assert!(
         scratch.available() >= required,
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
@@ -334,7 +255,7 @@ fn glwe_automorphism_add_assign_dispatch<BE, M, R, K>(
         Some(effective_dsize) => {
             module.glwe_keyswitch_internal_selected(&mut res_dft, &res_conv, key, effective_dsize, &mut scratch_2)
         }
-    }
+    };
 
     {
         let res_norm = res_conv.to_backend_ref();

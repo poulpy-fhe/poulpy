@@ -3,8 +3,8 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef};
 
 use crate::layouts::{
-    Dsize, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos,
-    GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
+    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
+    GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
     prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
@@ -263,32 +263,6 @@ pub trait GLWEKeyswitchDefault<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
-
-    /// Scratch bound of [`Self::glwe_keyswitch_selected_default`].
-    fn glwe_keyswitch_selected_tmp_bytes_default<R, A, K>(
-        &self,
-        res_infos: &R,
-        a_infos: &A,
-        key_infos: &K,
-        effective_dsize: Dsize,
-    ) -> usize
-    where
-        R: GLWEInfos,
-        A: GLWEInfos,
-        K: GGLWEInfos;
-
-    /// Key-switch through the coarsening `effective_dsize` selects out of `key`.
-    fn glwe_keyswitch_selected_default<R, A, K>(
-        &self,
-        res: &mut R,
-        a: &A,
-        key: &K,
-        effective_dsize: Dsize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 /// Override surface for the GGLWE key-switching sub-family.
@@ -505,49 +479,6 @@ macro_rules! impl_glwe_keyswitch_defaults_full {
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
             {
                 $crate::default::keyswitching::glwe::glwe_keyswitch_default::<$be, _, _, _, _>(self, res, a, key, scratch)
-            }
-
-            fn glwe_keyswitch_selected_tmp_bytes_default<R, A, K>(
-                &self,
-                res_infos: &R,
-                a_infos: &A,
-                key_infos: &K,
-                effective_dsize: $crate::layouts::Dsize,
-            ) -> usize
-            where
-                R: $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEInfos,
-                K: $crate::layouts::GGLWEInfos,
-            {
-                $crate::default::keyswitching::glwe::glwe_keyswitch_selected_tmp_bytes_default::<$be, _, _, _, _>(
-                    self,
-                    res_infos,
-                    a_infos,
-                    key_infos,
-                    effective_dsize,
-                )
-            }
-
-            fn glwe_keyswitch_selected_default<R, A, K>(
-                &self,
-                res: &mut R,
-                a: &A,
-                key: &K,
-                effective_dsize: $crate::layouts::Dsize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
-            {
-                $crate::default::keyswitching::glwe::glwe_keyswitch_selected_default::<$be, _, _, _, _>(
-                    self,
-                    res,
-                    a,
-                    key,
-                    effective_dsize,
-                    scratch,
-                )
             }
 
             fn glwe_keyswitch_assign_default<R, K>(

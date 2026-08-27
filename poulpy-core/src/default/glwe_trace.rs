@@ -28,7 +28,7 @@ use crate::{
     error::Result,
     layouts::{
         Base2K, GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEAutomorphismKeyMap,
-        GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+        GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, WithEffectiveDsize,
         prepared::GGLWEPreparedToBackendRef,
     },
     oep::{GLWEAutomorphismDefault, GLWEKeyswitchDefault},
@@ -227,7 +227,7 @@ pub mod glwe_trace_defaults_impl {
             let (layout, effective_dsize) = keys.get_automorphism_key_layout_for(p, a_infos.k())?;
             assert_eq!(module.n() as u32, layout.n());
             key_base2k = Some(layout.base2k());
-            worst = worst.max(module.glwe_automorphism_selected_tmp_bytes_default(a_infos, a_infos, layout, effective_dsize));
+            worst = worst.max(module.glwe_automorphism_tmp_bytes_default(a_infos, a_infos, &layout.with_dsize(effective_dsize)));
         }
         let Some(key_base2k) = key_base2k else {
             return Ok(0);
@@ -296,11 +296,10 @@ pub mod glwe_trace_defaults_impl {
             assert_eq!(key.rank_out(), res.rank());
             assert_eq!(res.base2k(), key.base2k(), "base2k conversion is the caller's job");
             module.glwe_rsh(1, res, scratch);
-            crate::default::automorphism::glwe::glwe_automorphism_add_assign_selected_default(
+            crate::default::automorphism::glwe::glwe_automorphism_add_assign_default(
                 module,
                 res,
-                key,
-                effective_dsize,
+                &key.with_dsize(effective_dsize),
                 &mut scratch.borrow(),
             );
         }

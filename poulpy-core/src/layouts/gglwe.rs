@@ -30,6 +30,15 @@ where
     fn dsize(&self) -> Dsize;
     fn rank_in(&self) -> Rank;
     fn rank_out(&self) -> Rank;
+    /// Decomposition this key is *used* through.
+    ///
+    /// Defaults to the one its rows are stored with, so a key used natively
+    /// needs no override. A coarsened use reports a multiple of `dsize()`, and
+    /// the product then reads every `effective_dsize / dsize`-th row.
+    fn effective_dsize(&self) -> Dsize {
+        self.dsize()
+    }
+
     /// Number of limb polynomials stored: `dnum * rank_in * (rank_out + 1) * max_size`.
     fn limb_count(&self) -> usize {
         self.dnum().as_usize() * self.rank_in().as_usize() * (self.rank_out() + 1).as_usize() * self.max_size()
