@@ -50,6 +50,7 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::keyswitch::test_glwe_external_product_ignores_dirty_scratch,
                 glwe_rotate => $crate::test_suite::noise::test_glwe_rotate,
                 glwe_trace_assign => $crate::test_suite::noise::test_glwe_trace_assign,
+                glwe_trace_selected_assign => $crate::test_suite::noise::test_glwe_trace_selected_assign,
                 glwe_hoisted_baby_rotations_match_automorphism =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,
                 glwe_packing => $crate::test_suite::noise::test_glwe_packing,

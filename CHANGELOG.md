@@ -14,6 +14,7 @@
 - Add `glwe_keyswitch_selected{,_tmp_bytes}_default`, `glwe_keyswitch_internal_selected`, `glwe_automorphism_selected{,_tmp_bytes}_default` and `glwe_automorphism_add_assign_selected_default`, which size from the resolved logical layout. The native paths are unchanged.
 - Add `GLWEAutomorphismKeyHelper` / `GLWERelinearizationKeyHelper` and their layout twins: a caller names a function and its exact precision, the helper answers with a physical key and the effective `dsize`. Implemented by `GGLWEKeyRegistry` and by `GGLWESingleKey`. Unlike the trait they replace, they carry no backend parameter: callers bound `K: GGLWEPreparedToBackendRef<BE>` themselves.
 - **Breaking:** the previous `GLWEAutomorphismKeyHelper` (lookup by Galois element, one common layout) is renamed `GLWEAutomorphismKeyMap`, freeing the name for the precision-driven helper.
+- Add `glwe_trace_selected_assign{,_tmp_bytes}`, which resolve each rotation's key and effective `dsize` at the exact precision of the operand and take the maximum scratch over the rotations visited, rather than assuming one common automorphism-key layout.
 - `error` is now a module of the crate; `CoreError`/`Result` were previously unreachable.
 
 ## [0.8.2] - 2026-08-22

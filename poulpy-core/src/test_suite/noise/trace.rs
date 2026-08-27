@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssignBackend, VecZnxSubAssignBackend},
+    api::{
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAddSmallAssign, VecZnxBigAutomorphismAssign, VecZnxBigBytesOf,
+        VecZnxBigNormalize, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxNormalizeAssignBackend, VecZnxSubAssignBackend,
+    },
     layouts::{Module, ScratchOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
@@ -9,14 +12,19 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWETrace,
+    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, GLWEShift, GLWETrace,
+    api::GLWEBytesOf,
+    default::{glwe_trace::glwe_trace_defaults_impl, keyswitching::GLWEKeyswitchInternal, operations::GLWENormalizeDefault},
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWEPlaintext,
-        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        Dsize, GGLWEKeyRegistryBuilder, GGLWEKeyUsePolicy, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout,
+        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
+        ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
+        resolve_gglwe_key_use,
     },
     noise::GGLWENoiseModel,
+    oep::{GLWEAutomorphismDefault, GLWEKeyswitchDefault},
     test_suite::noise::{
         download_glwe_plaintext, upload_glwe, upload_glwe_automorphism_key, upload_glwe_plaintext, upload_glwe_secret,
     },
@@ -173,4 +181,186 @@ where
         let noise_max: f64 = noise_want + 1.0;
         assert!(noise_have <= noise_max, "noise_have: {noise_have} > noise_max: {noise_max}");
     }
+}
+
+/// Trace over automorphism keys with *different* physical decompositions per
+/// rotation, each resolved to the same effective `dsize` by the policy.
+///
+/// This is what dropping the one-common-layout assumption buys: no single
+/// `GGLWELayout` describes this key set, and scratch is the maximum over the
+/// rotations actually visited.
+pub fn test_glwe_trace_selected_assign<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWETrace<BE>
+        + GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWEShift<BE>
+        + GLWECopy<BE>
+        + GLWENormalize<BE>
+        + GLWEBytesOf<BE>
+        + GLWEAutomorphismDefault<BE>
+        + GLWEKeyswitchDefault<BE>
+        + GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
+        + VecZnxBigAutomorphismAssign<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>
+        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxSubAssignBackend<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let k: usize = 4 * base2k + 1;
+    let effective_dsize: Dsize = Dsize(2);
+    let n: usize = module.n();
+    let rank: usize = 1;
+
+    let glwe_out_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: k.into(),
+        rank: rank.into(),
+    })
+    .unwrap();
+
+    // Two physical shapes: a fine parent coarsened by 2, and a native dsize-2 key.
+    let shapes: [(usize, usize); 2] = [(1, 8), (2, 3)];
+    let key_infos: Vec<_> = shapes
+        .iter()
+        .map(|(dsize, dnum)| {
+            EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
+                n: n.into(),
+                base2k: base2k.into(),
+                dnum: (*dnum).into(),
+                k_aux: (dsize * base2k + module.log_n()).into(),
+                rank: rank.into(),
+                dsize: (*dsize).into(),
+            })
+            .unwrap()
+        })
+        .collect();
+
+    let policy = GGLWEKeyUsePolicy::new(base2k.into(), (0..=k.div_ceil(base2k)).map(|_| effective_dsize).collect()).unwrap();
+
+    let mut source_xs: Source = Source::new([0u8; 32]);
+    let mut source_xe: Source = Source::new([0u8; 32]);
+    let mut source_xa: Source = Source::new([0u8; 32]);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        (module).glwe_encrypt_sk_tmp_bytes(&glwe_out_infos)
+            | (module).glwe_decrypt_tmp_bytes(&glwe_out_infos)
+            | (module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&key_infos[0])
+            | (module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&key_infos[1]),
+    );
+
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_out_infos);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
+    let sk_backend = upload_glwe_secret(module, &sk);
+    let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+    module.glwe_secret_prepare(&mut sk_dft, &sk_backend);
+
+    // Alternate the physical shape across rotations.
+    let gal_els: Vec<i64> = module.glwe_trace_galois_elements();
+    let mut builder: GGLWEKeyRegistryBuilder<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = GGLWEKeyRegistryBuilder::new();
+    for (i, gal_el) in gal_els.iter().enumerate() {
+        let infos = &key_infos[i % shapes.len()];
+        let template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(infos);
+        let mut tmp = upload_glwe_automorphism_key(module, &template);
+        module.glwe_automorphism_key_encrypt_sk(
+            &mut tmp,
+            *gal_el,
+            &sk_backend,
+            infos,
+            &mut source_xe,
+            &mut source_xa,
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+        );
+        let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
+            module.glwe_automorphism_key_prepared_alloc_from_infos(&tmp);
+        module.glwe_automorphism_key_prepare(&mut prepared, &tmp, &mut scratch.borrow());
+        builder.register(*gal_el, prepared).unwrap();
+    }
+    let keys = builder.finish(policy).unwrap();
+
+    // Scratch is the maximum over the rotations, resolved from the same registry.
+    let trace_bytes =
+        glwe_trace_defaults_impl::glwe_trace_selected_assign_tmp_bytes::<BE, _, _, _, _>(module, &glwe_out_infos, 0, &keys)
+            .unwrap();
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        (module).glwe_encrypt_sk_tmp_bytes(&glwe_out_infos) | (module).glwe_decrypt_tmp_bytes(&glwe_out_infos) | trace_bytes,
+    );
+
+    let pt_template: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+    let glwe_out_template: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
+    let mut data_want: Vec<i64> = vec![0i64; n];
+    data_want.iter_mut().for_each(|x| *x = source_xa.next_i64() & 0xFF);
+    let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+    for j in 0..pt_want.data.size() {
+        pt_want.data.at_mut(0, j).fill(0);
+    }
+    pt_want.data.at_mut(0, 0)[0] = data_want[0];
+    let pt_input = upload_glwe_plaintext(module, &pt_want);
+
+    let mut glwe_out = upload_glwe(module, &glwe_out_template);
+    module.glwe_encrypt_sk(
+        &mut glwe_out,
+        &pt_input,
+        &sk_dft,
+        &glwe_out_infos,
+        &mut source_xe,
+        &mut source_xa,
+        &mut scratch.borrow(),
+    );
+
+    glwe_trace_defaults_impl::glwe_trace_selected_assign(module, &mut glwe_out, 0, &keys, &mut scratch.borrow()).unwrap();
+
+    let mut pt_have_backend = upload_glwe_plaintext(module, &pt_template);
+    module.glwe_decrypt(&glwe_out, &mut pt_have_backend, &sk_dft, &mut scratch.borrow());
+    let pt_have: GLWEPlaintext<Vec<u8>, BE::ZnxWord> = download_glwe_plaintext(module, &pt_have_backend);
+
+    {
+        let mut pt_want_data =
+            <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut pt_want.data);
+        let pt_have_data =
+            <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&pt_have.data);
+        module.vec_znx_sub_assign_backend(&mut pt_want_data, 0, &pt_have_data, 0);
+    }
+    let mut pt_noise = upload_glwe_plaintext(module, &pt_want);
+    module.vec_znx_normalize_assign_backend(
+        pt_noise.base2k().as_usize(),
+        &mut vec_znx_backend_mut::<BE>(&mut pt_noise.data),
+        0,
+        &mut scratch.borrow(),
+    );
+    let pt_noise = download_glwe_plaintext(module, &pt_noise);
+    let noise_have: f64 = pt_noise.stats().std().log2();
+
+    // Bound of the worst decomposition any rotation resolves to.
+    let mut noise_want: f64 = 0.0;
+    for infos in &key_infos {
+        let logical = resolve_gglwe_key_use(infos, glwe_out_infos.k(), effective_dsize)
+            .unwrap()
+            .expect("every registered shape realizes the policy")
+            .logical_layout;
+        noise_want = noise_want.max(logical.var_noise_keyswitch(
+            &glwe_out_infos,
+            0.5,
+            0.5,
+            DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
+            DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
+            0.0,
+        ));
+    }
+    noise_want += n as f64 * 1.0 / 12.0 * 0.5 * rank as f64 * (-2.0 * k as f64).exp2();
+    let noise_max: f64 = noise_want.sqrt().log2() + 1.0;
+    assert!(noise_have <= noise_max, "noise_have: {noise_have} > noise_max: {noise_max}");
 }
