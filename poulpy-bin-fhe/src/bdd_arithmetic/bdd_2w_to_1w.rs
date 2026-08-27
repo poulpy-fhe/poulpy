@@ -59,7 +59,7 @@ where
     }
 
     /// Minimum scratch size in bytes for [`execute_bdd_circuit_2w_to_1w`][Self::execute_bdd_circuit_2w_to_1w]
-    /// (single OS thread for BDD evaluation).
+    /// (one BDD worker).
     fn execute_bdd_circuit_2w_to_1w_tmp_bytes<C, T, R, G, K, H>(
         &self,
         circuit: &C,
@@ -101,7 +101,11 @@ where
     {
         let atk_infos = key.automorphism_key_infos();
         let glwe_slot_bytes = T::BITS as usize * self.glwe_bytes_of_from_infos(res_infos);
-        let bdd_per_thread = self.execute_bdd_circuit_tmp_bytes(res_infos, circuit.max_state_size(), ggsw_infos);
+        let bdd_per_thread = poulpy_hal::execution::worker_scratch_bytes::<BE>(self.execute_bdd_circuit_tmp_bytes(
+            res_infos,
+            circuit.max_state_size(),
+            ggsw_infos,
+        ));
         let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, &atk_infos);
         glwe_slot_bytes + (threads * bdd_per_thread).max(pack_bytes)
     }
