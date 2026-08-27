@@ -161,6 +161,7 @@ where
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
                     op: "linear_transformation",
                     rotation,
+                    k: src_k.into(),
                 }
                 .into());
             }
@@ -324,6 +325,7 @@ where
             return Err(CKKSCompositionError::MissingAutomorphismKey {
                 op: "linear_transformation",
                 rotation,
+                k: a_k.into(),
             }
             .into());
         }

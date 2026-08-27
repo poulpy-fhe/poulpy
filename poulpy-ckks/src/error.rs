@@ -130,7 +130,7 @@ pub enum CKKSCompositionError {
         n: usize,
     },
     /// A requested rotation/conjugation key is not present in the provided key map.
-    MissingAutomorphismKey { op: &'static str, rotation: i64 },
+    MissingAutomorphismKey { op: &'static str, rotation: i64, k: u32 },
     /// No relinearization key covers the exact precision the operation works at.
     MissingRelinearizationKey { op: &'static str, k: u32 },
     /// A plaintext cannot be aligned into the requested destination precision.
@@ -209,10 +209,10 @@ impl fmt::Display for CKKSCompositionError {
             Self::PlaintextCoefficientOutOfRange { op, role, coeff, n } => {
                 write!(f, "{op} coefficient index {coeff} is out of range for {role} degree {n}")
             }
-            Self::MissingAutomorphismKey { op, rotation } => {
+            Self::MissingAutomorphismKey { op, rotation, k } => {
                 write!(
                     f,
-                    "{op} requires an automorphism key for rotation {rotation}, but none was provided"
+                    "{op} requires an automorphism key for rotation {rotation} at precision k={k}, but none was provided"
                 )
             }
             Self::MissingRelinearizationKey { op, k } => {

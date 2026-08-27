@@ -151,6 +151,7 @@ where
                 .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
                     op: "paco_slot_trace",
                     rotation: rot,
+                    k: ct.k().into(),
                 })?;
             self.glwe_automorphism_add_assign(ct, &key.with_dsize(effective_dsize), scratch);
         }

@@ -813,10 +813,6 @@ pub(crate) fn vmp_extract_selected_rows_ifma(
     row_step: usize,
 ) {
     let n: usize = a.n();
-    assert_eq!(res.n(), n);
-    assert_eq!(res.cols_in(), a.cols_in());
-    assert_eq!(res.cols_out(), a.cols_out());
-    assert!(res.size() <= a.size(), "res.size(): {} > a.size(): {}", res.size(), a.size());
 
     let cols_in: usize = a.cols_in();
     let (res_rows, res_nrows, res_ncols) = (res.rows(), res.rows() * cols_in, res.cols_out() * res.size());

@@ -247,6 +247,7 @@ where
             .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
                 op: "ckks_paco_bootstrap",
                 rotation: element,
+                k: output.k().into(),
             })?;
         ckks_ensure!(
             key.p() == element,
@@ -361,6 +362,7 @@ where
         CKKSCompositionError::MissingAutomorphismKey {
             op: "ckks_paco_bootstrap",
             rotation: -1,
+            k: output.k().into(),
         }
     })?;
 
@@ -383,6 +385,7 @@ where
                 .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
                     op: "ckks_paco_bootstrap",
                     rotation: *galois_element,
+                    k: output.k().into(),
                 })?;
             module.ckks_conjugate_into(&mut temporary, output, conj_rotate_key, scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;

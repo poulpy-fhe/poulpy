@@ -43,6 +43,7 @@ where
             CKKSCompositionError::MissingAutomorphismKey {
                 op: "rotate",
                 rotation: k,
+                k: src.k().into(),
             }
         })?;
         BE::ckks_rotate_into_impl(self, dst, src, &key.with_dsize(effective_dsize), scratch)
@@ -58,6 +59,7 @@ where
             CKKSCompositionError::MissingAutomorphismKey {
                 op: "rotate_assign",
                 rotation: k,
+                k: dst.k().into(),
             }
         })?;
         BE::ckks_rotate_assign_impl(self, dst, &key.with_dsize(effective_dsize), scratch)

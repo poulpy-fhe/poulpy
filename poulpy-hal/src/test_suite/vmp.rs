@@ -431,6 +431,39 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
             }
         }
     }
+
+    let parent: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, max_cols, max_cols, size);
+    check_extract_rejects_bad_selections(module, &parent);
+}
+
+/// A selection the kernel must never be handed is rejected in release, by the
+/// delegate, so a backend may index without bounds checks.
+///
+/// On a bounds-checked backend the out-of-range cases would also trip a slice
+/// panic; only the zero step reaches the kernel and returns quietly. A backend
+/// indexing raw pointers has neither guard, which is the point of the check.
+fn check_extract_rejects_bad_selections<BE: crate::test_suite::TestBackend>(module: &Module<BE>, a: &VmpPMatOwned<BE>)
+where
+    Module<BE>: VmpPMatAlloc<BE> + VmpExtractSelectedRows<BE>,
+{
+    let (rows, cols_in, cols_out, size) = (a.rows(), a.cols_in(), a.cols_out(), a.size());
+    // (res rows, res size, first row, step, what is wrong)
+    let cases: [(usize, usize, usize, usize, &str); 4] = [
+        (rows, size, 1, 1, "last row past a.rows()"),
+        (rows, size, 0, 2, "step walks past a.rows()"),
+        (1, size + 1, 0, 1, "truncation widens"),
+        (1, size, 0, 0, "zero step"),
+    ];
+    for (res_rows, res_size, first, step, what) in cases {
+        let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size);
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.vmp_extract_selected_rows(&mut res.to_backend_mut(), &a.to_backend_ref(), first, step);
+        }));
+        std::panic::set_hook(hook);
+        assert!(caught.is_err(), "{what} was accepted");
+    }
 }
 
 pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(

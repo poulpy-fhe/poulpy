@@ -4,7 +4,7 @@
 
 ### `poulpy-hal`
 
-- Add `VmpExtractSelectedRows`: copies rows `first_row + i * row_step` of a `VmpPMat`, truncated to `res.size()` limbs, into a smaller one, reading only the selected cells.
+- Add `VmpExtractSelectedRows`: copies rows `first_row + i * row_step` of a `VmpPMat`, truncated to `res.size()` limbs, into a smaller one, reading only the selected cells. The delegate validates the selection in release before dispatch (shapes, `row_step > 0`, last row inside `a` without overflow), so an implementation may index on those facts without re-checking them.
 
 ### `poulpy-core`
 
@@ -23,6 +23,7 @@
 
 ### `poulpy-ckks`
 
+- **Breaking:** `CKKSCompositionError::MissingAutomorphismKey` carries the precision the lookup was made at, so missing coverage names the function, the rotation and the exact `k`.
 - **Breaking:** the ciphertext-ciphertext operations (`ckks_mul_*`, `ckks_square_*`, the `mul_add`/`mul_sub`/`dot_product` composites, polynomial evaluation, approximation, EvalMod and the PaCo slot product) take a relinearization-key source rather than one tensor key, and resolve it at the exact precision the operation works at (`max(a.k(), b.k())` and its variants). A bare tensor key implements the helper, so existing callers are unaffected.
 - Add `CKKSCompositionError::MissingRelinearizationKey`.
 - Add `BootstrappingKeys::relinearization_keys` / `PaCoKeys::relinearization_keys` and their `RelinearizationKeys` associated type, so a key manager can answer with a registry rather than one key.
