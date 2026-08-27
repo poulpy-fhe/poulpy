@@ -21,7 +21,7 @@ use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
-    layouts::{Base2K, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation},
+    layouts::{Base2K, GLWEAutomorphismKeyMap, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation},
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -66,7 +66,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     fn ckks_coeffs_to_slots_impl<P, Dst, H, K>(
         module: &Module<BE>,
@@ -79,7 +79,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     fn ckks_slots_to_coeffs_impl<P, Dst, H, K>(
         module: &Module<BE>,
@@ -92,7 +92,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     fn ckks_coeffs_to_slots_split_impl<P, Dst, Src, H, K>(
         module: &Module<BE>,
@@ -109,7 +109,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     fn ckks_slots_to_coeffs_split_impl<P, Dst, Src, H, K>(
         module: &Module<BE>,
@@ -125,7 +125,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     fn ckks_coeffs_to_slots_repack_impl<P, Dst, Src, H, K>(
         module: &Module<BE>,
@@ -141,7 +141,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     fn ckks_slots_to_coeffs_repack_impl<P, Dst, Src, H, K>(
         module: &Module<BE>,
@@ -156,7 +156,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 }
 
 /// Backend hook for homomorphic-DFT matrix generation at scalar precision `F`.
@@ -268,7 +268,7 @@ pub trait DFTDefault<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     {
@@ -286,7 +286,7 @@ pub trait DFTDefault<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     {
@@ -304,7 +304,7 @@ pub trait DFTDefault<BE: Backend> {
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     {
@@ -326,7 +326,7 @@ pub trait DFTDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE>
             + CnvPVecAlloc<BE>
@@ -354,7 +354,7 @@ pub trait DFTDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     {
@@ -375,7 +375,7 @@ pub trait DFTDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE>
             + CnvPVecAlloc<BE>
@@ -403,7 +403,7 @@ pub trait DFTDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE>,
     {
@@ -447,7 +447,7 @@ where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         module.ckks_dft_evaluate_assign_default(ct, dft, keys, scratch)
     }
@@ -463,7 +463,7 @@ where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         module.ckks_coeffs_to_slots_default(ct, dft, keys, scratch)
     }
@@ -479,7 +479,7 @@ where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         module.ckks_slots_to_coeffs_default(ct, dft, keys, scratch)
     }
@@ -499,7 +499,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         module.ckks_coeffs_to_slots_split_default(ct_real, ct_imag, ct_in, dft, keys, conj_key, scratch)
     }
@@ -518,7 +518,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         module.ckks_slots_to_coeffs_split_default(op_out, ct_real, ct_imag, dft, keys, scratch)
     }
@@ -537,7 +537,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         module.ckks_coeffs_to_slots_repack_default(ct_out, ct_in, dft, keys, conj_key, scratch)
     }
@@ -555,7 +555,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         module.ckks_slots_to_coeffs_repack_default(op_out, ct_in, dft, keys, scratch)
     }

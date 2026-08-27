@@ -9,7 +9,7 @@ use poulpy_hal::{
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GetGaloisElement, ModuleCoreAlloc,
+        GGLWEInfos, GLWEAutomorphismKeyMap, GLWEInfos, GLWEToBackendMut, GetGaloisElement, ModuleCoreAlloc,
         prepared::GGLWEPreparedToBackendRef,
     },
 };
@@ -90,7 +90,7 @@ pub trait GLWEPackingDefault<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 }
 
 /// Reference implementations of the [`GLWEPackingDefault`] methods.
@@ -155,7 +155,7 @@ pub mod glwe_packing_defaults_impl {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         assert!(*a.keys().max().unwrap() < module.n());
         let key_infos = keys.automorphism_key_infos();

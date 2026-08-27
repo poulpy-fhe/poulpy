@@ -34,7 +34,7 @@ use crate::{
         operations::msb_mask_bottom_limb,
     },
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+        GGLWEInfos, GLWEAutomorphismKeyMap, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         prepared::GGLWEPreparedToBackendRef,
     },
 };
@@ -138,7 +138,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GLWEAutomorphismKeyMap<K, BE>,
 {
     let cols = a.rank().as_usize() + 1;
     let key: &K = keys
@@ -220,7 +220,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
         + VecZnxIdftApply<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GLWEAutomorphismKeyMap<K, BE>,
 {
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();

@@ -25,7 +25,7 @@ use poulpy_hal::{
 use crate::{
     GLWEAutomorphism, GLWECopy, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
+        GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyMap, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
         GetGaloisElement, LWEInfos, prepared::GGLWEPreparedToBackendRef,
     },
 };
@@ -61,7 +61,7 @@ fn trace_assign_internal<M, K, H, R, BE: Backend>(
         + GLWETraceDefault<BE>
         + ?Sized,
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GLWEAutomorphismKeyMap<K, BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
     let ksk_infos: &GGLWELayout = &keys.automorphism_key_infos();
@@ -135,13 +135,13 @@ pub trait GLWETraceDefault<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     fn glwe_trace_assign_default<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 }
 
 /// Reference implementations of the [`GLWETraceDefault`] methods.
@@ -256,7 +256,7 @@ pub mod glwe_trace_defaults_impl {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         let atk_layout: &GGLWELayout = &keys.automorphism_key_infos();
         assert!(
@@ -321,7 +321,7 @@ pub mod glwe_trace_defaults_impl {
             + GLWENormalize<BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         trace_assign_internal::<M, K, H, _, BE>(module, res, skip, keys, scratch);
     }

@@ -2,7 +2,7 @@ use poulpy_core::{
     EncryptionInfos, GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
     GLWETrace, LWEFromGLWE, ScratchArenaTakeCore,
     layouts::{
-        Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEPlaintext,
+        Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWEAutomorphismKeyMap, GLWEInfos, GLWEPlaintext,
         GLWEPlaintextLayout, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         LWEToBackendMut, ModuleCoreAlloc, Rank, TorusPrecision,
     },
@@ -277,7 +277,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
         G: GLWEToBackendMut<BE> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + GLWEPacking<BE> + GLWECopy<BE>,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -307,7 +307,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
         Self: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
         M: GLWEBytesOf<BE>
             + ModuleLogN
@@ -345,7 +345,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
         Self: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
         M: GLWEBytesOf<BE>
             + ModuleLogN
@@ -484,7 +484,7 @@ impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         Self: GLWEToBackendRef<BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + GLWERotate<BE> + GLWETrace<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -501,7 +501,7 @@ impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         Self: GLWEToBackendRef<BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + GLWERotate<BE> + GLWETrace<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -532,7 +532,7 @@ impl<T: UnsignedInteger> FheUint<Vec<u8>, T, i64> {
         Self: GLWEToBackendMut<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -559,7 +559,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         Self: GLWEToBackendMut<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
         M: GLWEBytesOf<BE>
             + ModuleLogN
@@ -594,7 +594,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
     where
         Self: GLWEToBackendRef<BE>,
         Self: GLWEToBackendMut<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         M: GLWEBytesOf<BE>

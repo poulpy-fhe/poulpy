@@ -10,7 +10,7 @@ use anyhow::Context;
 use poulpy_core::{
     GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
     layouts::{
-        Degree, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees,
+        Degree, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyMap, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees,
         GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
     },
 };

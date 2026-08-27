@@ -12,7 +12,7 @@ use crate::{
 use anyhow::Result;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPrepared, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout,
+    GGLWEInfos, GLWEAutomorphismKeyMap, GLWEAutomorphismKeyPrepared, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout,
     GLWESwitchingKeyPrepared, ModuleCoreAlloc,
 };
 use poulpy_core::{DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWESwitchingKeyEncryptSk};
@@ -382,7 +382,7 @@ impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepare
     }
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>, BE>
+impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyMap<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>, BE>
     for BDDKeyPrepared<BE::OwnedBuf, BRA, BE>
 {
     fn automorphism_key_infos(&self) -> poulpy_core::layouts::GGLWELayout {

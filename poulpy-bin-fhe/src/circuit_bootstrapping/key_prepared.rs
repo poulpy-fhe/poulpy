@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use poulpy_core::layouts::{
     GGLWEInfos, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSWInfos,
-    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos,
+    GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyMap, GLWEAutomorphismKeyPreparedFactory, GLWEInfos,
     GLWETensorKeyPreparedFactory, LWEInfos, prepared::GLWEAutomorphismKeyPrepared,
 };
 use std::collections::HashMap;
@@ -152,7 +152,7 @@ pub struct CircuitBootstrappingKeyPrepared<D: Data, BRA: BlindRotationAlgo, B: B
     pub(crate) atk: HashMap<i64, GLWEAutomorphismKeyPrepared<D, B>>,
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>, BE>
+impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyMap<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>, BE>
     for CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
 {
     fn get_automorphism_key(&self, k: i64) -> Option<&GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> {

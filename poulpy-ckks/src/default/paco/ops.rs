@@ -36,7 +36,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWEAutomorphism,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
+        GGLWEInfos, GLWEAutomorphismKeyMap, GLWEToBackendMut, GLWEToBackendRef,
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -102,7 +102,7 @@ pub trait PaCoSlotOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     /// `Pr_{a→b}` in place: slot `i` becomes `Π_j ct[i + j·b]` for
     /// `j ∈ [0, a/b)` (indices mod `N/2`). Rotate-and-multiply with
@@ -119,7 +119,7 @@ pub trait PaCoSlotOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
 }
 
@@ -139,7 +139,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         let order = self.cyclotomic_order();
         for rot in checked_fold_rotations(self, a, b)? {
@@ -166,7 +166,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         let rotations = checked_fold_rotations(self, a, b)?;

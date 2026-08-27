@@ -34,7 +34,7 @@ use crate::{
         operations::cnv_offset_to_limb_offset,
     },
     layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+        GGLWEInfos, GLWE, GLWEAutomorphismKeyMap, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         ModuleCoreAlloc,
         prepared::{GGLWEPreparedToBackendRef, PreparedDiagonal},
     },
@@ -172,7 +172,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GLWEAutomorphismKeyMap<K, BE>,
 {
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k();

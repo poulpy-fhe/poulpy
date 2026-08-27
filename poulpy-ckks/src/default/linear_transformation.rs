@@ -14,7 +14,7 @@ use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
     default::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::PreparedDiagonal},
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyMap, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::PreparedDiagonal},
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN},
@@ -146,7 +146,7 @@ where
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         let cyclotomic_order = self.cyclotomic_order();
         for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
@@ -181,7 +181,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         check_required_keys(lt, babies, keys, self.cyclotomic_order())?;
 
@@ -227,7 +227,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         // The dst-shaped working copy is carved from scratch (accounted for by
         // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
@@ -255,7 +255,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         // Only the (small) input baby cache is materialized here; with a plaintext
         // `lt` the matrix RHS itself is streamed inside the eval.
@@ -275,7 +275,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         // The dst-shaped working copy is carved from scratch (accounted for by
         // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
@@ -299,7 +299,7 @@ fn check_required_keys<BE: Backend, P, H, K>(
 ) -> Result<()>
 where
     K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GLWEAutomorphismKeyMap<K, BE>,
 {
     for rotation in lt.baby_steps().iter().copied() {
         ckks_ensure!(

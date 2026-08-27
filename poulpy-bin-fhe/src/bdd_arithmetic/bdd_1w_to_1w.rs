@@ -1,8 +1,7 @@
 use poulpy_core::{
     GLWECopy, GLWEPacking,
     layouts::{
-        GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GetGaloisElement,
-        ModuleCoreAlloc,
+        GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWEAutomorphismKeyMap, GLWEToBackendMut, GetGaloisElement, ModuleCoreAlloc,
     },
 };
 use poulpy_hal::{
@@ -45,7 +44,7 @@ where
         T: UnsignedInteger,
         C: GetBitCircuitInfo,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -66,7 +65,7 @@ where
         T: UnsignedInteger,
         C: GetBitCircuitInfo,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
         BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -101,7 +100,7 @@ macro_rules! define_bdd_1w_to_1w_trait {
                 ) where
                     M: ExecuteBDDCircuit1WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GLWEAutomorphismKeyMap<K, BE>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
                     Self: GLWEToBackendMut<BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut;
@@ -117,7 +116,7 @@ macro_rules! define_bdd_1w_to_1w_trait {
                 ) where
                     M: ExecuteBDDCircuit1WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GLWEAutomorphismKeyMap<K, BE>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
                     Self: GLWEToBackendMut<BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut;
@@ -141,7 +140,7 @@ macro_rules! impl_bdd_1w_to_1w_trait {
                 ) where
                     M: ExecuteBDDCircuit1WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GLWEAutomorphismKeyMap<K, BE>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
                     for<'a> BE::BufMut<'a>: HostDataMut,
                 {
@@ -158,7 +157,7 @@ macro_rules! impl_bdd_1w_to_1w_trait {
                 ) where
                     M: ExecuteBDDCircuit1WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GLWEAutomorphismKeyMap<K, BE>,
                     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
                     for<'a> BE::BufMut<'a>: HostDataMut,
                 {

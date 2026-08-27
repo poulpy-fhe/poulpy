@@ -11,7 +11,7 @@
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+    GGLWEInfos, GLWEAutomorphismKeyMap, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
     LinearTransformation,
     prepared::{GGLWEPreparedToBackendRef, LinearTransformationBabySteps, PreparedDiagonal},
 };
@@ -80,7 +80,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
     ) where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     /// Computes `res = M(a)` from the prepared left cache `lhs` (the input baby
     /// rotations) and the matrix `rhs`, generic over the diagonal representation
@@ -108,5 +108,5 @@ pub trait GLWELinearTransformations<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: crate::default::linear_transformation::DiagonalProd<BE>,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 }

@@ -35,7 +35,7 @@ use poulpy_core::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     layouts::{
         BackendGLWESecret, GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
+        GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyMap, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
         GLWEInfos, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
         GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
         GetGaloisElement, LWEInfos, ModuleCoreAlloc,
@@ -67,7 +67,7 @@ pub trait BootstrappingKeys<BE: Backend> {
         + GGLWEInfos;
 
     /// The rotation-key collection passed to the homomorphic DFT stages.
-    type RotationKeys: GLWEAutomorphismKeyHelper<Self::AutomorphismKey, BE>;
+    type RotationKeys: GLWEAutomorphismKeyMap<Self::AutomorphismKey, BE>;
 
     /// The prepared tensor (relinearization) key type for EvalMod.
     type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;

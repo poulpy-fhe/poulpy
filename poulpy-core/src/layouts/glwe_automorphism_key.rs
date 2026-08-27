@@ -15,7 +15,7 @@ use std::fmt;
 
 /// Provides lookup of automorphism keys by Galois element and access
 /// to the shared layout information.
-pub trait GLWEAutomorphismKeyHelper<K, BE: Backend> {
+pub trait GLWEAutomorphismKeyMap<K, BE: Backend> {
     /// Returns the automorphism key associated with the Galois element `k`, if present.
     fn get_automorphism_key(&self, k: i64) -> Option<&K>;
     /// Returns the [`GGLWELayout`] common to all stored automorphism keys.

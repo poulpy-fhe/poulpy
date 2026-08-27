@@ -6,7 +6,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
     layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEAutomorphismKeyHelper,
+        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEAutomorphismKeyMap,
         GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
@@ -338,13 +338,13 @@ pub unsafe trait GLWETraceImpl<BE: Backend>: Backend {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     fn glwe_trace_assign<R, K, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 }
 
 /// Backend-provided GLWE packing operations.
@@ -371,7 +371,7 @@ pub unsafe trait GLWEPackImpl<BE: Backend>: Backend {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 }
 
 unsafe impl<BE: Backend> GLWEMulConstImpl<BE> for BE
@@ -818,7 +818,7 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         let mut scratch_local = scratch.borrow();
         module.glwe_trace_default(res, skip, a, keys, &mut scratch_local)
@@ -828,7 +828,7 @@ where
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         let mut scratch_local = scratch.borrow();
         module.glwe_trace_assign_default(res, skip, keys, &mut scratch_local)
@@ -863,7 +863,7 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         let mut scratch_local = scratch.borrow();
         module.glwe_pack_default(res, a, log_gap_out, keys, &mut scratch_local)
@@ -913,7 +913,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GetGaloisElement
                     + $crate::layouts::GGLWEInfos,
-                H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
+                H: $crate::layouts::GLWEAutomorphismKeyMap<K, $be>,
             {
                 $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_default::<$be, _, _, _, _, _>(
                     self, res, skip, a, keys, scratch,
@@ -931,7 +931,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GetGaloisElement
                     + $crate::layouts::GGLWEInfos,
-                H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
+                H: $crate::layouts::GLWEAutomorphismKeyMap<K, $be>,
             {
                 $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_assign_default::<$be, _, _, _, _>(
                     self, res, skip, keys, scratch,
@@ -974,7 +974,7 @@ macro_rules! impl_glwe_packing_defaults_full {
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GetGaloisElement
                     + $crate::layouts::GGLWEInfos,
-                H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
+                H: $crate::layouts::GLWEAutomorphismKeyMap<K, $be>,
             {
                 $crate::default::glwe_packing::glwe_packing_defaults_impl::glwe_pack_default::<$be, _, _, _, _, _>(
                     self,

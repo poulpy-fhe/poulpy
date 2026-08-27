@@ -9,7 +9,7 @@ use poulpy_core::{
     GGSWExpandRows, GGSWFromGGLWE, GLWECopy, GLWEDecrypt, GLWENormalize, GLWEPacking, GLWERotate, GLWETrace,
     layouts::{
         Dsize, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
-        GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWEToBackendMut, GLWEToBackendRef,
+        GLWEAutomorphismKeyMap, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWEToBackendMut, GLWEToBackendRef,
         GetGaloisElement, LWEInfos, LWEToBackendRef, ModuleCoreAlloc, Rank,
     },
 };
@@ -416,7 +416,7 @@ fn post_process<R, A, M, H, K, BE>(
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GLWEAutomorphismKeyMap<K, BE>,
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     M: ModuleLogN
         + GLWETrace<BE>

@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyHelper,
-    GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+    GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyMap, GLWEInfos,
+    GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
     prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
 };
 
@@ -23,13 +23,13 @@ pub trait GLWETrace<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 
     fn glwe_trace_assign<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 }
 
 pub trait GLWEPacking<BE: Backend> {
@@ -51,7 +51,7 @@ pub trait GLWEPacking<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyMap<K, BE>;
 }
 
 pub trait GLWEMulConst<BE: Backend> {

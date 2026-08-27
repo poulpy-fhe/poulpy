@@ -10,7 +10,7 @@ use crate::{
     },
     default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
     layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyHelper,
+        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyMap,
         GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
@@ -401,7 +401,7 @@ impl_operations_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         BE::glwe_trace(self, res, skip, a, keys, scratch)
     },
@@ -409,7 +409,7 @@ impl_operations_delegate!(
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         BE::glwe_trace_assign(self, res, skip, keys, scratch)
     }
@@ -440,7 +440,7 @@ impl_operations_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GLWEAutomorphismKeyMap<K, BE>,
     {
         BE::glwe_pack(self, res, a, log_gap_out, keys, scratch)
     }

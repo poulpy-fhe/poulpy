@@ -9,7 +9,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
-    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWETensorKeyPreparedToBackendRef,
+    GLWEAutomorphismKeyMap, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWETensorKeyPreparedToBackendRef,
     GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
