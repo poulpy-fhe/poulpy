@@ -433,7 +433,7 @@ pub fn test_circuit_bootstrapping_to_constant<
 
     // Parameters are set such that the first limb should be noiseless.
     let mut pt_want: Vec<i64> = vec![0i64; module.n()];
-    pt_want[0] = pt_glwe.data_mut().at(0, 0)[0] * data;
+    pt_want[0] = pt_glwe.data().at(0, 0)[0].wrapping_mul(data);
     println!("pt_res: {pt_res}");
     assert_eq!(pt_res.data().at(0, 0), pt_want);
 }

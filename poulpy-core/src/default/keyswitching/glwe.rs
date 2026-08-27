@@ -228,7 +228,8 @@ pub fn gglwe_product_digits_strided_default<BE: Backend>(
 use poulpy_hal::{
     api::{
         VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalize,
+        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
     },
     layouts::{VecZnxBigToBackendRef, VecZnxToBackendRef},
 };
@@ -348,6 +349,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftNormalizeConsumeTmpBytes
         + VecZnxBigNormalizeTmpBytes
         + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
@@ -364,10 +366,13 @@ where
     let a_dft_size = a_infos.k().div_ceil(key_infos.base2k()) as usize;
     let lvl_0: usize = module.bytes_of_vec_znx_dft(output_cols, output_size);
     let lvl_1_big: usize = module.bytes_of_vec_znx_big(output_cols, output_size);
-    let lvl_1: usize = lvl_1_big
-        + module
-            .vec_znx_idft_apply_tmp_bytes()
-            .max(module.vec_znx_big_normalize_tmp_bytes());
+    let consume_tmp: usize = module.vec_znx_idft_normalize_consume_tmp_bytes(output_size, output_size);
+    let lvl_1: usize = consume_tmp.max(
+        lvl_1_big
+            + module
+                .vec_znx_idft_apply_tmp_bytes()
+                .max(module.vec_znx_big_normalize_tmp_bytes()),
+    );
     let lvl_2: usize = if a_infos.base2k() != key_infos.base2k() {
         let small_term_tmp: usize = BE::bytes_of_vec_znx(module.n(), 1, output_size);
         let a_conv_infos: GLWELayout = GLWELayout {
@@ -380,12 +385,14 @@ where
         let lvl_2_1: usize = module
             .glwe_normalize_tmp_bytes_default()
             .max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos));
-        let lvl_2_2: usize = lvl_1_big
-            + small_term_tmp
-            + module
-                .vec_znx_idft_apply_tmp_bytes()
-                .max(module.vec_znx_big_normalize_tmp_bytes())
-                .max(module.vec_znx_normalize_tmp_bytes());
+        let lvl_2_2: usize = small_term_tmp
+            + consume_tmp.max(
+                lvl_1_big
+                    + module
+                        .vec_znx_idft_apply_tmp_bytes()
+                        .max(module.vec_znx_big_normalize_tmp_bytes())
+                        .max(module.vec_znx_normalize_tmp_bytes()),
+            );
         lvl_2_0 + lvl_2_1.max(lvl_2_2)
     } else {
         lvl_1.max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, output_size, a_dft_size, key_infos))
@@ -402,11 +409,8 @@ where
         + ModuleN
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
-        + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigBytesOf
-        + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftApply<BE>
+        + VecZnxIdftNormalizeConsume<BE>
         + VecZnxNormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -464,11 +468,7 @@ where
         glwe_keyswitch_dft_fill(module, &mut res_dft, a, &key, &mut scratch.borrow());
     }
 
-    let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, output_size);
-    let res_dft_ref = res_dft.to_backend_ref();
-    for i in 0..cols {
-        module.vec_znx_idft_apply(&mut res_big, i, &res_dft_ref, i, &mut scratch.borrow());
-    }
+    let mut res_ref = res.to_backend_mut();
     if a_base2k != key_base2k {
         let (mut res_small, mut scratch_2) = scratch.borrow().take_vec_znx_scratch(module.n(), 1, output_size);
         module.vec_znx_normalize(
@@ -482,23 +482,34 @@ where
             &mut scratch_2.borrow(),
         );
         let res_small_ref = res_small.to_backend_ref();
-        module.vec_znx_big_add_small_assign(&mut res_big, 0, &res_small_ref, 0);
+        for i in 0..cols {
+            let addend = (i == 0).then_some((&res_small_ref, 0));
+            module.vec_znx_idft_normalize_consume(
+                &mut res_ref.data,
+                res_base2k,
+                i,
+                &mut res_dft,
+                i,
+                key_base2k,
+                addend,
+                &mut scratch_2.borrow(),
+            );
+        }
     } else {
-        module.vec_znx_big_add_small_assign(&mut res_big, 0, &a.to_backend_ref().data, 0);
-    }
-    let res_big_ref = res_big.to_backend_ref();
-    let mut res_ref = res.to_backend_mut();
-    for i in 0..cols {
-        module.vec_znx_big_normalize(
-            &mut res_ref.data,
-            res_base2k,
-            0,
-            i,
-            &res_big_ref,
-            key_base2k,
-            i,
-            &mut scratch.borrow(),
-        );
+        let a_ref = a.to_backend_ref();
+        for i in 0..cols {
+            let addend = (i == 0).then_some((&a_ref.data, 0));
+            module.vec_znx_idft_normalize_consume(
+                &mut res_ref.data,
+                res_base2k,
+                i,
+                &mut res_dft,
+                i,
+                key_base2k,
+                addend,
+                &mut scratch.borrow(),
+            );
+        }
     }
 }
 
