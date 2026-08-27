@@ -159,8 +159,20 @@ where
     // Inputs and the oracle are built here and uploaded, so the test does not
     // require the backend's own buffers to be host-resident.
     let host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
-    // (parent dsize, parent dnum, coarsening factor, input limbs)
-    let cases: [(u32, u32, u32, usize); 5] = [(1, 8, 2, 4), (1, 12, 4, 6), (2, 8, 2, 5), (2, 6, 3, 6), (4, 4, 2, 8)];
+    // (parent dsize, parent dnum, coarsening factor, input limbs). `s == 1` is a
+    // key used natively but below its capacity: fewer active rows and a shorter
+    // prefix than it stores, which is the case output parity alone cannot see.
+    let cases: [(u32, u32, u32, usize); 9] = [
+        (1, 8, 1, 4),
+        (1, 8, 2, 4),
+        (1, 12, 3, 4),
+        (1, 12, 4, 6),
+        (2, 8, 1, 6),
+        (2, 8, 2, 5),
+        (2, 6, 3, 6),
+        (4, 4, 1, 8),
+        (4, 4, 2, 8),
+    ];
 
     for (dsize, dnum, s, input_size) in cases {
         let parent = GGLWELayout {
@@ -210,6 +222,25 @@ where
 
         let mut mat = host.mat_znx_alloc(rows, cols_in, cols_out, size);
         mat.fill_uniform(base2k, &mut source);
+
+        // Poison every row the bound does not select. The oracle is built from
+        // the selected rows only, so reading a skipped one changes the result.
+        //
+        // Only rows are poisoned. How many limbs of a selected row a digit
+        // product reads is not agreed between backends: fft64 stops at
+        // `res.size()`, ntt4x30 at `res.size() + limb_offset`, so a poisoned
+        // suffix fails there for reasons that have nothing to do with the bound.
+        {
+            let selected: Vec<usize> = (0..sel_rows).map(|i| use_.first_physical_row + i * s as usize).collect();
+            let mat_ncols = cols_out * size;
+            for row in (0..rows).filter(|row| !selected.contains(row)) {
+                for c in 0..cols_in {
+                    let flat = row * cols_in + c;
+                    let at = n as usize * flat * mat_ncols;
+                    mat.raw_mut()[at..at + n as usize * mat_ncols].fill(i64::MIN + 1);
+                }
+            }
+        }
 
         // Oracle: the selected rows and limb prefixes, densely prepared.
         let (mat_ncols, sel_ncols) = (cols_out * size, cols_out * sel_size);
@@ -273,11 +304,58 @@ where
             &mut scratch.borrow(),
         );
 
-        assert_eq!(
-            BE::to_host_bytes(&have.data),
-            BE::to_host_bytes(&want.data),
-            "selected product mismatch for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
-        );
+        // The dense-copy oracle only applies where the bound is gathered: a
+        // contiguous bound is read in place at the stored pitch, and how many
+        // limbs of it an accumulating digit reads is backend-defined (fft64
+        // stops at `res.size()`, ntt4x30 at `res.size() + limb_offset`), so a
+        // limb-truncated copy is not the same computation there.
+        if s > 1 {
+            assert_eq!(
+                BE::to_host_bytes(&have.data),
+                BE::to_host_bytes(&want.data),
+                "selected product mismatch for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
+            );
+        }
+
+        // Whatever the bound reads, it is not the skipped rows: refilling them
+        // must not move the output.
+        {
+            let selected: Vec<usize> = (0..sel_rows).map(|i| use_.first_physical_row + i * s as usize).collect();
+            let mut refilled = mat.clone();
+            // Poison in `mat`, zeros here: the two agree only if neither is read.
+            for row in (0..rows).filter(|row| !selected.contains(row)) {
+                for c in 0..cols_in {
+                    let at = n as usize * (row * cols_in + c) * mat_ncols;
+                    refilled.raw_mut()[at..at + n as usize * mat_ncols].fill(0);
+                }
+            }
+            let mut refilled_pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
+            module.vmp_prepare(
+                &mut refilled_pmat.to_backend_mut(),
+                &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&refilled)),
+                &mut scratch.borrow(),
+            );
+            let refilled_key = GGLWEPrepared {
+                data: refilled_pmat.to_backend_ref(),
+                k_aux: parent.k_aux,
+                base2k: parent.base2k,
+                dsize: parent.dsize,
+            };
+            let mut other = module.vec_znx_dft_alloc(cols_out, sel_size);
+            module.gglwe_product_dft_default(
+                &mut other.to_backend_mut(),
+                &a_dft.to_backend_ref(),
+                &refilled_key,
+                &use_,
+                1,
+                &mut scratch.borrow(),
+            );
+            assert_eq!(
+                BE::to_host_bytes(&have.data),
+                BE::to_host_bytes(&other.data),
+                "skipped rows changed the output for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
+            );
+        }
 
         // A key whose stored shape disagrees with the bound it was resolved from
         // is rejected before dispatch. `dense_use` is contiguous, so nothing

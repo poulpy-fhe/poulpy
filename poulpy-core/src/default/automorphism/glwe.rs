@@ -23,26 +23,16 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     default::{
-        keyswitching::glwe::bound_for,
+        keyswitching::glwe::bound_layout,
         keyswitching::{GLWEKeyswitchInternal, gglwe_product_output_size},
         operations::GLWENormalizeDefault,
     },
     layouts::{
-        GGLWEInfos, GGLWELayout, GGLWEUse, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, TorusPrecision,
+        GGLWEInfos, GGLWELayout, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
         prepared::GGLWEPreparedToBackendRef,
     },
     oep::{GLWEAutomorphismDefault, GLWEKeyswitchDefault},
 };
-
-/// The layout every size here is computed from: the key as it is bound for the
-/// operation's input precision, never the physical metadata a `with_dsize`
-/// wrapper still forwards.
-fn bound_layout<K: GGLWEInfos>(key: &K, input_k: TorusPrecision) -> GGLWELayout {
-    match bound_for(key, input_k) {
-        GGLWEUse::Empty => key.gglwe_layout(),
-        GGLWEUse::Active(active) => active.logical_layout,
-    }
-}
 
 pub fn glwe_automorphism_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where

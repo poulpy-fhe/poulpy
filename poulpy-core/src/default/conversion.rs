@@ -21,7 +21,7 @@ use poulpy_hal::{
 use crate::{
     GLWERotate, ScratchArenaTakeCore,
     default::{
-        keyswitching::glwe::bound_for,
+        keyswitching::glwe::{bound_for, bound_layout},
         keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
         operations::GLWECopyDefault,
     },
@@ -499,11 +499,11 @@ where
     let cols: usize = rank + 1;
 
     let a_size: usize = res_infos.k().as_usize().div_ceil(tsk_base2k);
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, res_infos, tsk_infos);
+    let input_k: TorusPrecision = TorusPrecision((a_size * tsk_base2k) as u32);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, res_infos, &bound_layout(tsk_infos, input_k));
 
     let lvl_0: usize = module.bytes_of_vec_znx_dft(cols - 1, a_size) + BE::bytes_of_vec_znx(module.n(), 1, a_size);
     let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(cols, output_size);
-    let input_k: TorusPrecision = TorusPrecision((a_size * tsk_base2k) as u32);
     let lvl_1_gglwe_prod: usize = match bound_for(tsk_infos, input_k) {
         GGLWEUse::Empty => 0,
         GGLWEUse::Active(active) => module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, &active),
@@ -537,9 +537,10 @@ where
 {
     let mut res_backend = res.to_backend_mut();
 
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_backend, &res_backend, tsk);
     let res_base2k: usize = res_backend.base2k().into();
     let tsk_base2k: usize = tsk.base2k().into();
+    let input_k: TorusPrecision = TorusPrecision((res_backend.k().as_usize().div_ceil(tsk_base2k) * tsk_base2k) as u32);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_backend, &res_backend, &bound_layout(tsk, input_k));
 
     assert!(
         scratch.available() >= module.ggsw_expand_rows_tmp_bytes_default(&res_backend, tsk),

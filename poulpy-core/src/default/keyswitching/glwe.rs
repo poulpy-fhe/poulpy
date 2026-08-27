@@ -77,6 +77,16 @@ where
     }
 }
 
+/// The layout every size is computed from: the key as it is bound for the
+/// operation's input precision, never the physical metadata a `with_dsize`
+/// wrapper still forwards.
+pub fn bound_layout<K: GGLWEInfos>(key: &K, input_k: TorusPrecision) -> GGLWELayout {
+    match bound_for(key, input_k) {
+        GGLWEUse::Empty => key.gglwe_layout(),
+        GGLWEUse::Active(active) => active.logical_layout,
+    }
+}
+
 /// Binds a key for `input_k`, or fails loudly: the seam never falls back to the
 /// physical decomposition.
 ///

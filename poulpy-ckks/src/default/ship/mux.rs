@@ -1,7 +1,7 @@
 //! Hoisted base-B mux blind rotation (SHIP §5.1, Algorithm 5).
 
 use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::default::keyswitching::glwe::bound_for;
+use poulpy_core::default::keyswitching::glwe::{bound_for, bound_layout};
 use poulpy_core::layouts::GGLWEUse;
 use poulpy_core::layouts::TorusPrecision;
 use poulpy_core::{
@@ -57,8 +57,8 @@ where
     Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + GGLWEProductDefault<BE>,
 {
     let a_size = ct.size();
-    let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
     let input_k: TorusPrecision = TorusPrecision((a_size * key.base2k().as_usize()) as u32);
+    let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, &bound_layout(key, input_k), term_count);
     let product = match bound_for(key, input_k) {
         GGLWEUse::Empty => 0,
         GGLWEUse::Active(active) => module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, &active),
@@ -96,7 +96,9 @@ where
     ckks_ensure!(!keys.is_empty(), "{OP}: empty key group");
     let a_size = ct.size();
     let key_size = keys[0].key.size();
-    let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, &keys[0].key, keys.len());
+    let group_input_k: TorusPrecision = TorusPrecision((a_size * keys[0].key.base2k().as_usize()) as u32);
+    let output_size =
+        gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, &bound_layout(&keys[0].key, group_input_k), keys.len());
     let base2k = ct.base2k().as_usize();
     ckks_ensure!(
         keys[0].key.base2k().as_usize() == base2k,
