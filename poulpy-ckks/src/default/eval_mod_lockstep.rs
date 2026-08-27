@@ -26,9 +26,11 @@ use poulpy_core::{
     GLWECopy, GLWEPolynomialEvaluation, GLWEZero,
     default::polynomial_evaluation::giant_step_schedule,
     layouts::{
-        BSGSMeta, BSGSPolynomial, BSGSPolynomialInfos, Base2K, Degree, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared,
-        GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, Parity, PowerBasis, PowerBasisHelper, Rank, SetBSGSMeta,
-        TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef, split_degree,
+        BSGSMeta, BSGSPolynomial, BSGSPolynomialInfos, Base2K, Degree, GGLWEInfos, GLWEInfos, GLWELayout,
+        GLWERelinearizationKeyHelper, GLWERelinearizationKeyLayoutHelper, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos,
+        LWEInfos, Parity, PowerBasis, PowerBasisHelper, Rank, SetBSGSMeta, TorusPrecision,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        split_degree,
     },
 };
 use poulpy_hal::api::CnvPVecBytesOf;
@@ -196,17 +198,18 @@ fn transform_plan(transform: PolynomialInputTransform) -> Option<PowerPlan> {
 }
 
 /// Runs a [`PowerPlan`] on both branches, each product one two-item frontier.
-fn execute_power_plan<BE>(
+fn execute_power_plan<BE, H>(
     plan: &PowerPlan,
     basis: &mut [PowerBasis<Ct<BE>>; 2],
     module: &Module<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSLockstepOps<BE>,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     for product in &plan.products {
@@ -275,17 +278,18 @@ where
 
 /// [`polynomial_input`](crate::oep) for both branches: the working copy, then
 /// the transform's square as one two-item frontier.
-fn polynomial_input_pair<BE>(
+fn polynomial_input_pair<BE, H>(
     srcs: [&Ct<BE>; 2],
     transform: PolynomialInputTransform,
     module: &Module<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<[Ct<BE>; 2]>
 where
     BE: Backend,
     Module<BE>: CKKSLockstepOps<BE>,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let mut inputs: [Ct<BE>; 2] = [
@@ -316,17 +320,18 @@ where
 /// branch 0, ...) so a backend that consumes them two at a time gets the
 /// corresponding operation from each branch, and four at a time gets two
 /// sibling pairs from each.
-fn eval_giant_steps_pair<BE>(
+fn eval_giant_steps_pair<BE, H>(
     steps: &mut [Vec<BabyStepPair<BE>>; 2],
     basis: &[PowerBasis<Ct<BE>>; 2],
     module: &Module<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSLockstepOps<BE>,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     ckks_ensure!(
@@ -441,12 +446,12 @@ fn frontier_destinations<'a, BE: Backend>(
 /// Real BSGS polynomial over both branches: baby steps per branch (ct×pt only),
 /// then one lockstep giant-step fold.
 #[allow(clippy::too_many_arguments)]
-fn eval_poly_real_pair<BE, B>(
+fn eval_poly_real_pair<BE, B, H>(
     acc: &mut [Ct<BE>; 2],
     poly: &B,
     basis: &[PowerBasis<Ct<BE>>; 2],
     module: &Module<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -454,7 +459,8 @@ where
     Module<BE>: CKKSLockstepOps<BE>,
     B: BSGSPolynomialInfos<BE>,
     B::Coeffs: CKKSCtBounds,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let n_baby = poly.baby_steps();
@@ -515,19 +521,20 @@ where
 /// Complex BSGS polynomial over both branches. Same shape as
 /// [`eval_poly_real_pair`]: only the giant-step fold is a frontier.
 #[allow(clippy::too_many_arguments)]
-fn eval_poly_complex_pair<BE, C>(
+fn eval_poly_complex_pair<BE, C, H>(
     acc: &mut [Ct<BE>; 2],
     poly: &ComplexBSGSPolynomial<C>,
     basis: &[PowerBasis<Ct<BE>>; 2],
     module: &Module<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSLockstepOps<BE>,
     C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let poly_re = &poly.re;
@@ -650,19 +657,20 @@ where
 
 /// Power basis + baby steps + giant steps over both branches, from ready
 /// power-basis roots.
-fn eval_stage_from_roots_pair<BE, P>(
+fn eval_stage_from_roots_pair<BE, P, H>(
     acc: &mut [Ct<BE>; 2],
     roots: [Ct<BE>; 2],
     bsgs: &StageBsgs<'_, P>,
     module: &Module<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSLockstepOps<BE>,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let [x0, x1] = roots;
@@ -692,19 +700,20 @@ where
 
 /// One full BSGS stage over both branches: input transform, evaluation, and the
 /// `TimesInput` tail.
-fn eval_stage_pair<BE, P>(
+fn eval_stage_pair<BE, P, H>(
     acc: &mut [Ct<BE>; 2],
     inputs: [Ct<BE>; 2],
     bsgs: &StageBsgs<'_, P>,
     module: &Module<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSLockstepOps<BE>,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let transform = stage_input_transform::<BE, P>(bsgs)?;
@@ -934,11 +943,11 @@ impl Frontier {
 
     /// The advertised scratch of this frontier, queried through the public
     /// batch API with the item layouts the driver will really pass.
-    fn tmp_bytes<BE, T>(&self, module: &Module<BE>, tsk: &T) -> usize
+    fn tmp_bytes<BE, H>(&self, module: &Module<BE>, tsk: &H) -> usize
     where
         BE: Backend,
         Module<BE>: CKKSMulOps<BE>,
-        T: GGLWEInfos,
+        H: GLWERelinearizationKeyLayoutHelper,
     {
         match self {
             Frontier::MulInto(items) => {
@@ -1482,14 +1491,14 @@ where
 /// terms 2 and 3 alone; a backend that carves its working set from the arena is
 /// covered by the full number.
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_eval_mod_pair_lockstep_tmp_bytes_default<BE, R0, R1, C0, C1, P, F, T>(
+pub fn ckks_eval_mod_pair_lockstep_tmp_bytes_default<BE, R0, R1, C0, C1, P, F, H>(
     module: &Module<BE>,
     res_0: &R0,
     res_1: &R1,
     ct_0: &C0,
     ct_1: &C1,
     params: &EvalMod<F, P>,
-    tsk: &T,
+    tsk: &H,
 ) -> usize
 where
     BE: Backend,
@@ -1499,7 +1508,7 @@ where
     C0: CKKSCtBounds,
     C1: CKKSCtBounds,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
-    T: GGLWEInfos,
+    H: GLWERelinearizationKeyLayoutHelper,
 {
     let stages = super::eval_mod::ckks_eval_mod_tmp_bytes_default(module, res_0, ct_0, params, tsk).max(
         super::eval_mod::ckks_eval_mod_tmp_bytes_default(module, res_1, ct_1, params, tsk),
@@ -1547,14 +1556,14 @@ where
 ///
 /// [`ckks_eval_mod`]: crate::api::CKKSEvalModOps::ckks_eval_mod
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_eval_mod_pair_lockstep_default<BE, R0, R1, C0, C1, P, F>(
+pub fn ckks_eval_mod_pair_lockstep_default<BE, R0, R1, C0, C1, P, F, H>(
     module: &Module<BE>,
     res_0: &mut R0,
     res_1: &mut R1,
     ct_0: &C0,
     ct_1: &C1,
     params: &EvalMod<F, P>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -1565,7 +1574,8 @@ where
     C0: GLWEToBackendRef<BE> + CKKSCtBounds,
     C1: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let s_eval = params.plan.f_mod_log_delta;
@@ -1690,16 +1700,17 @@ where
 }
 
 /// The two range-extension squares of one level, as one frontier.
-fn square_assign_frontier<BE>(
+fn square_assign_frontier<BE, H>(
     acc: &mut [Ct<BE>; 2],
     module: &Module<BE>,
-    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: CKKSLockstepOps<BE>,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     Ct<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let (first, second) = acc.split_at_mut(1);

@@ -115,6 +115,20 @@ impl<K: GGLWEInfos> GLWERelinearizationKeyHelper for GGLWESingleKey<(), K> {
     }
 }
 
+impl<L: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<L> for GGLWESingleKey<i64, L> {
+    fn get_automorphism_key_layout_for(&self, p: i64, k: TorusPrecision) -> Result<(&L, Dsize)> {
+        self.registry.key_for(&p, k)
+    }
+}
+
+impl<L: GGLWEInfos> GLWERelinearizationKeyLayoutHelper for GGLWESingleKey<(), L> {
+    type Layout = L;
+
+    fn get_relinearization_key_layout_for(&self, k: TorusPrecision) -> Result<(&L, Dsize)> {
+        self.registry.key_for(&(), k)
+    }
+}
+
 /// A plain map answers with each key used through its own decomposition, which
 /// is what callers holding no policy expect.
 impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for HashMap<i64, K> {

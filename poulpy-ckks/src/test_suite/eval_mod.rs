@@ -1,7 +1,7 @@
 use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::{
-    BSGSPolynomial, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, bsgs_op_counts,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    BSGSPolynomial, GGLWEInfos, GGLWEKeyUsePolicy, GGLWESingleKey, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut,
+    GLWEToBackendRef, LWEInfos, bsgs_op_counts, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -508,16 +508,21 @@ where
     // arena would.
     let shapes = lockstep_frontier_shapes::<BE, _, _, _, _, _, F>(&lock_0, &lock_1, &inputs[0], &inputs[1], &params_be)
         .expect("frontier shapes");
+    // Driven by a policy helper rather than a bare key, so every frontier
+    // resolves its key at the precision it works at, on both the sizing and the
+    // execution path.
+    let policy = GGLWEKeyUsePolicy::new(
+        test_params.base2k.into(),
+        (0..=test_params.tsk_layout().max_size())
+            .map(|_| test_params.dsize.into())
+            .collect(),
+    )
+    .expect("uniform policy");
+    let key_layouts = GGLWESingleKey::new((), test_params.tsk_layout(), policy.clone()).expect("layout helper");
+    let keys = GGLWESingleKey::new((), tsk, policy).expect("key helper");
     before_lockstep();
-    let lock_bytes = ckks_eval_mod_pair_lockstep_tmp_bytes_default(
-        module,
-        &lock_0,
-        &lock_1,
-        &inputs[0],
-        &inputs[1],
-        &params_be,
-        &test_params.tsk_layout(),
-    );
+    let lock_bytes =
+        ckks_eval_mod_pair_lockstep_tmp_bytes_default(module, &lock_0, &lock_1, &inputs[0], &inputs[1], &params_be, &key_layouts);
     let mut lock_scratch = ScratchOwned::<BE>::alloc(lock_bytes);
     ckks_eval_mod_pair_lockstep_default(
         module,
@@ -526,7 +531,7 @@ where
         &inputs[0],
         &inputs[1],
         &params_be,
-        &tsk,
+        &keys,
         &mut lock_scratch.borrow(),
     )
     .expect("ckks_eval_mod_pair_lockstep");

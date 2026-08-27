@@ -43,6 +43,8 @@
 - Add `giant_step_schedule` / `GiantStepPair`, the giant-step fold schedule shared by the engine and the lockstep EvalMod driver.
 - Add `BSGSOps::mul_prepared_assign_batch` with a sequential provided default; `eval_giant_steps` dispatches each level's ready frontier as one batch.
 - The BSGS giant-step loop and the planner both skip empty diagonal buckets.
+- **Breaking:** `BSGSOps::mul_prepared_assign_batch` takes a relinearization-key source rather than one key, like the scalar form.
+- `GGLWESingleKey` implements the automorphism and relinearization layout helpers, so a policy-driven single key sizes scratch as well as it executes.
 
 ### `poulpy-ckks`
 
@@ -66,6 +68,7 @@
 - Add `CKKSMulAddOps::ckks_mul_add_pt_consts_into`, the ordered batch of `ckks_mul_add_pt_const_into`, with the `CKKSMulImpl::ckks_mul_add_pt_consts_into_impl` hook (provided) and the `CKKSMulDefault` per-method override; `ckks_mul_add_pt_consts_plan` walks a virtual destination to emit the per-term `CKKSMulAddPtConstPlan` before `dst` is mutated, and scratch is that of one term. `get_mul_pt_params` / `mul_pt_params_raw` are public.
 - Add `EvalModType::CosHKEven`: the `CosHK` fit recentred on `x - 1/4` and `T₂`-folded, via `cosine::approximate_cos_centered` and `EvalModPlan::{input_offset, mirrored_clusters, folds_even_base}`. `compile_eval_mod` rejects a plan the variant cannot evaluate below `CosHK`'s cost.
 - `DFTMatrix::factors()` is public, replacing `factor_operands()`.
+- **Breaking:** the CKKS batch operations and the lockstep EvalMod, execution and scratch query alike, take a relinearization-key source rather than one tensor key, resolved at the exact precision of each frontier.
 
 ## [0.8.2] - 2026-08-22
 
