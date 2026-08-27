@@ -4,7 +4,7 @@ use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
     SetBSGSMeta, TorusPrecision,
 };
-use poulpy_hal::api::CnvPVecBytesOf;
+use poulpy_hal::api::{CnvPVecBytesOf, Convolution, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::SlotsKind;
@@ -57,7 +57,14 @@ impl CKKSInfos for EvalModWorkCtInfos {
 
 impl<BE: Backend + CKKSEvalModImpl<BE>> CKKSEvalModOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CnvPVecBytesOf,
+    Module<BE>: CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSCopyOps<BE>
+        + CnvPVecBytesOf
+        + Convolution<BE>
+        + VecZnxRshTmpBytes
+        + VecZnxBigNormalizeTmpBytes,
 {
     fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
     where
@@ -109,6 +116,19 @@ where
                         || poly.im.input_transform() != PolynomialInputTransform::Identity
                 }
             };
+        // Working set of the fused baby-step linear combination.
+        let pt_size_max = {
+            let poly_max =
+                |poly: &crate::polynomial::BSGSPolynomial<P>| poly.baby_steps().iter().map(|c| c.size()).max().unwrap_or(0);
+            let base = match &params.f_mod_bsgs {
+                EvalModBsgs::Real(poly) => poly_max(poly),
+                EvalModBsgs::Complex(poly) => poly_max(&poly.re).max(poly_max(&poly.im)),
+            };
+            base.max(params.f_mod_inv_bsgs.as_ref().map_or(0, poly_max))
+        };
+        let fused_baby =
+            crate::default::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(self, work.max_size(), pt_size_max);
+
         usize::from(needs_work_copy) * compact_work
             + self
                 .ckks_copy_tmp_bytes()
@@ -116,6 +136,7 @@ where
                 .max(self.ckks_sub_pt_const_tmp_bytes())
                 .max(bsgs_giant)
                 .max(square_scope)
+                .max(fused_baby)
     }
 
     fn ckks_eval_mod<R, C, P, F>(

@@ -74,13 +74,13 @@ where
 
 /// Replays the circuit on its retained polynomials: base polynomial, then the
 /// range-extension squarings, then the optional arcsine post-composition. The
-/// circuit feeds the encrypted value straight into the bare Chebyshev
-/// recurrence, so the polynomial is evaluated directly at `t`.
+/// centred variants first apply their input offset.
 fn oracle_polynomial<F, P>(params: &EvalMod<F, P>, _lit: &EvalModPlan, t: F) -> (F, F)
 where
     F: TestScalar,
 {
     let two = F::one() + F::one();
+    let t = t + params.plan.input_offset::<F>().unwrap_or_else(F::zero);
     match &params.f_mod_poly {
         EvalModPoly::Complex(poly) => {
             let (mut re, mut im) = poly.evaluate(t);
@@ -90,7 +90,6 @@ where
             (re, im)
         }
         EvalModPoly::Real(poly) => {
-            // The CosCheby phase shift is baked into `poly`, so evaluate at `t` directly.
             let mut p = poly.evaluate(t);
             let s = params.range_extension_scale();
             for i in 0..params.plan.f_mod_log_interval_reduction {
@@ -116,7 +115,7 @@ where
     F: TestScalar,
 {
     let amp = F::from_f64(params.plan.scaling.unwrap_or(1.0) * std::f64::consts::TAU.recip()).unwrap();
-    let x = F::from_usize(lit.f_mod_interval).unwrap() * t;
+    let x = t / F::from_f64(lit.input_scaling().unwrap()).unwrap();
     let theta = two_pi::<F>() * x;
     if matches!(lit.eval_mod_type, EvalModType::ExpCmplx) {
         return (amp * theta.cos(), amp * theta.sin());
@@ -151,6 +150,8 @@ fn run_eval_mod_case<BE, F, E>(
         ScratchOwned::<BE>::alloc(CKKSEncodingHostOps::<BE, F>::ckks_reim_tmp_bytes(module, module.n() / 2));
     let params_be =
         compile_eval_mod::<BE, F>(params.base2k.into(), lit, module, &mut compile_scratch.borrow()).expect("compile_eval_mod");
+    assert_eq!(lit.consumed_bits(), params_be.consumed_bits(), "{label}: consumed bits");
+    assert_eq!(lit.eval_depth(), params_be.eval_depth(), "{label}: eval depth");
 
     // Input message scale, below the plan scale so EvalMod's internal raise to
     // `f_mod_log_delta` is exercised.
@@ -176,22 +177,20 @@ fn run_eval_mod_case<BE, F, E>(
     let slots = test_params.n / 2;
     let encoder = ReferenceEncoder::<E>::new(slots).unwrap();
 
-    // Sample the plaintext as I·q + m : I is a
-    // random integer multiple in [-(interval-1), interval-1], m a message in
-    // [-1, 1], and q = MessageRatio (QDiff = 1 since poulpy's Q = 2^k). The
-    // encrypted value is the normalized Chebyshev variable t = (I·q + m)/(q·interval).
+    // Sample I·q + m over the input range represented by the plan scaling.
     let mr = (1u64 << lit.log_msg_ratio) as f64;
-    let interval = lit.f_mod_interval as f64;
-    let k = (lit.f_mod_interval - 1) as f64;
+    let input_scaling = lit.input_scaling().unwrap();
+    let integer_bound = (input_scaling.recip() - mr.recip()).floor().max(0.0);
     let mut source = Source::new([0u8; 32]);
     let mut x_re_raw: Vec<F> = (0..slots)
         .map(|_| {
-            let value = source.next_f64(-k, k).round() * mr + source.next_f64(-1.0, 1.0);
-            F::from_f64(value / (mr * interval)).unwrap()
+            let value = source.next_f64(-integer_bound, integer_bound).round() * mr + source.next_f64(-1.0, 1.0);
+            F::from_f64(value * input_scaling / mr).unwrap()
         })
         .collect();
-    // Worst-case slot: largest integer multiple plus a half-message.
-    x_re_raw[0] = F::from_f64((k * mr + 0.5) / (mr * interval)).unwrap();
+    // Worst-case slots: both outer integer multiples plus a half-message.
+    x_re_raw[0] = F::from_f64((integer_bound * mr + 0.5) * input_scaling / mr).unwrap();
+    x_re_raw[1] = F::from_f64(-(integer_bound * mr + 0.5) * input_scaling / mr).unwrap();
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
 
     let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
@@ -414,4 +413,33 @@ where
         f_mod_log_delta: 60,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_exp", lit, 18.0);
+}
+
+pub fn test_eval_mod_cos_discrete_even<BE, F, E>(
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let lit = EvalModPlan {
+        eval_mod_type: EvalModType::CosHKEven,
+        log_msg_ratio: 8,
+        f_mod_degree: 30,
+        f_mod_interval: 16,
+        f_mod_log_interval_reduction: 3,
+        f_mod_inv_degree: None,
+        scaling: None,
+        split_strategy: SplitStrategy::MinDepth,
+        coeffs_meta: CoeffsMeta::from_delta_budget(0, 0),
+        f_mod_log_delta: 60,
+    };
+    assert!(lit.folds_even_base());
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete_even", lit, 18.0);
 }

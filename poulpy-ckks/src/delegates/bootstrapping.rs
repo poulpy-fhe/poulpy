@@ -124,7 +124,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+        F: Sync,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
     {
         BootstrappingDefault::new(self).ckks_bootstrap_default(ct_out, ct_in, ctx, keys, scratch)
     }
