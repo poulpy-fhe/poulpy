@@ -1,6 +1,10 @@
 #[cfg(feature = "enable-ifma")]
 use crate::NTT3x42Ifma;
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+use crate::NTT3x42IfmaRayon;
 use crate::{FFT64Avx512, NTT4x30Avx512};
+#[cfg(feature = "enable-rayon")]
+use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 use poulpy_core::{
     default::operations::{
         GLWETensoringDefault, cnv_offset_to_limb_offset, msb_mask_bottom_limb, normalize_input_limb_bound_with_offset,
@@ -27,7 +31,11 @@ use poulpy_hal::{
 };
 
 impl_glwe_tensoring_default!(FFT64Avx512);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_tensoring_default!(FFT64Avx512Rayon);
 impl_gglwe_product_digits_strided_default!(FFT64Avx512);
+#[cfg(feature = "enable-rayon")]
+impl_gglwe_product_digits_strided_default!(FFT64Avx512Rayon);
 
 trait RankOneTensorDft: Backend {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize;
@@ -61,6 +69,35 @@ impl RankOneTensorDft for NTT4x30Avx512 {
     }
 }
 
+#[cfg(feature = "enable-rayon")]
+impl RankOneTensorDft for NTT4x30Avx512Rayon {
+    fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+        crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512_tmp_bytes(res_size, a_size, b_size)
+    }
+
+    fn rank_one_tensor_dft(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        cnv_offset: usize,
+        a: &CnvPVecLBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512(
+                module.reinterpret(),
+                &mut crate::ntt4x30_avx512::rayon::base_dft_mut(res),
+                cnv_offset,
+                &crate::ntt4x30_avx512::rayon::base_cnv_l_ref(a),
+                &crate::ntt4x30_avx512::rayon::base_cnv_r_ref(b),
+                tmp,
+            )
+        };
+    }
+}
+
 #[cfg(feature = "enable-ifma")]
 impl RankOneTensorDft for NTT3x42Ifma {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
@@ -77,7 +114,45 @@ impl RankOneTensorDft for NTT3x42Ifma {
     ) {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        unsafe { crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma(res, cnv_offset, a, b, tmp) };
+        unsafe {
+            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
+                res, cnv_offset, a, b, tmp,
+            )
+        };
+    }
+}
+
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+impl RankOneTensorDft for NTT3x42IfmaRayon {
+    fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
+            * crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res_size, a_size, b_size)
+    }
+
+    fn rank_one_tensor_dft(
+        _module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        cnv_offset: usize,
+        a: &CnvPVecLBackendRef<'_, Self>,
+        b: &CnvPVecRBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let per_worker = crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            crate::ntt3x42_ifma::convolution::cnv_tensor_rank1_dft_ifma::<crate::NTT3x42IfmaRayonExecutor>(
+                &mut crate::ntt3x42_ifma::rayon::base_dft_mut(res),
+                cnv_offset,
+                &crate::ntt3x42_ifma::rayon::base_cnv_l_ref(a),
+                &crate::ntt3x42_ifma::rayon::base_cnv_r_ref(b),
+                tmp,
+            )
+        };
     }
 }
 
@@ -183,8 +258,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         in_base2k,
         cnv_offset_lo,
     );
-    let (mut diag_terms, scratch) = scratch.borrow().take_vec_znx_scratch(module.n(), 2, res.size());
-    let (mut tensor_dft, mut work) = scratch.take_vec_znx_dft_scratch(module, 3, dft_size);
+    let (mut tensor_dft, mut work) = scratch.borrow().take_vec_znx_dft_scratch(module, 3, dft_size);
     BE::rank_one_tensor_dft(
         module,
         &mut tensor_dft.to_backend_mut(),
@@ -194,7 +268,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         &mut work,
     );
 
-    for (dft_col, diag_col, res_col) in [(0, 0, 0), (2, 1, 2)] {
+    for (dft_col, res_col) in [(0, 0), (2, 2)] {
         let (mut product_big, mut norm_scratch) = work.borrow().take_vec_znx_big_scratch(module, 1, dft_size);
         module.vec_znx_idft_apply_tmpa(
             &mut product_big.to_backend_mut(),
@@ -203,20 +277,14 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
             dft_col,
         );
         module.vec_znx_big_normalize(
-            &mut diag_terms.to_backend_mut(),
+            res.to_backend_mut().data_mut(),
             res_base2k,
             cnv_offset_lo,
-            diag_col,
+            res_col,
             &product_big.to_backend_ref(),
             in_base2k,
             0,
             &mut norm_scratch,
-        );
-        module.vec_znx_copy_backend(
-            res.to_backend_mut().data_mut(),
-            res_col,
-            &diag_terms.to_backend_ref(),
-            diag_col,
         );
     }
 
@@ -235,9 +303,9 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     );
     {
         let mut pairwise = pairwise.to_backend_mut();
-        let diag_terms = diag_terms.to_backend_ref();
-        module.vec_znx_sub_assign_backend(&mut pairwise, 0, &diag_terms, 0);
-        module.vec_znx_sub_assign_backend(&mut pairwise, 0, &diag_terms, 1);
+        let res_ref = res.to_backend_ref();
+        module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 0);
+        module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 2);
     }
     module.vec_znx_copy_backend(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
 }
@@ -445,8 +513,12 @@ macro_rules! impl_rank_one_tensoring {
 }
 
 impl_rank_one_tensoring!(NTT4x30Avx512);
+#[cfg(feature = "enable-rayon")]
+impl_rank_one_tensoring!(NTT4x30Avx512Rayon);
 #[cfg(feature = "enable-ifma")]
 impl_rank_one_tensoring!(NTT3x42Ifma);
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+impl_rank_one_tensoring!(NTT3x42IfmaRayon);
 
 unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     fn gglwe_product_digits_strided_tmp_bytes(
@@ -484,7 +556,15 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512> for N
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx(module, res, a, dsize, product_limbs, pmat, tmp);
+        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+            module,
+            res,
+            a,
+            dsize,
+            product_limbs,
+            pmat,
+            tmp,
+        );
     }
 }
 
@@ -525,7 +605,15 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42Ifma> for NTT
             pmat.size(),
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma(module, res, a, dsize, product_limbs, pmat, tmp);
+        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
+            module,
+            res,
+            a,
+            dsize,
+            product_limbs,
+            pmat,
+            tmp,
+        );
     }
 }
 
@@ -608,3 +696,80 @@ impl_linear_transformation_defaults_full!(FFT64Avx512);
 impl_linear_transformation_defaults_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 impl_linear_transformation_defaults_full!(NTT3x42Ifma);
+
+#[cfg(feature = "enable-rayon")]
+impl_glwe_automorphism_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_ggsw_automorphism_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_gglwe_automorphism_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_decryption_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_trace_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_packing_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_conversion_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_keyswitch_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_gglwe_keyswitch_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_ggsw_keyswitch_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_lwe_keyswitch_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_encryption_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_glwe_external_product_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_gglwe_external_product_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_ggsw_external_product_defaults_full!(FFT64Avx512Rayon);
+#[cfg(feature = "enable-rayon")]
+impl_linear_transformation_defaults_full!(FFT64Avx512Rayon);
+
+#[cfg(feature = "enable-rayon")]
+mod ntt4x30_rayon_defaults {
+    use super::*;
+
+    impl_glwe_automorphism_defaults_full!(NTT4x30Avx512Rayon);
+    impl_ggsw_automorphism_defaults_full!(NTT4x30Avx512Rayon);
+    impl_gglwe_automorphism_defaults_full!(NTT4x30Avx512Rayon);
+    impl_decryption_defaults_full!(NTT4x30Avx512Rayon);
+    impl_glwe_trace_defaults_full!(NTT4x30Avx512Rayon);
+    impl_glwe_packing_defaults_full!(NTT4x30Avx512Rayon);
+    impl_conversion_defaults_full!(NTT4x30Avx512Rayon);
+    impl_glwe_keyswitch_defaults_full!(NTT4x30Avx512Rayon);
+    impl_gglwe_keyswitch_defaults_full!(NTT4x30Avx512Rayon);
+    impl_ggsw_keyswitch_defaults_full!(NTT4x30Avx512Rayon);
+    impl_lwe_keyswitch_defaults_full!(NTT4x30Avx512Rayon);
+    impl_encryption_defaults_full!(NTT4x30Avx512Rayon);
+    impl_glwe_external_product_defaults_full!(NTT4x30Avx512Rayon);
+    impl_gglwe_external_product_defaults_full!(NTT4x30Avx512Rayon);
+    impl_ggsw_external_product_defaults_full!(NTT4x30Avx512Rayon);
+    impl_linear_transformation_defaults_full!(NTT4x30Avx512Rayon);
+}
+
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+mod ifma_rayon_defaults {
+    use super::*;
+
+    impl_glwe_automorphism_defaults_full!(NTT3x42IfmaRayon);
+    impl_ggsw_automorphism_defaults_full!(NTT3x42IfmaRayon);
+    impl_gglwe_automorphism_defaults_full!(NTT3x42IfmaRayon);
+    impl_decryption_defaults_full!(NTT3x42IfmaRayon);
+    impl_glwe_trace_defaults_full!(NTT3x42IfmaRayon);
+    impl_glwe_packing_defaults_full!(NTT3x42IfmaRayon);
+    impl_conversion_defaults_full!(NTT3x42IfmaRayon);
+    impl_glwe_keyswitch_defaults_full!(NTT3x42IfmaRayon);
+    impl_gglwe_keyswitch_defaults_full!(NTT3x42IfmaRayon);
+    impl_ggsw_keyswitch_defaults_full!(NTT3x42IfmaRayon);
+    impl_lwe_keyswitch_defaults_full!(NTT3x42IfmaRayon);
+    impl_encryption_defaults_full!(NTT3x42IfmaRayon);
+    impl_glwe_external_product_defaults_full!(NTT3x42IfmaRayon);
+    impl_gglwe_external_product_defaults_full!(NTT3x42IfmaRayon);
+    impl_ggsw_external_product_defaults_full!(NTT3x42IfmaRayon);
+    impl_linear_transformation_defaults_full!(NTT3x42IfmaRayon);
+}

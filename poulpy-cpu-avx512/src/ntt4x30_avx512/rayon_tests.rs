@@ -7,13 +7,13 @@ use poulpy_hal::{
     },
 };
 
-use crate::FFT64Avx512;
+use crate::NTT4x30Avx512Rayon;
 
 cross_backend_test_suite! {
     mod vec_znx,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
-    backend_test = crate::FFT64Avx512,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
         test_vec_znx_add_into => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_into_backend_matches_reference,
         test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
@@ -57,9 +57,9 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod svp,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
-    backend_test = crate::FFT64Avx512,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
         test_svp_apply_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign,
@@ -68,9 +68,9 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_big,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
-    backend_test = crate::FFT64Avx512,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
         test_vec_znx_big_add_into => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_into,
         test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
@@ -93,9 +93,9 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_dft,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
-    backend_test = crate::FFT64Avx512,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
         test_vec_znx_dft_add_into => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_into,
         test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
@@ -113,10 +113,11 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vmp,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
-    backend_test = crate::FFT64Avx512,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
+        test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
         test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
     }
@@ -124,8 +125,8 @@ cross_backend_test_suite! {
 
 backend_test_suite! {
     mod sampling,
-    backend = crate::FFT64Avx512,
-    params = TestParams { size: 1<<12, base2k: 12 },
+    backend = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<12, base2k: 50 },
     tests = {
         test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
         test_vec_znx_fill_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_normal,
@@ -135,49 +136,84 @@ backend_test_suite! {
 
 backend_test_suite! {
     mod lwe_matrix,
-    backend = crate::FFT64Avx512,
-    params = TestParams { size: 1<<8, base2k: 17 },
+    backend = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
         glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::noise::test_glwe_expand_lwe_matrix_decrypt,
     }
 }
 
+cross_backend_test_suite! {
+    mod ntt_n1024,
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<10, base2k: 50 },
+    tests = {
+        test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
+        test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
+        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+    }
+}
+
+cross_backend_test_suite! {
+    mod ntt_n8192,
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<13, base2k: 50 },
+    tests = {
+        test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
+        test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
+        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+    }
+}
+
+cross_backend_test_suite! {
+    mod ntt_n16384,
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<14, base2k: 50 },
+    tests = {
+        test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
+        test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
+        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+    }
+}
+
+cross_backend_test_suite! {
+    mod ntt_n32768,
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<15, base2k: 50 },
+    tests = {
+        test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
+        test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
+        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+    }
+}
+
 #[test]
 fn test_convolution_direct() {
-    let module = Module::<FFT64Avx512>::new(1 << 8);
-    test_convolution(&module, 12);
-    test_convolution_by_const(&module, 12);
-    test_convolution_by_const_add(&module, 12);
-    test_convolution_pairwise(&module, 12);
-    test_convolution_accumulate(&module, 12);
+    let module = Module::<NTT4x30Avx512Rayon>::new(1 << 8);
+    test_convolution(&module, 50);
+    test_convolution_by_const(&module, 50);
+    test_convolution_by_const_add(&module, 50);
+    test_convolution_pairwise(&module, 50);
+    test_convolution_accumulate(&module, 50);
+}
+
+#[test]
+fn test_gglwe_product_digits_strided_bit_identical() {
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT4x30Avx512Rayon>::new(64), 50);
 }
 
 cross_backend_test_suite! {
     mod word_compat,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
-    backend_test = crate::FFT64Avx512,
-    params = TestParams { size: 1<<8, base2k: 12 },
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30Avx512Rayon,
+    params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
+        test_word_compat_dft_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_dft_bytes,
+        test_word_compat_svp_prepare_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_bytes,
         test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
     }
-}
-
-// Fused-op conformance on the Rayon variant; the size crosses the parallel-work floors of the overrides that have them.
-#[cfg(feature = "enable-rayon")]
-cross_backend_test_suite! {
-    mod vec_znx_dft_rayon,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
-    backend_test = crate::FFT64Avx512Rayon,
-    params = TestParams { size: 1<<14, base2k: 12 },
-    tests = {
-        test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
-        test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
-    }
-}
-
-#[cfg(feature = "enable-rayon")]
-#[test]
-fn test_convolution_by_const_add_rayon() {
-    let module = Module::<crate::FFT64Avx512Rayon>::new(1 << 8);
-    test_convolution_by_const_add(&module, 12);
 }
