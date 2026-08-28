@@ -437,6 +437,7 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_avx(
     dsize: usize,
     b_rows: usize,
     b_cols_in: usize,
+    workers: usize,
 ) -> usize {
     let nrows = b_rows * b_cols_in;
     let row_max = (0..dsize)
@@ -444,7 +445,7 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_avx(
         .max()
         .unwrap_or(0);
     let rhs_count = dsize.clamp(1, 2);
-    (4 * dsize + rhs_count * 16 * (row_max + 1)) * size_of::<u64>()
+    (4 * dsize + workers * rhs_count * 16 * (row_max + 1)) * size_of::<u64>()
 }
 
 /// Applies all gadget digits directly from their interleaved source limbs.

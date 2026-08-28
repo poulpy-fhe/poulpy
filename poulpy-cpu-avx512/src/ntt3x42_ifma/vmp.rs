@@ -902,6 +902,7 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_ifma(
     dsize: usize,
     b_rows: usize,
     b_cols_in: usize,
+    workers: usize,
 ) -> usize {
     let nrows = b_rows * b_cols_in;
     let row_max_all = (0..dsize)
@@ -909,7 +910,7 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_ifma(
         .max()
         .unwrap_or(0);
     let rhs_count = if dsize >= 2 { 2 } else { 1 };
-    (4 * dsize + 32 + rhs_count * 3 * 8 * row_max_all) * size_of::<u64>()
+    (4 * dsize + workers * rhs_count * 3 * 8 * row_max_all) * size_of::<u64>()
 }
 
 /// Fused multi-digit VMP over strided digit rows.

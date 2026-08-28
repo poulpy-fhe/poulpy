@@ -362,6 +362,21 @@ fn test_gglwe_product_digits_strided_bit_identical_rayon() {
     poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<crate::NTT3x42IfmaRayon>::new(64), 50);
 }
 
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_gglwe_product_digits_strided_rayon_scratch_workers() {
+    use poulpy_core::oep::GGLWEProductDigitsStridedImpl;
+
+    type BE = crate::NTT3x42IfmaRayon;
+    let module = Module::<BE>::new(64);
+    let dsize = 4;
+    let metadata = 4 * dsize * std::mem::size_of::<u64>();
+    let one_worker = crate::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(1, 28, dsize, 7, 1, 1);
+    let workers = poulpy_cpu_rayon::workers(<BE as poulpy_hal::execution::ScratchWorkers>::VMP);
+    let actual = BE::gglwe_product_digits_strided_tmp_bytes(&module, 28, 1, 28, dsize, 7, 1, 2, 28);
+    assert_eq!(actual, metadata + workers * (one_worker - metadata));
+}
+
 #[test]
 fn test_glwe_keyswitch_noise_ntt3x42_ifma() {
     let params = poulpy_hal::test_suite::TestParams {
