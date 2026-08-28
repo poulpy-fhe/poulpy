@@ -9,8 +9,9 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
-    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWETensorKeyPreparedToBackendRef,
-    GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision, WithEffectiveDsize,
+    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWERelinearizationKeyHelper,
+    GLWETensorKeyPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision,
+    WithEffectiveDsize,
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
@@ -228,12 +229,27 @@ where
     // working accumulator's limb capacity (`branch_working_k`). `output.k() <= k_out`
     // keeps this within the gadget keys' capacity, but re-validate defensively (custom
     // key managers may under-size).
-    let working_size = branch_working_k(plan, output_meta.1)?.div_ceil(context.base2k().as_usize());
+    let working_k: usize = branch_working_k(plan, output_meta.1)?;
+    let working_size = working_k.div_ceil(context.base2k().as_usize());
+    // Keys are resolved at the precision the branch really works at, not at the
+    // narrower final output width: that is the precision execution will ask for.
+    let working_k: TorusPrecision = TorusPrecision(
+        u32::try_from(working_k).map_err(|_| anyhow::anyhow!("PaCo branch working precision {working_k} exceeds u32"))?,
+    );
 
-    let tensor_view = GLWETensorKeyPreparedToBackendRef::to_backend_ref(keys.tensor_key());
+    // The fold relinearizes through the relinearization-key source, which is what
+    // is validated here; `tensor_key()` is only its default single entry.
+    let (relinearization_key, _) = keys
+        .relinearization_keys()
+        .get_relinearization_key_for(working_k)
+        .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+            op: "ckks_paco_bootstrap",
+            k: working_k.into(),
+        })?;
+    let tensor_view = GLWETensorKeyPreparedToBackendRef::to_backend_ref(relinearization_key);
     validate_gadget_backend_view(
-        "PaCo tensor key",
-        keys.tensor_key(),
+        "PaCo relinearization key",
+        relinearization_key,
         &tensor_view,
         plan.n(),
         context.base2k(),
@@ -243,11 +259,11 @@ where
     for &element in context.galois_elements() {
         let (key, _) = keys
             .rotation_keys()
-            .get_automorphism_key_for(element, output.k())
+            .get_automorphism_key_for(element, working_k)
             .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
                 op: "ckks_paco_bootstrap",
                 rotation: element,
-                k: output.k().into(),
+                k: working_k.into(),
             })?;
         ckks_ensure!(
             key.p() == element,

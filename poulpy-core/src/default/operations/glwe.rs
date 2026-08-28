@@ -21,9 +21,9 @@ use crate::api::{
 use crate::layouts::{GLWELayout, TorusPrecision};
 use crate::{
     default::keyswitching::glwe::{bound_for, bound_prepared},
-    default::keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
+    default::keyswitching::{GGLWEProductDefault, bound_output_size},
     layouts::{
-        Base2K, GGLWEInfos, GGLWELayout, GGLWEUse, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
+        Base2K, GGLWEInfos, GGLWEUse, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
     oep::GLWETensoringImpl,
@@ -798,22 +798,16 @@ where
         assert_eq!(self.n() as u32, a.n());
         assert_eq!(self.n() as u32, tsk.n());
 
-        let a_base2k: usize = a.base2k().into();
-        let key_base2k: usize = tsk.base2k().into();
-
         let cols: usize = tsk.rank_out().as_usize() + 1;
         let pairs: usize = tsk.rank_in().as_usize();
 
-        let a_dft_size: usize = (a.size() * a_base2k).div_ceil(key_base2k);
         // Re-radixing to the key's `base2k` does not change the operand's
-        // precision, so the bound is taken at `a.k()` rather than at the limb
-        // count rounded back up.
+        // precision: the bound and the limb count it implies both come from
+        // `a.k()`, never from the storage width rounded back up. Across radices
+        // the two disagree, and the product would be handed one limb too many.
+        let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let use_: GGLWEUse = bound_for(tsk, a.k());
-        let layout: GGLWELayout = match &use_ {
-            GGLWEUse::Empty => tsk.gglwe_layout(),
-            GGLWEUse::Active(active) => active.logical_layout,
-        };
-        let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, &layout);
+        let output_size = bound_output_size::<BE, _, _>(res, a, &use_);
 
         let lvl_0: usize = self.bytes_of_vec_znx_dft(pairs, a_dft_size);
 
@@ -857,13 +851,9 @@ where
         let cols: usize = tsk.rank_out().as_usize() + 1;
         let pairs: usize = tsk.rank_in().as_usize();
 
-        let a_dft_size: usize = (a.size() * a_base2k).div_ceil(key_base2k);
+        let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let use_: GGLWEUse = bound_for(tsk, a.k());
-        let logical: GGLWELayout = match &use_ {
-            GGLWEUse::Empty => tsk.gglwe_layout(),
-            GGLWEUse::Active(active) => active.logical_layout,
-        };
-        let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, &logical);
+        let output_size = bound_output_size::<BE, _, _>(res, a, &use_);
 
         let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(self, pairs, a_dft_size);
 

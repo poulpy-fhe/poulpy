@@ -345,12 +345,10 @@ where
     // Bound of the worst decomposition any rotation resolves to.
     let mut noise_want: f64 = 0.0;
     for infos in &key_infos {
-        let logical = resolve_gglwe_key_use(infos, glwe_out_infos.k(), effective_dsize)
+        let use_ = resolve_gglwe_key_use(infos, glwe_out_infos.k(), effective_dsize)
             .unwrap()
-            .expect("every registered shape realizes the policy")
-            .active()
-            .expect("positive precision")
-            .logical_layout;
+            .expect("every registered shape realizes the policy");
+        let logical = use_.active().expect("positive precision").logical_layout();
         noise_want = noise_want.max(logical.var_noise_keyswitch(
             &glwe_out_infos,
             0.5,

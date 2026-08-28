@@ -1,11 +1,11 @@
 //! Hoisted base-B mux blind rotation (SHIP §5.1, Algorithm 5).
 
 use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::default::keyswitching::glwe::{bound_for, bound_layout, bound_prepared};
+use poulpy_core::default::keyswitching::glwe::{bound_for, bound_prepared};
 use poulpy_core::layouts::GGLWEUse;
 use poulpy_core::layouts::TorusPrecision;
 use poulpy_core::{
-    default::keyswitching::glwe::{GGLWEProductDefault, gglwe_product_accumulation_output_size},
+    default::keyswitching::glwe::{GGLWEProductDefault, bound_accumulation_output_size},
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GGLWEPreparedToBackendRef},
 };
 use poulpy_hal::{
@@ -58,7 +58,7 @@ where
 {
     let a_size = ct.size();
     let input_k: TorusPrecision = ct.k();
-    let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, &bound_layout(key, input_k), term_count);
+    let output_size = bound_accumulation_output_size::<BE, _, _>(ct, ct, &bound_for(key, input_k), term_count);
     let product = match bound_for(key, input_k) {
         GGLWEUse::Empty => 0,
         GGLWEUse::Active(active) => module.gglwe_product_dft_tmp_bytes_upper_default(output_size, a_size, &active),
@@ -95,10 +95,18 @@ where
     const OP: &str = "ship_mux_rotate";
     ckks_ensure!(!keys.is_empty(), "{OP}: empty key group");
     let a_size = ct.size();
-    let key_size = keys[0].key.size();
     let group_input_k: TorusPrecision = ct.k();
-    let output_size =
-        gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, &bound_layout(&keys[0].key, group_input_k), keys.len());
+    // The group is summed into one accumulator, so every key of it must bind to
+    // the same logical shape: one width serves them all, and the scratch query
+    // answers from any single one of them.
+    let group_use: GGLWEUse = bound_for(&keys[0].key, group_input_k);
+    for key in keys {
+        ckks_ensure!(
+            bound_for(&key.key, group_input_k) == group_use,
+            "{OP}: key group does not share one effective decomposition at k={group_input_k}"
+        );
+    }
+    let output_size = bound_accumulation_output_size::<BE, _, _>(ct, ct, &group_use, keys.len());
     let base2k = ct.base2k().as_usize();
     ckks_ensure!(
         keys[0].key.base2k().as_usize() == base2k,
@@ -124,10 +132,9 @@ where
         let (mut prod_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(module, 2, output_size);
         let (mut rot_dft, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module, 2, output_size);
         for key in keys {
-            ckks_ensure!(key.key.size() == key_size, "{OP}: inconsistent key sizes in group");
             {
                 let mut prod_dft_mut = prod_dft.to_backend_mut();
-                match bound_for(&key.key, group_input_k) {
+                match group_use {
                     GGLWEUse::Active(active) => {
                         let bound = bound_prepared(key.key.to_backend_ref(), active);
                         module.gglwe_product_dft_default(

@@ -367,8 +367,8 @@ where
             .expect("parent realizes the coarsening")
             .active()
             .expect("positive precision");
-        assert_eq!(use_.logical_layout.dnum.as_usize(), r_active);
-        assert_eq!(use_.physical_row_step.get(), s);
+        assert_eq!(use_.logical_layout().dnum.as_usize(), r_active);
+        assert_eq!(use_.physical_row_step().get(), s);
 
         let mut autokey: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
             module.glwe_automorphism_key_alloc_from_infos(&autokey_infos);
@@ -433,7 +433,7 @@ where
         );
 
         // The bound of the decomposition the parent stands in for, not its own.
-        let max_noise: f64 = use_.logical_layout.log2_std_noise_keyswitch(
+        let max_noise: f64 = use_.logical_layout().log2_std_noise_keyswitch(
             &ct_in_infos,
             0.5,
             0.5,
@@ -570,8 +570,8 @@ pub fn test_glwe_bound_reads_only_selected_rows<BE: crate::test_suite::noise::Te
             .expect("parent realizes the coarsening")
             .active()
             .expect("positive precision");
-        let selected: Vec<usize> = (0..use_.logical_layout.dnum.as_usize())
-            .map(|i| use_.first_physical_row + i * use_.physical_row_step.get())
+        let selected: Vec<usize> = (0..use_.logical_layout().dnum.as_usize())
+            .map(|i| use_.first_physical_row() + i * use_.physical_row_step().get())
             .collect();
         assert!(
             selected.len() < dnum || !use_.is_dense(),
@@ -631,10 +631,14 @@ pub fn test_glwe_bound_reads_only_selected_rows<BE: crate::test_suite::noise::Te
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
         }
-        // Everything the bound does not select is zeroed in the twin only.
+        // Everything the bound does not select is overwritten in the twin with
+        // fresh uniform material. Not zeroes: zero is the neutral element of a
+        // multiply-accumulate, so a kernel that did read a zeroed row would
+        // still land on the same output and the check would pass vacuously.
+        let mut source_poison: Source = Source::new([7u8; 32]);
         for row in (0..dnum).filter(|row| !selected.contains(row)) {
             for col in 0..rank {
-                poulpy_hal::layouts::ZnxViewMut::raw_mut(&mut twin.key.at_mut(row, col).data).fill(0);
+                poulpy_hal::layouts::FillUniform::fill_uniform(&mut twin.key.at_mut(row, col).data, base2k, &mut source_poison);
             }
         }
 

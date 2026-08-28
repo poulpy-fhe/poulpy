@@ -29,29 +29,70 @@ where
         .map_err(|_| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into() }.into())
 }
 
-/// The `(physical key, effective dsize)` one lane of a batch resolves to.
+/// The precision each ciphertext-ciphertext operation resolves its key at.
+///
+/// One definition per operation, used by the scratch query and by the execution
+/// alike, so the two cannot drift apart. The assign forms read their
+/// destination as an operand, which is why it enters here and not only there.
+fn mul_k<A: CKKSCtBounds, B: CKKSCtBounds>(a: &A, b: &B) -> TorusPrecision {
+    a.k().max(b.k())
+}
+
+fn square_k<A: CKKSCtBounds>(a: &A) -> TorusPrecision {
+    a.k()
+}
+
+fn prepared_mul_k<D: CKKSCtBounds>(dst: &D, prepared_k: usize) -> TorusPrecision {
+    dst.k().max(TorusPrecision(prepared_k as u32))
+}
+
+/// What one lane of a batch resolves to, as a comparable value.
 ///
 /// A batch is a set of independent items, each at its own precision, so two
 /// lanes need not resolve to the same key or the same decomposition. Lanes are
 /// grouped by this id and one call is issued per group: a batch never straddles
 /// two physical keys or two decompositions, and no lane is dispatched under a
 /// key resolved for a different precision.
-type Lane = (usize, u32);
+///
+/// The shape half is a value, not a pointer, so the scratch query and the
+/// execution partition the same way even though one holds layouts and the other
+/// holds prepared keys. Execution refines the partition by key identity, since
+/// two distinct keys of the same shape must not share a call; a query group is
+/// therefore a union of execution groups, and the reference batch scratch is the
+/// maximum over its items, so answering on the coarser partition is an upper
+/// bound on every finer one.
+type Shape = (u32, u32, u32, u32, u32, u32, u32);
+
+fn shape_of<K: GGLWEInfos>(key: &K, dsize: poulpy_core::layouts::Dsize) -> Shape {
+    (
+        key.n().as_u32(),
+        key.base2k().as_u32(),
+        key.dnum().as_u32(),
+        key.k_aux().as_u32(),
+        key.rank_in().as_u32(),
+        key.rank_out().as_u32(),
+        dsize.as_u32(),
+    )
+}
+
+/// Execution lane: the resolved shape, refined by which key it actually is.
+type Lane = (Shape, usize);
 
 fn lane_of<H>(keys: &H, k: TorusPrecision, op: &'static str) -> Result<Lane>
 where
     H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos,
 {
     let (key, dsize) = resolve(keys, k, op)?;
-    Ok((key as *const H::Key as usize, dsize.as_u32()))
+    Ok((shape_of(key, dsize), key as *const H::Key as usize))
 }
 
-fn lane_layout_of<H>(keys: &H, k: TorusPrecision) -> Lane
+fn lane_layout_of<H>(keys: &H, k: TorusPrecision) -> Shape
 where
     H: GLWERelinearizationKeyLayoutHelper,
 {
     let (layout, dsize) = keys.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
-    (layout as *const H::Layout as usize, dsize.as_u32())
+    shape_of(layout, dsize)
 }
 
 /// Runs of consecutive equal lanes, after sorting the items by lane.
@@ -59,12 +100,12 @@ where
 /// Items in a frontier are independent, so reordering them is not observable in
 /// the results; it is what lets each group be handed over as one contiguous
 /// slice.
-fn group_by_lane<T, F>(items: &mut [T], mut lane: F) -> Vec<(Lane, usize, usize)>
+fn group_by_lane<T, L: Ord + Copy, F>(items: &mut [T], mut lane: F) -> Vec<(L, usize, usize)>
 where
-    F: FnMut(&T) -> Lane,
+    F: FnMut(&T) -> L,
 {
     items.sort_by_key(&mut lane);
-    let mut runs: Vec<(Lane, usize, usize)> = Vec::new();
+    let mut runs: Vec<(L, usize, usize)> = Vec::new();
     for (i, item) in items.iter().enumerate() {
         let id = lane(item);
         match runs.last_mut() {
@@ -75,10 +116,14 @@ where
     runs
 }
 
-/// The widest precision in a run. Every lane of a run resolves to the same key
-/// and decomposition, so binding at the widest binds every one of them.
+/// The precision a run is bound at: the first lane's.
+///
+/// Every lane of a run resolves to the same key and decomposition, so any of
+/// them selects it; the first is the one already known to resolve, which the
+/// widest is not (it is a maximum over the run, not necessarily any lane's own
+/// precision, and may fall outside the policy table).
 fn run_k<T, F: Fn(&T) -> TorusPrecision>(run: &[T], k_of: F) -> TorusPrecision {
-    run.iter().fold(TorusPrecision(0), |k, i| k.max(k_of(i)))
+    k_of(run.first().expect("a run holds at least one lane"))
 }
 
 impl<BE: Backend + CKKSMulImpl<BE>> CKKSMulOps<BE> for Module<BE>
@@ -101,7 +146,7 @@ where
         H: GLWERelinearizationKeyLayoutHelper,
     {
         let (tsk, dsize) = tsk
-            .get_relinearization_key_layout_for(a.k().max(b.k()))
+            .get_relinearization_key_layout_for(mul_k(a, b))
             .unwrap_or_else(|e| panic!("{e}"));
         BE::ckks_mul_tmp_bytes_impl(self, res, a, b, &tsk.with_dsize(dsize))
     }
@@ -113,7 +158,7 @@ where
         H: GLWERelinearizationKeyLayoutHelper,
     {
         let (tsk, dsize) = tsk
-            .get_relinearization_key_layout_for(a.k())
+            .get_relinearization_key_layout_for(square_k(a))
             .unwrap_or_else(|e| panic!("{e}"));
         BE::ckks_square_tmp_bytes_impl(self, res, a, &tsk.with_dsize(dsize))
     }
@@ -145,10 +190,10 @@ where
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         let (tsk, dsize) =
-            tsk.get_relinearization_key_for(a.k().max(b.k()))
+            tsk.get_relinearization_key_for(mul_k(a, b))
                 .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                     op: "ckks_mul_into",
-                    k: a.k().max(b.k()).into(),
+                    k: mul_k(a, b).into(),
                 })?;
         BE::ckks_mul_into_impl(self, dst, a, b, &tsk.with_dsize(dsize), scratch)
     }
@@ -161,10 +206,10 @@ where
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         let (tsk, dsize) =
-            tsk.get_relinearization_key_for(dst.k().max(a.k()))
+            tsk.get_relinearization_key_for(mul_k(dst, a))
                 .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                     op: "ckks_mul_assign",
-                    k: dst.k().max(a.k()).into(),
+                    k: mul_k(dst, a).into(),
                 })?;
         BE::ckks_mul_assign_impl(self, dst, a, &tsk.with_dsize(dsize), scratch)
     }
@@ -189,10 +234,10 @@ where
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         let (tsk, dsize) = tsk
-            .get_relinearization_key_for(dst.k().max(TorusPrecision(prepared.k as u32)))
+            .get_relinearization_key_for(prepared_mul_k(dst, prepared.k))
             .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                 op: "ckks_mul_prepared_assign",
-                k: dst.k().max(TorusPrecision(prepared.k as u32)).into(),
+                k: prepared_mul_k(dst, prepared.k).into(),
             })?;
         BE::ckks_mul_prepared_assign_impl(self, dst, prepared, &tsk.with_dsize(dsize), scratch)
     }
@@ -205,7 +250,7 @@ where
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         let (tsk, dsize) =
-            tsk.get_relinearization_key_for(a.k())
+            tsk.get_relinearization_key_for(square_k(a))
                 .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                     op: "ckks_square_into",
                     k: a.k().into(),
@@ -220,7 +265,7 @@ where
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         let (tsk, dsize) =
-            tsk.get_relinearization_key_for(dst.k())
+            tsk.get_relinearization_key_for(square_k(dst))
                 .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
                     op: "ckks_square_assign",
                     k: dst.k().into(),
@@ -281,8 +326,8 @@ where
         B: CKKSCtBounds,
         H: GLWERelinearizationKeyLayoutHelper,
     {
-        let k_of = |i: &CKKSMulIntoItem<&Dst, &A, &B>| i.a.k().max(i.b.k());
-        let mut lanes: Vec<(Lane, &CKKSMulIntoItem<&Dst, &A, &B>)> =
+        let k_of = |i: &CKKSMulIntoItem<&Dst, &A, &B>| mul_k(i.a, i.b);
+        let mut lanes: Vec<(Shape, &CKKSMulIntoItem<&Dst, &A, &B>)> =
             items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
         let mut best: usize = 0;
         for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
@@ -318,7 +363,7 @@ where
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         const OP: &str = "ckks_mul_into_batch";
-        let k_of = |i: &CKKSMulIntoItem<&mut Dst, &A, &B>| i.a.k().max(i.b.k());
+        let k_of = |i: &CKKSMulIntoItem<&mut Dst, &A, &B>| mul_k(i.a, i.b);
         for i in items.iter() {
             lane_of(tsk, k_of(i), OP)?;
         }
@@ -336,8 +381,8 @@ where
         A: CKKSCtBounds,
         H: GLWERelinearizationKeyLayoutHelper,
     {
-        let k_of = |i: &CKKSSquareIntoItem<&Dst, &A>| i.a.k();
-        let mut lanes: Vec<(Lane, &CKKSSquareIntoItem<&Dst, &A>)> =
+        let k_of = |i: &CKKSSquareIntoItem<&Dst, &A>| square_k(i.a);
+        let mut lanes: Vec<(Shape, &CKKSSquareIntoItem<&Dst, &A>)> =
             items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
         let mut best: usize = 0;
         for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
@@ -370,7 +415,7 @@ where
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         const OP: &str = "ckks_square_into_batch";
-        let k_of = |i: &CKKSSquareIntoItem<&mut Dst, &A>| i.a.k();
+        let k_of = |i: &CKKSSquareIntoItem<&mut Dst, &A>| square_k(i.a);
         for i in items.iter() {
             lane_of(tsk, k_of(i), OP)?;
         }
@@ -387,8 +432,8 @@ where
         Dst: CKKSCtBounds,
         H: GLWERelinearizationKeyLayoutHelper,
     {
-        let k_of = |i: &CKKSSquareAssignItem<&Dst>| i.dst.k();
-        let mut lanes: Vec<(Lane, &CKKSSquareAssignItem<&Dst>)> =
+        let k_of = |i: &CKKSSquareAssignItem<&Dst>| square_k(i.dst);
+        let mut lanes: Vec<(Shape, &CKKSSquareAssignItem<&Dst>)> =
             items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
         let mut best: usize = 0;
         for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
@@ -419,7 +464,7 @@ where
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         const OP: &str = "ckks_square_assign_batch";
-        let k_of = |i: &CKKSSquareAssignItem<&mut Dst>| i.dst.k();
+        let k_of = |i: &CKKSSquareAssignItem<&mut Dst>| square_k(i.dst);
         for i in items.iter() {
             lane_of(tsk, k_of(i), OP)?;
         }
@@ -441,8 +486,8 @@ where
         PR: CKKSPreparedRightInfos,
         H: GLWERelinearizationKeyLayoutHelper,
     {
-        let k_of = |i: &CKKSPreparedMulAssignItem<&Dst, &PR>| i.dst.k().max(TorusPrecision(i.prepared.prepared_k() as u32));
-        let mut lanes: Vec<(Lane, &CKKSPreparedMulAssignItem<&Dst, &PR>)> =
+        let k_of = |i: &CKKSPreparedMulAssignItem<&Dst, &PR>| prepared_mul_k(i.dst, i.prepared.prepared_k());
+        let mut lanes: Vec<(Shape, &CKKSPreparedMulAssignItem<&Dst, &PR>)> =
             items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
         let mut best: usize = 0;
         for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
@@ -479,8 +524,7 @@ where
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         const OP: &str = "ckks_mul_prepared_assign_batch";
-        let k_of =
-            |i: &CKKSPreparedMulAssignItem<&mut Dst, &CKKSPreparedRight<BE>>| i.dst.k().max(TorusPrecision(i.prepared.k as u32));
+        let k_of = |i: &CKKSPreparedMulAssignItem<&mut Dst, &CKKSPreparedRight<BE>>| prepared_mul_k(i.dst, i.prepared.k);
         for i in items.iter() {
             lane_of(tsk, k_of(i), OP)?;
         }

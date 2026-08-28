@@ -31,12 +31,12 @@ use crate::{
     api::GLWEBytesOf,
     default::{
         keyswitching::glwe::{bound_for, bound_prepared, resolved_use},
-        keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
+        keyswitching::{GGLWEProductDefault, bound_output_size},
         operations::msb_mask_bottom_limb,
     },
     layouts::{
-        GGLWEInfos, GGLWELayout, GGLWEUse, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos,
-        GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, WithEffectiveDsize, prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GGLWEUse, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut,
+        GLWEToBackendRef, GetGaloisElement, LWEInfos, WithEffectiveDsize, prepared::GGLWEPreparedToBackendRef,
     },
 };
 
@@ -98,11 +98,7 @@ where
     let cols = a_infos.rank().as_usize() + 1;
     let a_size = a_infos.size();
     let use_: GGLWEUse = bound_for(key_infos, a_infos.k());
-    let logical: GGLWELayout = match &use_ {
-        GGLWEUse::Empty => key_infos.gglwe_layout(),
-        GGLWEUse::Active(active) => active.logical_layout,
-    };
-    let key_size = gglwe_product_output_size::<BE, _, _, _>(a_infos, a_infos, &logical);
+    let key_size = bound_output_size::<BE, _, _>(a_infos, a_infos, &use_);
     let baby = module.glwe_bytes_of_from_infos(a_infos);
     let prepare = module.cnv_prepare_left_tmp_bytes(a_infos.size(), a_infos.size());
 
@@ -263,11 +259,8 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
             key_base2k = Some(layout.base2k());
             // Sizing reads the resolved logical `dnum`/`k_aux`, not the physical
             // ones a `with_dsize` wrapper still forwards.
-            let logical: GGLWELayout = match resolved_use(layout, a.k(), effective_dsize) {
-                GGLWEUse::Empty => layout.gglwe_layout(),
-                GGLWEUse::Active(active) => active.logical_layout,
-            };
-            key_size = key_size.max(gglwe_product_output_size::<BE, _, _, _>(a, a, &logical));
+            let use_: GGLWEUse = resolved_use(layout, a.k(), effective_dsize);
+            key_size = key_size.max(bound_output_size::<BE, _, _>(a, a, &use_));
         }
         (a.base2k() == key_base2k.expect("at least one nonzero rotation"), key_size)
     } else {

@@ -21,12 +21,12 @@ use poulpy_hal::{
 use crate::{
     GLWERotate, ScratchArenaTakeCore,
     default::{
-        keyswitching::glwe::{bound_for, bound_layout, bound_prepared},
-        keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
+        keyswitching::glwe::{bound_for, bound_prepared, resolved_use},
+        keyswitching::{GGLWEProductDefault, bound_output_size},
         operations::GLWECopyDefault,
     },
     layouts::{
-        GGLWEInfos, GGLWEToBackendRef, GGLWEUse, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout,
+        Dsize, GGLWEInfos, GGLWEToBackendRef, GGLWEUse, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout,
         GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut,
         LWEToBackendMut, LWEToBackendRef, Rank, TorusPrecision, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
@@ -502,7 +502,7 @@ where
     // The exact precision of the operand, not the limb count rounded back up:
     // rounding claims digits the input does not have.
     let input_k: TorusPrecision = res_infos.k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, res_infos, &bound_layout(tsk_infos, input_k));
+    let output_size = bound_output_size::<BE, _, _>(res_infos, res_infos, &bound_for(tsk_infos, input_k));
 
     let lvl_0: usize = module.bytes_of_vec_znx_dft(cols - 1, a_size) + BE::bytes_of_vec_znx(module.n(), 1, a_size);
     let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(cols, output_size);
@@ -542,7 +542,7 @@ where
     let res_base2k: usize = res_backend.base2k().into();
     let tsk_base2k: usize = tsk.base2k().into();
     let input_k: TorusPrecision = res_backend.k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_backend, &res_backend, &bound_layout(tsk, input_k));
+    let output_size = bound_output_size::<BE, _, _>(&res_backend, &res_backend, &bound_for(tsk, input_k));
 
     assert!(
         scratch.available() >= module.ggsw_expand_rows_tmp_bytes_default(&res_backend, tsk),
@@ -628,8 +628,11 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>,
     R: GGSWAtViewMut<BE> + GGSWInfos,
-    T: GGLWEToGGSWKeyPreparedToBackendRef<BE>,
+    T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    // Read before the conversion to a concrete prepared reference, which carries
+    // the stored decomposition and drops the one a `with_dsize` wrapper asks for.
+    let effective_dsize: Dsize = tsk.effective_dsize();
     let tsk: GGLWEToGGSWKeyPreparedBackendRef<'_, BE> = tsk.to_backend_ref();
     let cols: usize = res.rank().as_usize() + 1;
 
@@ -639,7 +642,7 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
         {
             let mut scratch_prod = scratch_1.borrow();
             let key = tsk.at(col - 1);
-            match bound_for(key, input_k) {
+            match resolved_use(key, input_k, effective_dsize) {
                 GGLWEUse::Active(active) => {
                     let bound = bound_prepared(key.reborrow(), active);
                     module.gglwe_product_dft_default(&mut res_dft, a_dft, &bound, 1, &mut scratch_prod);

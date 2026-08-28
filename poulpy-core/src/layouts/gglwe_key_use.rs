@@ -169,34 +169,85 @@ pub enum GGLWEUse {
 
 /// A positive-precision use: which physical rows are read, and the logical
 /// layout the product and its sizing are carried out in.
+///
+/// Every field is private and there is no public constructor: a value of this
+/// type can only come out of [`resolve_gglwe_key_use`], so the relation between
+/// the logical layout, the row map, the readable prefix and the stored
+/// decomposition holds by construction. A hand-built use claiming `dsize = 1`
+/// over a key that stores `dsize = 8` would otherwise reach the dense
+/// specialization and read the whole stored matrix.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GGLWEActiveUse {
     /// Exact input precision this use was resolved for.
-    pub input_k: TorusPrecision,
+    input_k: TorusPrecision,
     /// `(dnum, dsize, k_aux) = (r_active, D, a_eff)`, physical degree/base2k/ranks.
-    pub logical_layout: GGLWELayout,
+    logical_layout: GGLWELayout,
     /// Logical row `i` is physical row `first_physical_row + i * physical_row_step`.
-    pub first_physical_row: usize,
-    pub physical_row_step: NonZeroUsize,
+    first_physical_row: usize,
+    physical_row_step: NonZeroUsize,
     /// Readable limb prefix within each selected physical polynomial.
-    pub logical_work_size: usize,
+    logical_work_size: usize,
     /// Rows the physical key stores.
-    pub physical_rows: usize,
+    physical_rows: usize,
     /// Storage pitch: limbs each physical polynomial occupies.
-    pub physical_size: usize,
+    physical_size: usize,
     /// The stored decomposition the rows were selected out of. A prepared key
     /// is paired with a bound only if all three agree, so two keys of the same
     /// shape but different radix, digit or guard cannot be swapped.
-    pub physical_base2k: Base2K,
-    pub physical_dsize: Dsize,
-    pub physical_k_aux: TorusPrecision,
+    physical_base2k: Base2K,
+    physical_dsize: Dsize,
+    physical_k_aux: TorusPrecision,
     /// Whether the key has enough digits for the whole input precision. A use
     /// that does not cover it is still valid: the product decomposes the digits
     /// the key has. Policy dispatch refuses such a key; execution does not.
-    pub covers_input: bool,
+    covers_input: bool,
 }
 
 impl GGLWEActiveUse {
+    /// Exact input precision this use was resolved for.
+    pub fn input_k(&self) -> TorusPrecision {
+        self.input_k
+    }
+
+    /// The layout the product and its sizing are carried out in.
+    pub fn logical_layout(&self) -> &GGLWELayout {
+        &self.logical_layout
+    }
+
+    /// Logical row `i` is physical row `first_physical_row() + i * physical_row_step()`.
+    pub fn first_physical_row(&self) -> usize {
+        self.first_physical_row
+    }
+
+    pub fn physical_row_step(&self) -> NonZeroUsize {
+        self.physical_row_step
+    }
+
+    /// Readable limb prefix within each selected physical polynomial.
+    pub fn logical_work_size(&self) -> usize {
+        self.logical_work_size
+    }
+
+    /// Rows the physical key stores.
+    pub fn physical_rows(&self) -> usize {
+        self.physical_rows
+    }
+
+    /// Storage pitch: limbs each physical polynomial occupies.
+    pub fn physical_size(&self) -> usize {
+        self.physical_size
+    }
+
+    /// The stored decomposition the rows were selected out of.
+    pub fn physical_gadget(&self) -> (Base2K, Dsize, TorusPrecision) {
+        (self.physical_base2k, self.physical_dsize, self.physical_k_aux)
+    }
+
+    /// Whether the key has enough digits for the whole input precision.
+    pub fn covers_input(&self) -> bool {
+        self.covers_input
+    }
+
     /// Limbs the product input must carry.
     pub fn input_size(&self) -> usize {
         self.input_k.div_ceil(self.logical_layout.base2k()) as usize

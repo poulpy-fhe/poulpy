@@ -81,15 +81,25 @@ where
 /// The layout every size is computed from: the key as it is bound for the
 /// operation's input precision, never the physical metadata a `with_dsize`
 /// wrapper still forwards.
+///
+/// For handing a key shape to an API that takes one. Product sizing goes
+/// through [`bound_output_size`], which takes the bound itself so a physical
+/// key cannot stand in for it.
 pub fn bound_layout<K: GGLWEInfos>(key: &K, input_k: TorusPrecision) -> GGLWELayout {
     match bound_for(key, input_k) {
         GGLWEUse::Empty => key.gglwe_layout(),
-        GGLWEUse::Active(active) => active.logical_layout,
+        GGLWEUse::Active(active) => *active.logical_layout(),
     }
 }
 
 /// Binds a key for `input_k`, or fails loudly: the seam never falls back to the
 /// physical decomposition.
+///
+/// Binds through [`GGLWEBind::bind_for`], not `bind_covering_for`: a key whose
+/// gadget stops short of the input's last partial digit is the ordinary case
+/// here, not an error. Registry dispatch is what refuses to *select* such a key
+/// (`GGLWEActiveUse::covers_input`); execution decomposes the digits the key
+/// has, which is what the dense kernels have always done.
 ///
 /// Public because every operation that reaches a GGLWE product binds through
 /// it, including the ones outside this crate.
@@ -116,12 +126,12 @@ where
         + VmpPMatBytesOf,
 {
     fn gglwe_product_dft_tmp_bytes_default(&self, res_size: usize, a_size: usize, use_: &GGLWEActiveUse) -> usize {
-        let logical = &use_.logical_layout;
+        let logical = &use_.logical_layout();
         let cols_in: usize = logical.rank_in().into();
         if is_whole_dense_matrix(use_) {
             let dnum: usize = logical.dnum().into();
             let cols_out: usize = (logical.rank_out() + 1).into();
-            return self.vmp_apply_dft_to_dft_tmp_bytes(res_size, a_size, dnum, cols_in, cols_out, use_.logical_work_size);
+            return self.vmp_apply_dft_to_dft_tmp_bytes(res_size, a_size, dnum, cols_in, cols_out, use_.logical_work_size());
         }
         BE::gglwe_product_bound_tmp_bytes(self, res_size, cols_in, a_size, use_)
     }
@@ -140,7 +150,7 @@ where
             a_size,
             use_.input_size(),
             "the product input must carry ceil(input_k / base2k) limbs for input_k={}",
-            use_.input_k
+            use_.input_k()
         );
         assert!(
             scratch.available() >= self.gglwe_product_dft_tmp_bytes_default(res.size(), a_size, use_),
@@ -164,15 +174,15 @@ where
 /// Whether the bound is the complete stored matrix under a single gadget digit,
 /// the one shape a plain dense VMP realizes exactly.
 fn is_whole_dense_matrix(use_: &GGLWEActiveUse) -> bool {
-    use_.is_dense() && use_.logical_layout.dsize().as_usize() == 1
+    use_.is_dense() && use_.logical_layout().dsize().as_usize() == 1
 }
 
-/// Spill width of the coefficient-product accumulation for this bound.
+/// Coefficient products one accumulation sums, over the logical key.
 ///
-/// Panics rather than saturating: a saturated term count silently understates
-/// the retained window, which is not noise-visible.
-fn product_limbs_of(use_: &GGLWEActiveUse, term_count: usize) -> usize {
-    let logical = &use_.logical_layout;
+/// Panics rather than saturating: a saturated count silently understates the
+/// retained window, which is not noise-visible.
+fn product_terms_of(use_: &GGLWEActiveUse, term_count: usize) -> usize {
+    let logical: &GGLWELayout = use_.logical_layout();
     let factors: [usize; 5] = [
         logical.n().as_usize(),
         logical.dnum().as_usize(),
@@ -180,11 +190,15 @@ fn product_limbs_of(use_: &GGLWEActiveUse, term_count: usize) -> usize {
         logical.rank_in().as_usize().max(1),
         term_count.max(1),
     ];
-    let product_terms: usize = factors
+    factors
         .iter()
         .try_fold(1usize, |acc, f| acc.checked_mul(*f))
-        .unwrap_or_else(|| panic!("product term count overflows usize for logical layout {logical:?} over {term_count} term(s)"));
-    gadget_product_limbs(logical.base2k(), product_terms)
+        .unwrap_or_else(|| panic!("product term count overflows usize for logical layout {logical:?} over {term_count} term(s)"))
+}
+
+/// Spill width of the coefficient-product accumulation for this bound.
+fn product_limbs_of(use_: &GGLWEActiveUse, term_count: usize) -> usize {
+    gadget_product_limbs(use_.logical_layout().base2k(), product_terms_of(use_, term_count))
 }
 
 /// Reference scratch for [`gglwe_product_bound_default`].
@@ -199,11 +213,11 @@ pub fn gglwe_product_bound_tmp_bytes_default<BE: Backend>(
 where
     Module<BE>: VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes + VmpApplyDftToDftAccumulateTmpBytes + VmpPMatBytesOf,
 {
-    let logical = &use_.logical_layout;
+    let logical = &use_.logical_layout();
     let (dsize, dnum) = (logical.dsize().as_usize(), logical.dnum().as_usize());
     let cols_in: usize = logical.rank_in().into();
     let cols_out: usize = (logical.rank_out() + 1).into();
-    let key_size: usize = use_.logical_work_size;
+    let key_size: usize = use_.logical_work_size();
     let product: usize = gglwe_product_digits_strided_tmp_bytes_default(
         module, res_size, a_cols, a_size, dsize, dnum, cols_in, cols_out, key_size,
     );
@@ -236,7 +250,7 @@ where
     if use_.is_dense() {
         return f(bound.pmat(), scratch);
     }
-    let logical = &use_.logical_layout;
+    let logical = &use_.logical_layout();
     let (rows, cols_in, cols_out) = (
         logical.dnum().as_usize(),
         logical.rank_in().as_usize(),
@@ -244,12 +258,12 @@ where
     );
     scratch.scope(|scratch_phase| {
         let (mut selected, mut scratch_1) =
-            scratch_phase.take_vmp_pmat_scratch(module, rows, cols_in, cols_out, use_.logical_work_size);
+            scratch_phase.take_vmp_pmat_scratch(module, rows, cols_in, cols_out, use_.logical_work_size());
         module.vmp_extract_selected_rows(
             &mut selected,
             bound.pmat(),
-            use_.first_physical_row,
-            use_.physical_row_step.get(),
+            use_.first_physical_row(),
+            use_.physical_row_step().get(),
         );
         f(&selected.to_backend_ref(), &mut scratch_1.borrow())
     })
@@ -280,7 +294,7 @@ pub fn gglwe_product_bound_default<BE>(
         + VmpExtractSelectedRows<BE>
         + VmpPMatBytesOf,
 {
-    let dsize: usize = bound.use_().logical_layout.dsize().into();
+    let dsize: usize = bound.use_().logical_layout().dsize().into();
     with_bound_pmat(module, bound, scratch, |pmat, scratch| {
         gglwe_product_digits_strided_default(module, res, a, dsize, product_limbs, pmat, scratch);
     });
@@ -340,13 +354,13 @@ where
         if !use_.is_dense() {
             return exact;
         }
-        let logical = &use_.logical_layout;
+        let logical = &use_.logical_layout();
         exact
             + self.bytes_of_vmp_pmat(
                 logical.dnum().as_usize(),
                 logical.rank_in().as_usize(),
                 (logical.rank_out() + 1).as_usize(),
-                use_.logical_work_size,
+                use_.logical_work_size(),
             )
     }
 
@@ -496,14 +510,13 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A, K>(
 /// On exact transform backends the retained window covers the live precision
 /// plus the worst-case norm growth of the signed polynomial products and VMP
 /// accumulation; approximate backends retain the complete work region.
-pub fn gglwe_product_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub fn bound_output_size<BE, R, A>(res_infos: &R, a_infos: &A, use_: &GGLWEUse) -> usize
 where
     BE: Backend,
     R: LWEInfos,
     A: LWEInfos,
-    K: GGLWEInfos,
 {
-    gglwe_product_accumulation_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos, 1)
+    bound_accumulation_output_size::<BE, _, _>(res_infos, a_infos, use_, 1)
 }
 
 /// Number of limbs required when `term_count` GGLWE/VMP products are summed
@@ -512,20 +525,19 @@ where
 /// Relative to one product, summing `term_count` values can amplify the tail
 /// by that factor. Exact backends account for this in the product-norm window;
 /// approximate backends keep the complete work region.
-pub fn gglwe_product_accumulation_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K, term_count: usize) -> usize
+pub fn bound_accumulation_output_size<BE, R, A>(res_infos: &R, a_infos: &A, use_: &GGLWEUse, term_count: usize) -> usize
 where
     BE: Backend,
     R: LWEInfos,
     A: LWEInfos,
-    K: GGLWEInfos,
 {
-    gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(res_infos, a_infos, key_infos, term_count, 0)
+    bound_accumulation_output_size_with_tail::<BE, _, _>(res_infos, a_infos, use_, term_count, 0)
 }
 
-pub(crate) fn gglwe_product_accumulation_output_size_with_tail<BE, R, A, K>(
+pub(crate) fn bound_accumulation_output_size_with_tail<BE, R, A>(
     res_infos: &R,
     a_infos: &A,
-    key_infos: &K,
+    use_: &GGLWEUse,
     term_count: usize,
     extra_live_limbs: usize,
 ) -> usize
@@ -533,24 +545,22 @@ where
     BE: Backend,
     R: LWEInfos,
     A: LWEInfos,
-    K: GGLWEInfos,
 {
-    let product_terms = key_infos
-        .n()
-        .as_usize()
-        .saturating_mul(key_infos.dnum().as_usize())
-        .saturating_mul(key_infos.dsize().as_usize())
-        .saturating_mul(key_infos.rank_in().as_usize().max(1))
-        .saturating_mul(term_count.max(1));
+    // No row is active, so no product runs and the accumulator only has to hold
+    // the destination.
+    let GGLWEUse::Active(active) = use_ else {
+        return res_infos.size();
+    };
+    let logical: &GGLWELayout = active.logical_layout();
     gadget_product_output_size(GadgetProductOutputSizeParams {
-        key_size: key_infos.size(),
-        key_base2k: key_infos.base2k(),
+        key_size: active.logical_work_size(),
+        key_base2k: logical.base2k(),
         input_k: a_infos.k(),
         output_k: res_infos.k(),
-        dsize: key_infos.dsize(),
-        k_aux: key_infos.k_aux(),
+        dsize: logical.dsize(),
+        k_aux: logical.k_aux(),
         dft_is_exact: BE::DFT_IS_EXACT,
-        product_terms,
+        product_terms: product_terms_of(active, term_count),
         extra_live_limbs,
     })
 }
@@ -600,7 +610,7 @@ where
     let use_: GGLWEUse = bound_for(key_infos, a_infos.k());
     let layout: GGLWELayout = match &use_ {
         GGLWEUse::Empty => key_infos.gglwe_layout(),
-        GGLWEUse::Active(active) => active.logical_layout,
+        GGLWEUse::Active(active) => *active.logical_layout(),
     };
     let mask_cols = a_infos.rank().as_usize();
     let product_tmp_bytes = |res_size: usize, a_size: usize| -> usize {
@@ -608,7 +618,7 @@ where
     };
 
     let output_cols = res_infos.rank().as_usize() + 1;
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, a_infos, &layout);
+    let output_size = bound_output_size::<BE, _, _>(res_infos, a_infos, &use_);
     let a_dft_size = a_infos.k().div_ceil(layout.base2k()) as usize;
     let lvl_0: usize = module.bytes_of_vec_znx_dft(output_cols, output_size);
     let lvl_1_big: usize = module.bytes_of_vec_znx_big(output_cols, output_size);
@@ -703,11 +713,7 @@ where
     assert_eq!(key.n(), module.n() as u32);
 
     // Sizing follows the bound, never the physical metadata.
-    let layout: GGLWELayout = match bound_for(key, a.k()) {
-        GGLWEUse::Empty => key.gglwe_layout(),
-        GGLWEUse::Active(active) => active.logical_layout,
-    };
-
+    let use_: GGLWEUse = bound_for(key, a.k());
     let required: usize = module.glwe_keyswitch_tmp_bytes_default(res, a, key);
     assert!(
         scratch.available() >= required,
@@ -716,7 +722,7 @@ where
         required
     );
 
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, &layout);
+    let output_size = bound_output_size::<BE, _, _>(res, a, &use_);
 
     let a_base2k: usize = a.base2k().into();
     let key_base2k: usize = key.base2k().into();
@@ -822,7 +828,7 @@ where
         module.glwe_keyswitch_tmp_bytes_default(res, res, key)
     );
 
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, res, &bound_layout(key, res.k()));
+    let output_size = bound_output_size::<BE, _, _>(res, res, &bound_for(key, res.k()));
 
     let res_base2k: usize = res.base2k().as_usize();
     let key_base2k: usize = key.base2k().as_usize();

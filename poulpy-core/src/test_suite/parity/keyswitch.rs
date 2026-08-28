@@ -220,13 +220,13 @@ where
             .expect("parent realizes the coarsening")
             .active()
             .expect("positive precision");
-        let logical = use_.logical_layout;
+        let logical = use_.logical_layout();
         let (cols_in, cols_out) = (parent.rank_in.as_usize(), (parent.rank_out + 1).as_usize());
         let (rows, size) = (parent.dnum.as_usize(), parent.max_size());
-        let (sel_rows, sel_size) = (logical.dnum.as_usize(), use_.logical_work_size);
+        let (sel_rows, sel_size) = (logical.dnum.as_usize(), use_.logical_work_size());
         // The oracle runs the same product over a dense key holding exactly the
         // selected rows, so its bound is that key used natively.
-        let dense_use = *resolve_gglwe_key_use(&logical, input_k, logical.dsize)
+        let dense_use = *resolve_gglwe_key_use(logical, input_k, logical.dsize)
             .expect("valid layout")
             .expect("a dense key realizes its own decomposition")
             .active()
@@ -257,7 +257,7 @@ where
         // selected rows too. The oracle is the selected rows truncated to the
         // prefix, so reading any of it changes the result.
         {
-            let selected: Vec<usize> = (0..sel_rows).map(|i| use_.first_physical_row + i * s as usize).collect();
+            let selected: Vec<usize> = (0..sel_rows).map(|i| use_.first_physical_row() + i * s as usize).collect();
             let mat_ncols = cols_out * size;
             let suffix_from = if use_.is_dense() {
                 sel_ncols_of(cols_out, size)
@@ -351,7 +351,7 @@ where
         // Whatever the bound reads, it is not the skipped rows: refilling them
         // must not move the output.
         {
-            let selected: Vec<usize> = (0..sel_rows).map(|i| use_.first_physical_row + i * s as usize).collect();
+            let selected: Vec<usize> = (0..sel_rows).map(|i| use_.first_physical_row() + i * s as usize).collect();
             let mut refilled = mat.clone();
             // Poison in `mat`, zeros here: the two agree only if neither is read.
             let suffix_from = if use_.is_dense() {

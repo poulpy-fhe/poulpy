@@ -38,8 +38,8 @@ use crate::{
         operations::cnv_offset_to_limb_offset,
     },
     layouts::{
-        GGLWEInfos, GGLWELayout, GGLWEUse, GLWE, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos,
-        GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, WithEffectiveDsize,
+        GGLWEInfos, GGLWEUse, GLWE, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut,
+        GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, WithEffectiveDsize,
         prepared::{GGLWEPreparedToBackendRef, PreparedDiagonal},
     },
 };
@@ -246,26 +246,27 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     let (use_lazy_giant_rotation, key_output_size) = if has_nonzero_giant_rotation {
         let mut key_base2k: Option<crate::layouts::Base2K> = None;
         let mut output_size: usize = 0;
-        for gs in rhs.giant_steps.iter().filter(|gs| gs.rot != 0) {
+        // Same filter as the evaluation loop: an empty bucket is skipped there,
+        // so sizing must not demand a key for it either.
+        for gs in rhs.giant_steps.iter().filter(|gs| gs.rot != 0 && !gs.diagonals.is_empty()) {
             let (layout, effective_dsize) = keys
                 .get_automorphism_key_layout_for(module.galois_element(gs.rot), lhs.k())
                 .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot));
             key_base2k = Some(layout.base2k());
             // Sizing reads the resolved logical `dnum`/`k_aux`, not the physical
             // ones a `with_dsize` wrapper still forwards.
-            let logical: GGLWELayout = match resolved_use(layout, lhs.k(), effective_dsize) {
-                GGLWEUse::Empty => layout.gglwe_layout(),
-                GGLWEUse::Active(active) => active.logical_layout,
-            };
-            output_size = output_size.max(
-                crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(
-                    res,
-                    res,
-                    &logical,
-                    nonzero_giant_rotations,
-                    prod_size.saturating_sub(res.size()),
-                ),
-            );
+            let use_: GGLWEUse = resolved_use(layout, lhs.k(), effective_dsize);
+            output_size = output_size.max(crate::default::keyswitching::bound_accumulation_output_size_with_tail::<
+                BE,
+                _,
+                _,
+            >(
+                res,
+                res,
+                &use_,
+                nonzero_giant_rotations,
+                prod_size.saturating_sub(res.size()),
+            ));
         }
         let key_base2k = key_base2k.expect("at least one nonzero giant rotation");
         let bases_match = res_base2k == key_base2k && prod_base2k == key_base2k;

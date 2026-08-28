@@ -42,24 +42,25 @@ impl<'a, B: Backend + 'a> GGLWEPreparedBound<'a, B> {
     /// then the selected rows and limb prefix, and that the backing covers the
     /// shape the key claims.
     pub fn new(key: GGLWEPreparedBackendRef<'a, B>, use_: GGLWEActiveUse) -> Result<Self> {
-        let logical: &GGLWELayout = &use_.logical_layout;
+        let logical: &GGLWELayout = use_.logical_layout();
         let data = &key.data;
 
         eq(data.n(), logical.n().as_usize(), "degree")?;
-        eq(data.rows(), use_.physical_rows, "rows")?;
+        eq(data.rows(), use_.physical_rows(), "rows")?;
         eq(data.cols_in(), logical.rank_in().as_usize(), "input columns")?;
         eq(data.cols_out(), (logical.rank_out() + 1).as_usize(), "output columns")?;
         // A bound is always resolved from a complete key, never from a projection.
-        eq(data.size(), use_.physical_size, "limb pitch")?;
+        eq(data.size(), use_.physical_size(), "limb pitch")?;
 
-        eq(key.base2k(), use_.physical_base2k, "base2k")?;
-        eq(key.dsize(), use_.physical_dsize, "dsize")?;
-        eq(key.k_aux(), use_.physical_k_aux, "k_aux")?;
+        let (physical_base2k, physical_dsize, physical_k_aux) = use_.physical_gadget();
+        eq(key.base2k(), physical_base2k, "base2k")?;
+        eq(key.dsize(), physical_dsize, "dsize")?;
+        eq(key.k_aux(), physical_k_aux, "k_aux")?;
 
-        if use_.logical_work_size > data.size() {
+        if use_.logical_work_size() > data.size() {
             return Err(err(format!(
                 "logical work size {} exceeds the stored pitch {}",
-                use_.logical_work_size,
+                use_.logical_work_size(),
                 data.size()
             )));
         }
@@ -69,15 +70,15 @@ impl<'a, B: Backend + 'a> GGLWEPreparedBound<'a, B> {
             .dnum()
             .as_usize()
             .checked_sub(1)
-            .and_then(|i| i.checked_mul(use_.physical_row_step.get()))
-            .and_then(|o| o.checked_add(use_.first_physical_row));
+            .and_then(|i| i.checked_mul(use_.physical_row_step().get()))
+            .and_then(|o| o.checked_add(use_.first_physical_row()));
         match last_row {
             Some(last) if last < data.rows() => {}
             _ => {
                 return Err(err(format!(
                     "selected rows {}..={last_row:?} step {} exceed the stored {}",
-                    use_.first_physical_row,
-                    use_.physical_row_step,
+                    use_.first_physical_row(),
+                    use_.physical_row_step(),
                     data.rows()
                 )));
             }

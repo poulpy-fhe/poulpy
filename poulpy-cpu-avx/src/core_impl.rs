@@ -24,7 +24,7 @@ unsafe impl poulpy_core::oep::GGLWEProductBoundImpl<NTT4x30Avx> for NTT4x30Avx {
         a_size: usize,
         use_: &GGLWEActiveUse,
     ) -> usize {
-        let logical = &use_.logical_layout;
+        let logical = &use_.logical_layout();
         let kernel = crate::ntt4x30::vmp::vmp_apply_digits_strided_tmp_bytes_avx(
             a_cols,
             a_size,
@@ -40,7 +40,7 @@ unsafe impl poulpy_core::oep::GGLWEProductBoundImpl<NTT4x30Avx> for NTT4x30Avx {
             logical.dnum().as_usize(),
             logical.rank_in().as_usize(),
             (logical.rank_out() + 1).as_usize(),
-            use_.logical_work_size,
+            use_.logical_work_size(),
         ) + kernel
     }
 
@@ -52,7 +52,7 @@ unsafe impl poulpy_core::oep::GGLWEProductBoundImpl<NTT4x30Avx> for NTT4x30Avx {
         product_limbs: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let dsize = bound.use_().logical_layout.dsize().as_usize();
+        let dsize = bound.use_().logical_layout().dsize().as_usize();
         with_bound_pmat(module, bound, scratch, |pmat, scratch| {
             let bytes = crate::ntt4x30::vmp::vmp_apply_digits_strided_tmp_bytes_avx(
                 a.cols(),

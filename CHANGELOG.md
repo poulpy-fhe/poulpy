@@ -57,6 +57,11 @@
 - Fix the lazy giant-rotation ROT truncating its output with the stored pitch rather than with the bound.
 - A composite whose bound is empty zeroes its DFT accumulator instead of leaving scratch contents in it: GGSW row expansion, tensor relinearization, baby steps, lazy ROT and the SHIP mux.
 - GGSW row expansion and tensor relinearization bind at the operand's exact precision rather than at its limb count rounded back up.
+- Fix cross-radix tensor relinearization: the DFT operand width came from the storage precision rounded to the key's radix while the bound came from `a.k()`, so at `base2k=30, k=31` against a `base2k=40` key the product was handed two limbs for a one-limb bound. Both now derive from `a.k()`.
+- **Breaking:** `GGLWEActiveUse` has private fields and accessors. It can only come out of the resolver, so a hand-built use claiming a decomposition the key does not store cannot reach the dense specialization.
+- **Breaking:** `gglwe_product_output_size` and `gglwe_product_accumulation_output_size` become `bound_output_size` and `bound_accumulation_output_size`, taking the bound rather than any `GGLWEInfos`: a `with_dsize` wrapper can no longer stand in for the logical key it wraps. The accumulation term count is checked, not saturating.
+- `GGLWEKeyUse` forwards `GGLWEToGGSWKeyPreparedToBackendRef`, and GGSW row expansion binds through the wrapper's effective decomposition instead of the row's stored one.
+- Giant-step scratch sizing skips empty rotation buckets, as the evaluation loop already did, so it no longer demands a key for a rotation that never runs.
 
 ### `poulpy-ckks`
 
@@ -84,6 +89,10 @@
 - **Breaking:** a CKKS batch resolves every lane at its own precision and issues one call per `(physical key, effective dsize)` group, instead of resolving one key at the widest lane. Lanes are reordered into groups; they are independent, so results are unchanged.
 - The PaCo conjugation and conj-rotate keys, and the PaCo preflight scratch query, use the decomposition the helper resolves rather than the one the key stores.
 - The SHIP mux binds at the ciphertext's exact precision rather than at its limb count rounded back up.
+- Batch lanes are partitioned by the resolved key shape as a value rather than by pointer identity, so the scratch query and the execution partition the same way; execution refines by key identity, and each group is bound at a lane's own precision rather than at a maximum no lane holds.
+- One precision rule per ciphertext-ciphertext operation (`mul_k`, `square_k`, `prepared_mul_k`), used by the scratch query and the execution alike.
+- PaCo validates the relinearization-key source the fold really uses, not `tensor_key()`, and resolves both it and the rotation keys at the branch's working precision rather than at the final output width.
+- A SHIP mux group must bind to one decomposition at the group's precision; the sum was previously sized from the first key alone.
 
 ## [0.8.2] - 2026-08-22
 
