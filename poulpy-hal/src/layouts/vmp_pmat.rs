@@ -280,6 +280,21 @@ pub trait VmpPMatReborrowBackendRef<B: Backend> {
     fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B>;
 }
 
+/// Reborrow an already backend-borrowed shared `VmpPMat` for a shorter lifetime.
+pub trait VmpPMatReborrowRef<B: Backend> {
+    fn reborrow_ref(&self) -> VmpPMatBackendRef<'_, B>;
+}
+
+impl<'b, B: Backend + 'b> VmpPMatReborrowRef<B> for VmpPMat<B::BufRef<'b>, B::DftWord, B> {
+    fn reborrow_ref(&self) -> VmpPMatBackendRef<'_, B> {
+        VmpPMat {
+            data: B::view_ref(&self.data),
+            shape: self.shape,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
 impl<'b, B: Backend + 'b> VmpPMatReborrowBackendRef<B> for VmpPMat<B::BufMut<'b>, B::DftWord, B> {
     fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
         VmpPMat {

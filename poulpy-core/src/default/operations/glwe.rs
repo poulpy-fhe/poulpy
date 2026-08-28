@@ -2,8 +2,8 @@ use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAddAssignBackend, VecZnxAddIntoBackend,
         VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxLshAddIntoBackend, VecZnxLshAssignBackend, VecZnxLshBackend,
-        VecZnxLshSubBackend, VecZnxLshTmpBytes, VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneBackend,
+        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApplyTmpA, VecZnxLshAddIntoBackend, VecZnxLshAssignBackend,
+        VecZnxLshBackend, VecZnxLshSubBackend, VecZnxLshTmpBytes, VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneBackend,
         VecZnxNegateAssignBackend, VecZnxNegateBackend, VecZnxNormalize, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
         VecZnxRotateAssignBackend, VecZnxRotateAssignTmpBytes, VecZnxRotateBackend, VecZnxRshAssignBackend, VecZnxRshTmpBytes,
         VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
@@ -20,7 +20,7 @@ use crate::api::{
 };
 use crate::layouts::{GLWELayout, TorusPrecision};
 use crate::{
-    default::keyswitching::glwe::bound_for,
+    default::keyswitching::glwe::{bound_for, bound_prepared},
     default::keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
     layouts::{
         Base2K, GGLWEInfos, GGLWELayout, GGLWEUse, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
@@ -805,8 +805,10 @@ where
         let pairs: usize = tsk.rank_in().as_usize();
 
         let a_dft_size: usize = (a.size() * a_base2k).div_ceil(key_base2k);
-        let input_k: TorusPrecision = TorusPrecision((a_dft_size * key_base2k) as u32);
-        let use_: GGLWEUse = bound_for(tsk, input_k);
+        // Re-radixing to the key's `base2k` does not change the operand's
+        // precision, so the bound is taken at `a.k()` rather than at the limb
+        // count rounded back up.
+        let use_: GGLWEUse = bound_for(tsk, a.k());
         let layout: GGLWELayout = match &use_ {
             GGLWEUse::Empty => tsk.gglwe_layout(),
             GGLWEUse::Active(active) => active.logical_layout,
@@ -820,7 +822,7 @@ where
         let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(cols, output_size);
         let lvl_1_gglwe_product: usize = match use_.active() {
             None => 0,
-            Some(active) => self.gglwe_product_dft_tmp_bytes_default(output_size, a_dft_size, active),
+            Some(active) => self.gglwe_product_dft_tmp_bytes_upper_default(output_size, a_dft_size, active),
         };
         let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(cols, output_size)
             + conv.max(BE::bytes_of_vec_znx(self.n(), 1, res.size()) + self.vec_znx_big_normalize_tmp_bytes());
@@ -856,8 +858,7 @@ where
         let pairs: usize = tsk.rank_in().as_usize();
 
         let a_dft_size: usize = (a.size() * a_base2k).div_ceil(key_base2k);
-        let input_k: TorusPrecision = TorusPrecision((a_dft_size * key_base2k) as u32);
-        let use_: GGLWEUse = bound_for(tsk, input_k);
+        let use_: GGLWEUse = bound_for(tsk, a.k());
         let logical: GGLWELayout = match &use_ {
             GGLWEUse::Empty => tsk.gglwe_layout(),
             GGLWEUse::Active(active) => active.logical_layout,
@@ -889,8 +890,17 @@ where
         let tsk = tsk.to_backend_ref();
 
         let a_dft_ref = a_dft.to_backend_ref();
-        if let GGLWEUse::Active(active) = &use_ {
-            self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, &tsk.0, active, 1, &mut scratch_2);
+        match use_ {
+            GGLWEUse::Active(active) => {
+                let bound = bound_prepared(tsk.0.reborrow(), active);
+                self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, &bound, 1, &mut scratch_2);
+            }
+            // No row is active, so nothing overwrites the accumulator.
+            GGLWEUse::Empty => {
+                for col in 0..res_dft.cols() {
+                    self.vec_znx_dft_zero(&mut res_dft, col);
+                }
+            }
         }
         let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self, cols, output_size);
         {

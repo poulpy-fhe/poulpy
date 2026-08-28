@@ -26,11 +26,10 @@ pub use rotate::*;
 pub use trace::*;
 
 use crate::oep::{
-    AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl,
-    GGLWEProductDigitsStridedImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
-    GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
-    GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
-    LWEKeyswitchImpl,
+    AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGLWEProductBoundImpl,
+    GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEExternalProductImpl,
+    GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl, GLWENormalizeImpl,
+    GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl, LWEKeyswitchImpl,
 };
 use crate::{
     api::TransferInto,
@@ -62,7 +61,7 @@ pub trait TestBackend:
     + GGLWEExternalProductImpl<Self>
     + GGSWExternalProductImpl<Self>
     + GLWETensoringImpl<Self>
-    + GGLWEProductDigitsStridedImpl<Self>
+    + GGLWEProductBoundImpl<Self>
     + GLWEMulConstImpl<Self>
     + GLWEMulPlainImpl<Self>
     + GLWERotateImpl<Self>
@@ -98,7 +97,7 @@ where
         + GGLWEExternalProductImpl<BE>
         + GGSWExternalProductImpl<BE>
         + GLWETensoringImpl<BE>
-        + GGLWEProductDigitsStridedImpl<BE>
+        + GGLWEProductBoundImpl<BE>
         + GLWEMulConstImpl<BE>
         + GLWEMulPlainImpl<BE>
         + GLWERotateImpl<BE>

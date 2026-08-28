@@ -11,7 +11,7 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VmpPMatBytesOf,
     },
     layouts::{
         Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -20,10 +20,10 @@ use poulpy_hal::{
 };
 
 use crate::{
-    default::keyswitching::glwe::bound_for,
+    default::keyswitching::glwe::{bound_for, bound_layout, bound_prepared},
     default::keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
     layouts::{
-        GGLWEInfos, GGLWEUse, GLWEInfos, GLWEToBackendMut, GetGaloisElement, LWEInfos, TorusPrecision,
+        GGLWEInfos, GGLWELayout, GGLWEUse, GLWEInfos, GLWEToBackendMut, GetGaloisElement, LWEInfos, TorusPrecision,
         prepared::GGLWEPreparedToBackendRef,
     },
 };
@@ -55,11 +55,14 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft_tmp_bytes<BE, M, K>(
 ) -> usize
 where
     BE: Backend,
-    M: ModuleN + GGLWEProductDefault<BE> + VecZnxBigBytesOf + VecZnxDftBytesOf + VecZnxIdftApplyTmpBytes,
+    M: ModuleN + GGLWEProductDefault<BE> + VecZnxBigBytesOf + VecZnxDftBytesOf + VecZnxIdftApplyTmpBytes + VmpPMatBytesOf,
     K: GGLWEInfos,
 {
     let cols = rank + 1;
-    let key_size = key_infos.size();
+    // The stored pitch bounds every bound of this key from above, which is what
+    // this query promises: it is asked once for a whole transformation, before
+    // the per-rotation widths are known.
+    let key_size = key_infos.max_size();
     let mask_small_size = prod_size.min(key_size);
     let mask_big = module.bytes_of_vec_znx_big(1, prod_size);
     let mask_dft = module.bytes_of_vec_znx_dft(rank, mask_small_size);
@@ -68,7 +71,9 @@ where
     let input_k: TorusPrecision = TorusPrecision((mask_small_size * key_infos.base2k().as_usize()) as u32);
     let inner = match bound_for(key_infos, input_k) {
         GGLWEUse::Empty => 0,
-        GGLWEUse::Active(active) => module.gglwe_product_dft_tmp_bytes_default(key_size, mask_small_size, &active),
+        // A narrower rotation binds the same key at a lower precision, so this
+        // query is answered over every precision at or below the widest.
+        GGLWEUse::Active(active) => module.gglwe_product_dft_tmp_bytes_upper_default(key_size, mask_small_size, &active),
     };
 
     mask_dft + mask_big + mask_small + module.vec_znx_idft_apply_tmp_bytes() + ks_dft + inner
@@ -109,7 +114,11 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     let key_base2k = key.base2k().as_usize();
     assert_eq!(prod_base2k, key_base2k, "lazy DFT path requires prod_base2k == key.base2k()");
     assert_eq!(prod_dft.cols(), cols);
-    let output_size = output_size.min(key.size());
+    // The bound, never the stored pitch: `output_size` is already derived from
+    // the resolved logical layout, so this only pins that agreement.
+    let full_input_k: TorusPrecision = TorusPrecision((prod_dft.size() * key_base2k) as u32);
+    let key_logical: GGLWELayout = bound_layout(key, full_input_k);
+    let output_size = output_size.min(key_logical.size());
     assert_eq!(res_dft.size(), output_size);
     let mask_small_size = prod_dft.size().min(output_size);
 
@@ -138,15 +147,23 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols, output_size);
     let key_ref = key.to_backend_ref();
     let input_k: TorusPrecision = TorusPrecision((a_dft.size() * key_ref.base2k().as_usize()) as u32);
-    if let GGLWEUse::Active(active) = bound_for(key, input_k) {
-        module.gglwe_product_dft_default(
-            &mut ks_dft,
-            &a_dft.to_backend_ref(),
-            &key_ref,
-            &active,
-            term_count,
-            &mut scratch_2.borrow(),
-        );
+    match bound_for(key, input_k) {
+        GGLWEUse::Active(active) => {
+            let bound = bound_prepared(key_ref, active);
+            module.gglwe_product_dft_default(
+                &mut ks_dft,
+                &a_dft.to_backend_ref(),
+                &bound,
+                term_count,
+                &mut scratch_2.borrow(),
+            );
+        }
+        // No row is active, so nothing overwrites the accumulator.
+        GGLWEUse::Empty => {
+            for col in 0..cols {
+                module.vec_znx_dft_zero(&mut ks_dft, col);
+            }
+        }
     }
 
     // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `output_size`,

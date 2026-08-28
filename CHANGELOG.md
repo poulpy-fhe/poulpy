@@ -9,6 +9,7 @@
 - Add `Convolution::cnv_accumulate_dft_columns_batch`: independent multi-column accumulations, one per term set, with an ordered sequential default.
 - `Convolution::cnv_accumulate_dft_tmp_bytes` also covers the per-term `cnv_apply_dft{,_accumulate}` fallback.
 - Add `vec_znx_backend_ref_with_size`, the read-only counterpart of `vec_znx_backend_mut_with_size`.
+- Add `VmpPMatReborrowRef`, reborrowing an already-borrowed shared `VmpPMat` for a shorter lifetime.
 
 ### `poulpy-core`
 
@@ -45,6 +46,17 @@
 - The BSGS giant-step loop and the planner both skip empty diagonal buckets.
 - **Breaking:** `BSGSOps::mul_prepared_assign_batch` takes a relinearization-key source rather than one key, like the scalar form.
 - `GGLWESingleKey` implements the automorphism and relinearization layout helpers, so a policy-driven single key sizes scratch as well as it executes.
+- **Breaking:** `GGLWEProductDigitsStridedImpl` becomes `GGLWEProductBoundImpl`. The hook takes the complete physical key plus the `GGLWEActiveUse` resolved from it, so a backend addresses the row map and the limb prefix directly; `with_bound_pmat` materializes the selection for one that cannot.
+- **Breaking:** `gglwe_product_dft_default` takes a `GGLWEPreparedBound`, a key and the use it was resolved from checked against each other once: geometry, stored decomposition (`base2k`, `dsize`, `k_aux`), selected rows, limb prefix and backing length.
+- A bound is the logical key it resolves: only a use covering the whole stored matrix under one digit reaches dense VMP, and every narrower one, strided or contiguous, is read through the bound product. No row or limb outside the bound is addressed.
+- Add `GGLWEProductDefault::gglwe_product_dft_tmp_bytes_upper_default`, the bound-product scratch over every input precision at or below the queried one. The exact requirement is not monotone in that precision, so a query answered from a proxy operand takes this one.
+- **Breaking:** zero precision is the only input that binds to `GGLWEUse::Empty`; a positive precision a key cannot serve at all is an unrealizable use. `GGLWEBind::bind_covering_for` additionally refuses a key with fewer digits than its input.
+- `GGLWEActiveUse` carries the stored `base2k`, `dsize` and `k_aux` it was resolved from, so two keys of the same shape but different decomposition cannot be paired with each other's bound.
+- The resolver and the product-term count use checked arithmetic and report overflow instead of saturating.
+- Fix `glwe_keyswitch_assign` sizing its product from the physical key rather than from the bound.
+- Fix the lazy giant-rotation ROT truncating its output with the stored pitch rather than with the bound.
+- A composite whose bound is empty zeroes its DFT accumulator instead of leaving scratch contents in it: GGSW row expansion, tensor relinearization, baby steps, lazy ROT and the SHIP mux.
+- GGSW row expansion and tensor relinearization bind at the operand's exact precision rather than at its limb count rounded back up.
 
 ### `poulpy-ckks`
 
@@ -69,6 +81,9 @@
 - Add `EvalModType::CosHKEven`: the `CosHK` fit recentred on `x - 1/4` and `T₂`-folded, via `cosine::approximate_cos_centered` and `EvalModPlan::{input_offset, mirrored_clusters, folds_even_base}`. `compile_eval_mod` rejects a plan the variant cannot evaluate below `CosHK`'s cost.
 - `DFTMatrix::factors()` is public, replacing `factor_operands()`.
 - **Breaking:** the CKKS batch operations and the lockstep EvalMod, execution and scratch query alike, take a relinearization-key source rather than one tensor key, resolved at the exact precision of each frontier.
+- **Breaking:** a CKKS batch resolves every lane at its own precision and issues one call per `(physical key, effective dsize)` group, instead of resolving one key at the widest lane. Lanes are reordered into groups; they are independent, so results are unchanged.
+- The PaCo conjugation and conj-rotate keys, and the PaCo preflight scratch query, use the decomposition the helper resolves rather than the one the key stores.
+- The SHIP mux binds at the ciphertext's exact precision rather than at its limb count rounded back up.
 
 ## [0.8.2] - 2026-08-22
 

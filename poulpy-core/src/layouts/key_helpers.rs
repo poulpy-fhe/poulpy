@@ -22,7 +22,10 @@ use crate::{
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEKeyRegistry, GGLWEPreparedBackendRef, GLWEInfos, GetGaloisElement,
         LWEInfos, Rank, TorusPrecision,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedBackendRef, GLWETensorKeyPreparedToBackendRef},
+        prepared::{
+            GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef,
+            GLWETensorKeyPreparedBackendRef, GLWETensorKeyPreparedToBackendRef,
+        },
     },
 };
 
@@ -253,6 +256,14 @@ impl<K: GetGaloisElement> GetGaloisElement for GGLWEKeyUse<'_, K> {
 impl<BE: Backend, K: GGLWEPreparedToBackendRef<BE>> GGLWEPreparedToBackendRef<BE> for GGLWEKeyUse<'_, K> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, BE> {
         GGLWEPreparedToBackendRef::to_backend_ref(self.key)
+    }
+}
+
+impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GLWEAutomorphismKeyPreparedToBackendRef<BE>
+    for GGLWEKeyUse<'_, K>
+{
+    fn to_backend_ref(&self) -> GLWEAutomorphismKeyPreparedBackendRef<'_, BE> {
+        GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(self.key)
     }
 }
 

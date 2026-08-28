@@ -21,7 +21,7 @@ use poulpy_hal::{
 use crate::{
     GLWERotate, ScratchArenaTakeCore,
     default::{
-        keyswitching::glwe::{bound_for, bound_layout},
+        keyswitching::glwe::{bound_for, bound_layout, bound_prepared},
         keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
         operations::GLWECopyDefault,
     },
@@ -499,7 +499,9 @@ where
     let cols: usize = rank + 1;
 
     let a_size: usize = res_infos.k().as_usize().div_ceil(tsk_base2k);
-    let input_k: TorusPrecision = TorusPrecision((a_size * tsk_base2k) as u32);
+    // The exact precision of the operand, not the limb count rounded back up:
+    // rounding claims digits the input does not have.
+    let input_k: TorusPrecision = res_infos.k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, res_infos, &bound_layout(tsk_infos, input_k));
 
     let lvl_0: usize = module.bytes_of_vec_znx_dft(cols - 1, a_size) + BE::bytes_of_vec_znx(module.n(), 1, a_size);
@@ -539,7 +541,7 @@ where
 
     let res_base2k: usize = res_backend.base2k().into();
     let tsk_base2k: usize = tsk.base2k().into();
-    let input_k: TorusPrecision = TorusPrecision((res_backend.k().as_usize().div_ceil(tsk_base2k) * tsk_base2k) as u32);
+    let input_k: TorusPrecision = res_backend.k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(&res_backend, &res_backend, &bound_layout(tsk, input_k));
 
     assert!(
@@ -598,6 +600,7 @@ where
                 &a_dft_ref,
                 tsk,
                 output_size,
+                input_k,
                 &mut scratch_row,
             );
         }
@@ -613,6 +616,7 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
     a_dft: &VecZnxDftBackendRef<'b, BE>,
     tsk: &T,
     output_size: usize,
+    input_k: TorusPrecision,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: GLWEBytesOf<BE>
@@ -635,9 +639,17 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
         {
             let mut scratch_prod = scratch_1.borrow();
             let key = tsk.at(col - 1);
-            let input_k: TorusPrecision = TorusPrecision((a_dft.size() * key.base2k().as_usize()) as u32);
-            if let GGLWEUse::Active(active) = bound_for(key, input_k) {
-                module.gglwe_product_dft_default(&mut res_dft, a_dft, key, &active, 1, &mut scratch_prod);
+            match bound_for(key, input_k) {
+                GGLWEUse::Active(active) => {
+                    let bound = bound_prepared(key.reborrow(), active);
+                    module.gglwe_product_dft_default(&mut res_dft, a_dft, &bound, 1, &mut scratch_prod);
+                }
+                // No row is active, so nothing overwrites the accumulator.
+                GGLWEUse::Empty => {
+                    for col in 0..res_dft.cols() {
+                        module.vec_znx_dft_zero(&mut res_dft, col);
+                    }
+                }
             }
         }
 

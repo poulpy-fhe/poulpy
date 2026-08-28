@@ -1,11 +1,11 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef};
 
 use crate::layouts::{
-    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
-    GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
-    prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
+    GGLWEActiveUse, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos,
+    GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
+    prepared::{GGLWEPreparedBound, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
 /// Output limbs computed by gadget digit `di`.
@@ -23,88 +23,67 @@ pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: 
     }
 }
 
-/// Backend implementation of the interleaved-digit GGLWE product.
+/// Backend implementation of the GGLWE product over a bound key.
 ///
-/// For `dsize >= 2`, it must reproduce
-/// [`gglwe_product_digits_strided_default`](crate::default::keyswitching::glwe::gglwe_product_digits_strided_default)
+/// The hook receives the **complete physical** prepared key together with the
+/// [`GGLWEActiveUse`] resolved from it, so an implementation that can address
+/// rows `first_physical_row + i * physical_row_step` and the first
+/// `logical_work_size` limbs of each does so directly, with no gather pass and
+/// no read outside that window. The reference body materializes the selection
+/// first and is a fallback, not the contract.
+///
+/// It must reproduce
+/// [`gglwe_product_bound_default`](crate::default::keyswitching::glwe::gglwe_product_bound_default)
 /// bit for bit. `product_limbs` is the caller-derived spill width for the full
 /// coefficient-product accumulation.
 ///
 /// # Safety
-/// Implementations must honor the supplied layouts and return a scratch bound
-/// sufficient for [`Self::gglwe_product_digits_strided`].
-pub unsafe trait GGLWEProductDigitsStridedImpl<BE: Backend>: Backend {
-    #[allow(clippy::too_many_arguments)]
-    fn gglwe_product_digits_strided_tmp_bytes(
+/// Implementations must honor the supplied bound, read no key material outside
+/// the rows and limb prefix it resolves, and return a scratch bound sufficient
+/// for [`Self::gglwe_product_bound`].
+pub unsafe trait GGLWEProductBoundImpl<BE: Backend>: Backend {
+    fn gglwe_product_bound_tmp_bytes(
         module: &Module<BE>,
         res_size: usize,
         a_cols: usize,
         a_size: usize,
-        dsize: usize,
-        pmat_rows: usize,
-        pmat_cols_in: usize,
-        pmat_cols_out: usize,
-        pmat_size: usize,
+        use_: &GGLWEActiveUse,
     ) -> usize;
 
-    fn gglwe_product_digits_strided(
+    fn gglwe_product_bound(
         module: &Module<BE>,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         a: &VecZnxDftBackendRef<'_, BE>,
-        dsize: usize,
+        bound: &GGLWEPreparedBound<'_, BE>,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }
 
-/// Opts a backend into the canonical GGLWE interleaved-digit product.
+/// Opts a backend into the canonical bound GGLWE product.
 #[macro_export]
-macro_rules! impl_gglwe_product_digits_strided_default {
+macro_rules! impl_gglwe_product_bound_default {
     ($be:ty) => {
-        unsafe impl $crate::oep::GGLWEProductDigitsStridedImpl<$be> for $be {
-            fn gglwe_product_digits_strided_tmp_bytes(
+        unsafe impl $crate::oep::GGLWEProductBoundImpl<$be> for $be {
+            fn gglwe_product_bound_tmp_bytes(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_size: usize,
                 a_cols: usize,
                 a_size: usize,
-                dsize: usize,
-                pmat_rows: usize,
-                pmat_cols_in: usize,
-                pmat_cols_out: usize,
-                pmat_size: usize,
+                use_: &$crate::layouts::GGLWEActiveUse,
             ) -> usize {
-                $crate::default::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
-                    module,
-                    res_size,
-                    a_cols,
-                    a_size,
-                    dsize,
-                    pmat_rows,
-                    pmat_cols_in,
-                    pmat_cols_out,
-                    pmat_size,
-                )
+                $crate::default::keyswitching::glwe::gglwe_product_bound_tmp_bytes_default(module, res_size, a_cols, a_size, use_)
             }
 
-            fn gglwe_product_digits_strided(
+            fn gglwe_product_bound(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut ::poulpy_hal::layouts::VecZnxDftBackendMut<'_, $be>,
                 a: &::poulpy_hal::layouts::VecZnxDftBackendRef<'_, $be>,
-                dsize: usize,
+                bound: &$crate::layouts::prepared::GGLWEPreparedBound<'_, $be>,
                 product_limbs: usize,
-                pmat: &::poulpy_hal::layouts::VmpPMatBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                $crate::default::keyswitching::glwe::gglwe_product_digits_strided_default(
-                    module,
-                    res,
-                    a,
-                    dsize,
-                    product_limbs,
-                    pmat,
-                    scratch,
-                )
+                $crate::default::keyswitching::glwe::gglwe_product_bound_default(module, res, a, bound, product_limbs, scratch)
             }
         }
     };

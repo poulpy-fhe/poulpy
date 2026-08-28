@@ -208,6 +208,19 @@ impl<D: Data, B: Backend> GGLWEPrepared<D, B> {
     }
 }
 
+impl<'b, B: Backend + 'b> GGLWEPrepared<B::BufRef<'b>, B> {
+    /// Reborrows a backend reference for a shorter lifetime, so one prepared
+    /// reference can be paired with a bound without giving it up.
+    pub fn reborrow(&self) -> GGLWEPreparedBackendRef<'_, B> {
+        GGLWEPrepared {
+            base2k: self.base2k,
+            k_aux: self.k_aux,
+            dsize: self.dsize,
+            data: poulpy_hal::layouts::VmpPMatReborrowRef::reborrow_ref(&self.data),
+        }
+    }
+}
+
 pub trait GGLWEPreparedToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B>;
 }

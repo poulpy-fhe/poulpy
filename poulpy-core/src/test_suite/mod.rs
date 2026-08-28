@@ -48,6 +48,8 @@ macro_rules! core_backend_test_suite {
                 glwe_automorphism => $crate::test_suite::noise::automorphism::test_glwe_automorphism,
                 glwe_automorphism_assign => $crate::test_suite::noise::automorphism::test_glwe_automorphism_assign,
                 glwe_automorphism_selected => $crate::test_suite::noise::automorphism::test_glwe_automorphism_selected,
+                glwe_bound_reads_only_selected_rows =>
+                    $crate::test_suite::noise::automorphism::test_glwe_bound_reads_only_selected_rows,
                 glwe_external_product => $crate::test_suite::noise::external_product::test_glwe_external_product,
                 glwe_external_product_assign => $crate::test_suite::noise::external_product::test_glwe_external_product_assign,
                 glwe_keyswitch_ignores_dirty_scratch =>

@@ -22,7 +22,7 @@ use poulpy_core::{
     },
     oep::{
         AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl,
-        GGLWEProductDigitsStridedImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
+        GGLWEProductBoundImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
         GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
         GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl,
         GLWETraceImpl, LWEKeyswitchImpl, LinearTransformationImpl,
@@ -105,7 +105,7 @@ pub trait CkksBenchBackend:
     + GGLWEExternalProductImpl<Self>
     + GGSWExternalProductImpl<Self>
     + GLWETensoringImpl<Self>
-    + GGLWEProductDigitsStridedImpl<Self>
+    + GGLWEProductBoundImpl<Self>
     + GLWEMulConstImpl<Self>
     + GLWEMulPlainImpl<Self>
     + GLWERotateImpl<Self>
@@ -165,7 +165,7 @@ where
         + GGLWEExternalProductImpl<BE>
         + GGSWExternalProductImpl<BE>
         + GLWETensoringImpl<BE>
-        + GGLWEProductDigitsStridedImpl<BE>
+        + GGLWEProductBoundImpl<BE>
         + GLWEMulConstImpl<BE>
         + GLWEMulPlainImpl<BE>
         + GLWERotateImpl<BE>

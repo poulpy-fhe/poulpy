@@ -6,19 +6,20 @@ use poulpy_hal::{
         VmpPMatBytesOf,
     },
     layouts::{
-        Backend, DataView, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftToBackendRef, VmpPMatToBackendRef,
+        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef,
+        VmpPMatToBackendRef,
     },
 };
 
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        Dsize, GGLWEActiveUse, GGLWEBind, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEUse, GLWEInfos,
-        GLWEToBackendRef, GadgetProductOutputSizeParams, LWEInfos, TorusPrecision, gadget_product_limbs,
-        gadget_product_output_size, prepared::GGLWEPreparedToBackendRef, resolve_gglwe_key_use,
+        Dsize, GGLWEActiveUse, GGLWEBind, GGLWEInfos, GGLWELayout, GGLWEUse, GLWEInfos, GLWEToBackendRef,
+        GadgetProductOutputSizeParams, LWEInfos, TorusPrecision, gadget_product_limbs, gadget_product_output_size,
+        prepared::{GGLWEPreparedBackendRef, GGLWEPreparedBound, GGLWEPreparedToBackendRef},
+        resolve_gglwe_key_use,
     },
-    oep::{GGLWEProductDigitsStridedImpl, gglwe_product_digit_output_size},
+    oep::{GGLWEProductBoundImpl, gglwe_product_digit_output_size},
 };
 
 impl<BE: Backend> GLWEKeyswitchInternal<BE> for Module<BE> where Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE> {}
@@ -101,7 +102,7 @@ pub fn bound_for<K: GGLWEInfos>(key_infos: &K, input_k: TorusPrecision) -> GGLWE
 
 impl<BE: Backend> GGLWEProductDefault<BE> for Module<BE>
 where
-    BE: GGLWEProductDigitsStridedImpl<BE>,
+    BE: GGLWEProductBoundImpl<BE>,
     Self: Sized
         + ModuleN
         + VecZnxDftBytesOf
@@ -116,36 +117,24 @@ where
 {
     fn gglwe_product_dft_tmp_bytes_default(&self, res_size: usize, a_size: usize, use_: &GGLWEActiveUse) -> usize {
         let logical = &use_.logical_layout;
-        let dsize: usize = logical.dsize().into();
-        let dnum: usize = logical.dnum().into();
         let cols_in: usize = logical.rank_in().into();
-        let cols_out: usize = (logical.rank_out() + 1).into();
-        let key_size: usize = use_.logical_work_size;
-        let product: usize = if dsize == 1 {
-            self.vmp_apply_dft_to_dft_tmp_bytes(res_size, a_size, dnum, cols_in, cols_out, key_size)
-        } else {
-            BE::gglwe_product_digits_strided_tmp_bytes(self, res_size, cols_in, a_size, dsize, dnum, cols_in, cols_out, key_size)
-        };
-        if use_.physical_row_step.get() == 1 {
-            // A contiguous bound is read in place: the dense kernels already
-            // stop at `min(rows, a.size())` and `min(size, res.size())`.
-            return product;
+        if is_whole_dense_matrix(use_) {
+            let dnum: usize = logical.dnum().into();
+            let cols_out: usize = (logical.rank_out() + 1).into();
+            return self.vmp_apply_dft_to_dft_tmp_bytes(res_size, a_size, dnum, cols_in, cols_out, use_.logical_work_size);
         }
-        // ponytail: a strided bound is gathered dense first, one extra pass over
-        // the selected material. A backend addressing the row map in its own
-        // kernel overrides the product and drops this.
-        self.bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size) + product
+        BE::gglwe_product_bound_tmp_bytes(self, res_size, cols_in, a_size, use_)
     }
 
     fn gglwe_product_dft_default<'r, 'a>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, BE>,
         a: &VecZnxDftBackendRef<'a, BE>,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        use_: &GGLWEActiveUse,
+        bound: &GGLWEPreparedBound<'_, BE>,
         term_count: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
+        let use_: &GGLWEActiveUse = bound.use_();
         let a_size: usize = a.size();
         assert_eq!(
             a_size,
@@ -153,7 +142,6 @@ where
             "the product input must carry ceil(input_k / base2k) limbs for input_k={}",
             use_.input_k
         );
-        assert_prepared_matches_bound::<BE>(key, use_);
         assert!(
             scratch.available() >= self.gglwe_product_dft_tmp_bytes_default(res.size(), a_size, use_),
             "scratch.available(): {} < GGLWEProductDefault::gglwe_product_dft_tmp_bytes: {}",
@@ -161,118 +149,151 @@ where
             self.gglwe_product_dft_tmp_bytes_default(res.size(), a_size, use_)
         );
 
-        if use_.physical_row_step.get() == 1 {
-            gglwe_product_dft_dense(self, res, a, key, use_, term_count, scratch);
+        // The dense VMP specialization is kept only when the bound is the whole
+        // stored matrix: every row, every limb, one digit. Anything narrower
+        // goes through the bound product, which is what enforces the row map and
+        // the limb prefix.
+        if is_whole_dense_matrix(use_) {
+            self.vmp_apply_dft_to_dft(res, a, bound.pmat(), 0, scratch);
             return;
         }
-
-        let (rows, cols_in, cols_out) = (
-            use_.logical_layout.dnum().as_usize(),
-            use_.logical_layout.rank_in().as_usize(),
-            (use_.logical_layout.rank_out() + 1).as_usize(),
-        );
-        scratch.scope(|scratch_phase| {
-            let (mut selected, mut scratch_1) =
-                scratch_phase.take_vmp_pmat_scratch(self, rows, cols_in, cols_out, use_.logical_work_size);
-            self.vmp_extract_selected_rows(
-                &mut selected,
-                &key.data,
-                use_.first_physical_row,
-                use_.physical_row_step.get(),
-            );
-            let gathered: GGLWEPreparedBackendRef<'_, BE> = GGLWEPrepared {
-                data: selected.to_backend_ref(),
-                k_aux: use_.logical_layout.k_aux(),
-                base2k: use_.logical_layout.base2k(),
-                dsize: use_.logical_layout.dsize(),
-            };
-            gglwe_product_dft_dense(self, res, a, &gathered, use_, term_count, &mut scratch_1.borrow());
-        });
+        BE::gglwe_product_bound(self, res, a, bound, product_limbs_of(use_, term_count), scratch);
     }
 }
 
-/// Rejects a prepared key that does not match the physical shape its bound was
-/// resolved from, before any of it reaches a backend.
-///
-/// A key reconstructed from storage carries its metadata separately from its
-/// buffer, so a mismatch is a restore bug rather than a caller bug, and it would
-/// otherwise surface as an out-of-range read inside a kernel.
-fn assert_prepared_matches_bound<BE: Backend>(key: &GGLWEPreparedBackendRef<'_, BE>, use_: &GGLWEActiveUse) {
-    let logical: &GGLWELayout = &use_.logical_layout;
-    let data = &key.data;
-    let (rows, cols_in, cols_out, size) = (data.rows(), data.cols_in(), data.cols_out(), data.size());
-
-    assert_eq!(data.n(), logical.n().as_usize(), "prepared degree does not match the bound");
-    assert_eq!(rows, use_.physical_rows, "prepared rows do not match the bound");
-    assert_eq!(
-        cols_in,
-        logical.rank_in().as_usize(),
-        "prepared input columns do not match the bound"
-    );
-    assert_eq!(
-        cols_out,
-        (logical.rank_out() + 1).as_usize(),
-        "prepared output columns do not match the bound"
-    );
-    // A bound is always resolved from a complete key, never from a projection.
-    assert_eq!(size, use_.physical_size, "prepared limb pitch does not match the bound");
-    assert!(
-        use_.logical_work_size <= size,
-        "logical work size {} exceeds the stored pitch {size}",
-        use_.logical_work_size
-    );
-
-    // The last selected row, computed without wrapping.
-    let last_row: Option<usize> = logical
-        .dnum()
-        .as_usize()
-        .checked_sub(1)
-        .and_then(|i| i.checked_mul(use_.physical_row_step.get()))
-        .and_then(|o| o.checked_add(use_.first_physical_row));
-    assert!(
-        last_row.is_some_and(|last| last < rows),
-        "selected rows {}..={last_row:?} step {} exceed the stored {rows}",
-        use_.first_physical_row,
-        use_.physical_row_step
-    );
-
-    assert!(
-        BE::len_bytes_ref(DataView::data(data)) >= BE::bytes_of_vmp_pmat(data.n(), rows, cols_in, cols_out, size),
-        "prepared backing is shorter than its own shape requires"
-    );
+/// Whether the bound is the complete stored matrix under a single gadget digit,
+/// the one shape a plain dense VMP realizes exactly.
+fn is_whole_dense_matrix(use_: &GGLWEActiveUse) -> bool {
+    use_.is_dense() && use_.logical_layout.dsize().as_usize() == 1
 }
 
-/// The product over a key whose rows are contiguous from `first_physical_row`.
+/// Spill width of the coefficient-product accumulation for this bound.
 ///
-/// The `dsize == 1` dense specialization is entered from here, where the rows
-/// are known to be contiguous; the dense kernels then trim to the operands,
-/// reading `min(rows, a.size())` rows and `min(size, res.size())` limbs.
-fn gglwe_product_dft_dense<BE>(
+/// Panics rather than saturating: a saturated term count silently understates
+/// the retained window, which is not noise-visible.
+fn product_limbs_of(use_: &GGLWEActiveUse, term_count: usize) -> usize {
+    let logical = &use_.logical_layout;
+    let factors: [usize; 5] = [
+        logical.n().as_usize(),
+        logical.dnum().as_usize(),
+        logical.dsize().as_usize(),
+        logical.rank_in().as_usize().max(1),
+        term_count.max(1),
+    ];
+    let product_terms: usize = factors
+        .iter()
+        .try_fold(1usize, |acc, f| acc.checked_mul(*f))
+        .unwrap_or_else(|| panic!("product term count overflows usize for logical layout {logical:?} over {term_count} term(s)"));
+    gadget_product_limbs(logical.base2k(), product_terms)
+}
+
+/// Reference scratch for [`gglwe_product_bound_default`].
+#[doc(hidden)]
+pub fn gglwe_product_bound_tmp_bytes_default<BE: Backend>(
+    module: &Module<BE>,
+    res_size: usize,
+    a_cols: usize,
+    a_size: usize,
+    use_: &GGLWEActiveUse,
+) -> usize
+where
+    Module<BE>: VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes + VmpApplyDftToDftAccumulateTmpBytes + VmpPMatBytesOf,
+{
+    let logical = &use_.logical_layout;
+    let (dsize, dnum) = (logical.dsize().as_usize(), logical.dnum().as_usize());
+    let cols_in: usize = logical.rank_in().into();
+    let cols_out: usize = (logical.rank_out() + 1).into();
+    let key_size: usize = use_.logical_work_size;
+    let product: usize = gglwe_product_digits_strided_tmp_bytes_default(
+        module, res_size, a_cols, a_size, dsize, dnum, cols_in, cols_out, key_size,
+    );
+    if use_.is_dense() {
+        return product;
+    }
+    // ponytail: the reference materializes the selection, one extra pass over
+    // it. A backend addressing the row map in its own kernel overrides
+    // `gglwe_product_bound` and drops this.
+    module.bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size) + product
+}
+
+/// Runs `f` on the matrix the bound resolves.
+///
+/// A bound that is the whole stored matrix is handed over in place. Anything
+/// narrower is materialized into the logical shape first, so `f` never sees a
+/// row or a limb the bound excludes. A backend able to address the row map and
+/// the limb prefix itself skips this and reads the stored matrix directly.
+pub fn with_bound_pmat<BE, R>(
+    module: &Module<BE>,
+    bound: &GGLWEPreparedBound<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+    f: impl FnOnce(&poulpy_hal::layouts::VmpPMatBackendRef<'_, BE>, &mut ScratchArena<'_, BE>) -> R,
+) -> R
+where
+    BE: Backend,
+    Module<BE>: ModuleN + VmpExtractSelectedRows<BE> + VmpPMatBytesOf,
+{
+    let use_: &GGLWEActiveUse = bound.use_();
+    if use_.is_dense() {
+        return f(bound.pmat(), scratch);
+    }
+    let logical = &use_.logical_layout;
+    let (rows, cols_in, cols_out) = (
+        logical.dnum().as_usize(),
+        logical.rank_in().as_usize(),
+        (logical.rank_out() + 1).as_usize(),
+    );
+    scratch.scope(|scratch_phase| {
+        let (mut selected, mut scratch_1) =
+            scratch_phase.take_vmp_pmat_scratch(module, rows, cols_in, cols_out, use_.logical_work_size);
+        module.vmp_extract_selected_rows(
+            &mut selected,
+            bound.pmat(),
+            use_.first_physical_row,
+            use_.physical_row_step.get(),
+        );
+        f(&selected.to_backend_ref(), &mut scratch_1.borrow())
+    })
+}
+
+/// Reference GGLWE product over a bound key.
+///
+/// A bound that is not the whole stored matrix is materialized into the logical
+/// shape first: `vmp_extract_selected_rows` copies rows
+/// `first_physical_row + i * physical_row_step` truncated to `logical_work_size`
+/// limbs, so the product is exactly the product with the logical key and no
+/// limb outside the prefix is read.
+#[doc(hidden)]
+pub fn gglwe_product_bound_default<BE>(
     module: &Module<BE>,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     a: &VecZnxDftBackendRef<'_, BE>,
-    key: &GGLWEPreparedBackendRef<'_, BE>,
-    use_: &GGLWEActiveUse,
-    term_count: usize,
+    bound: &GGLWEPreparedBound<'_, BE>,
+    product_limbs: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + GGLWEProductDigitsStridedImpl<BE>,
-    Module<BE>: VmpApplyDftToDft<BE>,
+    BE: Backend,
+    Module<BE>: ModuleN
+        + VecZnxDftBytesOf
+        + VecZnxDftCopy<BE>
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftAccumulate<BE>
+        + VmpExtractSelectedRows<BE>
+        + VmpPMatBytesOf,
 {
-    let logical = &use_.logical_layout;
-    let dsize: usize = logical.dsize().into();
-    if dsize == 1 {
-        module.vmp_apply_dft_to_dft(res, a, &key.data, 0, scratch);
-    } else {
-        let product_terms = logical
-            .n()
-            .as_usize()
-            .saturating_mul(logical.dnum().as_usize())
-            .saturating_mul(dsize)
-            .saturating_mul(logical.rank_in().as_usize().max(1))
-            .saturating_mul(term_count.max(1));
-        let product_limbs = gadget_product_limbs(logical.base2k(), product_terms);
-        BE::gglwe_product_digits_strided(module, res, a, dsize, product_limbs, &key.data, scratch);
+    let dsize: usize = bound.use_().logical_layout.dsize().into();
+    with_bound_pmat(module, bound, scratch, |pmat, scratch| {
+        gglwe_product_digits_strided_default(module, res, a, dsize, product_limbs, pmat, scratch);
+    });
+}
+
+/// Pairs a prepared key with the bound resolved from it, or fails loudly.
+///
+/// Public for the same reason as [`bound_for`]: every caller that reaches a
+/// GGLWE product goes through it, including the ones outside this crate.
+pub fn bound_prepared<'a, BE: Backend>(key: GGLWEPreparedBackendRef<'a, BE>, use_: GGLWEActiveUse) -> GGLWEPreparedBound<'a, BE> {
+    match GGLWEPreparedBound::new(key, use_) {
+        Ok(bound) => bound,
+        Err(e) => panic!("{e}"),
     }
 }
 
@@ -306,17 +327,39 @@ where
     /// Scratch bound of [`Self::gglwe_product_dft_default`] for the same bound.
     fn gglwe_product_dft_tmp_bytes_default(&self, res_size: usize, a_size: usize, use_: &GGLWEActiveUse) -> usize;
 
+    /// Upper bound of [`Self::gglwe_product_dft_tmp_bytes_default`] over every
+    /// input precision this key can be bound at, at or below `use_`'s.
+    ///
+    /// The exact requirement is not monotone in the input precision: a bound
+    /// that is the whole stored matrix is read in place, and any narrower one is
+    /// materialized first. A query answered from a proxy operand, rather than
+    /// from the ciphertext the operation will really run on, has to carry that
+    /// materialization even when the proxy itself binds the whole matrix.
+    fn gglwe_product_dft_tmp_bytes_upper_default(&self, res_size: usize, a_size: usize, use_: &GGLWEActiveUse) -> usize {
+        let exact: usize = self.gglwe_product_dft_tmp_bytes_default(res_size, a_size, use_);
+        if !use_.is_dense() {
+            return exact;
+        }
+        let logical = &use_.logical_layout;
+        exact
+            + self.bytes_of_vmp_pmat(
+                logical.dnum().as_usize(),
+                logical.rank_in().as_usize(),
+                (logical.rank_out() + 1).as_usize(),
+                use_.logical_work_size,
+            )
+    }
+
     /// Applies one GGLWE product into a DFT accumulator that will contain
     /// `term_count` such products before normalization.
     ///
-    /// Reads only the rows and limb prefix `bound` resolves. Zero precision
+    /// Reads only the rows and limb prefix the bound resolves. Zero precision
     /// never reaches here: the caller has no bound to pass.
     fn gglwe_product_dft_default<'r, 'a>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, BE>,
         a: &VecZnxDftBackendRef<'a, BE>,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        use_: &GGLWEActiveUse,
+        bound: &GGLWEPreparedBound<'_, BE>,
         term_count: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
@@ -435,7 +478,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A, K>(
 
     let mask_cols = a_ref.rank().as_usize();
     let a_size: usize = a_ref.size();
-    let key_ref: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
+    let bound: GGLWEPreparedBound<'_, BE> = bound_prepared(key.to_backend_ref(), active);
     scratch.scope(|scratch_phase| {
         let (mut a_dft, mut scratch_1) = scratch_phase.take_vec_znx_dft_scratch(module, mask_cols, a_size);
         for col_i in 0..mask_cols {
@@ -443,7 +486,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A, K>(
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, a_data, col_i + 1);
         }
         let a_dft_ref = a_dft.to_backend_ref();
-        module.gglwe_product_dft_default(res, &a_dft_ref, &key_ref, &active, 1, &mut scratch_1.borrow());
+        module.gglwe_product_dft_default(res, &a_dft_ref, &bound, 1, &mut scratch_1.borrow());
     });
 }
 
@@ -779,7 +822,7 @@ where
         module.glwe_keyswitch_tmp_bytes_default(res, res, key)
     );
 
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, res, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, res, &bound_layout(key, res.k()));
 
     let res_base2k: usize = res.base2k().as_usize();
     let key_base2k: usize = key.base2k().as_usize();

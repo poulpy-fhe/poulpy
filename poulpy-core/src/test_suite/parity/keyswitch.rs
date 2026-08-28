@@ -4,7 +4,7 @@ use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
         VecZnxDftZero, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         FillUniform, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, VecZnx,
@@ -18,19 +18,39 @@ use crate::{
     GGLWEKeyswitch, GLWEKeyswitch,
     api::TransferInto,
     default::keyswitching::GGLWEProductDefault,
+    default::keyswitching::glwe::bound_prepared,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWEActiveUse, GGLWELayout, GLWELayout, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
         gadget_product_limbs, prepared::GGLWEPreparedFactory,
     },
     layouts::{GGLWEPrepared, resolve_gglwe_key_use},
-    oep::GGLWEProductDigitsStridedImpl,
+    oep::GGLWEProductBoundImpl,
     test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe},
 };
+
+/// The bound a complete key of this shape realizes through its own
+/// decomposition at `input_k`.
+fn dense_bound(n: usize, base2k: usize, dsize: usize, dnum: usize, cols_in: usize, cols_out: usize, k: usize) -> GGLWEActiveUse {
+    let layout = GGLWELayout {
+        n: Degree(n as u32),
+        base2k: Base2K(base2k as u32),
+        dnum: Dnum(dnum as u32),
+        dsize: Dsize(dsize as u32),
+        k_aux: TorusPrecision((dsize * base2k) as u32),
+        rank_in: Rank(cols_in as u32),
+        rank_out: Rank((cols_out - 1) as u32),
+    };
+    *resolve_gglwe_key_use(&layout, TorusPrecision(k as u32), layout.dsize)
+        .expect("valid layout")
+        .expect("a key realizes its own decomposition")
+        .active()
+        .expect("positive precision")
+}
 
 /// Checks a backend's interleaved-digit product against the Core definition.
 pub fn test_gglwe_product_digits_strided<BE>(module: &Module<BE>, base2k: usize)
 where
-    BE: poulpy_hal::test_suite::TestBackend + GGLWEProductDigitsStridedImpl<BE>,
+    BE: poulpy_hal::test_suite::TestBackend + GGLWEProductBoundImpl<BE>,
     BE::OwnedBuf: HostDataMut,
     Module<BE>: VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
@@ -42,7 +62,9 @@ where
         + VmpApplyDftToDftAccumulate<BE>
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDftAccumulateTmpBytes
+        + VmpExtractSelectedRows<BE>
         + VmpPMatAlloc<BE>
+        + VmpPMatBytesOf
         + VmpPrepare<BE>
         + VmpPrepareTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -67,15 +89,16 @@ where
         ]
     }) {
         let rows = a_size.div_ceil(dsize);
-        let size_out = a_size;
+        // The natural size of a key of this shape, so the bound below is the
+        // whole stored matrix and both products read exactly it.
+        let size_out = rows * dsize + dsize;
+        let use_ = dense_bound(module.n(), base2k, dsize, rows, cols_in, cols_out, a_size * base2k);
+        assert!(use_.is_dense(), "the parity case must bind the whole stored matrix");
         let product_terms = module.n().saturating_mul(rows).saturating_mul(dsize).saturating_mul(cols_in);
         let product_limbs = gadget_product_limbs(Base2K(base2k as u32), product_terms);
-        let default_tmp = crate::default::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
-            module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
-        );
-        let backend_tmp = BE::gglwe_product_digits_strided_tmp_bytes(
-            module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
-        );
+        let default_tmp =
+            crate::default::keyswitching::glwe::gglwe_product_bound_tmp_bytes_default(module, size_out, cols_in, a_size, &use_);
+        let backend_tmp = BE::gglwe_product_bound_tmp_bytes(module, size_out, cols_in, a_size, &use_);
         let mut scratch = ScratchOwned::<BE>::alloc(
             default_tmp
                 .max(backend_tmp)
@@ -103,28 +126,34 @@ where
         let mat = <MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat);
         module.vmp_prepare(&mut pmat.to_backend_mut(), &mat, &mut scratch.borrow());
 
+        let key = GGLWEPrepared {
+            data: pmat.to_backend_ref(),
+            k_aux: TorusPrecision((dsize * base2k) as u32),
+            base2k: Base2K(base2k as u32),
+            dsize: Dsize(dsize as u32),
+        };
+        let bound = bound_prepared(key, use_);
+
         let mut want = module.vec_znx_dft_alloc(cols_out, size_out);
         let sentinel = vec![1u8; BE::len_bytes(&want.data)];
         BE::copy_from_host(&mut want.data, &sentinel);
-        crate::default::keyswitching::glwe::gglwe_product_digits_strided_default(
+        crate::default::keyswitching::glwe::gglwe_product_bound_default(
             module,
             &mut want.to_backend_mut(),
             &a_dft.to_backend_ref(),
-            dsize,
+            &bound,
             product_limbs,
-            &pmat.to_backend_ref(),
             &mut scratch.borrow(),
         );
 
         let mut have = module.vec_znx_dft_alloc(cols_out, size_out);
         BE::copy_from_host(&mut have.data, &sentinel);
-        BE::gglwe_product_digits_strided(
+        BE::gglwe_product_bound(
             module,
             &mut have.to_backend_mut(),
             &a_dft.to_backend_ref(),
-            dsize,
+            &bound,
             product_limbs,
-            &pmat.to_backend_ref(),
             &mut scratch.borrow(),
         );
 
@@ -223,21 +252,29 @@ where
         let mut mat = host.mat_znx_alloc(rows, cols_in, cols_out, size);
         mat.fill_uniform(base2k, &mut source);
 
-        // Poison every row the bound does not select. The oracle is built from
-        // the selected rows only, so reading a skipped one changes the result.
-        //
-        // Only rows are poisoned. How many limbs of a selected row a digit
-        // product reads is not agreed between backends: fft64 stops at
-        // `res.size()`, ntt4x30 at `res.size() + limb_offset`, so a poisoned
-        // suffix fails there for reasons that have nothing to do with the bound.
+        // Poison everything the bound does not resolve: every skipped row, and
+        // on a bound narrower than the stored matrix the limb suffix of the
+        // selected rows too. The oracle is the selected rows truncated to the
+        // prefix, so reading any of it changes the result.
         {
             let selected: Vec<usize> = (0..sel_rows).map(|i| use_.first_physical_row + i * s as usize).collect();
             let mat_ncols = cols_out * size;
-            for row in (0..rows).filter(|row| !selected.contains(row)) {
+            let suffix_from = if use_.is_dense() {
+                sel_ncols_of(cols_out, size)
+            } else {
+                sel_ncols_of(cols_out, sel_size)
+            };
+            for row in 0..rows {
                 for c in 0..cols_in {
-                    let flat = row * cols_in + c;
-                    let at = n as usize * flat * mat_ncols;
-                    mat.raw_mut()[at..at + n as usize * mat_ncols].fill(i64::MIN + 1);
+                    let at = n as usize * (row * cols_in + c) * mat_ncols;
+                    if selected.contains(&row) {
+                        for col in suffix_from..mat_ncols {
+                            let at = at + n as usize * col;
+                            mat.raw_mut()[at..at + n as usize].fill(i64::MIN + 1);
+                        }
+                    } else {
+                        mat.raw_mut()[at..at + n as usize * mat_ncols].fill(i64::MIN + 1);
+                    }
                 }
             }
         }
@@ -289,8 +326,7 @@ where
         module.gglwe_product_dft_default(
             &mut want.to_backend_mut(),
             &a_dft.to_backend_ref(),
-            &sel_key,
-            &dense_use,
+            &bound_prepared(sel_key, dense_use),
             1,
             &mut scratch.borrow(),
         );
@@ -298,24 +334,19 @@ where
         module.gglwe_product_dft_default(
             &mut have.to_backend_mut(),
             &a_dft.to_backend_ref(),
-            &parent_key,
-            &use_,
+            &bound_prepared(parent_key, use_),
             1,
             &mut scratch.borrow(),
         );
 
-        // The dense-copy oracle only applies where the bound is gathered: a
-        // contiguous bound is read in place at the stored pitch, and how many
-        // limbs of it an accumulating digit reads is backend-defined (fft64
-        // stops at `res.size()`, ntt4x30 at `res.size() + limb_offset`), so a
-        // limb-truncated copy is not the same computation there.
-        if s > 1 {
-            assert_eq!(
-                BE::to_host_bytes(&have.data),
-                BE::to_host_bytes(&want.data),
-                "selected product mismatch for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
-            );
-        }
+        // A bound is the logical key it resolves, whatever the stored matrix is:
+        // the product over the parent equals the product over a dense key
+        // holding exactly the selected rows and limb prefixes.
+        assert_eq!(
+            BE::to_host_bytes(&have.data),
+            BE::to_host_bytes(&want.data),
+            "selected product mismatch for dsize={dsize} dnum={dnum} s={s} input_size={input_size}"
+        );
 
         // Whatever the bound reads, it is not the skipped rows: refilling them
         // must not move the output.
@@ -323,10 +354,22 @@ where
             let selected: Vec<usize> = (0..sel_rows).map(|i| use_.first_physical_row + i * s as usize).collect();
             let mut refilled = mat.clone();
             // Poison in `mat`, zeros here: the two agree only if neither is read.
-            for row in (0..rows).filter(|row| !selected.contains(row)) {
+            let suffix_from = if use_.is_dense() {
+                sel_ncols_of(cols_out, size)
+            } else {
+                sel_ncols_of(cols_out, sel_size)
+            };
+            for row in 0..rows {
                 for c in 0..cols_in {
                     let at = n as usize * (row * cols_in + c) * mat_ncols;
-                    refilled.raw_mut()[at..at + n as usize * mat_ncols].fill(0);
+                    if selected.contains(&row) {
+                        for col in suffix_from..mat_ncols {
+                            let at = at + n as usize * col;
+                            refilled.raw_mut()[at..at + n as usize].fill(0);
+                        }
+                    } else {
+                        refilled.raw_mut()[at..at + n as usize * mat_ncols].fill(0);
+                    }
                 }
             }
             let mut refilled_pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
@@ -345,8 +388,7 @@ where
             module.gglwe_product_dft_default(
                 &mut other.to_backend_mut(),
                 &a_dft.to_backend_ref(),
-                &refilled_key,
-                &use_,
+                &bound_prepared(refilled_key, use_),
                 1,
                 &mut scratch.borrow(),
             );
@@ -375,8 +417,7 @@ where
             module.gglwe_product_dft_default(
                 &mut out.to_backend_mut(),
                 &a_dft.to_backend_ref(),
-                &mismatched,
-                &dense_use,
+                &bound_prepared(mismatched, dense_use),
                 1,
                 &mut scratch.borrow(),
             );
@@ -387,6 +428,11 @@ where
             "a prepared key whose shape disagrees with its bound was accepted"
         );
     }
+}
+
+/// Flat column count of one prepared row.
+fn sel_ncols_of(cols_out: usize, size: usize) -> usize {
+    cols_out * size
 }
 
 /// Key layout for a `rank_in -> rank_out` switch covering `k` bits of input.

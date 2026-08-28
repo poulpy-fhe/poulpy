@@ -21,14 +21,64 @@ use crate::{
     oep::CKKSMulImpl,
 };
 
-/// A batch shares one effective decomposition, resolved at the widest item, so
-/// a frontier issued as one call cannot straddle two of them.
 fn resolve<'a, H>(keys: &'a H, k: TorusPrecision, op: &'static str) -> Result<(&'a H::Key, poulpy_core::layouts::Dsize)>
 where
     H: GLWERelinearizationKeyHelper,
 {
     keys.get_relinearization_key_for(k)
         .map_err(|_| CKKSCompositionError::MissingRelinearizationKey { op, k: k.into() }.into())
+}
+
+/// The `(physical key, effective dsize)` one lane of a batch resolves to.
+///
+/// A batch is a set of independent items, each at its own precision, so two
+/// lanes need not resolve to the same key or the same decomposition. Lanes are
+/// grouped by this id and one call is issued per group: a batch never straddles
+/// two physical keys or two decompositions, and no lane is dispatched under a
+/// key resolved for a different precision.
+type Lane = (usize, u32);
+
+fn lane_of<H>(keys: &H, k: TorusPrecision, op: &'static str) -> Result<Lane>
+where
+    H: GLWERelinearizationKeyHelper,
+{
+    let (key, dsize) = resolve(keys, k, op)?;
+    Ok((key as *const H::Key as usize, dsize.as_u32()))
+}
+
+fn lane_layout_of<H>(keys: &H, k: TorusPrecision) -> Lane
+where
+    H: GLWERelinearizationKeyLayoutHelper,
+{
+    let (layout, dsize) = keys.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
+    (layout as *const H::Layout as usize, dsize.as_u32())
+}
+
+/// Runs of consecutive equal lanes, after sorting the items by lane.
+///
+/// Items in a frontier are independent, so reordering them is not observable in
+/// the results; it is what lets each group be handed over as one contiguous
+/// slice.
+fn group_by_lane<T, F>(items: &mut [T], mut lane: F) -> Vec<(Lane, usize, usize)>
+where
+    F: FnMut(&T) -> Lane,
+{
+    items.sort_by_key(&mut lane);
+    let mut runs: Vec<(Lane, usize, usize)> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        let id = lane(item);
+        match runs.last_mut() {
+            Some((last, _, end)) if *last == id => *end = i + 1,
+            _ => runs.push((id, i, i + 1)),
+        }
+    }
+    runs
+}
+
+/// The widest precision in a run. Every lane of a run resolves to the same key
+/// and decomposition, so binding at the widest binds every one of them.
+fn run_k<T, F: Fn(&T) -> TorusPrecision>(run: &[T], k_of: F) -> TorusPrecision {
+    run.iter().fold(TorusPrecision(0), |k, i| k.max(k_of(i)))
 }
 
 impl<BE: Backend + CKKSMulImpl<BE>> CKKSMulOps<BE> for Module<BE>
@@ -231,9 +281,27 @@ where
         B: CKKSCtBounds,
         H: GLWERelinearizationKeyLayoutHelper,
     {
-        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.a.k().max(i.b.k())));
-        let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
-        BE::ckks_mul_into_batch_tmp_bytes_impl(self, items, &tsk.with_dsize(dsize))
+        let k_of = |i: &CKKSMulIntoItem<&Dst, &A, &B>| i.a.k().max(i.b.k());
+        let mut lanes: Vec<(Lane, &CKKSMulIntoItem<&Dst, &A, &B>)> =
+            items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
+        let mut best: usize = 0;
+        for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
+            .into_iter()
+            .map(|(_, from, to)| &lanes[from..to])
+        {
+            let group: Vec<CKKSMulIntoItem<&Dst, &A, &B>> = run
+                .iter()
+                .map(|(_, i)| CKKSMulIntoItem {
+                    dst: i.dst,
+                    a: i.a,
+                    b: i.b,
+                })
+                .collect();
+            let k = run_k(run, |(_, i)| k_of(i));
+            let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
+            best = best.max(BE::ckks_mul_into_batch_tmp_bytes_impl(self, &group, &tsk.with_dsize(dsize)));
+        }
+        best
     }
 
     fn ckks_mul_into_batch<Dst, A, B, H>(
@@ -249,9 +317,17 @@ where
         H: GLWERelinearizationKeyHelper,
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.a.k().max(i.b.k())));
-        let (tsk, dsize) = resolve(tsk, k, "ckks_mul_into_batch")?;
-        BE::ckks_mul_into_batch_impl(self, items, &tsk.with_dsize(dsize), scratch)
+        const OP: &str = "ckks_mul_into_batch";
+        let k_of = |i: &CKKSMulIntoItem<&mut Dst, &A, &B>| i.a.k().max(i.b.k());
+        for i in items.iter() {
+            lane_of(tsk, k_of(i), OP)?;
+        }
+        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above")) {
+            let run = &mut items[from..to];
+            let (key, dsize) = resolve(tsk, run_k(run, k_of), OP)?;
+            BE::ckks_mul_into_batch_impl(self, run, &key.with_dsize(dsize), scratch)?;
+        }
+        Ok(())
     }
 
     fn ckks_square_into_batch_tmp_bytes<Dst, A, H>(&self, items: &[CKKSSquareIntoItem<&Dst, &A>], tsk: &H) -> usize
@@ -260,9 +336,25 @@ where
         A: CKKSCtBounds,
         H: GLWERelinearizationKeyLayoutHelper,
     {
-        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.a.k()));
-        let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
-        BE::ckks_square_into_batch_tmp_bytes_impl(self, items, &tsk.with_dsize(dsize))
+        let k_of = |i: &CKKSSquareIntoItem<&Dst, &A>| i.a.k();
+        let mut lanes: Vec<(Lane, &CKKSSquareIntoItem<&Dst, &A>)> =
+            items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
+        let mut best: usize = 0;
+        for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
+            .into_iter()
+            .map(|(_, from, to)| &lanes[from..to])
+        {
+            let group: Vec<CKKSSquareIntoItem<&Dst, &A>> =
+                run.iter().map(|(_, i)| CKKSSquareIntoItem { dst: i.dst, a: i.a }).collect();
+            let k = run_k(run, |(_, i)| k_of(i));
+            let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
+            best = best.max(BE::ckks_square_into_batch_tmp_bytes_impl(
+                self,
+                &group,
+                &tsk.with_dsize(dsize),
+            ));
+        }
+        best
     }
 
     fn ckks_square_into_batch<Dst, A, H>(
@@ -277,9 +369,17 @@ where
         H: GLWERelinearizationKeyHelper,
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.a.k()));
-        let (tsk, dsize) = resolve(tsk, k, "ckks_square_into_batch")?;
-        BE::ckks_square_into_batch_impl(self, items, &tsk.with_dsize(dsize), scratch)
+        const OP: &str = "ckks_square_into_batch";
+        let k_of = |i: &CKKSSquareIntoItem<&mut Dst, &A>| i.a.k();
+        for i in items.iter() {
+            lane_of(tsk, k_of(i), OP)?;
+        }
+        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above")) {
+            let run = &mut items[from..to];
+            let (key, dsize) = resolve(tsk, run_k(run, k_of), OP)?;
+            BE::ckks_square_into_batch_impl(self, run, &key.with_dsize(dsize), scratch)?;
+        }
+        Ok(())
     }
 
     fn ckks_square_assign_batch_tmp_bytes<Dst, H>(&self, items: &[CKKSSquareAssignItem<&Dst>], tsk: &H) -> usize
@@ -287,9 +387,24 @@ where
         Dst: CKKSCtBounds,
         H: GLWERelinearizationKeyLayoutHelper,
     {
-        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.dst.k()));
-        let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
-        BE::ckks_square_assign_batch_tmp_bytes_impl(self, items, &tsk.with_dsize(dsize))
+        let k_of = |i: &CKKSSquareAssignItem<&Dst>| i.dst.k();
+        let mut lanes: Vec<(Lane, &CKKSSquareAssignItem<&Dst>)> =
+            items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
+        let mut best: usize = 0;
+        for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
+            .into_iter()
+            .map(|(_, from, to)| &lanes[from..to])
+        {
+            let group: Vec<CKKSSquareAssignItem<&Dst>> = run.iter().map(|(_, i)| CKKSSquareAssignItem { dst: i.dst }).collect();
+            let k = run_k(run, |(_, i)| k_of(i));
+            let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
+            best = best.max(BE::ckks_square_assign_batch_tmp_bytes_impl(
+                self,
+                &group,
+                &tsk.with_dsize(dsize),
+            ));
+        }
+        best
     }
 
     fn ckks_square_assign_batch<Dst, H>(
@@ -303,9 +418,17 @@ where
         H: GLWERelinearizationKeyHelper,
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        let k = items.iter().fold(TorusPrecision(0), |k, i| k.max(i.dst.k()));
-        let (tsk, dsize) = resolve(tsk, k, "ckks_square_assign_batch")?;
-        BE::ckks_square_assign_batch_impl(self, items, &tsk.with_dsize(dsize), scratch)
+        const OP: &str = "ckks_square_assign_batch";
+        let k_of = |i: &CKKSSquareAssignItem<&mut Dst>| i.dst.k();
+        for i in items.iter() {
+            lane_of(tsk, k_of(i), OP)?;
+        }
+        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above")) {
+            let run = &mut items[from..to];
+            let (key, dsize) = resolve(tsk, run_k(run, k_of), OP)?;
+            BE::ckks_square_assign_batch_impl(self, run, &key.with_dsize(dsize), scratch)?;
+        }
+        Ok(())
     }
 
     fn ckks_mul_prepared_assign_batch_tmp_bytes<Dst, PR, H>(
@@ -318,11 +441,30 @@ where
         PR: CKKSPreparedRightInfos,
         H: GLWERelinearizationKeyLayoutHelper,
     {
-        let k = items.iter().fold(TorusPrecision(0), |k, i| {
-            k.max(i.dst.k().max(TorusPrecision(i.prepared.prepared_k() as u32)))
-        });
-        let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
-        BE::ckks_mul_prepared_assign_batch_tmp_bytes_impl(self, items, &tsk.with_dsize(dsize))
+        let k_of = |i: &CKKSPreparedMulAssignItem<&Dst, &PR>| i.dst.k().max(TorusPrecision(i.prepared.prepared_k() as u32));
+        let mut lanes: Vec<(Lane, &CKKSPreparedMulAssignItem<&Dst, &PR>)> =
+            items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
+        let mut best: usize = 0;
+        for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
+            .into_iter()
+            .map(|(_, from, to)| &lanes[from..to])
+        {
+            let group: Vec<CKKSPreparedMulAssignItem<&Dst, &PR>> = run
+                .iter()
+                .map(|(_, i)| CKKSPreparedMulAssignItem {
+                    dst: i.dst,
+                    prepared: i.prepared,
+                })
+                .collect();
+            let k = run_k(run, |(_, i)| k_of(i));
+            let (tsk, dsize) = tsk.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
+            best = best.max(BE::ckks_mul_prepared_assign_batch_tmp_bytes_impl(
+                self,
+                &group,
+                &tsk.with_dsize(dsize),
+            ));
+        }
+        best
     }
 
     fn ckks_mul_prepared_assign_batch<Dst, H>(
@@ -336,10 +478,17 @@ where
         H: GLWERelinearizationKeyHelper,
         H::Key: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        let k = items.iter().fold(TorusPrecision(0), |k, i| {
-            k.max(i.dst.k().max(TorusPrecision(i.prepared.k as u32)))
-        });
-        let (tsk, dsize) = resolve(tsk, k, "ckks_mul_prepared_assign_batch")?;
-        BE::ckks_mul_prepared_assign_batch_impl(self, items, &tsk.with_dsize(dsize), scratch)
+        const OP: &str = "ckks_mul_prepared_assign_batch";
+        let k_of =
+            |i: &CKKSPreparedMulAssignItem<&mut Dst, &CKKSPreparedRight<BE>>| i.dst.k().max(TorusPrecision(i.prepared.k as u32));
+        for i in items.iter() {
+            lane_of(tsk, k_of(i), OP)?;
+        }
+        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above")) {
+            let run = &mut items[from..to];
+            let (key, dsize) = resolve(tsk, run_k(run, k_of), OP)?;
+            BE::ckks_mul_prepared_assign_batch_impl(self, run, &key.with_dsize(dsize), scratch)?;
+        }
+        Ok(())
     }
 }

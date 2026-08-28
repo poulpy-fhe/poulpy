@@ -29,24 +29,38 @@ struct Gadget {
     total_k: usize,
 }
 
+/// `a * b`, or an overflow error naming the product.
+fn mul(a: usize, b: usize, what: &str, op: &'static str) -> Result<usize> {
+    a.checked_mul(b)
+        .ok_or_else(|| err(op, format!("{what}: {a} * {b} overflows usize")))
+}
+
+/// `a + b`, or an overflow error naming the sum.
+fn add(a: usize, b: usize, what: &str, op: &'static str) -> Result<usize> {
+    a.checked_add(b)
+        .ok_or_else(|| err(op, format!("{what}: {a} + {b} overflows usize")))
+}
+
 fn gadget<P: GGLWEInfos>(key: &P, op: &'static str) -> Result<Gadget> {
     let (base2k, dsize) = (key.base2k().as_usize(), key.dsize().as_usize());
     let (dnum, k_aux) = (key.dnum().as_usize(), key.k_aux().as_usize());
     if base2k == 0 || dsize == 0 {
         return Err(err(op, format!("base2k={base2k} and dsize={dsize} must both be non-zero")));
     }
-    if k_aux < dsize * base2k {
+    let digit: usize = mul(dsize, base2k, "digit", op)?;
+    if k_aux < digit {
         return Err(err(
             op,
-            format!("k_aux={k_aux} does not cover one gadget digit of {} bits", dsize * base2k),
+            format!("k_aux={k_aux} does not cover one gadget digit of {digit} bits"),
         ));
     }
+    let total_k: usize = add(mul(dnum, digit, "stored precision", op)?, k_aux, "total_k", op)?;
     Ok(Gadget {
         base2k,
         dsize,
         dnum,
         k_aux,
-        total_k: dnum * dsize * base2k + k_aux,
+        total_k,
     })
 }
 
@@ -89,8 +103,9 @@ pub fn gglwe_is_whole_row_subset<P: GGLWEInfos, Q: GGLWEInfos>(parent: &P, reque
         return Ok(false);
     }
     let s: usize = q.dsize / p.dsize;
-    let consumed: usize = q.dnum * q.dsize * p.base2k;
-    Ok(s * q.dnum <= p.dnum && p.total_k >= consumed && p.total_k - consumed >= q.k_aux)
+    let consumed: usize = mul(q.dnum, mul(q.dsize, p.base2k, "requested digit", OP)?, "consumed", OP)?;
+    let rows: usize = mul(s, q.dnum, "requested rows", OP)?;
+    Ok(rows <= p.dnum && p.total_k >= consumed && p.total_k - consumed >= q.k_aux)
 }
 
 /// Immutable `size -> dsize` table: the effective decomposition is a hard
@@ -169,6 +184,12 @@ pub struct GGLWEActiveUse {
     pub physical_rows: usize,
     /// Storage pitch: limbs each physical polynomial occupies.
     pub physical_size: usize,
+    /// The stored decomposition the rows were selected out of. A prepared key
+    /// is paired with a bound only if all three agree, so two keys of the same
+    /// shape but different radix, digit or guard cannot be swapped.
+    pub physical_base2k: Base2K,
+    pub physical_dsize: Dsize,
+    pub physical_k_aux: TorusPrecision,
     /// Whether the key has enough digits for the whole input precision. A use
     /// that does not cover it is still valid: the product decomposes the digits
     /// the key has. Policy dispatch refuses such a key; execution does not.
@@ -222,6 +243,29 @@ pub trait GGLWEBind: GGLWEInfos {
             )),
         }
     }
+
+    /// [`Self::bind_for`], refusing a key that cannot decompose the whole input
+    /// precision. For callers that must not silently drop the low digits.
+    fn bind_covering_for(&self, input_k: TorusPrecision) -> Result<GGLWEUse>
+    where
+        Self: Sized,
+    {
+        let use_ = self.bind_for(input_k)?;
+        if let GGLWEUse::Active(active) = &use_
+            && !active.covers_input
+        {
+            let digit: usize = active.logical_layout.dsize().as_usize() * self.base2k().as_usize();
+            return Err(err(
+                "bind_covering_for",
+                format!(
+                    "key has {} digit(s) of {digit} bits, short of the {} input_k={input_k} needs",
+                    active.logical_layout.dnum(),
+                    input_k.as_usize().div_ceil(digit),
+                ),
+            ));
+        }
+        Ok(use_)
+    }
 }
 
 impl<T: GGLWEInfos> GGLWEBind for T {}
@@ -260,12 +304,21 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
         // Largest complete effective decomposition rows and padding both allow;
         // the remaining precision stays as auxiliary padding, never dropped.
         let r: usize = (p.dnum / s).min(p.total_k / digit - 1);
-        (r, p.total_k - r * digit)
+        (r, p.total_k - mul(r, digit, "coarse precision", OP)?)
     };
-    // A key with fewer digits than the input has decomposes the ones it has;
-    // the dense kernels already stop at `min(rows, a.size())`. Policy dispatch
-    // is what must refuse such a key, through `covers_input`.
+    // Zero precision reads nothing. It is the only input that resolves to an
+    // empty use: a positive precision the key cannot serve at all is an
+    // unrealizable use, not an empty one.
+    if input_k.as_usize() == 0 {
+        return Ok(Some(GGLWEUse::Empty));
+    }
     let requested: usize = input_k.as_usize().div_ceil(digit);
+    if r_eff == 0 {
+        return Ok(None);
+    }
+    // A key with fewer digits than the input has decomposes the ones it has;
+    // the dense kernels already stop at `min(rows, a.size())`. Dispatch and
+    // direct binding both refuse such a key, through `covers_input`.
     let covers_input: bool = requested <= r_eff;
     let r_active: usize = requested.min(r_eff);
 
@@ -278,13 +331,14 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
         rank_out: physical.rank_out(),
         dsize: effective_dsize,
     };
-    let logical_work_size: usize = r_active * d + a_eff.div_ceil(p.base2k);
+    let logical_work_size: usize = add(
+        mul(r_active, d, "effective work rows", OP)?,
+        a_eff.div_ceil(p.base2k),
+        "logical work size",
+        OP,
+    )?;
     debug_assert_eq!(logical_layout.max_size(), logical_work_size);
     debug_assert_eq!(logical_layout.size(), logical_work_size);
-
-    if r_active == 0 {
-        return Ok(Some(GGLWEUse::Empty));
-    }
 
     let step: NonZeroUsize = NonZeroUsize::new(s).expect("row step is a positive quotient");
     Ok(Some(GGLWEUse::Active(GGLWEActiveUse {
@@ -295,6 +349,9 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
         logical_work_size,
         physical_rows: p.dnum,
         physical_size: physical.max_size(),
+        physical_base2k: physical.base2k(),
+        physical_dsize: physical.dsize(),
+        physical_k_aux: physical.k_aux(),
         covers_input,
     })))
 }

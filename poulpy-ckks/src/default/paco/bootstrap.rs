@@ -10,7 +10,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
     GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWETensorKeyPreparedToBackendRef,
-    GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision,
+    GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision, WithEffectiveDsize,
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
@@ -358,13 +358,14 @@ where
     // Fetched once and reused by both the ψ tail (Pair form) and the
     // imaginary-part extraction (step 7): `conj(·)` via the order `-1`
     // automorphism key.
-    let (conjugation_key, _) = keys.rotation_keys().get_automorphism_key_for(-1, output.k()).map_err(|_| {
+    let (conjugation_key, conjugation_dsize) = keys.rotation_keys().get_automorphism_key_for(-1, output.k()).map_err(|_| {
         CKKSCompositionError::MissingAutomorphismKey {
             op: "ckks_paco_bootstrap",
             rotation: -1,
             k: output.k().into(),
         }
     })?;
+    let conjugation_key = &conjugation_key.with_dsize(conjugation_dsize);
 
     // Step 5 — CoeffsToSlots (ψ tail). The conjugation-augmented final C2S
     // factor, scheduled apart from the body. Either the fused `Pair` form
@@ -379,7 +380,7 @@ where
             module.ckks_add_assign(output, &temporary, scratch)?;
         }
         PaCoPsiTailMaterial::Mask { mu, galois_element } => {
-            let (conj_rotate_key, _) = keys
+            let (conj_rotate_key, conj_rotate_dsize) = keys
                 .rotation_keys()
                 .get_automorphism_key_for(*galois_element, output.k())
                 .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
@@ -387,7 +388,12 @@ where
                     rotation: *galois_element,
                     k: output.k().into(),
                 })?;
-            module.ckks_conjugate_into(&mut temporary, output, conj_rotate_key, scratch)?;
+            module.ckks_conjugate_into(
+                &mut temporary,
+                output,
+                &conj_rotate_key.with_dsize(conj_rotate_dsize),
+                scratch,
+            )?;
             module.ckks_add_assign(output, &temporary, scratch)?;
             module.ckks_mul_pt_vec_assign(output, mu, scratch)?;
         }

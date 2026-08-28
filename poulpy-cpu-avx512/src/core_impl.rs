@@ -2,32 +2,37 @@
 use crate::NTT3x42Ifma;
 use crate::{FFT64Avx512, NTT4x30Avx512};
 use poulpy_core::{
+    default::keyswitching::glwe::with_bound_pmat,
     default::operations::{
         GLWETensoringDefault, cnv_offset_to_limb_offset, msb_mask_bottom_limb, normalize_input_limb_bound_with_offset,
     },
     impl_conversion_defaults_full, impl_decryption_defaults_full, impl_encryption_defaults_full,
     impl_gglwe_automorphism_defaults_full, impl_gglwe_external_product_defaults_full, impl_gglwe_keyswitch_defaults_full,
-    impl_gglwe_product_digits_strided_default, impl_ggsw_automorphism_defaults_full, impl_ggsw_external_product_defaults_full,
+    impl_gglwe_product_bound_default, impl_ggsw_automorphism_defaults_full, impl_ggsw_external_product_defaults_full,
     impl_ggsw_keyswitch_defaults_full, impl_glwe_automorphism_defaults_full, impl_glwe_external_product_defaults_full,
     impl_glwe_keyswitch_defaults_full, impl_glwe_packing_defaults_full, impl_glwe_tensoring_default,
     impl_glwe_trace_defaults_full, impl_linear_transformation_defaults_full, impl_lwe_keyswitch_defaults_full,
-    layouts::{Degree, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef},
+    layouts::{
+        Degree, GGLWEActiveUse, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef,
+        prepared::{GGLWEPreparedBound, GLWETensorKeyPreparedToBackendRef},
+    },
     oep::GLWETensoringImpl,
 };
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
+        VmpPMatBytesOf,
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef,
+        VecZnxToBackendMut, VecZnxToBackendRef,
     },
 };
 
 impl_glwe_tensoring_default!(FFT64Avx512);
-impl_gglwe_product_digits_strided_default!(FFT64Avx512);
+impl_gglwe_product_bound_default!(FFT64Avx512);
 
 trait RankOneTensorDft: Backend {
     fn rank_one_tensor_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize;
@@ -448,84 +453,106 @@ impl_rank_one_tensoring!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 impl_rank_one_tensoring!(NTT3x42Ifma);
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512> for NTT4x30Avx512 {
-    fn gglwe_product_digits_strided_tmp_bytes(
-        _module: &Module<Self>,
+unsafe impl poulpy_core::oep::GGLWEProductBoundImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+    fn gglwe_product_bound_tmp_bytes(
+        module: &Module<Self>,
         _res_size: usize,
         a_cols: usize,
         a_size: usize,
-        dsize: usize,
-        pmat_rows: usize,
-        pmat_cols_in: usize,
-        _pmat_cols_out: usize,
-        _pmat_size: usize,
+        use_: &GGLWEActiveUse,
     ) -> usize {
-        crate::ntt4x30_avx512::vmp::vmp_apply_digits_strided_tmp_bytes_avx(a_cols, a_size, dsize, pmat_rows, pmat_cols_in)
+        let logical = &use_.logical_layout;
+        let kernel = crate::ntt4x30_avx512::vmp::vmp_apply_digits_strided_tmp_bytes_avx(
+            a_cols,
+            a_size,
+            logical.dsize().as_usize(),
+            logical.dnum().as_usize(),
+            logical.rank_in().as_usize(),
+        );
+        if use_.is_dense() {
+            return kernel;
+        }
+        // The bound is materialized before the kernel sees it.
+        module.bytes_of_vmp_pmat(
+            logical.dnum().as_usize(),
+            logical.rank_in().as_usize(),
+            (logical.rank_out() + 1).as_usize(),
+            use_.logical_work_size,
+        ) + kernel
     }
 
-    fn gglwe_product_digits_strided(
+    fn gglwe_product_bound(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
-        dsize: usize,
+        bound: &GGLWEPreparedBound<'_, Self>,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = Self::gglwe_product_digits_strided_tmp_bytes(
-            module,
-            res.size(),
-            a.cols(),
-            a.size(),
-            dsize,
-            pmat.rows(),
-            pmat.cols_in(),
-            pmat.cols_out(),
-            pmat.size(),
-        );
-        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx(module, res, a, dsize, product_limbs, pmat, tmp);
+        let dsize = bound.use_().logical_layout.dsize().as_usize();
+        with_bound_pmat(module, bound, scratch, |pmat, scratch| {
+            let bytes = crate::ntt4x30_avx512::vmp::vmp_apply_digits_strided_tmp_bytes_avx(
+                a.cols(),
+                a.size(),
+                dsize,
+                pmat.rows(),
+                pmat.cols_in(),
+            );
+            let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
+            crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_digits_strided_avx(module, res, a, dsize, product_limbs, pmat, tmp);
+        });
     }
 }
 
 #[cfg(feature = "enable-ifma")]
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42Ifma> for NTT3x42Ifma {
-    fn gglwe_product_digits_strided_tmp_bytes(
-        _module: &Module<Self>,
+unsafe impl poulpy_core::oep::GGLWEProductBoundImpl<NTT3x42Ifma> for NTT3x42Ifma {
+    fn gglwe_product_bound_tmp_bytes(
+        module: &Module<Self>,
         _res_size: usize,
         a_cols: usize,
         a_size: usize,
-        dsize: usize,
-        pmat_rows: usize,
-        pmat_cols_in: usize,
-        _pmat_cols_out: usize,
-        _pmat_size: usize,
+        use_: &GGLWEActiveUse,
     ) -> usize {
-        crate::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a_cols, a_size, dsize, pmat_rows, pmat_cols_in)
+        let logical = &use_.logical_layout;
+        let kernel = crate::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(
+            a_cols,
+            a_size,
+            logical.dsize().as_usize(),
+            logical.dnum().as_usize(),
+            logical.rank_in().as_usize(),
+        );
+        if use_.is_dense() {
+            return kernel;
+        }
+        // The bound is materialized before the kernel sees it.
+        module.bytes_of_vmp_pmat(
+            logical.dnum().as_usize(),
+            logical.rank_in().as_usize(),
+            (logical.rank_out() + 1).as_usize(),
+            use_.logical_work_size,
+        ) + kernel
     }
 
-    fn gglwe_product_digits_strided(
+    fn gglwe_product_bound(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
-        dsize: usize,
+        bound: &GGLWEPreparedBound<'_, Self>,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = Self::gglwe_product_digits_strided_tmp_bytes(
-            module,
-            res.size(),
-            a.cols(),
-            a.size(),
-            dsize,
-            pmat.rows(),
-            pmat.cols_in(),
-            pmat.cols_out(),
-            pmat.size(),
-        );
-        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
-        crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma(module, res, a, dsize, product_limbs, pmat, tmp);
+        let dsize = bound.use_().logical_layout.dsize().as_usize();
+        with_bound_pmat(module, bound, scratch, |pmat, scratch| {
+            let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(
+                a.cols(),
+                a.size(),
+                dsize,
+                pmat.rows(),
+                pmat.cols_in(),
+            );
+            let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / std::mem::size_of::<u64>());
+            crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma(module, res, a, dsize, product_limbs, pmat, tmp);
+        });
     }
 }
 

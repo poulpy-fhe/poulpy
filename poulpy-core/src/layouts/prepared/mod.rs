@@ -11,6 +11,7 @@
 //! via `prepare` / `prepare_*` methods.
 
 mod gglwe;
+mod gglwe_bound;
 mod gglwe_to_ggsw_key;
 mod ggsw;
 mod glwe;
@@ -26,6 +27,7 @@ mod lwe_switching_key;
 mod lwe_to_glwe_key;
 
 pub use gglwe::*;
+pub use gglwe_bound::*;
 pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
 pub use glwe::*;

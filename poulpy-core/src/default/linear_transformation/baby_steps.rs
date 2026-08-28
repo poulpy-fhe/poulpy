@@ -30,7 +30,7 @@ use crate::{
     GLWEAutomorphism, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     default::{
-        keyswitching::glwe::{bound_for, resolved_use},
+        keyswitching::glwe::{bound_for, bound_prepared, resolved_use},
         keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
         operations::msb_mask_bottom_limb,
     },
@@ -161,8 +161,17 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
         // top limbs that must not contain stale scratch contents.
     }
     let use_: GGLWEUse = resolved_use(key, a.k(), effective_dsize);
-    if let GGLWEUse::Active(active) = &use_ {
-        module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, &key_ref, active, 1, &mut scratch_1.borrow());
+    match use_ {
+        GGLWEUse::Active(active) => {
+            let bound = bound_prepared(key_ref, active);
+            module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, &bound, 1, &mut scratch_1.borrow());
+        }
+        // No row is active, so nothing overwrites the accumulator.
+        GGLWEUse::Empty => {
+            for col in 0..res_dft.cols() {
+                module.vec_znx_dft_zero(&mut res_dft, col);
+            }
+        }
     }
 
     let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module, cols, key_size);
