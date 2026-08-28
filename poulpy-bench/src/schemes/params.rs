@@ -1,6 +1,7 @@
 use std::fmt::Display;
 
 use poulpy_ckks::SlotsKind;
+use poulpy_hal::layouts::Backend;
 use serde::{Deserialize, Serialize};
 
 /// One point of the CKKS benchmark sweep.
@@ -26,6 +27,18 @@ impl Display for CkksBenchParams {
             "(n={},base2k={},k={},log_delta={},dsize={})",
             self.n, self.base2k, self.k, self.log_delta, self.dsize
         )
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct CkksBootstrappingBenchParams {
+    pub base2k: usize,
+    pub dsize: usize,
+}
+
+impl Display for CkksBootstrappingBenchParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(n={},base2k={},dsize={})", 1 << 16, self.base2k, self.dsize)
     }
 }
 
@@ -158,6 +171,14 @@ pub fn default_bench_params_ckks() -> Vec<CkksBenchParams> {
             slots: SlotsKind::Complex,
         },
     ]
+}
+
+pub fn default_bench_params_ckks_bootstrapping<BE: Backend>() -> [CkksBootstrappingBenchParams; 1] {
+    [if BE::DFT_IS_EXACT {
+        CkksBootstrappingBenchParams { base2k: 52, dsize: 4 }
+    } else {
+        CkksBootstrappingBenchParams { base2k: 19, dsize: 7 }
+    }]
 }
 
 /// Blind-rotation benchmark points. Unlike the other `default_bench_params_*`
