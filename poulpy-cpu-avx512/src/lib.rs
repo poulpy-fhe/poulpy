@@ -1,10 +1,13 @@
 //! AVX-512 / AVX-512-IFMA accelerated CPU backends for the Poulpy lattice cryptography library.
 //!
-//! This crate provides three backend implementations for [`poulpy_hal`]:
+//! This crate provides six backend implementations for [`poulpy_hal`]:
 //!
 //! - `FFT64Avx512`: f64 FFT backend, gated on `enable-avx512f`.
+//! - `FFT64Avx512Rayon`: Rayon-scheduled FFT backend, gated on `enable-rayon`.
 //! - `NTT4x30Avx512`: Q120 NTT backend over four ~30-bit CRT primes, gated on `enable-avx512f`.
+//! - `NTT4x30Avx512Rayon`: Rayon-scheduled Q120 NTT backend, gated on `enable-rayon`.
 //! - `NTT3x42Ifma`: Q126 NTT backend over three ~42-bit CRT primes, gated on `enable-ifma`.
+//! - `NTT3x42IfmaRayon`: parallel IFMA backend, gated on `enable-ifma` and `enable-rayon`.
 //!
 //! # Architecture
 //!
@@ -90,6 +93,8 @@
 //!
 //! - `enable-avx512f`: exports `FFT64Avx512` and `NTT4x30Avx512`.
 //! - `enable-ifma`: implies `enable-avx512f` and also exports `NTT3x42Ifma`.
+//! - `enable-rayon`: implies `enable-avx512f` and exports `FFT64Avx512Rayon` and `NTT4x30Avx512Rayon`;
+//!   with `enable-ifma`, it also exports `NTT3x42IfmaRayon`.
 //! - `enable-ckks`: wires these backends into `poulpy-ckks` defaults.
 //!
 //! # Platform support
@@ -146,7 +151,6 @@ compile_error!(
 #[cfg(feature = "enable-avx512f")]
 mod fft64;
 #[cfg(feature = "enable-avx512f")]
-#[cfg(feature = "enable-avx512f")]
 mod hal_impl;
 #[cfg(feature = "enable-avx512f")]
 mod ntt4x30_avx512;
@@ -159,12 +163,21 @@ mod vec_znx_big_avx512;
 #[cfg(feature = "enable-ifma")]
 mod ntt3x42_ifma;
 
+#[cfg(all(feature = "enable-avx512f", feature = "enable-rayon"))]
+pub use fft64::FFT64Avx512Rayon;
 #[cfg(feature = "enable-avx512f")]
 pub use fft64::{FFT64Avx512, FFT64Avx512ReimTable, ReimFFTAvx512, ReimIFFTAvx512};
 #[cfg(feature = "enable-ifma")]
 pub use ntt3x42_ifma::NTT3x42Ifma;
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+pub use ntt3x42_ifma::NTT3x42IfmaRayon;
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
+#[doc(hidden)]
+pub use ntt3x42_ifma::NTT3x42IfmaRayonExecutor;
 #[cfg(feature = "enable-avx512f")]
 pub use ntt4x30_avx512::NTT4x30Avx512;
+#[cfg(all(feature = "enable-avx512f", feature = "enable-rayon"))]
+pub use ntt4x30_avx512::NTT4x30Avx512Rayon;
 
 /// Public surface for tools that drive [`NTT3x42Ifma`] kernels directly (e.g. the
 /// benches): the precomputed twiddle tables, the prime set, and the
@@ -195,3 +208,5 @@ mod tests;
 
 #[cfg(feature = "enable-avx512f")]
 mod layout_compat;
+
+pub mod capabilities;

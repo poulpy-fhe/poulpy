@@ -22,13 +22,15 @@
 
 pub(crate) mod bbc_meta;
 pub(crate) mod convolution;
+mod execution;
 pub(crate) mod kernels;
 pub(crate) mod mat_vec_ifma;
 pub(crate) mod module;
 mod prim;
 pub(crate) mod primes;
+#[cfg(feature = "enable-rayon")]
+pub(crate) mod rayon;
 pub(crate) mod reference;
-mod serial;
 pub(crate) mod svp;
 pub(crate) mod tables;
 pub(crate) mod traits;
@@ -66,3 +68,14 @@ mod tests;
 /// `NTT3x42Ifma` is `Send + Sync` (derived from being a zero-sized, field-less struct).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NTT3x42Ifma;
+
+/// Rayon-parallel AVX512-IFMA backend.
+#[cfg(feature = "enable-rayon")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NTT3x42IfmaRayon;
+
+#[cfg(feature = "enable-rayon")]
+pub type NTT3x42IfmaRayonExecutor = poulpy_cpu_rayon::RayonTaskExecutor;
+
+#[cfg(feature = "enable-rayon")]
+poulpy_hal::impl_backend_from!(NTT3x42IfmaRayon, NTT3x42Ifma, NTT3x42IfmaRayonExecutor);
