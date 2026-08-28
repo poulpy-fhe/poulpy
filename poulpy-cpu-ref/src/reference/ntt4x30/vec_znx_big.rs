@@ -37,7 +37,7 @@ use crate::{
         Backend, HostDataMut, HostDataRef, NoiseInfos, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
         VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
-    reference::znx::{get_carry_i128, get_digit_i128},
+    reference::znx::{get_carry_i64, get_carry_i128, get_digit_i64, get_digit_i128},
     source::Source,
 };
 
@@ -378,6 +378,7 @@ fn ntt4x30_vec_znx_big_normalize_inter<R, A, BE>(
     base2k: usize,
     res: &mut R,
     res_offset: i64,
+    res_padding: usize,
     res_col: usize,
     a: &A,
     a_col: usize,
@@ -437,23 +438,52 @@ fn ntt4x30_vec_znx_big_normalize_inter<R, A, BE>(
 
     // Normalize overlapping a→res limbs.
     for j in 0..mid_range {
-        BE::nfc_middle_step(
-            base2k,
-            lsh_pos,
-            res.at_mut(res_col, res_start - j - 1),
-            a.at(a_col, a_start - j - 1),
-            carry,
-        );
+        let res_limb = res_start - j - 1;
+        if res_limb == res_size - 1 && res_padding != 0 {
+            BE::nfc_middle_step_partial(
+                base2k,
+                lsh_pos,
+                res_padding,
+                res.at_mut(res_col, res_limb),
+                a.at(a_col, a_start - j - 1),
+                carry,
+            );
+        } else {
+            BE::nfc_middle_step(
+                base2k,
+                lsh_pos,
+                res.at_mut(res_col, res_limb),
+                a.at(a_col, a_start - j - 1),
+                carry,
+            );
+        }
     }
 
     // Propagate carry to remaining lower res limbs (which were zeroed above).
     for j in 0..res_end {
-        res.at_mut(res_col, res_end - j - 1).fill(0);
+        let res_limb = res_end - j - 1;
+        res.at_mut(res_col, res_limb).fill(0);
         if j == res_end - 1 {
-            BE::nfc_final_step_assign(base2k, lsh_pos, res.at_mut(res_col, res_end - j - 1), carry);
+            BE::nfc_final_step_assign(base2k, lsh_pos, res.at_mut(res_col, res_limb), carry);
         } else {
-            BE::nfc_middle_step_assign(base2k, lsh_pos, res.at_mut(res_col, res_end - j - 1), carry);
+            BE::nfc_middle_step_assign(base2k, lsh_pos, res.at_mut(res_col, res_limb), carry);
         }
+        if res_limb == res_size - 1 {
+            BE::nfc_canonicalize_bottom(base2k, res_padding, res.at_mut(res_col, res_limb), carry);
+        }
+    }
+}
+
+#[inline(always)]
+fn canonicalize_bottom_limb_i128(base2k: usize, padding: usize, digit: &mut [i64], carry: &mut [i128]) {
+    if padding == 0 {
+        return;
+    }
+    for (digit, carry) in digit.iter_mut().zip(carry.iter_mut()) {
+        let rounded = digit.wrapping_sub(get_digit_i64(padding, *digit));
+        let normalized = get_digit_i64(base2k, rounded);
+        *carry = carry.wrapping_add(get_carry_i64(base2k, rounded, normalized) as i128);
+        *digit = normalized;
     }
 }
 
@@ -958,6 +988,17 @@ pub trait I128BigOps {
 ///
 /// This is the normalization-specific counterpart of [`I128BigOps`].
 pub trait I128NormalizeOps {
+    #[inline(always)]
+    fn nfc_canonicalize_bottom(base2k: usize, padding: usize, res: &mut [i64], carry: &mut [i128]) {
+        canonicalize_bottom_limb_i128(base2k, padding, res, carry);
+    }
+
+    #[inline(always)]
+    fn nfc_middle_step_partial(base2k: usize, lsh: usize, padding: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+        Self::nfc_middle_step(base2k, lsh, res, a, carry);
+        Self::nfc_canonicalize_bottom(base2k, padding, res, carry);
+    }
+
     /// Convert `i128` input + carry into `i64` output, updating carry in place.
     ///
     /// Equivalent to the private `nfc_middle_step` helper.
@@ -1452,10 +1493,33 @@ pub fn ntt4x30_vec_znx_big_normalize<R, A, BE>(
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
     if res_base2k == a_base2k {
-        ntt4x30_vec_znx_big_normalize_inter(res_base2k, res, res_offset, res_col, a, a_col, carry);
+        ntt4x30_vec_znx_big_normalize_inter(res_base2k, res, res_offset, 0, res_col, a, a_col, carry);
     } else {
         ntt4x30_vec_znx_big_normalize_cross(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ntt4x30_vec_znx_big_normalize_partial<R, A, BE>(
+    res: &mut R,
+    base2k: usize,
+    res_offset: i64,
+    res_padding: usize,
+    res_col: usize,
+    a: &A,
+    a_base2k: usize,
+    a_col: usize,
+    carry: &mut [i128],
+) where
+    R: VecZnxToBackendMut<BE>,
+    A: VecZnxBigToBackendRef<BE>,
+    BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+{
+    assert_eq!(base2k, a_base2k);
+    assert!(res_padding < base2k);
+    ntt4x30_vec_znx_big_normalize_inter(base2k, res, res_offset, res_padding, res_col, a, a_col, carry);
 }
 
 #[allow(clippy::too_many_arguments)]

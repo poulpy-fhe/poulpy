@@ -782,6 +782,20 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_big_normalize_partial(
+        module: &Module<BE>,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_base2k: usize,
+        res_offset: i64,
+        res_padding: usize,
+        res_col: usize,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
     fn vec_znx_big_automorphism(
         module: &Module<BE>,
         k: i64,

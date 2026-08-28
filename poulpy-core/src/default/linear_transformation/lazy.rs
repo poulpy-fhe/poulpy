@@ -20,8 +20,12 @@ use poulpy_hal::{
 };
 
 use crate::{
+    GLWEShift,
     default::keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetGaloisElement, prepared::GGLWEPreparedToBackendRef},
+    layouts::{
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEViewMut, GetGaloisElement, glwe_backend_mut_with_size,
+        prepared::GGLWEPreparedToBackendRef,
+    },
 };
 
 pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(module: &M, a_infos: &R, key_infos: &K) -> usize
@@ -199,28 +203,67 @@ pub(super) fn glwe_idft_dft_into_big<BE, M>(
 pub(super) fn glwe_normalize_big_into<BE, M, R>(
     module: &M,
     res: &mut R,
+    res_k: usize,
     a: &VecZnxBigBackendRef<'_, BE>,
     a_base2k: usize,
     cnv_offset_lo: i64,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: VecZnxBigNormalize<BE>,
+    M: VecZnxBigNormalize<BE> + GLWEShift<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k().as_usize();
-    let mut res_ref = res.to_backend_mut();
-    for col in 0..cols {
-        module.vec_znx_big_normalize(
-            &mut res_ref.data,
-            res_base2k,
-            cnv_offset_lo,
-            col,
-            a,
-            a_base2k,
-            col,
-            &mut scratch.borrow(),
-        );
+    let padding = (res_base2k - res_k % res_base2k) % res_base2k;
+    let active_size = res_k.div_ceil(res_base2k);
+    {
+        let mut active = GLWEViewMut::<BE>::from_inner(glwe_backend_mut_with_size::<BE>(res.to_backend_mut(), active_size));
+        let mut res_ref = active.to_backend_mut();
+        for col in 0..cols {
+            if padding != 0 && res_base2k == a_base2k {
+                module.vec_znx_big_normalize_partial(
+                    &mut res_ref.data,
+                    res_base2k,
+                    cnv_offset_lo,
+                    padding,
+                    col,
+                    a,
+                    a_base2k,
+                    col,
+                    &mut scratch.borrow(),
+                );
+            } else {
+                module.vec_znx_big_normalize(
+                    &mut res_ref.data,
+                    res_base2k,
+                    cnv_offset_lo,
+                    col,
+                    a,
+                    a_base2k,
+                    col,
+                    &mut scratch.borrow(),
+                );
+            }
+        }
+    }
+    if padding != 0 && res_base2k != a_base2k {
+        glwe_canonicalize_partial(module, res, res_k, scratch);
+    }
+}
+
+pub(super) fn glwe_canonicalize_partial<BE, M, R>(module: &M, res: &mut R, res_k: usize, scratch: &mut ScratchArena<'_, BE>)
+where
+    BE: Backend,
+    M: GLWEShift<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+{
+    let base2k = res.base2k().as_usize();
+    let padding = (base2k - res_k % base2k) % base2k;
+    if padding != 0 {
+        let active_size = res_k.div_ceil(base2k);
+        let mut active = GLWEViewMut::<BE>::from_inner(glwe_backend_mut_with_size::<BE>(res.to_backend_mut(), active_size));
+        module.glwe_rsh(padding, &mut active, scratch);
+        module.glwe_lsh_assign(&mut active, padding, scratch);
     }
 }

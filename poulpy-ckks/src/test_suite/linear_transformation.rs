@@ -10,10 +10,10 @@
 use crate::api::CKKSEncodingOps;
 use std::collections::HashMap;
 
-use poulpy_core::layouts::{Diagonals, Evaluate, LinearTransformationStrategy};
+use poulpy_core::layouts::{Diagonals, Evaluate, GLWEToBackendRef, LWEInfos, LinearTransformationStrategy};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchArena},
+    layouts::{CyclotomicOrder, HostBytesBackend, HostDataRef, Module, ScratchArena, ZnxView},
 };
 
 use crate::{
@@ -51,6 +51,27 @@ fn complex_diagonals<F: TestScalar>(diag_indices: &[usize], m: usize) -> Complex
         im.set(i as i64, di);
     }
     ComplexDiagonals::new(re, im)
+}
+
+fn assert_partial_limb_canonical<BE, C>(ct: &C)
+where
+    BE: TestContextBackend,
+    C: GLWEToBackendRef<BE> + LWEInfos,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+{
+    let base2k = ct.base2k().as_usize();
+    let padding = (base2k - ct.k().as_usize() % base2k) % base2k;
+    assert_ne!(padding, 0, "test requires a partial output limb");
+
+    let low_mask = (1i64 << padding) - 1;
+    let ct_ref = ct.to_backend_ref();
+    let bottom_limb = ct.size() - 1;
+    for col in 0..ct_ref.data().cols() {
+        assert!(
+            ct_ref.data().at(col, bottom_limb).iter().all(|value| value & low_mask == 0),
+            "linear transformation produced noncanonical padding in column {col}"
+        );
+    }
 }
 
 /// Encodes the diagonal map `b` into a `LinearTransformation<CKKSPlaintext>`
@@ -163,6 +184,7 @@ where
     module
         .ckks_eval_linear_transformation_self_into(&mut ct_left, &ct, &prepared_left, &atks, &mut scratch.borrow())
         .unwrap();
+    assert_partial_limb_canonical::<BE, _>(&ct_left);
     let (want_left_re, want_left_im) = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
     assert_decrypt_precision(
         "linear_transformation_B_times_a",
@@ -182,6 +204,7 @@ where
     module
         .ckks_eval_linear_transformation_self_into(&mut ct_left_streamed, &ct, &lt_left, &atks, &mut scratch.borrow())
         .unwrap();
+    assert_partial_limb_canonical::<BE, _>(&ct_left_streamed);
     assert_decrypt_precision(
         "linear_transformation_B_times_a_streamed",
         &params,

@@ -1,7 +1,7 @@
 use poulpy_hal::{
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx, VecZnxToBackendMut,
-        VecZnxToBackendRef, WriterTo,
+        VecZnxToBackendRef, WriterTo, vec_znx_backend_mut_with_size,
     },
     source::Source,
 };
@@ -97,6 +97,14 @@ pub struct GLWE<D: Data, W: ZnxWord> {
 
 pub type GLWEBackendRef<'a, BE> = GLWE<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
 pub type GLWEBackendMut<'a, BE> = GLWE<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+
+pub(crate) fn glwe_backend_mut_with_size<'a, BE: Backend>(
+    mut glwe: GLWEBackendMut<'a, BE>,
+    size: usize,
+) -> GLWEBackendMut<'a, BE> {
+    glwe.data = vec_znx_backend_mut_with_size::<BE>(glwe.data, size);
+    glwe
+}
 
 impl<D: Data, W: ZnxWord> SetBase2k for GLWE<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {

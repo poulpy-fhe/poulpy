@@ -240,6 +240,33 @@ macro_rules! hal_impl_vec_znx_big {
             );
         }
 
+        fn vec_znx_big_normalize_partial(
+            module: &Module<Self>,
+            mut res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_base2k: usize,
+            res_offset: i64,
+            res_padding: usize,
+            res_col: usize,
+            a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
+            a_base2k: usize,
+            a_col: usize,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
+        ) {
+            let mut scratch = scratch.borrow();
+            <Self as $defaults<Self>>::vec_znx_big_normalize_partial_default(
+                module,
+                &mut res,
+                res_base2k,
+                res_offset,
+                res_padding,
+                res_col,
+                &a,
+                a_base2k,
+                a_col,
+                &mut scratch,
+            );
+        }
+
         fn vec_znx_big_automorphism(
             module: &Module<Self>,
             k: i64,

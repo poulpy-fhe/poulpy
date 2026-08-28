@@ -79,6 +79,7 @@ where
     fn glwe_eval_linear_transformation_into<R, P, H, K>(
         &self,
         cnv_offset: usize,
+        res_k: usize,
         res: &mut R,
         lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<P>,
@@ -90,6 +91,6 @@ where
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch)
+        BE::glwe_eval_linear_transformation_into(self, cnv_offset, res_k, res, lhs, rhs, keys, scratch)
     }
 }

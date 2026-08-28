@@ -19,6 +19,7 @@ use crate::reference::{
         vec_znx_big_automorphism_assign_tmp_bytes as fft64_vec_znx_big_automorphism_assign_tmp_bytes,
         vec_znx_big_negate as fft64_vec_znx_big_negate, vec_znx_big_negate_assign as fft64_vec_znx_big_negate_assign,
         vec_znx_big_normalize as fft64_vec_znx_big_normalize,
+        vec_znx_big_normalize_partial as fft64_vec_znx_big_normalize_partial,
         vec_znx_big_normalize_tmp_bytes as fft64_vec_znx_big_normalize_tmp_bytes, vec_znx_big_sub as fft64_vec_znx_big_sub,
         vec_znx_big_sub_assign as fft64_vec_znx_big_sub_assign,
         vec_znx_big_sub_negate_assign as fft64_vec_znx_big_sub_negate_assign,
@@ -33,9 +34,10 @@ use crate::reference::{
         ntt4x30_vec_znx_big_automorphism, ntt4x30_vec_znx_big_automorphism_assign,
         ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes, ntt4x30_vec_znx_big_from_small, ntt4x30_vec_znx_big_negate,
         ntt4x30_vec_znx_big_negate_assign, ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_add_assign,
-        ntt4x30_vec_znx_big_normalize_sub_assign, ntt4x30_vec_znx_big_normalize_tmp_bytes, ntt4x30_vec_znx_big_sub,
-        ntt4x30_vec_znx_big_sub_assign, ntt4x30_vec_znx_big_sub_negate_assign, ntt4x30_vec_znx_big_sub_small_a,
-        ntt4x30_vec_znx_big_sub_small_assign, ntt4x30_vec_znx_big_sub_small_b, ntt4x30_vec_znx_big_sub_small_negate_assign,
+        ntt4x30_vec_znx_big_normalize_partial, ntt4x30_vec_znx_big_normalize_sub_assign, ntt4x30_vec_znx_big_normalize_tmp_bytes,
+        ntt4x30_vec_znx_big_sub, ntt4x30_vec_znx_big_sub_assign, ntt4x30_vec_znx_big_sub_negate_assign,
+        ntt4x30_vec_znx_big_sub_small_a, ntt4x30_vec_znx_big_sub_small_assign, ntt4x30_vec_znx_big_sub_small_b,
+        ntt4x30_vec_znx_big_sub_small_negate_assign,
     },
     znx::{
         ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNegate,
@@ -514,6 +516,46 @@ where
         fft64_vec_znx_big_normalize::<_, _, BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
+    fn vec_znx_big_normalize_partial_default<R, A>(
+        module: &Module<BE>,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_padding: usize,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: Backend<BigWord = i64, ZnxWord = i64>
+            + ZnxZero
+            + ZnxNormalizeFirstStepCarryOnly
+            + ZnxNormalizeMiddleStepCarryOnly
+            + ZnxNormalizeMiddleStep
+            + ZnxNormalizeFinalStepAssign
+            + ZnxNormalizeMiddleStepAssign,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        R: VecZnxToBackendMut<BE>,
+        A: VecZnxBigToBackendRef<BE>,
+    {
+        let (carry, _) = take_host_typed::<BE, i64>(
+            scratch.borrow(),
+            fft64_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i64>(),
+        );
+        fft64_vec_znx_big_normalize_partial::<_, _, BE>(
+            res,
+            res_base2k,
+            res_offset,
+            res_padding,
+            res_col,
+            a,
+            a_base2k,
+            a_col,
+            carry,
+        );
+    }
+
     fn vec_znx_big_automorphism_default<R, A>(_module: &Module<BE>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAutomorphism + ZnxZero,
@@ -861,6 +903,40 @@ where
             ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>(),
         );
         ntt4x30_vec_znx_big_normalize::<_, _, BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+    }
+
+    fn vec_znx_big_normalize_partial_default<R, A>(
+        module: &Module<BE>,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_padding: usize,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        R: VecZnxToBackendMut<BE>,
+        A: VecZnxBigToBackendRef<BE>,
+    {
+        let (carry, _) = take_host_typed::<BE, i128>(
+            scratch.borrow(),
+            ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>(),
+        );
+        ntt4x30_vec_znx_big_normalize_partial::<_, _, BE>(
+            res,
+            res_base2k,
+            res_offset,
+            res_padding,
+            res_col,
+            a,
+            a_base2k,
+            a_col,
+            carry,
+        );
     }
 
     fn vec_znx_big_normalize_add_assign_default<R, A>(

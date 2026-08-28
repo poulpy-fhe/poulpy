@@ -286,6 +286,20 @@ pub trait VecZnxBigNormalize<B: Backend> {
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_big_normalize_partial(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_base2k: usize,
+        res_offset: i64,
+        res_padding: usize,
+        res_col: usize,
+        a: &VecZnxBigBackendRef<'_, B>,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, B>,
+    );
 }
 
 /// Returns scratch bytes required for in-place automorphism on [`VecZnxBig`](crate::layouts::VecZnxBig).

@@ -206,7 +206,7 @@ where
             0,
             pt_max_k,
         )?;
-        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
+        self.glwe_eval_linear_transformation_into(cnv_offset, res_log_budget + res_log_delta, dst, babies, lt, keys, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         // Diagonals are complex in general, so a transformed value leaves the
