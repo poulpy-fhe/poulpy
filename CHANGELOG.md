@@ -8,7 +8,7 @@
 
 ### `poulpy-core`
 
-- Fix precision loss at non-`base2k`-aligned ciphertext widths. Masks and Gaussian noise are sampled at `k`-bit precision, avoiding redundant secret-key ciphertext rounding; public-key products are still rounded to `k`.
+- Fix precision loss at non-`base2k`-aligned ciphertext widths. Masks and Gaussian noise are sampled at `k`-bit precision, avoiding redundant post-encryption rounding for both secret- and public-key ciphertexts.
 
 ## [0.8.2] - 2026-08-22
 

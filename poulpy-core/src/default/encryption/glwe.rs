@@ -4,9 +4,8 @@ use poulpy_hal::{
         ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend, ScratchArenaTakeBasic, SvpApplyDftToDft,
         SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssignBackend, VecZnxAddNormalSourceBackend,
         VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxLshAssignBackend, VecZnxLshTmpBytes,
-        VecZnxNormalize, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxRshAssignBackend, VecZnxRshTmpBytes,
-        VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
+        VecZnxDftBytesOf, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssignBackend,
+        VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
         Backend, Module, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
@@ -264,9 +263,7 @@ where
         + SvpPPolBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxZeroBackend<BE>
-        + VecZnxRshTmpBytes
-        + VecZnxLshTmpBytes,
+        + VecZnxZeroBackend<BE>,
 {
     fn glwe_encrypt_pk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -281,9 +278,7 @@ where
             * (self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + BE::bytes_of_vec_znx(self.n(), 1, size));
         let lvl_3: usize = self.vec_znx_big_normalize_tmp_bytes();
 
-        (lvl_0 + lvl_1 + lvl_2 + lvl_3)
-            .max(self.vec_znx_rsh_tmp_bytes())
-            .max(self.vec_znx_lsh_tmp_bytes())
+        lvl_0 + lvl_1 + lvl_2 + lvl_3
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -374,8 +369,6 @@ where
         + ScalarZnxFillBinaryHwSourceBackend<BE>
         + ScalarZnxFillBinaryProbSourceBackend<BE>
         + ScalarZnxFillBinaryBlockSourceBackend<BE>
-        + VecZnxRshAssignBackend<BE>
-        + VecZnxLshAssignBackend<BE>
         + SvpPPolBytesOf
         + ModuleN
         + VecZnxDftBytesOf,
@@ -487,19 +480,6 @@ where
 
                 let ci_ref = ci.to_backend_ref();
                 self.vec_znx_copy_backend(&mut res.data, i, &ci_ref, 0);
-            }
-        }
-        let padding = res
-            .data
-            .size()
-            .checked_mul(base2k)
-            .expect("GLWE allocation precision overflows usize")
-            .checked_sub(noise_infos.k)
-            .expect("encryption precision exceeds the GLWE allocation");
-        if padding != 0 {
-            for col in 0..cols {
-                self.vec_znx_rsh_assign_backend(base2k, padding, &mut res.data, col, &mut scratch_1);
-                self.vec_znx_lsh_assign_backend(base2k, padding, &mut res.data, col, &mut scratch_1);
             }
         }
     }
