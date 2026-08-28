@@ -40,24 +40,26 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    let mut input = module.ckks_ciphertext_alloc_from_infos(src);
-    module.ckks_copy(&mut input, src, scratch)?;
-
     match transform {
-        PolynomialInputTransform::Identity => Ok(input),
+        PolynomialInputTransform::Identity => {
+            let mut input = module.ckks_ciphertext_alloc_from_infos(src);
+            module.ckks_copy(&mut input, src, scratch)?;
+            Ok(input)
+        }
         PolynomialInputTransform::Square | PolynomialInputTransform::SquareTimesInput => {
-            let mut input_basis = PowerBasis::new(crate::api::Basis::Monomial, input);
-            input_basis.gen_power(2, module, tsk, scratch)?;
-            Ok(input_basis
-                .take_power(2)
-                .expect("generating x² must store the degree-two power"))
+            let k = crate::power_basis::square_ct_k(src)?;
+            let mut squared = module.ckks_ciphertext_alloc(src.base2k(), k.into());
+            module.ckks_square_into(&mut squared, src, tsk, scratch)?;
+            Ok(squared)
         }
         PolynomialInputTransform::ChebyshevT2 | PolynomialInputTransform::ChebyshevT2TimesInput => {
-            let mut input_basis = PowerBasis::new(crate::api::Basis::Chebyshev, input);
-            input_basis.gen_power_chebyshev(2, module, tsk, scratch)?;
-            Ok(input_basis
-                .take_power(2)
-                .expect("generating T₂ must store the degree-two power"))
+            let k = crate::power_basis::square_ct_k(src)?;
+            let mut doubled = module.ckks_ciphertext_alloc(src.base2k(), k.into());
+            module.ckks_square_into(&mut doubled, src, tsk, scratch)?;
+            module.ckks_mul_pow2_assign(&mut doubled, 1, scratch)?;
+            let one = crate::default::carry_verb::ckks_one_pt(module, src.base2k())?;
+            module.ckks_sub_pt_const_assign(&mut doubled, 0, &one, 0, scratch)?;
+            Ok(doubled)
         }
     }
 }
@@ -133,6 +135,8 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
 unsafe impl<BE: Backend> CKKSPolynomialEvaluationImpl<BE> for BE
 where
     Module<BE>: GiantStepTensorBounds<BE>
+        + poulpy_hal::api::VecZnxRshCoeffBackend<BE>
+        + poulpy_hal::api::VecZnxRshTmpBytes
         + CKKSAddOps<BE>
         + CKKSCopyOps<BE>
         + CKKSImagOps<BE>

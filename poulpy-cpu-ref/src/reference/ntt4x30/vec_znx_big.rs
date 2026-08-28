@@ -37,7 +37,10 @@ use crate::{
         Backend, HostDataMut, HostDataRef, NoiseInfos, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
         VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
-    reference::znx::{get_carry_i128, get_digit_i128},
+    reference::{
+        vec_znx::VecZnxRangeMut,
+        znx::{get_carry_i128, get_digit_i128},
+    },
     source::Source,
 };
 
@@ -374,29 +377,27 @@ fn nfc_extract_digit_assignmul<O: AssignOp>(base2k: usize, scale: usize, res: &m
 /// Structurally identical to `vec_znx_normalize_inter_base2k` but with `i128` input
 /// and `i128` carry (the output `res` is `i64`).
 #[allow(clippy::too_many_arguments)]
-fn ntt4x30_vec_znx_big_normalize_inter<R, A, BE>(
+fn ntt4x30_vec_znx_big_normalize_inter<A, BE>(
     base2k: usize,
-    res: &mut R,
+    res: &mut VecZnxRangeMut<'_>,
+    res_size: usize,
     res_offset: i64,
-    res_col: usize,
     a: &A,
     a_col: usize,
+    coeff_start: usize,
+    coeff_len: usize,
     carry: &mut [i128],
 ) where
-    R: VecZnxToBackendMut<BE>,
     A: VecZnxBigToBackendRef<BE>,
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
-    for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
-    let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
 
-    let n = res.n();
-    let res_size = res.size();
+    let (lo, hi) = (coeff_start, coeff_start + coeff_len);
     let a_size = a.size();
 
-    let (carry, _) = carry.split_at_mut(n);
+    let (carry, _) = carry.split_at_mut(coeff_len);
 
     let mut lsh: i64 = res_offset % base2k as i64;
     let mut limbs_offset: i64 = res_offset / base2k as i64;
@@ -418,9 +419,9 @@ fn ntt4x30_vec_znx_big_normalize_inter<R, A, BE>(
     // Compute carry over discarded a limbs (those beyond res capacity).
     for j in 0..a_out_range {
         if j == 0 {
-            nfc_first_carry_only(base2k, lsh_pos, a.at(a_col, a_size - j - 1), carry);
+            nfc_first_carry_only(base2k, lsh_pos, &a.at(a_col, a_size - j - 1)[lo..hi], carry);
         } else {
-            nfc_middle_carry_only(base2k, lsh_pos, a.at(a_col, a_size - j - 1), carry);
+            nfc_middle_carry_only(base2k, lsh_pos, &a.at(a_col, a_size - j - 1)[lo..hi], carry);
         }
     }
 
@@ -430,7 +431,7 @@ fn ntt4x30_vec_znx_big_normalize_inter<R, A, BE>(
 
     // Zero bottom res limbs that will not receive a value.
     for j in res_start..res_size {
-        res.at_mut(res_col, j).fill(0);
+        res.at_mut(j).fill(0);
     }
 
     let mid_range: usize = a_start.saturating_sub(a_end);
@@ -440,19 +441,19 @@ fn ntt4x30_vec_znx_big_normalize_inter<R, A, BE>(
         BE::nfc_middle_step(
             base2k,
             lsh_pos,
-            res.at_mut(res_col, res_start - j - 1),
-            a.at(a_col, a_start - j - 1),
+            res.at_mut(res_start - j - 1),
+            &a.at(a_col, a_start - j - 1)[lo..hi],
             carry,
         );
     }
 
     // Propagate carry to remaining lower res limbs (which were zeroed above).
     for j in 0..res_end {
-        res.at_mut(res_col, res_end - j - 1).fill(0);
+        res.at_mut(res_end - j - 1).fill(0);
         if j == res_end - 1 {
-            BE::nfc_final_step_assign(base2k, lsh_pos, res.at_mut(res_col, res_end - j - 1), carry);
+            BE::nfc_final_step_assign(base2k, lsh_pos, res.at_mut(res_end - j - 1), carry);
         } else {
-            BE::nfc_middle_step_assign(base2k, lsh_pos, res.at_mut(res_col, res_end - j - 1), carry);
+            BE::nfc_middle_step_assign(base2k, lsh_pos, res.at_mut(res_end - j - 1), carry);
         }
     }
 }
@@ -538,32 +539,30 @@ fn ntt4x30_vec_znx_big_normalize_inter_assign<O, R, A, BE>(
 /// Structurally identical to `vec_znx_normalize_cross_base2k` but with `i128` input
 /// limbs, `i128` carry buffers, and `i64` output.
 #[allow(clippy::too_many_arguments)]
-fn ntt4x30_vec_znx_big_normalize_cross<R, A, BE>(
-    res: &mut R,
+fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
+    res: &mut VecZnxRangeMut<'_>,
+    res_size: usize,
     res_base2k: usize,
     res_offset: i64,
-    res_col: usize,
     a: &A,
     a_base2k: usize,
     a_col: usize,
-    carry: &mut [i128], // 3 * n elements
+    coeff_start: usize,
+    coeff_len: usize,
+    carry: &mut [i128], // 3 * coeff_len elements
 ) where
-    R: VecZnxToBackendMut<BE>,
     A: VecZnxBigToBackendRef<BE>,
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
-    for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
-    let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
 
-    let n = res.n();
-    let res_size = res.size();
+    let (lo, hi) = (coeff_start, coeff_start + coeff_len);
     let a_size = a.size();
 
     // Partition the scratch: [a_norm | res_carry | a_carry]
-    let (a_norm, carry) = carry.split_at_mut(n);
-    let (res_carry, a_carry) = carry[..2 * n].split_at_mut(n);
+    let (a_norm, carry) = carry.split_at_mut(coeff_len);
+    let (res_carry, a_carry) = carry[..2 * coeff_len].split_at_mut(coeff_len);
     nfc_zero(res_carry);
 
     let a_tot_bits: usize = a_size * a_base2k;
@@ -591,7 +590,7 @@ fn ntt4x30_vec_znx_big_normalize_cross<R, A, BE>(
 
     // Zero all res limbs.
     for j in 0..res_size {
-        res.at_mut(res_col, j).fill(0);
+        res.at_mut(j).fill(0);
     }
 
     if res_start == 0 {
@@ -602,9 +601,9 @@ fn ntt4x30_vec_znx_big_normalize_cross<R, A, BE>(
     let a_out_range: usize = a_size.saturating_sub(a_start);
     for j in 0..a_out_range {
         if j == 0 {
-            nfc_first_carry_only(a_base2k, lsh_pos, a.at(a_col, a_size - j - 1), a_carry);
+            nfc_first_carry_only(a_base2k, lsh_pos, &a.at(a_col, a_size - j - 1)[lo..hi], a_carry);
         } else {
-            nfc_middle_carry_only(a_base2k, lsh_pos, a.at(a_col, a_size - j - 1), a_carry);
+            nfc_middle_carry_only(a_base2k, lsh_pos, &a.at(a_col, a_size - j - 1)[lo..hi], a_carry);
         }
     }
     if a_out_range == 0 {
@@ -618,7 +617,7 @@ fn ntt4x30_vec_znx_big_normalize_cross<R, A, BE>(
 
     'outer: for j in 0..mid_range {
         let a_limb: usize = a_start - j - 1;
-        let a_slice: &[i128] = a.at(a_col, a_limb);
+        let a_slice: &[i128] = &a.at(a_col, a_limb)[lo..hi];
 
         let mut a_take_left: usize = a_base2k;
 
@@ -636,7 +635,7 @@ fn ntt4x30_vec_znx_big_normalize_cross<R, A, BE>(
         }
 
         'inner: loop {
-            let res_slice: &mut [i64] = res.at_mut(res_col, res_limb);
+            let res_slice = res.at_mut(res_limb);
             let a_take: usize = a_base2k.min(a_take_left).min(res_acc_left);
 
             if a_take != 0 {
@@ -678,9 +677,9 @@ fn ntt4x30_vec_znx_big_normalize_cross<R, A, BE>(
         let carry_to_use = if a_start == a_end { a_carry } else { res_carry };
         for j in 0..res_end {
             if j == res_end - 1 {
-                BE::nfc_final_step_assign(res_base2k, 0, res.at_mut(res_col, res_end - j - 1), carry_to_use);
+                BE::nfc_final_step_assign(res_base2k, 0, res.at_mut(res_end - j - 1), carry_to_use);
             } else {
-                BE::nfc_middle_step_assign(res_base2k, 0, res.at_mut(res_col, res_end - j - 1), carry_to_use);
+                BE::nfc_middle_step_assign(res_base2k, 0, res.at_mut(res_end - j - 1), carry_to_use);
             }
         }
     }
@@ -1451,10 +1450,117 @@ pub fn ntt4x30_vec_znx_big_normalize<R, A, BE>(
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
+    let n = res.to_backend_mut().n();
+    ntt4x30_vec_znx_big_normalize_range(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry);
+}
+
+/// [`ntt4x30_vec_znx_big_normalize`] restricted to `[coeff_start, coeff_start + coeff_len)`;
+/// `carry` needs `3 * coeff_len` elements private to the range.
+#[allow(clippy::too_many_arguments)]
+fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
+    res: &mut R,
+    res_base2k: usize,
+    res_offset: i64,
+    res_col: usize,
+    a: &A,
+    a_base2k: usize,
+    a_col: usize,
+    coeff_start: usize,
+    coeff_len: usize,
+    carry: &mut [i128],
+) where
+    R: VecZnxToBackendMut<BE>,
+    A: VecZnxBigToBackendRef<BE>,
+    BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+{
+    #[cfg(debug_assertions)]
+    {
+        assert!(carry.len() >= 3 * coeff_len);
+    }
+    let mut res = res.to_backend_mut();
+    let (n, cols, size) = (res.n(), res.cols(), res.size());
+    let ptr = res.data.as_mut().as_mut_ptr().cast::<i64>();
+    unsafe {
+        ntt4x30_vec_znx_big_normalize_range_raw::<A, BE>(
+            ptr,
+            n,
+            cols,
+            size,
+            res_base2k,
+            res_offset,
+            res_col,
+            a,
+            a_base2k,
+            a_col,
+            coeff_start,
+            coeff_len,
+            carry,
+        )
+    }
+}
+
+/// Normalizes one coefficient range into a raw host output.
+///
+/// # Safety
+///
+/// `res_ptr` must address a valid `n * cols * size` allocation. Any live calls
+/// using the same allocation must write disjoint coefficient ranges.
+#[allow(clippy::too_many_arguments)]
+#[doc(hidden)]
+pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
+    res_ptr: *mut i64,
+    n: usize,
+    cols: usize,
+    size: usize,
+    res_base2k: usize,
+    res_offset: i64,
+    res_col: usize,
+    a: &A,
+    a_base2k: usize,
+    a_col: usize,
+    coeff_start: usize,
+    coeff_len: usize,
+    carry: &mut [i128],
+) where
+    A: VecZnxBigToBackendRef<BE>,
+    BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+{
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(n, a.to_backend_ref().n());
+        assert!(res_col < cols);
+        assert!(coeff_start + coeff_len <= n);
+        assert!(carry.len() >= 3 * coeff_len);
+    }
+    let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
     if res_base2k == a_base2k {
-        ntt4x30_vec_znx_big_normalize_inter(res_base2k, res, res_offset, res_col, a, a_col, carry);
+        ntt4x30_vec_znx_big_normalize_inter(
+            res_base2k,
+            &mut res,
+            size,
+            res_offset,
+            a,
+            a_col,
+            coeff_start,
+            coeff_len,
+            carry,
+        );
     } else {
-        ntt4x30_vec_znx_big_normalize_cross(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        ntt4x30_vec_znx_big_normalize_cross(
+            &mut res,
+            size,
+            res_base2k,
+            res_offset,
+            a,
+            a_base2k,
+            a_col,
+            coeff_start,
+            coeff_len,
+            carry,
+        );
     }
 }
 

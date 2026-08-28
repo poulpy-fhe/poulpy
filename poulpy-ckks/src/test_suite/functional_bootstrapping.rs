@@ -499,8 +499,6 @@ fn fbt_plan(base2k: usize) -> BootstrappingPlan {
         DFTOutputFormat::SplitRealAndImag,
         CoeffsMeta::from_delta_budget(50, 2),
     )
-    .unwrap()
-    .with_scaling(1.0 / K_INTERVAL as f64)
     .unwrap();
     BootstrappingPlan::new(
         BootstrappingPipeline::S2CFirst,

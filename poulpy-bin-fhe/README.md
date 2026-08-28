@@ -24,6 +24,13 @@ RUSTFLAGS="-C target-feature=+avx2,+fma" \
 cargo test -p poulpy-cpu-avx --features enable-avx bin_fhe
 ```
 
+For Rayon-scheduled NEON acceleration on AArch64 targets, instantiate the
+suite from the backend crate:
+
+```sh
+cargo test -p poulpy-cpu-arm --features enable-rayon bin_fhe
+```
+
 The runnable examples live in `poulpy-cpu-ref/examples` (`bdd_arithmetic`,
 `circuit_bootstrapping`, `max_array`), behind its `enable-core` feature.
 

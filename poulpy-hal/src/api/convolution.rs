@@ -78,6 +78,22 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// `res[res_col] +=` the [`Convolution::cnv_by_const_apply`] result; limbs
+    /// the convolution would zero-fill are left untouched.
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_by_const_apply_add(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxBigBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+        b_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
     #[allow(clippy::too_many_arguments)]
     /// Evaluates a bivariate convolution over Z\[X, Y\] (x) Z\[X, Y\] mod (X^N + 1) where Y = 2^-K over the
     /// selected columns and stores the result on the selected column, scaled by 2^{cnv_offset * Base2K}

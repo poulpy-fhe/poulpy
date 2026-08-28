@@ -28,6 +28,9 @@ pub struct ScratchArena<'a, B: Backend> {
     _phantom: PhantomData<&'a mut B::OwnedBuf>,
 }
 
+// Moving an arena transfers exclusive access to its disjoint byte range.
+unsafe impl<B: Backend> Send for ScratchArena<'_, B> where B::OwnedBuf: Send {}
+
 impl<B: Backend> ScratchOwned<B> {
     /// Borrows this owned scratch buffer as a backend-native arena.
     pub fn arena(&mut self) -> ScratchArena<'_, B> {
@@ -41,6 +44,20 @@ impl<B: Backend> ScratchOwned<B> {
 }
 
 impl<'a, B: Backend> ScratchArena<'a, B> {
+    /// Re-tags this arena for a backend sharing the same owned storage.
+    pub fn into_backend<Other>(self) -> ScratchArena<'a, Other>
+    where
+        Other: Backend<OwnedBuf = B::OwnedBuf>,
+    {
+        assert_eq!(B::SCRATCH_ALIGN, Other::SCRATCH_ALIGN);
+        ScratchArena {
+            data: self.data,
+            start: self.start,
+            end: self.end,
+            _phantom: PhantomData,
+        }
+    }
+
     /// Reborrows this arena with a shorter lifetime.
     pub fn borrow<'b>(&'b mut self) -> ScratchArena<'b, B> {
         ScratchArena {

@@ -81,7 +81,10 @@ pub struct FFT64Avx512Handle {
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
+impl poulpy_hal::execution::ScratchWorkers for FFT64Avx512 {}
+
 impl Backend for FFT64Avx512 {
+    type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;

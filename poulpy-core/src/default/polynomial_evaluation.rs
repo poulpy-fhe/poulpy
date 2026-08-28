@@ -91,6 +91,19 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>;
 
+    /// Tries to evaluate `res = Σ coeffs[idx]·term` in one pass. Returning
+    /// `false` leaves `res` untouched and selects the default operation sequence.
+    fn eval_baby_linear_combination(
+        &self,
+        _module: &Module<BE>,
+        _res: &mut V,
+        _terms: &[(&A, usize)],
+        _coeffs: &P,
+        _scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<bool> {
+        Ok(false)
+    }
+
     /// Computes `res = a · coeffs[idx]` (ct × pt), setting `res`'s precision metadata.
     fn mul_pt_const(
         &self,
@@ -167,15 +180,26 @@ where
     };
 
     let init_power = (first..=degree).step_by(step).last().unwrap_or(1);
+
+    let mut terms: Vec<(&A, usize)> = Vec::with_capacity(degree / step + 1);
+    for i in (first..=degree).step_by(step) {
+        terms.push((power_basis.get(i)?, i));
+    }
+    if !terms.is_empty() && ops.eval_baby_linear_combination(module, res, &terms, coeffs, scratch)? {
+        if parity != Parity::Odd {
+            ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
+        }
+        return Ok(());
+    }
+
     ops.init_accumulator(module, res, power_basis.get(init_power)?, scratch)?;
 
     if parity != Parity::Odd {
         ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
     }
 
-    for i in (first..=degree).step_by(step) {
-        let xpow = power_basis.get(i)?;
-        ops.mul_add_pt_const(module, res, xpow, coeffs, i, scratch)?;
+    for (xpow, i) in &terms {
+        ops.mul_add_pt_const(module, res, xpow, coeffs, *i, scratch)?;
     }
 
     Ok(())

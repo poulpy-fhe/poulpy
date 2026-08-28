@@ -9,8 +9,8 @@ use crate::reference::{
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
         reim4::Reim4BlkMatVec,
         vmp::{
-            vmp_apply_dft_to_dft as fft64_vmp_apply_dft_to_dft,
-            vmp_apply_dft_to_dft_tmp_bytes as fft64_vmp_apply_dft_to_dft_tmp_bytes, vmp_prepare as fft64_vmp_prepare,
+            vmp_apply_dft_to_dft_tmp_bytes as fft64_vmp_apply_dft_to_dft_tmp_bytes,
+            vmp_apply_dft_to_dft_with_kernel as fft64_vmp_apply_dft_to_dft_with_kernel, vmp_prepare as fft64_vmp_prepare,
             vmp_prepare_tmp_bytes as fft64_vmp_prepare_tmp_bytes, vmp_zero as fft64_vmp_zero,
         },
     },
@@ -28,6 +28,7 @@ use crate::reference::{
 };
 use poulpy_hal::{
     api::{HostBufMut, ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftZero},
+    execution::TaskExecutor,
     layouts::{
         Backend, HostDataMut, HostDataRef, MatZnxBackendRef, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef,
         VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
@@ -107,6 +108,7 @@ where
         fft64_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
     }
 
+    #[inline(always)]
     fn vmp_apply_dft_to_dft_default(
         _module: &Module<BE>,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -120,9 +122,31 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = fft64_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
+        Self::vmp_apply_dft_to_dft_with_kernel_default::<BE, BE::TaskExecutor>(_module, res, a, b, limb_offset, 1, scratch);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn vmp_apply_dft_to_dft_with_kernel_default<KERNEL, E>(
+        _module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        b: &VmpPMatBackendRef<'_, BE>,
+        limb_offset: usize,
+        workers: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: Backend<DftWord = f64, ZnxWord = i64>,
+        KERNEL: ReimArith + Reim4BlkMatVec,
+        E: TaskExecutor,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+    {
+        let per_worker = fft64_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
+        let bytes = workers.max(1).min(scratch.available() / per_worker.max(1)).max(1) * per_worker;
         let (tmp, _) = take_host_typed::<BE, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        fft64_vmp_apply_dft_to_dft::<BE>(res, a, b, limb_offset, tmp);
+        fft64_vmp_apply_dft_to_dft_with_kernel::<BE, KERNEL, E>(res, a, b, limb_offset, tmp);
     }
 
     fn vmp_apply_dft_to_dft_accumulate_tmp_bytes_default(
@@ -141,6 +165,7 @@ where
         module.bytes_of_vec_znx_dft(b_cols_out, res_size) + fft64_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
     }
 
+    #[inline(always)]
     fn vmp_apply_dft_to_dft_accumulate_default(
         module: &Module<BE>,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -155,15 +180,46 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
+        Self::vmp_apply_dft_to_dft_accumulate_with_kernel_default::<BE, BE::TaskExecutor>(
+            module,
+            res,
+            a,
+            b,
+            limb_offset,
+            1,
+            scratch,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn vmp_apply_dft_to_dft_accumulate_with_kernel_default<KERNEL, E>(
+        module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        b: &VmpPMatBackendRef<'_, BE>,
+        limb_offset: usize,
+        workers: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        Module<BE>: VecZnxDftBytesOf + ModuleN + VecZnxDftAddAssign<BE> + VecZnxDftZero<BE>,
+        BE: Backend<DftWord = f64, ZnxWord = i64>,
+        KERNEL: ReimArith + Reim4BlkMatVec,
+        E: TaskExecutor,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+    {
         let cols_out = res.cols();
         let res_size = res.size();
         let (mut tmp, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols_out, res_size);
         for col in 0..cols_out {
             module.vec_znx_dft_zero(&mut tmp, col);
         }
-        let bytes = fft64_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
+        let per_worker = fft64_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
+        let bytes = workers.max(1).min(scratch_1.available() / per_worker.max(1)).max(1) * per_worker;
         let (kernel_tmp, _) = take_host_typed::<BE, f64>(scratch_1, bytes / size_of::<f64>());
-        fft64_vmp_apply_dft_to_dft::<BE>(&mut tmp, a, b, limb_offset, kernel_tmp);
+        fft64_vmp_apply_dft_to_dft_with_kernel::<BE, KERNEL, E>(&mut tmp, a, b, limb_offset, kernel_tmp);
         let tmp_ref = tmp.to_backend_ref();
         for col in 0..cols_out {
             module.vec_znx_dft_add_assign(res, col, &tmp_ref, col);

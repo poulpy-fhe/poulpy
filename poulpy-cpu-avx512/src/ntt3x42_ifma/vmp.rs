@@ -17,15 +17,19 @@ use std::mem::size_of;
 
 use crate::ntt3x42_ifma::{
     bbc_meta::Bbc126IfmaMeta,
+    execution::SendPtr,
     kernels::ntt_avx512,
     module::handle,
     primes::Primes42,
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_core::oep::gglwe_product_digit_output_size;
-use poulpy_hal::layouts::{
-    DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
-    VmpPMatBackendRef, ZnxInfos,
+use poulpy_hal::{
+    execution::TaskExecutor,
+    layouts::{
+        DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
+        VmpPMatBackendRef, ZnxInfos,
+    },
 };
 
 use super::{
@@ -152,7 +156,7 @@ pub(crate) fn vmp_apply_tmp_bytes_ifma(a_size: usize, b_rows: usize, b_cols_in: 
 ///
 /// Element `(blk_quad, col, row)` offset in u64:
 ///   `((blk_quad * ncols + col) * nrows + row) * 16`.
-pub(crate) fn vmp_prepare_ifma(
+pub(crate) fn vmp_prepare_ifma<E: TaskExecutor>(
     module: &Module<crate::NTT3x42Ifma>,
     res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>,
     a: &MatZnxBackendRef<'_, crate::NTT3x42Ifma>,
@@ -163,16 +167,17 @@ pub(crate) fn vmp_prepare_ifma(
     let ncols = a.cols_out() * a.size();
     let n_blk_quads = n / 8;
 
-    let (tmp_b, tmp_c_u64) = tmp.split_at_mut(3 * n);
-    let tmp_c_u64 = &mut tmp_c_u64[..3 * n];
     let mat_i64: &[i64] = a.raw();
     let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
+    let pmat_ptr = SendPtr(pmat_u64.as_mut_ptr());
 
     let bq_stride = ncols * nrows * 16;
     let col_stride = nrows * 16;
     let row_stride = 16;
 
-    for row_i in 0..nrows {
+    E::for_each_chunked(nrows, tmp, 6 * n, |tmp, row_i| {
+        let (tmp_b, tmp_c_u64) = tmp.split_at_mut(3 * n);
+        let tmp_c_u64 = &mut tmp_c_u64[..3 * n];
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
             crate::NTT3x42Ifma::ntt3x42_ifma_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
@@ -184,16 +189,17 @@ pub(crate) fn vmp_prepare_ifma(
             for bq in 0..n_blk_quads {
                 let coeff_base = 8 * bq;
                 let dst_base = bq * bq_stride + col_i * col_stride + row_i * row_stride;
+                let dst = unsafe { std::slice::from_raw_parts_mut(pmat_ptr.get().add(dst_base), 16) };
                 for i in 0..8 {
                     let p0 = tmp_c_u64[coeff_base + i];
                     let p1 = tmp_c_u64[n + coeff_base + i];
                     let p2 = tmp_c_u64[2 * n + coeff_base + i];
-                    pmat_u64[dst_base + i] = p0 | (p1 & MASK22) << 42;
-                    pmat_u64[dst_base + 8 + i] = (p1 >> 22) | (p2 << 20);
+                    dst[i] = p0 | (p1 & MASK22) << 42;
+                    dst[8 + i] = (p1 >> 22) | (p2 << 20);
                 }
             }
         }
-    }
+    });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -545,7 +551,7 @@ unsafe fn vmp_apply_core_pm_small_rows<const ROWS: usize, const OVERWRITE: bool>
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 #[inline]
-unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
+unsafe fn vmp_apply_core_pm<const OVERWRITE: bool, E: TaskExecutor>(
     n: usize,
     res_u64: &mut [u64],
     a_u64: &[u64],
@@ -660,20 +666,56 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
         return;
     }
 
-    let (_kernel_output, x_pm) = tmp.split_at_mut(32);
-    let x_pm = &mut x_pm[..3 * 8 * row_max];
-    for bq in 0..n_blk_quads {
+    if !E::is_parallel() || n_blk_quads < 2 {
+        // Scratch: 32 u64 reserved for layout compatibility with vmp_apply_tmp_bytes_ifma
+        //        + 3 * 8 * row_max u64 for prime-major x extract
+        let (_kernel_output, x_pm) = tmp.split_at_mut(32);
+        let x_pm = &mut x_pm[..3 * 8 * row_max];
+
+        for bq in 0..n_blk_quads {
+            unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_u64, x_pm) };
+
+            for col_pmat in limb_offset..col_max {
+                let col_res = col_pmat - limb_offset;
+                let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
+
+                unsafe {
+                    let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
+                    let dst_base = res_u64.as_mut_ptr().add(col_res * 2 * n);
+                    save_planar_result::<OVERWRITE>(dst_base, bq, &pc, red[0], red[1], red[2]);
+                }
+            }
+        }
+
+        if OVERWRITE {
+            let active_cols = col_max.saturating_sub(limb_offset);
+            for col in active_cols..res_size {
+                res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
+            }
+            _mm_sfence();
+        }
+        return;
+    }
+
+    let res_ptr = SendPtr(res_u64.as_mut_ptr());
+    E::for_each_chunked(n_blk_quads, tmp, 3 * 8 * row_max, |x_pm, bq| {
         unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_u64, x_pm) };
+
         for col_pmat in limb_offset..col_max {
             let col_res = col_pmat - limb_offset;
             let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
+
             unsafe {
                 let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                let dst_base = res_u64.as_mut_ptr().add(col_res * 2 * n);
+                let dst_base = res_ptr.get().add(col_res * 2 * n);
                 save_planar_result::<OVERWRITE>(dst_base, bq, &pc, red[0], red[1], red[2]);
             }
         }
-    }
+
+        if OVERWRITE {
+            _mm_sfence();
+        }
+    });
 
     if OVERWRITE {
         let active_cols = col_max.saturating_sub(limb_offset);
@@ -689,7 +731,7 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_ifma(
+pub(crate) fn vmp_apply_dft_to_dft_ifma<E: TaskExecutor>(
     module: &Module<crate::NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
     a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
@@ -711,7 +753,7 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma(
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
     unsafe {
-        vmp_apply_core_pm::<true>(
+        vmp_apply_core_pm::<true, E>(
             n,
             res_u64,
             a_u64,
@@ -726,7 +768,7 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma(
+pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma<E: TaskExecutor>(
     module: &Module<crate::NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
     a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
@@ -748,7 +790,7 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma(
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
     unsafe {
-        vmp_apply_core_pm::<false>(
+        vmp_apply_core_pm::<false, E>(
             n,
             res_u64,
             a_u64,
@@ -759,6 +801,98 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma(
             &handle(module).meta_bbc,
             tmp,
         );
+    }
+}
+
+/// Fused multi-digit VMP over materialized digit slices.
+pub(crate) fn vmp_apply_dft_to_dft_digits_ifma<E: TaskExecutor>(
+    _module: &Module<crate::NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    digits: &[VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>],
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    tmp: &mut [u64],
+) {
+    let n = res.n();
+    let max_size = res.size();
+    debug_assert_eq!(max_size, res.size());
+
+    let dsize = digits.len();
+    if dsize == 0 || n < 2 {
+        return;
+    }
+
+    let n_blk_quads = n / 8;
+    let nrows = pmat.rows() * pmat.cols_in();
+    let ncols = pmat.cols_out() * pmat.size();
+    let cols_out = pmat.cols_out();
+    let res_cols = res.cols();
+
+    let bq_stride = ncols * nrows * 16;
+    let col_stride_y = nrows * 16;
+
+    let mut a_slices: Vec<&[u64]> = Vec::with_capacity(dsize);
+    let mut row_maxs: Vec<usize> = Vec::with_capacity(dsize);
+    let mut limb_offs: Vec<usize> = Vec::with_capacity(dsize);
+    let mut col_maxs: Vec<usize> = Vec::with_capacity(dsize);
+    for (di, a) in digits.iter().enumerate() {
+        let a_u64: &[u64] = &cast_slice::<_, u64>(a.data())[..2 * n * a.poly_count()];
+        let a_size = a_u64.len() / (2 * n);
+        let pad = ((dsize - di) as isize - 2).max(0) as usize;
+        let res_size_di = res_cols * (max_size - pad);
+        let limb_off = di * cols_out;
+        a_slices.push(a_u64);
+        row_maxs.push(nrows.min(a_size));
+        limb_offs.push(limb_off);
+        col_maxs.push(ncols.min(res_size_di + limb_off));
+    }
+
+    let res_u64: &mut [u64] = &mut cast_slice_mut::<_, u64>(res.data_mut())[..2 * n * res_cols * max_size];
+    let pmat_u64: &[u64] = cast_slice(pmat.data());
+
+    let res_size_0 = res_cols * (max_size - (dsize as isize - 2).max(0) as usize);
+    for col in col_maxs[0]..res_size_0 {
+        res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
+    }
+
+    let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
+    let row_max_all = row_maxs.iter().copied().max().unwrap_or(0);
+    let res_ptr = SendPtr(res_u64.as_mut_ptr());
+    let process_bq = |x_pm: &mut [u64], bq: usize| {
+        for di in 0..dsize {
+            let limb_off = limb_offs[di];
+            let col_max = col_maxs[di];
+            if limb_off >= col_max {
+                continue;
+            }
+            let row_max = row_maxs[di];
+            let x_pm = &mut x_pm[..3 * 8 * row_max];
+            unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_slices[di], x_pm) };
+
+            for col_pmat in limb_off..col_max {
+                let col_res = col_pmat - limb_off;
+                let y_off = bq * bq_stride + col_pmat * col_stride_y;
+
+                unsafe {
+                    let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
+                    let dst_base = res_ptr.get().add(col_res * 2 * n);
+                    if di == 0 {
+                        save_planar_overwrite(dst_base, bq, red[0], red[1], red[2]);
+                    } else {
+                        save_planar_add(dst_base, bq, &pc, red[0], red[1], red[2]);
+                    }
+                }
+            }
+        }
+    };
+
+    if !E::is_parallel() || n_blk_quads < 2 {
+        let (_kernel_output, x_pm) = tmp.split_at_mut(32);
+        let x_pm = &mut x_pm[..3 * 8 * row_max_all];
+        for bq in 0..n_blk_quads {
+            process_bq(x_pm, bq);
+        }
+    } else {
+        E::for_each_chunked(n_blk_quads, tmp, 3 * 8 * row_max_all, process_bq);
     }
 }
 
@@ -779,7 +913,7 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_ifma(
 }
 
 /// Fused multi-digit VMP over strided digit rows.
-pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma<E: TaskExecutor>(
     _module: &Module<crate::NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
     a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
@@ -845,12 +979,12 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
 
     let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
     let row_max_all = row_maxs.iter().copied().max().unwrap_or(0) as usize;
-    let (_kernel_output, x_pm) = tmp.split_at_mut(32);
     let x_words = 3 * 8 * row_max_all;
     let rhs_count = if dsize >= 2 { 2 } else { 1 };
-    let x_pm = &mut x_pm[..rhs_count * x_words];
-    let (x0_pm, x1_pm) = x_pm.split_at_mut(x_words);
-    for bq in 0..n_blk_quads {
+    let task_tmp_len = rhs_count * x_words;
+    let res_ptr = SendPtr(res_u64.as_mut_ptr());
+    let process_bq = |task_tmp: &mut [u64], bq: usize| {
+        let (x0_pm, x1_pm) = task_tmp[..task_tmp_len].split_at_mut(x_words);
         let mut di = 0;
         while di < dsize {
             let pair = di + 1 < dsize
@@ -883,7 +1017,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
                     let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
                     unsafe {
                         let red = madd_reduce_col(x0_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                        let dst = res_u64.as_mut_ptr().add((col_pmat - limb_off0) * 2 * n);
+                        let dst = res_ptr.get().add((col_pmat - limb_off0) * 2 * n);
                         save_planar_digit(dst, bq, &pc, di == 0, red);
                     }
                 }
@@ -892,8 +1026,8 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
                     let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
                     unsafe {
                         let [red0, red1] = madd_reduce_col_x2(x0_pm, x1_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                        let dst0 = res_u64.as_mut_ptr().add((col_pmat - limb_off0) * 2 * n);
-                        let dst1 = res_u64.as_mut_ptr().add((col_pmat - limb_off1) * 2 * n);
+                        let dst0 = res_ptr.get().add((col_pmat - limb_off0) * 2 * n);
+                        let dst1 = res_ptr.get().add((col_pmat - limb_off1) * 2 * n);
                         save_planar_digit(dst0, bq, &pc, di == 0, red0);
                         save_planar_add(dst1, bq, &pc, red1[0], red1[1], red1[2]);
                     }
@@ -903,7 +1037,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
                     let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
                     unsafe {
                         let red = madd_reduce_col(x0_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                        let dst = res_u64.as_mut_ptr().add((col_pmat - limb_off0) * 2 * n);
+                        let dst = res_ptr.get().add((col_pmat - limb_off0) * 2 * n);
                         save_planar_digit(dst, bq, &pc, di == 0, red);
                     }
                 }
@@ -912,7 +1046,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
                     let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
                     unsafe {
                         let red = madd_reduce_col(x1_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                        let dst = res_u64.as_mut_ptr().add((col_pmat - limb_off1) * 2 * n);
+                        let dst = res_ptr.get().add((col_pmat - limb_off1) * 2 * n);
                         save_planar_add(dst, bq, &pc, red[0], red[1], red[2]);
                     }
                 }
@@ -938,12 +1072,20 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
                 let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
                 unsafe {
                     let red = madd_reduce_col(x0_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                    let dst = res_u64.as_mut_ptr().add((col_pmat - limb_off) * 2 * n);
+                    let dst = res_ptr.get().add((col_pmat - limb_off) * 2 * n);
                     save_planar_digit(dst, bq, &pc, di == 0, red);
                 }
             }
             di += 1;
         }
+    };
+
+    if !E::is_parallel() || n_blk_quads < 2 {
+        for bq in 0..n_blk_quads {
+            process_bq(tmp, bq);
+        }
+    } else {
+        E::for_each_chunked(n_blk_quads, tmp, task_tmp_len, process_bq);
     }
 }
 

@@ -130,6 +130,8 @@ impl BootstrappingPlan {
         if slots_to_coeffs.kind() != DFTType::Decode {
             return Err(invalid("slots_to_coeffs must be a DFTType::Decode plan".to_string()));
         }
+        eval_mod.validate()?;
+        let coeffs_to_slots = coeffs_to_slots.with_scaling(eval_mod.input_scaling()?)?;
         if let Some(sse) = techniques.sparse_secret_encapsulation
             && sse.hamming_weight == 0
         {
@@ -284,11 +286,7 @@ impl BootstrappingPlan {
 pub struct BootstrappingContext<BE: Backend, F> {
     /// Prepared CoeffsToSlots matrix (homomorphic encoding).
     ///
-    /// The `1/K` amplitude bridge into EvalMod's domain is **not** applied here:
-    /// the caller owns it, by folding it into the plan (e.g. building the
-    /// CoeffsToSlots stage with
-    /// [`with_scaling`](DFTPlan::with_scaling)`(1.0 / f_mod_interval as f64)`)
-    /// before [`Self::compile`]. `compile` performs no implicit scaling.
+    /// The plan constructor scales this transform for its EvalMod variant.
     coeffs_to_slots: DFTMatrixPrepared<BE, Encode, Split>,
 
     /// Prepared bypass CoeffsToSlots matrix
@@ -347,9 +345,8 @@ where
     /// Compiles `plan` directly into backend-resident matrices and EvalMod.
     ///
     /// Each stage carries its own coefficient metadata (`DFTPlan::meta` /
-    /// `EvalModPlan::meta`), read directly off the plan, including any `scaling`
-    /// the caller folded in (the `1/f_mod_interval` amplitude bridge — see the
-    /// [`Self::coeffs_to_slots`] docs); no implicit scaling is applied here.
+    /// `EvalModPlan::meta`), including the CoeffsToSlots scaling resolved by
+    /// [`BootstrappingPlan::new`].
     pub fn compile(
         module: &Module<BE>,
         base2k: Base2K,
@@ -412,7 +409,7 @@ mod tests {
         EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
             log_msg_ratio: 2,
-            f_mod_degree: 3,
+            f_mod_degree: 2 * (f_mod_interval - 1),
             f_mod_interval,
             f_mod_log_interval_reduction: 1,
             f_mod_inv_degree: None,
@@ -456,6 +453,32 @@ mod tests {
     fn recipe_accepts_s2c_first_pipeline() {
         let plan = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
         assert_eq!(plan.pipeline(), BootstrappingPipeline::S2CFirst);
+    }
+
+    #[test]
+    fn recipe_owns_eval_mod_input_scaling() {
+        let c2s = dft(DFTType::Encode).with_scaling(7.0).unwrap();
+        let plan = BootstrappingPlan::new(
+            BootstrappingPipeline::C2SFirst,
+            BootstrappingTechniques::default(),
+            c2s,
+            eval_mod(16),
+            dft(DFTType::Decode),
+        )
+        .unwrap();
+        assert_eq!(plan.coeffs_to_slots().scaling(), Some(1.0 / 16.0));
+
+        let mut centered = eval_mod(16);
+        centered.eval_mod_type = EvalModType::CosHKEven;
+        let plan = BootstrappingPlan::new(
+            BootstrappingPipeline::S2CFirst,
+            BootstrappingTechniques::default(),
+            dft(DFTType::Encode),
+            centered,
+            dft(DFTType::Decode),
+        )
+        .unwrap();
+        assert_eq!(plan.coeffs_to_slots().scaling(), Some(1.0 / 16.0));
     }
 
     #[test]
