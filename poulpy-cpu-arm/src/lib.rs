@@ -1,7 +1,7 @@
 //! NEON/ASIMD-accelerated CPU backend for the Poulpy lattice cryptography library.
 //!
-//! This crate provides `FFT64Neon` and `NTT4x30Neon`, high-performance backend
-//! implementations for [`poulpy_hal`] that leverage AArch64 SIMD (NEON / ASIMD)
+//! This crate provides serial and Rayon-scheduled FFT64 and NTT4x30 backends
+//! that leverage AArch64 SIMD (NEON / ASIMD)
 //! to accelerate cryptographic operations in fully homomorphic encryption (FHE)
 //! schemes based on Module-LWE.
 //!
@@ -113,7 +113,7 @@
 //!
 //! # Threading and concurrency
 //!
-//! - **`FFT64Neon` / `NTT4x30Neon` are `Send + Sync`**: zero-sized marker types, no internal state.
+//! - **All backend markers are `Send + Sync`**: zero-sized marker types, no internal state.
 //! - **`Module<FFT64Neon>` / `Module<NTT4x30Neon>` are `Send + Sync`**: FFT/NTT tables are immutable after construction.
 //! - **Operations require `&mut` for outputs**: prevents data races at the API level.
 //! - **No internal locking**: all synchronization is the caller's responsibility.
@@ -122,7 +122,8 @@
 //!
 //! - `enable-neon` (required): opt-in compilation of the backend. Without this feature,
 //!   the crate is an empty shell, allowing the workspace to build on non-aarch64 targets.
-//! - `enable-ckks` (optional): wires the CKKS scheme OEP impls for both backends.
+//! - `enable-rayon` (optional): exports `FFT64NeonRayon` and `NTT4x30NeonRayon`.
+//! - `enable-ckks` (optional): wires the CKKS scheme OEP impls for enabled backends.
 //!
 //! # Platform support
 //!
@@ -139,15 +140,15 @@
 //!
 //! # Usage
 //!
-//! This crate exports two public marker types, `FFT64Neon` and `NTT4x30Neon`, used as type
+//! This crate exports serial and Rayon marker types used as type
 //! parameters to the HAL generic types. Application code typically does not import this
 //! crate directly, but instead uses it via `poulpy_core` or `poulpy_bin_fhe` with
 //! runtime backend selection.
 //!
 //! # Versioning and stability
 //!
-//! This crate follows semantic versioning. The public API consists of the `FFT64Neon` and
-//! `NTT4x30Neon` marker types, the `FFT64NeonReimTable` and `ReimFFT(I)Neon` FFT executors,
+//! This crate follows semantic versioning. The public API consists of the backend marker
+//! types, the `FFT64NeonReimTable` and `ReimFFT(I)Neon` FFT executors,
 //! and their trait implementations from `poulpy_hal::oep`. All other items are
 //! implementation details subject to change without notice.
 
@@ -169,10 +170,16 @@ mod ntt4x30;
 #[cfg(all(test, feature = "enable-neon"))]
 mod tests;
 
+#[cfg(feature = "enable-rayon")]
+pub use fft64::FFT64NeonRayon;
 #[cfg(feature = "enable-neon")]
 pub use fft64::{FFT64Neon, FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
 #[cfg(feature = "enable-neon")]
 pub use ntt4x30::NTT4x30Neon;
+#[cfg(feature = "enable-rayon")]
+pub use ntt4x30::NTT4x30NeonRayon;
 
 #[cfg(feature = "enable-neon")]
 mod layout_compat;
+
+pub mod capabilities;
