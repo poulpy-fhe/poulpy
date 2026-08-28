@@ -326,14 +326,6 @@ pub(crate) unsafe fn barrett_reduce(tmp: __m256i, q: __m256i, mu: __m256i) -> __
     }
 }
 
-/// Horizontal sum of 4 × u64 lanes in a `__m256i`.
-///
-/// Returns `lane[0] + lane[1] + lane[2] + lane[3]` as u64.
-#[inline(always)]
-pub(crate) unsafe fn hadd64_pub(v: __m256i) -> u64 {
-    unsafe { hadd64(v) }
-}
-
 #[inline(always)]
 unsafe fn hadd64(v: __m256i) -> u64 {
     unsafe {

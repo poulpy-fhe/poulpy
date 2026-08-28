@@ -1,6 +1,8 @@
+use std::mem::size_of;
+
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 use poulpy_hal::{
-    layouts::Module,
+    layouts::{Backend, Module},
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
     },
@@ -120,6 +122,34 @@ cross_backend_test_suite! {
     }
 }
 
+#[test]
+fn test_vmp_pmat_packed_byte_size() {
+    let (n, rows, cols_in, cols_out, size) = (256, 3, 2, 4, 5);
+    assert_eq!(
+        <NTT4x30Avx512 as Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size),
+        n * rows * cols_in * cols_out * size * 2 * size_of::<u64>()
+    );
+}
+
+#[test]
+fn test_transform_domain_packed_byte_sizes() {
+    let (n, cols, size) = (256, 3, 5);
+    let packed_bytes = n * cols * size * 4 * size_of::<u32>();
+    assert_eq!(<NTT4x30Avx512 as Backend>::bytes_of_vec_znx_dft(n, cols, size), packed_bytes);
+    assert_eq!(
+        <NTT4x30Avx512 as Backend>::bytes_of_cnv_pvec_left(n, cols, size),
+        packed_bytes
+    );
+    assert_eq!(
+        <NTT4x30Avx512 as Backend>::bytes_of_cnv_pvec_right(n, cols, size),
+        packed_bytes
+    );
+    assert_eq!(
+        <NTT4x30Avx512 as Backend>::bytes_of_svp_ppol(n, cols),
+        n * cols * 4 * size_of::<u32>()
+    );
+}
+
 backend_test_suite! {
     mod sampling,
     backend = crate::NTT4x30Avx512,
@@ -210,16 +240,4 @@ fn test_convolution_direct() {
 #[test]
 fn test_gglwe_product_digits_strided_bit_identical() {
     poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT4x30Avx512>::new(64), 50);
-}
-
-cross_backend_test_suite! {
-    mod word_compat,
-    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
-    backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<8, base2k: 50 },
-    tests = {
-        test_word_compat_dft_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_dft_bytes,
-        test_word_compat_svp_prepare_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_bytes,
-        test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
-    }
 }

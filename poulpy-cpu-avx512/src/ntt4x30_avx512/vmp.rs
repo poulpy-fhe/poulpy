@@ -9,33 +9,34 @@ use std::mem::size_of;
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m256i, __m512i, _mm_sfence, _mm256_loadu_si256, _mm256_storeu_si256, _mm256_stream_si256, _mm512_add_epi64,
-    _mm512_castsi512_si256, _mm512_loadu_si512, _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64,
-    _mm512_storeu_si512,
+    _mm512_castsi512_si256, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_extracti64x4_epi64, _mm512_loadu_si512,
+    _mm512_permutex2var_epi64, _mm512_set_epi64,
 };
 
 use poulpy_core::oep::gglwe_product_digit_output_size;
 use poulpy_cpu_ref::reference::ntt4x30::{
-    NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
+    NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
 use poulpy_hal::layouts::{
-    DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
-    ZnxView, ZnxViewMut,
+    DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
+    VmpPMatBackendRef, ZnxView, ZnxViewMut,
 };
 
+use super::arithmetic_avx512::{BARRETT_MU, POW32, Q_VEC, bcast_quad, reduce_b_to_canonical_512};
 use super::mat_vec_avx512::vec_mat1col_product_blkpair_bbc_pm_avx512;
-use super::prim::{lazy_reduce_512, q_shifted_512};
+use super::vec_znx_dft::canonicalize_limb_q120;
 use crate::NTT4x30Avx512;
 
 /// Scratch space (in bytes) required by the AVX VMP prepare kernel.
 pub(crate) fn vmp_prepare_tmp_bytes_avx(n: usize) -> usize {
-    8 * n * size_of::<u64>()
+    4 * n * size_of::<u64>()
 }
 
-/// AVX-local VMP prepare into a prime-major layout interleaved per
-/// `(block_pair, output_column)`: `block_pair -> output_column -> prime ->
-/// input_row`, every row storing `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
-/// Keeping the four prime planes adjacent per chunk makes the apply read the
-/// matrix as a single sequential stream.
+/// AVX-local VMP prepare into packed prime-pair planes.
+///
+/// Every u64 stores two canonical u32 residues. The two planes hold prime
+/// pairs `(p0, p1)` and `(p2, p3)` for
+/// `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
 pub(crate) fn vmp_prepare_avx_pm(
     module: &Module<NTT4x30Avx512>,
     res: &mut VmpPMatBackendMut<'_, NTT4x30Avx512>,
@@ -55,12 +56,11 @@ pub(crate) fn vmp_prepare_avx_pm(
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
     let n_block_pairs = n / 4;
-    let plane_stride = nrows * 4;
-    let col_stride = nrows * 16;
-    let bp_stride = ncols * nrows * 16;
+    let pair_stride = nrows * 4;
+    let col_stride = nrows * 8;
+    let bp_stride = ncols * nrows * 8;
 
-    let (tmp_b, tmp_c_u64) = tmp.split_at_mut(4 * n);
-    let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
+    let tmp_b = &mut tmp[..4 * n];
 
     let mat_i64: &[i64] = a.raw();
     let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
@@ -71,19 +71,19 @@ pub(crate) fn vmp_prepare_avx_pm(
 
             NTT4x30Avx512::ntt_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
             NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), tmp_b);
-            NTT4x30Avx512::ntt_c_from_b(n, tmp_c, tmp_b);
-            let tmp_c_u64: &[u64] = cast_slice(tmp_c);
+            unsafe { canonicalize_limb_q120(n, tmp_b) };
 
             for bp in 0..n_block_pairs {
                 let coeff_base = 16 * bp;
-                for p in 0..4usize {
-                    let dst = bp * bp_stride + col_i * col_stride + p * plane_stride + row_i * 4;
-                    pmat_u64[dst..dst + 4].copy_from_slice(&[
-                        tmp_c_u64[coeff_base + p],
-                        tmp_c_u64[coeff_base + 4 + p],
-                        tmp_c_u64[coeff_base + 8 + p],
-                        tmp_c_u64[coeff_base + 12 + p],
-                    ]);
+                for pair in 0..2usize {
+                    let p = 2 * pair;
+                    let dst = bp * bp_stride + col_i * col_stride + pair * pair_stride + row_i * 4;
+                    for coeff in 0..4 {
+                        let coeff_off = coeff_base + 4 * coeff;
+                        let r0 = tmp_b[coeff_off + p];
+                        let r1 = tmp_b[coeff_off + p + 1];
+                        pmat_u64[dst + coeff] = r0 | (r1 << 32);
+                    }
                 }
             }
         }
@@ -131,7 +131,7 @@ pub(crate) unsafe fn extract_1blk_from_contiguous_q120b_avx512(
 /// Each plane stores `row_max` rows of 4 u64 with lane order
 /// `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
 #[target_feature(enable = "avx512f")]
-unsafe fn extract_blk_pair_prime_major_avx512(n: usize, row_max: usize, blk_pair: usize, src: &[u64], dst: &mut [u64]) {
+unsafe fn extract_blk_pair_prime_major_avx512(n: usize, row_max: usize, blk_pair: usize, src: &[u32], dst: &mut [u64]) {
     debug_assert!(n.is_multiple_of(4));
     debug_assert!(src.len() >= row_max * 4 * n);
     debug_assert!(dst.len() >= 16 * row_max);
@@ -148,11 +148,11 @@ unsafe fn extract_blk_pair_prime_major_avx512(n: usize, row_max: usize, blk_pair
     let idx_p1 = _mm512_set_epi64(0, 0, 0, 0, 13, 9, 5, 1);
     let idx_p2 = _mm512_set_epi64(0, 0, 0, 0, 14, 10, 6, 2);
     let idx_p3 = _mm512_set_epi64(0, 0, 0, 0, 15, 11, 7, 3);
-
     for row in 0..row_max {
         let row_base = row * 4 * n + coeff_base;
-        let v0: __m512i = unsafe { _mm512_loadu_si512(src.as_ptr().add(row_base) as *const __m512i) };
-        let v1: __m512i = unsafe { _mm512_loadu_si512(src.as_ptr().add(row_base + 8) as *const __m512i) };
+        let packed = unsafe { _mm512_loadu_si512(src.as_ptr().add(row_base) as *const __m512i) };
+        let v0 = _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64::<0>(packed));
+        let v1 = _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64::<1>(packed));
         for (p, idx) in [idx_p0, idx_p1, idx_p2, idx_p3].into_iter().enumerate() {
             let dst_ptr = unsafe { dst.as_mut_ptr().add(p * plane_stride + row * 4) as *mut __m256i };
             let plane = _mm512_permutex2var_epi64(v0, idx, v1);
@@ -168,7 +168,7 @@ unsafe fn extract_blk_pair_prime_major_strided_avx512(
     n: usize,
     row_max: usize,
     blk_pair: usize,
-    src: &[u64],
+    src: &[u32],
     cols: usize,
     limb_base: usize,
     limb_step: usize,
@@ -184,15 +184,15 @@ unsafe fn extract_blk_pair_prime_major_strided_avx512(
     let idx_p1 = _mm512_set_epi64(0, 0, 0, 0, 13, 9, 5, 1);
     let idx_p2 = _mm512_set_epi64(0, 0, 0, 0, 14, 10, 6, 2);
     let idx_p3 = _mm512_set_epi64(0, 0, 0, 0, 15, 11, 7, 3);
-
     for row in 0..row_max {
         let logical_row = row_start + row;
         let col = logical_row % cols;
         let digit = logical_row / cols;
         let flat = (limb_base + digit * limb_step) * cols + col;
         let row_base = flat * 4 * n + coeff_base;
-        let v0 = unsafe { _mm512_loadu_si512(src.as_ptr().add(row_base) as *const __m512i) };
-        let v1 = unsafe { _mm512_loadu_si512(src.as_ptr().add(row_base + 8) as *const __m512i) };
+        let packed = unsafe { _mm512_loadu_si512(src.as_ptr().add(row_base) as *const __m512i) };
+        let v0 = _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64::<0>(packed));
+        let v1 = _mm512_cvtepu32_epi64(_mm512_extracti64x4_epi64::<1>(packed));
         for (p, idx) in [idx_p0, idx_p1, idx_p2, idx_p3].into_iter().enumerate() {
             let dst_ptr = unsafe { dst.as_mut_ptr().add(p * plane_stride + row * 4) as *mut __m256i };
             let plane = _mm512_permutex2var_epi64(v0, idx, v1);
@@ -207,28 +207,30 @@ unsafe fn extract_blk_pair_prime_major_strided_avx512(
 /// multiple of 64 bytes, so both 256-bit stream stores land on aligned cache
 /// line halves.
 #[target_feature(enable = "avx512f")]
-unsafe fn save_blk_overwrite_nt(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
+unsafe fn save_blk_overwrite_nt(blk: usize, dst: &mut [u32], src: &[u64]) {
     debug_assert!(src.len() >= 8);
     let off = 8 * blk;
-    let dst_ptr = unsafe { dst.as_mut_ptr().add(off) as *mut __m256i };
-    let src_ptr = src.as_ptr() as *const __m256i;
     unsafe {
-        _mm256_stream_si256(dst_ptr, _mm256_loadu_si256(src_ptr));
-        _mm256_stream_si256(dst_ptr.add(1), _mm256_loadu_si256(src_ptr.add(1)));
+        let q = bcast_quad(Q_VEC.as_ptr());
+        let mu = bcast_quad(BARRETT_MU.as_ptr());
+        let pow32 = bcast_quad(POW32.as_ptr());
+        let value = reduce_b_to_canonical_512(_mm512_loadu_si512(src.as_ptr() as *const __m512i), q, mu, pow32);
+        _mm256_stream_si256(dst.as_mut_ptr().add(off) as *mut __m256i, _mm512_cvtepi64_epi32(value));
     }
 }
 
 /// Cached overwrite used when a following gadget digit immediately reads the
 /// same block for accumulation.
 #[target_feature(enable = "avx512f")]
-unsafe fn save_blk_overwrite(blk: usize, dst: &mut [u64], src: &[u64]) {
+unsafe fn save_blk_overwrite(blk: usize, dst: &mut [u32], src: &[u64]) {
     debug_assert!(src.len() >= 8);
     let off = 8 * blk;
     unsafe {
-        _mm512_storeu_si512(
-            dst.as_mut_ptr().add(off) as *mut __m512i,
-            _mm512_loadu_si512(src.as_ptr() as *const __m512i),
-        );
+        let q = bcast_quad(Q_VEC.as_ptr());
+        let mu = bcast_quad(BARRETT_MU.as_ptr());
+        let pow32 = bcast_quad(POW32.as_ptr());
+        let value = reduce_b_to_canonical_512(_mm512_loadu_si512(src.as_ptr() as *const __m512i), q, mu, pow32);
+        _mm256_storeu_si256(dst.as_mut_ptr().add(off) as *mut __m256i, _mm512_cvtepi64_epi32(value));
     }
 }
 
@@ -240,17 +242,17 @@ unsafe fn save_blk_overwrite(blk: usize, dst: &mut [u64], src: &[u64]) {
 /// subtract) reproduces the scalar `%` byte-for-byte. The summed result stays in
 /// `[0, 2·Q_SHIFTED[k])`, matching the downstream iNTT/normalize invariant.
 #[target_feature(enable = "avx512f")]
-unsafe fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
+unsafe fn save_blk_add(blk: usize, dst: &mut [u32], src: &[u64]) {
     debug_assert!(src.len() >= 8);
-    debug_assert!(dst.len() >= 4 * n);
     unsafe {
-        let q_s_512 = q_shifted_512();
-        let msb_512 = _mm512_set1_epi64(i64::MIN);
-        let dst_ptr = dst.as_mut_ptr().add(8 * blk) as *mut __m512i;
-        let src_ptr = src.as_ptr() as *const __m512i;
-        let dv = lazy_reduce_512(_mm512_loadu_si512(dst_ptr), q_s_512, msb_512);
-        let sv = lazy_reduce_512(_mm512_loadu_si512(src_ptr), q_s_512, msb_512);
-        _mm512_storeu_si512(dst_ptr, _mm512_add_epi64(dv, sv));
+        let q = bcast_quad(Q_VEC.as_ptr());
+        let mu = bcast_quad(BARRETT_MU.as_ptr());
+        let pow32 = bcast_quad(POW32.as_ptr());
+        let dst_ptr = dst.as_mut_ptr().add(8 * blk) as *mut __m256i;
+        let dv = _mm512_cvtepu32_epi64(_mm256_loadu_si256(dst_ptr));
+        let sv = reduce_b_to_canonical_512(_mm512_loadu_si512(src.as_ptr() as *const __m512i), q, mu, pow32);
+        let sum = super::arithmetic_avx512::cond_sub_512(_mm512_add_epi64(dv, sv), q);
+        _mm256_storeu_si256(dst_ptr, _mm512_cvtepi64_epi32(sum));
     }
 }
 
@@ -258,8 +260,8 @@ unsafe fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
 #[target_feature(enable = "avx512f")]
 unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
     n: usize,
-    res_u64: &mut [u64],
-    a_u64: &[u64],
+    res_u32: &mut [u32],
+    a_u32: &[u32],
     pmat_u64: &[u64],
     limb_offset: usize,
     nrows: usize,
@@ -271,12 +273,12 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
     debug_assert!(n.is_power_of_two());
     debug_assert!(n.is_multiple_of(4));
 
-    let a_size = a_u64.len() / (4 * n);
-    let res_size = res_u64.len() / (4 * n);
+    let a_size = a_u32.len() / (4 * n);
+    let res_size = res_u32.len() / (4 * n);
     let n_block_pairs = n / 4;
 
     let row_end = nrows.min(a_size);
-    let row_start = a_u64
+    let row_start = a_u32
         .chunks_exact(4 * n)
         .take(row_end)
         .take_while(|row| row.iter().all(|&x| x == 0))
@@ -286,38 +288,38 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
 
     if limb_offset >= col_max || row_max == 0 {
         if OVERWRITE {
-            res_u64.fill(0);
+            res_u32.fill(0);
         }
         return;
     }
 
     let (blkpair_output, x_pm) = tmp.split_at_mut(16);
     let x_pm = &mut x_pm[..16 * row_max];
-    let plane_stride = nrows * 4;
-    let col_stride = nrows * 16;
-    let bp_stride = ncols * nrows * 16;
-    let a_u64 = &a_u64[row_start * 4 * n..];
+    let pair_stride = nrows * 4;
+    let col_stride = nrows * 8;
+    let bp_stride = ncols * nrows * 8;
+    let a_u32 = &a_u32[row_start * 4 * n..];
 
     for bp in 0..n_block_pairs {
-        unsafe { extract_blk_pair_prime_major_avx512(n, row_max, bp, a_u64, x_pm) };
+        unsafe { extract_blk_pair_prime_major_avx512(n, row_max, bp, a_u32, x_pm) };
 
         for col_pmat in limb_offset..col_max {
             let col_res = col_pmat - limb_offset;
             let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
 
             unsafe {
-                vec_mat1col_product_blkpair_bbc_pm_avx512(meta, row_max, blkpair_output, x_pm, &pmat_u64[y_off..], plane_stride)
+                vec_mat1col_product_blkpair_bbc_pm_avx512(meta, row_max, blkpair_output, x_pm, &pmat_u64[y_off..], pair_stride)
             };
 
             let blk0 = 2 * bp;
             let blk1 = blk0 + 1;
             let base = col_res * 4 * n;
             if OVERWRITE {
-                unsafe { save_blk_overwrite_nt(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]) };
-                unsafe { save_blk_overwrite_nt(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]) };
+                unsafe { save_blk_overwrite_nt(blk0, &mut res_u32[base..], &blkpair_output[0..8]) };
+                unsafe { save_blk_overwrite_nt(blk1, &mut res_u32[base..], &blkpair_output[8..16]) };
             } else {
-                unsafe { save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]) };
-                unsafe { save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]) };
+                unsafe { save_blk_add(blk0, &mut res_u32[base..], &blkpair_output[0..8]) };
+                unsafe { save_blk_add(blk1, &mut res_u32[base..], &blkpair_output[8..16]) };
             }
         }
     }
@@ -325,7 +327,7 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
     if OVERWRITE {
         let active_cols = col_max - limb_offset;
         for col in active_cols..res_size {
-            res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
+            res_u32[col * 4 * n..(col + 1) * 4 * n].fill(0);
         }
         _mm_sfence();
     }
@@ -344,15 +346,15 @@ pub(crate) fn vmp_apply_dft_to_dft_avx(
     let ncols = pmat.cols_out() * pmat.size();
     let meta = module.get_bbc_meta();
 
-    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
-    let a_u64: &[u64] = cast_slice(a.raw());
-    let pmat_u64: &[u64] = cast_slice(pmat.raw());
+    let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
+    let a_u32: &[u32] = cast_slice(a.raw());
+    let pmat_u64: &[u64] = cast_slice(pmat.data());
 
     unsafe {
         vmp_apply_core_avx_pm::<true>(
             n,
-            res_u64,
-            a_u64,
+            res_u32,
+            a_u32,
             pmat_u64,
             limb_offset * pmat.cols_out(),
             nrows,
@@ -376,15 +378,15 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_avx(
     let ncols = pmat.cols_out() * pmat.size();
     let meta = module.get_bbc_meta();
 
-    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
-    let a_u64: &[u64] = cast_slice(a.raw());
-    let pmat_u64: &[u64] = cast_slice(pmat.raw());
+    let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
+    let a_u32: &[u32] = cast_slice(a.raw());
+    let pmat_u64: &[u64] = cast_slice(pmat.data());
 
     unsafe {
         vmp_apply_core_avx_pm::<false>(
             n,
-            res_u64,
-            a_u64,
+            res_u32,
+            a_u32,
             pmat_u64,
             limb_offset * pmat.cols_out(),
             nrows,
@@ -437,13 +439,13 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     let a_size = a.size();
     let dnum = pmat.rows();
     let meta = module.get_bbc_meta();
-    let a_u64: &[u64] = cast_slice(a.raw());
-    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
-    let pmat_u64: &[u64] = cast_slice(pmat.raw());
+    let a_u32: &[u32] = cast_slice(a.raw());
+    let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
+    let pmat_u64: &[u64] = cast_slice(pmat.data());
 
-    let plane_stride = nrows * 4;
-    let col_stride = nrows * 16;
-    let bp_stride = ncols * nrows * 16;
+    let pair_stride = nrows * 4;
+    let col_stride = nrows * 8;
+    let bp_stride = ncols * nrows * 8;
 
     let (digit_meta, tmp) = tmp.split_at_mut(4 * dsize);
     let (row_maxs, digit_meta) = digit_meta.split_at_mut(dsize);
@@ -459,7 +461,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
         let row_start = (0..row_end)
             .take_while(|&row| {
                 let flat = (limb_base + (row / a_cols) * dsize) * a_cols + row % a_cols;
-                a_u64[flat * 4 * n..(flat + 1) * 4 * n].iter().all(|&x| x == 0)
+                a_u32[flat * 4 * n..(flat + 1) * 4 * n].iter().all(|&x| x == 0)
             })
             .count();
         row_starts[di] = row_start as u64;
@@ -470,10 +472,10 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
 
     let res_flat = res_cols * output_size;
     if row_maxs[0] == 0 {
-        res_u64.fill(0);
+        res_u32.fill(0);
     } else {
         for col in col_maxs[0] as usize..res_flat {
-            res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
+            res_u32[col * 4 * n..(col + 1) * 4 * n].fill(0);
         }
     }
 
@@ -496,7 +498,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
                     n,
                     row_max,
                     bp,
-                    a_u64,
+                    a_u32,
                     a_cols,
                     dsize - 1 - di,
                     dsize,
@@ -516,17 +518,17 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
                         blkpair_output,
                         x_pm,
                         &pmat_u64[y_off..],
-                        plane_stride,
+                        pair_stride,
                     );
                     let base = col_res * 4 * n;
                     let blk0 = 2 * bp;
                     let blk1 = blk0 + 1;
                     if di == 0 {
-                        save_blk_overwrite(blk0, &mut res_u64[base..], &blkpair_output[0..8]);
-                        save_blk_overwrite(blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                        save_blk_overwrite(blk0, &mut res_u32[base..], &blkpair_output[0..8]);
+                        save_blk_overwrite(blk1, &mut res_u32[base..], &blkpair_output[8..16]);
                     } else {
-                        save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
-                        save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                        save_blk_add(blk0, &mut res_u32[base..], &blkpair_output[0..8]);
+                        save_blk_add(blk1, &mut res_u32[base..], &blkpair_output[8..16]);
                     }
                 }
             }

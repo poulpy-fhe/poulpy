@@ -1,0 +1,541 @@
+use bytemuck::{cast_slice, cast_slice_mut};
+use core::arch::x86_64::{
+    __m512i, _mm512_add_epi32, _mm512_cmp_epu32_mask, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512,
+    _mm512_mask_sub_epi32, _mm512_storeu_si512, _mm512_sub_epi32,
+};
+use poulpy_cpu_ref::reference::ntt4x30::{
+    NttDFTExecute, NttFromZnx64, NttToZnx128,
+    primes::{PrimeSet, Primes30},
+    vec_znx_dft::{NttAutomorphismPlan, NttModuleHandle},
+};
+use poulpy_hal::layouts::{
+    DataView, DataViewMut, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView,
+    ZnxViewMut,
+};
+
+use super::{
+    NTT4x30Avx512,
+    arithmetic_avx512::{BARRETT_MU, POW32, Q_VEC, bcast_quad, reduce_b_to_canonical_512},
+};
+
+const Q32X16: [u32; 16] = [
+    Primes30::Q[0],
+    Primes30::Q[1],
+    Primes30::Q[2],
+    Primes30::Q[3],
+    Primes30::Q[0],
+    Primes30::Q[1],
+    Primes30::Q[2],
+    Primes30::Q[3],
+    Primes30::Q[0],
+    Primes30::Q[1],
+    Primes30::Q[2],
+    Primes30::Q[3],
+    Primes30::Q[0],
+    Primes30::Q[1],
+    Primes30::Q[2],
+    Primes30::Q[3],
+];
+
+#[inline(always)]
+pub(crate) fn packed_limb(data: &[u32], n: usize, cols: usize, col: usize, limb: usize) -> &[u32] {
+    let start = 4 * n * (limb * cols + col);
+    &data[start..start + 4 * n]
+}
+
+#[inline(always)]
+pub(crate) fn packed_limb_mut(data: &mut [u32], n: usize, cols: usize, col: usize, limb: usize) -> &mut [u32] {
+    let start = 4 * n * (limb * cols + col);
+    &mut data[start..start + 4 * n]
+}
+
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn pack_limb_q120(n: usize, dst: &mut [u32], src: &[u64]) {
+    debug_assert!(dst.len() >= 4 * n);
+    debug_assert!(src.len() >= 4 * n);
+    unsafe {
+        let q = bcast_quad(Q_VEC.as_ptr());
+        let mu = bcast_quad(BARRETT_MU.as_ptr());
+        let pow32 = bcast_quad(POW32.as_ptr());
+        for pair in 0..n / 2 {
+            let x = _mm512_loadu_si512(src.as_ptr().add(8 * pair) as *const __m512i);
+            let x = reduce_b_to_canonical_512(x, q, mu, pow32);
+            core::arch::x86_64::_mm256_storeu_si256(dst.as_mut_ptr().add(8 * pair) as *mut _, _mm512_cvtepi64_epi32(x));
+        }
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn canonicalize_limb_q120(n: usize, src: &mut [u64]) {
+    debug_assert!(src.len() >= 4 * n);
+    unsafe {
+        let q = bcast_quad(Q_VEC.as_ptr());
+        let mu = bcast_quad(BARRETT_MU.as_ptr());
+        let pow32 = bcast_quad(POW32.as_ptr());
+        for pair in 0..n / 2 {
+            let ptr = src.as_mut_ptr().add(8 * pair) as *mut __m512i;
+            let x = reduce_b_to_canonical_512(_mm512_loadu_si512(ptr), q, mu, pow32);
+            _mm512_storeu_si512(ptr, x);
+        }
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn unpack_limb_q120(n: usize, dst: &mut [u64], src: &[u32]) {
+    debug_assert!(dst.len() >= 4 * n);
+    debug_assert!(src.len() >= 4 * n);
+    unsafe {
+        for pair in 0..n / 2 {
+            let x = core::arch::x86_64::_mm256_loadu_si256(src.as_ptr().add(8 * pair) as *const _);
+            _mm512_storeu_si512(dst.as_mut_ptr().add(8 * pair) as *mut __m512i, _mm512_cvtepu32_epi64(x));
+        }
+    }
+}
+
+#[inline(always)]
+unsafe fn reduce_u32(x: __m512i, q: __m512i) -> __m512i {
+    unsafe { _mm512_mask_sub_epi32(x, _mm512_cmp_epu32_mask::<5>(x, q), x, q) }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_add(n: usize, dst: &mut [u32], a: &[u32], b: &[u32]) {
+    unsafe {
+        let q = _mm512_loadu_si512(Q32X16.as_ptr() as *const __m512i);
+        for group in 0..n / 4 {
+            let off = 16 * group;
+            let av = _mm512_loadu_si512(a.as_ptr().add(off) as *const __m512i);
+            let bv = _mm512_loadu_si512(b.as_ptr().add(off) as *const __m512i);
+            _mm512_storeu_si512(
+                dst.as_mut_ptr().add(off) as *mut __m512i,
+                reduce_u32(_mm512_add_epi32(av, bv), q),
+            );
+        }
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_add_assign(n: usize, dst: &mut [u32], a: &[u32]) {
+    unsafe {
+        let q = _mm512_loadu_si512(Q32X16.as_ptr() as *const __m512i);
+        for group in 0..n / 4 {
+            let off = 16 * group;
+            let dv = _mm512_loadu_si512(dst.as_ptr().add(off) as *const __m512i);
+            let av = _mm512_loadu_si512(a.as_ptr().add(off) as *const __m512i);
+            _mm512_storeu_si512(
+                dst.as_mut_ptr().add(off) as *mut __m512i,
+                reduce_u32(_mm512_add_epi32(dv, av), q),
+            );
+        }
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_sub(n: usize, dst: &mut [u32], a: &[u32], b: &[u32]) {
+    unsafe {
+        let q = _mm512_loadu_si512(Q32X16.as_ptr() as *const __m512i);
+        for group in 0..n / 4 {
+            let off = 16 * group;
+            let av = _mm512_loadu_si512(a.as_ptr().add(off) as *const __m512i);
+            let bv = _mm512_loadu_si512(b.as_ptr().add(off) as *const __m512i);
+            let x = _mm512_sub_epi32(_mm512_add_epi32(av, q), bv);
+            _mm512_storeu_si512(dst.as_mut_ptr().add(off) as *mut __m512i, reduce_u32(x, q));
+        }
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_sub_assign(n: usize, dst: &mut [u32], a: &[u32]) {
+    unsafe {
+        let q = _mm512_loadu_si512(Q32X16.as_ptr() as *const __m512i);
+        for group in 0..n / 4 {
+            let off = 16 * group;
+            let dv = _mm512_loadu_si512(dst.as_ptr().add(off) as *const __m512i);
+            let av = _mm512_loadu_si512(a.as_ptr().add(off) as *const __m512i);
+            let x = _mm512_sub_epi32(_mm512_add_epi32(dv, q), av);
+            _mm512_storeu_si512(dst.as_mut_ptr().add(off) as *mut __m512i, reduce_u32(x, q));
+        }
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_sub_negate_assign(n: usize, dst: &mut [u32], a: &[u32]) {
+    unsafe {
+        let q = _mm512_loadu_si512(Q32X16.as_ptr() as *const __m512i);
+        for group in 0..n / 4 {
+            let off = 16 * group;
+            let dv = _mm512_loadu_si512(dst.as_ptr().add(off) as *const __m512i);
+            let av = _mm512_loadu_si512(a.as_ptr().add(off) as *const __m512i);
+            let x = _mm512_sub_epi32(_mm512_add_epi32(av, q), dv);
+            _mm512_storeu_si512(dst.as_mut_ptr().add(off) as *mut __m512i, reduce_u32(x, q));
+        }
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn packed_negate_assign(n: usize, dst: &mut [u32]) {
+    unsafe {
+        let q = _mm512_loadu_si512(Q32X16.as_ptr() as *const __m512i);
+        for group in 0..n / 4 {
+            let off = 16 * group;
+            let dv = _mm512_loadu_si512(dst.as_ptr().add(off) as *const __m512i);
+            _mm512_storeu_si512(
+                dst.as_mut_ptr().add(off) as *mut __m512i,
+                reduce_u32(_mm512_sub_epi32(q, dv), q),
+            );
+        }
+    }
+}
+
+pub(crate) fn vec_znx_dft_apply(
+    module: &Module<NTT4x30Avx512>,
+    step: usize,
+    offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+) {
+    let n = res.n();
+    let cols = res.cols();
+    let res_size = res.size();
+    let a_size = a.size();
+    let mut tmp = vec![0u64; 4 * n];
+    let res_data: &mut [u32] = cast_slice_mut(res.data_mut());
+    for limb in 0..res_size {
+        let dst = packed_limb_mut(res_data, n, cols, res_col, limb);
+        let src_limb = offset + limb * step;
+        if src_limb < a_size {
+            NTT4x30Avx512::ntt_from_znx64(&mut tmp, a.at(a_col, src_limb));
+            NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), &mut tmp);
+            unsafe { pack_limb_q120(n, dst, &tmp) };
+        } else {
+            dst.fill(0);
+        }
+    }
+}
+
+pub(crate) fn vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
+    4 * n * size_of::<u64>()
+}
+
+pub(crate) fn vec_znx_idft_apply(
+    module: &Module<NTT4x30Avx512>,
+    res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+    tmp: &mut [u64],
+) {
+    let n = res.n();
+    let min_size = res.size().min(a.size());
+    let a_cols = a.cols();
+    let a_data: &[u32] = cast_slice(a.data());
+    for limb in 0..min_size {
+        unsafe { unpack_limb_q120(n, tmp, packed_limb(a_data, n, a_cols, a_col, limb)) };
+        NTT4x30Avx512::ntt_dft_execute(module.get_intt_table(), tmp);
+        NTT4x30Avx512::ntt_to_znx128(res.at_mut(res_col, limb), n, tmp);
+    }
+    for limb in min_size..res.size() {
+        res.at_mut(res_col, limb).fill(0);
+    }
+}
+
+pub(crate) fn vec_znx_idft_apply_tmpa(
+    module: &Module<NTT4x30Avx512>,
+    res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    a_col: usize,
+) {
+    let mut tmp = vec![0u64; 4 * a.n()];
+    let a_ref = poulpy_hal::layouts::vec_znx_dft_backend_ref_from_mut(a);
+    vec_znx_idft_apply(module, res, res_col, &a_ref, a_col, &mut tmp);
+}
+
+pub(crate) fn idft_compact_in_place(
+    module: &Module<NTT4x30Avx512>,
+    a: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    a_col: usize,
+    tmp: &mut [u64],
+) {
+    let n = a.n();
+    let cols = a.cols();
+    let size = a.size();
+    let data: &mut [u32] = cast_slice_mut(a.data_mut());
+    for limb in 0..size {
+        let slot = packed_limb_mut(data, n, cols, a_col, limb);
+        unsafe { unpack_limb_q120(n, tmp, slot) };
+        NTT4x30Avx512::ntt_dft_execute(module.get_intt_table(), tmp);
+        let dst = unsafe { std::slice::from_raw_parts_mut(slot.as_mut_ptr() as *mut i128, n) };
+        NTT4x30Avx512::ntt_to_znx128(dst, n, tmp);
+    }
+}
+
+pub(crate) fn vec_znx_dft_add_into(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+    b: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    b_col: usize,
+) {
+    let n = res.n();
+    let (rc, ac, bc) = (res.cols(), a.cols(), b.cols());
+    let (rs, asz, bsz) = (res.size(), a.size(), b.size());
+    let (sum_size, copy_size, copy_b) = if asz <= bsz {
+        (asz.min(rs), bsz.min(rs), true)
+    } else {
+        (bsz.min(rs), asz.min(rs), false)
+    };
+    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
+    let ap: &[u32] = cast_slice(a.data());
+    let bp: &[u32] = cast_slice(b.data());
+    for limb in 0..rs {
+        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+        if limb < sum_size {
+            unsafe {
+                packed_add(
+                    n,
+                    dst,
+                    packed_limb(ap, n, ac, a_col, limb),
+                    packed_limb(bp, n, bc, b_col, limb),
+                )
+            };
+        } else if limb < copy_size {
+            let src = if copy_b {
+                packed_limb(bp, n, bc, b_col, limb)
+            } else {
+                packed_limb(ap, n, ac, a_col, limb)
+            };
+            dst.copy_from_slice(src);
+        } else {
+            dst.fill(0);
+        }
+    }
+}
+
+pub(crate) fn vec_znx_dft_add_assign(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+) {
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
+    let size = res.size().min(a.size());
+    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
+    let ap: &[u32] = cast_slice(a.data());
+    for limb in 0..size {
+        unsafe {
+            packed_add_assign(
+                n,
+                packed_limb_mut(rp, n, rc, res_col, limb),
+                packed_limb(ap, n, ac, a_col, limb),
+            )
+        };
+    }
+}
+
+pub(crate) fn vec_znx_dft_add_scaled_assign(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+    scale: i64,
+) {
+    let (res_shift, a_shift, size) = if scale > 0 {
+        let shift = (scale as usize).min(a.size());
+        (0, shift, a.size().min(res.size()).saturating_sub(shift))
+    } else if scale < 0 {
+        let shift = (scale.unsigned_abs() as usize).min(res.size());
+        (shift, 0, a.size().min(res.size().saturating_sub(shift)))
+    } else {
+        (0, 0, a.size().min(res.size()))
+    };
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
+    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
+    let ap: &[u32] = cast_slice(a.data());
+    for limb in 0..size {
+        unsafe {
+            packed_add_assign(
+                n,
+                packed_limb_mut(rp, n, rc, res_col, limb + res_shift),
+                packed_limb(ap, n, ac, a_col, limb + a_shift),
+            )
+        };
+    }
+}
+
+pub(crate) fn vec_znx_dft_sub(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+    b: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    b_col: usize,
+) {
+    let n = res.n();
+    let (rc, ac, bc) = (res.cols(), a.cols(), b.cols());
+    let (rs, asz, bsz) = (res.size(), a.size(), b.size());
+    let (sub_size, copy_size, negate_b) = if asz <= bsz {
+        (asz.min(rs), bsz.min(rs), true)
+    } else {
+        (bsz.min(rs), asz.min(rs), false)
+    };
+    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
+    let ap: &[u32] = cast_slice(a.data());
+    let bp: &[u32] = cast_slice(b.data());
+    for limb in 0..rs {
+        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+        if limb < sub_size {
+            unsafe {
+                packed_sub(
+                    n,
+                    dst,
+                    packed_limb(ap, n, ac, a_col, limb),
+                    packed_limb(bp, n, bc, b_col, limb),
+                )
+            };
+        } else if limb < copy_size {
+            if negate_b {
+                dst.copy_from_slice(packed_limb(bp, n, bc, b_col, limb));
+                unsafe { packed_negate_assign(n, dst) };
+            } else {
+                dst.copy_from_slice(packed_limb(ap, n, ac, a_col, limb));
+            }
+        } else {
+            dst.fill(0);
+        }
+    }
+}
+
+pub(crate) fn vec_znx_dft_sub_assign(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+) {
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
+    let size = res.size().min(a.size());
+    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
+    let ap: &[u32] = cast_slice(a.data());
+    for limb in 0..size {
+        unsafe {
+            packed_sub_assign(
+                n,
+                packed_limb_mut(rp, n, rc, res_col, limb),
+                packed_limb(ap, n, ac, a_col, limb),
+            )
+        };
+    }
+}
+
+pub(crate) fn vec_znx_dft_sub_negate_assign(
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+) {
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
+    let rs = res.size();
+    let size = rs.min(a.size());
+    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
+    let ap: &[u32] = cast_slice(a.data());
+    for limb in 0..rs {
+        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+        if limb < size {
+            unsafe { packed_sub_negate_assign(n, dst, packed_limb(ap, n, ac, a_col, limb)) };
+        } else {
+            unsafe { packed_negate_assign(n, dst) };
+        }
+    }
+}
+
+pub(crate) fn vec_znx_dft_copy(
+    step: usize,
+    offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+) {
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
+    let size = res.size();
+    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
+    let ap: &[u32] = cast_slice(a.data());
+    for limb in 0..size {
+        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+        let src_limb = offset + limb * step;
+        if src_limb < a.size() {
+            dst.copy_from_slice(packed_limb(ap, n, ac, a_col, src_limb));
+        } else {
+            dst.fill(0);
+        }
+    }
+}
+
+pub(crate) fn vec_znx_dft_zero(res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>, res_col: usize) {
+    let n = res.n();
+    let cols = res.cols();
+    let size = res.size();
+    let data: &mut [u32] = cast_slice_mut(res.data_mut());
+    for limb in 0..size {
+        packed_limb_mut(data, n, cols, res_col, limb).fill(0);
+    }
+}
+
+pub(crate) fn vec_znx_dft_automorphism(
+    plan: &NttAutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+) {
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
+    let size = res.size().min(a.size());
+    let rs = res.size();
+    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
+    let ap: &[u32] = cast_slice(a.data());
+    for limb in 0..rs {
+        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+        if limb < size {
+            let src = packed_limb(ap, n, ac, a_col, limb);
+            for (i, &p) in plan.perm.iter().enumerate() {
+                dst[4 * i..4 * i + 4].copy_from_slice(&src[4 * p as usize..4 * p as usize + 4]);
+            }
+        } else {
+            dst.fill(0);
+        }
+    }
+}
+
+pub(crate) fn vec_znx_dft_automorphism_add(
+    plan: &NttAutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    a_col: usize,
+) {
+    let n = res.n();
+    let (rc, ac) = (res.cols(), a.cols());
+    let size = res.size().min(a.size());
+    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
+    let ap: &[u32] = cast_slice(a.data());
+    for limb in 0..size {
+        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+        let src = packed_limb(ap, n, ac, a_col, limb);
+        for (i, &p) in plan.perm.iter().enumerate() {
+            let p = p as usize;
+            for prime in 0..4 {
+                let sum = dst[4 * i + prime] as u64 + src[4 * p + prime] as u64;
+                let q = Primes30::Q[prime] as u64;
+                dst[4 * i + prime] = if sum >= q { (sum - q) as u32 } else { sum as u32 };
+            }
+        }
+    }
+}
