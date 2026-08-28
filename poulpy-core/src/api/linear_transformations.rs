@@ -24,27 +24,69 @@ use crate::layouts::{
 /// [`LinearTransformationBabySteps::alloc`] for the allocation half.
 pub trait GLWELinearTransformations<BE: Backend> {
     /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`].
-    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_tmp_bytes<R, A, P, H, K>(
+        &self,
+        res: &R,
+        a: &A,
+        rhs: &LinearTransformation<P>,
+        keys: &H,
+    ) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
-        B: GLWEInfos,
-        K: GGLWEInfos;
+        P: LWEInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>;
 
     /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`] when
     /// the RHS is *streamed* (an unprepared plaintext-diagonal `P`): the streamed
     /// inner product additionally holds one resident `CnvPVecR` diagonal slot.
-    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, P, H, K>(
+        &self,
+        res: &R,
+        a: &A,
+        rhs: &LinearTransformation<P>,
+        keys: &H,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        P: LWEInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>;
+
+    /// Scratch bytes required by [`Self::glwe_prepare_linear_transformation_baby_steps`].
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, H, K>(&self, a: &A, rotations: &[i64], keys: &H) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>;
+
+    /// Upper bound of [`Self::glwe_eval_linear_transformation_tmp_bytes`] over any
+    /// transform whose diagonals are no wider than `pt` and whose rotations all
+    /// resolve to `key`.
+    ///
+    /// For a caller allocating one arena before it knows which transforms run
+    /// through it. A caller holding the transform takes the exact query.
+    fn glwe_eval_linear_transformation_bound_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
         K: GGLWEInfos;
 
-    /// Scratch bytes required by [`Self::glwe_prepare_linear_transformation_baby_steps`].
-    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(&self, a: &A, key: &K) -> usize
+    /// [`Self::glwe_eval_linear_transformation_bound_tmp_bytes`] for a streamed RHS.
+    fn glwe_eval_linear_transformation_unprepared_rhs_bound_tmp_bytes<R, A, B, K>(
+        &self,
+        res: &R,
+        a: &A,
+        pt: &B,
+        key: &K,
+    ) -> usize
     where
+        R: GLWEInfos,
         A: GLWEInfos,
+        B: GLWEInfos,
         K: GGLWEInfos;
 
     /// Scratch bytes required by [`Self::glwe_prepare_linear_transformation_rhs`].

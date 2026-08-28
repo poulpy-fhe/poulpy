@@ -15,8 +15,9 @@ use poulpy_hal::{
 
 use crate::api::{CKKSMulIntoItem, CKKSMulOps, CKKSPreparedMulAssignItem, CKKSSquareAssignItem, CKKSSquareIntoItem};
 
+use crate::default::mul::{check_prepared_layout, get_mul_ct_params};
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos, ckks_ensure,
     layouts::{CKKSPreparedRight, CKKSPreparedRightInfos},
     oep::CKKSMulImpl,
 };
@@ -54,16 +55,18 @@ fn prepared_mul_k<D: CKKSCtBounds>(dst: &D, prepared_k: usize) -> TorusPrecision
 /// two physical keys or two decompositions, and no lane is dispatched under a
 /// key resolved for a different precision.
 ///
-/// The shape half is a value, not a pointer, so the scratch query and the
-/// execution partition the same way even though one holds layouts and the other
-/// holds prepared keys. Execution refines the partition by key identity, since
-/// two distinct keys of the same shape must not share a call; a query group is
-/// therefore a union of execution groups, and the reference batch scratch is the
-/// maximum over its items, so answering on the coarser partition is an upper
-/// bound on every finer one.
-type Shape = (u32, u32, u32, u32, u32, u32, u32);
+/// The lane id is a value, not a pointer, so the scratch query and the execution
+/// partition identically even though one holds layouts and the other holds
+/// prepared keys. It carries the stored decomposition and pitch as well as the
+/// resolved one, so two keys whose row map or limb pitch differ never collide.
+///
+/// Execution additionally requires every lane of a group to resolve to the same
+/// physical key, and refuses the batch otherwise. That is what makes the two
+/// partitions equal rather than merely nested, so no monotonicity of the OEP
+/// scratch under group refinement is assumed anywhere.
+type Lane = (u32, u32, u32, u32, u32, u32, u32, u32, usize);
 
-fn shape_of<K: GGLWEInfos>(key: &K, dsize: poulpy_core::layouts::Dsize) -> Shape {
+fn lane_id<K: GGLWEInfos>(key: &K, dsize: poulpy_core::layouts::Dsize) -> Lane {
     (
         key.n().as_u32(),
         key.base2k().as_u32(),
@@ -71,28 +74,69 @@ fn shape_of<K: GGLWEInfos>(key: &K, dsize: poulpy_core::layouts::Dsize) -> Shape
         key.k_aux().as_u32(),
         key.rank_in().as_u32(),
         key.rank_out().as_u32(),
+        // The stored decomposition and pitch: the row map and the readable
+        // prefix are resolved out of these, so two keys agreeing on everything
+        // else but differing here are not interchangeable.
+        key.dsize().as_u32(),
         dsize.as_u32(),
+        key.max_size(),
     )
 }
 
-/// Execution lane: the resolved shape, refined by which key it actually is.
-type Lane = (Shape, usize);
-
-fn lane_of<H>(keys: &H, k: TorusPrecision, op: &'static str) -> Result<Lane>
+fn lane_of<H>(keys: &H, k: TorusPrecision, op: &'static str) -> Result<(Lane, usize)>
 where
     H: GLWERelinearizationKeyHelper,
     H::Key: GGLWEInfos,
 {
     let (key, dsize) = resolve(keys, k, op)?;
-    Ok((shape_of(key, dsize), key as *const H::Key as usize))
+    Ok((lane_id(key, dsize), key as *const H::Key as usize))
 }
 
-fn lane_layout_of<H>(keys: &H, k: TorusPrecision) -> Shape
+fn lane_layout_of<H>(keys: &H, k: TorusPrecision) -> Lane
 where
     H: GLWERelinearizationKeyLayoutHelper,
 {
     let (layout, dsize) = keys.get_relinearization_key_layout_for(k).unwrap_or_else(|e| panic!("{e}"));
-    shape_of(layout, dsize)
+    lane_id(layout, dsize)
+}
+
+/// Plans every item of a batch before any of them is dispatched.
+///
+/// A batch is documented to validate the whole slice before it writes anything.
+/// Splitting it into per-key groups would otherwise weaken that to per group: a
+/// malformed item in the second group would be caught only after the first had
+/// already written its destinations.
+fn plan_all<T, F>(items: &[T], plan: F) -> Result<()>
+where
+    F: Fn(&T) -> Result<()>,
+{
+    items.iter().try_for_each(plan)
+}
+
+/// Rejects a group whose lanes resolve to different physical keys.
+///
+/// They would share one call and therefore one key, which is not the key half of
+/// them resolved. Splitting further instead would make the execution partition
+/// finer than the query's.
+fn one_key_per_group<T, H, F>(run: &[T], keys: &H, k_of: F, op: &'static str) -> Result<()>
+where
+    H: GLWERelinearizationKeyHelper,
+    H::Key: GGLWEInfos,
+    F: Fn(&T) -> TorusPrecision,
+{
+    let mut seen: Option<usize> = None;
+    for item in run {
+        let (_, ptr) = lane_of(keys, k_of(item), op)?;
+        match seen {
+            None => seen = Some(ptr),
+            Some(first) if first == ptr => {}
+            Some(_) => ckks_ensure!(
+                false,
+                "{op}: one batch group resolves to two different physical keys of the same shape; split the frontier"
+            ),
+        }
+    }
+    Ok(())
 }
 
 /// Runs of consecutive equal lanes, after sorting the items by lane.
@@ -327,7 +371,7 @@ where
         H: GLWERelinearizationKeyLayoutHelper,
     {
         let k_of = |i: &CKKSMulIntoItem<&Dst, &A, &B>| mul_k(i.a, i.b);
-        let mut lanes: Vec<(Shape, &CKKSMulIntoItem<&Dst, &A, &B>)> =
+        let mut lanes: Vec<(Lane, &CKKSMulIntoItem<&Dst, &A, &B>)> =
             items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
         let mut best: usize = 0;
         for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
@@ -367,8 +411,10 @@ where
         for i in items.iter() {
             lane_of(tsk, k_of(i), OP)?;
         }
-        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above")) {
+        plan_all(items, |i| get_mul_ct_params(&*i.dst, i.a, i.b).map(|_| ()))?;
+        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above").0) {
             let run = &mut items[from..to];
+            one_key_per_group(run, tsk, k_of, OP)?;
             let (key, dsize) = resolve(tsk, run_k(run, k_of), OP)?;
             BE::ckks_mul_into_batch_impl(self, run, &key.with_dsize(dsize), scratch)?;
         }
@@ -382,7 +428,7 @@ where
         H: GLWERelinearizationKeyLayoutHelper,
     {
         let k_of = |i: &CKKSSquareIntoItem<&Dst, &A>| square_k(i.a);
-        let mut lanes: Vec<(Shape, &CKKSSquareIntoItem<&Dst, &A>)> =
+        let mut lanes: Vec<(Lane, &CKKSSquareIntoItem<&Dst, &A>)> =
             items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
         let mut best: usize = 0;
         for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
@@ -419,8 +465,10 @@ where
         for i in items.iter() {
             lane_of(tsk, k_of(i), OP)?;
         }
-        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above")) {
+        plan_all(items, |i| get_mul_ct_params(&*i.dst, i.a, i.a).map(|_| ()))?;
+        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above").0) {
             let run = &mut items[from..to];
+            one_key_per_group(run, tsk, k_of, OP)?;
             let (key, dsize) = resolve(tsk, run_k(run, k_of), OP)?;
             BE::ckks_square_into_batch_impl(self, run, &key.with_dsize(dsize), scratch)?;
         }
@@ -433,7 +481,7 @@ where
         H: GLWERelinearizationKeyLayoutHelper,
     {
         let k_of = |i: &CKKSSquareAssignItem<&Dst>| square_k(i.dst);
-        let mut lanes: Vec<(Shape, &CKKSSquareAssignItem<&Dst>)> =
+        let mut lanes: Vec<(Lane, &CKKSSquareAssignItem<&Dst>)> =
             items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
         let mut best: usize = 0;
         for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
@@ -468,8 +516,13 @@ where
         for i in items.iter() {
             lane_of(tsk, k_of(i), OP)?;
         }
-        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above")) {
+        plan_all(items, |i| {
+            let dst = &*i.dst;
+            get_mul_ct_params(dst, dst, dst).map(|_| ())
+        })?;
+        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above").0) {
             let run = &mut items[from..to];
+            one_key_per_group(run, tsk, k_of, OP)?;
             let (key, dsize) = resolve(tsk, run_k(run, k_of), OP)?;
             BE::ckks_square_assign_batch_impl(self, run, &key.with_dsize(dsize), scratch)?;
         }
@@ -487,7 +540,7 @@ where
         H: GLWERelinearizationKeyLayoutHelper,
     {
         let k_of = |i: &CKKSPreparedMulAssignItem<&Dst, &PR>| prepared_mul_k(i.dst, i.prepared.prepared_k());
-        let mut lanes: Vec<(Shape, &CKKSPreparedMulAssignItem<&Dst, &PR>)> =
+        let mut lanes: Vec<(Lane, &CKKSPreparedMulAssignItem<&Dst, &PR>)> =
             items.iter().map(|i| (lane_layout_of(tsk, k_of(i)), i)).collect();
         let mut best: usize = 0;
         for run in group_by_lane(&mut lanes, |(lane, _)| *lane)
@@ -528,8 +581,10 @@ where
         for i in items.iter() {
             lane_of(tsk, k_of(i), OP)?;
         }
-        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above")) {
+        plan_all(items, |i| check_prepared_layout(&*i.dst, i.prepared))?;
+        for (_, from, to) in group_by_lane(items, |i| lane_of(tsk, k_of(i), OP).expect("every lane resolved above").0) {
             let run = &mut items[from..to];
+            one_key_per_group(run, tsk, k_of, OP)?;
             let (key, dsize) = resolve(tsk, run_k(run, k_of), OP)?;
             BE::ckks_mul_prepared_assign_batch_impl(self, run, &key.with_dsize(dsize), scratch)?;
         }

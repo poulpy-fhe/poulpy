@@ -58,7 +58,7 @@ where
 {
     let a_size = ct.size();
     let input_k: TorusPrecision = ct.k();
-    let output_size = bound_accumulation_output_size::<BE, _, _>(ct, ct, &bound_for(key, input_k), term_count);
+    let output_size = bound_accumulation_output_size::<BE, _>(ct, &bound_for(key, input_k), term_count);
     let product = match bound_for(key, input_k) {
         GGLWEUse::Empty => 0,
         GGLWEUse::Active(active) => module.gglwe_product_dft_tmp_bytes_upper_default(output_size, a_size, &active),
@@ -106,7 +106,7 @@ where
             "{OP}: key group does not share one effective decomposition at k={group_input_k}"
         );
     }
-    let output_size = bound_accumulation_output_size::<BE, _, _>(ct, ct, &group_use, keys.len());
+    let output_size = bound_accumulation_output_size::<BE, _>(ct, &group_use, keys.len());
     let base2k = ct.base2k().as_usize();
     ckks_ensure!(
         keys[0].key.base2k().as_usize() == base2k,

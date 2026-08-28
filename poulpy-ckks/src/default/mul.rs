@@ -722,7 +722,7 @@ where
 
 /// Prepared operands are long-lived cached objects: reject one built under a
 /// different ring degree, radix or rank before touching `dst`.
-fn check_prepared_layout<BE: Backend, D: GLWEInfos>(dst: &D, prepared: &CKKSPreparedRight<BE>) -> Result<()> {
+pub(crate) fn check_prepared_layout<BE: Backend, D: GLWEInfos>(dst: &D, prepared: &CKKSPreparedRight<BE>) -> Result<()> {
     if prepared.layout.n != dst.n() || prepared.layout.base2k != dst.base2k() || prepared.layout.rank != dst.rank() {
         return Err(crate::CKKSCompositionError::PreparedOperandLayoutMismatch {
             op: "mul_prepared",
@@ -920,7 +920,7 @@ where
 {
     let layouts: Vec<GLWELayout> = items
         .iter()
-        .map(|item| tensor_layout(item.dst, item.dst.k().max(item.a.k()).max(item.b.k())))
+        .map(|item| tensor_layout(item.dst, item.a.k().max(item.b.k())))
         .collect();
     let core: Vec<TensorApplyRelinearizeItem<&Dst, &GLWELayout, &A, &B>> = items
         .iter()
@@ -996,10 +996,7 @@ where
     A: GLWEInfos,
     T: GGLWEInfos,
 {
-    let layouts: Vec<GLWELayout> = items
-        .iter()
-        .map(|item| tensor_layout(item.dst, item.dst.k().max(item.a.k())))
-        .collect();
+    let layouts: Vec<GLWELayout> = items.iter().map(|item| tensor_layout(item.dst, item.a.k())).collect();
     let core: Vec<TensorSquareApplyRelinearizeItem<&Dst, &GLWELayout, &A>> = items
         .iter()
         .zip(layouts.iter())

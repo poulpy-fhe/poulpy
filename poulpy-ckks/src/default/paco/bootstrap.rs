@@ -239,17 +239,20 @@ where
 
     // The fold relinearizes through the relinearization-key source, which is what
     // is validated here; `tensor_key()` is only its default single entry.
-    let (relinearization_key, _) = keys
+    let (relinearization_key, relinearization_dsize) = keys
         .relinearization_keys()
         .get_relinearization_key_for(working_k)
         .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
             op: "ckks_paco_bootstrap",
             k: working_k.into(),
         })?;
-    let tensor_view = GLWETensorKeyPreparedToBackendRef::to_backend_ref(relinearization_key);
+    // Validated through the decomposition the policy resolves, not the stored
+    // one: a coarsened use reads a different row map and prefix.
+    let relinearization_use = relinearization_key.with_dsize(relinearization_dsize);
+    let tensor_view = GLWETensorKeyPreparedToBackendRef::to_backend_ref(&relinearization_use);
     validate_gadget_backend_view(
         "PaCo relinearization key",
-        relinearization_key,
+        &relinearization_use,
         &tensor_view,
         plan.n(),
         context.base2k(),
@@ -257,7 +260,7 @@ where
     )?;
 
     for &element in context.galois_elements() {
-        let (key, _) = keys
+        let (key, effective_dsize) = keys
             .rotation_keys()
             .get_automorphism_key_for(element, working_k)
             .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
@@ -270,7 +273,8 @@ where
             "PaCo rotation-key map returned Galois element {} for label {element}",
             key.p()
         );
-        let key_view = GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(key);
+        let key_use = key.with_dsize(effective_dsize);
+        let key_view = GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(&key_use);
         ckks_ensure!(
             key_view.p() == element,
             "PaCo automorphism-key backend view returned Galois element {} for label {element}",
@@ -278,7 +282,7 @@ where
         );
         validate_gadget_backend_view(
             "PaCo automorphism key",
-            key,
+            &key_use,
             &key_view,
             plan.n(),
             context.base2k(),
@@ -371,17 +375,19 @@ where
         module.ckks_eval_linear_transformation_self_assign(output, factor, keys.rotation_keys(), scratch)?;
     }
 
-    // Fetched once and reused by both the ψ tail (Pair form) and the
-    // imaginary-part extraction (step 7): `conj(·)` via the order `-1`
-    // automorphism key.
-    let (conjugation_key, conjugation_dsize) = keys.rotation_keys().get_automorphism_key_for(-1, output.k()).map_err(|_| {
-        CKKSCompositionError::MissingAutomorphismKey {
-            op: "ckks_paco_bootstrap",
-            rotation: -1,
-            k: output.k().into(),
-        }
-    })?;
-    let conjugation_key = &conjugation_key.with_dsize(conjugation_dsize);
+    // `conj(·)` via the order `-1` automorphism key. Resolved at each point of
+    // use, not once: the product fold between the two uses spends budget, so the
+    // second conjugation runs at a narrower precision and can legitimately
+    // resolve to a different key or a different effective decomposition.
+    let conjugation_key_for = |k: TorusPrecision| {
+        keys.rotation_keys()
+            .get_automorphism_key_for(-1, k)
+            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+                op: "ckks_paco_bootstrap",
+                rotation: -1,
+                k: k.into(),
+            })
+    };
 
     // Step 5 — CoeffsToSlots (ψ tail). The conjugation-augmented final C2S
     // factor, scheduled apart from the body. Either the fused `Pair` form
@@ -390,7 +396,8 @@ where
     // one multiply by the share-scaled μ mask).
     match context.psi_tail() {
         PaCoPsiTailMaterial::Pair(pair) => {
-            module.ckks_conjugate_into(&mut temporary, output, conjugation_key, scratch)?;
+            let (key, dsize) = conjugation_key_for(output.k())?;
+            module.ckks_conjugate_into(&mut temporary, output, &key.with_dsize(dsize), scratch)?;
             module.ckks_eval_linear_transformation_self_assign(output, &pair[0], keys.rotation_keys(), scratch)?;
             module.ckks_eval_linear_transformation_self_assign(&mut temporary, &pair[1], keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
@@ -431,7 +438,8 @@ where
     // Step 7 — Imaginary-part extraction. `output ← output − conj(output) =
     // 2i·Im(output)`, isolating the imaginary component that carries the
     // recovered coefficients.
-    module.ckks_conjugate_into(&mut temporary, output, conjugation_key, scratch)?;
+    let (key, dsize) = conjugation_key_for(output.k())?;
+    module.ckks_conjugate_into(&mut temporary, output, &key.with_dsize(dsize), scratch)?;
     module.ckks_sub_assign(output, &temporary, scratch)?;
 
     // Step 8 — SlotsToCoeffs′. Apply the compiled S2C factor chain, moving the

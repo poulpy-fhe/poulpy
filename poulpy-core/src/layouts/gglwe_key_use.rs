@@ -341,7 +341,7 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
         return Ok(None);
     }
     let s: usize = d / p.dsize;
-    let digit: usize = d * p.base2k;
+    let digit: usize = mul(d, p.base2k, "effective digit", OP)?;
     if p.total_k < digit {
         return Ok(None);
     }
@@ -354,7 +354,8 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
     } else {
         // Largest complete effective decomposition rows and padding both allow;
         // the remaining precision stays as auxiliary padding, never dropped.
-        let r: usize = (p.dnum / s).min(p.total_k / digit - 1);
+        // `total_k >= digit` was checked above, so the quotient is at least one.
+        let r: usize = (p.dnum / s).min((p.total_k / digit) - 1);
         (r, p.total_k - mul(r, digit, "coarse precision", OP)?)
     };
     // Zero precision reads nothing. It is the only input that resolves to an

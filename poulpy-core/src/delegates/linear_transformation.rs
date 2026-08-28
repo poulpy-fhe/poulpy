@@ -16,32 +16,67 @@ impl<BE> GLWELinearTransformations<BE> for Module<BE>
 where
     BE: Backend + LinearTransformationImpl<BE>,
 {
-    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_tmp_bytes<R, A, P, H, K>(
+        &self,
+        res: &R,
+        a: &A,
+        rhs: &LinearTransformation<P>,
+        keys: &H,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        P: LWEInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>,
+    {
+        BE::glwe_eval_linear_transformation_tmp_bytes(self, res, a, rhs, keys)
+    }
+
+    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, P, H, K>(
+        &self,
+        res: &R,
+        a: &A,
+        rhs: &LinearTransformation<P>,
+        keys: &H,
+    ) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        P: LWEInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>,
+    {
+        BE::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(self, res, a, rhs, keys)
+    }
+
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, H, K>(&self, a: &A, rotations: &[i64], keys: &H) -> usize
+    where
+        A: GLWEInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>,
+    {
+        BE::glwe_prepare_linear_transformation_baby_steps_tmp_bytes(self, a, rotations, keys)
+    }
+
+    fn glwe_eval_linear_transformation_bound_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
         K: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_tmp_bytes(self, res, a, pt, key)
+        BE::glwe_eval_linear_transformation_bound_tmp_bytes(self, res, a, pt, key)
     }
 
-    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    fn glwe_eval_linear_transformation_unprepared_rhs_bound_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
         K: GGLWEInfos,
     {
-        BE::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(self, res, a, pt, key)
-    }
-
-    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(&self, a: &A, key: &K) -> usize
-    where
-        A: GLWEInfos,
-        K: GGLWEInfos,
-    {
-        BE::glwe_prepare_linear_transformation_baby_steps_tmp_bytes(self, a, key)
+        BE::glwe_eval_linear_transformation_unprepared_rhs_bound_tmp_bytes(self, res, a, pt, key)
     }
 
     fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(&self, pt_infos: &P) -> usize

@@ -93,25 +93,38 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         P: LWEInfos;
 
     /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_baby_steps`].
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, H, K>(&self, ct: &C, rotations: &[i64], keys: &H) -> usize
     where
         C: CKKSCtBounds,
-        K: GGLWEInfos;
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>;
 
     /// Scratch bytes required to evaluate with a **resident** RHS (`P =
     /// PreparedDiagonal`).
-    fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    ///
+    /// Takes the transform and the key source the evaluation will be given, and
+    /// resolves each rotation through them exactly as the evaluation does.
+    fn ckks_eval_linear_transformation_tmp_bytes<C, P, H, K>(&self, ct: &C, lt: &LinearTransformation<P>, keys: &H) -> usize
     where
         C: CKKSCtBounds,
-        K: GGLWEInfos;
+        P: LWEInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>;
 
     /// Scratch bytes required to evaluate with a **streamed** RHS (a plaintext
     /// diagonal `P`): the streamed inner product additionally holds one resident
     /// `CnvPVecR` diagonal slot, so this is larger than the resident budget.
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, P, H, K>(
+        &self,
+        ct: &C,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+    ) -> usize
     where
         C: CKKSCtBounds,
-        K: GGLWEInfos;
+        P: LWEInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>;
 
     /// Scratch bytes required by a whole chained transform (homomorphic DFT):
     /// the widest per-factor budget plus the one ciphertext the chain

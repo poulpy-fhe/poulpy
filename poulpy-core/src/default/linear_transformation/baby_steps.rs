@@ -98,7 +98,7 @@ where
     let cols = a_infos.rank().as_usize() + 1;
     let a_size = a_infos.size();
     let use_: GGLWEUse = bound_for(key_infos, a_infos.k());
-    let key_size = bound_output_size::<BE, _, _>(a_infos, a_infos, &use_);
+    let key_size = bound_output_size::<BE, _>(a_infos, &use_);
     let baby = module.glwe_bytes_of_from_infos(a_infos);
     let prepare = module.cnv_prepare_left_tmp_bytes(a_infos.size(), a_infos.size());
 
@@ -260,7 +260,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
             // Sizing reads the resolved logical `dnum`/`k_aux`, not the physical
             // ones a `with_dsize` wrapper still forwards.
             let use_: GGLWEUse = resolved_use(layout, a.k(), effective_dsize);
-            key_size = key_size.max(bound_output_size::<BE, _, _>(a, a, &use_));
+            key_size = key_size.max(bound_output_size::<BE, _>(a, &use_));
         }
         (a.base2k() == key_base2k.expect("at least one nonzero rotation"), key_size)
     } else {

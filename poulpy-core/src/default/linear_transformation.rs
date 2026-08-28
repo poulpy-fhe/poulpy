@@ -30,7 +30,8 @@ pub use crate::layouts::{
 
 // Reference implementations forwarded to from `crate::oep::LinearTransformationDefault`.
 pub use eval::{
-    glwe_eval_linear_transformation_into_default, glwe_eval_linear_transformation_tmp_bytes_default,
+    glwe_eval_linear_transformation_bound_tmp_bytes_default, glwe_eval_linear_transformation_into_default,
+    glwe_eval_linear_transformation_tmp_bytes_default, glwe_eval_linear_transformation_unprepared_rhs_bound_tmp_bytes_default,
     glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default, glwe_prepare_linear_transformation_baby_steps_default,
     glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default,
 };

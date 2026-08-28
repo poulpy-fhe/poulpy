@@ -510,13 +510,12 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A, K>(
 /// On exact transform backends the retained window covers the live precision
 /// plus the worst-case norm growth of the signed polynomial products and VMP
 /// accumulation; approximate backends retain the complete work region.
-pub fn bound_output_size<BE, R, A>(res_infos: &R, a_infos: &A, use_: &GGLWEUse) -> usize
+pub fn bound_output_size<BE, R>(res_infos: &R, use_: &GGLWEUse) -> usize
 where
     BE: Backend,
     R: LWEInfos,
-    A: LWEInfos,
 {
-    bound_accumulation_output_size::<BE, _, _>(res_infos, a_infos, use_, 1)
+    bound_accumulation_output_size::<BE, _>(res_infos, use_, 1)
 }
 
 /// Number of limbs required when `term_count` GGLWE/VMP products are summed
@@ -525,18 +524,21 @@ where
 /// Relative to one product, summing `term_count` values can amplify the tail
 /// by that factor. Exact backends account for this in the product-norm window;
 /// approximate backends keep the complete work region.
-pub fn bound_accumulation_output_size<BE, R, A>(res_infos: &R, a_infos: &A, use_: &GGLWEUse, term_count: usize) -> usize
+pub fn bound_accumulation_output_size<BE, R>(res_infos: &R, use_: &GGLWEUse, term_count: usize) -> usize
 where
     BE: Backend,
     R: LWEInfos,
-    A: LWEInfos,
 {
-    bound_accumulation_output_size_with_tail::<BE, _, _>(res_infos, a_infos, use_, term_count, 0)
+    bound_accumulation_output_size_with_tail::<BE, _>(res_infos, use_, term_count, 0)
 }
 
-pub(crate) fn bound_accumulation_output_size_with_tail<BE, R, A>(
+/// The accumulator width for one bound product into `res_infos`.
+///
+/// The input precision comes from the bound and nowhere else: it is the
+/// precision the bound was resolved at, so sizing and execution cannot be given
+/// two different answers about the same product.
+pub(crate) fn bound_accumulation_output_size_with_tail<BE, R>(
     res_infos: &R,
-    a_infos: &A,
     use_: &GGLWEUse,
     term_count: usize,
     extra_live_limbs: usize,
@@ -544,7 +546,6 @@ pub(crate) fn bound_accumulation_output_size_with_tail<BE, R, A>(
 where
     BE: Backend,
     R: LWEInfos,
-    A: LWEInfos,
 {
     // No row is active, so no product runs and the accumulator only has to hold
     // the destination.
@@ -555,7 +556,7 @@ where
     gadget_product_output_size(GadgetProductOutputSizeParams {
         key_size: active.logical_work_size(),
         key_base2k: logical.base2k(),
-        input_k: a_infos.k(),
+        input_k: active.input_k(),
         output_k: res_infos.k(),
         dsize: logical.dsize(),
         k_aux: logical.k_aux(),
@@ -618,7 +619,7 @@ where
     };
 
     let output_cols = res_infos.rank().as_usize() + 1;
-    let output_size = bound_output_size::<BE, _, _>(res_infos, a_infos, &use_);
+    let output_size = bound_output_size::<BE, _>(res_infos, &use_);
     let a_dft_size = a_infos.k().div_ceil(layout.base2k()) as usize;
     let lvl_0: usize = module.bytes_of_vec_znx_dft(output_cols, output_size);
     let lvl_1_big: usize = module.bytes_of_vec_znx_big(output_cols, output_size);
@@ -722,7 +723,7 @@ where
         required
     );
 
-    let output_size = bound_output_size::<BE, _, _>(res, a, &use_);
+    let output_size = bound_output_size::<BE, _>(res, &use_);
 
     let a_base2k: usize = a.base2k().into();
     let key_base2k: usize = key.base2k().into();
@@ -828,7 +829,7 @@ where
         module.glwe_keyswitch_tmp_bytes_default(res, res, key)
     );
 
-    let output_size = bound_output_size::<BE, _, _>(res, res, &bound_for(key, res.k()));
+    let output_size = bound_output_size::<BE, _>(res, &bound_for(key, res.k()));
 
     let res_base2k: usize = res.base2k().as_usize();
     let key_base2k: usize = key.base2k().as_usize();

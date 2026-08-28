@@ -87,35 +87,41 @@ where
         self.glwe_prepare_linear_transformation_rhs_tmp_bytes(pt_infos)
     }
 
-    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, H, K>(&self, ct: &C, rotations: &[i64], keys: &H) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>,
     {
-        self.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key)
+        self.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, rotations, keys)
     }
 
-    fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_tmp_bytes<C, P, H, K>(&self, ct: &C, lt: &LinearTransformation<P>, keys: &H) -> usize
     where
         C: CKKSCtBounds,
+        P: LWEInfos,
         K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>,
     {
-        // `ct` doubles as the plaintext-operand proxy: it bounds the convolution
-        // sizes from above, so the result is a safe upper bound. The extra
-        // ct-sized buffer is the dst-shaped working copy the `_assign` wrappers
-        // carve from scratch (an upper bound for the `_into` paths, which skip it).
-        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key) + self.glwe_bytes_of_from_infos(ct)
+        // The extra ct-sized buffer is the dst-shaped working copy the `_assign`
+        // wrappers carve from scratch (an upper bound for the `_into` paths,
+        // which skip it).
+        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, lt, keys) + self.glwe_bytes_of_from_infos(ct)
     }
 
-    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, P, H, K>(
+        &self,
+        ct: &C,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+    ) -> usize
     where
         C: CKKSCtBounds,
+        P: LWEInfos,
         K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>,
     {
-        // `ct` doubles as the plaintext-operand proxy (upper bound on diagonal
-        // shape). The extra ct-sized buffer covers the `_assign` wrappers'
-        // scratch-carved working copy, as above.
-        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key) + self.glwe_bytes_of_from_infos(ct)
+        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, lt, keys) + self.glwe_bytes_of_from_infos(ct)
     }
 
     fn ckks_dft_evaluate_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
@@ -123,13 +129,15 @@ where
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
+        // The whole-chain arena, asked before the factors are known: `ct` doubles
+        // as the plaintext-operand proxy and `key` stands in for every rotation,
+        // so this is the bound form. A caller holding the factors sizes each one
+        // exactly through `ckks_eval_linear_transformation_streamed_tmp_bytes`.
+        //
         // The chain carves one ciphertext up front and ping-pongs the running
-        // value through it, so the per-factor budgets (baby prep, then the
-        // widest eval) nest inside it rather than each carving their own.
-        self.glwe_bytes_of_from_infos(ct)
-            + self
-                .ckks_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key)
-                .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key))
+        // value through it, so the per-factor budgets nest inside it rather than
+        // each carving their own.
+        self.glwe_bytes_of_from_infos(ct) + self.glwe_eval_linear_transformation_unprepared_rhs_bound_tmp_bytes(ct, ct, ct, key)
     }
 
     // ---------- populate ----------

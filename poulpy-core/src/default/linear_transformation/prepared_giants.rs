@@ -256,17 +256,14 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
             // Sizing reads the resolved logical `dnum`/`k_aux`, not the physical
             // ones a `with_dsize` wrapper still forwards.
             let use_: GGLWEUse = resolved_use(layout, lhs.k(), effective_dsize);
-            output_size = output_size.max(crate::default::keyswitching::bound_accumulation_output_size_with_tail::<
-                BE,
-                _,
-                _,
-            >(
-                res,
-                res,
-                &use_,
-                nonzero_giant_rotations,
-                prod_size.saturating_sub(res.size()),
-            ));
+            output_size = output_size.max(
+                crate::default::keyswitching::bound_accumulation_output_size_with_tail::<BE, _>(
+                    res,
+                    &use_,
+                    nonzero_giant_rotations,
+                    prod_size.saturating_sub(res.size()),
+                ),
+            );
         }
         let key_base2k = key_base2k.expect("at least one nonzero giant rotation");
         let bases_match = res_base2k == key_base2k && prod_base2k == key_base2k;
@@ -417,8 +414,11 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
 
         let rot = rhs.giant_steps[g].rot;
         if rot != 0 {
+            // Resolved at the precision of the accumulator being rotated, which
+            // is what the operation binds the key at, not at the baby-step
+            // precision the lazy path selects on.
             let (key, effective_dsize) = keys
-                .get_automorphism_key_for(module.galois_element(rot), lhs.k())
+                .get_automorphism_key_for(module.galois_element(rot), fallback_acc.k())
                 .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
             module.glwe_automorphism_assign(&mut fallback_acc, &key.with_dsize(effective_dsize), &mut scratch_phase);
         }

@@ -187,7 +187,7 @@ where
             .max(module.glwe_automorphism_tmp_bytes(&branch_layout, &branch_layout, key))
             .max(module.ckks_rotate_tmp_bytes(&branch_layout, key))
             .max(module.ckks_conjugate_tmp_bytes(&branch_layout, key))
-            .max(module.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(
+            .max(module.glwe_eval_linear_transformation_unprepared_rhs_bound_tmp_bytes(
                 &branch_layout,
                 &branch_layout,
                 &factor_layout,

@@ -101,8 +101,10 @@ where
         self.ckks_all_ops_tmp_bytes(ct_infos, tsk_infos, pt_prec)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))
             .max(self.ckks_conjugate_tmp_bytes(ct_infos, atk_infos))
-            .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
-            .max(self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
+            // No transform in hand: this query sizes one arena for anything, so
+            // the bound form stands in for every rotation with `atk_infos`.
+            .max(self.glwe_eval_linear_transformation_bound_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
+            .max(self.glwe_eval_linear_transformation_unprepared_rhs_bound_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
             // The chained (homomorphic-DFT) form keeps one ciphertext live across
             // factors on top of the per-factor budget.
             .max(self.ckks_dft_evaluate_tmp_bytes(ct_infos, atk_infos))

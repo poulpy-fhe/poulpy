@@ -62,6 +62,12 @@
 - **Breaking:** `gglwe_product_output_size` and `gglwe_product_accumulation_output_size` become `bound_output_size` and `bound_accumulation_output_size`, taking the bound rather than any `GGLWEInfos`: a `with_dsize` wrapper can no longer stand in for the logical key it wraps. The accumulation term count is checked, not saturating.
 - `GGLWEKeyUse` forwards `GGLWEToGGSWKeyPreparedToBackendRef`, and GGSW row expansion binds through the wrapper's effective decomposition instead of the row's stored one.
 - Giant-step scratch sizing skips empty rotation buckets, as the evaluation loop already did, so it no longer demands a key for a rotation that never runs.
+- **Breaking:** the bound sizing functions take only the destination and the bound. The input precision comes from the bound itself rather than a separate operand, so a caller cannot size a product at one precision and run it at another; the giant-step query did exactly that, resolving at `lhs.k()` and sizing at `res.k()`.
+- `key_k`, `key_size` and `key_work_size` compute widened and narrow with a named panic instead of wrapping, and the resolver's effective-digit product is checked.
+- Add `test_glwe_tensor_relinearize_cross_radix`, pinning the operand width against the bound where the operand's radix, the key's radix and a precision that is not a whole number of key limbs make the storage width and the exact precision disagree.
+- **Breaking:** the linear-transformation scratch queries take the transform and a key layout helper, the pair the evaluation is given, and resolve every rotation the transform visits through them. `glwe_prepare_linear_transformation_baby_steps_tmp_bytes` takes the rotation list for the same reason.
+- Add `glwe_eval_linear_transformation{,_unprepared_rhs}_bound_tmp_bytes`, the upper bound over any transform from one representative key, for callers that allocate one arena before knowing which transforms run through it. The two share the per-key half of the budget, so they cannot drift.
+- The giant-step fallback rotation resolves its key at the accumulator's precision rather than at the baby-step precision the lazy path selects on.
 
 ### `poulpy-ckks`
 
@@ -93,6 +99,11 @@
 - One precision rule per ciphertext-ciphertext operation (`mul_k`, `square_k`, `prepared_mul_k`), used by the scratch query and the execution alike.
 - PaCo validates the relinearization-key source the fold really uses, not `tensor_key()`, and resolves both it and the rotation keys at the branch's working precision rather than at the final output width.
 - A SHIP mux group must bind to one decomposition at the group's precision; the sum was previously sized from the first key alone.
+- The batch lane id carries the stored decomposition and pitch as well as the resolved one, and a group whose lanes resolve to different physical keys is refused, so the scratch query and the execution partition identically rather than one refining the other.
+- The batch scratch queries build the tensor layout the batch bodies build; multiply and square previously widened it with the destination, binding the key at a precision execution never uses.
+- A batch plans every item before dispatching any group, restoring the validate-before-write guarantee across the split.
+- PaCo resolves the conjugation key at each point of use rather than once before the product fold, which spends budget between the two uses, and validates both key sources through the decomposition the helper resolves.
+- **Breaking:** `ckks_eval_linear_transformation{,_streamed}_tmp_bytes` take the transform and the key source; `ckks_prepare_linear_transformation_baby_steps_tmp_bytes` takes the rotation list. `ckks_dft_evaluate_tmp_bytes` stays transform-free and is documented as the bound form, since it sizes one arena for a whole chain.
 
 ## [0.8.2] - 2026-08-22
 

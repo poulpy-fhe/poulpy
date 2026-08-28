@@ -807,7 +807,7 @@ where
         // the two disagree, and the product would be handed one limb too many.
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let use_: GGLWEUse = bound_for(tsk, a.k());
-        let output_size = bound_output_size::<BE, _, _>(res, a, &use_);
+        let output_size = bound_output_size::<BE, _>(res, &use_);
 
         let lvl_0: usize = self.bytes_of_vec_znx_dft(pairs, a_dft_size);
 
@@ -853,7 +853,7 @@ where
 
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let use_: GGLWEUse = bound_for(tsk, a.k());
-        let output_size = bound_output_size::<BE, _, _>(res, a, &use_);
+        let output_size = bound_output_size::<BE, _>(res, &use_);
 
         let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(self, pairs, a_dft_size);
 

@@ -98,7 +98,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
             | module.glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
             | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
-            | module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &ct_infos, &atk_infos)
+            | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &baby_steps, &atk_infos)
             | module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
             | module.cnv_apply_dft_tmp_bytes(0, product_size, ct_infos.size(), pt.size())
             | module.vec_znx_big_normalize_tmp_bytes(),
@@ -271,23 +271,12 @@ pub fn test_glwe_eval_linear_transformation_skips_empty_giant_steps<BE: crate::t
     let n = module.n();
     let base2k = params.base2k;
     let k_in = 2 * base2k + 1;
-    let dsize = 2;
-    let dnum = k_in.div_ceil(base2k * dsize);
 
     let ct_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
         n: n.into(),
         base2k: base2k.into(),
         k: k_in.into(),
         rank: 1usize.into(),
-    })
-    .unwrap();
-    let atk_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
-        n: n.into(),
-        base2k: base2k.into(),
-        dnum: dnum.into(),
-        k_aux: (dsize * base2k + module.log_n()).into(),
-        rank: 1usize.into(),
-        dsize: dsize.into(),
     })
     .unwrap();
 
@@ -298,11 +287,25 @@ pub fn test_glwe_eval_linear_transformation_skips_empty_giant_steps<BE: crate::t
     let mut source_xe = Source::new([12u8; 32]);
     let mut source_xa = Source::new([13u8; 32]);
 
+    // Identity-only transform: one diagonal at index 0, so neither the baby
+    // preparation nor the giant loop legitimately needs a key.
+    let layout = LinearTransformationLayout {
+        indexes: vec![0],
+        slots: n,
+        strategy: LinearTransformationStrategy::Direct,
+    };
+    let mut lt: LinearTransformationPrepared<BE> = LinearTransformation::alloc_prepared(module, &layout, &pt);
+
+    // No keys at all: `automorphism_key_infos()` panics on an empty map, so any
+    // planning step that counts the empty bucket as a live rotation aborts here,
+    // sizing included.
+    let keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
+
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
-            | module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &ct_infos, &atk_infos)
+            | module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &lt, &keys)
             | module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
-            | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos),
+            | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, lt.baby_steps(), &keys),
     );
 
     module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
@@ -319,14 +322,6 @@ pub fn test_glwe_eval_linear_transformation_skips_empty_giant_steps<BE: crate::t
         &mut scratch.borrow(),
     );
 
-    // Identity-only transform: one diagonal at index 0, so neither the baby
-    // preparation nor the giant loop legitimately needs a key.
-    let layout = LinearTransformationLayout {
-        indexes: vec![0],
-        slots: n,
-        strategy: LinearTransformationStrategy::Direct,
-    };
-    let mut lt: LinearTransformationPrepared<BE> = LinearTransformation::alloc_prepared(module, &layout, &pt);
     {
         let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
         for gs in &mut lt.giant_steps {
@@ -341,9 +336,6 @@ pub fn test_glwe_eval_linear_transformation_skips_empty_giant_steps<BE: crate::t
         }
     }
 
-    // No keys at all: `automorphism_key_infos()` panics on an empty map, so any
-    // planning step that counts the empty bucket as a live rotation aborts here.
-    let keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
     let mut babies = LinearTransformationBabySteps::alloc(module, lt.baby_steps(), &ct);
     module.glwe_prepare_linear_transformation_baby_steps(&mut babies, &ct, &keys, &mut scratch.borrow());
 

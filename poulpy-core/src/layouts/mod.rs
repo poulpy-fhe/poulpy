@@ -1287,7 +1287,14 @@ pub fn key_k(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision) ->
         base2k.0,
         dsize.0 * base2k.0
     );
-    TorusPrecision(dnum.0 * dsize.0 * base2k.0 + k_aux.0)
+    // Widened, then narrowed with a name: a wrapped total precision would size
+    // every buffer downstream of it.
+    let total: u64 = u64::from(dnum.0) * u64::from(dsize.0) * u64::from(base2k.0) + u64::from(k_aux.0);
+    TorusPrecision(
+        u32::try_from(total).unwrap_or_else(|_| {
+            panic!("key_k: dnum={dnum} * dsize={dsize} * base2k={base2k} + k_aux={k_aux} = {total} exceeds u32")
+        }),
+    )
 }
 
 /// Number of limbs stored per row of a key: `ceil((dnum*dsize*base2k + k_aux) / base2k)`,
@@ -1311,9 +1318,12 @@ pub fn key_size(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision)
 /// work   = digits * dsize + ceil(k_aux / base2k)
 /// ```
 pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize, k_aux: TorusPrecision) -> usize {
-    let digit_bits: u32 = dsize.0 * base2k.0;
-    let digits: u32 = input_k.0.div_ceil(digit_bits);
-    (digits * dsize.0 + k_aux.0.div_ceil(base2k.0)) as usize
+    let digit_bits: u64 = u64::from(dsize.0) * u64::from(base2k.0);
+    assert!(digit_bits != 0, "key_work_size: dsize and base2k must both be non-zero");
+    let digits: u64 = u64::from(input_k.0).div_ceil(digit_bits);
+    let limbs: u64 = digits * u64::from(dsize.0) + u64::from(k_aux.0.div_ceil(base2k.0));
+    usize::try_from(limbs)
+        .unwrap_or_else(|_| panic!("key_work_size: {limbs} limbs at input_k={input_k} dsize={dsize} exceeds usize"))
 }
 
 /// Inputs used to size the key region materialized for a gadget product.
