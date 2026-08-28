@@ -11,11 +11,12 @@
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
-        VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
-        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
-        VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
-        VecZnxIdftApplyTmpBytes,
+        CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
+        VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphismAssign,
+        VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, GaloisElement, ScratchArena},
 };
@@ -23,19 +24,23 @@ use poulpy_hal::{
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
     default::{
-        keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
+        automorphism::glwe::glwe_automorphism_tmp_bytes_upper_default,
+        keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal, bound_accumulation_output_size_with_tail},
         linear_transformation::{
             baby_steps::{
-                glwe_prepare_linear_transformation_baby_steps, glwe_prepare_linear_transformation_baby_steps_tmp_bytes,
+                glwe_prepare_linear_transformation_baby_steps, glwe_prepare_linear_transformation_baby_steps_bound_tmp_bytes,
+                glwe_prepare_linear_transformation_baby_steps_tmp_bytes,
             },
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
-            lazy::{glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_lazy_giant_automorphism_tmp_bytes},
+            lazy::{glwe_lazy_giant_automorphism_from_dft_bound_tmp_bytes, glwe_lazy_giant_automorphism_from_dft_tmp_bytes},
             prepared_giants::{DiagonalProd, glwe_eval_giant_steps},
         },
+        operations::GLWENormalizeDefault,
     },
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWELayout, GLWEToBackendMut,
-        GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, WithEffectiveDsize, prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GGLWEUse, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWELayout,
+        GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc, WithEffectiveDsize,
+        prepared::GGLWEPreparedToBackendRef,
     },
 };
 
@@ -132,18 +137,42 @@ where
             _,
         >(module, a, rhs.baby_steps(), keys));
 
-    for rot in lt_key_rotations(rhs) {
-        let (layout, effective_dsize) = keys
-            .get_automorphism_key_layout_for(module.galois_element(rot), a.k())
-            .unwrap_or_else(|e| panic!("linear-transformation rotation {rot}: {e}"));
-        worst = worst.max(lt_eval_tmp_bytes_for_key::<BE, _, _, _, _>(
+    let nonzero_giant_rotations = lt_giant_key_rotations(rhs).count();
+    let giant_plans = lt_giant_key_rotations(rhs)
+        .map(|rot| {
+            let (layout, effective_dsize) = keys
+                .get_automorphism_key_layout_for(module.galois_element(rot), res.k())
+                .unwrap_or_else(|e| panic!("linear-transformation giant rotation {rot}: {e}"));
+            let key = layout.with_dsize(effective_dsize);
+            let use_: GGLWEUse = crate::default::keyswitching::glwe::bound_for(&key, res.k());
+            let key_output_size = bound_accumulation_output_size_with_tail::<BE, _>(
+                res,
+                &use_,
+                nonzero_giant_rotations,
+                prod_size.saturating_sub(res.size()),
+            );
+            (layout, effective_dsize, use_, key_output_size)
+        })
+        .collect::<Vec<_>>();
+    let lazy_acc_size = giant_plans
+        .iter()
+        .map(|(_, _, _, output_size)| *output_size)
+        .max()
+        .unwrap_or_else(|| res.max_size())
+        .max(prod_size);
+    for (layout, effective_dsize, use_, key_output_size) in giant_plans {
+        let key = layout.with_dsize(effective_dsize);
+        worst = worst.max(lt_eval_tmp_bytes_for_key::<BE, _, _, _>(
             module,
             res,
-            a,
             prod_size,
             inner_dft,
             prod_dft,
-            &layout.with_dsize(effective_dsize),
+            prod_col_big,
+            key_output_size,
+            lazy_acc_size,
+            &use_,
+            &key,
         ));
     }
     worst
@@ -151,17 +180,18 @@ where
 
 /// The key-dependent half of the eval budget, for one key.
 ///
-/// Shared by the exact query, which calls it once per rotation the transform
-/// visits, and by [`glwe_eval_linear_transformation_bound_tmp_bytes_default`],
-/// which calls it once for a representative key. Neither can drift from the
-/// other.
-fn lt_eval_tmp_bytes_for_key<BE, M, R, A, K>(
+/// Used only by exact per-factor queries. Proxy/whole-chain bounds deliberately
+/// use [`lt_eval_upper_tmp_bytes_for_key`] instead.
+fn lt_eval_tmp_bytes_for_key<BE, M, R, K>(
     module: &M,
     res: &R,
-    a: &A,
     prod_size: usize,
     inner_dft: usize,
     prod_dft: usize,
+    prod_col_big: usize,
+    key_output_size: usize,
+    lazy_acc_size: usize,
+    use_: &GGLWEUse,
     key: &K,
 ) -> usize
 where
@@ -177,25 +207,77 @@ where
         + VecZnxIdftApplyTmpBytes
         + poulpy_hal::api::VmpPMatBytesOf,
     R: GLWEInfos,
-    A: GLWEInfos,
     K: GGLWEInfos,
 {
-    let cols = a.rank().as_usize() + 1;
-    // The stored pitch bounds every bound of this key from above, which is what
-    // the accumulator widths need: the evaluation carries one accumulator across
-    // rotations whose per-rotation widths come from the resolved layouts.
-    let key_size = key.max_size();
-    let lazy_size = key_size.max(prod_size);
+    let cols = res.rank().as_usize() + 1;
+    let rotation = module.bytes_of_vec_znx_dft(cols, key_output_size)
+        + glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _>(
+            module,
+            res.rank().as_usize(),
+            prod_size,
+            key_output_size,
+            use_,
+        );
     let lazy_dft_path = prod_dft
-        + module.bytes_of_vec_znx_dft(cols, lazy_size)
+        + module.bytes_of_vec_znx_dft(cols, lazy_acc_size)
         + inner_dft
-        + module.bytes_of_vec_znx_dft(cols, key_size)
-        + glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key)
-        + module.bytes_of_vec_znx_big(cols, lazy_size);
-    module
-        .glwe_automorphism_tmp_bytes(res, a, key)
-        .max(glwe_lazy_giant_automorphism_tmp_bytes::<BE, _, _, _>(module, res, key))
-        .max(lazy_dft_path)
+            .max(rotation)
+            .max(module.bytes_of_vec_znx_big(cols, lazy_acc_size) + module.vec_znx_idft_apply_tmp_bytes());
+    let fallback = prod_dft + prod_col_big + inner_dft.max(module.glwe_automorphism_tmp_bytes(res, res, key));
+    lazy_dft_path.max(fallback)
+}
+
+/// Conservative representative-key counterpart of
+/// [`lt_eval_tmp_bytes_for_key`]. The outer lifetime nesting is unchanged; only
+/// the lazy gadget product and regular-automorphism fallback are replaced by
+/// their upper variants.
+fn lt_eval_upper_tmp_bytes_for_key<BE, M, R, K>(
+    module: &M,
+    res: &R,
+    prod_size: usize,
+    inner_dft: usize,
+    prod_dft: usize,
+    prod_col_big: usize,
+    key_output_size: usize,
+    lazy_acc_size: usize,
+    use_: &GGLWEUse,
+    key: &K,
+) -> usize
+where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + poulpy_hal::api::ModuleN
+        + GGLWEProductDefault<BE>
+        + GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
+        + VecZnxAutomorphismAssignTmpBytes
+        + VecZnxBigAutomorphismAssignTmpBytes
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeTmpBytes
+        + poulpy_hal::api::VmpPMatBytesOf,
+    R: GLWEInfos,
+    K: GGLWEInfos,
+{
+    let cols = res.rank().as_usize() + 1;
+    let rotation = module.bytes_of_vec_znx_dft(cols, key_output_size)
+        + glwe_lazy_giant_automorphism_from_dft_bound_tmp_bytes::<BE, _>(
+            module,
+            res.rank().as_usize(),
+            prod_size,
+            key_output_size,
+            use_,
+        );
+    let lazy_dft_path = prod_dft
+        + module.bytes_of_vec_znx_dft(cols, lazy_acc_size)
+        + inner_dft
+            .max(rotation)
+            .max(module.bytes_of_vec_znx_big(cols, lazy_acc_size) + module.vec_znx_idft_apply_tmp_bytes());
+    let fallback_automorphism = glwe_automorphism_tmp_bytes_upper_default::<BE, _, _, _, _>(module, res, res, key);
+    let fallback = prod_dft + prod_col_big + inner_dft.max(fallback_automorphism);
+    lazy_dft_path.max(fallback)
 }
 
 /// Upper bound of [`glwe_eval_linear_transformation_tmp_bytes_default`] over any
@@ -223,12 +305,16 @@ where
         + Convolution<BE>
         + GGLWEProductDefault<BE>
         + crate::default::keyswitching::GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
         + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssignTmpBytes
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeTmpBytes
         + poulpy_hal::api::VmpPMatBytesOf,
     R: GLWEInfos,
     A: GLWEInfos,
@@ -242,17 +328,33 @@ where
     let prod_size = a_size + pt_size - cnv_offset_hi;
     let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(module, cnv_offset_hi, a_size, pt_size);
     let prod_dft = module.bytes_of_vec_znx_dft(cols, prod_size);
-    let fallback_path = prod_dft + module.bytes_of_vec_znx_big(1, prod_size) + inner_dft;
+    let prod_col_big = module.bytes_of_vec_znx_big(1, prod_size);
+    let fallback_path = prod_dft + prod_col_big + inner_dft;
+    let use_: GGLWEUse = crate::default::keyswitching::glwe::bound_for(key, res.k());
+    // This query has no concrete transform, so use the maximum possible number
+    // of nonzero giant buckets for the ring as a conservative accumulation
+    // bound. Exact transform queries use their actual count above.
+    let key_output_size =
+        bound_accumulation_output_size_with_tail::<BE, _>(res, &use_, module.n(), prod_size.saturating_sub(res.size()));
 
     module
         .glwe_mul_plain_tmp_bytes(res, a, pt)
         .max(module.cnv_prepare_right_tmp_bytes(pt_size, pt_size))
         .max(fallback_path)
-        .max(glwe_prepare_linear_transformation_baby_steps_tmp_bytes::<BE, _, _, _>(
+        .max(glwe_prepare_linear_transformation_baby_steps_bound_tmp_bytes::<BE, _, _, _>(
             module, a, key,
         ))
-        .max(lt_eval_tmp_bytes_for_key::<BE, _, _, _, _>(
-            module, res, a, prod_size, inner_dft, prod_dft, key,
+        .max(lt_eval_upper_tmp_bytes_for_key::<BE, _, _, _>(
+            module,
+            res,
+            prod_size,
+            inner_dft,
+            prod_dft,
+            prod_col_big,
+            key_output_size,
+            key_output_size.max(prod_size),
+            &use_,
+            key,
         ))
 }
 
@@ -274,12 +376,16 @@ where
         + Convolution<BE>
         + GGLWEProductDefault<BE>
         + crate::default::keyswitching::GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
         + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssignTmpBytes
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeTmpBytes
         + poulpy_hal::api::VmpPMatBytesOf,
     R: GLWEInfos,
     A: GLWEInfos,
@@ -291,14 +397,14 @@ where
         + module.cnv_prepare_right_tmp_bytes(pt.max_size(), pt.max_size())
 }
 
-/// The rotations a transform consults a key for: its baby steps and the giant
-/// steps that have something to rotate. The identity needs no key, and an empty
-/// giant bucket is skipped by the evaluation, so neither appears here.
-pub(crate) fn lt_key_rotations<P>(rhs: &LinearTransformation<P>) -> impl Iterator<Item = i64> + '_ {
-    rhs.baby_steps()
+/// Non-identity giant rotations the transform evaluates. Baby rotations are
+/// sized separately at the source precision; these bind at the destination
+/// precision because they rotate the post-PROD value.
+pub(crate) fn lt_giant_key_rotations<P>(rhs: &LinearTransformation<P>) -> impl Iterator<Item = i64> + '_ {
+    rhs.giant_steps
         .iter()
-        .copied()
-        .chain(rhs.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot))
+        .filter(|gs| !gs.diagonals.is_empty())
+        .map(|gs| gs.rot)
         .filter(|&rot| rot != 0)
 }
 

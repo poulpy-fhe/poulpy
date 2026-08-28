@@ -9,11 +9,11 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
-    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWERelinearizationKeyHelper,
-    GLWETensorKeyPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision,
-    WithEffectiveDsize,
+    GGLWEActiveUse, GGLWEBind, GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEUse, GLWEAutomorphismKeyHelper,
+    GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWERelinearizationKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
+    GetGaloisElement, LWEInfos, TorusPrecision, WithEffectiveDsize, prepared::GGLWEPreparedBound,
 };
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena, galois_element};
 
 use super::ops::PaCoSlotOps;
 use crate::{
@@ -23,12 +23,187 @@ use crate::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
         paco::{
             context::{PaCoContext, PaCoPsiTailMaterial},
-            keyset::{PaCoKeyParameters, PaCoKeys, validate_backend_storage_capacity, validate_gadget_backend_view},
+            keyset::{PaCoKeyParameters, PaCoKeys, validate_backend_storage_capacity},
             plan::PaCoPlan,
         },
     },
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
 };
+
+use super::ops::fold_rotations;
+
+/// One operation in the branch's checked key/precision schedule.
+///
+/// The schedule is deliberately expressed in terms of the compiled factors,
+/// rather than the context-wide union of Galois elements. This preserves the
+/// exact source/destination precision at which each helper is queried and lets
+/// scratch sizing follow the same sequence as execution.
+pub(super) enum BranchKeyStage<'a, BE: Backend> {
+    /// Budget-neutral fused `ct += sigma(ct)` used by the trace.
+    Trace { element: i64, k: TorusPrecision },
+    /// One streamed BSGS factor. Babies bind at `source_k`; giants bind at
+    /// `destination_k`, after this factor's plaintext rescale.
+    LinearTransformation {
+        factor: &'a crate::api::LinearTransformation<CKKSPlaintextOwned<BE>>,
+        source_k: TorusPrecision,
+        destination_k: TorusPrecision,
+    },
+    /// The conjugation-augmented `(A, B)` psi tail. Both transforms consume
+    /// the same source and land at one shared destination, so precision is
+    /// consumed only once.
+    PsiPair {
+        pair: &'a [crate::api::LinearTransformation<CKKSPlaintextOwned<BE>>; 2],
+        source_k: TorusPrecision,
+        destination_k: TorusPrecision,
+    },
+    /// The fast psi tail: one fused conjugate/rotate at `source_k`, followed by
+    /// the mu plaintext multiplication which lands at `destination_k`.
+    PsiMask {
+        mu: &'a CKKSPlaintextOwned<BE>,
+        element: i64,
+        source_k: TorusPrecision,
+        destination_k: TorusPrecision,
+    },
+    /// One rotate-and-multiply product fold step. Rotation and relinearization
+    /// both resolve at `source_k`; the multiplication lands at `destination_k`.
+    Product {
+        element: i64,
+        source_k: TorusPrecision,
+        destination_k: TorusPrecision,
+    },
+    /// Budget-neutral imaginary-part conjugation after the product fold.
+    Conjugation { element: i64, k: TorusPrecision },
+}
+
+/// Checked branch schedule shared by runtime key validation and scratch sizing.
+pub(super) struct BranchKeySchedule<'a, BE: Backend> {
+    working_k: TorusPrecision,
+    final_k: TorusPrecision,
+    stages: Vec<BranchKeyStage<'a, BE>>,
+}
+
+impl<'a, BE: Backend> BranchKeySchedule<'a, BE> {
+    pub(super) fn working_k(&self) -> TorusPrecision {
+        self.working_k
+    }
+
+    pub(super) fn final_k(&self) -> TorusPrecision {
+        self.final_k
+    }
+
+    pub(super) fn stages(&self) -> &[BranchKeyStage<'a, BE>] {
+        &self.stages
+    }
+}
+
+fn checked_torus_precision(k: usize, what: &str) -> Result<TorusPrecision> {
+    u32::try_from(k)
+        .map(TorusPrecision)
+        .with_context(|| format!("{what} precision {k} exceeds u32"))
+        .map_err(Into::into)
+}
+
+fn consume_precision(current: &mut usize, bits: usize, what: &str) -> Result<(TorusPrecision, TorusPrecision)> {
+    let source = checked_torus_precision(*current, what)?;
+    *current = current
+        .checked_sub(bits)
+        .with_context(|| format!("{what} consumes {bits} bits from precision {source}"))?;
+    Ok((source, checked_torus_precision(*current, what)?))
+}
+
+/// Builds the exact branch schedule followed by
+/// [`paco_bootstrap_branch_validated_into`]. All precision arithmetic is
+/// checked here; consumers do not independently reconstruct precision changes.
+pub(super) fn branch_key_schedule<'a, BE, F>(
+    module: &Module<BE>,
+    context: &'a PaCoContext<BE, F>,
+    output_k: usize,
+) -> Result<BranchKeySchedule<'a, BE>>
+where
+    BE: Backend,
+    Module<BE>: CyclotomicOrder,
+{
+    let plan = context.plan();
+    let working_k = branch_working_k(plan, output_k)?;
+    let mut current = working_k;
+    let order = module.cyclotomic_order();
+    let mut stages = Vec::new();
+
+    // Trace is budget-neutral and every fold key is used at the initial
+    // working precision produced by blind rotation.
+    let trace_k = checked_torus_precision(current, "PaCo trace")?;
+    stages.extend(
+        fold_rotations(plan.half_n(), plan.slots())
+            .into_iter()
+            .map(|rotation| BranchKeyStage::Trace {
+                element: galois_element(rotation, order),
+                k: trace_k,
+            }),
+    );
+
+    for factor in context.coeffs_to_slots() {
+        let (source_k, destination_k) = consume_precision(&mut current, plan.c2s().log_delta(), "PaCo CoeffsToSlots factor")?;
+        stages.push(BranchKeyStage::LinearTransformation {
+            factor,
+            source_k,
+            destination_k,
+        });
+    }
+
+    match context.psi_tail() {
+        PaCoPsiTailMaterial::Pair(pair) => {
+            let (source_k, destination_k) = consume_precision(&mut current, plan.c2s().log_delta(), "PaCo paired psi tail")?;
+            stages.push(BranchKeyStage::PsiPair {
+                pair,
+                source_k,
+                destination_k,
+            });
+        }
+        PaCoPsiTailMaterial::Mask { mu, galois_element } => {
+            let (source_k, destination_k) = consume_precision(&mut current, plan.c2s().log_delta(), "PaCo masked psi tail")?;
+            stages.push(BranchKeyStage::PsiMask {
+                mu,
+                element: *galois_element,
+                source_k,
+                destination_k,
+            });
+        }
+    }
+
+    let product_target = plan.c().checked_mul(2).context("PaCo product target overflows usize")?;
+    for rotation in fold_rotations(plan.slots(), product_target) {
+        let (source_k, destination_k) = consume_precision(&mut current, plan.log_delta_bsk(), "PaCo product fold")?;
+        stages.push(BranchKeyStage::Product {
+            element: galois_element(rotation, order),
+            source_k,
+            destination_k,
+        });
+    }
+
+    stages.push(BranchKeyStage::Conjugation {
+        element: -1,
+        k: checked_torus_precision(current, "PaCo post-product conjugation")?,
+    });
+
+    for factor in context.slots_to_coeffs() {
+        let (source_k, destination_k) = consume_precision(&mut current, plan.stc().log_delta(), "PaCo SlotsToCoeffs factor")?;
+        stages.push(BranchKeyStage::LinearTransformation {
+            factor,
+            source_k,
+            destination_k,
+        });
+    }
+
+    ckks_ensure!(
+        current == output_k,
+        "PaCo branch schedule lands at precision {current}, expected requested output precision {output_k}",
+    );
+    Ok(BranchKeySchedule {
+        working_k: checked_torus_precision(working_k, "PaCo branch working")?,
+        final_k: checked_torus_precision(current, "PaCo branch final")?,
+        stages,
+    })
+}
 
 /// Metadata predicted for a direct PaCo branch after the final, budget-neutral
 /// scale relabel. Computing it before evaluation prevents an expensive circuit
@@ -91,6 +266,220 @@ pub(crate) fn branch_working_k(plan: &PaCoPlan, output_k: usize) -> Result<usize
         .checked_add(circuit_depth)
         .context("PaCo working torus width overflows usize")
         .map_err(Into::into)
+}
+
+fn bind_covering_key_use<K>(
+    name: &str,
+    key: &K,
+    effective_dsize: poulpy_core::layouts::Dsize,
+    input_k: TorusPrecision,
+) -> Result<GGLWEActiveUse>
+where
+    K: GGLWEInfos,
+{
+    let selected = key.with_dsize(effective_dsize);
+    let use_ = selected
+        .bind_covering_for(input_k)
+        .with_context(|| format!("{name} does not cover exact input precision {input_k} at dsize={effective_dsize}"))?;
+    match use_ {
+        GGLWEUse::Active(active) => Ok(active),
+        GGLWEUse::Empty => {
+            Err(anyhow::anyhow!("{name} unexpectedly resolved an empty use at positive precision {input_k}").into())
+        }
+    }
+}
+
+fn validate_prepared_key_use<BE, K>(
+    name: &str,
+    key: &K,
+    effective_dsize: poulpy_core::layouts::Dsize,
+    input_k: TorusPrecision,
+    n: usize,
+    base2k: poulpy_core::layouts::Base2K,
+) -> Result<()>
+where
+    BE: Backend,
+    K: GGLWEInfos + GGLWEPreparedToBackendRef<BE>,
+{
+    ckks_ensure!(
+        key.n().as_usize() == n,
+        "{name} degree {} does not match the PaCo degree {n}",
+        key.n(),
+    );
+    ckks_ensure!(
+        key.rank_in().as_usize() == 1 && key.rank_out().as_usize() == 1,
+        "{name} must have rank_in=rank_out=1, got rank_in={} and rank_out={}",
+        key.rank_in(),
+        key.rank_out(),
+    );
+    ckks_ensure!(
+        key.base2k() == base2k,
+        "{name} base2k {} does not match the PaCo base2k {base2k}",
+        key.base2k(),
+    );
+
+    let active = bind_covering_key_use(name, key, effective_dsize, input_k)?;
+    let complete_view = GGLWEPreparedToBackendRef::to_backend_ref(key);
+    GGLWEPreparedBound::new(complete_view, active)
+        .with_context(|| format!("{name} prepared backend view does not match its exact-precision bound"))?;
+    Ok(())
+}
+
+fn validate_automorphism_use<BE, K>(
+    keys: &K,
+    element: i64,
+    input_k: TorusPrecision,
+    n: usize,
+    base2k: poulpy_core::layouts::Base2K,
+) -> Result<()>
+where
+    BE: Backend,
+    K: PaCoKeys<BE>,
+{
+    let (key, effective_dsize) = keys.rotation_keys().get_automorphism_key_for(element, input_k).map_err(|_| {
+        CKKSCompositionError::MissingAutomorphismKey {
+            op: "ckks_paco_bootstrap",
+            rotation: element,
+            k: input_k.into(),
+        }
+    })?;
+    ckks_ensure!(
+        key.p() == element,
+        "PaCo rotation-key helper returned Galois element {} for label {element} at precision {input_k}",
+        key.p(),
+    );
+    let automorphism_view = GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(key);
+    ckks_ensure!(
+        automorphism_view.p() == element,
+        "PaCo automorphism-key backend view returned Galois element {} for label {element} at precision {input_k}",
+        automorphism_view.p(),
+    );
+    validate_prepared_key_use::<BE, _>(
+        &format!("PaCo automorphism key {element} at precision {input_k}"),
+        key,
+        effective_dsize,
+        input_k,
+        n,
+        base2k,
+    )
+}
+
+fn validate_relinearization_use<BE, K>(
+    keys: &K,
+    input_k: TorusPrecision,
+    n: usize,
+    base2k: poulpy_core::layouts::Base2K,
+) -> Result<()>
+where
+    BE: Backend,
+    K: PaCoKeys<BE>,
+{
+    let (key, effective_dsize) = keys
+        .relinearization_keys()
+        .get_relinearization_key_for(input_k)
+        .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+            op: "ckks_paco_bootstrap",
+            k: input_k.into(),
+        })?;
+    validate_prepared_key_use::<BE, _>(
+        &format!("PaCo relinearization key at precision {input_k}"),
+        key,
+        effective_dsize,
+        input_k,
+        n,
+        base2k,
+    )
+}
+
+fn visit_linear_transformation_key_queries<BE, A>(
+    factor: &crate::api::LinearTransformation<CKKSPlaintextOwned<BE>>,
+    source_k: TorusPrecision,
+    destination_k: TorusPrecision,
+    order: i64,
+    automorphism: &mut A,
+) -> Result<()>
+where
+    BE: Backend,
+    A: FnMut(i64, TorusPrecision) -> Result<()>,
+{
+    let index = factor.index();
+    for rotation in index.baby_steps.into_iter().filter(|&rotation| rotation != 0) {
+        automorphism(galois_element(rotation, order), source_k)?;
+    }
+    for rotation in index.giant_steps.into_iter().filter(|&rotation| rotation != 0) {
+        automorphism(galois_element(rotation, order), destination_k)?;
+    }
+    Ok(())
+}
+
+fn visit_schedule_key_queries<BE, A, R>(
+    schedule: &BranchKeySchedule<'_, BE>,
+    order: i64,
+    mut automorphism: A,
+    mut relinearization: R,
+) -> Result<()>
+where
+    BE: Backend,
+    A: FnMut(i64, TorusPrecision) -> Result<()>,
+    R: FnMut(TorusPrecision) -> Result<()>,
+{
+    for stage in schedule.stages() {
+        match stage {
+            BranchKeyStage::Trace { element, k } | BranchKeyStage::Conjugation { element, k } => {
+                automorphism(*element, *k)?;
+            }
+            BranchKeyStage::LinearTransformation {
+                factor,
+                source_k,
+                destination_k,
+            } => {
+                visit_linear_transformation_key_queries::<BE, _>(factor, *source_k, *destination_k, order, &mut automorphism)?;
+            }
+            BranchKeyStage::PsiPair {
+                pair,
+                source_k,
+                destination_k,
+            } => {
+                automorphism(-1, *source_k)?;
+                for factor in *pair {
+                    visit_linear_transformation_key_queries::<BE, _>(
+                        factor,
+                        *source_k,
+                        *destination_k,
+                        order,
+                        &mut automorphism,
+                    )?;
+                }
+            }
+            BranchKeyStage::PsiMask { element, source_k, .. } => {
+                automorphism(*element, *source_k)?;
+            }
+            BranchKeyStage::Product { element, source_k, .. } => {
+                automorphism(*element, *source_k)?;
+                relinearization(*source_k)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_schedule_keys<BE, K>(
+    keys: &K,
+    schedule: &BranchKeySchedule<'_, BE>,
+    n: usize,
+    base2k: poulpy_core::layouts::Base2K,
+    order: i64,
+) -> Result<()>
+where
+    BE: Backend,
+    K: PaCoKeys<BE>,
+{
+    visit_schedule_key_queries(
+        schedule,
+        order,
+        |element, k| validate_automorphism_use::<BE, _>(keys, element, k, n, base2k),
+        |k| validate_relinearization_use::<BE, _>(keys, k, n, base2k),
+    )
 }
 
 /// Validates the runtime ciphertexts and every key reachable through a custom
@@ -225,70 +614,14 @@ where
         );
     }
 
-    // Automorphism and multiplication keyswitches size their working result from the
-    // working accumulator's limb capacity (`branch_working_k`). `output.k() <= k_out`
-    // keeps this within the gadget keys' capacity, but re-validate defensively (custom
-    // key managers may under-size).
-    let working_k: usize = branch_working_k(plan, output_meta.1)?;
-    let working_size = working_k.div_ceil(context.base2k().as_usize());
-    // Keys are resolved at the precision the branch really works at, not at the
-    // narrower final output width: that is the precision execution will ask for.
-    let working_k: TorusPrecision = TorusPrecision(
-        u32::try_from(working_k).map_err(|_| anyhow::anyhow!("PaCo branch working precision {working_k} exceeds u32"))?,
+    let schedule = branch_key_schedule(module, context, output_meta.1)?;
+    ckks_ensure!(
+        schedule.final_k().as_usize() == output_meta.1,
+        "PaCo validated schedule ends at {}, expected {}",
+        schedule.final_k(),
+        output_meta.1,
     );
-
-    // The fold relinearizes through the relinearization-key source, which is what
-    // is validated here; `tensor_key()` is only its default single entry.
-    let (relinearization_key, relinearization_dsize) = keys
-        .relinearization_keys()
-        .get_relinearization_key_for(working_k)
-        .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
-            op: "ckks_paco_bootstrap",
-            k: working_k.into(),
-        })?;
-    // Validated through the decomposition the policy resolves, not the stored
-    // one: a coarsened use reads a different row map and prefix.
-    let relinearization_use = relinearization_key.with_dsize(relinearization_dsize);
-    let tensor_view = GLWETensorKeyPreparedToBackendRef::to_backend_ref(&relinearization_use);
-    validate_gadget_backend_view(
-        "PaCo relinearization key",
-        &relinearization_use,
-        &tensor_view,
-        plan.n(),
-        context.base2k(),
-        working_size,
-    )?;
-
-    for &element in context.galois_elements() {
-        let (key, effective_dsize) = keys
-            .rotation_keys()
-            .get_automorphism_key_for(element, working_k)
-            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
-                op: "ckks_paco_bootstrap",
-                rotation: element,
-                k: working_k.into(),
-            })?;
-        ckks_ensure!(
-            key.p() == element,
-            "PaCo rotation-key map returned Galois element {} for label {element}",
-            key.p()
-        );
-        let key_use = key.with_dsize(effective_dsize);
-        let key_view = GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(&key_use);
-        ckks_ensure!(
-            key_view.p() == element,
-            "PaCo automorphism-key backend view returned Galois element {} for label {element}",
-            key_view.p(),
-        );
-        validate_gadget_backend_view(
-            "PaCo automorphism key",
-            &key_use,
-            &key_view,
-            plan.n(),
-            context.base2k(),
-            working_size,
-        )?;
-    }
+    validate_schedule_keys::<BE, _>(keys, &schedule, plan.n(), context.base2k(), module.cyclotomic_order())?;
 
     Ok(output_meta)
 }
@@ -480,4 +813,132 @@ where
     // exactly `expected_final_k` (= the requested output level), so the copy is lossless.
     module.ckks_copy(destination, &*output, scratch)?;
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    use poulpy_core::layouts::{Base2K, Degree, Dnum, Dsize, GGLWELayout, Rank};
+    use poulpy_hal::layouts::{HostBytesBackend, galois_element};
+
+    use crate::{
+        api::{Diagonal, GiantStep, LinearTransformation},
+        layouts::CKKSModuleAlloc,
+    };
+
+    type TestBackend = HostBytesBackend;
+
+    #[derive(Default)]
+    struct QueryLog {
+        automorphisms: RefCell<Vec<(i64, TorusPrecision)>>,
+        relinearizations: RefCell<Vec<TorusPrecision>>,
+    }
+
+    impl QueryLog {
+        fn automorphism(&self, element: i64, k: TorusPrecision) -> Result<()> {
+            self.automorphisms.borrow_mut().push((element, k));
+            Ok(())
+        }
+
+        fn relinearization(&self, k: TorusPrecision) -> Result<()> {
+            self.relinearizations.borrow_mut().push(k);
+            Ok(())
+        }
+    }
+
+    fn factor(module: &Module<TestBackend>, baby: i64, giant: i64) -> LinearTransformation<CKKSPlaintextOwned<TestBackend>> {
+        let plaintext = module.ckks_pt_vec_alloc(Base2K(8), TorusPrecision(16));
+        LinearTransformation {
+            baby_steps: vec![0, baby],
+            giant_steps: vec![GiantStep {
+                rot: giant,
+                diagonals: vec![Diagonal { baby, plaintext }],
+            }],
+        }
+    }
+
+    #[test]
+    fn scheduled_validation_queries_successive_exact_precisions() {
+        let module = Module::<TestBackend>::new(256);
+        let order = module.cyclotomic_order();
+        let trace = galois_element(8, order);
+        let ordinary = factor(&module, 1, 2);
+        let pair = [factor(&module, 3, 4), factor(&module, 5, 6)];
+        let product = galois_element(7, order);
+        let schedule = BranchKeySchedule {
+            working_k: TorusPrecision(48),
+            final_k: TorusPrecision(24),
+            stages: vec![
+                BranchKeyStage::Trace {
+                    element: trace,
+                    k: TorusPrecision(48),
+                },
+                BranchKeyStage::LinearTransformation {
+                    factor: &ordinary,
+                    source_k: TorusPrecision(48),
+                    destination_k: TorusPrecision(40),
+                },
+                BranchKeyStage::PsiPair {
+                    pair: &pair,
+                    source_k: TorusPrecision(40),
+                    destination_k: TorusPrecision(32),
+                },
+                BranchKeyStage::Product {
+                    element: product,
+                    source_k: TorusPrecision(32),
+                    destination_k: TorusPrecision(24),
+                },
+                BranchKeyStage::Conjugation {
+                    element: -1,
+                    k: TorusPrecision(24),
+                },
+            ],
+        };
+        let log = QueryLog::default();
+
+        visit_schedule_key_queries::<TestBackend, _, _>(
+            &schedule,
+            order,
+            |element, k| log.automorphism(element, k),
+            |k| log.relinearization(k),
+        )
+        .unwrap();
+
+        assert_eq!(
+            *log.automorphisms.borrow(),
+            vec![
+                (trace, TorusPrecision(48)),
+                (galois_element(1, order), TorusPrecision(48)),
+                (galois_element(2, order), TorusPrecision(40)),
+                (-1, TorusPrecision(40)),
+                (galois_element(3, order), TorusPrecision(40)),
+                (galois_element(4, order), TorusPrecision(32)),
+                (galois_element(5, order), TorusPrecision(40)),
+                (galois_element(6, order), TorusPrecision(32)),
+                (product, TorusPrecision(32)),
+                (-1, TorusPrecision(24)),
+            ],
+        );
+        assert_eq!(*log.relinearizations.borrow(), vec![TorusPrecision(32)]);
+    }
+
+    #[test]
+    fn scheduled_validation_rejects_insufficient_effective_padding() {
+        let key = GGLWELayout {
+            n: Degree(256),
+            base2k: Base2K(8),
+            dnum: Dnum(2),
+            k_aux: TorusPrecision(8),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
+            dsize: Dsize(1),
+        };
+        let error = bind_covering_key_use("coarsened PaCo automorphism key", &key, Dsize(2), TorusPrecision(24))
+            .expect_err("one coarse row without a full coarse guard must not cover 24 bits");
+        assert!(
+            error.to_string().contains("does not cover exact input precision"),
+            "unexpected error: {error:#}",
+        );
+    }
 }

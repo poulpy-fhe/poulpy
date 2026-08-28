@@ -8,9 +8,9 @@ use poulpy_core::{
     },
     glwe_prepare_right,
     layouts::{
-        GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
-        TorusPrecision,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        GGLWEActiveUse, GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        ModuleCoreAlloc, TorusPrecision,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedBound, GLWETensorKeyPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -170,14 +170,16 @@ pub trait CKKSMulDefault<BE: Backend> {
         // width `max(a.k, b.k)` (`ckks_mul_into`) or `max(dst.k, a.k)`
         // (`ckks_mul_assign`), matching the `cnv_offset` rule in
         // `mul_ct_params_raw` (which is already expressed on effective `k`).
-        // Sizing must cover the widest of the three — a destination narrower
-        // than its operands is a supported call.
+        // `res.k` is its pre-call metadata and does not size this intermediate.
         let tensor_layout = GLWELayout {
             n: res.n(),
             base2k: res.base2k(),
-            k: TorusPrecision(res.k().max(a.k()).max(b.k()).as_u32()),
+            k: a.k().max(b.k()),
             rank: res.rank(),
         };
+        if tensor_layout.k().as_u32() == 0 {
+            return 0;
+        }
 
         let lvl_0 = self.glwe_tensor_bytes_of_from_infos(&tensor_layout);
         let lvl_1 = self
@@ -291,21 +293,14 @@ pub trait CKKSMulDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        check_prepared_layout(&*dst, prepared)?;
-        let (res_log_budget, res_log_delta, cnv_offset) = mul_ct_params_raw(
-            dst.k().as_usize(),
-            dst.log_delta(),
-            dst.k().into(),
-            prepared.log_delta,
-            prepared.k,
-        )?;
+        let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
 
         // Size the intermediate from the right operand's `k` rather than
         // its full `max_k`: the tensor product only consumes the top `k`
         // limbs (via the prepared operand).
         tensor_mul_core(
             dst,
-            dst.k().max(TorusPrecision(prepared.k as u32)),
+            tensor_k,
             MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -343,9 +338,12 @@ pub trait CKKSMulDefault<BE: Backend> {
         let tensor_layout = GLWELayout {
             n: res.n(),
             base2k: res.base2k(),
-            k: TorusPrecision(res.k().max(a.k()).as_u32()),
+            k: a.k(),
             rank: res.rank(),
         };
+        if tensor_layout.k().as_u32() == 0 {
+            return 0;
+        }
 
         let lvl_0 = self.glwe_tensor_bytes_of_from_infos(&tensor_layout);
         let lvl_1 = self
@@ -541,10 +539,10 @@ pub trait CKKSMulDefault<BE: Backend> {
     /// Ordered [`CKKSMulOps::ckks_mul_into`] batch: one core tensor batch after
     /// a complete planning pass. Provided, so a backend replacing
     /// `impl_ckks_mul_defaults!` inherits it and may override just this method.
-    fn ckks_mul_into_batch_default<Dst, A, B, T>(
+    fn ckks_mul_into_batch_default<Dst, A, B>(
         &self,
         items: &mut [CKKSMulIntoItem<&mut Dst, &A, &B>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -552,96 +550,100 @@ pub trait CKKSMulDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        ckks_mul_into_batch_ordered(self, items, tsk, scratch)
+        ckks_mul_into_batch_ordered(self, items, bounds, scratch)
     }
 
-    fn ckks_mul_into_batch_tmp_bytes_default<Dst, A, B, T>(&self, items: &[CKKSMulIntoItem<&Dst, &A, &B>], tsk: &T) -> usize
+    fn ckks_mul_into_batch_tmp_bytes_default<Dst, A, B>(
+        &self,
+        items: &[CKKSMulIntoItem<&Dst, &A, &B>],
+        uses: &[GGLWEActiveUse],
+    ) -> usize
     where
         Self: GLWETensoring<BE> + Sized,
         Dst: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
-        T: GGLWEInfos,
     {
-        ckks_mul_into_batch_tmp_bytes_ordered(self, items, tsk)
+        ckks_mul_into_batch_tmp_bytes_ordered(self, items, uses)
     }
 
-    fn ckks_square_into_batch_default<Dst, A, T>(
+    fn ckks_square_into_batch_default<Dst, A>(
         &self,
         items: &mut [CKKSSquareIntoItem<&mut Dst, &A>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Self: GLWETensoring<BE> + Sized,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        ckks_square_into_batch_ordered(self, items, tsk, scratch)
+        ckks_square_into_batch_ordered(self, items, bounds, scratch)
     }
 
-    fn ckks_square_into_batch_tmp_bytes_default<Dst, A, T>(&self, items: &[CKKSSquareIntoItem<&Dst, &A>], tsk: &T) -> usize
+    fn ckks_square_into_batch_tmp_bytes_default<Dst, A>(
+        &self,
+        items: &[CKKSSquareIntoItem<&Dst, &A>],
+        uses: &[GGLWEActiveUse],
+    ) -> usize
     where
         Self: GLWETensoring<BE> + Sized,
         Dst: GLWEInfos,
         A: GLWEInfos,
-        T: GGLWEInfos,
     {
-        ckks_square_into_batch_tmp_bytes_ordered(self, items, tsk)
+        ckks_square_into_batch_tmp_bytes_ordered(self, items, uses)
     }
 
-    fn ckks_square_assign_batch_default<Dst, T>(
+    fn ckks_square_assign_batch_default<Dst>(
         &self,
         items: &mut [CKKSSquareAssignItem<&mut Dst>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Self: GLWETensoring<BE> + Sized,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        ckks_square_assign_batch_ordered(self, items, tsk, scratch)
+        ckks_square_assign_batch_ordered(self, items, bounds, scratch)
     }
 
-    fn ckks_square_assign_batch_tmp_bytes_default<Dst, T>(&self, items: &[CKKSSquareAssignItem<&Dst>], tsk: &T) -> usize
+    fn ckks_square_assign_batch_tmp_bytes_default<Dst>(
+        &self,
+        items: &[CKKSSquareAssignItem<&Dst>],
+        uses: &[GGLWEActiveUse],
+    ) -> usize
     where
         Self: GLWETensoring<BE> + Sized,
         Dst: GLWEInfos,
-        T: GGLWEInfos,
     {
-        ckks_square_assign_batch_tmp_bytes_ordered(self, items, tsk)
+        ckks_square_assign_batch_tmp_bytes_ordered(self, items, uses)
     }
 
-    fn ckks_mul_prepared_assign_batch_default<Dst, T>(
+    fn ckks_mul_prepared_assign_batch_default<Dst>(
         &self,
         items: &mut [CKKSPreparedMulAssignItem<&mut Dst, &CKKSPreparedRight<BE>>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Self: GLWETensoring<BE> + Sized,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        ckks_mul_prepared_assign_batch_ordered(self, items, tsk, scratch)
+        ckks_mul_prepared_assign_batch_ordered(self, items, bounds, scratch)
     }
 
-    fn ckks_mul_prepared_assign_batch_tmp_bytes_default<Dst, PR, T>(
+    fn ckks_mul_prepared_assign_batch_tmp_bytes_default<Dst, PR>(
         &self,
         items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         Self: GLWETensoring<BE> + Sized,
         Dst: GLWEInfos,
         PR: CKKSPreparedRightInfos,
-        T: GGLWEInfos,
     {
-        ckks_mul_prepared_assign_batch_tmp_bytes_ordered(self, items, tsk)
+        ckks_mul_prepared_assign_batch_tmp_bytes_ordered(self, items, uses)
     }
 
     fn ckks_mul_add_pt_consts_into_default<Dst, A, P>(
@@ -738,6 +740,28 @@ pub(crate) fn check_prepared_layout<BE: Backend, D: GLWEInfos>(dst: &D, prepared
     Ok(())
 }
 
+/// Full scalar-equivalent validation and parameters for a prepared multiply.
+///
+/// Batch delegates call this for every lane before resolving any bound or
+/// writing any destination, so a late insufficient-budget error cannot leave
+/// an earlier lane modified.
+pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
+    dst: &D,
+    prepared: &CKKSPreparedRight<BE>,
+) -> Result<(usize, usize, usize, TorusPrecision)> {
+    check_prepared_layout(dst, prepared)?;
+    let prepared_k = u32::try_from(prepared.k)
+        .map_err(|_| crate::CKKSError::Internal(anyhow::anyhow!("prepared precision {} exceeds u32", prepared.k)))?;
+    let tensor_k = dst.k().max(TorusPrecision(prepared_k));
+    let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(
+        dst.k().as_usize(),
+        dst.log_delta(),
+        dst.k().into(),
+        prepared.log_delta,
+        prepared.k,
+    )?;
+    Ok((log_budget, log_delta, cnv_offset, tensor_k))
+}
 /// Writes a [`MulStamp`] onto a destination.
 fn stamp_meta<Dst: SetCKKSInfos>(dst: &mut Dst, stamp: &MulStamp) {
     dst.set_log_budget(stamp.log_budget);
@@ -846,6 +870,44 @@ struct BatchPlan {
     stamp: MulStamp,
 }
 
+fn validate_batch_bound<BE: Backend, D: GLWEInfos>(
+    dst: &D,
+    input_k: TorusPrecision,
+    bound: &GLWETensorKeyPreparedBound<'_, BE>,
+) -> Result<()> {
+    let use_ = bound.use_();
+    let key = use_.logical_layout();
+    ckks_ensure!(
+        use_.input_k() == input_k,
+        "batch bound precision {} != lane precision {input_k}",
+        use_.input_k()
+    );
+    ckks_ensure!(
+        dst.n() == key.n(),
+        "batch bound degree {} != lane degree {}",
+        key.n(),
+        dst.n()
+    );
+    ckks_ensure!(
+        dst.rank() == key.rank_out(),
+        "batch bound output rank {} != lane rank {}",
+        key.rank_out(),
+        dst.rank()
+    );
+    let rank = dst.rank().as_usize();
+    let pairs = rank
+        .checked_add(1)
+        .and_then(|cols| cols.checked_mul(rank))
+        .map(|product| (product >> 1).max(1))
+        .ok_or_else(|| crate::CKKSError::Internal(anyhow::anyhow!("batch rank overflows its pair count")))?;
+    ckks_ensure!(
+        key.rank_in().as_usize() == pairs,
+        "batch bound input rank {} != tensor pair count {pairs}",
+        key.rank_in()
+    );
+    Ok(())
+}
+
 fn tensor_layout<D: GLWEInfos>(dst: &D, k: TorusPrecision) -> GLWELayout {
     GLWELayout {
         n: dst.n(),
@@ -855,11 +917,20 @@ fn tensor_layout<D: GLWEInfos>(dst: &D, k: TorusPrecision) -> GLWELayout {
     }
 }
 
+fn ensure_batch_scratch<BE: Backend>(scratch: &ScratchArena<'_, BE>, required: usize, op: &str) -> Result<()> {
+    ckks_ensure!(
+        scratch.available() >= required,
+        "scratch.available(): {} < {op}: {required}",
+        scratch.available()
+    );
+    Ok(())
+}
+
 /// Ordered [`CKKSMulOps::ckks_mul_into`] batch.
-pub fn ckks_mul_into_batch_ordered<BE, M, Dst, A, B, T>(
+pub fn ckks_mul_into_batch_ordered<BE, M, Dst, A, B>(
     module: &M,
     items: &mut [CKKSMulIntoItem<&mut Dst, &A, &B>],
-    tsk: &T,
+    bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -868,8 +939,14 @@ where
     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-    T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    ckks_ensure!(
+        items.len() == bounds.len(),
+        "one prepared bound is required per CKKS batch lane"
+    );
+    for (item, bound) in items.iter().zip(bounds) {
+        validate_batch_bound(&*item.dst, item.a.k().max(item.b.k()), bound)?;
+    }
     let mut plans: Vec<BatchPlan> = Vec::with_capacity(items.len());
     for item in items.iter() {
         let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(&*item.dst, item.a, item.b)?;
@@ -884,6 +961,22 @@ where
             },
         });
     }
+
+    let uses: Vec<GGLWEActiveUse> = bounds.iter().map(|bound| *bound.use_()).collect();
+    let query: Vec<TensorApplyRelinearizeItem<&Dst, &GLWELayout, &A, &B>> = items
+        .iter()
+        .zip(plans.iter())
+        .map(|(item, plan)| TensorApplyRelinearizeItem {
+            cnv_offset: plan.cnv_offset,
+            res: &*item.dst,
+            tensor_infos: &plan.layout,
+            a: item.a,
+            b: item.b,
+        })
+        .collect();
+    let required = module.glwe_tensor_apply_relinearize_batch_tmp_bytes(&query, &uses);
+    ensure_batch_scratch(scratch, required, "ckks_mul_into_batch")?;
+    drop(query);
 
     for (item, plan) in items.iter_mut().zip(plans.iter()) {
         stamp_meta(&mut *item.dst, &plan.stamp);
@@ -900,15 +993,15 @@ where
             b: item.b,
         })
         .collect();
-    module.glwe_tensor_apply_relinearize_batch(&mut core, tsk, scratch);
+    module.glwe_tensor_apply_relinearize_batch(&mut core, bounds, scratch);
     Ok(())
 }
 
 /// Scratch for [`ckks_mul_into_batch_ordered`].
-pub fn ckks_mul_into_batch_tmp_bytes_ordered<BE, M, Dst, A, B, T>(
+pub fn ckks_mul_into_batch_tmp_bytes_ordered<BE, M, Dst, A, B>(
     module: &M,
     items: &[CKKSMulIntoItem<&Dst, &A, &B>],
-    tsk: &T,
+    uses: &[GGLWEActiveUse],
 ) -> usize
 where
     BE: Backend,
@@ -916,7 +1009,6 @@ where
     Dst: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,
-    T: GGLWEInfos,
 {
     let layouts: Vec<GLWELayout> = items
         .iter()
@@ -933,14 +1025,14 @@ where
             b: item.b,
         })
         .collect();
-    module.glwe_tensor_apply_relinearize_batch_tmp_bytes(&core, tsk)
+    module.glwe_tensor_apply_relinearize_batch_tmp_bytes(&core, uses)
 }
 
 /// Ordered [`CKKSMulOps::ckks_square_into`] batch.
-pub fn ckks_square_into_batch_ordered<BE, M, Dst, A, T>(
+pub fn ckks_square_into_batch_ordered<BE, M, Dst, A>(
     module: &M,
     items: &mut [CKKSSquareIntoItem<&mut Dst, &A>],
-    tsk: &T,
+    bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -948,8 +1040,14 @@ where
     M: GLWETensoring<BE> + ?Sized,
     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-    T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    ckks_ensure!(
+        items.len() == bounds.len(),
+        "one prepared bound is required per CKKS batch lane"
+    );
+    for (item, bound) in items.iter().zip(bounds) {
+        validate_batch_bound(&*item.dst, item.a.k(), bound)?;
+    }
     let mut plans: Vec<BatchPlan> = Vec::with_capacity(items.len());
     for item in items.iter() {
         let (log_budget, log_delta, cnv_offset) = get_mul_ct_params(&*item.dst, item.a, item.a)?;
@@ -965,6 +1063,21 @@ where
         });
     }
 
+    let uses: Vec<GGLWEActiveUse> = bounds.iter().map(|bound| *bound.use_()).collect();
+    let query: Vec<TensorSquareApplyRelinearizeItem<&Dst, &GLWELayout, &A>> = items
+        .iter()
+        .zip(plans.iter())
+        .map(|(item, plan)| TensorSquareApplyRelinearizeItem {
+            cnv_offset: plan.cnv_offset,
+            res: &*item.dst,
+            tensor_infos: &plan.layout,
+            a: item.a,
+        })
+        .collect();
+    let required = module.glwe_tensor_square_apply_relinearize_batch_tmp_bytes(&query, &uses);
+    ensure_batch_scratch(scratch, required, "ckks_square_into_batch")?;
+    drop(query);
+
     for (item, plan) in items.iter_mut().zip(plans.iter()) {
         stamp_meta(&mut *item.dst, &plan.stamp);
     }
@@ -979,22 +1092,21 @@ where
             a: item.a,
         })
         .collect();
-    module.glwe_tensor_square_apply_relinearize_batch(&mut core, tsk, scratch);
+    module.glwe_tensor_square_apply_relinearize_batch(&mut core, bounds, scratch);
     Ok(())
 }
 
 /// Scratch for [`ckks_square_into_batch_ordered`].
-pub fn ckks_square_into_batch_tmp_bytes_ordered<BE, M, Dst, A, T>(
+pub fn ckks_square_into_batch_tmp_bytes_ordered<BE, M, Dst, A>(
     module: &M,
     items: &[CKKSSquareIntoItem<&Dst, &A>],
-    tsk: &T,
+    uses: &[GGLWEActiveUse],
 ) -> usize
 where
     BE: Backend,
     M: GLWETensoring<BE> + ?Sized,
     Dst: GLWEInfos,
     A: GLWEInfos,
-    T: GGLWEInfos,
 {
     let layouts: Vec<GLWELayout> = items.iter().map(|item| tensor_layout(item.dst, item.a.k())).collect();
     let core: Vec<TensorSquareApplyRelinearizeItem<&Dst, &GLWELayout, &A>> = items
@@ -1007,22 +1119,28 @@ where
             a: item.a,
         })
         .collect();
-    module.glwe_tensor_square_apply_relinearize_batch_tmp_bytes(&core, tsk)
+    module.glwe_tensor_square_apply_relinearize_batch_tmp_bytes(&core, uses)
 }
 
 /// Ordered [`CKKSMulOps::ckks_square_assign`] batch.
-pub fn ckks_square_assign_batch_ordered<BE, M, Dst, T>(
+pub fn ckks_square_assign_batch_ordered<BE, M, Dst>(
     module: &M,
     items: &mut [CKKSSquareAssignItem<&mut Dst>],
-    tsk: &T,
+    bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     M: GLWETensoring<BE> + ?Sized,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-    T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    ckks_ensure!(
+        items.len() == bounds.len(),
+        "one prepared bound is required per CKKS batch lane"
+    );
+    for (item, bound) in items.iter().zip(bounds) {
+        validate_batch_bound(&*item.dst, item.dst.k(), bound)?;
+    }
     let mut plans: Vec<BatchPlan> = Vec::with_capacity(items.len());
     for item in items.iter() {
         let dst = &*item.dst;
@@ -1041,6 +1159,20 @@ where
         });
     }
 
+    let uses: Vec<GGLWEActiveUse> = bounds.iter().map(|bound| *bound.use_()).collect();
+    let query: Vec<TensorSquareRelinearizeAssignItem<&Dst, &GLWELayout>> = items
+        .iter()
+        .zip(plans.iter())
+        .map(|(item, plan)| TensorSquareRelinearizeAssignItem {
+            cnv_offset: plan.cnv_offset,
+            res: &*item.dst,
+            tensor_infos: &plan.layout,
+        })
+        .collect();
+    let required = module.glwe_tensor_square_relinearize_assign_batch_tmp_bytes(&query, &uses);
+    ensure_batch_scratch(scratch, required, "ckks_square_assign_batch")?;
+    drop(query);
+
     let mut core: Vec<TensorSquareRelinearizeAssignItem<&mut Dst, &GLWELayout>> = items
         .iter_mut()
         .zip(plans.iter())
@@ -1050,7 +1182,7 @@ where
             tensor_infos: &plan.layout,
         })
         .collect();
-    module.glwe_tensor_square_relinearize_assign_batch(&mut core, tsk, scratch);
+    module.glwe_tensor_square_relinearize_assign_batch(&mut core, bounds, scratch);
     drop(core);
 
     for (item, plan) in items.iter_mut().zip(plans.iter()) {
@@ -1060,16 +1192,15 @@ where
 }
 
 /// Scratch for [`ckks_square_assign_batch_ordered`].
-pub fn ckks_square_assign_batch_tmp_bytes_ordered<BE, M, Dst, T>(
+pub fn ckks_square_assign_batch_tmp_bytes_ordered<BE, M, Dst>(
     module: &M,
     items: &[CKKSSquareAssignItem<&Dst>],
-    tsk: &T,
+    uses: &[GGLWEActiveUse],
 ) -> usize
 where
     BE: Backend,
     M: GLWETensoring<BE> + ?Sized,
     Dst: GLWEInfos,
-    T: GGLWEInfos,
 {
     let layouts: Vec<GLWELayout> = items.iter().map(|item| tensor_layout(item.dst, item.dst.k())).collect();
     let core: Vec<TensorSquareRelinearizeAssignItem<&Dst, &GLWELayout>> = items
@@ -1081,37 +1212,34 @@ where
             tensor_infos: layout,
         })
         .collect();
-    module.glwe_tensor_square_relinearize_assign_batch_tmp_bytes(&core, tsk)
+    module.glwe_tensor_square_relinearize_assign_batch_tmp_bytes(&core, uses)
 }
 
 /// Ordered [`CKKSMulOps::ckks_mul_prepared_assign`] batch.
-pub fn ckks_mul_prepared_assign_batch_ordered<BE, M, Dst, T>(
+pub fn ckks_mul_prepared_assign_batch_ordered<BE, M, Dst>(
     module: &M,
     items: &mut [CKKSPreparedMulAssignItem<&mut Dst, &CKKSPreparedRight<BE>>],
-    tsk: &T,
+    bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     M: GLWETensoring<BE> + ?Sized,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-    T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    ckks_ensure!(
+        items.len() == bounds.len(),
+        "one prepared bound is required per CKKS batch lane"
+    );
     let mut plans: Vec<BatchPlan> = Vec::with_capacity(items.len());
-    for item in items.iter() {
+    for (item, bound) in items.iter().zip(bounds) {
         let dst = &*item.dst;
         let prepared = item.prepared;
-        check_prepared_layout(dst, prepared)?;
-        let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(
-            dst.k().as_usize(),
-            dst.log_delta(),
-            dst.k().into(),
-            prepared.log_delta,
-            prepared.k,
-        )?;
+        let (log_budget, log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(dst, prepared)?;
+        validate_batch_bound(dst, tensor_k, bound)?;
         plans.push(BatchPlan {
             cnv_offset,
-            layout: tensor_layout(dst, dst.k().max(TorusPrecision(prepared.k as u32))),
+            layout: tensor_layout(dst, tensor_k),
             stamp: MulStamp {
                 log_budget,
                 log_delta,
@@ -1120,6 +1248,22 @@ where
             },
         });
     }
+
+    let uses: Vec<GGLWEActiveUse> = bounds.iter().map(|bound| *bound.use_()).collect();
+    let query: Vec<TensorPreparedRightRelinearizeAssignItem<&Dst, &GLWELayout, &CnvPVecROwned<BE>>> = items
+        .iter()
+        .zip(plans.iter())
+        .map(|(item, plan)| TensorPreparedRightRelinearizeAssignItem {
+            cnv_offset: plan.cnv_offset,
+            res: &*item.dst,
+            tensor_infos: &plan.layout,
+            prepared_right: &item.prepared.prep,
+            prepared_right_size: item.prepared.size,
+        })
+        .collect();
+    let required = module.glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes(&query, &uses);
+    ensure_batch_scratch(scratch, required, "ckks_mul_prepared_assign_batch")?;
+    drop(query);
 
     let mut core: Vec<TensorPreparedRightRelinearizeAssignItem<&mut Dst, &GLWELayout, &CnvPVecROwned<BE>>> = items
         .iter_mut()
@@ -1132,7 +1276,7 @@ where
             prepared_right_size: item.prepared.size,
         })
         .collect();
-    module.glwe_tensor_apply_prepared_right_relinearize_assign_batch(&mut core, tsk, scratch);
+    module.glwe_tensor_apply_prepared_right_relinearize_assign_batch(&mut core, bounds, scratch);
     drop(core);
 
     for (item, plan) in items.iter_mut().zip(plans.iter()) {
@@ -1142,21 +1286,24 @@ where
 }
 
 /// Scratch for [`ckks_mul_prepared_assign_batch_ordered`].
-pub fn ckks_mul_prepared_assign_batch_tmp_bytes_ordered<BE, M, Dst, PR, T>(
+pub fn ckks_mul_prepared_assign_batch_tmp_bytes_ordered<BE, M, Dst, PR>(
     module: &M,
     items: &[CKKSPreparedMulAssignItem<&Dst, &PR>],
-    tsk: &T,
+    uses: &[GGLWEActiveUse],
 ) -> usize
 where
     BE: Backend,
     M: GLWETensoring<BE> + ?Sized,
     Dst: GLWEInfos,
     PR: CKKSPreparedRightInfos,
-    T: GGLWEInfos,
 {
     let layouts: Vec<GLWELayout> = items
         .iter()
-        .map(|item| tensor_layout(item.dst, item.dst.k().max(TorusPrecision(item.prepared.prepared_k() as u32))))
+        .map(|item| {
+            let prepared_k =
+                u32::try_from(item.prepared.prepared_k()).unwrap_or_else(|_| panic!("prepared precision exceeds u32"));
+            tensor_layout(item.dst, item.dst.k().max(TorusPrecision(prepared_k)))
+        })
         .collect();
     // The core query reads only `res`, `tensor_infos` and the limb count, so the
     // prepared operand itself never has to exist.
@@ -1171,7 +1318,7 @@ where
             prepared_right_size: item.prepared.prepared_size(),
         })
         .collect();
-    module.glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes(&core, tsk)
+    module.glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes(&core, uses)
 }
 
 #[cfg(test)]

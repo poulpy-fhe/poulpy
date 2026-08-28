@@ -4,9 +4,9 @@ use std::collections::HashMap;
 use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyHelper,
-    GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-    prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+    GGLWEActiveUse, GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef,
+    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+    prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedBound, GLWETensorKeyPreparedToBackendRef},
 };
 
 pub trait GLWETrace<BE: Backend> {
@@ -291,107 +291,119 @@ pub trait GLWETensoring<BE: Backend> {
 
     /// Scratch bytes for [`Self::glwe_tensor_apply_relinearize_batch`].
     ///
+    /// Core tensor batches contain active, positive-precision lanes only;
+    /// callers handle [`GGLWEUse::Empty`](crate::layouts::GGLWEUse::Empty)
+    /// separately.
     /// The sequential default reuses one arena, so it returns the largest
     /// single-item bound. An override may return more.
-    fn glwe_tensor_apply_relinearize_batch_tmp_bytes<R, I, A, B, T>(
+    /// `uses[i]` is authoritative for `items[i]`; fusion or splitting must
+    /// preserve that alignment.
+    fn glwe_tensor_apply_relinearize_batch_tmp_bytes<R, I, A, B>(
         &self,
         items: &[TensorApplyRelinearizeItem<&R, &I, &A, &B>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         R: GLWEInfos,
         I: GLWEInfos,
         A: GLWEInfos,
-        B: GLWEInfos,
-        T: GGLWEInfos;
+        B: GLWEInfos;
 
     /// Independent [`Self::glwe_tensor_apply_relinearize`] calls, in item order.
     ///
     /// Every item keeps its own `cnv_offset`, tensor layout and operand widths.
+    /// `bounds[i]` is authoritative for `items[i]`; fusion or splitting must
+    /// preserve that alignment.
     /// Destinations must be mutually non-aliasing and must not alias another
     /// item's readable operand; read-only operands may repeat. An empty slice is
-    /// a no-op, a singleton is exactly the scalar call.
-    fn glwe_tensor_apply_relinearize_batch<R, I, A, B, T>(
+    /// a no-op; a positive-precision singleton is exactly the scalar
+    /// computation.
+    fn glwe_tensor_apply_relinearize_batch<R, I, A, B>(
         &self,
         items: &mut [TensorApplyRelinearizeItem<&mut R, &I, &A, &B>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         I: GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        B: GLWEToBackendRef<BE> + GLWEInfos;
 
     /// Scratch bytes for [`Self::glwe_tensor_square_apply_relinearize_batch`].
-    fn glwe_tensor_square_apply_relinearize_batch_tmp_bytes<R, I, A, T>(
+    /// `uses[i]` is authoritative for `items[i]`; fusion or splitting must
+    /// preserve that alignment.
+    fn glwe_tensor_square_apply_relinearize_batch_tmp_bytes<R, I, A>(
         &self,
         items: &[TensorSquareApplyRelinearizeItem<&R, &I, &A>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         R: GLWEInfos,
         I: GLWEInfos,
-        A: GLWEInfos,
-        T: GGLWEInfos;
+        A: GLWEInfos;
 
     /// Independent [`Self::glwe_tensor_square_apply_relinearize`] calls, in item order.
-    fn glwe_tensor_square_apply_relinearize_batch<R, I, A, T>(
+    /// `bounds[i]` is authoritative for `items[i]`; fusion or splitting must
+    /// preserve that alignment.
+    fn glwe_tensor_square_apply_relinearize_batch<R, I, A>(
         &self,
         items: &mut [TensorSquareApplyRelinearizeItem<&mut R, &I, &A>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         I: GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 
     /// Scratch bytes for [`Self::glwe_tensor_square_relinearize_assign_batch`].
-    fn glwe_tensor_square_relinearize_assign_batch_tmp_bytes<R, I, T>(
+    /// `uses[i]` is authoritative for `items[i]`; fusion or splitting must
+    /// preserve that alignment.
+    fn glwe_tensor_square_relinearize_assign_batch_tmp_bytes<R, I>(
         &self,
         items: &[TensorSquareRelinearizeAssignItem<&R, &I>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         R: GLWEInfos,
-        I: GLWEInfos,
-        T: GGLWEInfos;
+        I: GLWEInfos;
 
     /// Independent [`Self::glwe_tensor_square_relinearize_assign`] calls, in item order.
-    fn glwe_tensor_square_relinearize_assign_batch<R, I, T>(
+    /// `bounds[i]` is authoritative for `items[i]`; fusion or splitting must
+    /// preserve that alignment.
+    fn glwe_tensor_square_relinearize_assign_batch<R, I>(
         &self,
         items: &mut [TensorSquareRelinearizeAssignItem<&mut R, &I>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        I: GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        I: GLWEInfos;
 
     /// Scratch bytes for [`Self::glwe_tensor_apply_prepared_right_relinearize_assign_batch`].
-    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes<R, I, BP, T>(
+    /// `uses[i]` is authoritative for `items[i]`; fusion or splitting must
+    /// preserve that alignment.
+    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes<R, I, BP>(
         &self,
         items: &[TensorPreparedRightRelinearizeAssignItem<&R, &I, &BP>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         R: GLWEInfos,
-        I: GLWEInfos,
-        T: GGLWEInfos;
+        I: GLWEInfos;
 
     /// Independent [`Self::glwe_tensor_apply_prepared_right_relinearize_assign`]
     /// calls, in item order. Prepared operands may repeat across items.
-    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch<R, I, BP, T>(
+    /// `bounds[i]` is authoritative for `items[i]`; fusion or splitting must
+    /// preserve that alignment.
+    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch<R, I, BP>(
         &self,
         items: &mut [TensorPreparedRightRelinearizeAssignItem<&mut R, &I, &BP>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         I: GLWEInfos,
-        BP: CnvPVecRToBackendRef<BE>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        BP: CnvPVecRToBackendRef<BE>;
 }
 
 pub trait GLWEAdd<BE: Backend> {

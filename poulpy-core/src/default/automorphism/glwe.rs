@@ -14,8 +14,9 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
-        VecZnxBigAddSmallAssign, VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigSubSmallAssign,
-        VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxBigAddSmallAssign, VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxBigSubSmallAssign, VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes,
+        VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
@@ -23,7 +24,7 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     default::{
-        keyswitching::glwe::bound_for,
+        keyswitching::glwe::{bound_for, glwe_keyswitch_tmp_bytes_upper_default},
         keyswitching::{GLWEKeyswitchInternal, bound_output_size},
         operations::GLWENormalizeDefault,
     },
@@ -43,6 +44,44 @@ where
     K: GGLWEInfos,
 {
     glwe_automorphism_tmp_bytes_body(module, res_infos, a_infos, key_infos)
+}
+
+/// Conservative counterpart of [`glwe_automorphism_tmp_bytes_default`] for an
+/// LT proxy/bound query. It preserves the automorphism scratch nesting and only
+/// replaces the nested regular keyswitch query by its upper variant.
+pub fn glwe_automorphism_tmp_bytes_upper_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + ModuleN
+        + GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
+        + VecZnxAutomorphismAssignTmpBytes
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeTmpBytes,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    assert_eq!(module.n() as u32, res_infos.n());
+    assert_eq!(module.n() as u32, a_infos.n());
+    assert_eq!(module.n() as u32, key_infos.n());
+
+    let lvl_conv = if res_infos.k() > a_infos.k() {
+        module.glwe_bytes_of_from_infos(res_infos)
+    } else {
+        module.glwe_bytes_of_from_infos(a_infos)
+    };
+    let lvl_ks = glwe_keyswitch_tmp_bytes_upper_default::<BE, _, _, _, _>(module, res_infos, a_infos, key_infos);
+    let lvl_auto = module.vec_znx_automorphism_assign_tmp_bytes();
+    lvl_auto.max(
+        lvl_conv
+            .checked_add(lvl_ks)
+            .expect("GLWE automorphism upper scratch size overflows usize"),
+    )
 }
 
 fn glwe_automorphism_tmp_bytes_body<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize

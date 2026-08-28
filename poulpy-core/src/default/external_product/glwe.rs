@@ -42,12 +42,20 @@ where
     A: GLWEInfos,
     G: GGSWInfos,
 {
-    let product_terms = ggsw_infos
-        .n()
+    let cols: usize = ggsw_infos
+        .rank()
         .as_usize()
-        .saturating_mul(ggsw_infos.dnum().as_usize())
-        .saturating_mul(ggsw_infos.dsize().as_usize())
-        .saturating_mul((ggsw_infos.rank() + 1).as_usize());
+        .checked_add(1)
+        .expect("external-product output column count overflows usize");
+    let product_terms: usize = [
+        ggsw_infos.n().as_usize(),
+        ggsw_infos.dnum().as_usize(),
+        ggsw_infos.dsize().as_usize(),
+        cols,
+    ]
+    .into_iter()
+    .try_fold(1usize, usize::checked_mul)
+    .expect("external-product term count overflows usize");
     gadget_product_output_size(GadgetProductOutputSizeParams {
         key_size: ggsw_infos.size(),
         key_base2k: ggsw_infos.base2k(),
@@ -80,15 +88,17 @@ fn glwe_external_product_dft_fill<BE, M>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes,
 {
-    let cols: usize = (ggsw.rank() + 1).into();
+    let cols: usize = ggsw
+        .rank()
+        .as_usize()
+        .checked_add(1)
+        .expect("external-product output column count overflows usize");
     let dsize: usize = ggsw.dsize().into();
     let a_size: usize = a.size();
-    let product_terms = ggsw
-        .n()
-        .as_usize()
-        .saturating_mul(ggsw.dnum().as_usize())
-        .saturating_mul(dsize)
-        .saturating_mul(cols);
+    let product_terms: usize = [ggsw.n().as_usize(), ggsw.dnum().as_usize(), dsize, cols]
+        .into_iter()
+        .try_fold(1usize, usize::checked_mul)
+        .expect("external-product term count overflows usize");
     let product_limbs = gadget_product_limbs(ggsw.base2k(), product_terms);
     // Same shape as `gglwe_product_dft_default`, and the same two
     // constraints hold; see the comment there for why. In short:
@@ -105,7 +115,8 @@ fn glwe_external_product_dft_fill<BE, M>(
     // is folded into `vec_znx_dft_apply`, so no full-width DFT of `a` is
     // ever materialized.
     for di in 0..dsize {
-        let (mut a_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, (a_size + di) / dsize);
+        let digit_size: usize = a_size.checked_add(di).expect("external-product digit offset overflows usize") / dsize;
+        let (mut a_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, digit_size);
 
         for j in 0..cols {
             module.vec_znx_dft_apply(dsize, dsize - 1 - di, &mut a_dft, j, &a.data, j);

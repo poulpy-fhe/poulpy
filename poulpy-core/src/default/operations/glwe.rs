@@ -9,8 +9,9 @@ use poulpy_hal::{
         VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, DataView, Module, ScratchArena,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
+        VecZnxToBackendRef,
     },
 };
 
@@ -23,8 +24,10 @@ use crate::{
     default::keyswitching::glwe::{bound_for, bound_prepared},
     default::keyswitching::{GGLWEProductDefault, bound_output_size},
     layouts::{
-        Base2K, GGLWEInfos, GGLWEUse, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        Base2K, GGLWEActiveUse, GGLWEInfos, GGLWEUse, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
+        prepared::{
+            GGLWEPreparedBound, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedBound, GLWETensorKeyPreparedToBackendRef,
+        },
     },
     oep::GLWETensoringImpl,
     scratch::ScratchArenaTakeCore,
@@ -478,6 +481,13 @@ pub trait GLWETensoringDefault<BE: Backend> {
         A: GLWEInfos,
         B: GLWEInfos;
 
+    /// Scratch for relinearization through an already-resolved active use.
+    /// Unlike the ordinary helper, this never resolves the key again.
+    fn glwe_tensor_relinearize_bound_tmp_bytes_default<R, A>(&self, res: &R, a: &A, use_: &GGLWEActiveUse) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos;
+
     fn glwe_tensor_relinearize_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, tsk: &B) -> usize
     where
         R: GLWEInfos,
@@ -489,6 +499,18 @@ pub trait GLWETensoringDefault<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+
+    /// Relinearizes through the exact prepared bound supplied by the caller.
+    /// The bound was paired with its physical key before this body is entered.
+    fn glwe_tensor_relinearize_bound_default<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        bound: &GGLWEPreparedBound<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 
     fn glwe_tensor_square_apply_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -591,100 +613,269 @@ pub trait GLWETensoringDefault<BE: Backend> {
 
     /// Largest single-item bound over `items`, zero for an empty batch: the
     /// sequential default reuses one arena.
-    fn glwe_tensor_apply_relinearize_batch_tmp_bytes_default<R, I, A, B, T>(
+    fn glwe_tensor_apply_relinearize_batch_tmp_bytes_default<R, I, A, B>(
         &self,
         items: &[TensorApplyRelinearizeItem<&R, &I, &A, &B>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         BE: GLWETensoringImpl<BE>,
         R: GLWEInfos,
         I: GLWEInfos,
         A: GLWEInfos,
-        B: GLWEInfos,
-        T: GGLWEInfos;
+        B: GLWEInfos;
 
-    fn glwe_tensor_apply_relinearize_batch_default<R, I, A, B, T>(
+    fn glwe_tensor_apply_relinearize_batch_default<R, I, A, B>(
         &self,
         items: &mut [TensorApplyRelinearizeItem<&mut R, &I, &A, &B>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: GLWETensoringImpl<BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         I: GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        B: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_tensor_square_apply_relinearize_batch_tmp_bytes_default<R, I, A, T>(
+    fn glwe_tensor_square_apply_relinearize_batch_tmp_bytes_default<R, I, A>(
         &self,
         items: &[TensorSquareApplyRelinearizeItem<&R, &I, &A>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         BE: GLWETensoringImpl<BE>,
         R: GLWEInfos,
         I: GLWEInfos,
-        A: GLWEInfos,
-        T: GGLWEInfos;
+        A: GLWEInfos;
 
-    fn glwe_tensor_square_apply_relinearize_batch_default<R, I, A, T>(
+    fn glwe_tensor_square_apply_relinearize_batch_default<R, I, A>(
         &self,
         items: &mut [TensorSquareApplyRelinearizeItem<&mut R, &I, &A>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: GLWETensoringImpl<BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         I: GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_tensor_square_relinearize_assign_batch_tmp_bytes_default<R, I, T>(
+    fn glwe_tensor_square_relinearize_assign_batch_tmp_bytes_default<R, I>(
         &self,
         items: &[TensorSquareRelinearizeAssignItem<&R, &I>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         BE: GLWETensoringImpl<BE>,
         R: GLWEInfos,
-        I: GLWEInfos,
-        T: GGLWEInfos;
+        I: GLWEInfos;
 
-    fn glwe_tensor_square_relinearize_assign_batch_default<R, I, T>(
+    fn glwe_tensor_square_relinearize_assign_batch_default<R, I>(
         &self,
         items: &mut [TensorSquareRelinearizeAssignItem<&mut R, &I>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: GLWETensoringImpl<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        I: GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        I: GLWEInfos;
 
-    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes_default<R, I, BP, T>(
+    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes_default<R, I, BP>(
         &self,
         items: &[TensorPreparedRightRelinearizeAssignItem<&R, &I, &BP>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         BE: GLWETensoringImpl<BE>,
         R: GLWEInfos,
-        I: GLWEInfos,
-        T: GGLWEInfos;
+        I: GLWEInfos;
 
-    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_default<R, I, BP, T>(
+    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_default<R, I, BP>(
         &self,
         items: &mut [TensorPreparedRightRelinearizeAssignItem<&mut R, &I, &BP>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: GLWETensoringImpl<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         I: GLWEInfos,
-        BP: CnvPVecRToBackendRef<BE>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        BP: CnvPVecRToBackendRef<BE>;
+}
+
+fn validate_resolved_tensor_lane<R: GLWEInfos, I: GLWEInfos>(res: &R, tensor_infos: &I, use_: &GGLWEActiveUse) {
+    validate_glwe_live_width(res, "result");
+    validate_glwe_live_width(tensor_infos, "intermediate");
+    let key = use_.logical_layout();
+    assert_eq!(
+        res.n(),
+        key.n(),
+        "tensor batch result degree differs from its resolved key use"
+    );
+    assert_eq!(
+        tensor_infos.n(),
+        key.n(),
+        "tensor batch intermediate degree differs from its resolved key use"
+    );
+    assert_eq!(
+        tensor_infos.k(),
+        use_.input_k(),
+        "tensor batch precision differs from its resolved key use"
+    );
+    assert_eq!(
+        res.rank(),
+        key.rank_out(),
+        "tensor batch result rank differs from its resolved key use"
+    );
+    assert_eq!(
+        tensor_infos.rank(),
+        key.rank_out(),
+        "tensor batch intermediate rank differs from its resolved key use"
+    );
+    let rank = tensor_infos.rank().as_usize();
+    let pairs = rank
+        .checked_add(1)
+        .and_then(|cols| cols.checked_mul(rank))
+        .map(|product| (product >> 1).max(1))
+        .expect("tensor batch rank overflows its pair count");
+    assert_eq!(
+        key.rank_in().as_usize(),
+        pairs,
+        "tensor batch pair count differs from its resolved key use"
+    );
+}
+
+fn validate_glwe_live_width<T: GLWEInfos>(value: &T, name: &str) -> usize {
+    let base2k = value.base2k().as_usize();
+    assert_ne!(base2k, 0, "tensor batch {name} base2k must be non-zero");
+    let live_size = value.k().as_usize().div_ceil(base2k);
+    assert!(
+        live_size <= value.max_size(),
+        "tensor batch {name} needs {live_size} limbs but its capacity is {}",
+        value.max_size()
+    );
+    live_size
+}
+
+fn validate_tensor_operand<I: GLWEInfos, A: GLWEInfos>(tensor_infos: &I, operand: &A, name: &str) -> usize {
+    assert_eq!(
+        operand.n(),
+        tensor_infos.n(),
+        "tensor batch {name} degree differs from the intermediate"
+    );
+    assert_eq!(
+        operand.rank(),
+        tensor_infos.rank(),
+        "tensor batch {name} rank differs from the intermediate"
+    );
+    validate_glwe_live_width(operand, name)
+}
+
+fn validate_tensor_offset(cnv_offset: usize, base2k: usize, a_size: usize, b_size: usize) {
+    let total_size = a_size
+        .checked_add(b_size)
+        .expect("tensor batch operand limb count overflows usize");
+    let (offset_hi, _) = cnv_offset_to_limb_offset(cnv_offset, base2k);
+    assert!(
+        offset_hi <= total_size,
+        "tensor batch conversion offset consumes {offset_hi} limbs but the operands provide {total_size}"
+    );
+}
+
+fn validate_tensor_apply_lane<R: GLWEInfos, I: GLWEInfos, A: GLWEInfos, B: GLWEInfos>(
+    res: &R,
+    tensor_infos: &I,
+    a: &A,
+    b: &B,
+    cnv_offset: usize,
+    use_: &GGLWEActiveUse,
+) {
+    validate_resolved_tensor_lane(res, tensor_infos, use_);
+    let a_size = validate_tensor_operand(tensor_infos, a, "left operand");
+    let b_size = validate_tensor_operand(tensor_infos, b, "right operand");
+    assert_eq!(a.base2k(), b.base2k(), "tensor batch operands use different base2k");
+    validate_tensor_offset(cnv_offset, a.base2k().as_usize(), a_size, b_size);
+}
+
+fn validate_tensor_square_lane<R: GLWEInfos, I: GLWEInfos, A: GLWEInfos>(
+    res: &R,
+    tensor_infos: &I,
+    a: &A,
+    cnv_offset: usize,
+    use_: &GGLWEActiveUse,
+) {
+    validate_resolved_tensor_lane(res, tensor_infos, use_);
+    let a_size = validate_tensor_operand(tensor_infos, a, "square operand");
+    validate_tensor_offset(cnv_offset, a.base2k().as_usize(), a_size, a_size);
+}
+
+fn validate_tensor_square_assign_lane<R: GLWEInfos, I: GLWEInfos>(
+    res: &R,
+    tensor_infos: &I,
+    cnv_offset: usize,
+    use_: &GGLWEActiveUse,
+) {
+    validate_resolved_tensor_lane(res, tensor_infos, use_);
+    let size = validate_tensor_operand(tensor_infos, res, "square operand");
+    validate_tensor_offset(cnv_offset, res.base2k().as_usize(), size, size);
+}
+
+fn validate_tensor_prepared_right_lane<R: GLWEInfos, I: GLWEInfos>(
+    res: &R,
+    tensor_infos: &I,
+    cnv_offset: usize,
+    prepared_right_size: usize,
+    use_: &GGLWEActiveUse,
+) {
+    validate_resolved_tensor_lane(res, tensor_infos, use_);
+    let left_size = validate_tensor_operand(tensor_infos, res, "left operand");
+    validate_tensor_offset(cnv_offset, res.base2k().as_usize(), left_size, prepared_right_size);
+}
+
+fn validate_prepared_right_backing<BE: Backend, R: GLWEInfos, BP: CnvPVecRToBackendRef<BE>>(
+    res: &R,
+    prepared_right: &BP,
+    used_size: usize,
+) {
+    let view = prepared_right.to_backend_ref();
+    assert_eq!(view.n(), res.n().as_usize(), "prepared-right degree differs from the lane");
+    let cols = res
+        .rank()
+        .as_usize()
+        .checked_add(1)
+        .expect("tensor batch prepared-right column count overflows usize");
+    assert_eq!(view.cols(), cols, "prepared-right column count differs from the lane");
+    assert!(
+        used_size <= view.size(),
+        "prepared-right use needs {used_size} limbs but the view contains {}",
+        view.size()
+    );
+    let required = BE::bytes_of_cnv_pvec_right(view.n(), view.cols(), view.size());
+    assert!(
+        BE::len_bytes_ref(DataView::data(&view)) >= required,
+        "prepared-right backing is shorter than its declared shape"
+    );
+}
+
+fn assert_batch_scratch<BE: Backend>(scratch: &ScratchArena<'_, BE>, required: usize, op: &str) {
+    assert!(
+        scratch.available() >= required,
+        "scratch.available(): {} < {op}: {required}",
+        scratch.available()
+    );
+}
+
+fn prepared_right_layout<R: GLWEInfos>(res: &R, prepared_right_size: usize) -> GLWELayout {
+    let size = u32::try_from(prepared_right_size).expect("prepared-right limb count exceeds u32");
+    let k = res
+        .base2k()
+        .as_u32()
+        .checked_mul(size)
+        .expect("prepared-right precision overflows u32");
+    GLWELayout {
+        n: res.n(),
+        base2k: res.base2k(),
+        k: TorusPrecision(k),
+        rank: res.rank(),
+    }
 }
 
 impl<BE: Backend> GLWETensoringDefault<BE> for Module<BE>
@@ -705,7 +896,8 @@ where
         + VecZnxNegateBackend<BE>
         + GGLWEProductDefault<BE>
         + VecZnxBigAddSmallAssign<BE>
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + VecZnxZeroBackend<BE>,
 {
     fn glwe_tensor_square_apply_tmp_bytes_default<R, A>(&self, res: &R, a: &A) -> usize
     where
@@ -786,6 +978,36 @@ where
         let lvl_2: usize = lvl_2a.max(lvl_2b);
 
         lvl_0 + lvl_1.max(lvl_2)
+    }
+
+    fn glwe_tensor_relinearize_bound_tmp_bytes_default<R, A>(&self, res: &R, a: &A, use_: &GGLWEActiveUse) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+    {
+        let layout = use_.logical_layout();
+        assert_eq!(self.n() as u32, res.n());
+        assert_eq!(self.n() as u32, a.n());
+        assert_eq!(self.n() as u32, layout.n());
+        assert_eq!(
+            a.k(),
+            use_.input_k(),
+            "tensor operand precision differs from its resolved key use"
+        );
+
+        let cols: usize = layout.rank_out().as_usize() + 1;
+        let pairs: usize = layout.rank_in().as_usize();
+        let a_dft_size: usize = use_.input_size();
+        let output_size = bound_output_size::<BE, _>(res, &GGLWEUse::Active(*use_));
+
+        let lvl_0: usize = self.bytes_of_vec_znx_dft(pairs, a_dft_size);
+        let conv: usize = BE::bytes_of_vec_znx(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes();
+        let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(cols, output_size);
+        let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_default(output_size, a_dft_size, use_);
+        let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(cols, output_size)
+            + conv.max(BE::bytes_of_vec_znx(self.n(), 1, res.size()) + self.vec_znx_big_normalize_tmp_bytes());
+        let lvl_1_main: usize = lvl_1_res_dft + lvl_1_gglwe_product.max(lvl_1_big_norm);
+        lvl_0 + conv.max(lvl_1_main)
     }
 
     fn glwe_tensor_relinearize_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, tsk: &B) -> usize
@@ -892,6 +1114,94 @@ where
                 }
             }
         }
+        let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self, cols, output_size);
+        {
+            let mut res_big_backend = res_big.to_backend_mut();
+            let mut res_dft_backend = res_dft.to_backend_mut();
+            for i in 0..cols {
+                self.vec_znx_idft_apply_tmpa(&mut res_big_backend, i, &mut res_dft_backend, i);
+            }
+        }
+
+        {
+            let (mut a_conv, mut scratch_norm) = scratch_3.borrow().take_vec_znx_scratch(self.n(), 1, a_dft_size);
+            for i in 0..cols {
+                let mut scratch_iter = scratch_norm.borrow();
+                self.vec_znx_normalize(&mut a_conv, key_base2k, 0, 0, &a_backend.data, a_base2k, i, &mut scratch_iter);
+                let a_conv_ref = a_conv.to_backend_ref();
+                self.vec_znx_big_add_small_assign(&mut res_big, i, &a_conv_ref, 0);
+            }
+        }
+
+        {
+            let (mut res_tmp, mut scratch_norm) = scratch_3.borrow().take_vec_znx_scratch(self.n(), 1, res.size());
+            for i in 0..(res.rank() + 1).into() {
+                let res_big_ref = res_big.to_backend_ref();
+                let mut scratch_iter = scratch_norm.borrow();
+                self.vec_znx_big_normalize(&mut res_tmp, res_base2k, 0, 0, &res_big_ref, key_base2k, i, &mut scratch_iter);
+                let mut res_backend = res.to_backend_mut();
+                let res_tmp_ref = res_tmp.to_backend_ref();
+                self.vec_znx_copy_backend(&mut res_backend.data, i, &res_tmp_ref, 0);
+            }
+        }
+    }
+
+    fn glwe_tensor_relinearize_bound_default<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        bound: &GGLWEPreparedBound<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        let use_ = bound.use_();
+        let layout = use_.logical_layout();
+        let scratch = scratch.borrow();
+        let required = self.glwe_tensor_relinearize_bound_tmp_bytes_default(res, a, use_);
+        assert!(
+            scratch.available() >= required,
+            "scratch.available(): {} < bound-aware tensor relinearization: {required}",
+            scratch.available(),
+        );
+
+        let a_base2k: usize = a.base2k().into();
+        let key_base2k: usize = layout.base2k().into();
+        let res_base2k: usize = res.base2k().into();
+        let a_backend = a.to_backend_ref();
+
+        assert_eq!(res.rank(), layout.rank_out());
+        assert_eq!(a.rank(), layout.rank_out());
+        let cols: usize = layout.rank_out().as_usize() + 1;
+        let pairs: usize = layout.rank_in().as_usize();
+        let a_dft_size: usize = use_.input_size();
+        let output_size = bound_output_size::<BE, _>(res, &GGLWEUse::Active(*use_));
+
+        let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(self, pairs, a_dft_size);
+        {
+            let (mut a_conv, mut scratch_norm) = scratch.borrow().take_vec_znx_scratch(self.n(), 1, a_dft_size);
+            for i in 0..pairs {
+                let mut scratch_iter = scratch_norm.borrow();
+                self.vec_znx_normalize(
+                    &mut a_conv,
+                    key_base2k,
+                    0,
+                    0,
+                    &a_backend.data,
+                    a_base2k,
+                    cols + i,
+                    &mut scratch_iter,
+                );
+                let a_conv_ref = a_conv.to_backend_ref();
+                self.vec_znx_dft_apply(1, 0, &mut a_dft, i, &a_conv_ref, 0);
+            }
+        }
+
+        let (mut res_dft, mut scratch_2) = scratch.borrow().take_vec_znx_dft_scratch(self, cols, output_size);
+        let a_dft_ref = a_dft.to_backend_ref();
+        self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, bound, 1, &mut scratch_2);
+
         let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self, cols, output_size);
         {
             let mut res_big_backend = res_big.to_backend_mut();
@@ -1061,6 +1371,10 @@ where
         B: GLWEToBackendRef<BE> + GLWEInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
+        if tensor_infos.k().as_u32() == 0 {
+            self.glwe_zero_default(res);
+            return;
+        }
         let arena = scratch.borrow();
         let (mut tensor, mut arena) = arena.take_glwe_tensor_scratch(tensor_infos);
         BE::glwe_tensor_apply(self, cnv_offset, &mut tensor, a, b, &mut arena);
@@ -1080,6 +1394,10 @@ where
         I: GLWEInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
+        if tensor_infos.k().as_u32() == 0 {
+            self.glwe_zero_default(res);
+            return;
+        }
         let arena = scratch.borrow();
         let (mut tensor, mut arena) = arena.take_glwe_tensor_scratch(tensor_infos);
         BE::glwe_tensor_square_apply(self, cnv_offset, &mut tensor, &*res, &mut arena);
@@ -1102,6 +1420,10 @@ where
         BP: CnvPVecRToBackendRef<BE>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
+        if tensor_infos.k().as_u32() == 0 {
+            self.glwe_zero_default(res);
+            return;
+        }
         let arena = scratch.borrow();
         let (mut tensor, mut arena) = arena.take_glwe_tensor_scratch(tensor_infos);
         BE::glwe_tensor_apply_prepared_right(self, cnv_offset, &mut tensor, &*res, b_prep, b_size, &mut arena);
@@ -1123,16 +1445,20 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
+        if tensor_infos.k().as_u32() == 0 {
+            self.glwe_zero_default(res);
+            return;
+        }
         let arena = scratch.borrow();
         let (mut tensor, mut arena) = arena.take_glwe_tensor_scratch(tensor_infos);
         BE::glwe_tensor_square_apply(self, cnv_offset, &mut tensor, a, &mut arena);
         BE::glwe_tensor_relinearize(self, res, &tensor, tsk, &mut arena);
     }
 
-    fn glwe_tensor_apply_relinearize_batch_tmp_bytes_default<R, I, A, B, T>(
+    fn glwe_tensor_apply_relinearize_batch_tmp_bytes_default<R, I, A, B>(
         &self,
         items: &[TensorApplyRelinearizeItem<&R, &I, &A, &B>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         BE: GLWETensoringImpl<BE>,
@@ -1140,23 +1466,27 @@ where
         I: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
-        T: GGLWEInfos,
     {
+        assert_eq!(items.len(), uses.len(), "one resolved use is required per tensor batch lane");
+        for (item, use_) in items.iter().zip(uses) {
+            validate_tensor_apply_lane(item.res, item.tensor_infos, item.a, item.b, item.cnv_offset, use_);
+        }
         items
             .iter()
-            .map(|item| {
+            .zip(uses)
+            .map(|(item, use_)| {
                 self.glwe_tensor_bytes_of_from_infos(item.tensor_infos)
                     + BE::glwe_tensor_apply_tmp_bytes(self, item.tensor_infos, item.a, item.b)
-                        .max(BE::glwe_tensor_relinearize_tmp_bytes(self, item.res, item.tensor_infos, tsk))
+                        .max(self.glwe_tensor_relinearize_bound_tmp_bytes_default(item.res, item.tensor_infos, use_))
             })
             .max()
             .unwrap_or(0)
     }
 
-    fn glwe_tensor_apply_relinearize_batch_default<R, I, A, B, T>(
+    fn glwe_tensor_apply_relinearize_batch_default<R, I, A, B>(
         &self,
         items: &mut [TensorApplyRelinearizeItem<&mut R, &I, &A, &B>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: GLWETensoringImpl<BE>,
@@ -1164,168 +1494,242 @@ where
         I: GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        for item in items.iter_mut() {
-            BE::glwe_tensor_apply_relinearize(
-                self,
-                item.cnv_offset,
-                &mut *item.res,
-                item.tensor_infos,
-                item.a,
-                item.b,
-                tsk,
-                &mut scratch.borrow(),
-            );
+        assert_eq!(
+            items.len(),
+            bounds.len(),
+            "one prepared bound is required per tensor batch lane"
+        );
+        for (item, bound) in items.iter().zip(bounds) {
+            validate_tensor_apply_lane(&*item.res, item.tensor_infos, item.a, item.b, item.cnv_offset, bound.use_());
+        }
+        let required = items
+            .iter()
+            .zip(bounds)
+            .map(|(item, bound)| {
+                self.glwe_tensor_bytes_of_from_infos(item.tensor_infos)
+                    + BE::glwe_tensor_apply_tmp_bytes(self, item.tensor_infos, item.a, item.b)
+                        .max(self.glwe_tensor_relinearize_bound_tmp_bytes_default(&*item.res, item.tensor_infos, bound.use_()))
+            })
+            .max()
+            .unwrap_or(0);
+        assert_batch_scratch(scratch, required, "glwe_tensor_apply_relinearize_batch");
+        for (item, bound) in items.iter_mut().zip(bounds) {
+            let arena = scratch.borrow();
+            let (mut tensor, mut arena) = arena.take_glwe_tensor_scratch(item.tensor_infos);
+            BE::glwe_tensor_apply(self, item.cnv_offset, &mut tensor, item.a, item.b, &mut arena);
+            self.glwe_tensor_relinearize_bound_default(&mut *item.res, &tensor, bound.as_gglwe_bound(), &mut arena);
         }
     }
 
-    fn glwe_tensor_square_apply_relinearize_batch_tmp_bytes_default<R, I, A, T>(
+    fn glwe_tensor_square_apply_relinearize_batch_tmp_bytes_default<R, I, A>(
         &self,
         items: &[TensorSquareApplyRelinearizeItem<&R, &I, &A>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         BE: GLWETensoringImpl<BE>,
         R: GLWEInfos,
         I: GLWEInfos,
         A: GLWEInfos,
-        T: GGLWEInfos,
     {
+        assert_eq!(items.len(), uses.len(), "one resolved use is required per tensor batch lane");
+        for (item, use_) in items.iter().zip(uses) {
+            validate_tensor_square_lane(item.res, item.tensor_infos, item.a, item.cnv_offset, use_);
+        }
         items
             .iter()
-            .map(|item| {
+            .zip(uses)
+            .map(|(item, use_)| {
                 self.glwe_tensor_bytes_of_from_infos(item.tensor_infos)
                     + BE::glwe_tensor_square_apply_tmp_bytes(self, item.tensor_infos, item.a)
-                        .max(BE::glwe_tensor_relinearize_tmp_bytes(self, item.res, item.tensor_infos, tsk))
+                        .max(self.glwe_tensor_relinearize_bound_tmp_bytes_default(item.res, item.tensor_infos, use_))
             })
             .max()
             .unwrap_or(0)
     }
 
-    fn glwe_tensor_square_apply_relinearize_batch_default<R, I, A, T>(
+    fn glwe_tensor_square_apply_relinearize_batch_default<R, I, A>(
         &self,
         items: &mut [TensorSquareApplyRelinearizeItem<&mut R, &I, &A>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: GLWETensoringImpl<BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         I: GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        for item in items.iter_mut() {
-            BE::glwe_tensor_square_apply_relinearize(
-                self,
-                item.cnv_offset,
-                &mut *item.res,
-                item.tensor_infos,
-                item.a,
-                tsk,
-                &mut scratch.borrow(),
-            );
+        assert_eq!(
+            items.len(),
+            bounds.len(),
+            "one prepared bound is required per tensor batch lane"
+        );
+        for (item, bound) in items.iter().zip(bounds) {
+            validate_tensor_square_lane(&*item.res, item.tensor_infos, item.a, item.cnv_offset, bound.use_());
+        }
+        let required = items
+            .iter()
+            .zip(bounds)
+            .map(|(item, bound)| {
+                self.glwe_tensor_bytes_of_from_infos(item.tensor_infos)
+                    + BE::glwe_tensor_square_apply_tmp_bytes(self, item.tensor_infos, item.a)
+                        .max(self.glwe_tensor_relinearize_bound_tmp_bytes_default(&*item.res, item.tensor_infos, bound.use_()))
+            })
+            .max()
+            .unwrap_or(0);
+        assert_batch_scratch(scratch, required, "glwe_tensor_square_apply_relinearize_batch");
+        for (item, bound) in items.iter_mut().zip(bounds) {
+            let arena = scratch.borrow();
+            let (mut tensor, mut arena) = arena.take_glwe_tensor_scratch(item.tensor_infos);
+            BE::glwe_tensor_square_apply(self, item.cnv_offset, &mut tensor, item.a, &mut arena);
+            self.glwe_tensor_relinearize_bound_default(&mut *item.res, &tensor, bound.as_gglwe_bound(), &mut arena);
         }
     }
 
-    fn glwe_tensor_square_relinearize_assign_batch_tmp_bytes_default<R, I, T>(
+    fn glwe_tensor_square_relinearize_assign_batch_tmp_bytes_default<R, I>(
         &self,
         items: &[TensorSquareRelinearizeAssignItem<&R, &I>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         BE: GLWETensoringImpl<BE>,
         R: GLWEInfos,
         I: GLWEInfos,
-        T: GGLWEInfos,
     {
+        assert_eq!(items.len(), uses.len(), "one resolved use is required per tensor batch lane");
+        for (item, use_) in items.iter().zip(uses) {
+            validate_tensor_square_assign_lane(item.res, item.tensor_infos, item.cnv_offset, use_);
+        }
         items
             .iter()
-            .map(|item| {
+            .zip(uses)
+            .map(|(item, use_)| {
                 self.glwe_tensor_bytes_of_from_infos(item.tensor_infos)
                     + BE::glwe_tensor_square_apply_tmp_bytes(self, item.tensor_infos, item.res)
-                        .max(BE::glwe_tensor_relinearize_tmp_bytes(self, item.res, item.tensor_infos, tsk))
+                        .max(self.glwe_tensor_relinearize_bound_tmp_bytes_default(item.res, item.tensor_infos, use_))
             })
             .max()
             .unwrap_or(0)
     }
 
-    fn glwe_tensor_square_relinearize_assign_batch_default<R, I, T>(
+    fn glwe_tensor_square_relinearize_assign_batch_default<R, I>(
         &self,
         items: &mut [TensorSquareRelinearizeAssignItem<&mut R, &I>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: GLWETensoringImpl<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         I: GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        for item in items.iter_mut() {
-            BE::glwe_tensor_square_relinearize_assign(
-                self,
-                item.cnv_offset,
-                &mut *item.res,
-                item.tensor_infos,
-                tsk,
-                &mut scratch.borrow(),
-            );
+        assert_eq!(
+            items.len(),
+            bounds.len(),
+            "one prepared bound is required per tensor batch lane"
+        );
+        for (item, bound) in items.iter().zip(bounds) {
+            validate_tensor_square_assign_lane(&*item.res, item.tensor_infos, item.cnv_offset, bound.use_());
+        }
+        let required = items
+            .iter()
+            .zip(bounds)
+            .map(|(item, bound)| {
+                self.glwe_tensor_bytes_of_from_infos(item.tensor_infos)
+                    + BE::glwe_tensor_square_apply_tmp_bytes(self, item.tensor_infos, &*item.res)
+                        .max(self.glwe_tensor_relinearize_bound_tmp_bytes_default(&*item.res, item.tensor_infos, bound.use_()))
+            })
+            .max()
+            .unwrap_or(0);
+        assert_batch_scratch(scratch, required, "glwe_tensor_square_relinearize_assign_batch");
+        for (item, bound) in items.iter_mut().zip(bounds) {
+            let arena = scratch.borrow();
+            let (mut tensor, mut arena) = arena.take_glwe_tensor_scratch(item.tensor_infos);
+            BE::glwe_tensor_square_apply(self, item.cnv_offset, &mut tensor, &*item.res, &mut arena);
+            self.glwe_tensor_relinearize_bound_default(&mut *item.res, &tensor, bound.as_gglwe_bound(), &mut arena);
         }
     }
 
-    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes_default<R, I, BP, T>(
+    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes_default<R, I, BP>(
         &self,
         items: &[TensorPreparedRightRelinearizeAssignItem<&R, &I, &BP>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         BE: GLWETensoringImpl<BE>,
         R: GLWEInfos,
         I: GLWEInfos,
-        T: GGLWEInfos,
     {
+        assert_eq!(items.len(), uses.len(), "one resolved use is required per tensor batch lane");
+        for (item, use_) in items.iter().zip(uses) {
+            validate_tensor_prepared_right_lane(item.res, item.tensor_infos, item.cnv_offset, item.prepared_right_size, use_);
+        }
         items
             .iter()
-            .map(|item| {
+            .zip(uses)
+            .map(|(item, use_)| {
                 // Prepared-right stays within the ordinary-apply bound for the
                 // equivalent unprepared right operand.
-                let right = GLWELayout {
-                    n: item.res.n(),
-                    base2k: item.res.base2k(),
-                    k: TorusPrecision(item.res.base2k().as_u32() * item.prepared_right_size as u32),
-                    rank: item.res.rank(),
-                };
+                let right = prepared_right_layout(item.res, item.prepared_right_size);
                 self.glwe_tensor_bytes_of_from_infos(item.tensor_infos)
                     + BE::glwe_tensor_apply_tmp_bytes(self, item.tensor_infos, item.res, &right)
-                        .max(BE::glwe_tensor_relinearize_tmp_bytes(self, item.res, item.tensor_infos, tsk))
+                        .max(self.glwe_tensor_relinearize_bound_tmp_bytes_default(item.res, item.tensor_infos, use_))
             })
             .max()
             .unwrap_or(0)
     }
 
-    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_default<R, I, BP, T>(
+    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_default<R, I, BP>(
         &self,
         items: &mut [TensorPreparedRightRelinearizeAssignItem<&mut R, &I, &BP>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: GLWETensoringImpl<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         I: GLWEInfos,
         BP: CnvPVecRToBackendRef<BE>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        for item in items.iter_mut() {
-            BE::glwe_tensor_apply_prepared_right_relinearize_assign(
+        assert_eq!(
+            items.len(),
+            bounds.len(),
+            "one prepared bound is required per tensor batch lane"
+        );
+        for (item, bound) in items.iter().zip(bounds) {
+            validate_tensor_prepared_right_lane(
+                &*item.res,
+                item.tensor_infos,
+                item.cnv_offset,
+                item.prepared_right_size,
+                bound.use_(),
+            );
+            validate_prepared_right_backing::<BE, _, _>(&*item.res, item.prepared_right, item.prepared_right_size);
+        }
+        let required = items
+            .iter()
+            .zip(bounds)
+            .map(|(item, bound)| {
+                let right = prepared_right_layout(&*item.res, item.prepared_right_size);
+                self.glwe_tensor_bytes_of_from_infos(item.tensor_infos)
+                    + BE::glwe_tensor_apply_tmp_bytes(self, item.tensor_infos, &*item.res, &right)
+                        .max(self.glwe_tensor_relinearize_bound_tmp_bytes_default(&*item.res, item.tensor_infos, bound.use_()))
+            })
+            .max()
+            .unwrap_or(0);
+        assert_batch_scratch(scratch, required, "glwe_tensor_apply_prepared_right_relinearize_assign_batch");
+        for (item, bound) in items.iter_mut().zip(bounds) {
+            let arena = scratch.borrow();
+            let (mut tensor, mut arena) = arena.take_glwe_tensor_scratch(item.tensor_infos);
+            BE::glwe_tensor_apply_prepared_right(
                 self,
                 item.cnv_offset,
-                &mut *item.res,
-                item.tensor_infos,
+                &mut tensor,
+                &*item.res,
                 item.prepared_right,
                 item.prepared_right_size,
-                tsk,
-                &mut scratch.borrow(),
+                &mut arena,
             );
+            self.glwe_tensor_relinearize_bound_default(&mut *item.res, &tensor, bound.as_gglwe_bound(), &mut arena);
         }
     }
 }

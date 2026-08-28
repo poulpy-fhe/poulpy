@@ -27,12 +27,112 @@ use crate::{
     LinearTransformation, LinearTransformationBabySteps, LinearTransformationGiantStep, LinearTransformationLayout,
     LinearTransformationPrepared, LinearTransformationStrategy,
     layouts::{
-        Base2K, Degree, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret,
-        GLWESecretPreparedFactory, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        Base2K, Degree, Dsize, GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyLayoutHelper,
+        GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        TorusPrecision,
         prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESecretPrepared, PreparedDiagonal},
     },
     msb_mask_bottom_limb,
 };
+
+struct PrecisionDependentLayout {
+    key: GLWEAutomorphismKeyLayout,
+    threshold: TorusPrecision,
+    low_dsize: Dsize,
+}
+
+impl GLWEAutomorphismKeyLayoutHelper<GLWEAutomorphismKeyLayout> for PrecisionDependentLayout {
+    fn get_automorphism_key_layout_for(&self, _p: i64, k: TorusPrecision) -> crate::Result<(&GLWEAutomorphismKeyLayout, Dsize)> {
+        Ok((
+            &self.key,
+            if k < self.threshold {
+                self.low_dsize
+            } else {
+                self.key.effective_dsize()
+            },
+        ))
+    }
+}
+
+/// A whole-chain representative can be dense at its high proxy precision even
+/// though the same physical key is used through strided rows at a lower precision.
+pub fn test_glwe_linear_transformation_bound_covers_lower_strided_key<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: CnvPVecAlloc<BE> + GLWELinearTransformations<BE>,
+{
+    let base2k = params.base2k;
+    let rank = 1usize;
+    let high_k = 16 * base2k;
+    let low_k = 5 * base2k;
+    let key = GLWEAutomorphismKeyLayout {
+        n: module.n().into(),
+        base2k: base2k.into(),
+        dnum: 8usize.into(),
+        k_aux: (2 * base2k + module.log_n()).into(),
+        rank: rank.into(),
+        dsize: 2usize.into(),
+    };
+    let helper = PrecisionDependentLayout {
+        key,
+        threshold: high_k.into(),
+        low_dsize: Dsize(4),
+    };
+    let src_high = GLWELayout {
+        n: module.n().into(),
+        base2k: base2k.into(),
+        k: high_k.into(),
+        rank: rank.into(),
+    };
+    let src_low = GLWELayout {
+        n: module.n().into(),
+        base2k: base2k.into(),
+        k: low_k.into(),
+        rank: rank.into(),
+    };
+    let pt = GLWELayout {
+        n: module.n().into(),
+        base2k: base2k.into(),
+        k: (2 * base2k).into(),
+        rank: 0usize.into(),
+    };
+    let layout = LinearTransformationLayout {
+        indexes: vec![0, 1, 2, 3],
+        slots: module.n(),
+        strategy: LinearTransformationStrategy::Bsgs { giant_step: 2 },
+    };
+    let lt: LinearTransformationPrepared<BE> = LinearTransformation::alloc_prepared(module, &layout, &pt);
+
+    let exact_lazy = module.glwe_eval_linear_transformation_tmp_bytes(&src_low, &src_low, &lt, &helper);
+    let bound_lazy = module.glwe_eval_linear_transformation_bound_tmp_bytes(&src_high, &src_high, &pt, &helper.key);
+    assert!(
+        bound_lazy >= exact_lazy,
+        "whole-chain lazy bound {bound_lazy} < lower-precision exact {exact_lazy}"
+    );
+
+    let dst_high = GLWELayout {
+        n: module.n().into(),
+        base2k: (base2k + 1).into(),
+        k: high_k.into(),
+        rank: rank.into(),
+    };
+    let dst_low = GLWELayout {
+        n: module.n().into(),
+        base2k: (base2k + 1).into(),
+        k: low_k.into(),
+        rank: rank.into(),
+    };
+    let exact_fallback = module.glwe_eval_linear_transformation_tmp_bytes(&dst_low, &src_low, &lt, &helper);
+    let bound_fallback = module.glwe_eval_linear_transformation_bound_tmp_bytes(&dst_high, &src_high, &pt, &helper.key);
+    assert!(
+        bound_fallback >= exact_fallback,
+        "whole-chain fallback bound {bound_fallback} < lower-precision exact {exact_fallback}"
+    );
+}
 
 pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,

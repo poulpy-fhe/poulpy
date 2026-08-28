@@ -55,6 +55,7 @@ fn gadget<P: GGLWEInfos>(key: &P, op: &'static str) -> Result<Gadget> {
         ));
     }
     let total_k: usize = add(mul(dnum, digit, "stored precision", op)?, k_aux, "total_k", op)?;
+    narrow(total_k, "total precision", op)?;
     Ok(Gadget {
         base2k,
         dsize,
@@ -70,18 +71,35 @@ fn narrow(v: usize, what: &str, op: &'static str) -> Result<u32> {
 }
 
 /// Tie-break tuple shared by registration and dispatch selection.
-type PhysicalOrder = (usize, u32, u32, u32, u32, usize, usize);
+type PhysicalOrder = (u128, u32, u32, u32, u32, usize, usize);
 
-fn physical_order<P: GGLWEInfos>(key: &P, index: usize) -> PhysicalOrder {
-    (
-        key.limb_count(),
+/// Backend-independent matrix material, widened so adversarial public layout
+/// metadata cannot wrap the deterministic registry ordering.
+fn material<P: GGLWEInfos>(key: &P, op: &'static str) -> Result<u128> {
+    let cols_out: u128 = u128::from(key.rank_out().as_u32())
+        .checked_add(1)
+        .ok_or_else(|| err(op, "output column count overflows u128".to_string()))?;
+    [
+        u128::from(key.dnum().as_u32()),
+        u128::from(key.rank_in().as_u32()),
+        cols_out,
+        key.max_size() as u128,
+    ]
+    .into_iter()
+    .try_fold(1u128, u128::checked_mul)
+    .ok_or_else(|| err(op, "GGLWE material score overflows u128".to_string()))
+}
+
+fn physical_order<P: GGLWEInfos>(key: &P, index: usize, op: &'static str) -> Result<PhysicalOrder> {
+    Ok((
+        material(key, op)?,
         key.k().as_u32(),
         key.dsize().as_u32(),
         key.dnum().as_u32(),
         key.k_aux().as_u32(),
         key.max_size(),
         index,
-    )
+    ))
 }
 
 /// Whether `requested` is exactly a whole-row subset of `parent`.
@@ -197,9 +215,8 @@ pub struct GGLWEActiveUse {
     physical_base2k: Base2K,
     physical_dsize: Dsize,
     physical_k_aux: TorusPrecision,
-    /// Whether the key has enough digits for the whole input precision. A use
-    /// that does not cover it is still valid: the product decomposes the digits
-    /// the key has. Policy dispatch refuses such a key; execution does not.
+    /// Whether the key has enough digits for the whole input precision. A partial
+    /// raw-key use is valid, while registry/helper selection requires coverage.
     covers_input: bool,
 }
 
@@ -296,7 +313,7 @@ pub trait GGLWEBind: GGLWEInfos {
     }
 
     /// [`Self::bind_for`], refusing a key that cannot decompose the whole input
-    /// precision. For callers that must not silently drop the low digits.
+    /// precision. Use this for registry/helper selection that must not drop digits.
     fn bind_covering_for(&self, input_k: TorusPrecision) -> Result<GGLWEUse>
     where
         Self: Sized,
@@ -305,7 +322,12 @@ pub trait GGLWEBind: GGLWEInfos {
         if let GGLWEUse::Active(active) = &use_
             && !active.covers_input
         {
-            let digit: usize = active.logical_layout.dsize().as_usize() * self.base2k().as_usize();
+            let digit: usize = mul(
+                active.logical_layout.dsize().as_usize(),
+                self.base2k().as_usize(),
+                "digit",
+                "bind_covering_for",
+            )?;
             return Err(err(
                 "bind_covering_for",
                 format!(
@@ -337,6 +359,13 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
     if d == 0 {
         return Err(err(OP, "effective_dsize must be non-zero".to_string()));
     }
+    // Zero precision reads no row and therefore does not require the policy's
+    // conventional dsize to be realizable by the physical decomposition. Keep
+    // validating the physical gadget and the non-zero effective dsize above,
+    // but do not reject an otherwise valid key on row geometry that is unused.
+    if input_k.as_usize() == 0 {
+        return Ok(Some(GGLWEUse::Empty));
+    }
     if !d.is_multiple_of(p.dsize) {
         return Ok(None);
     }
@@ -345,10 +374,9 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
     if p.total_k < digit {
         return Ok(None);
     }
-    // The stored decomposition is realized as stored: every row is available and
-    // the guard is exactly `k_aux`, which may be narrower than one digit.
-    // Coarsening is what has to reserve a full coarse digit of padding, so the
-    // capacity rule below applies only when rows are actually being skipped.
+    // The stored decomposition uses every stored row and its exact `k_aux`.
+    // Coarsening must reserve a full coarse digit of padding, so the capacity
+    // rule below applies only when rows are actually being skipped.
     let (r_eff, a_eff): (usize, usize) = if s == 1 {
         (p.dnum, p.k_aux)
     } else {
@@ -358,19 +386,12 @@ pub(crate) fn resolve_gglwe_key_use<P: GGLWEInfos>(
         let r: usize = (p.dnum / s).min((p.total_k / digit) - 1);
         (r, p.total_k - mul(r, digit, "coarse precision", OP)?)
     };
-    // Zero precision reads nothing. It is the only input that resolves to an
-    // empty use: a positive precision the key cannot serve at all is an
-    // unrealizable use, not an empty one.
-    if input_k.as_usize() == 0 {
-        return Ok(Some(GGLWEUse::Empty));
-    }
     let requested: usize = input_k.as_usize().div_ceil(digit);
     if r_eff == 0 {
         return Ok(None);
     }
-    // A key with fewer digits than the input has decomposes the ones it has;
-    // the dense kernels already stop at `min(rows, a.size())`. Dispatch and
-    // direct binding both refuse such a key, through `covers_input`.
+    // Raw-key execution may intentionally omit disposable low/auxiliary digits;
+    // registry and helper selection reject that case through `covers_input`.
     let covers_input: bool = requested <= r_eff;
     let r_active: usize = requested.min(r_eff);
 
@@ -442,7 +463,7 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWEKeyRegistryBuilder<Id, K> {
             if entry_id != id || !gglwe_is_whole_row_subset(key, requested)? {
                 continue;
             }
-            let order: PhysicalOrder = physical_order(key, i);
+            let order: PhysicalOrder = physical_order(key, i, "GGLWEKeyRegistryBuilder::find_subsuming")?;
             if best.as_ref().is_none_or(|(b, _)| order < *b) {
                 best = Some((order, i));
             }
@@ -501,11 +522,16 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWEKeyRegistryBuilder<Id, K> {
             }
             let mut row: Vec<Option<usize>> = Vec::with_capacity(policy.sizes());
             for size in 0..policy.sizes() {
-                row.push(match u32::try_from(size * policy.base2k().as_usize()) {
-                    // No `k` has this size, so the cell is unreachable.
-                    Err(_) => None,
-                    Ok(k) => self.select(id, TorusPrecision(k), policy.dsize_by_size[size])?,
-                });
+                row.push(
+                    match size
+                        .checked_mul(policy.base2k().as_usize())
+                        .and_then(|k| u32::try_from(k).ok())
+                    {
+                        // No `k` has this size, so the cell is unreachable.
+                        None => None,
+                        Some(k) => self.select(id, TorusPrecision(k), policy.dsize_by_size[size])?,
+                    },
+                );
             }
             dispatch.insert(id.clone(), row.into_boxed_slice());
         }
@@ -519,7 +545,7 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWEKeyRegistryBuilder<Id, K> {
 
     /// Least-material key of `id` able to realize `d` at exact precision `k`.
     fn select(&self, id: &Id, k: TorusPrecision, d: Dsize) -> Result<Option<usize>> {
-        let mut best: Option<((usize, PhysicalOrder), usize)> = None;
+        let mut best: Option<((u128, PhysicalOrder), usize)> = None;
         for (i, (entry_id, key)) in self.entries.iter().enumerate() {
             if entry_id != id {
                 continue;
@@ -532,8 +558,10 @@ impl<Id: Clone + Eq + Hash, K: GGLWEInfos> GGLWEKeyRegistryBuilder<Id, K> {
                 continue;
             }
             // Zero precision reads nothing, so every candidate ties at zero.
-            let material: usize = use_.active().map_or(0, |a| a.logical_layout.limb_count());
-            let order: (usize, PhysicalOrder) = (material, physical_order(key, i));
+            let active_material: u128 = use_
+                .active()
+                .map_or(Ok(0), |a| material(a.logical_layout(), "GGLWEKeyRegistryBuilder::select"))?;
+            let order: (u128, PhysicalOrder) = (active_material, physical_order(key, i, "GGLWEKeyRegistryBuilder::select")?);
             if best.as_ref().is_none_or(|(b, _)| order < *b) {
                 best = Some((order, i));
             }
@@ -727,6 +755,20 @@ mod tests {
         assert!(use_.active().is_none());
     }
 
+    #[test]
+    fn registry_zero_precision_ignores_conventional_dsize_geometry() {
+        let mut builder: GGLWEKeyRegistryBuilder<(), GGLWELayout> = GGLWEKeyRegistryBuilder::new();
+        builder.register((), normal(8, 4)).unwrap();
+
+        // Entry zero is only a convention. It need not divide the physical
+        // key's dsize because a zero-precision use reads no rows.
+        let registry = builder.finish(policy(&[1, 8])).unwrap();
+        let (key, dsize) = registry.key_for(&(), TorusPrecision(0)).unwrap();
+        assert_eq!(key.dsize(), Dsize(8));
+        assert_eq!(dsize, Dsize(1));
+        assert_eq!(key.with_dsize(dsize).bind_for(TorusPrecision(0)).unwrap(), GGLWEUse::Empty);
+    }
+
     // Acceptance 4: a native-dsize use is a step-1 identity over r_active rows.
     #[test]
     fn native_dsize_reads_active_rows_only() {
@@ -763,10 +805,11 @@ mod tests {
         };
         assert_eq!(rows(3, 16), vec![1]);
         assert_eq!(rows(6, 32), vec![1, 3]);
-        // Row capacity is there but padding is not: one digit short. The use is
-        // still valid, it just does not cover the precision, so dispatch skips
-        // this key while execution would decompose the digits it has.
-        let short: GGLWEActiveUse = resolve_gglwe_key_use(&normal(8, 4), TorusPrecision(32 * K), Dsize(16))
+        // Row capacity is there but padding is not: one digit short. A raw-key
+        // product may intentionally use the available prefix, while registry or
+        // helper selection must require complete coverage.
+        let physical = normal(8, 4);
+        let short: GGLWEActiveUse = resolve_gglwe_key_use(&physical, TorusPrecision(32 * K), Dsize(16))
             .unwrap()
             .unwrap()
             .active()
@@ -774,6 +817,9 @@ mod tests {
             .expect("positive precision");
         assert!(!short.covers_input);
         assert_eq!(short.logical_layout.dnum, Dnum(1));
+        let wrapped = physical.with_dsize(Dsize(16));
+        assert!(wrapped.bind_for(TorusPrecision(32 * K)).is_ok());
+        assert!(wrapped.bind_covering_for(TorusPrecision(32 * K)).is_err());
     }
 
     // Acceptance 10.
@@ -860,5 +906,13 @@ mod tests {
 
         // A mapped value must keep the exact physical infos.
         assert!(registry.try_map_values(|_, _| Ok(normal(1, 1))).is_err());
+    }
+
+    #[test]
+    fn registration_rejects_total_precision_outside_the_layout_domain() {
+        let invalid = layout(1, u32::MAX, TorusPrecision(K));
+        let mut builder: GGLWEKeyRegistryBuilder<(), GGLWELayout> = GGLWEKeyRegistryBuilder::new();
+        assert!(builder.register((), invalid).is_err());
+        assert!(gglwe_is_whole_row_subset(&invalid, &normal(1, 1)).is_err());
     }
 }

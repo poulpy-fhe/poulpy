@@ -9,19 +9,19 @@
 
 use crate::api::CKKSEncodingOps;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use poulpy_core::layouts::{
     Diagonals, Dsize, Evaluate, GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, LWEInfos,
     LinearTransformationStrategy, TorusPrecision,
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchArena},
+    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchArena, ScratchOwned, galois_element},
 };
 
 use crate::{
-    api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationPrepared},
+    api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationBabySteps, LinearTransformationPrepared},
     layouts::{CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
@@ -30,6 +30,7 @@ use crate::{
             TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
             gen_atk, gen_sk_with_raw, test_vector_1,
         },
+        polynomial_evaluation::assert_ct_identical,
     },
 };
 
@@ -223,29 +224,74 @@ where
 /// Key set that records the precision each lookup was made at.
 struct QueryLog<K> {
     keys: HashMap<i64, K>,
-    seen: RefCell<Vec<TorusPrecision>>,
+    seen: RefCell<Vec<(i64, TorusPrecision)>>,
 }
 
 impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for QueryLog<K> {
     fn get_automorphism_key_for(&self, p: i64, k: TorusPrecision) -> poulpy_core::Result<(&K, Dsize)> {
-        self.seen.borrow_mut().push(k);
+        self.seen.borrow_mut().push((p, k));
         self.keys.get_automorphism_key_for(p, k)
     }
 }
 
 impl<K: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<K> for QueryLog<K> {
     fn get_automorphism_key_layout_for(&self, p: i64, k: TorusPrecision) -> poulpy_core::Result<(&K, Dsize)> {
-        self.seen.borrow_mut().push(k);
+        self.seen.borrow_mut().push((p, k));
         self.keys.get_automorphism_key_layout_for(p, k)
     }
 }
 
-/// One factor resolves every rotation, baby and giant, at the same precision.
+/// Helper that makes one late giant key disappear while delegating every
+/// earlier lookup unchanged.
+struct RejectElement<'a, K> {
+    inner: &'a QueryLog<K>,
+    reject: i64,
+}
+
+impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for RejectElement<'_, K> {
+    fn get_automorphism_key_for(&self, p: i64, k: TorusPrecision) -> poulpy_core::Result<(&K, Dsize)> {
+        self.inner
+            .get_automorphism_key_for(if p == self.reject { i64::MIN } else { p }, k)
+    }
+}
+
+impl<K: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<K> for RejectElement<'_, K> {
+    fn get_automorphism_key_layout_for(&self, p: i64, k: TorusPrecision) -> poulpy_core::Result<(&K, Dsize)> {
+        self.inner
+            .get_automorphism_key_layout_for(if p == self.reject { i64::MIN } else { p }, k)
+    }
+}
+
+/// Helper that returns a key but an unrealizable decomposition for one late
+/// giant, exercising covering-bind validation before evaluation writes.
+struct InvalidDsize<'a, K> {
+    inner: &'a QueryLog<K>,
+    invalid: i64,
+}
+
+impl<K: GGLWEInfos> GLWEAutomorphismKeyHelper<K> for InvalidDsize<'_, K> {
+    fn get_automorphism_key_for(&self, p: i64, k: TorusPrecision) -> poulpy_core::Result<(&K, Dsize)> {
+        let (key, dsize) = self.inner.get_automorphism_key_for(p, k)?;
+        Ok((key, if p == self.invalid { Dsize(u32::MAX) } else { dsize }))
+    }
+}
+
+impl<K: GGLWEInfos> GLWEAutomorphismKeyLayoutHelper<K> for InvalidDsize<'_, K> {
+    fn get_automorphism_key_layout_for(&self, p: i64, k: TorusPrecision) -> poulpy_core::Result<(&K, Dsize)> {
+        let (key, dsize) = self.inner.get_automorphism_key_layout_for(p, k)?;
+        Ok((key, if p == self.invalid { Dsize(u32::MAX) } else { dsize }))
+    }
+}
+
+/// Baby keys resolve at source precision and giant keys at destination
+/// precision, in both exact scratch planning and execution. Explicit `_into`
+/// honors its caller-selected destination, while `self_assign` plans the
+/// factor's natural lower post-product destination before key lookup.
 ///
-/// The destination is narrower than the input, so a giant step that queried
-/// `res.k()` instead of the factor's input `k` would let the effective
-/// decomposition drift mid-factor.
-pub fn test_linear_transformation_pins_one_precision<BE, F, E>(
+/// Giant rotations deliberately use heterogeneous physical decompositions so
+/// the lazy accumulator must combine a global widest width with each key's own
+/// rotation width instead of forcing every rotation through one shared shape.
+pub fn test_linear_transformation_operation_precisions<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
@@ -262,21 +308,45 @@ pub fn test_linear_transformation_pins_one_precision<BE, F, E>(
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (a_re, a_im) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let key_params = CKKSTestParams {
+    let fine_key_params = CKKSTestParams {
         dsize: params.dsize.max(4),
         ..params
     };
-    let mut scratch = alloc_scratch(&key_params, module);
+    let wide_key_params = CKKSTestParams {
+        dsize: params.dsize.max(8),
+        ..params
+    };
+    let mut scratch = alloc_scratch(&fine_key_params, module);
 
     let n1 = 2;
     let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m);
     let lt = encode_lt(module, &params, &b, n1, false, &mut scratch.borrow());
 
     let order = module.cyclotomic_order();
+    let baby_elements = lt
+        .baby_steps()
+        .iter()
+        .copied()
+        .filter(|&rot| rot != 0)
+        .map(|rot| galois_element(rot, order))
+        .collect::<BTreeSet<_>>();
+    let giant_elements = lt
+        .giant_steps
+        .iter()
+        .filter(|gs| gs.rot != 0 && !gs.diagonals.is_empty())
+        .map(|gs| galois_element(gs.rot, order))
+        .collect::<BTreeSet<_>>();
+    assert!(giant_elements.len() >= 2, "regression needs two giant rotations");
+
     let mut keys = HashMap::new();
     for p in lt.galois_elements(order) {
+        let params_for_key = giant_elements
+            .iter()
+            .position(|&giant| giant == p)
+            .filter(|index| index % 2 == 1)
+            .map_or(&fine_key_params, |_| &wide_key_params);
         keys.entry(p)
-            .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
+            .or_insert_with(|| gen_atk(params_for_key, module, p, &sk_raw, &mut scratch.borrow()));
     }
     let keys = QueryLog {
         keys,
@@ -297,15 +367,132 @@ pub fn test_linear_transformation_pins_one_precision<BE, F, E>(
 
     let prepared = prepare_lt(module, &lt, &mut scratch.borrow());
     let mut res = alloc_ct(&params, module, params.k - params.base2k);
-    module
-        .ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, &mut scratch.borrow())
-        .unwrap();
+    let (src_k, dst_k) = (ct.k(), res.k());
 
-    let seen = keys.seen.borrow();
-    assert!(!seen.is_empty(), "the factor consulted no key");
+    let assert_precisions = |seen: &[(i64, TorusPrecision)], giant_k: TorusPrecision| {
+        assert!(!seen.is_empty(), "the factor consulted no key");
+        for &(p, k) in seen {
+            match (baby_elements.contains(&p), giant_elements.contains(&p)) {
+                (true, false) => assert_eq!(k, src_k, "baby key p={p} resolved at the wrong precision"),
+                (false, true) => assert_eq!(k, giant_k, "giant key p={p} resolved at the wrong precision"),
+                (true, true) => assert!(
+                    k == src_k || k == giant_k,
+                    "shared baby/giant key p={p} resolved at unrelated precision {k}"
+                ),
+                (false, false) => panic!("unexpected key lookup p={p} at k={k}"),
+            }
+        }
+    };
+
+    let exact_scratch_bytes = module.ckks_eval_linear_transformation_into_tmp_bytes(&res, &ct, &prepared, &keys);
+    assert_precisions(&keys.seen.borrow(), dst_k);
+    keys.seen.borrow_mut().clear();
+
+    let mut babies = LinearTransformationBabySteps::alloc(module, prepared.baby_steps(), &ct);
+    module
+        .ckks_prepare_linear_transformation_baby_steps(&mut babies, &ct, &keys, &mut scratch.borrow())
+        .unwrap();
+    let mut exact_scratch: ScratchOwned<BE> = ScratchOwned::alloc(exact_scratch_bytes);
+    module
+        .ckks_eval_linear_transformation_into(&mut res, &ct, &babies, &prepared, &keys, &mut exact_scratch.borrow())
+        .unwrap();
+    assert_precisions(&keys.seen.borrow(), dst_k);
+    keys.seen.borrow_mut().clear();
+
+    // The assign API keeps the source-shaped physical scratch allocation, but
+    // the factor consumes its diagonal scale before giant rotations. Its exact
+    // query and execution must therefore both resolve giant keys at this
+    // natural lower precision rather than at `src_k`.
+    let factor_log_scale = prepared
+        .first_diagonal_plaintext()
+        .expect("linear transformation has no diagonals")
+        .log_scale();
+    let assign_dst_k: TorusPrecision = src_k
+        .as_usize()
+        .checked_sub(factor_log_scale)
+        .expect("test factor scale exceeds source precision")
+        .into();
+    let assign_scratch_bytes = module.ckks_eval_linear_transformation_tmp_bytes(&ct, &prepared, &keys);
+    assert_precisions(&keys.seen.borrow(), assign_dst_k);
+    keys.seen.borrow_mut().clear();
+    let streamed_assign_scratch_bytes = module.ckks_eval_linear_transformation_streamed_tmp_bytes(&ct, &lt, &keys);
+    assert!(streamed_assign_scratch_bytes > 0);
+    assert_precisions(&keys.seen.borrow(), assign_dst_k);
+    keys.seen.borrow_mut().clear();
+
+    // A cache prepared for a different source precision must fail before the
+    // destination's metadata or limbs are touched.
+    let mismatched_babies = LinearTransformationBabySteps::alloc(module, prepared.baby_steps(), &res);
+    let mut guarded = alloc_ct(&params, module, params.k - params.base2k);
+    let untouched = guarded.clone();
+    let err = module
+        .ckks_eval_linear_transformation_into(&mut guarded, &ct, &mismatched_babies, &prepared, &keys, &mut scratch.borrow())
+        .expect_err("a baby cache at the wrong source precision must be rejected");
     assert!(
-        seen.iter().all(|&k| k == ct.k()),
-        "keys were resolved at {seen:?}, but the factor's input is k={}",
-        ct.k()
+        err.to_string().contains("baby cache precision"),
+        "unexpected cache error: {err}"
+    );
+    assert_ct_identical::<BE>("mismatched baby cache", &untouched, &guarded);
+    keys.seen.borrow_mut().clear();
+
+    let late_giant = *giant_elements.last().expect("regression needs a giant key");
+    {
+        let helper = RejectElement {
+            inner: &keys,
+            reject: late_giant,
+        };
+        let mut guarded = alloc_ct(&params, module, params.k - params.base2k);
+        let untouched = guarded.clone();
+        module
+            .ckks_eval_linear_transformation_into(&mut guarded, &ct, &babies, &prepared, &helper, &mut scratch.borrow())
+            .expect_err("late missing giant");
+        assert_ct_identical::<BE>("late missing giant", &untouched, &guarded);
+        keys.seen.borrow_mut().clear();
+    }
+    {
+        let helper = InvalidDsize {
+            inner: &keys,
+            invalid: late_giant,
+        };
+        let mut guarded = alloc_ct(&params, module, params.k - params.base2k);
+        let untouched = guarded.clone();
+        module
+            .ckks_eval_linear_transformation_into(&mut guarded, &ct, &babies, &prepared, &helper, &mut scratch.borrow())
+            .expect_err("late invalid giant");
+        assert_ct_identical::<BE>("late invalid giant", &untouched, &guarded);
+        keys.seen.borrow_mut().clear();
+    }
+
+    let mut assigned = ct;
+    let mut assign_scratch: ScratchOwned<BE> = ScratchOwned::alloc(assign_scratch_bytes);
+    module
+        .ckks_eval_linear_transformation_self_assign(&mut assigned, &prepared, &keys, &mut assign_scratch.borrow())
+        .unwrap();
+    assert_precisions(&keys.seen.borrow(), assign_dst_k);
+    assert_eq!(assigned.k(), assign_dst_k, "self_assign retained the pre-factor precision");
+
+    let strategy = LinearTransformationStrategy::Bsgs { giant_step: n1 };
+    let (want_re, want_im) = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
+    assert_decrypt_precision(
+        "linear_transformation_operation_precisions",
+        &params,
+        module,
+        &encoder,
+        &res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+    assert_decrypt_precision(
+        "linear_transformation_self_assign_operation_precisions",
+        &params,
+        module,
+        &encoder,
+        &assigned,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
     );
 }

@@ -11,9 +11,10 @@ use crate::{
     },
     default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
     layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyHelper,
-        GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        GGLWEActiveUse, GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef,
+        GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef,
+        GetGaloisElement,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedBound, GLWETensorKeyPreparedToBackendRef},
     },
     oep::{
         GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
@@ -333,108 +334,100 @@ impl_operations_delegate!(
     {
         BE::glwe_tensor_square_apply_relinearize(self, cnv_offset, res, tensor_infos, a, tsk, scratch)
     },
-    fn glwe_tensor_apply_relinearize_batch_tmp_bytes<R, I, A, B, T>(
+    fn glwe_tensor_apply_relinearize_batch_tmp_bytes<R, I, A, B>(
         &self,
         items: &[TensorApplyRelinearizeItem<&R, &I, &A, &B>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         R: GLWEInfos,
         I: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
-        T: GGLWEInfos,
     {
-        BE::glwe_tensor_apply_relinearize_batch_tmp_bytes(self, items, tsk)
+        BE::glwe_tensor_apply_relinearize_batch_tmp_bytes(self, items, uses)
     },
-    fn glwe_tensor_apply_relinearize_batch<R, I, A, B, T>(
+    fn glwe_tensor_apply_relinearize_batch<R, I, A, B>(
         &self,
         items: &mut [TensorApplyRelinearizeItem<&mut R, &I, &A, &B>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         I: GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        BE::glwe_tensor_apply_relinearize_batch(self, items, tsk, scratch)
+        BE::glwe_tensor_apply_relinearize_batch(self, items, bounds, scratch)
     },
-    fn glwe_tensor_square_apply_relinearize_batch_tmp_bytes<R, I, A, T>(
+    fn glwe_tensor_square_apply_relinearize_batch_tmp_bytes<R, I, A>(
         &self,
         items: &[TensorSquareApplyRelinearizeItem<&R, &I, &A>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         R: GLWEInfos,
         I: GLWEInfos,
         A: GLWEInfos,
-        T: GGLWEInfos,
     {
-        BE::glwe_tensor_square_apply_relinearize_batch_tmp_bytes(self, items, tsk)
+        BE::glwe_tensor_square_apply_relinearize_batch_tmp_bytes(self, items, uses)
     },
-    fn glwe_tensor_square_apply_relinearize_batch<R, I, A, T>(
+    fn glwe_tensor_square_apply_relinearize_batch<R, I, A>(
         &self,
         items: &mut [TensorSquareApplyRelinearizeItem<&mut R, &I, &A>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         I: GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        BE::glwe_tensor_square_apply_relinearize_batch(self, items, tsk, scratch)
+        BE::glwe_tensor_square_apply_relinearize_batch(self, items, bounds, scratch)
     },
-    fn glwe_tensor_square_relinearize_assign_batch_tmp_bytes<R, I, T>(
+    fn glwe_tensor_square_relinearize_assign_batch_tmp_bytes<R, I>(
         &self,
         items: &[TensorSquareRelinearizeAssignItem<&R, &I>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         R: GLWEInfos,
         I: GLWEInfos,
-        T: GGLWEInfos,
     {
-        BE::glwe_tensor_square_relinearize_assign_batch_tmp_bytes(self, items, tsk)
+        BE::glwe_tensor_square_relinearize_assign_batch_tmp_bytes(self, items, uses)
     },
-    fn glwe_tensor_square_relinearize_assign_batch<R, I, T>(
+    fn glwe_tensor_square_relinearize_assign_batch<R, I>(
         &self,
         items: &mut [TensorSquareRelinearizeAssignItem<&mut R, &I>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         I: GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        BE::glwe_tensor_square_relinearize_assign_batch(self, items, tsk, scratch)
+        BE::glwe_tensor_square_relinearize_assign_batch(self, items, bounds, scratch)
     },
-    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes<R, I, BP, T>(
+    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes<R, I, BP>(
         &self,
         items: &[TensorPreparedRightRelinearizeAssignItem<&R, &I, &BP>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         R: GLWEInfos,
         I: GLWEInfos,
-        T: GGLWEInfos,
     {
-        BE::glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes(self, items, tsk)
+        BE::glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes(self, items, uses)
     },
-    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch<R, I, BP, T>(
+    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch<R, I, BP>(
         &self,
         items: &mut [TensorPreparedRightRelinearizeAssignItem<&mut R, &I, &BP>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         I: GLWEInfos,
         BP: CnvPVecRToBackendRef<BE>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
-        BE::glwe_tensor_apply_prepared_right_relinearize_assign_batch(self, items, tsk, scratch)
+        BE::glwe_tensor_apply_prepared_right_relinearize_assign_batch(self, items, bounds, scratch)
     }
 );
 

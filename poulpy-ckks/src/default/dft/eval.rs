@@ -32,7 +32,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, CyclotomicOrder, Module, ScratchArena},
 };
 
 use crate::SlotsKind;
@@ -42,7 +42,10 @@ use crate::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSImagOps, CKKSLinearTransformationOps,
         CKKSRotateOps, CKKSSubOps, LinearTransformationBabySteps, LinearTransformationPrepared, LtDiagonalScale,
     },
-    default::dft::matrices::{DftScalar, gen_dft_matrices},
+    default::{
+        dft::matrices::{DftScalar, gen_dft_matrices},
+        linear_transformation::{plan_linear_transformation_assign_target, preflight_linear_transformation_eval},
+    },
     layouts::{
         CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, Decode,
         DftDirection, DftFormat, Encode, Repack, ScratchArenaTakeCKKS, Split, Standard,
@@ -298,13 +301,15 @@ where
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
-    // `dst` is the previous factor's buffer: its logical metadata and width still
-    // describe that factor's output. Realign it with `src` before anything reads
-    // `dst.k()` (the eval parameters) or sizes work off it.
-    dst.set_meta(src.meta());
-    dst.set_k(src.k());
+    // `dst` is the previous factor's physical buffer, but giant rotations of
+    // this factor must resolve at this factor's post-product precision. Plan that
+    // natural logical destination with the same arithmetic as the assign
+    // wrappers while retaining `dst`'s existing capacity.
+    let target = plan_linear_transformation_assign_target(src, factor)?;
     let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), src);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, scratch)?;
+    preflight_linear_transformation_eval::<BE, _, _, _, _>(src, &babies, factor, keys, module.cyclotomic_order(), target.k)?;
+    target.stamp(dst);
     module.ckks_eval_linear_transformation_into(dst, src, &babies, factor, keys, scratch)
 }
 

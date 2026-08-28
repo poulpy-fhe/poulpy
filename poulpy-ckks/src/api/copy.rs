@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
-/// Level-aware ciphertext copy.
+/// Precision-aware ciphertext copy.
 ///
 /// Copies the polynomial data from `src` into `dst`, adjusting for any
 /// mismatch between the source's precision and the destination's allocated

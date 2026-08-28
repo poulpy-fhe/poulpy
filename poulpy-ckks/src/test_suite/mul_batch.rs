@@ -6,13 +6,14 @@
 //! `compile_fail` doctest on
 //! [`CKKSMulOps::ckks_mul_into_batch`](crate::api::CKKSMulOps::ckks_mul_into_batch).
 
+use poulpy_core::layouts::{Dsize, GGLWEInfos, GLWERelinearizationKeyHelper, GLWERelinearizationKeyLayoutHelper, TorusPrecision};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned},
 };
 
 use crate::{
-    CKKSCompositionError, SetCKKSInfos,
+    CKKSCompositionError, CKKSInfos, SetCKKSInfos,
     api::{CKKSMulIntoItem, CKKSMulOps, CKKSPreparedMulAssignItem, CKKSSquareAssignItem, CKKSSquareIntoItem},
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPreparedRight},
     test_suite::{
@@ -25,6 +26,36 @@ use crate::{
         reference_encoder::ReferenceEncoder,
     },
 };
+
+struct TwoRelinearizationKeys<K> {
+    pivot: TorusPrecision,
+    pivot_key: K,
+    other_key: K,
+}
+
+impl<K> TwoRelinearizationKeys<K> {
+    fn key_for(&self, k: TorusPrecision) -> &K {
+        if k == self.pivot { &self.pivot_key } else { &self.other_key }
+    }
+}
+
+impl<K: GGLWEInfos> GLWERelinearizationKeyHelper for TwoRelinearizationKeys<K> {
+    type Key = K;
+
+    fn get_relinearization_key_for(&self, k: TorusPrecision) -> poulpy_core::Result<(&K, Dsize)> {
+        let key = self.key_for(k);
+        Ok((key, key.effective_dsize()))
+    }
+}
+
+impl<K: GGLWEInfos> GLWERelinearizationKeyLayoutHelper for TwoRelinearizationKeys<K> {
+    type Layout = K;
+
+    fn get_relinearization_key_layout_for(&self, k: TorusPrecision) -> poulpy_core::Result<(&K, Dsize)> {
+        let key = self.key_for(k);
+        Ok((key, key.effective_dsize()))
+    }
+}
 
 /// Four source ciphertexts at three different widths, so the items in a batch
 /// carry different effective widths and therefore different convolution offsets.
@@ -397,6 +428,490 @@ pub fn test_mul_prepared_assign_batch_rejects_layout_mismatch<BE, F, E>(
             &untouched[i],
             &dst[i],
         );
+    }
+}
+
+/// A mixed frontier may resolve equal-shaped lanes to different physical keys,
+/// and may contain an Empty lane. The batch must preserve each exact pairing,
+/// dispatch only active lanes through the batch OEP, and match scalar calls.
+pub fn test_mul_batch_distinct_keys_and_empty_lane<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<ZnxWord = i64>,
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re, im) = super::helpers::test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    // Independently allocated prepared keys with exactly the same physical
+    // shape. Pointer identity must not enter the batch contract.
+    let keys = TwoRelinearizationKeys {
+        pivot: params.k.into(),
+        pivot_key: gen_tsk(&params, module, &sk_raw, &mut scratch.borrow()),
+        other_key: gen_tsk(&params, module, &sk_raw, &mut scratch.borrow()),
+    };
+    let full = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
+    let narrow = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k - params.base2k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
+    let mut zero = clone_ct::<BE>(&narrow);
+    zero.set_log_delta(0);
+    zero.set_log_budget(0);
+    let sources = [&full, &narrow, &zero];
+
+    let mut want: Vec<_> = (0..sources.len()).map(|_| alloc_ct(&params, module, params.k)).collect();
+    for (dst, source) in want.iter_mut().zip(sources) {
+        module.ckks_square_into(dst, source, &keys, &mut scratch.borrow()).unwrap();
+    }
+
+    let mut have: Vec<_> = (0..sources.len()).map(|_| alloc_ct(&params, module, params.k)).collect();
+    let query: Vec<_> = have
+        .iter()
+        .zip(sources)
+        .map(|(dst, source)| CKKSSquareIntoItem { dst, a: source })
+        .collect();
+    let bytes = module.ckks_square_into_batch_tmp_bytes(&query, &keys);
+    drop(query);
+    let mut exact = ScratchOwned::<BE>::alloc(bytes.max(1));
+    let mut items: Vec<_> = have
+        .iter_mut()
+        .zip(sources)
+        .map(|(dst, source)| CKKSSquareIntoItem { dst, a: source })
+        .collect();
+    module.ckks_square_into_batch(&mut items, &keys, &mut exact.borrow()).unwrap();
+    drop(items);
+
+    for i in 0..sources.len() {
+        assert_ct_identical::<BE>(&format!("distinct physical keys / Empty lane item={i}"), &want[i], &have[i]);
+    }
+}
+
+/// A late prepared-multiply budget failure is discovered during the global
+/// planning pass, before even the first valid destination is touched.
+pub fn test_mul_prepared_assign_batch_rejects_late_budget_without_writes<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<ZnxWord = i64>,
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re, im) = super::helpers::test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let source = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
+    let prepared = module.ckks_prepare_right(&source, &mut scratch.borrow()).unwrap();
+
+    let mut dst = [clone_ct::<BE>(&source), clone_ct::<BE>(&source)];
+    dst[1].set_log_budget(8);
+    let untouched = [clone_ct::<BE>(&dst[0]), clone_ct::<BE>(&dst[1])];
+    let err = {
+        let (head, tail) = dst.split_at_mut(1);
+        let mut items = [
+            CKKSPreparedMulAssignItem {
+                dst: &mut head[0],
+                prepared: &prepared,
+            },
+            CKKSPreparedMulAssignItem {
+                dst: &mut tail[0],
+                prepared: &prepared,
+            },
+        ];
+        module
+            .ckks_mul_prepared_assign_batch(&mut items, &tsk, &mut scratch.borrow())
+            .unwrap_err()
+    };
+    assert_ckks_error(
+        "mul_prepared_assign_batch_late_budget",
+        &err,
+        CKKSCompositionError::MultiplicationPrecisionUnderflow {
+            op: "mul",
+            lhs_log_budget: 8,
+            rhs_log_budget: source.log_budget(),
+            lhs_log_delta: source.log_delta(),
+            rhs_log_delta: source.log_delta(),
+        },
+    );
+    for i in 0..dst.len() {
+        assert_ct_identical::<BE>(&format!("late prepared budget preserves item={i}"), &untouched[i], &dst[i]);
+    }
+}
+
+/// A helper may resolve a valid key for an early lane and an insufficiently
+/// deep key for a later one. Every key is bound before dispatch, so the later
+/// coverage failure leaves both destinations byte-for-byte unchanged.
+pub fn test_mul_batch_rejects_late_non_covering_key_without_writes<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<ZnxWord = i64>,
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re, im) = super::helpers::test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let full_key = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let digit = params
+        .dsize
+        .checked_mul(params.base2k)
+        .expect("test decomposition digit overflows");
+    let requested = params.k.div_ceil(digit);
+    assert!(requested >= 2, "test parameters need at least two tensor-key digits");
+    let short_params = CKKSTestParams {
+        // `tsk_layout` adds one digit before dividing. This leaves exactly
+        // `requested - 1` stored rows for a `requested`-digit input.
+        k: (requested - 2) * digit,
+        ..params
+    };
+    let short_key = gen_tsk(&short_params, module, &sk_raw, &mut scratch.borrow());
+
+    let narrow_k = params.k - params.base2k;
+    let keys = TwoRelinearizationKeys {
+        pivot: narrow_k.into(),
+        pivot_key: full_key,
+        other_key: short_key,
+    };
+    let narrow = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        narrow_k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
+    let full = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
+
+    // Scalar execution and its singleton batch have the same covering-key
+    // contract. Neither may fall through to the permissive raw-key prefix use.
+    let mut scalar_dst = alloc_ct(&params, module, params.k);
+    let scalar_untouched = clone_ct::<BE>(&scalar_dst);
+    let scalar_err = module
+        .ckks_square_into(&mut scalar_dst, &full, &keys, &mut scratch.borrow())
+        .unwrap_err();
+    let scalar_message = scalar_err.to_string();
+    assert!(
+        scalar_message.contains("short of") && scalar_message.contains(&format!("input_k={}", params.k)),
+        "unexpected scalar key-coverage error: {scalar_message}"
+    );
+    assert_ct_identical::<BE>(
+        "scalar non-covering key preserves destination",
+        &scalar_untouched,
+        &scalar_dst,
+    );
+
+    let mut singleton_dst = alloc_ct(&params, module, params.k);
+    let singleton_untouched = clone_ct::<BE>(&singleton_dst);
+    let singleton_err = {
+        let mut items = [CKKSSquareIntoItem {
+            dst: &mut singleton_dst,
+            a: &full,
+        }];
+        module
+            .ckks_square_into_batch(&mut items, &keys, &mut scratch.borrow())
+            .unwrap_err()
+    };
+    let singleton_message = singleton_err.to_string();
+    assert!(
+        singleton_message.contains("short of") && singleton_message.contains(&format!("input_k={}", params.k)),
+        "unexpected singleton key-coverage error: {singleton_message}"
+    );
+    assert_ct_identical::<BE>(
+        "singleton non-covering key preserves destination",
+        &singleton_untouched,
+        &singleton_dst,
+    );
+
+    let scalar_query = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.ckks_square_tmp_bytes(&scalar_dst, &full, &keys)
+    }));
+    assert!(scalar_query.is_err(), "scalar scratch query accepted a non-covering key");
+    let singleton_query = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let items = [CKKSSquareIntoItem {
+            dst: &singleton_dst,
+            a: &full,
+        }];
+        module.ckks_square_into_batch_tmp_bytes(&items, &keys)
+    }));
+    assert!(
+        singleton_query.is_err(),
+        "singleton scratch query accepted a non-covering key"
+    );
+
+    let mut dst = [alloc_ct(&params, module, params.k), alloc_ct(&params, module, params.k)];
+    let untouched = [clone_ct::<BE>(&dst[0]), clone_ct::<BE>(&dst[1])];
+    let err = {
+        let (head, tail) = dst.split_at_mut(1);
+        let mut items = [
+            CKKSSquareIntoItem {
+                dst: &mut head[0],
+                a: &narrow,
+            },
+            CKKSSquareIntoItem {
+                dst: &mut tail[0],
+                a: &full,
+            },
+        ];
+        module
+            .ckks_square_into_batch(&mut items, &keys, &mut scratch.borrow())
+            .unwrap_err()
+    };
+    let message = err.to_string();
+    assert!(
+        message.contains("short of") && message.contains(&format!("input_k={}", params.k)),
+        "unexpected late key-coverage error: {message}"
+    );
+    for i in 0..dst.len() {
+        assert_ct_identical::<BE>(&format!("late non-covering key preserves item={i}"), &untouched[i], &dst[i]);
+    }
+}
+
+/// Prepared widths are `usize` in cached metadata but exact tensor precision
+/// is `u32`-backed. Both query and execution reject an unrepresentable late
+/// lane before writing the earlier valid lane.
+pub fn test_mul_prepared_batch_rejects_precision_overflow_without_writes<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<ZnxWord = i64>,
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let Some(overflow_k) = (u32::MAX as usize).checked_add(1) else {
+        return;
+    };
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re, im) = super::helpers::test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let source = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
+    let good = module.ckks_prepare_right(&source, &mut scratch.borrow()).unwrap();
+    let mut bad = module.ckks_prepare_right(&source, &mut scratch.borrow()).unwrap();
+    bad.k = overflow_k;
+
+    let mut dst = [clone_ct::<BE>(&source), clone_ct::<BE>(&source)];
+    let query = [
+        CKKSPreparedMulAssignItem {
+            dst: &dst[0],
+            prepared: &good,
+        },
+        CKKSPreparedMulAssignItem {
+            dst: &dst[1],
+            prepared: &bad,
+        },
+    ];
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.ckks_mul_prepared_assign_batch_tmp_bytes(&query, &tsk)
+    }))
+    .expect_err("prepared precision overflow must make the scratch query panic");
+    let panic_message = panic
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| panic.downcast_ref::<&str>().copied())
+        .unwrap_or("non-string panic");
+    assert!(
+        panic_message.contains("prepared precision") && panic_message.contains("exceeds u32"),
+        "unexpected query panic: {panic_message}"
+    );
+
+    let untouched = [clone_ct::<BE>(&dst[0]), clone_ct::<BE>(&dst[1])];
+    let err = {
+        let (head, tail) = dst.split_at_mut(1);
+        let mut items = [
+            CKKSPreparedMulAssignItem {
+                dst: &mut head[0],
+                prepared: &good,
+            },
+            CKKSPreparedMulAssignItem {
+                dst: &mut tail[0],
+                prepared: &bad,
+            },
+        ];
+        module
+            .ckks_mul_prepared_assign_batch(&mut items, &tsk, &mut scratch.borrow())
+            .unwrap_err()
+    };
+    let message = err.to_string();
+    assert!(
+        message.contains(&format!("prepared precision {overflow_k} exceeds u32")),
+        "unexpected overflow error: {message}"
+    );
+    for i in 0..dst.len() {
+        assert_ct_identical::<BE>(
+            &format!("prepared precision overflow preserves item={i}"),
+            &untouched[i],
+            &dst[i],
+        );
+    }
+}
+
+/// The execution seam recomputes the whole frontier's exact requirement and
+/// rejects a short shared arena before the first destination write.
+pub fn test_mul_batch_rejects_short_scratch_without_writes<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend<ZnxWord = i64>,
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re, im) = super::helpers::test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let full = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
+    let narrow = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k - params.base2k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
+    let sources = [&full, &narrow];
+    let mut dst = [alloc_ct(&params, module, params.k), alloc_ct(&params, module, params.k)];
+    let query = [
+        CKKSSquareIntoItem {
+            dst: &dst[0],
+            a: sources[0],
+        },
+        CKKSSquareIntoItem {
+            dst: &dst[1],
+            a: sources[1],
+        },
+    ];
+    let required = module.ckks_square_into_batch_tmp_bytes(&query, &tsk);
+    assert!(required > 0, "active square batch must require scratch");
+    let mut short = ScratchOwned::<BE>::alloc(0);
+    let untouched = [clone_ct::<BE>(&dst[0]), clone_ct::<BE>(&dst[1])];
+
+    let err = {
+        let (head, tail) = dst.split_at_mut(1);
+        let mut items = [
+            CKKSSquareIntoItem {
+                dst: &mut head[0],
+                a: sources[0],
+            },
+            CKKSSquareIntoItem {
+                dst: &mut tail[0],
+                a: sources[1],
+            },
+        ];
+        module
+            .ckks_square_into_batch(&mut items, &tsk, &mut short.borrow())
+            .unwrap_err()
+    };
+    let message = err.to_string();
+    assert!(
+        message.contains("scratch.available()") && message.contains("ckks_square_into_batch"),
+        "unexpected short-scratch error: {message}"
+    );
+    for i in 0..dst.len() {
+        assert_ct_identical::<BE>(&format!("short batch scratch preserves item={i}"), &untouched[i], &dst[i]);
     }
 }
 

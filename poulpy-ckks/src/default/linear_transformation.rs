@@ -16,8 +16,9 @@ use poulpy_core::{
     LinearTransformationPrepared,
     default::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        prepared::PreparedDiagonal,
+        Base2K, Degree, GGLWEBind, GGLWEInfos, GGLWEUse, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos,
+        GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, Rank, TorusPrecision, WithEffectiveDsize,
+        prepared::{GGLWEPreparedBound, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef, PreparedDiagonal},
     },
 };
 use poulpy_hal::{
@@ -26,7 +27,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LtDiagonalScale},
     default::mul::mul_pt_params_raw,
     layouts::{CKKSModuleAlloc, CKKSPlaintext, ScratchArenaTakeCKKS},
@@ -96,17 +97,54 @@ where
         self.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, rotations, keys)
     }
 
-    fn ckks_eval_linear_transformation_tmp_bytes<C, P, H, K>(&self, ct: &C, lt: &LinearTransformation<P>, keys: &H) -> usize
+    fn ckks_eval_linear_transformation_into_tmp_bytes<Dst, Src, P, H, K>(
+        &self,
+        dst: &Dst,
+        src: &Src,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+    ) -> usize
     where
-        C: CKKSCtBounds,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
         P: LWEInfos,
         K: GGLWEInfos,
         H: GLWEAutomorphismKeyLayoutHelper<K>,
     {
-        // The extra ct-sized buffer is the dst-shaped working copy the `_assign`
-        // wrappers carve from scratch (an upper bound for the `_into` paths,
-        // which skip it).
-        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, lt, keys) + self.glwe_bytes_of_from_infos(ct)
+        self.glwe_eval_linear_transformation_tmp_bytes(dst, src, lt, keys)
+    }
+
+    fn ckks_eval_linear_transformation_streamed_into_tmp_bytes<Dst, Src, P, H, K>(
+        &self,
+        dst: &Dst,
+        src: &Src,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+    ) -> usize
+    where
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        P: LWEInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>,
+    {
+        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(dst, src, lt, keys)
+    }
+
+    fn ckks_eval_linear_transformation_tmp_bytes<C, P, H, K>(&self, ct: &C, lt: &LinearTransformation<P>, keys: &H) -> usize
+    where
+        C: CKKSCtBounds,
+        P: LtDiagonalScale + IntPolyInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>,
+    {
+        // The extra buffer is the natural post-factor destination the `_assign`
+        // wrappers carve; the query proxy carries both its lower logical precision
+        // and correspondingly narrower physical size.
+        let target = plan_linear_transformation_assign_target(ct, lt)
+            .unwrap_or_else(|e| panic!("ckks linear-transformation assign scratch query: {e}"));
+        let dst = LinearTransformationAssignDst::new(ct, target);
+        self.ckks_eval_linear_transformation_into_tmp_bytes(&dst, ct, lt, keys) + self.glwe_bytes_of_from_infos(&dst)
     }
 
     fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, P, H, K>(
@@ -117,11 +155,14 @@ where
     ) -> usize
     where
         C: CKKSCtBounds,
-        P: LWEInfos,
+        P: LtDiagonalScale + IntPolyInfos,
         K: GGLWEInfos,
         H: GLWEAutomorphismKeyLayoutHelper<K>,
     {
-        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, lt, keys) + self.glwe_bytes_of_from_infos(ct)
+        let target = plan_linear_transformation_assign_target(ct, lt)
+            .unwrap_or_else(|e| panic!("ckks streamed linear-transformation assign scratch query: {e}"));
+        let dst = LinearTransformationAssignDst::new(ct, target);
+        self.ckks_eval_linear_transformation_streamed_into_tmp_bytes(&dst, ct, lt, keys) + self.glwe_bytes_of_from_infos(&dst)
     }
 
     fn ckks_dft_evaluate_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
@@ -211,9 +252,8 @@ where
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
     {
-        check_required_keys(lt, babies, keys, self.cyclotomic_order(), src.k())?;
-
         let params = LinearTransformationEvalParams::new(dst.k().as_usize(), src, babies, lt)?;
+        preflight_linear_transformation_eval::<BE, _, _, _, _>(src, babies, lt, keys, self.cyclotomic_order(), dst.k())?;
         self.glwe_eval_linear_transformation_into(params.cnv_offset, dst, babies, lt, keys, scratch);
         dst.set_log_budget(params.log_budget);
         dst.set_log_delta(params.log_delta);
@@ -237,10 +277,12 @@ where
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
     {
-        // The dst-shaped working copy is carved from scratch (accounted for by
-        // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
+        let target = plan_linear_transformation_assign_target(dst, lt)?;
+        // The natural post-factor destination is carved from scratch (accounted
+        // for by `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
         scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
+            let target_layout = LinearTransformationAssignDst::new(dst, target);
+            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&target_layout, target.meta);
             self.ckks_eval_linear_transformation_into(&mut tmp, dst, babies, lt, keys, &mut scratch_local)?;
             // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
             // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
@@ -285,15 +327,106 @@ where
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
     {
-        // The dst-shaped working copy is carved from scratch (accounted for by
-        // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
+        let target = plan_linear_transformation_assign_target(dst, lt)?;
+        // The natural post-factor destination is carved from scratch (accounted
+        // for by `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
         scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
+            let target_layout = LinearTransformationAssignDst::new(dst, target);
+            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&target_layout, target.meta);
             self.ckks_eval_linear_transformation_self_into(&mut tmp, dst, lt, keys, &mut scratch_local)?;
             // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
             // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
             self.ckks_copy(dst, &tmp, &mut scratch_local)
         })
+    }
+}
+
+/// Natural destination metadata for an in-place linear-transformation factor.
+///
+/// Its logical precision describes the post-plaintext-product value before
+/// giant rotations resolve their keys. Assign wrappers also use that precision
+/// to carve a narrower physical destination; ping-pong callers can stamp the
+/// same target onto an already-allocated wider buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LinearTransformationAssignTarget {
+    pub(crate) k: TorusPrecision,
+    pub(crate) meta: CKKSMeta,
+}
+
+impl LinearTransformationAssignTarget {
+    pub(crate) fn stamp<Dst: SetCKKSInfos>(self, dst: &mut Dst) {
+        dst.set_meta(self.meta);
+        dst.set_k(self.k);
+    }
+}
+
+/// Plans the uncapped, natural post-factor destination shared by the assign
+/// wrappers, their exact scratch queries, and DFT ping-pong evaluation.
+pub(crate) fn plan_linear_transformation_assign_target<Src, P>(
+    src: &Src,
+    lt: &LinearTransformation<P>,
+) -> Result<LinearTransformationAssignTarget>
+where
+    Src: CKKSCtBounds,
+    P: LtDiagonalScale + IntPolyInfos,
+{
+    // Using the source width as the destination cap introduces no extra
+    // rounding: a plaintext product only spends `pt_log_scale` from the source
+    // budget. The returned budget therefore defines the factor's natural precision.
+    let (_, log_budget, log_delta, _) = linear_transformation_mul_params(src.k().as_usize(), src, lt)?;
+    let k = log_budget
+        .checked_add(log_delta)
+        .ok_or_else(|| anyhow::anyhow!("linear-transformation destination precision overflows usize"))?;
+    let k = u32::try_from(k).map_err(|_| anyhow::anyhow!("linear-transformation destination precision {k} exceeds u32"))?;
+    let mut meta = src.meta();
+    meta.log_delta = log_delta;
+    meta.slots = SlotsKind::Complex;
+    Ok(LinearTransformationAssignTarget {
+        k: TorusPrecision(k),
+        meta,
+    })
+}
+
+/// Read-only natural-destination layout used identically by assign scratch
+/// query and execution.
+struct LinearTransformationAssignDst<'a, Src> {
+    src: &'a Src,
+    target: LinearTransformationAssignTarget,
+}
+
+impl<'a, Src> LinearTransformationAssignDst<'a, Src> {
+    fn new(src: &'a Src, target: LinearTransformationAssignTarget) -> Self {
+        Self { src, target }
+    }
+}
+
+impl<Src: CKKSCtBounds> LWEInfos for LinearTransformationAssignDst<'_, Src> {
+    fn n(&self) -> Degree {
+        self.src.n()
+    }
+
+    fn base2k(&self) -> Base2K {
+        self.src.base2k()
+    }
+
+    fn max_size(&self) -> usize {
+        self.target.k.as_usize().div_ceil(self.src.base2k().as_usize())
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.target.k
+    }
+}
+
+impl<Src: CKKSCtBounds> GLWEInfos for LinearTransformationAssignDst<'_, Src> {
+    fn rank(&self) -> Rank {
+        self.src.rank()
+    }
+}
+
+impl<Src: CKKSCtBounds> CKKSInfos for LinearTransformationAssignDst<'_, Src> {
+    fn meta(&self) -> CKKSMeta {
+        self.target.meta
     }
 }
 
@@ -336,21 +469,7 @@ impl LinearTransformationEvalParams {
         Src: CKKSCtBounds,
         P: LtDiagonalScale + IntPolyInfos + LWEInfos,
     {
-        let first = lt
-            .first_diagonal_plaintext()
-            .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
-        // The diagonal scale (`lt_log_scale`) and its effective torus width `k` are
-        // read off the first diagonal. The convolution offset must match the width
-        // the diagonal data was masked/positioned at in `cnv_prepare_right` (its
-        // effective `k`), which can be below the rounded physical `max_k`.
-        let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.encoded_k().as_usize());
-        ensure_uniform_diagonal_scale(lt, pt_log_scale, pt_max_k)?;
-        // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
-        // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
-        // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
-        // (`checked_mul_pt_log_budget` reads the rhs budget only for diagnostics), so 0.
-        let (log_budget, log_delta, cnv_offset) =
-            mul_pt_params_raw(dst_k, src.log_delta(), src.log_budget(), pt_log_scale, 0, pt_max_k)?;
+        let (first, log_budget, log_delta, cnv_offset) = linear_transformation_mul_params(dst_k, src, lt)?;
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, first.base2k().as_usize());
         let baby_size = babies.size();
         let diagonal_size = first.size();
@@ -373,19 +492,56 @@ impl LinearTransformationEvalParams {
     }
 }
 
+/// Validates the factor's diagonal metadata and applies the single ct×plaintext
+/// arithmetic rule used by explicit destinations and natural assign targets.
+fn linear_transformation_mul_params<'a, Src, P>(
+    dst_k: usize,
+    src: &Src,
+    lt: &'a LinearTransformation<P>,
+) -> Result<(&'a P, usize, usize, usize)>
+where
+    Src: CKKSCtBounds,
+    P: LtDiagonalScale + IntPolyInfos,
+{
+    let first = lt
+        .first_diagonal_plaintext()
+        .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
+    // The diagonal scale (`lt_log_scale`) and its effective torus width `k` are
+    // read off the first diagonal. The convolution offset must match the width
+    // the diagonal data was masked/positioned at in `cnv_prepare_right` (its
+    // effective `k`), which can be below the rounded physical `max_k`.
+    let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.encoded_k().as_usize());
+    ensure_uniform_diagonal_scale(lt, pt_log_scale, pt_max_k)?;
+    // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
+    // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
+    // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
+    // (`checked_mul_pt_log_budget` reads the rhs budget only for diagnostics), so 0.
+    let (log_budget, log_delta, cnv_offset) =
+        mul_pt_params_raw(dst_k, src.log_delta(), src.log_budget(), pt_log_scale, 0, pt_max_k)?;
+    Ok((first, log_budget, log_delta, cnv_offset))
+}
+
 /// Verifies that all automorphism keys required by `lt` are present (keyed by
 /// Galois element) and that `babies` covers every baby rotation `lt` needs.
-fn check_required_keys<BE: Backend, P, H, K>(
-    lt: &LinearTransformation<P>,
+pub(crate) fn preflight_linear_transformation_eval<BE: Backend, Src, P, H, K>(
+    src: &Src,
     babies: &LinearTransformationBabySteps<BE>,
+    lt: &LinearTransformation<P>,
     keys: &H,
     cyclotomic_order: i64,
-    a_k: poulpy_core::layouts::TorusPrecision,
+    giant_k: TorusPrecision,
 ) -> Result<()>
 where
+    Src: CKKSCtBounds,
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K> + GLWEAutomorphismKeyLayoutHelper<K>,
 {
+    ckks_ensure!(
+        babies.k() == src.k(),
+        "linear-transformation baby cache precision {} does not match source precision {}",
+        babies.k(),
+        src.k(),
+    );
     for rotation in lt.baby_steps().iter().copied() {
         ckks_ensure!(
             babies.contains_baby_step(rotation),
@@ -400,13 +556,32 @@ where
         .filter(|&r| r != 0)
     {
         let gal_el = galois_element(rotation, cyclotomic_order);
-        if keys.get_automorphism_key_layout_for(gal_el, a_k).is_err() {
-            return Err(CKKSCompositionError::MissingAutomorphismKey {
-                op: "linear_transformation",
-                rotation,
-                k: a_k.into(),
-            }
-            .into());
+        let (key, effective_dsize) =
+            keys.get_automorphism_key_for(gal_el, giant_k)
+                .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+                    op: "linear_transformation",
+                    rotation,
+                    k: giant_k.into(),
+                })?;
+        ckks_ensure!(
+            key.p() == gal_el,
+            "linear-transformation helper returned Galois element {} for requested giant rotation {rotation} (element {gal_el})",
+            key.p(),
+        );
+        let automorphism_view = GLWEAutomorphismKeyPreparedToBackendRef::<BE>::to_backend_ref(key);
+        ckks_ensure!(
+            automorphism_view.p() == gal_el,
+            "linear-transformation automorphism-key backend view returned Galois element {} for requested giant rotation {rotation} (element {gal_el})",
+            automorphism_view.p(),
+        );
+        let selected = key.with_dsize(effective_dsize);
+        let use_ = selected
+            .bind_covering_for(giant_k)
+            .map_err(|e| anyhow::anyhow!("linear-transformation giant rotation {rotation}: {e}"))?;
+        if let GGLWEUse::Active(active) = use_ {
+            let prepared = GGLWEPreparedToBackendRef::<BE>::to_backend_ref(key);
+            GGLWEPreparedBound::new(prepared, active)
+                .map_err(|e| anyhow::anyhow!("linear-transformation giant rotation {rotation}: {e}"))?;
         }
     }
     Ok(())

@@ -1278,18 +1278,20 @@ impl Degree {
 /// GGLWE/GGSW key families, so encryption places the error at the physical
 /// bottom limb.
 pub fn key_k(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision) -> TorusPrecision {
+    let digit_bits: u128 = u128::from(dsize.0) * u128::from(base2k.0);
     debug_assert!(
-        k_aux.0 >= dsize.0 * base2k.0,
+        u128::from(k_aux.0) >= digit_bits,
         "k_aux ({}) must be at least dsize * base2k ({} * {} = {}): the auxiliary guard must \
          cover at least one full gadget digit, otherwise operations truncate mid-digit",
         k_aux.0,
         dsize.0,
         base2k.0,
-        dsize.0 * base2k.0
+        digit_bits
     );
-    // Widened, then narrowed with a name: a wrapped total precision would size
-    // every buffer downstream of it.
-    let total: u64 = u64::from(dnum.0) * u64::from(dsize.0) * u64::from(base2k.0) + u64::from(k_aux.0);
+    // Three u32 factors need up to 96 bits. Keep the complete expression in
+    // u128, then narrow with a named failure rather than wrapping a layout.
+    let gadget_bits: u128 = u128::from(dnum.0) * digit_bits;
+    let total: u128 = gadget_bits + u128::from(k_aux.0);
     TorusPrecision(
         u32::try_from(total).unwrap_or_else(|_| {
             panic!("key_k: dnum={dnum} * dsize={dsize} * base2k={base2k} + k_aux={k_aux} = {total} exceeds u32")
@@ -1301,6 +1303,7 @@ pub fn key_k(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision) ->
 /// i.e. the `dnum * dsize` gadget limbs plus `ceil(k_aux / base2k)` auxiliary
 /// (guard) limbs used for noise management.
 pub fn key_size(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision) -> usize {
+    assert_ne!(base2k.0, 0, "key_size: base2k must be non-zero");
     key_k(base2k, dnum, dsize, k_aux).0.div_ceil(base2k.0) as usize
 }
 
@@ -1318,10 +1321,13 @@ pub fn key_size(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision)
 /// work   = digits * dsize + ceil(k_aux / base2k)
 /// ```
 pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize, k_aux: TorusPrecision) -> usize {
-    let digit_bits: u64 = u64::from(dsize.0) * u64::from(base2k.0);
+    let digit_bits: u128 = u128::from(dsize.0) * u128::from(base2k.0);
     assert!(digit_bits != 0, "key_work_size: dsize and base2k must both be non-zero");
-    let digits: u64 = u64::from(input_k.0).div_ceil(digit_bits);
-    let limbs: u64 = digits * u64::from(dsize.0) + u64::from(k_aux.0.div_ceil(base2k.0));
+    let digits: u128 = u128::from(input_k.0).div_ceil(digit_bits);
+    let limbs: u128 = digits
+        .checked_mul(u128::from(dsize.0))
+        .and_then(|v| v.checked_add(u128::from(k_aux.0).div_ceil(u128::from(base2k.0))))
+        .expect("key_work_size: limb count overflows u128");
     usize::try_from(limbs)
         .unwrap_or_else(|_| panic!("key_work_size: {limbs} limbs at input_k={input_k} dsize={dsize} exceeds usize"))
 }
@@ -1344,13 +1350,18 @@ pub(crate) struct GadgetProductOutputSizeParams {
 /// Each elementary coefficient product contributes two limbs. Accumulating
 /// `product_terms` such products adds `ceil(log2(product_terms))` bits.
 pub(crate) fn gadget_product_limbs(key_base2k: Base2K, product_terms: usize) -> usize {
-    let base2k = key_base2k.as_usize();
-    let accumulation_bits = if product_terms <= 1 {
+    let base2k: usize = key_base2k.as_usize();
+    assert_ne!(base2k, 0, "gadget_product_limbs: base2k must be non-zero");
+    let accumulation_bits: usize = if product_terms <= 1 {
         0
     } else {
         usize::BITS as usize - (product_terms - 1).leading_zeros() as usize
     };
-    base2k.saturating_mul(2).saturating_add(accumulation_bits).div_ceil(base2k)
+    let coefficient_bits: u128 = (base2k as u128)
+        .checked_mul(2)
+        .and_then(|v| v.checked_add(accumulation_bits as u128))
+        .expect("gadget_product_limbs: coefficient precision overflows u128");
+    usize::try_from(coefficient_bits.div_ceil(base2k as u128)).expect("gadget_product_limbs: limb count exceeds usize")
 }
 
 /// Sizes the key region materialized for a gadget product and its immediate
@@ -1380,14 +1391,18 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         return work_size;
     }
 
-    let base2k = key_base2k.as_usize();
-    let live_limbs = input_k
-        .as_usize()
-        .max(output_k.as_usize())
-        .div_ceil(base2k)
-        .saturating_add(extra_live_limbs);
-    let product_limbs = gadget_product_limbs(key_base2k, product_terms);
-    work_size.min(live_limbs.saturating_add(product_limbs))
+    let base2k: usize = key_base2k.as_usize();
+    let live_limbs: usize = input_k.as_usize().max(output_k.as_usize()).div_ceil(base2k);
+    let product_limbs: usize = gadget_product_limbs(key_base2k, product_terms);
+    let retained: u128 = (live_limbs as u128)
+        .checked_add(extra_live_limbs as u128)
+        .and_then(|v| v.checked_add(product_limbs as u128))
+        .expect("gadget_product_output_size: retained limb count overflows u128");
+    if retained >= work_size as u128 {
+        work_size
+    } else {
+        retained as usize
+    }
 }
 
 #[cfg(test)]
@@ -1454,5 +1469,35 @@ mod gadget_sizing_tests {
         assert_eq!(gadget_product_limbs(Base2K(30), 1), 2);
         assert_eq!(gadget_product_limbs(Base2K(30), 1 << 16), 3);
         assert_eq!(gadget_product_limbs(Base2K(19), 1 << 20), 4);
+    }
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "auxiliary guard")]
+    fn key_k_rejects_a_wide_digit_without_primitive_overflow() {
+        let _ = key_k(Base2K(u32::MAX), Dnum(u32::MAX), Dsize(u32::MAX), TorusPrecision(u32::MAX));
+    }
+
+    #[test]
+    fn output_size_handles_an_extreme_extra_window_without_wrapping() {
+        assert_eq!(
+            gadget_product_output_size(GadgetProductOutputSizeParams {
+                key_size: 12,
+                key_base2k: Base2K(30),
+                input_k: TorusPrecision(60),
+                output_k: TorusPrecision(90),
+                dsize: Dsize(1),
+                k_aux: TorusPrecision(180),
+                dft_is_exact: true,
+                product_terms: usize::MAX,
+                extra_live_limbs: usize::MAX,
+            }),
+            8
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "exceeds u32")]
+    fn key_k_rejects_a_valid_guard_when_total_precision_does_not_fit() {
+        let _ = key_k(Base2K(1), Dnum(u32::MAX), Dsize(1), TorusPrecision(u32::MAX));
     }
 }

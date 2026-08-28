@@ -32,9 +32,9 @@ use poulpy_core::{
     impl_glwe_keyswitch_defaults_full, impl_glwe_packing_defaults_full, impl_glwe_trace_defaults_full,
     impl_linear_transformation_defaults_full, impl_lwe_keyswitch_defaults_full,
     layouts::{
-        BSGSMeta, GGLWEInfos, GLWEInfos, GLWERelinearizationKeyHelper, GLWERelinearizationKeyLayoutHelper, GLWEToBackendMut,
-        GLWEToBackendRef, IntPolyInfos, SetBSGSMeta,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        BSGSMeta, GGLWEActiveUse, GGLWEInfos, GLWEInfos, GLWERelinearizationKeyHelper, GLWERelinearizationKeyLayoutHelper,
+        GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, SetBSGSMeta,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedBound, GLWETensorKeyPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -271,6 +271,7 @@ unsafe impl poulpy_core::oep::GLWETensoringImpl<BE> for BE {
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
+        SCALAR_TENSOR_CALLS.fetch_add(1, Ordering::Relaxed);
         module.glwe_tensor_apply_default(cnv_offset, res, a, b, scratch)
     }
 
@@ -284,6 +285,7 @@ unsafe impl poulpy_core::oep::GLWETensoringImpl<BE> for BE {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
+        SCALAR_TENSOR_CALLS.fetch_add(1, Ordering::Relaxed);
         module.glwe_tensor_square_apply_default(cnv_offset, res, a, scratch)
     }
 
@@ -293,10 +295,6 @@ unsafe impl poulpy_core::oep::GLWETensoringImpl<BE> for BE {
         A: GLWEToBackendRef<BE> + GLWEInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE>,
     {
-        // Every tensor product ends in exactly one relinearization, whichever
-        // composite ran it. Counting here is how the lockstep test proves no
-        // product bypassed a priced frontier.
-        SCALAR_TENSOR_CALLS.fetch_add(1, Ordering::Relaxed);
         module.glwe_tensor_relinearize_default(res, a, tsk, scratch)
     }
 
@@ -324,6 +322,7 @@ unsafe impl poulpy_core::oep::GLWETensoringImpl<BE> for BE {
         BP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
     {
         PREPARED_RIGHT_CALLS.fetch_add(1, Ordering::Relaxed);
+        SCALAR_TENSOR_CALLS.fetch_add(1, Ordering::Relaxed);
         module.glwe_tensor_apply_prepared_right_default(cnv_offset, res, a, b_prep, b_size, scratch);
     }
 }
@@ -403,10 +402,10 @@ impl poulpy_ckks::default::mul::CKKSMulDefault<BE> for Module<BE> {
     // amount, so a caller that sized from the batch query fits and a caller
     // that priced only the scalar path does not.
 
-    fn ckks_mul_into_batch_default<Dst, A, B, T>(
+    fn ckks_mul_into_batch_default<Dst, A, B>(
         &self,
         items: &mut [poulpy_ckks::api::CKKSMulIntoItem<&mut Dst, &A, &B>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>
     where
@@ -414,7 +413,6 @@ impl poulpy_ckks::default::mul::CKKSMulDefault<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + poulpy_ckks::CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + poulpy_ckks::CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + poulpy_ckks::CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         record_frontier(
             "mul_into",
@@ -424,36 +422,34 @@ impl poulpy_ckks::default::mul::CKKSMulDefault<BE> for Module<BE> {
                 .collect(),
         );
         with_pad(self, scratch, |s| {
-            poulpy_ckks::default::mul::ckks_mul_into_batch_ordered(self, items, tsk, s)
+            poulpy_ckks::default::mul::ckks_mul_into_batch_ordered(self, items, bounds, s)
         })
     }
 
-    fn ckks_mul_into_batch_tmp_bytes_default<Dst, A, B, T>(
+    fn ckks_mul_into_batch_tmp_bytes_default<Dst, A, B>(
         &self,
         items: &[poulpy_ckks::api::CKKSMulIntoItem<&Dst, &A, &B>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         Self: poulpy_core::GLWETensoring<BE> + Sized,
         Dst: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
-        T: GGLWEInfos,
     {
-        poulpy_ckks::default::mul::ckks_mul_into_batch_tmp_bytes_ordered(self, items, tsk) + pad_bytes(self)
+        poulpy_ckks::default::mul::ckks_mul_into_batch_tmp_bytes_ordered(self, items, uses) + pad_bytes(self)
     }
 
-    fn ckks_square_into_batch_default<Dst, A, T>(
+    fn ckks_square_into_batch_default<Dst, A>(
         &self,
         items: &mut [poulpy_ckks::api::CKKSSquareIntoItem<&mut Dst, &A>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>
     where
         Self: poulpy_core::GLWETensoring<BE> + Sized,
         Dst: GLWEToBackendMut<BE> + poulpy_ckks::CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + poulpy_ckks::CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         record_frontier(
             "square_into",
@@ -463,34 +459,32 @@ impl poulpy_ckks::default::mul::CKKSMulDefault<BE> for Module<BE> {
                 .collect(),
         );
         with_pad(self, scratch, |s| {
-            poulpy_ckks::default::mul::ckks_square_into_batch_ordered(self, items, tsk, s)
+            poulpy_ckks::default::mul::ckks_square_into_batch_ordered(self, items, bounds, s)
         })
     }
 
-    fn ckks_square_into_batch_tmp_bytes_default<Dst, A, T>(
+    fn ckks_square_into_batch_tmp_bytes_default<Dst, A>(
         &self,
         items: &[poulpy_ckks::api::CKKSSquareIntoItem<&Dst, &A>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         Self: poulpy_core::GLWETensoring<BE> + Sized,
         Dst: GLWEInfos,
         A: GLWEInfos,
-        T: GGLWEInfos,
     {
-        poulpy_ckks::default::mul::ckks_square_into_batch_tmp_bytes_ordered(self, items, tsk) + pad_bytes(self)
+        poulpy_ckks::default::mul::ckks_square_into_batch_tmp_bytes_ordered(self, items, uses) + pad_bytes(self)
     }
 
-    fn ckks_square_assign_batch_default<Dst, T>(
+    fn ckks_square_assign_batch_default<Dst>(
         &self,
         items: &mut [poulpy_ckks::api::CKKSSquareAssignItem<&mut Dst>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>
     where
         Self: poulpy_core::GLWETensoring<BE> + Sized,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + poulpy_ckks::CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         record_frontier(
             "square_assign",
@@ -507,33 +501,31 @@ impl poulpy_ckks::default::mul::CKKSMulDefault<BE> for Module<BE> {
                 .collect(),
         );
         with_pad(self, scratch, |s| {
-            poulpy_ckks::default::mul::ckks_square_assign_batch_ordered(self, items, tsk, s)
+            poulpy_ckks::default::mul::ckks_square_assign_batch_ordered(self, items, bounds, s)
         })
     }
 
-    fn ckks_square_assign_batch_tmp_bytes_default<Dst, T>(
+    fn ckks_square_assign_batch_tmp_bytes_default<Dst>(
         &self,
         items: &[poulpy_ckks::api::CKKSSquareAssignItem<&Dst>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         Self: poulpy_core::GLWETensoring<BE> + Sized,
         Dst: GLWEInfos,
-        T: GGLWEInfos,
     {
-        poulpy_ckks::default::mul::ckks_square_assign_batch_tmp_bytes_ordered(self, items, tsk) + pad_bytes(self)
+        poulpy_ckks::default::mul::ckks_square_assign_batch_tmp_bytes_ordered(self, items, uses) + pad_bytes(self)
     }
 
-    fn ckks_mul_prepared_assign_batch_default<Dst, T>(
+    fn ckks_mul_prepared_assign_batch_default<Dst>(
         &self,
         items: &mut [poulpy_ckks::api::CKKSPreparedMulAssignItem<&mut Dst, &poulpy_ckks::layouts::CKKSPreparedRight<BE>>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>
     where
         Self: poulpy_core::GLWETensoring<BE> + Sized,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + poulpy_ckks::CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         record_frontier(
             "prepared_assign",
@@ -550,22 +542,21 @@ impl poulpy_ckks::default::mul::CKKSMulDefault<BE> for Module<BE> {
                 .collect(),
         );
         with_pad(self, scratch, |s| {
-            poulpy_ckks::default::mul::ckks_mul_prepared_assign_batch_ordered(self, items, tsk, s)
+            poulpy_ckks::default::mul::ckks_mul_prepared_assign_batch_ordered(self, items, bounds, s)
         })
     }
 
-    fn ckks_mul_prepared_assign_batch_tmp_bytes_default<Dst, PR, T>(
+    fn ckks_mul_prepared_assign_batch_tmp_bytes_default<Dst, PR>(
         &self,
         items: &[poulpy_ckks::api::CKKSPreparedMulAssignItem<&Dst, &PR>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         Self: poulpy_core::GLWETensoring<BE> + Sized,
         Dst: GLWEInfos,
         PR: poulpy_ckks::layouts::CKKSPreparedRightInfos,
-        T: GGLWEInfos,
     {
-        poulpy_ckks::default::mul::ckks_mul_prepared_assign_batch_tmp_bytes_ordered(self, items, tsk) + pad_bytes(self)
+        poulpy_ckks::default::mul::ckks_mul_prepared_assign_batch_tmp_bytes_ordered(self, items, uses) + pad_bytes(self)
     }
 }
 

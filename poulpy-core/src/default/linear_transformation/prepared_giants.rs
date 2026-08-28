@@ -241,37 +241,42 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
         .filter(|gs| gs.rot != 0 && !gs.diagonals.is_empty())
         .count();
     let has_nonzero_giant_rotation = nonzero_giant_rotations != 0;
-    // Keys may differ per giant rotation, so the sizing is the widest of the
-    // rotations actually used. An identity-only transform consults none.
-    let (use_lazy_giant_rotation, key_output_size) = if has_nonzero_giant_rotation {
-        let mut key_base2k: Option<crate::layouts::Base2K> = None;
-        let mut output_size: usize = 0;
-        // Same filter as the evaluation loop: an empty bucket is skipped there,
-        // so sizing must not demand a key for it either.
-        for gs in rhs.giant_steps.iter().filter(|gs| gs.rot != 0 && !gs.diagonals.is_empty()) {
-            let (layout, effective_dsize) = keys
-                .get_automorphism_key_layout_for(module.galois_element(gs.rot), lhs.k())
+
+    // Giant automorphisms rotate the post-PROD, destination-shaped value: bind
+    // them at `res.k()`, independently of the source precision used by baby
+    // rotations. Resolve the complete schedule before touching `res`, so a
+    // missing/unrealizable late key cannot leave a partially evaluated result.
+    let rotation_plans = rhs
+        .giant_steps
+        .iter()
+        .map(|gs| {
+            if gs.rot == 0 || gs.diagonals.is_empty() {
+                return None;
+            }
+            let (key, effective_dsize) = keys
+                .get_automorphism_key_for(module.galois_element(gs.rot), res.k())
                 .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot));
-            key_base2k = Some(layout.base2k());
-            // Sizing reads the resolved logical `dnum`/`k_aux`, not the physical
-            // ones a `with_dsize` wrapper still forwards.
-            let use_: GGLWEUse = resolved_use(layout, lhs.k(), effective_dsize);
-            output_size = output_size.max(
-                crate::default::keyswitching::bound_accumulation_output_size_with_tail::<BE, _>(
-                    res,
-                    &use_,
-                    nonzero_giant_rotations,
-                    prod_size.saturating_sub(res.size()),
-                ),
+            let use_: GGLWEUse = resolved_use(key, res.k(), effective_dsize);
+            let output_size = crate::default::keyswitching::bound_accumulation_output_size_with_tail::<BE, _>(
+                res,
+                &use_,
+                nonzero_giant_rotations,
+                prod_size.saturating_sub(res.size()),
             );
-        }
-        let key_base2k = key_base2k.expect("at least one nonzero giant rotation");
-        let bases_match = res_base2k == key_base2k && prod_base2k == key_base2k;
-        (bases_match, output_size)
-    } else {
-        // No giant rotation: BIG-flow accumulator is always valid (no key required).
-        (true, res.size())
-    };
+            Some((key, effective_dsize, use_, output_size))
+        })
+        .collect::<Vec<_>>();
+    let key_output_size = rotation_plans
+        .iter()
+        .filter_map(Option::as_ref)
+        .map(|(_, _, _, output_size)| *output_size)
+        .max()
+        .unwrap_or_else(|| res.size());
+    let use_lazy_giant_rotation = has_nonzero_giant_rotation
+        && rotation_plans
+            .iter()
+            .filter_map(Option::as_ref)
+            .all(|(key, _, _, _)| key.base2k() == res_base2k && key.base2k() == prod_base2k);
     let use_final_lazy_accumulator = !has_nonzero_giant_rotation || use_lazy_giant_rotation;
     let lazy_size = if use_lazy_giant_rotation {
         key_output_size.max(prod_size)
@@ -319,13 +324,13 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                     glwe_dft_copy_dft(module, &mut lazy_acc_dft_backend, &prod_dft_ref);
                 }
             } else {
-                let (key, effective_dsize) = keys
-                    .get_automorphism_key_for(module.galois_element(rot), lhs.k())
-                    .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
-                let key = &key.with_dsize(effective_dsize);
+                let &(key, _, use_, rotation_output_size) =
+                    rotation_plans[g].as_ref().expect("nonzero giant rotation has no key plan");
                 {
                     let (mut rot_dft, mut scratch_rot) =
-                        scratch_phase.borrow().take_vec_znx_dft_scratch(module, cols, key_output_size);
+                        scratch_phase
+                            .borrow()
+                            .take_vec_znx_dft_scratch(module, cols, rotation_output_size);
                     {
                         let mut rot_dft_backend = rot_dft.to_backend_mut();
                         let prod_dft_ref = prod_dft.to_backend_ref();
@@ -335,7 +340,8 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                             &prod_dft_ref,
                             prod_base2k.as_usize(),
                             key,
-                            key_output_size,
+                            &use_,
+                            rotation_output_size,
                             nonzero_giant_rotations,
                             &mut scratch_rot,
                         );
@@ -414,12 +420,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
 
         let rot = rhs.giant_steps[g].rot;
         if rot != 0 {
-            // Resolved at the precision of the accumulator being rotated, which
-            // is what the operation binds the key at, not at the baby-step
-            // precision the lazy path selects on.
-            let (key, effective_dsize) = keys
-                .get_automorphism_key_for(module.galois_element(rot), fallback_acc.k())
-                .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
+            let &(key, effective_dsize, _, _) = rotation_plans[g].as_ref().expect("nonzero giant rotation has no key plan");
             module.glwe_automorphism_assign(&mut fallback_acc, &key.with_dsize(effective_dsize), &mut scratch_phase);
         }
 

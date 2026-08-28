@@ -19,10 +19,11 @@ use crate::{
     },
     default::operations::glwe_prepare_right,
     layouts::{
-        BackendGLWE, Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor,
-        GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey,
-        GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
-        WithEffectiveDsize, prepared::GLWESecretPrepared,
+        BackendGLWE, Dnum, Dsize, GGLWEActiveUse, GGLWEBind, GGLWEInfos, GGLWEUse, GLWE, GLWELayout, GLWEPlaintext, GLWESecret,
+        GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory, GLWESecretTensorPrepared,
+        GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared,
+        GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision, WithEffectiveDsize,
+        prepared::{GLWESecretPrepared, GLWETensorKeyPreparedBound, GLWETensorKeyPreparedToBackendRef},
     },
     log2_std_noise_glwe_tensor,
 };
@@ -39,6 +40,22 @@ use crate::{
 /// measured draw inside the bound while still catching a noise regression of
 /// 4x or more.
 const TENSOR_NOISE_MARGIN: f64 = 2.0;
+
+fn active_use<K: GGLWEInfos>(key: &K, k: TorusPrecision) -> GGLWEActiveUse {
+    match key.bind_covering_for(k).unwrap() {
+        GGLWEUse::Active(use_) => use_,
+        GGLWEUse::Empty => panic!("tensor batch test requires a positive-precision use"),
+    }
+}
+
+fn prepared_bounds<'a, BE: poulpy_hal::layouts::Backend, K: GLWETensorKeyPreparedToBackendRef<BE>>(
+    key: &'a K,
+    uses: &[GGLWEActiveUse],
+) -> Vec<GLWETensorKeyPreparedBound<'a, BE>> {
+    uses.iter()
+        .map(|use_| GLWETensorKeyPreparedBound::new(GLWETensorKeyPreparedToBackendRef::to_backend_ref(key), *use_).unwrap())
+        .collect()
+}
 
 pub fn test_glwe_tensoring<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -910,7 +927,11 @@ pub fn test_glwe_tensor_fused_relinearize_batch<BE: crate::test_suite::noise::Te
                 b: &b,
             })
             .collect();
-        let bytes = module.glwe_tensor_apply_relinearize_batch_tmp_bytes(&query, &tsk_infos);
+        let uses: Vec<_> = query
+            .iter()
+            .map(|item| active_use(&tsk_infos, item.tensor_infos.k()))
+            .collect();
+        let bytes = module.glwe_tensor_apply_relinearize_batch_tmp_bytes(&query, &uses);
         drop(query);
         for fill in [0x00u8, 0xFFu8] {
             let mut exact: ScratchOwned<BE> = ScratchOwned::alloc(bytes.max(1));
@@ -927,7 +948,8 @@ pub fn test_glwe_tensor_fused_relinearize_batch<BE: crate::test_suite::noise::Te
                     b: &b,
                 })
                 .collect();
-            module.glwe_tensor_apply_relinearize_batch(&mut items, &tsk_prep, &mut exact.borrow());
+            let bounds = prepared_bounds(&tsk_prep, &uses);
+            module.glwe_tensor_apply_relinearize_batch(&mut items, &bounds, &mut exact.borrow());
             drop(items);
             assert_eq!(want, have, "apply_relinearize_batch len={len} fill={fill:#04x}");
         }
@@ -947,7 +969,11 @@ pub fn test_glwe_tensor_fused_relinearize_batch<BE: crate::test_suite::noise::Te
                 a: &a,
             })
             .collect();
-        let bytes = module.glwe_tensor_square_apply_relinearize_batch_tmp_bytes(&query, &tsk_infos);
+        let uses: Vec<_> = query
+            .iter()
+            .map(|item| active_use(&tsk_infos, item.tensor_infos.k()))
+            .collect();
+        let bytes = module.glwe_tensor_square_apply_relinearize_batch_tmp_bytes(&query, &uses);
         drop(query);
         for fill in [0x00u8, 0xFFu8] {
             let mut exact: ScratchOwned<BE> = ScratchOwned::alloc(bytes.max(1));
@@ -963,7 +989,8 @@ pub fn test_glwe_tensor_fused_relinearize_batch<BE: crate::test_suite::noise::Te
                     a: &a,
                 })
                 .collect();
-            module.glwe_tensor_square_apply_relinearize_batch(&mut items, &tsk_prep, &mut exact.borrow());
+            let bounds = prepared_bounds(&tsk_prep, &uses);
+            module.glwe_tensor_square_apply_relinearize_batch(&mut items, &bounds, &mut exact.borrow());
             drop(items);
             assert_eq!(want, have, "square_apply_relinearize_batch len={len} fill={fill:#04x}");
         }
@@ -982,7 +1009,11 @@ pub fn test_glwe_tensor_fused_relinearize_batch<BE: crate::test_suite::noise::Te
                 tensor_infos: infos_of(i),
             })
             .collect();
-        let bytes = module.glwe_tensor_square_relinearize_assign_batch_tmp_bytes(&query, &tsk_infos);
+        let uses: Vec<_> = query
+            .iter()
+            .map(|item| active_use(&tsk_infos, item.tensor_infos.k()))
+            .collect();
+        let bytes = module.glwe_tensor_square_relinearize_assign_batch_tmp_bytes(&query, &uses);
         drop(query);
         for fill in [0x00u8, 0xFFu8] {
             let mut exact: ScratchOwned<BE> = ScratchOwned::alloc(bytes.max(1));
@@ -997,7 +1028,8 @@ pub fn test_glwe_tensor_fused_relinearize_batch<BE: crate::test_suite::noise::Te
                     tensor_infos: infos_of(i),
                 })
                 .collect();
-            module.glwe_tensor_square_relinearize_assign_batch(&mut items, &tsk_prep, &mut exact.borrow());
+            let bounds = prepared_bounds(&tsk_prep, &uses);
+            module.glwe_tensor_square_relinearize_assign_batch(&mut items, &bounds, &mut exact.borrow());
             drop(items);
             assert_eq!(want, have, "square_relinearize_assign_batch len={len} fill={fill:#04x}");
         }
@@ -1027,7 +1059,11 @@ pub fn test_glwe_tensor_fused_relinearize_batch<BE: crate::test_suite::noise::Te
                 prepared_right_size: b_size,
             })
             .collect();
-        let bytes = module.glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes(&query, &tsk_infos);
+        let uses: Vec<_> = query
+            .iter()
+            .map(|item| active_use(&tsk_infos, item.tensor_infos.k()))
+            .collect();
+        let bytes = module.glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes(&query, &uses);
         drop(query);
         for fill in [0x00u8, 0xFFu8] {
             let mut exact: ScratchOwned<BE> = ScratchOwned::alloc(bytes.max(1));
@@ -1044,7 +1080,8 @@ pub fn test_glwe_tensor_fused_relinearize_batch<BE: crate::test_suite::noise::Te
                     prepared_right_size: b_size,
                 })
                 .collect();
-            module.glwe_tensor_apply_prepared_right_relinearize_assign_batch(&mut items, &tsk_prep, &mut exact.borrow());
+            let bounds = prepared_bounds(&tsk_prep, &uses);
+            module.glwe_tensor_apply_prepared_right_relinearize_assign_batch(&mut items, &bounds, &mut exact.borrow());
             drop(items);
             assert_eq!(
                 want, have,
@@ -1052,6 +1089,47 @@ pub fn test_glwe_tensor_fused_relinearize_batch<BE: crate::test_suite::noise::Te
             );
         }
     }
+
+    // A malformed late lane must be rejected by the frontier-wide preflight,
+    // before the valid first lane can write its destination.
+    let invalid_offsets = [0, usize::MAX];
+    let uses: Vec<_> = (0..2).map(|i| active_use(&tsk_infos, infos_of(i).k())).collect();
+    let bounds = prepared_bounds(&tsk_prep, &uses);
+    let mut have = alloc_dst(2);
+    let untouched = alloc_dst(2);
+    let mut items: Vec<TensorApplyRelinearizeItem<&mut GLWE<_, _>, _, _, _>> = have
+        .iter_mut()
+        .enumerate()
+        .map(|(i, dst)| TensorApplyRelinearizeItem {
+            cnv_offset: invalid_offsets[i],
+            res: dst,
+            tensor_infos: infos_of(i),
+            a: &a,
+            b: &b,
+        })
+        .collect();
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.glwe_tensor_apply_relinearize_batch(&mut items, &bounds, &mut setup.borrow());
+    }));
+    assert!(panic.is_err(), "batch accepted an out-of-range late conversion offset");
+    drop(items);
+    assert_eq!(untouched, have, "a late invalid tensor lane wrote an earlier destination");
+
+    let query: Vec<TensorApplyRelinearizeItem<&GLWE<_, _>, _, _, _>> = have
+        .iter()
+        .enumerate()
+        .map(|(i, dst)| TensorApplyRelinearizeItem {
+            cnv_offset: invalid_offsets[i],
+            res: dst,
+            tensor_infos: infos_of(i),
+            a: &a,
+            b: &b,
+        })
+        .collect();
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.glwe_tensor_apply_relinearize_batch_tmp_bytes(&query, &uses)
+    }));
+    assert!(panic.is_err(), "batch scratch query accepted an out-of-range late offset");
 }
 
 /// Relinearization honours the effective `dsize` carried on the key.
@@ -1215,13 +1293,22 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
         + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let _ = params;
     let rank: usize = 1;
     let n: usize = module.n();
 
+    // Keep both radices inside the envelope selected by each backend suite. In
+    // particular, FFT64's configured radix is 17; the old hard-coded radix 30
+    // overflowed its i64 BIG accumulator before exercising this regression.
+    let hi: usize = params.base2k;
+    let lo: usize = hi.checked_sub(1).expect("cross-radix test requires base2k >= 2");
+
     // (operand radix, key radix, operand precision), chosen so that the storage
     // width and the exact precision round to different key-limb counts.
-    for (a_base2k, key_base2k, k) in [(30usize, 20usize, 241usize), (30, 35, 138)] {
+    for (a_base2k, key_base2k) in [(hi, lo), (lo, hi)] {
+        let k: usize = a_base2k
+            .checked_mul(4)
+            .and_then(|v| v.checked_add(1))
+            .expect("cross-radix test precision overflows usize");
         let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
             n: n.into(),
             base2k: a_base2k.into(),

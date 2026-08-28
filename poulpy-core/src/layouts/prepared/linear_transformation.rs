@@ -115,14 +115,16 @@ impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
 /// cache is sized via [`LinearTransformationBabySteps::alloc`].
 pub struct LinearTransformationBabySteps<BE: Backend> {
     pub(crate) values: BTreeMap<i64, CnvPVecLOwned<BE>>,
-    /// Precision of the input the cache was allocated for. Every rotation of
-    /// the factor, baby and giant alike, resolves its key at this precision, so
-    /// the effective decomposition cannot drift inside the factor.
+    /// Precision of the source the baby cache was allocated for. Baby
+    /// automorphisms rotate that source and resolve their keys at this
+    /// precision; giant automorphisms rotate the post-product destination and
+    /// may therefore resolve at a lower precision.
     pub(crate) k: TorusPrecision,
 }
 
 impl<BE: Backend> LinearTransformationBabySteps<BE> {
-    /// Precision the factor's keys are resolved at.
+    /// Precision at which this cache's prepared baby/source rotations resolve
+    /// their keys.
     pub fn k(&self) -> TorusPrecision {
         self.k
     }

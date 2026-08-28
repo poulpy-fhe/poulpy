@@ -6,9 +6,10 @@ use poulpy_hal::layouts::{Backend, CnvPVecRToBackendRef, Module, ScratchArena};
 use crate::{
     default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
     layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEAutomorphismKeyHelper,
-        GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        GGLWEActiveUse, GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE,
+        GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef,
+        GetGaloisElement,
+        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedBound, GLWETensorKeyPreparedToBackendRef},
     },
     operations::{
         GGSWRotateDefault, GLWEAddDefault, GLWECopyDefault, GLWEMulConstDefault, GLWEMulPlainDefault, GLWEMulXpMinusOneDefault,
@@ -295,10 +296,10 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
     /// Provided: the default runs the items sequentially through
     /// [`Self::glwe_tensor_apply_relinearize`], so a backend inherits the batch
     /// for free and may override it to share key traffic across items.
-    fn glwe_tensor_apply_relinearize_batch_tmp_bytes<R, I, A, B, T>(
+    fn glwe_tensor_apply_relinearize_batch_tmp_bytes<R, I, A, B>(
         module: &Module<BE>,
         items: &[crate::api::TensorApplyRelinearizeItem<&R, &I, &A, &B>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         Module<BE>: crate::default::operations::GLWETensoringDefault<BE>,
@@ -307,17 +308,16 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
         I: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
-        T: GGLWEInfos,
     {
         <Module<BE> as crate::default::operations::GLWETensoringDefault<BE>>::glwe_tensor_apply_relinearize_batch_tmp_bytes_default(
-            module, items, tsk,
+            module, items, uses,
         )
     }
 
-    fn glwe_tensor_apply_relinearize_batch<R, I, A, B, T>(
+    fn glwe_tensor_apply_relinearize_batch<R, I, A, B>(
         module: &Module<BE>,
         items: &mut [crate::api::TensorApplyRelinearizeItem<&mut R, &I, &A, &B>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: crate::default::operations::GLWETensoringDefault<BE>,
@@ -326,17 +326,16 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
         I: GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         <Module<BE> as crate::default::operations::GLWETensoringDefault<BE>>::glwe_tensor_apply_relinearize_batch_default(
-            module, items, tsk, scratch,
+            module, items, bounds, scratch,
         )
     }
 
-    fn glwe_tensor_square_apply_relinearize_batch_tmp_bytes<R, I, A, T>(
+    fn glwe_tensor_square_apply_relinearize_batch_tmp_bytes<R, I, A>(
         module: &Module<BE>,
         items: &[crate::api::TensorSquareApplyRelinearizeItem<&R, &I, &A>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         Module<BE>: crate::default::operations::GLWETensoringDefault<BE>,
@@ -344,17 +343,16 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
         R: GLWEInfos,
         I: GLWEInfos,
         A: GLWEInfos,
-        T: GGLWEInfos,
     {
         <Module<BE> as crate::default::operations::GLWETensoringDefault<BE>>::glwe_tensor_square_apply_relinearize_batch_tmp_bytes_default(
-            module, items, tsk,
+            module, items, uses,
         )
     }
 
-    fn glwe_tensor_square_apply_relinearize_batch<R, I, A, T>(
+    fn glwe_tensor_square_apply_relinearize_batch<R, I, A>(
         module: &Module<BE>,
         items: &mut [crate::api::TensorSquareApplyRelinearizeItem<&mut R, &I, &A>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: crate::default::operations::GLWETensoringDefault<BE>,
@@ -362,68 +360,64 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         I: GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         <Module<BE> as crate::default::operations::GLWETensoringDefault<BE>>::glwe_tensor_square_apply_relinearize_batch_default(
-            module, items, tsk, scratch,
+            module, items, bounds, scratch,
         )
     }
 
-    fn glwe_tensor_square_relinearize_assign_batch_tmp_bytes<R, I, T>(
+    fn glwe_tensor_square_relinearize_assign_batch_tmp_bytes<R, I>(
         module: &Module<BE>,
         items: &[crate::api::TensorSquareRelinearizeAssignItem<&R, &I>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         Module<BE>: crate::default::operations::GLWETensoringDefault<BE>,
         BE: GLWETensoringImpl<BE>,
         R: GLWEInfos,
         I: GLWEInfos,
-        T: GGLWEInfos,
     {
         <Module<BE> as crate::default::operations::GLWETensoringDefault<BE>>::glwe_tensor_square_relinearize_assign_batch_tmp_bytes_default(
-            module, items, tsk,
+            module, items, uses,
         )
     }
 
-    fn glwe_tensor_square_relinearize_assign_batch<R, I, T>(
+    fn glwe_tensor_square_relinearize_assign_batch<R, I>(
         module: &Module<BE>,
         items: &mut [crate::api::TensorSquareRelinearizeAssignItem<&mut R, &I>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: crate::default::operations::GLWETensoringDefault<BE>,
         BE: GLWETensoringImpl<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         I: GLWEInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         <Module<BE> as crate::default::operations::GLWETensoringDefault<BE>>::glwe_tensor_square_relinearize_assign_batch_default(
-            module, items, tsk, scratch,
+            module, items, bounds, scratch,
         )
     }
 
-    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes<R, I, BP, T>(
+    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes<R, I, BP>(
         module: &Module<BE>,
         items: &[crate::api::TensorPreparedRightRelinearizeAssignItem<&R, &I, &BP>],
-        tsk: &T,
+        uses: &[GGLWEActiveUse],
     ) -> usize
     where
         Module<BE>: crate::default::operations::GLWETensoringDefault<BE>,
         BE: GLWETensoringImpl<BE>,
         R: GLWEInfos,
         I: GLWEInfos,
-        T: GGLWEInfos,
     {
         <Module<BE> as crate::default::operations::GLWETensoringDefault<BE>>::glwe_tensor_apply_prepared_right_relinearize_assign_batch_tmp_bytes_default(
-            module, items, tsk,
+            module, items, uses,
         )
     }
 
-    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch<R, I, BP, T>(
+    fn glwe_tensor_apply_prepared_right_relinearize_assign_batch<R, I, BP>(
         module: &Module<BE>,
         items: &mut [crate::api::TensorPreparedRightRelinearizeAssignItem<&mut R, &I, &BP>],
-        tsk: &T,
+        bounds: &[GLWETensorKeyPreparedBound<'_, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: crate::default::operations::GLWETensoringDefault<BE>,
@@ -431,10 +425,9 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         I: GLWEInfos,
         BP: CnvPVecRToBackendRef<BE>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
     {
         <Module<BE> as crate::default::operations::GLWETensoringDefault<BE>>::glwe_tensor_apply_prepared_right_relinearize_assign_batch_default(
-            module, items, tsk, scratch,
+            module, items, bounds, scratch,
         )
     }
 }

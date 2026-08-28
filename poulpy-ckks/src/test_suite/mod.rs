@@ -562,8 +562,8 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::linear_transformation::test_linear_transformation
             );
             run_test!(
-                linear_transformation_pins_one_precision,
-                $crate::test_suite::linear_transformation::test_linear_transformation_pins_one_precision
+                linear_transformation_operation_precisions,
+                $crate::test_suite::linear_transformation::test_linear_transformation_operation_precisions
             );
             run_test!(paco_partial_c2s, $crate::test_suite::paco_lt::test_paco_partial_c2s);
             run_test!(paco_packing, $crate::test_suite::paco_lt::test_paco_packing);
@@ -724,6 +724,26 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 mul_prepared_assign_batch_rejects_layout_mismatch,
                 $crate::test_suite::mul_batch::test_mul_prepared_assign_batch_rejects_layout_mismatch
+            );
+            run_test!(
+                mul_batch_distinct_keys_and_empty_lane,
+                $crate::test_suite::mul_batch::test_mul_batch_distinct_keys_and_empty_lane
+            );
+            run_test!(
+                mul_prepared_assign_batch_rejects_late_budget_without_writes,
+                $crate::test_suite::mul_batch::test_mul_prepared_assign_batch_rejects_late_budget_without_writes
+            );
+            run_test!(
+                mul_batch_rejects_late_non_covering_key_without_writes,
+                $crate::test_suite::mul_batch::test_mul_batch_rejects_late_non_covering_key_without_writes
+            );
+            run_test!(
+                mul_prepared_batch_rejects_precision_overflow_without_writes,
+                $crate::test_suite::mul_batch::test_mul_prepared_batch_rejects_precision_overflow_without_writes
+            );
+            run_test!(
+                mul_batch_rejects_short_scratch_without_writes,
+                $crate::test_suite::mul_batch::test_mul_batch_rejects_short_scratch_without_writes
             );
             run_test!(
                 power_basis_self_products_match_generic_mul,

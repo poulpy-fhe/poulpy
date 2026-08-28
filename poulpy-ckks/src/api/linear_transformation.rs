@@ -99,21 +99,62 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         K: GGLWEInfos,
         H: GLWEAutomorphismKeyLayoutHelper<K>;
 
-    /// Scratch bytes required to evaluate with a **resident** RHS (`P =
-    /// PreparedDiagonal`).
+    /// Scratch bytes required by
+    /// [`Self::ckks_eval_linear_transformation_into`] with a **resident** RHS
+    /// (`P = PreparedDiagonal`).
     ///
-    /// Takes the transform and the key source the evaluation will be given, and
-    /// resolves each rotation through them exactly as the evaluation does.
-    fn ckks_eval_linear_transformation_tmp_bytes<C, P, H, K>(&self, ct: &C, lt: &LinearTransformation<P>, keys: &H) -> usize
+    /// `dst` and `src` are separate because giant rotations bind at the
+    /// destination precision while baby rotations bind at the source
+    /// precision; an `_into` call is allowed to make those differ.
+    fn ckks_eval_linear_transformation_into_tmp_bytes<Dst, Src, P, H, K>(
+        &self,
+        dst: &Dst,
+        src: &Src,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+    ) -> usize
     where
-        C: CKKSCtBounds,
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
         P: LWEInfos,
         K: GGLWEInfos,
         H: GLWEAutomorphismKeyLayoutHelper<K>;
 
-    /// Scratch bytes required to evaluate with a **streamed** RHS (a plaintext
-    /// diagonal `P`): the streamed inner product additionally holds one resident
-    /// `CnvPVecR` diagonal slot, so this is larger than the resident budget.
+    /// Scratch bytes required by
+    /// [`Self::ckks_eval_linear_transformation_into`] with a **streamed** RHS
+    /// (a plaintext diagonal `P`).
+    fn ckks_eval_linear_transformation_streamed_into_tmp_bytes<Dst, Src, P, H, K>(
+        &self,
+        dst: &Dst,
+        src: &Src,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+    ) -> usize
+    where
+        Dst: CKKSCtBounds,
+        Src: CKKSCtBounds,
+        P: LWEInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>;
+
+    /// Scratch bytes required by the resident-RHS `_assign` variants.
+    ///
+    /// Takes the transform and the key source the evaluation will be given, and
+    /// resolves each rotation through them exactly as the evaluation does. The
+    /// working destination is planned at the factor's natural post-product
+    /// precision, exactly like `_assign`; baby keys therefore resolve at the
+    /// source precision and giant keys at the lower destination precision. The
+    /// result also includes that natural destination-shaped scratch copy.
+    fn ckks_eval_linear_transformation_tmp_bytes<C, P, H, K>(&self, ct: &C, lt: &LinearTransformation<P>, keys: &H) -> usize
+    where
+        C: CKKSCtBounds,
+        P: LtDiagonalScale + IntPolyInfos,
+        K: GGLWEInfos,
+        H: GLWEAutomorphismKeyLayoutHelper<K>;
+
+    /// Scratch bytes required by the streamed-RHS `_assign` variants. As above,
+    /// the result includes the natural post-product destination-shaped working
+    /// copy.
     fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, P, H, K>(
         &self,
         ct: &C,
@@ -122,7 +163,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ) -> usize
     where
         C: CKKSCtBounds,
-        P: LWEInfos,
+        P: LtDiagonalScale + IntPolyInfos,
         K: GGLWEInfos,
         H: GLWEAutomorphismKeyLayoutHelper<K>;
 

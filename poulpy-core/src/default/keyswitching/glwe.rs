@@ -48,7 +48,30 @@ where
             GGLWEUse::Empty => 0,
             GGLWEUse::Active(active) => self.gglwe_product_dft_tmp_bytes_default(res_size, a_size, active),
         };
-        lvl_0 + lvl_1
+        lvl_0
+            .checked_add(lvl_1)
+            .expect("GGLWE keyswitch scratch size overflows usize")
+    }
+
+    /// Conservative counterpart of
+    /// [`Self::glwe_keyswitch_internal_tmp_bytes_from_sizes`] for proxy/bound
+    /// queries. A dense representative use may become a strided, materialized
+    /// use at a lower precision, so only the nested product branch is widened.
+    fn glwe_keyswitch_internal_tmp_bytes_from_sizes_upper(
+        &self,
+        mask_cols: usize,
+        res_size: usize,
+        a_size: usize,
+        use_: &GGLWEUse,
+    ) -> usize {
+        let lvl_0 = self.bytes_of_vec_znx_dft(mask_cols, a_size);
+        let lvl_1 = match use_ {
+            GGLWEUse::Empty => 0,
+            GGLWEUse::Active(active) => self.gglwe_product_dft_tmp_bytes_upper_default(res_size, a_size, active),
+        };
+        lvl_0
+            .checked_add(lvl_1)
+            .expect("GGLWE keyswitch upper scratch size overflows usize")
     }
 
     /// Binds `key_infos` at `a_infos.k()`, the operation's exact input precision.
@@ -95,11 +118,10 @@ pub fn bound_layout<K: GGLWEInfos>(key: &K, input_k: TorusPrecision) -> GGLWELay
 /// Binds a key for `input_k`, or fails loudly: the seam never falls back to the
 /// physical decomposition.
 ///
-/// Binds through [`GGLWEBind::bind_for`], not `bind_covering_for`: a key whose
-/// gadget stops short of the input's last partial digit is the ordinary case
-/// here, not an error. Registry dispatch is what refuses to *select* such a key
-/// (`GGLWEActiveUse::covers_input`); execution decomposes the digits the key
-/// has, which is what the dense kernels have always done.
+/// Raw keys may intentionally stop before disposable low/auxiliary digits;
+/// [`GGLWEBind::bind_for`] preserves that established product behavior. Key
+/// registries and precision-aware helpers use `bind_covering_for` when complete
+/// input coverage is required.
 ///
 /// Public because every operation that reaches a GGLWE product binds through
 /// it, including the ones outside this crate.
@@ -216,7 +238,11 @@ where
     let logical = &use_.logical_layout();
     let (dsize, dnum) = (logical.dsize().as_usize(), logical.dnum().as_usize());
     let cols_in: usize = logical.rank_in().into();
-    let cols_out: usize = (logical.rank_out() + 1).into();
+    let cols_out: usize = logical
+        .rank_out()
+        .as_usize()
+        .checked_add(1)
+        .expect("GGLWE product output column count overflows usize");
     let key_size: usize = use_.logical_work_size();
     let product: usize = gglwe_product_digits_strided_tmp_bytes_default(
         module, res_size, a_cols, a_size, dsize, dnum, cols_in, cols_out, key_size,
@@ -227,7 +253,10 @@ where
     // ponytail: the reference materializes the selection, one extra pass over
     // it. A backend addressing the row map in its own kernel overrides
     // `gglwe_product_bound` and drops this.
-    module.bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size) + product
+    module
+        .bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size)
+        .checked_add(product)
+        .expect("GGLWE product scratch size overflows usize")
 }
 
 /// Runs `f` on the matrix the bound resolves.
@@ -355,13 +384,19 @@ where
             return exact;
         }
         let logical = &use_.logical_layout();
+        let cols_out: usize = logical
+            .rank_out()
+            .as_usize()
+            .checked_add(1)
+            .expect("GGLWE product output column count overflows usize");
         exact
-            + self.bytes_of_vmp_pmat(
+            .checked_add(self.bytes_of_vmp_pmat(
                 logical.dnum().as_usize(),
                 logical.rank_in().as_usize(),
-                (logical.rank_out() + 1).as_usize(),
+                cols_out,
                 use_.logical_work_size(),
-            )
+            ))
+            .expect("GGLWE product upper scratch size overflows usize")
     }
 
     /// Applies one GGLWE product into a DFT accumulator that will contain
@@ -401,7 +436,10 @@ where
     let apply = module.vmp_apply_dft_to_dft_tmp_bytes(res_size, digit_size, pmat_rows, pmat_cols_in, pmat_cols_out, pmat_size);
     let accumulate =
         module.vmp_apply_dft_to_dft_accumulate_tmp_bytes(res_size, digit_size, pmat_rows, pmat_cols_in, pmat_cols_out, pmat_size);
-    module.bytes_of_vec_znx_dft(a_cols, digit_size) + apply.max(accumulate)
+    module
+        .bytes_of_vec_znx_dft(a_cols, digit_size)
+        .checked_add(apply.max(accumulate))
+        .expect("GGLWE digit-product scratch size overflows usize")
 }
 
 /// Canonical GGLWE product over interleaved gadget digits: digit `di` gathers
@@ -424,7 +462,7 @@ pub fn gglwe_product_digits_strided_default<BE: Backend>(
     let a_size = a.size();
     let dnum = pmat.rows();
     for di in 0..dsize {
-        let digit_size = ((a_size + di) / dsize).min(dnum);
+        let digit_size = (a_size.checked_add(di).expect("GGLWE product digit offset overflows usize") / dsize).min(dnum);
         let (mut digit, mut digit_scratch) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, digit_size);
         for col in 0..cols {
             module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut digit, col, a, col);
@@ -583,10 +621,32 @@ where
     A: GLWEInfos,
     K: GGLWEInfos,
 {
-    glwe_keyswitch_tmp_bytes_dispatch(module, res_infos, a_infos, key_infos)
+    glwe_keyswitch_tmp_bytes_dispatch(module, res_infos, a_infos, key_infos, false)
 }
 
-fn glwe_keyswitch_tmp_bytes_dispatch<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+/// Upper bound of [`glwe_keyswitch_tmp_bytes_default`] for proxy/bound queries
+/// whose representative key use may bind more narrowly at the eventual input
+/// precision. Exact operation queries must keep using the exact function.
+pub fn glwe_keyswitch_tmp_bytes_upper_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + ModuleN
+        + GLWEKeyswitchInternal<BE>
+        + GLWENormalizeDefault<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxNormalizeTmpBytes,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    glwe_keyswitch_tmp_bytes_dispatch(module, res_infos, a_infos, key_infos, true)
+}
+
+fn glwe_keyswitch_tmp_bytes_dispatch<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K, upper: bool) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE>
@@ -615,7 +675,11 @@ where
     };
     let mask_cols = a_infos.rank().as_usize();
     let product_tmp_bytes = |res_size: usize, a_size: usize| -> usize {
-        module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, res_size, a_size, &use_)
+        if upper {
+            module.glwe_keyswitch_internal_tmp_bytes_from_sizes_upper(mask_cols, res_size, a_size, &use_)
+        } else {
+            module.glwe_keyswitch_internal_tmp_bytes_from_sizes(mask_cols, res_size, a_size, &use_)
+        }
     };
 
     let output_cols = res_infos.rank().as_usize() + 1;

@@ -8,15 +8,19 @@ use crate::{CKKSResult as Result, ckks_ensure};
 
 use anyhow::Context;
 use poulpy_core::{
-    GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
+    GLWEAutomorphism, GLWEBytesOf, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
     layouts::{
-        Degree, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees,
-        GLWEToBackendRef, LWEInfos, Rank, TorusPrecision, WithEffectiveDsize,
+        Degree, GGLWEKeyUse, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyLayoutHelper, GLWEInfos, GLWELayout,
+        GLWERelinearizationKeyLayoutHelper, GLWESwitchingKeyDegrees, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
+        WithEffectiveDsize,
     },
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
-use super::{bootstrap::validate_runtime, ops::PaCoSlotOps};
+use super::{
+    bootstrap::{BranchKeyStage, branch_key_schedule, validate_runtime},
+    ops::PaCoSlotOps,
+};
 use crate::SlotsKind;
 use crate::layouts::paco::{
     context::PaCoContext,
@@ -42,6 +46,44 @@ struct BranchScratchLayout {
     glwe_layout: GLWELayout,
     max_size: usize,
     meta: CKKSMeta,
+}
+
+impl BranchScratchLayout {
+    fn checked_at(&self, k: TorusPrecision, stage: &str) -> Result<Self> {
+        let capacity = self
+            .max_size
+            .checked_mul(self.base2k().as_usize())
+            .with_context(|| format!("{stage} scratch capacity overflows usize"))?;
+        ckks_ensure!(
+            k.as_usize() <= capacity,
+            "{stage} precision {k} exceeds the branch scratch capacity {capacity}",
+        );
+        ckks_ensure!(
+            self.meta.log_delta <= k.as_usize(),
+            "{stage} precision {k} is smaller than the branch scale {}",
+            self.meta.log_delta,
+        );
+        let mut layout = *self;
+        layout.glwe_layout.k = k;
+        Ok(layout)
+    }
+
+    fn expect_current(&self, k: TorusPrecision, stage: &str) -> Result<Self> {
+        ckks_ensure!(
+            self.k() == k,
+            "PaCo scratch schedule mismatch before {stage}: current precision {}, stage expects {k}",
+            self.k(),
+        );
+        self.checked_at(k, stage)
+    }
+
+    fn advance(&mut self, source_k: TorusPrecision, destination_k: TorusPrecision, stage: &str) -> Result<(Self, Self)> {
+        let source = self.expect_current(source_k, stage)?;
+        let mut destination = self.checked_at(destination_k, stage)?;
+        destination.meta.slots = SlotsKind::Complex;
+        *self = destination;
+        Ok((source, destination))
+    }
 }
 
 impl LWEInfos for BranchScratchLayout {
@@ -74,6 +116,17 @@ impl CKKSInfos for BranchScratchLayout {
     }
 }
 
+fn automorphism_layout_for<'a, H, L>(keys: &'a H, element: i64, k: TorusPrecision) -> Result<GGLWEKeyUse<'a, L>>
+where
+    L: poulpy_core::layouts::GGLWEInfos,
+    H: GLWEAutomorphismKeyLayoutHelper<L>,
+{
+    let (key, effective_dsize) = keys
+        .get_automorphism_key_layout_for(element, k)
+        .with_context(|| format!("PaCo rotation-key layout is missing Galois element {element} at precision {k}"))?;
+    Ok(key.with_dsize(effective_dsize))
+}
+
 /// Computes a conservative scratch bound for one direct branch after the
 /// common runtime layouts have been validated.
 pub(super) fn direct_tmp_bytes_validated<BE, F, K>(
@@ -103,18 +156,23 @@ where
 {
     let plan = context.plan();
     let canonical = &keys.bootstrapping_keys()[0];
-    // The branch evaluates at working level `output.k() + circuit_depth` (see
-    // `branch_working_k`), so size the op scratch from that, not the seed width.
-    let working_k = super::bootstrap::branch_working_k(plan, output.k().as_usize())?;
-    let branch_layout = BranchScratchLayout {
+    let schedule = branch_key_schedule(module, context, output.k().as_usize())?;
+    let working_k = schedule.working_k();
+    let mut branch_layout = BranchScratchLayout {
         glwe_layout: GLWELayout {
             n: canonical.n(),
             base2k: canonical.base2k(),
-            k: TorusPrecision(working_k as u32),
+            k: working_k,
             rank: canonical.rank(),
         },
-        max_size: working_k.div_ceil(canonical.base2k().as_usize()),
-        meta: canonical.meta(),
+        // Every stage has the working accumulator's physical capacity while
+        // its active precision evolves through the schedule below.
+        max_size: working_k.div_ceil(canonical.base2k()) as usize,
+        meta: CKKSMeta {
+            log_sparsity: 0,
+            log_delta: plan.log_delta_bsk(),
+            slots: SlotsKind::Complex,
+        },
     };
     let beta_k = plan
         .log_delta_bsk()
@@ -136,64 +194,102 @@ where
         },
     };
 
-    // Streamed linear transformations prepare a diagonal on demand.  Size
-    // that preparation from the widest compiled factor rather than using the
-    // output ciphertext as an implicit plaintext proxy: custom factor budgets
-    // may legitimately be wider than the final ciphertext.
-    let factor_k = plan
-        .c2s()
-        .log_delta()
-        .checked_add(plan.c2s().log_budget())
-        .context("PaCo CoeffsToSlots factor width overflows usize")?
-        .max(
-            plan.stc()
-                .log_delta()
-                .checked_add(plan.stc().log_budget())
-                .context("PaCo SlotsToCoeffs factor width overflows usize")?,
-        );
-    let factor_k = u32::try_from(factor_k).context("PaCo factor width does not fit the layout type")?;
-    let factor_layout = CKKSLayout {
-        glwe_layout: poulpy_core::layouts::GLWELayout {
-            n: Degree(degree),
-            base2k: context.base2k(),
-            k: TorusPrecision(factor_k),
-            rank: Rank(1),
-        },
-        meta: CKKSMeta {
-            log_sparsity: 0,
-            log_delta: plan.c2s().log_delta().max(plan.stc().log_delta()),
-            slots: SlotsKind::Complex,
-        },
-    };
-
     let bsk = canonical;
     let mut required = module
         .ckks_mul_pt_vec_tmp_bytes(&branch_layout, bsk, &beta_layout)
-        .max(module.ckks_mul_tmp_bytes(&branch_layout, &branch_layout, &branch_layout, keys.relinearization_keys()))
         .max(module.ckks_add_tmp_bytes())
         .max(module.ckks_sub_tmp_bytes())
         .max(module.ckks_copy_tmp_bytes())
         .max(module.glwe_rotate_tmp_bytes());
 
-    for &element in context.galois_elements() {
-        let (key, effective_dsize) = keys
-            .rotation_keys()
-            .get_automorphism_key_layout_for(element, branch_layout.k())
-            .with_context(|| format!("PaCo rotation-key map is missing Galois element {element}"))?;
-        // Sized through the decomposition the policy will really use, not the
-        // one the key stores.
-        let key = &key.with_dsize(effective_dsize);
-        required = required
-            .max(module.glwe_automorphism_tmp_bytes(&branch_layout, &branch_layout, key))
-            .max(module.ckks_rotate_tmp_bytes(&branch_layout, key))
-            .max(module.ckks_conjugate_tmp_bytes(&branch_layout, key))
-            .max(module.glwe_eval_linear_transformation_unprepared_rhs_bound_tmp_bytes(
-                &branch_layout,
-                &branch_layout,
-                &factor_layout,
-                key,
-            ));
+    for stage in schedule.stages() {
+        match stage {
+            BranchKeyStage::Trace { element, k } => {
+                let layout = branch_layout.expect_current(*k, "trace")?;
+                let key = automorphism_layout_for::<_, K::AutomorphismKey>(keys.rotation_keys(), *element, *k)?;
+                required = required.max(module.glwe_automorphism_tmp_bytes(&layout, &layout, &key));
+            }
+            BranchKeyStage::LinearTransformation {
+                factor,
+                source_k,
+                destination_k,
+            } => {
+                let (source, destination) = branch_layout.advance(*source_k, *destination_k, "linear transformation")?;
+                let eval = module.ckks_eval_linear_transformation_streamed_into_tmp_bytes(
+                    &destination,
+                    &source,
+                    factor,
+                    keys.rotation_keys(),
+                );
+                let stage_required = module
+                    .glwe_bytes_of_from_infos(&destination)
+                    .checked_add(eval)
+                    .context("PaCo linear-transformation scratch size overflows usize")?;
+                required = required.max(stage_required);
+            }
+            BranchKeyStage::PsiPair {
+                pair,
+                source_k,
+                destination_k,
+            } => {
+                let (source, destination) = branch_layout.advance(*source_k, *destination_k, "paired psi tail")?;
+                let conjugation = automorphism_layout_for::<_, K::AutomorphismKey>(keys.rotation_keys(), -1, *source_k)?;
+                required = required.max(module.ckks_conjugate_tmp_bytes(&source, &conjugation));
+                for factor in pair.iter() {
+                    let eval = module.ckks_eval_linear_transformation_streamed_into_tmp_bytes(
+                        &destination,
+                        &source,
+                        factor,
+                        keys.rotation_keys(),
+                    );
+                    let stage_required = module
+                        .glwe_bytes_of_from_infos(&destination)
+                        .checked_add(eval)
+                        .context("PaCo paired-psi linear-transformation scratch size overflows usize")?;
+                    required = required.max(stage_required);
+                }
+            }
+            BranchKeyStage::PsiMask {
+                mu,
+                element,
+                source_k,
+                destination_k,
+            } => {
+                let (source, destination) = branch_layout.advance(*source_k, *destination_k, "masked psi tail")?;
+                let key = automorphism_layout_for::<_, K::AutomorphismKey>(keys.rotation_keys(), *element, *source_k)?;
+                required = required
+                    .max(module.ckks_conjugate_tmp_bytes(&source, &key))
+                    .max(module.ckks_mul_pt_vec_tmp_bytes(&destination, &source, *mu));
+            }
+            BranchKeyStage::Product {
+                element,
+                source_k,
+                destination_k,
+            } => {
+                let (source, destination) = branch_layout.advance(*source_k, *destination_k, "product fold")?;
+                let rotation = automorphism_layout_for::<_, K::AutomorphismKey>(keys.rotation_keys(), *element, *source_k)?;
+                let (relinearization, effective_dsize) = keys
+                    .relinearization_keys()
+                    .get_relinearization_key_layout_for(*source_k)
+                    .with_context(|| format!("PaCo relinearization-key layout is missing precision {source_k}"))?;
+                let relinearization = relinearization.with_dsize(effective_dsize);
+                required = required
+                    .max(module.ckks_rotate_tmp_bytes(&source, &rotation))
+                    .max(module.ckks_mul_tmp_bytes(&destination, &source, &source, &relinearization));
+            }
+            BranchKeyStage::Conjugation { element, k } => {
+                let layout = branch_layout.expect_current(*k, "post-product conjugation")?;
+                let key = automorphism_layout_for::<_, K::AutomorphismKey>(keys.rotation_keys(), *element, *k)?;
+                required = required.max(module.ckks_conjugate_tmp_bytes(&layout, &key));
+            }
+        }
     }
+    ckks_ensure!(
+        branch_layout.k() == schedule.final_k(),
+        "PaCo scratch schedule ended at {}, expected {}",
+        branch_layout.k(),
+        schedule.final_k(),
+    );
     required = required.max(BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(module, plan)?);
     Ok(required)
 }

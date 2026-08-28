@@ -1,8 +1,9 @@
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, VmpPMatBackendRef};
 
-use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
+use crate::error::Result;
+use crate::layouts::prepared::{GGLWEPreparedBound, GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
+    Base2K, Degree, Dnum, Dsize, GGLWEActiveUse, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
     GGLWEPreparedFactory, GGLWEToBackendRef, GLWEInfos, LWEInfos, Rank, TorusPrecision,
 };
 
@@ -131,6 +132,41 @@ impl<B: Backend> GLWETensorKeyPreparedFactory<B> for Module<B> where Module<B>: 
 
 pub type GLWETensorKeyPreparedBackendRef<'a, B> = GLWETensorKeyPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GLWETensorKeyPreparedBackendMut<'a, B> = GLWETensorKeyPrepared<<B as Backend>::BufMut<'a>, B>;
+
+/// A prepared tensor key paired with one validated active use.
+///
+/// Unlike [`GGLWEPreparedBound`], this wrapper can only be constructed from a
+/// [`GLWETensorKeyPreparedBackendRef`]. Tensor batch APIs use this type so an
+/// unrelated prepared GGLWE key with compatible raw dimensions cannot be
+/// supplied accidentally.
+pub struct GLWETensorKeyPreparedBound<'a, B: Backend + 'a> {
+    inner: GGLWEPreparedBound<'a, B>,
+}
+
+impl<'a, B: Backend + 'a> GLWETensorKeyPreparedBound<'a, B> {
+    /// Pairs a complete prepared tensor key with a use resolved from its
+    /// physical layout.
+    pub fn new(key: GLWETensorKeyPreparedBackendRef<'a, B>, use_: GGLWEActiveUse) -> Result<Self> {
+        Ok(Self {
+            inner: GGLWEPreparedBound::new(key.0, use_)?,
+        })
+    }
+
+    /// The generic checked bound used by the low-level GGLWE product.
+    pub fn as_gglwe_bound(&self) -> &GGLWEPreparedBound<'a, B> {
+        &self.inner
+    }
+
+    /// The complete physical matrix. Reads must stay inside [`Self::use_`].
+    pub fn pmat(&self) -> &VmpPMatBackendRef<'a, B> {
+        self.inner.pmat()
+    }
+
+    /// The validated active row and limb geometry.
+    pub fn use_(&self) -> &GGLWEActiveUse {
+        self.inner.use_()
+    }
+}
 
 pub trait GLWETensorKeyPreparedToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> GLWETensorKeyPreparedBackendRef<'_, B>;

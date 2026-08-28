@@ -18,8 +18,13 @@ pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: 
     if di == 0 {
         res_size
     } else {
-        let omitted_limbs = dsize.saturating_sub(di.saturating_add(product_limbs));
-        res_size.min(key_size.saturating_sub(omitted_limbs))
+        let covered_limbs: u128 = (di as u128) + (product_limbs as u128);
+        let omitted_limbs: usize = if covered_limbs >= dsize as u128 {
+            0
+        } else {
+            dsize - covered_limbs as usize
+        };
+        res_size.min(key_size.checked_sub(omitted_limbs).unwrap_or(0))
     }
 }
 

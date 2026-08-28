@@ -65,6 +65,8 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,
                 glwe_eval_linear_transformation_skips_empty_giant_steps =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_eval_linear_transformation_skips_empty_giant_steps,
+                glwe_linear_transformation_bound_covers_lower_strided_key =>
+                    $crate::test_suite::noise::linear_transformation::test_glwe_linear_transformation_bound_covers_lower_strided_key,
                 glwe_prepared_giant_prods_match_sequential =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_prepared_giant_prods_match_sequential,
                 glwe_packing => $crate::test_suite::noise::test_glwe_packing,

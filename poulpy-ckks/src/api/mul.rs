@@ -125,11 +125,12 @@ pub trait CKKSMulOps<BE: Backend> {
     /// Scratch bytes for [`Self::ckks_mul_into`] / [`Self::ckks_mul_assign`] /
     /// [`Self::ckks_mul_prepared_assign`] with result `res` and operands `a`, `b`.
     ///
-    /// The operands must be passed: the internal tensor intermediate is carved at
-    /// the widest of `res`/`a`/`b`, so a destination narrower than its operands
-    /// (a supported call) needs more scratch than `res` alone describes. For
-    /// `_assign` pass `dst` as both `res` and `a`; for `_prepared_assign` pass
-    /// the operand the [`CKKSPreparedRight`] was prepared from.
+    /// The operands must be passed: the internal tensor intermediate is carved
+    /// at `max(a.k(), b.k())`; `res` supplies its physical result shape and
+    /// capacity, but its pre-call precision does not widen the intermediate.
+    /// For `_assign` pass `dst` as both `res` and `a`; for
+    /// `_prepared_assign` pass the operand the [`CKKSPreparedRight`] was
+    /// prepared from.
     fn ckks_mul_tmp_bytes<R, A, B, H>(&self, res: &R, a: &A, b: &B, tsk: &H) -> usize
     where
         R: CKKSCtBounds,

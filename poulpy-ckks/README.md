@@ -312,7 +312,7 @@ Leveled operations are invoked through traits implemented on
 | `CKKSAddManyOps` | tree-reduction add over slices |
 | `CKKSDotProductOps` | inner product of ciphertext or plaintext slices |
 | `CKKSImagOps` | multiplication and division by `i` (imaginary unit rotation) |
-| `CKKSCopyOps` | level-aware ciphertext copy |
+| `CKKSCopyOps` | precision-aware ciphertext copy |
 | `CKKSRotateOps` | homomorphic slot rotation |
 | `CKKSConjugateOps` | homomorphic conjugation |
 | `CKKSPow2Ops` | multiplication and division by powers of two |
