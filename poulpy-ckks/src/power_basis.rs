@@ -187,7 +187,11 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
             // `2·T_a·T_b − T_c`: compute the product directly into the owned result and
             // double it in place, rather than into a separate scratch buffer then copying.
             let mut doubled = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
-            module.ckks_mul_into(&mut doubled, a_val, b_val, tsk, &mut scratch)?;
+            if a == b {
+                module.ckks_square_into(&mut doubled, a_val, tsk, &mut scratch)?;
+            } else {
+                module.ckks_mul_into(&mut doubled, a_val, b_val, tsk, &mut scratch)?;
+            }
             module.ckks_mul_pow2_assign(&mut doubled, 1, &mut scratch)?;
 
             if c == 0 {
@@ -259,6 +263,11 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
 
         Ok(())
     }
+}
+
+/// `k` of a ciphertext square, shared with the input-transform path.
+pub(crate) fn square_ct_k<A: GLWEInfos + CKKSInfos>(a: &A) -> Result<usize> {
+    mul_ct_k(a, a)
 }
 
 fn mul_ct_k<A, B>(a: &A, b: &B) -> Result<usize>

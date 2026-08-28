@@ -1,8 +1,8 @@
 //! AVX2/FMA-accelerated CPU backend for the Poulpy lattice cryptography library.
 //!
-//! This crate provides `FFT64Avx`, a high-performance backend implementation for [`poulpy_hal`]
-//! that leverages x86-64 SIMD instruction sets (AVX2 and FMA) to accelerate cryptographic operations
-//! in fully homomorphic encryption (FHE) schemes based on Module-LWE.
+//! This crate provides AVX2/FMA FFT and NTT backends for [`poulpy_hal`],
+//! including the optional Rayon-scheduled [`FFT64AvxRayon`] and
+//! [`NTT4x30AvxRayon`] backends.
 //!
 //! # Architecture
 //!
@@ -126,7 +126,9 @@
 //!
 //! # Feature flags
 //!
-//! - `enable-avx` (optional): Historically used for conditional compilation, currently inactive.
+//! - `enable-avx`: exports the AVX2/FMA backends.
+//! - `enable-rayon`: exports `FFT64AvxRayon`, `NTT4x30AvxRayon`, and their crate-owned executor.
+//! - `enable-ckks`: wires the enabled backends into `poulpy-ckks`.
 //!
 //! # Platform support
 //!
@@ -143,9 +145,8 @@
 //!
 //! # Usage
 //!
-//! This crate exports a single public type, `FFT64Avx`, which is used as a type parameter
-//! to the HAL generic types. Application code typically does not import this crate directly,
-//! but instead uses it via `poulpy_core` or `poulpy_bin_fhe` with runtime backend selection.
+//! The public backend marker types are used as type parameters to HAL, core,
+//! CKKS, and bin-FHE generic APIs.
 //!
 //! # Versioning and stability
 //!
@@ -182,25 +183,25 @@ mod ckks_impl;
 #[cfg(feature = "enable-avx")]
 mod core_impl;
 #[cfg(feature = "enable-avx")]
-#[cfg(feature = "enable-avx")]
 mod fft64;
-#[cfg(feature = "enable-avx")]
-#[cfg(feature = "enable-avx")]
-#[cfg(feature = "enable-avx")]
 #[cfg(feature = "enable-avx")]
 mod hal_impl;
 #[cfg(feature = "enable-avx")]
-#[cfg(feature = "enable-avx")]
 mod ntt4x30;
-#[cfg(feature = "enable-avx")]
 #[cfg(all(test, feature = "enable-avx"))]
 mod tests;
 #[cfg(feature = "enable-avx")]
 mod znx_avx;
+#[cfg(all(feature = "enable-avx", feature = "enable-rayon"))]
+pub use fft64::FFT64AvxRayon;
 #[cfg(feature = "enable-avx")]
 pub use fft64::{FFT64Avx, FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
 #[cfg(feature = "enable-avx")]
 pub use ntt4x30::NTT4x30Avx;
+#[cfg(feature = "enable-rayon")]
+pub use ntt4x30::NTT4x30AvxRayon;
 
 #[cfg(feature = "enable-avx")]
 mod layout_compat;
+
+pub mod capabilities;

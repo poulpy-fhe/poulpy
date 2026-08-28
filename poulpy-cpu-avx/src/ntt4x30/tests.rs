@@ -5,7 +5,7 @@ use poulpy_hal::{
     layouts::{Backend, Module},
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
-        test_convolution_pairwise,
+        test_convolution_by_const_add, test_convolution_pairwise,
     },
 };
 
@@ -129,6 +129,8 @@ cross_backend_test_suite! {
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
         test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
         test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
+        test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
+        test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
     }
 }
 
@@ -227,6 +229,7 @@ fn test_convolution_direct() {
     let module = Module::<NTT4x30Avx>::new(1 << 8);
     test_convolution(&module, 50);
     test_convolution_by_const(&module, 50);
+    test_convolution_by_const_add(&module, 50);
     test_convolution_pairwise(&module, 50);
     test_convolution_accumulate(&module, 50);
     test_convolution_accumulate_fused(&module, 50);
@@ -235,4 +238,23 @@ fn test_convolution_direct() {
 #[test]
 fn test_gglwe_product_digits_strided_bit_identical() {
     poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT4x30Avx>::new(64), 50);
+}
+// Fused-op conformance on the Rayon variant; the size crosses the parallel-work floors of the overrides that have them.
+#[cfg(feature = "enable-rayon")]
+cross_backend_test_suite! {
+    mod vec_znx_dft_rayon,
+    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+    backend_test = crate::NTT4x30AvxRayon,
+    params = TestParams { size: 1<<14, base2k: 50 },
+    tests = {
+        test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
+        test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
+    }
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_convolution_by_const_add_rayon() {
+    let module = Module::<crate::NTT4x30AvxRayon>::new(1 << 8);
+    test_convolution_by_const_add(&module, 50);
 }

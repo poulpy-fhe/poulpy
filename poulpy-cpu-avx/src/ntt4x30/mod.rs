@@ -26,6 +26,8 @@ pub(crate) mod mat_vec_avx;
 mod module;
 pub(crate) mod ntt;
 mod prim;
+#[cfg(feature = "enable-rayon")]
+mod rayon;
 pub(crate) mod svp;
 mod vec_znx_big;
 pub(crate) mod vec_znx_big_avx;
@@ -56,6 +58,14 @@ mod znx;
 /// `NTT4x30Avx` is `Send + Sync` (derived from being a zero-sized, field-less struct).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NTT4x30Avx;
+
+/// Rayon-scheduled AVX2 NTT4x30 backend.
+///
+/// Storage and AVX2 kernels are shared with [`NTT4x30Avx`], while task
+/// scheduling is supplied by this crate's optional Rayon executor.
+#[cfg(feature = "enable-rayon")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct NTT4x30AvxRayon;
 
 #[cfg(test)]
 mod tests;

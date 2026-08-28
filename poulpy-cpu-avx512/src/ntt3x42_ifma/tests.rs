@@ -2,7 +2,8 @@ use poulpy_hal::{
     DEFAULTALIGN, is_aligned,
     layouts::{Backend, Module},
     test_suite::convolution::{
-        test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+        test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
+        test_convolution_by_const_add, test_convolution_pairwise,
     },
 };
 
@@ -79,6 +80,8 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
             test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
             test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
+            test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
+            test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
         }
     }
 
@@ -90,6 +93,19 @@ mod ntt3x42_ifma_tests {
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
+        }
+    }
+
+    // Rayon fused DFT ops; 2*n*size crosses the 1<<17 parallel-work floor.
+    #[cfg(feature = "enable-rayon")]
+    cross_backend_test_suite! {
+        mod vec_znx_dft_rayon,
+        backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
+        backend_test = crate::NTT3x42IfmaRayon,
+        params = TestParams { size: 1<<14, base2k: 50 },
+        tests = {
+            test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
+            test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
         }
     }
 
@@ -312,6 +328,15 @@ mod ntt3x42_ifma_tests {
 fn test_convolution_by_const_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
     test_convolution_by_const(&module, 12);
+    test_convolution_by_const_add(&module, 12);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_convolution_by_const_ntt3x42_ifma_rayon() {
+    let module = Module::<crate::NTT3x42IfmaRayon>::new(8);
+    test_convolution_by_const(&module, 12);
+    test_convolution_by_const_add(&module, 12);
 }
 
 #[test]
@@ -335,6 +360,19 @@ fn test_gglwe_product_digits_strided_bit_identical() {
 fn test_convolution_accumulate_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
     test_convolution_accumulate(&module, 12);
+}
+
+#[test]
+fn test_convolution_accumulate_fused_ntt3x42_ifma() {
+    let module = Module::<NTT3x42Ifma>::new(1 << 8);
+    test_convolution_accumulate_fused(&module, 12);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_convolution_accumulate_fused_ntt3x42_ifma_rayon() {
+    let module = Module::<crate::NTT3x42IfmaRayon>::new(1 << 8);
+    test_convolution_accumulate_fused(&module, 12);
 }
 
 #[test]

@@ -5,10 +5,10 @@ use poulpy_core::layouts::{
     prepared::{GGSWPrepared, GGSWPreparedBackendMut},
 };
 use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GGSW, GGSWLayout, GGSWPreparedToBackendMut, GLWEAutomorphismKeyHelper,
-    GetGaloisElement, LWE,
+    GGLWEInfos, GGLWEPreparedToBackendRef, GGSW, GGSWLayout, GGSWPreparedToBackendMut, GGSWToBackendMut,
+    GLWEAutomorphismKeyHelper, GetGaloisElement,
 };
-use poulpy_core::{EncryptionInfos, GLWECopy, GLWEDecrypt, GLWEKeyswitch, GLWEPacking, LWEFromGLWE};
+use poulpy_core::{EncryptionInfos, GLWECopy, GLWEDecrypt, GLWEKeyswitch, GLWEPacking, LWEFromGLWE, ScratchArenaTakeCore};
 
 use poulpy_core::{GGSWEncryptSk, layouts::GLWESecretPreparedToBackendRef};
 use poulpy_hal::api::{ModuleLogN, ScratchArenaTakeBasic};
@@ -360,10 +360,10 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, Zn
 /// key-switch), and DFT-prepares the resulting GGSW in-place.
 ///
 /// The `_custom` and `_multi_thread` variants allow partial updates (only a
-/// contiguous range of bits) and parallel execution across OS threads,
-/// respectively.
+/// contiguous range of bits) and backend-selected parallel execution,
+/// respectively. Serial backends execute these methods serially.
 pub trait FheUintPrepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
-    /// Returns the minimum scratch-space size in bytes required per thread for
+    /// Returns the aligned scratch-space size in bytes required per worker for
     /// [`fhe_uint_prepare`][Self::fhe_uint_prepare].
     fn fhe_uint_prepare_tmp_bytes<R, A, B>(
         &self,
@@ -435,14 +435,16 @@ where
         A: GLWEInfos,
         B: BDDKeyInfos,
     {
-        self.circuit_bootstrapping_execute_tmp_bytes(block_size, extension_factor, res_infos, &bdd_infos.cbt_infos())
-            + self.ggsw_bytes_of_from_infos(res_infos)
-            + self.lwe_bytes_of_from_infos(bits_infos)
+        poulpy_hal::execution::worker_scratch_bytes::<BE>(
+            self.circuit_bootstrapping_execute_tmp_bytes(block_size, extension_factor, res_infos, &bdd_infos.cbt_infos())
+                + self.ggsw_bytes_of_from_infos(res_infos)
+                + self.lwe_bytes_of_from_infos(bits_infos),
+        )
     }
 
     fn fhe_uint_prepare_custom_multi_thread<K, T: UnsignedInteger>(
         &self,
-        _threads: usize,
+        threads: usize,
         res: &mut FheUintPrepared<BE::OwnedBuf, T, BE>,
         bits: &FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
         bit_start: usize,
@@ -457,26 +459,19 @@ where
 
         assert!(bit_end <= T::BITS as usize);
 
+        let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(threads, bit_count);
         let scratch_thread_size = self.fhe_uint_prepare_tmp_bytes(cbt.block_size(), 1, res, bits, key);
+        let needed = workers
+            .checked_mul(scratch_thread_size)
+            .expect("FheUint parallel scratch size overflows usize");
 
         assert!(
-            scratch.available() >= scratch_thread_size,
-            "scratch.available():{} < scratch_thread_size:{scratch_thread_size}",
+            scratch.available() >= needed,
+            "scratch.available():{} < parallel FheUint scratch bytes:{needed}",
             scratch.available()
         );
 
         let ggsw_infos: &GGSWLayout = &res.ggsw_layout();
-        let scratch_local = scratch.borrow();
-        let mut tmp_ggsw: GGSW<BE::OwnedBuf, BE::ZnxWord> = self.ggsw_alloc_from_infos(ggsw_infos);
-        let mut tmp_lwe: LWE<BE::OwnedBuf, BE::ZnxWord> = self.lwe_alloc_from_infos(bits);
-        let mut scratch_1 = scratch_local;
-
-        for bit in bit_start..bit_end {
-            let mut scratch_bit = scratch_1.borrow();
-            bits.get_bit_lwe(self, bit, &mut tmp_lwe, ks_glwe, ks_lwe, &mut scratch_bit);
-            cbt.execute_to_constant(self, &mut tmp_ggsw, &tmp_lwe, 1, 1, &mut scratch_bit);
-            self.ggsw_prepare(&mut res.bits[bit], &tmp_ggsw, &mut scratch_bit);
-        }
 
         for i in 0..bit_start {
             self.ggsw_zero(&mut res.bits[i]);
@@ -485,6 +480,23 @@ where
         for i in bit_end..T::BITS as usize {
             self.ggsw_zero(&mut res.bits[i]);
         }
+        if bit_count == 0 {
+            return;
+        }
+
+        let (worker_scratch, _) = scratch.borrow().split(workers, scratch_thread_size);
+        poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
+            &mut res.bits[bit_start..bit_end],
+            bit_start,
+            worker_scratch,
+            &|bit, res_bit, scratch| {
+                let (mut tmp_ggsw, scratch_bit) = scratch.borrow().take_ggsw_scratch(ggsw_infos);
+                let (mut tmp_lwe, mut scratch_bit) = scratch_bit.take_lwe_scratch(bits);
+                bits.get_bit_lwe(self, bit, &mut tmp_lwe, ks_glwe, ks_lwe, &mut scratch_bit);
+                cbt.execute_to_constant(self, &mut tmp_ggsw.to_backend_mut(), &tmp_lwe, 1, 1, &mut scratch_bit);
+                self.ggsw_prepare(res_bit, &tmp_ggsw, &mut scratch_bit);
+            },
+        );
     }
 }
 
@@ -515,7 +527,8 @@ impl<T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWor
         K: BDDKeyHelper<BE::OwnedBuf, BRA, BE> + BDDKeyInfos,
         M: FheUintPrepare<BRA, BE>,
     {
-        module.fhe_uint_prepare_custom(self, other, bit_start, bit_end, key, scratch);
+        assert!(bit_start <= bit_end);
+        module.fhe_uint_prepare_custom(self, other, bit_start, bit_end - bit_start, key, scratch);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -533,6 +546,7 @@ impl<T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWor
         K: BDDKeyHelper<BE::OwnedBuf, BRA, BE> + BDDKeyInfos,
         M: FheUintPrepare<BRA, BE>,
     {
-        module.fhe_uint_prepare_custom_multi_thread(threads, self, other, bit_start, bit_end, key, scratch);
+        assert!(bit_start <= bit_end);
+        module.fhe_uint_prepare_custom_multi_thread(threads, self, other, bit_start, bit_end - bit_start, key, scratch);
     }
 }

@@ -1,0 +1,19 @@
+[package]
+name = "poulpy-cpu-rayon"
+version = "0.8.2"
+edition = "2024"
+license = "Apache-2.0"
+readme = "README.md"
+description = "Rayon-scheduled task executor shared by the poulpy CPU backends"
+repository = "https://github.com/poulpy-fhe/poulpy"
+homepage = "https://github.com/poulpy-fhe/poulpy"
+documentation = "https://docs.rs/poulpy-cpu-rayon"
+
+[lib]
+doctest = false
+
+[dependencies]
+bytemuck = {workspace = true}
+poulpy-cpu-ref = {workspace = true}
+poulpy-hal = {workspace = true}
+rayon = {workspace = true}

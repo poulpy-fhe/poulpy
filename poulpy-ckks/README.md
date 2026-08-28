@@ -390,7 +390,6 @@ Planned evaluator work:
 
 Higher-level functionality on top of that foundation:
 
-- discrete CKKS
 - scheme switching
 - additional higher-level circuit and application primitives built on top of the
   leveled and bootstrapped evaluator

@@ -1,6 +1,8 @@
 mod automorphism;
 mod convolution;
 mod module;
+#[cfg(feature = "enable-rayon")]
+mod rayon;
 mod reim;
 mod reim4;
 
@@ -53,6 +55,11 @@ mod reim4;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FFT64Avx512;
+
+/// Rayon-scheduled variant of [`FFT64Avx512`].
+#[cfg(feature = "enable-rayon")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FFT64Avx512Rayon;
 
 #[cfg(test)]
 pub mod tests;
