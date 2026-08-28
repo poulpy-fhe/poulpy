@@ -43,6 +43,8 @@ pub mod fft64;
 pub mod hal_defaults;
 mod hal_impl;
 pub mod ntt4x30;
+
+pub mod capabilities;
 pub mod reference;
 pub mod table_cache;
 

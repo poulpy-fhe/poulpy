@@ -691,6 +691,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "poulpy-cpu-rayon"
+version = "0.8.2"
+dependencies = [
+ "bytemuck",
+ "poulpy-cpu-ref",
+ "poulpy-hal",
+ "rayon",
+]
+
+[[package]]
 name = "poulpy-cpu-ref"
 version = "0.8.2"
 dependencies = [
