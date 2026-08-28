@@ -1,166 +1,444 @@
-//! Fused convolution accumulation AVX2 kernel for [`NTT4x30Avx`](crate::NTT4x30Avx).
-//!
-//! Computes `res[res_col] = Σ_t a_t ⊛ b_t` in one pass: the lazy q120
-//! accumulators stay live in registers across all terms of one output limb,
-//! the bbc reduction runs once per output, and the destination column is
-//! written exactly once through the staged group flush. The left rows hold the
-//! canonical encoding (odd lanes zero), so the `x_hi * y_hi` product path is
-//! identically zero and skipped.
-
+use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
-    __m256i, _mm256_add_epi64, _mm256_and_si256, _mm256_loadu_si256, _mm256_mul_epu32, _mm256_set1_epi64x, _mm256_setzero_si256,
-    _mm256_srli_epi64, _mm256_storeu_si256,
+    __m256i, _mm256_add_epi64, _mm256_and_si256, _mm256_castsi256_si128, _mm256_cvtepu32_epi64, _mm256_extracti128_si256,
+    _mm256_loadu_si256, _mm256_mul_epu32, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_srli_epi64, _mm256_storeu_si256,
+};
+use poulpy_cpu_ref::reference::ntt4x30::{
+    NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
+};
+use poulpy_hal::layouts::{
+    CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
+    VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
 };
 use std::mem::size_of;
 
-use bytemuck::{cast_slice, cast_slice_mut};
-
-use poulpy_cpu_ref::reference::ntt4x30::{
-    convolution::cnv_accumulate_schedule, mat_vec::BbcMeta, primes::Primes30, types::Q120bScalar, vec_znx_dft::NttModuleHandle,
+use super::{
+    NTT4x30Avx,
+    arithmetic_avx::{BARRETT_MU, POW32, Q_VEC, cond_sub, reduce_b_to_canonical},
+    mat_vec_avx::reduce_bbc,
+    vec_znx_dft::{pack_two_q120, packed_limb_mut},
 };
-use poulpy_hal::layouts::{CnvDftAccTerm, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
 
-use super::mat_vec_avx::reduce_bbc;
-use crate::NTT4x30Avx;
+const GROUP: usize = 8;
 
-/// Block-group size of the staged flush (matches the reference kernels).
-const GROUP: usize = 16;
-
-/// Scratch bytes required by [`cnv_accumulate_dft_avx`]: the group staging.
-pub(crate) fn cnv_accumulate_dft_avx_tmp_bytes(res_size: usize) -> usize {
-    8 * GROUP * res_size * size_of::<u64>()
+#[inline(always)]
+fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
+    (group * size + limb) * 4 * GROUP
 }
 
-/// One resolved window: base pointers at block 0 plus the per-block strides.
-struct WindowAvx {
-    a: *const u32,
-    b: *const u32,
-    a_stride: usize,
-    b_stride: usize,
-    len: usize,
+#[inline(always)]
+fn col_slice(raw: &[u32], n: usize, size: usize, col: usize) -> &[u32] {
+    let stride = 4 * n * size;
+    &raw[col * stride..(col + 1) * stride]
 }
 
-pub(crate) unsafe fn cnv_accumulate_dft_avx(
+#[inline(always)]
+fn col_slice_mut(raw: &mut [u32], n: usize, size: usize, col: usize) -> &mut [u32] {
+    let stride = 4 * n * size;
+    &mut raw[col * stride..(col + 1) * stride]
+}
+
+fn zero_res_limb(res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>, col: usize, limb: usize) {
+    let (n, cols) = (res.n(), res.cols());
+    let data: &mut [u32] = cast_slice_mut(res.data_mut());
+    packed_limb_mut(data, n, cols, col, limb).fill(0);
+}
+
+#[inline(always)]
+unsafe fn reduce_accum(meta: &BbcMeta<Primes30>, lo: __m256i, hi: __m256i) -> __m256i {
+    unsafe {
+        let x = reduce_bbc(
+            lo,
+            hi,
+            _mm256_set1_epi64x(((1u64 << meta.h) - 1) as i64),
+            meta.h,
+            _mm256_loadu_si256(meta.s2l_pow_red.as_ptr() as *const __m256i),
+            _mm256_loadu_si256(meta.s2h_pow_red.as_ptr() as *const __m256i),
+        );
+        reduce_b_to_canonical(
+            x,
+            _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i),
+            _mm256_loadu_si256(BARRETT_MU.as_ptr() as *const __m256i),
+            _mm256_loadu_si256(POW32.as_ptr() as *const __m256i),
+        )
+    }
+}
+
+#[inline(always)]
+unsafe fn accumulate_product(lo: &mut __m256i, hi: &mut __m256i, a: __m256i, b: __m256i) {
+    unsafe {
+        let mask32 = _mm256_set1_epi64x(u32::MAX as i64);
+        let product = _mm256_mul_epu32(a, b);
+        *lo = _mm256_add_epi64(*lo, _mm256_and_si256(product, mask32));
+        *hi = _mm256_add_epi64(*hi, _mm256_srli_epi64::<32>(product));
+    }
+}
+
+#[inline(always)]
+unsafe fn load_coeff(row: *const u32, coeff: usize) -> __m256i {
+    unsafe { _mm256_cvtepu32_epi64(core::arch::x86_64::_mm_loadu_si128(row.add(4 * coeff) as *const _)) }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx2")]
+unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
+    meta: &BbcMeta<Primes30>,
+    res: &mut [u32],
+    res_col: usize,
+    n: usize,
+    res_cols: usize,
+    min_size: usize,
+    offset: usize,
+    group: usize,
+    a0: &[u32],
+    a1: &[u32],
+    a_size: usize,
+    b0: &[u32],
+    b1: &[u32],
+    b_size: usize,
+) {
+    unsafe {
+        let q = _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i);
+        for k in 0..min_size {
+            let k_abs = k + offset;
+            let j_min = k_abs.saturating_sub(a_size - 1);
+            let j_max = (k_abs + 1).min(b_size);
+            let a_start = k_abs + 1 - j_max;
+            let b_start = b_size - j_max;
+            for pair in 0..GROUP / 2 {
+                let mut lo0 = _mm256_setzero_si256();
+                let mut hi0 = _mm256_setzero_si256();
+                let mut lo1 = _mm256_setzero_si256();
+                let mut hi1 = _mm256_setzero_si256();
+                for row in 0..j_max - j_min {
+                    let ao = packed_row_offset(a_size, a_start + row, group);
+                    let bo = packed_row_offset(b_size, b_start + row, group);
+                    let mut av0 = load_coeff(a0.as_ptr().add(ao), 2 * pair);
+                    let mut av1 = load_coeff(a0.as_ptr().add(ao), 2 * pair + 1);
+                    let mut bv0 = load_coeff(b0.as_ptr().add(bo), 2 * pair);
+                    let mut bv1 = load_coeff(b0.as_ptr().add(bo), 2 * pair + 1);
+                    if PAIRWISE {
+                        av0 = cond_sub(_mm256_add_epi64(av0, load_coeff(a1.as_ptr().add(ao), 2 * pair)), q);
+                        av1 = cond_sub(_mm256_add_epi64(av1, load_coeff(a1.as_ptr().add(ao), 2 * pair + 1)), q);
+                        bv0 = cond_sub(_mm256_add_epi64(bv0, load_coeff(b1.as_ptr().add(bo), 2 * pair)), q);
+                        bv1 = cond_sub(_mm256_add_epi64(bv1, load_coeff(b1.as_ptr().add(bo), 2 * pair + 1)), q);
+                    }
+                    accumulate_product(&mut lo0, &mut hi0, av0, bv0);
+                    accumulate_product(&mut lo1, &mut hi1, av1, bv1);
+                }
+                let value0 = reduce_accum(meta, lo0, hi0);
+                let value1 = reduce_accum(meta, lo1, hi1);
+                let dst = res
+                    .as_mut_ptr()
+                    .add((k * res_cols + res_col) * 4 * n + group * 4 * GROUP + pair * 8);
+                if ACC {
+                    let old = _mm256_loadu_si256(dst as *const __m256i);
+                    let old0 = _mm256_cvtepu32_epi64(_mm256_castsi256_si128(old));
+                    let old1 = _mm256_cvtepu32_epi64(_mm256_extracti128_si256::<1>(old));
+                    _mm256_storeu_si256(
+                        dst as *mut __m256i,
+                        pack_two_q120(
+                            cond_sub(_mm256_add_epi64(old0, value0), q),
+                            cond_sub(_mm256_add_epi64(old1, value1), q),
+                        ),
+                    );
+                } else {
+                    _mm256_storeu_si256(dst as *mut __m256i, pack_two_q120(value0, value1));
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn cnv_prepare_tmp_bytes(n: usize) -> usize {
+    4 * n * size_of::<u64>()
+}
+
+#[target_feature(enable = "avx2")]
+unsafe fn pack_prepared_limb(dst: &mut [u32], src: &[u64], n: usize, size: usize, limb: usize) {
+    unsafe {
+        let q = _mm256_loadu_si256(super::arithmetic_avx::Q_VEC.as_ptr() as *const __m256i);
+        let mu = _mm256_loadu_si256(super::arithmetic_avx::BARRETT_MU.as_ptr() as *const __m256i);
+        let pow32 = _mm256_loadu_si256(super::arithmetic_avx::POW32.as_ptr() as *const __m256i);
+        for group in 0..n / GROUP {
+            let dst_off = packed_row_offset(size, limb, group);
+            for pair in 0..GROUP / 2 {
+                let src_off = group * 4 * GROUP + pair * 8;
+                let a = super::arithmetic_avx::reduce_b_to_canonical(
+                    _mm256_loadu_si256(src.as_ptr().add(src_off) as *const __m256i),
+                    q,
+                    mu,
+                    pow32,
+                );
+                let b = super::arithmetic_avx::reduce_b_to_canonical(
+                    _mm256_loadu_si256(src.as_ptr().add(src_off + 4) as *const __m256i),
+                    q,
+                    mu,
+                    pow32,
+                );
+                _mm256_storeu_si256(dst.as_mut_ptr().add(dst_off + pair * 8) as *mut __m256i, pack_two_q120(a, b));
+            }
+        }
+    }
+}
+
+fn prepare(
+    module: &Module<NTT4x30Avx>,
+    left: Option<&mut CnvPVecLBackendMut<'_, NTT4x30Avx>>,
+    right: Option<&mut CnvPVecRBackendMut<'_, NTT4x30Avx>>,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx>,
+    mask: i64,
+    tmp: &mut [u64],
+) {
+    let (n, cols, size) = if let Some(res) = left.as_ref() {
+        (res.n(), res.cols(), res.size())
+    } else {
+        let res = right.as_ref().unwrap();
+        (res.n(), res.cols(), res.size())
+    };
+    let min_size = size.min(a.size());
+    let mut left = left.map(|res| cast_slice_mut::<_, u32>(res.data_mut()));
+    let mut right = right.map(|res| cast_slice_mut::<_, u32>(res.data_mut()));
+    for col in 0..cols {
+        let mut dst_l = left.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
+        let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
+        for limb in 0..min_size {
+            if limb + 1 == min_size {
+                NTT4x30Avx::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
+            } else {
+                NTT4x30Avx::ntt_from_znx64(tmp, a.at(col, limb));
+            }
+            NTT4x30Avx::ntt_dft_execute(module.get_ntt_table(), tmp);
+            if let Some(dst) = dst_l.as_deref_mut() {
+                unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
+            }
+            if let Some(dst) = dst_r.as_deref_mut() {
+                unsafe { pack_prepared_limb(dst, tmp, n, size, size - 1 - limb) };
+            }
+        }
+        for limb in min_size..size {
+            for group in 0..n / GROUP {
+                if let Some(dst) = dst_l.as_deref_mut() {
+                    let off = packed_row_offset(size, limb, group);
+                    dst[off..off + 4 * GROUP].fill(0);
+                }
+                if let Some(dst) = dst_r.as_deref_mut() {
+                    let off = packed_row_offset(size, size - 1 - limb, group);
+                    dst[off..off + 4 * GROUP].fill(0);
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn cnv_prepare_left(
+    module: &Module<NTT4x30Avx>,
+    res: &mut CnvPVecLBackendMut<'_, NTT4x30Avx>,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx>,
+    mask: i64,
+    tmp: &mut [u64],
+) {
+    prepare(module, Some(res), None, a, mask, tmp);
+}
+
+pub(crate) fn cnv_prepare_right(
+    module: &Module<NTT4x30Avx>,
+    res: &mut CnvPVecRBackendMut<'_, NTT4x30Avx>,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx>,
+    mask: i64,
+    tmp: &mut [u64],
+) {
+    prepare(module, None, Some(res), a, mask, tmp);
+}
+
+pub(crate) fn cnv_prepare_self(
+    module: &Module<NTT4x30Avx>,
+    left: &mut CnvPVecLBackendMut<'_, NTT4x30Avx>,
+    right: &mut CnvPVecRBackendMut<'_, NTT4x30Avx>,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx>,
+    mask: i64,
+    tmp: &mut [u64],
+) {
+    prepare(module, Some(left), Some(right), a, mask, tmp);
+}
+
+pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
+    0
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe fn apply<const ACC: bool, const PAIRWISE: bool>(
     module: &Module<NTT4x30Avx>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
     res_col: usize,
-    terms: &[CnvDftAccTerm<'_, NTT4x30Avx>],
-    tmp: &mut [u8],
+    a: &CnvPVecLBackendRef<'_, NTT4x30Avx>,
+    a0_col: usize,
+    a1_col: usize,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Avx>,
+    b0_col: usize,
+    b1_col: usize,
 ) {
-    let n = res.n();
-    let res_size = res.size();
-    if res_size == 0 {
-        return;
-    }
-    if terms.is_empty() {
-        for j in 0..res_size {
-            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+    let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        if !ACC {
+            for limb in 0..res_size {
+                zero_res_limb(res, res_col, limb);
+            }
         }
         return;
     }
+    let bound = a_size + b_size - 1;
+    let offset = cnv_offset.min(bound);
+    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let a_raw: &[u32] = cast_slice(a.data());
+    let b_raw: &[u32] = cast_slice(b.data());
+    let a0 = col_slice(a_raw, n, a_size, a0_col);
+    let a1 = col_slice(a_raw, n, a_size, a1_col);
+    let b0 = col_slice(b_raw, n, b_size, b0_col);
+    let b1 = col_slice(b_raw, n, b_size, b1_col);
+    let res_cols = res.cols();
+    let res_raw: &mut [u32] = cast_slice_mut(res.data_mut());
+    for group in 0..n / GROUP {
+        unsafe {
+            conv_group::<ACC, PAIRWISE>(
+                module.get_bbc_meta(),
+                res_raw,
+                res_col,
+                n,
+                res_cols,
+                min_size,
+                offset,
+                group,
+                a0,
+                a1,
+                a_size,
+                b0,
+                b1,
+                b_size,
+            )
+        };
+    }
+    if !ACC {
+        for limb in min_size..res_size {
+            zero_res_limb(res, res_col, limb);
+        }
+    }
+}
 
-    let meta: &BbcMeta<Primes30> = module.get_bbc_meta();
-    let n_blks = n / 2;
+#[allow(clippy::too_many_arguments)]
+pub(crate) unsafe fn cnv_apply_dft(
+    module: &Module<NTT4x30Avx>,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
+    res_col: usize,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Avx>,
+    a_col: usize,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Avx>,
+    b_col: usize,
+) {
+    unsafe { apply::<false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+}
 
-    // Block-major prepared layout: column `col` of a `size`-limb operand spans
-    // `8 * n * size` u32 starting at `col * 8 * n * size`; block `blk` holds its
-    // `size` rows (16 u32 each) contiguously.
-    let term_cols: Vec<(&[u32], &[u32], usize, usize)> = terms
-        .iter()
-        .map(|t| {
-            let a_size = t.a.size();
-            let b_size = t.b.size();
-            let a_raw: &[Q120bScalar] = t.a.raw();
-            let b_raw: &[Q120bScalar] = t.b.raw();
-            let a_col: &[u32] = &cast_slice(a_raw)[t.a_col * 8 * n * a_size..(t.a_col + 1) * 8 * n * a_size];
-            let b_col: &[u32] = &cast_slice(b_raw)[t.b_col * 8 * n * b_size..(t.b_col + 1) * 8 * n * b_size];
-            (a_col, b_col, a_size, b_size)
-        })
-        .collect();
-    let sched = cnv_accumulate_schedule(
-        cnv_offset,
-        res_size,
-        &term_cols.iter().map(|&(_, _, a, b)| (a, b)).collect::<Vec<_>>(),
-    );
-    let windows: Vec<Vec<WindowAvx>> = sched
-        .iter()
-        .map(|sched_k| {
-            sched_k
-                .iter()
-                .map(|e| {
-                    let (a_col, b_col, a_size, b_size) = term_cols[e.term];
-                    WindowAvx {
-                        a: unsafe { a_col.as_ptr().add(16 * e.a_row) },
-                        b: unsafe { b_col.as_ptr().add(16 * e.b_row) },
-                        a_stride: 16 * a_size,
-                        b_stride: 16 * b_size,
-                        len: e.len,
-                    }
-                })
-                .collect()
-        })
-        .collect();
+#[allow(clippy::too_many_arguments)]
+pub(crate) unsafe fn cnv_apply_dft_accumulate(
+    module: &Module<NTT4x30Avx>,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
+    res_col: usize,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Avx>,
+    a_col: usize,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Avx>,
+    b_col: usize,
+) {
+    unsafe { apply::<true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+}
 
-    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
-    let stage = &mut tmp_u64[..8 * GROUP * res_size];
+#[allow(clippy::too_many_arguments)]
+pub(crate) unsafe fn cnv_pairwise_apply_dft(
+    module: &Module<NTT4x30Avx>,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
+    res_col: usize,
+    a: &CnvPVecLBackendRef<'_, NTT4x30Avx>,
+    b: &CnvPVecRBackendRef<'_, NTT4x30Avx>,
+    i: usize,
+    j: usize,
+) {
+    if i == j {
+        unsafe { apply::<false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };
+    } else {
+        unsafe { apply::<false, true>(module, cnv_offset, res, res_col, a, i, j, b, i, j) };
+    }
+}
 
-    unsafe {
-        let mask32 = _mm256_set1_epi64x(u32::MAX as i64);
-        let mask_h2 = _mm256_set1_epi64x(((1u64 << meta.h) - 1) as i64);
-        let s2l_pow_red = _mm256_loadu_si256(meta.s2l_pow_red.as_ptr() as *const __m256i);
-        let s2h_pow_red = _mm256_loadu_si256(meta.s2h_pow_red.as_ptr() as *const __m256i);
+pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
+    0
+}
 
-        for blk in 0..n_blks {
-            let grp_pos = blk % GROUP;
-
-            for (k, windows_k) in windows.iter().enumerate() {
-                // Per x2 pair half: (low, high) lazy accumulators.
-                let mut s0a = _mm256_setzero_si256();
-                let mut s1a = _mm256_setzero_si256();
-                let mut s0b = _mm256_setzero_si256();
-                let mut s1b = _mm256_setzero_si256();
-
-                for w in windows_k {
-                    let mut x_ptr = w.a.add(blk * w.a_stride) as *const __m256i;
-                    let mut y_ptr = w.b.add(blk * w.b_stride) as *const __m256i;
-                    for _ in 0..w.len {
-                        let xa = _mm256_loadu_si256(x_ptr);
-                        let xb = _mm256_loadu_si256(x_ptr.add(1));
-                        let ya = _mm256_loadu_si256(y_ptr);
-                        let yb = _mm256_loadu_si256(y_ptr.add(1));
-
-                        // Canonical x: only the x_lo * y_lo product contributes.
-                        let pa = _mm256_mul_epu32(xa, ya);
-                        let pb = _mm256_mul_epu32(xb, yb);
-
-                        s0a = _mm256_add_epi64(s0a, _mm256_and_si256(pa, mask32));
-                        s1a = _mm256_add_epi64(s1a, _mm256_srli_epi64::<32>(pa));
-                        s0b = _mm256_add_epi64(s0b, _mm256_and_si256(pb, mask32));
-                        s1b = _mm256_add_epi64(s1b, _mm256_srli_epi64::<32>(pb));
-
-                        x_ptr = x_ptr.add(2);
-                        y_ptr = y_ptr.add(2);
-                    }
-                }
-
-                let out = stage.as_mut_ptr().add(8 * (k * GROUP + grp_pos)) as *mut __m256i;
-                _mm256_storeu_si256(out, reduce_bbc(s0a, s1a, mask_h2, meta.h, s2l_pow_red, s2h_pow_red));
-                _mm256_storeu_si256(out.add(1), reduce_bbc(s0b, s1b, mask_h2, meta.h, s2l_pow_red, s2h_pow_red));
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cnv_by_const_apply(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, NTT4x30Avx>,
+    b_col: usize,
+    b_coeff: usize,
+) {
+    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        for limb in 0..res_size {
+            res.at_mut(res_col, limb).fill(0);
+        }
+        return;
+    }
+    let bound = a_size + b_size - 1;
+    let min_size = res_size.min(bound);
+    let offset = cnv_offset.min(bound);
+    for k in 0..res_size {
+        if k < min_size {
+            let k_abs = k + offset;
+            let j_min = k_abs.saturating_sub(a_size - 1);
+            let j_max = (k_abs + 1).min(b_size);
+            for (coeff, out) in res.at_mut(res_col, k).iter_mut().enumerate() {
+                *out = (j_min..j_max)
+                    .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
+                    .sum();
             }
+        } else {
+            res.at_mut(res_col, k).fill(0);
+        }
+    }
+}
 
-            // Flush the group per limb as one contiguous run.
-            let in_group = grp_pos + 1;
-            if in_group == GROUP || blk == n_blks - 1 {
-                let grp_base = blk + 1 - in_group;
-                for k in 0..res_size {
-                    let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
-                    res_u64[8 * grp_base..8 * (grp_base + in_group)]
-                        .copy_from_slice(&stage[8 * k * GROUP..8 * (k * GROUP + in_group)]);
-                }
-            }
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cnv_by_const_apply_add(
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, NTT4x30Avx>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, NTT4x30Avx>,
+    b_col: usize,
+    b_coeff: usize,
+) {
+    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        return;
+    }
+    let bound = a_size + b_size - 1;
+    let min_size = res_size.min(bound);
+    let offset = cnv_offset.min(bound);
+    for k in 0..min_size {
+        let k_abs = k + offset;
+        let j_min = k_abs.saturating_sub(a_size - 1);
+        let j_max = (k_abs + 1).min(b_size);
+        for (coeff, out) in res.at_mut(res_col, k).iter_mut().enumerate() {
+            *out += (j_min..j_max)
+                .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
+                .sum::<i128>();
         }
     }
 }

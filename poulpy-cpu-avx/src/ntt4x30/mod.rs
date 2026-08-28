@@ -17,19 +17,19 @@
 //!
 //! # Scalar types
 //!
-//! - `DftWord = Q120bScalar` — NTT-domain coefficients (4 × u64, 32 bytes/coeff).
+//! - `DftWord = CrtWord<Primes30, u32>` — NTT-domain coefficients (4 × u32, 16 bytes/coeff).
 //! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
 pub(crate) mod arithmetic_avx;
-pub(crate) mod automorphism;
 pub(crate) mod convolution;
 pub(crate) mod mat_vec_avx;
 mod module;
 pub(crate) mod ntt;
 mod prim;
+pub(crate) mod svp;
 mod vec_znx_big;
 pub(crate) mod vec_znx_big_avx;
-pub(crate) mod vec_znx_dft_consume;
+pub(crate) mod vec_znx_dft;
 pub(crate) mod vmp;
 mod znx;
 
@@ -42,7 +42,7 @@ mod znx;
 ///
 /// # Backend characteristics
 ///
-/// - **DftWord**: `Q120bScalar` — NTT-domain coefficients stored as 4 × u64 CRT residues.
+/// - **DftWord**: `CrtWord<Primes30, u32>` — NTT-domain coefficients stored as 4 × u32 CRT residues.
 /// - **BigWord**: `i128` — large-coefficient ring elements use 128-bit signed integers.
 /// - **Prime set**: `Primes30` (four ~30-bit primes, Q ≈ 2^120).
 ///

@@ -3,15 +3,14 @@ use std::mem::size_of;
 use crate::{FFT64Avx, NTT4x30Avx};
 use poulpy_cpu_ref::hal_defaults::{
     FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
-    HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault, NTT4x30VecZnxBigDefault,
-    NTT4x30VecZnxDftDefault, NTT4x30VmpDefault,
+    HalVecZnxDefault, NTT4x30ModuleDefault, NTT4x30VecZnxBigDefault,
 };
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut,
-        VmpPMatBackendRef, ZnxInfos,
+        Backend, DataView, DataViewMut, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena,
+        SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
@@ -205,14 +204,14 @@ unsafe impl HalVmpImpl<NTT4x30Avx> for NTT4x30Avx {
         crate::ntt4x30::vmp::vmp_apply_dft_to_dft_accumulate_avx(module, res, a, b, limb_offset, tmp);
     }
 
-    fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
-        <Self as NTT4x30VmpDefault<Self>>::vmp_zero_default(module, res)
+    fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
+        res.data_mut().fill(Default::default());
     }
 }
 
 unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
-    fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_tmp_bytes_default(module, res_size, a_size)
+    fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_left(
@@ -222,12 +221,13 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_default(module, res, a, mask, &mut scratch);
+        let bytes = crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(module.n());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30::convolution::cnv_prepare_left(module, res, a, mask, tmp);
     }
 
-    fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_right_tmp_bytes_default(module, res_size, a_size)
+    fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_right(
@@ -237,8 +237,9 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_right_default(module, res, a, mask, &mut scratch);
+        let bytes = crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(module.n());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30::convolution::cnv_prepare_right(module, res, a, mask, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes(
@@ -248,7 +249,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        crate::ntt4x30::convolution::cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes(
@@ -258,16 +259,15 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_by_const_apply_tmp_bytes_default(
-            module, cnv_offset, res_size, a_size, b_size,
-        )
+        let _ = (module, cnv_offset);
+        crate::ntt4x30::convolution::cnv_by_const_apply_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
         module: &Module<Self>,
         cnv_offset: usize,
-        mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
+        res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
@@ -276,26 +276,15 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_by_const_apply_default(
-            module,
-            cnv_offset,
-            &mut res,
-            res_col,
-            a,
-            a_col,
-            b,
-            b_col,
-            b_coeff,
-            &mut scratch,
-        );
+        let _ = (module, scratch);
+        crate::ntt4x30::convolution::cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff);
     }
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply_add(
         module: &Module<Self>,
         cnv_offset: usize,
-        mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
+        res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
@@ -304,19 +293,8 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_by_const_apply_add_default(
-            module,
-            cnv_offset,
-            &mut res,
-            res_col,
-            a,
-            a_col,
-            b,
-            b_col,
-            b_coeff,
-            &mut scratch,
-        );
+        let _ = (module, scratch);
+        crate::ntt4x30::convolution::cnv_by_const_apply_add(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -331,22 +309,15 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes =
-            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft_tmp_bytes(res.size(), a.size(), b.size());
-        let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft::<Self>(
-            module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp,
-        );
+        let _ = scratch;
+        unsafe { crate::ntt4x30::convolution::cnv_apply_dft(module, cnv_offset, res, res_col, a, a_col, b, b_col) };
     }
-
-    // glwe_mul_plain keeps the eager block-major path on AVX2 (faster than the
-    // fused apply here), so the lazy methods inherit the eager default.
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_accumulate(
         module: &Module<Self>,
         cnv_offset: usize,
-        mut res: &mut VecZnxDftBackendMut<'_, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
         a_col: usize,
@@ -354,43 +325,8 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_dft_accumulate_default(
-            module,
-            cnv_offset,
-            &mut res,
-            res_col,
-            a,
-            a_col,
-            b,
-            b_col,
-            &mut scratch,
-        );
-    }
-
-    fn cnv_accumulate_dft_tmp_bytes(
-        _module: &Module<Self>,
-        _cnv_offset: usize,
-        res_size: usize,
-        _a_size: usize,
-        _b_size: usize,
-    ) -> usize {
-        crate::ntt4x30::convolution::cnv_accumulate_dft_avx_tmp_bytes(res_size)
-    }
-
-    fn cnv_accumulate_dft<'a>(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        res_col: usize,
-        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'a, Self>],
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        Self: poulpy_hal::oep::HalVecZnxDftImpl<Self> + 'a,
-    {
-        let bytes = crate::ntt4x30::convolution::cnv_accumulate_dft_avx_tmp_bytes(res.size());
-        let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        unsafe { crate::ntt4x30::convolution::cnv_accumulate_dft_avx(module, cnv_offset, res, res_col, terms, tmp) };
+        let _ = scratch;
+        unsafe { crate::ntt4x30::convolution::cnv_apply_dft_accumulate(module, cnv_offset, res, res_col, a, a_col, b, b_col) };
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(
@@ -400,7 +336,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        crate::ntt4x30::convolution::cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -415,19 +351,12 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         j: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(
-            res.size(),
-            a.size(),
-            b.size(),
-        );
-        let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft::<Self>(
-            module, cnv_offset, res, res_col, a, b, i, j, tmp,
-        );
+        let _ = scratch;
+        unsafe { crate::ntt4x30::convolution::cnv_pairwise_apply_dft(module, cnv_offset, res, res_col, a, b, i, j) };
     }
 
-    fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_tmp_bytes_default(module, res_size, a_size)
+    fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_self(
@@ -438,8 +367,9 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_default(module, left, right, a, mask, &mut scratch);
+        let bytes = crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(module.n());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30::convolution::cnv_prepare_self(module, left, right, a, mask, tmp);
     }
 }
 
@@ -448,20 +378,265 @@ unsafe impl HalVecZnxBigImpl<NTT4x30Avx> for NTT4x30Avx {
 }
 
 unsafe impl HalSvpImpl<NTT4x30Avx> for NTT4x30Avx {
-    poulpy_cpu_ref::hal_impl_svp!(NTT4x30SvpDefault);
+    fn svp_prepare(
+        module: &Module<Self>,
+        res: &mut SvpPPolBackendMut<'_, Self>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::ntt4x30::svp::svp_prepare(module, res, res_col, a, a_col);
+    }
+
+    fn svp_ppol_copy_backend(
+        _module: &Module<Self>,
+        res: &mut SvpPPolBackendMut<'_, Self>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::ntt4x30::svp::svp_ppol_copy_backend(res, res_col, a, a_col);
+    }
+
+    fn svp_apply_dft(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, Self>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, Self>,
+        b_col: usize,
+    ) {
+        crate::ntt4x30::svp::svp_apply_dft(module, res, res_col, a, a_col, b, b_col);
+    }
+
+    fn svp_apply_dft_to_dft(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, Self>,
+        a_col: usize,
+        b: &VecZnxDftBackendRef<'_, Self>,
+        b_col: usize,
+    ) {
+        crate::ntt4x30::svp::svp_apply_dft_to_dft(module, res, res_col, a, a_col, b, b_col);
+    }
+
+    fn svp_apply_dft_to_dft_assign(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::ntt4x30::svp::svp_apply_dft_to_dft_assign(module, res, res_col, a, a_col);
+    }
 }
 
 unsafe impl HalVecZnxDftImpl<NTT4x30Avx> for NTT4x30Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx_dft!(NTT4x30VecZnxDftDefault, automorphism_with_plan: skip);
+    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        4 * module.n() * size_of::<u64>() + 3 * module.n() * size_of::<i128>()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_idft_normalize_consume(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_base2k: usize,
+        res_col: usize,
+        a: &mut VecZnxDftBackendMut<'_, Self>,
+        a_col: usize,
+        a_base2k: usize,
+        addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let n = module.n();
+        let arena = scratch.borrow();
+        let (tmp, arena) = take_host_typed::<Self, u64>(arena, 4 * n);
+        let (carry, _) = take_host_typed::<Self, i128>(arena, 3 * n);
+        crate::ntt4x30::vec_znx_dft::idft_compact_in_place(module, a, a_col, tmp);
+        let (a_cols, a_size) = (a.cols(), a.size());
+        if let Some((add, add_col)) = addend {
+            let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self> =
+                poulpy_hal::layouts::VecZnxBig::from_data(&mut **a.data_mut(), n, a_cols, a_size);
+            let mut big_ref = &mut big;
+            poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
+                &mut big_ref,
+                a_col,
+                &add,
+                add_col,
+            );
+        }
+        let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self> =
+            poulpy_hal::layouts::VecZnxBig::from_data(&**a.data(), n, a_cols, a_size);
+        let mut res_ref = &mut *res;
+        poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
+            &mut res_ref,
+            res_base2k,
+            0,
+            res_col,
+            &&big_ref,
+            a_base2k,
+            a_col,
+            carry,
+        );
+    }
+
+    fn vec_znx_dft_apply(
+        module: &Module<Self>,
+        step: usize,
+        offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_apply(module, step, offset, res, res_col, a, a_col)
+    }
+
+    fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
+        crate::ntt4x30::vec_znx_dft::vec_znx_idft_apply_tmp_bytes(module.n())
+    }
+
+    fn vec_znx_idft_apply(
+        module: &Module<Self>,
+        res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = crate::ntt4x30::vec_znx_dft::vec_znx_idft_apply_tmp_bytes(module.n());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30::vec_znx_dft::vec_znx_idft_apply(module, res, res_col, a, a_col, tmp);
+    }
+
+    fn vec_znx_idft_apply_tmpa(
+        module: &Module<Self>,
+        res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
+        res_col: usize,
+        a: &mut VecZnxDftBackendMut<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::ntt4x30::vec_znx_dft::vec_znx_idft_apply_tmpa(module, res, res_col, a, a_col);
+    }
+
+    fn vec_znx_dft_add_into(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+        b: &VecZnxDftBackendRef<'_, Self>,
+        b_col: usize,
+    ) {
+        let _ = module;
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_add_into(res, res_col, a, a_col, b, b_col)
+    }
+
+    fn vec_znx_dft_add_scaled_assign(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+        a_scale: i64,
+    ) {
+        let _ = module;
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_add_scaled_assign(res, res_col, a, a_col, a_scale)
+    }
+
+    fn vec_znx_dft_add_assign(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        let _ = module;
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_add_assign(res, res_col, a, a_col)
+    }
+
+    fn vec_znx_dft_sub(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+        b: &VecZnxDftBackendRef<'_, Self>,
+        b_col: usize,
+    ) {
+        let _ = module;
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_sub(res, res_col, a, a_col, b, b_col)
+    }
+
+    fn vec_znx_dft_sub_assign(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        let _ = module;
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_sub_assign(res, res_col, a, a_col)
+    }
+
+    fn vec_znx_dft_sub_negate_assign(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        let _ = module;
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_sub_negate_assign(res, res_col, a, a_col)
+    }
+
+    fn vec_znx_dft_copy(
+        module: &Module<Self>,
+        step: usize,
+        offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        let _ = module;
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_copy(step, offset, res, res_col, a, a_col)
+    }
+
+    fn vec_znx_dft_zero(module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
+        let _ = module;
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_zero(res, res_col)
+    }
+
+    type AutomorphismPlan = poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
+
+    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
+        poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(module.n(), p)
+    }
 
     fn vec_znx_dft_automorphism_with_plan(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
         res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        crate::ntt4x30::automorphism::ntt4x30_vec_znx_dft_automorphism_avx::<Self>(plan, res, res_col, a, a_col);
+        let _ = module;
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_automorphism(plan, res, res_col, a, a_col)
+    }
+
+    fn vec_znx_dft_automorphism_add_with_plan(
+        module: &Module<Self>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        let _ = module;
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_automorphism_add(plan, res, res_col, a, a_col)
     }
 }
