@@ -659,12 +659,14 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-rayon",
  "poulpy-cpu-ref",
  "poulpy-hal",
  "rand",
  "rand_chacha",
  "rand_core",
  "rand_distr",
+ "rayon",
 ]
 
 [[package]]
