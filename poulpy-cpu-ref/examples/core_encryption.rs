@@ -2,7 +2,8 @@ use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWESub,
     layouts::{
-        Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, LWEInfos, ModuleCoreAlloc, Rank,
+        TorusPrecision,
         prepared::{GLWESecretPrepared, GLWESecretPreparedFactory},
     },
 };
@@ -53,6 +54,7 @@ fn main() {
 
     module.vec_znx_fill_uniform_source_backend(
         base2k.into(),
+        pt_want.k().as_usize(),
         &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_want.data_mut()),
         0,
         &mut source_xa,

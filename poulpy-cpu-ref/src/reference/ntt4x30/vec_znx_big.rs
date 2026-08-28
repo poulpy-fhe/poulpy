@@ -1618,18 +1618,15 @@ pub fn ntt4x30_vec_znx_big_add_normal_ref<R, BE>(
         noise_infos.bound.log2().ceil() as i64
     );
 
-    let (limb, scale) = noise_infos.target_limb_and_scale(base2k);
-    let scaled_sigma = noise_infos.sigma * scale;
-    let scaled_bound = noise_infos.bound * scale;
-
-    let normal: Normal<f64> = Normal::new(0.0, scaled_sigma).unwrap();
+    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
+    let normal: Normal<f64> = Normal::new(0.0, noise_infos.sigma).unwrap();
     let rj: &mut [i128] = res.at_mut(res_col, limb);
 
     rj.iter_mut().for_each(|r| {
         let mut s: f64 = normal.sample(source);
-        while s.abs() > scaled_bound {
+        while s.abs() > noise_infos.bound {
             s = normal.sample(source);
         }
-        *r = r.wrapping_add(s.round() as i64 as i128);
+        *r = r.wrapping_add((s.round() as i64 as i128) << shift);
     });
 }

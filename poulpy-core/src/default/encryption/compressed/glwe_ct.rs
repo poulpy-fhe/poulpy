@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{VecZnxCopyBackend, VecZnxFillUniformSourceBackend},
+    api::VecZnxCopyBackend,
     layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
@@ -39,7 +39,7 @@ pub trait GLWECompressedEncryptSkDefault<BE: Backend> {
 
 impl<BE: Backend> GLWECompressedEncryptSkDefault<BE> for Module<BE>
 where
-    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + VecZnxCopyBackend<BE> + VecZnxFillUniformSourceBackend<BE>,
+    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFillDefault<BE> + VecZnxCopyBackend<BE>,
 {
     fn glwe_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where

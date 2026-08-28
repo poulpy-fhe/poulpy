@@ -843,11 +843,12 @@ macro_rules! hal_impl_vec_znx {
         fn vec_znx_fill_uniform_backend(
             module: &Module<Self>,
             base2k: usize,
+            k: usize,
             res: &mut VecZnxBackendMut<'_, Self>,
             res_col: usize,
             seed: [u8; 32],
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_fill_uniform_backend_default(module, base2k, res, res_col, seed)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_fill_uniform_backend_default(module, base2k, k, res, res_col, seed)
         }
 
         fn vec_znx_fill_normal_backend(

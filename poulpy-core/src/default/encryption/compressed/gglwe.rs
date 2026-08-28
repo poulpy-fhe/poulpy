@@ -2,8 +2,8 @@
 
 use poulpy_hal::{
     api::{
-        ModuleN, VecZnxAddScalarAssignBackend, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxFillUniformSourceBackend,
-        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxZeroBackend,
+        ModuleN, VecZnxAddScalarAssignBackend, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxNormalizeAssignBackend,
+        VecZnxNormalizeTmpBytes, VecZnxZeroBackend,
     },
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
     source::Source,
@@ -46,8 +46,8 @@ where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
         + GLWEEncryptSk<BE>
+        + GLWEMaskFillDefault<BE>
         + VecZnxCopyBackend<BE>
-        + VecZnxFillUniformSourceBackend<BE>
         + VecZnxDftBytesOf
         + VecZnxNormalizeAssignBackend<BE>
         + VecZnxAddScalarAssignBackend<BE>

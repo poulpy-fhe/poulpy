@@ -1152,6 +1152,7 @@ where
     fn vec_znx_fill_uniform_backend_default(
         _module: &Module<BE>,
         base2k: usize,
+        k: usize,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
         seed: [u8; 32],
@@ -1159,7 +1160,7 @@ where
         for<'x> BE::BufMut<'x>: HostDataMut,
     {
         let mut source = Source::new(seed);
-        vec_znx_fill_uniform_ref::<BE>(base2k, res, res_col, &mut source);
+        vec_znx_fill_uniform_ref::<BE>(base2k, k, res, res_col, &mut source);
     }
 
     fn vec_znx_fill_normal_backend_default(

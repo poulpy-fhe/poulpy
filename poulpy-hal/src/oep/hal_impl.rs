@@ -571,6 +571,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
     fn vec_znx_fill_uniform_backend(
         module: &Module<BE>,
         base2k: usize,
+        k: usize,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
         seed: [u8; 32],

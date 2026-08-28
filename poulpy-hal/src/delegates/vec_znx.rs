@@ -967,18 +967,26 @@ impl_vec_znx_delegate!(
     fn vec_znx_fill_uniform_source_backend(
         &self,
         base2k: usize,
+        k: usize,
         res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
         source: &mut Source,
     ) {
-        B::vec_znx_fill_uniform_backend(self, base2k, res, res_col, source.new_seed());
+        B::vec_znx_fill_uniform_backend(self, base2k, k, res, res_col, source.new_seed());
     }
 );
 
 impl_vec_znx_delegate!(
     VecZnxFillUniformBackend<B>,
-    fn vec_znx_fill_uniform_backend(&self, base2k: usize, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, seed: [u8; 32]) {
-        B::vec_znx_fill_uniform_backend(self, base2k, res, res_col, seed);
+    fn vec_znx_fill_uniform_backend(
+        &self,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_col: usize,
+        seed: [u8; 32],
+    ) {
+        B::vec_znx_fill_uniform_backend(self, base2k, k, res, res_col, seed);
     }
 );
 

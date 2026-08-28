@@ -100,6 +100,7 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
 
         module.vec_znx_fill_uniform_source_backend(
             pt_in.base2k().into(),
+            pt_in.k().as_usize(),
             &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
             0,
             &mut source_xa,
@@ -227,7 +228,13 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
         let mut source_xe: Source = Source::new([0u8; 32]);
         let mut source_xa: Source = Source::new([0u8; 32]);
 
-        module.vec_znx_fill_uniform_source_backend(base2k, &mut vec_znx_backend_mut::<BE>(&mut pt_in.data), 0, &mut source_xa);
+        module.vec_znx_fill_uniform_source_backend(
+            base2k,
+            pt_in.k().as_usize(),
+            &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+            0,
+            &mut source_xa,
+        );
         pt_ggsw.raw_mut()[1] = 1; // X^1
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(

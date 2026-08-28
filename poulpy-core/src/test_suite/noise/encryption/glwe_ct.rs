@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
-    layouts::{Module, ScratchOwned},
+    layouts::{Module, ScratchOwned, ZnxView},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -11,11 +11,23 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPreparedFactory, GLWEPublicKey, GLWEPublicKeyPreparedFactory,
-        GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
         compressed::{GLWECompressed, GLWEDecompress},
         prepared::{GLWEPublicKeyPrepared, GLWESecretPrepared},
     },
 };
+
+fn assert_canonical(ct: &GLWE<Vec<u8>, i64>) {
+    let padding = ct.max_k().as_usize() - ct.k().as_usize();
+    if padding == 0 {
+        return;
+    }
+
+    let low_mask = (1i64 << padding) - 1;
+    for col in 0..ct.data().cols() {
+        assert!(ct.data().at(col, ct.max_size() - 1).iter().all(|value| value & low_mask == 0));
+    }
+}
 
 pub fn test_glwe_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -66,7 +78,13 @@ where
         let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-        module.vec_znx_fill_uniform_source_backend(base2k, &mut vec_znx_backend_mut::<BE>(&mut pt_want.data), 0, &mut source_xa);
+        module.vec_znx_fill_uniform_source_backend(
+            base2k,
+            pt_want.k().as_usize(),
+            &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+            0,
+            &mut source_xa,
+        );
 
         module.glwe_encrypt_sk(
             &mut ct,
@@ -77,6 +95,7 @@ where
             &mut source_xa,
             &mut scratch.borrow(),
         );
+        assert_canonical(&ct);
 
         let noise_have: f64 = module
             .glwe_noise(&ct, &pt_want, &sk_prepared, &mut scratch.borrow())
@@ -145,7 +164,13 @@ where
         let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-        module.vec_znx_fill_uniform_source_backend(base2k, &mut vec_znx_backend_mut::<BE>(&mut pt_want.data), 0, &mut source_xa);
+        module.vec_znx_fill_uniform_source_backend(
+            base2k,
+            pt_want.k().as_usize(),
+            &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+            0,
+            &mut source_xa,
+        );
 
         let seed_xa: [u8; 32] = [1u8; 32];
 
@@ -161,6 +186,7 @@ where
 
         let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
         module.decompress_glwe(&mut ct, &ct_compressed);
+        assert_canonical(&ct);
 
         let noise_have: f64 = module
             .glwe_noise(&ct, &pt_want, &sk_prepared, &mut scratch.borrow())
@@ -225,6 +251,7 @@ where
             &mut source_xa,
             &mut scratch.borrow(),
         );
+        assert_canonical(&ct);
 
         let noise_have: f64 = module.glwe_noise(&ct, &pt, &sk_prepared, &mut scratch.borrow()).std().log2();
         let noise_want: f64 = DEFAULT_SIGMA_XE.log2() - (k_ct as f64) + 0.5;
@@ -286,7 +313,13 @@ where
         let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&glwe_infos);
         module.glwe_public_key_generate(&mut pk, &sk_prepared, &glwe_infos, &mut source_xe, &mut source_xa);
 
-        module.vec_znx_fill_uniform_source_backend(base2k, &mut vec_znx_backend_mut::<BE>(&mut pt_want.data), 0, &mut source_xa);
+        module.vec_znx_fill_uniform_source_backend(
+            base2k,
+            pt_want.k().as_usize(),
+            &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+            0,
+            &mut source_xa,
+        );
 
         let mut pk_prepared: GLWEPublicKeyPrepared<BE::OwnedBuf, BE> =
             module.glwe_public_key_prepared_alloc_from_infos(&glwe_infos);
@@ -302,6 +335,7 @@ where
             &mut source_xe,
             &mut scratch.borrow(),
         );
+        assert_canonical(&ct);
 
         let noise_have: f64 = module
             .glwe_noise(&ct, &pt_want, &sk_prepared, &mut scratch.borrow())

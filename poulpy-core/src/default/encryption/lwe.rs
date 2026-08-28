@@ -33,7 +33,7 @@ where
     {
         let mut res = res.to_backend_mut();
         assert_eq!(res.mask.cols(), 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
-        self.vec_znx_fill_uniform_source_backend(base2k, &mut res.mask, 0, source_xa);
+        self.vec_znx_fill_uniform_source_backend(base2k, res.k().as_usize(), &mut res.mask, 0, source_xa);
     }
 
     fn fill_lwe_mask_from_seed_default<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])

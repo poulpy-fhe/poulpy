@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### `poulpy-hal`
+
+- **Breaking:** uniform `VecZnx` sampling now takes the target precision `k`; the sampler masks the unused low bits of the last live limb and clears limbs above `k`.
+
+### `poulpy-core`
+
+- Fix precision loss at non-`base2k`-aligned ciphertext widths. Masks and Gaussian noise are sampled at `k`-bit precision, avoiding redundant post-encryption rounding for both secret- and public-key ciphertexts.
+
 ## [0.8.2] - 2026-08-22
 
 ### `poulpy-hal`

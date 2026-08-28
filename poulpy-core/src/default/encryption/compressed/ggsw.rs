@@ -1,10 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{
-        ModuleN, VecZnxAddScalarAssignBackend, VecZnxCopyBackend, VecZnxFillUniformSourceBackend, VecZnxNormalizeAssignBackend,
-        VecZnxZeroBackend,
-    },
+    api::{ModuleN, VecZnxAddScalarAssignBackend, VecZnxCopyBackend, VecZnxNormalizeAssignBackend, VecZnxZeroBackend},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
     source::Source,
 };
@@ -46,8 +43,8 @@ where
         + GLWEEncryptSkInternal<BE>
         + GGSWEncryptSk<BE>
         + GGSWNoise<BE>
+        + GLWEMaskFillDefault<BE>
         + VecZnxCopyBackend<BE>
-        + VecZnxFillUniformSourceBackend<BE>
         + VecZnxAddScalarAssignBackend<BE>
         + VecZnxNormalizeAssignBackend<BE>
         + VecZnxZeroBackend<BE>,

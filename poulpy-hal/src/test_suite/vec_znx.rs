@@ -2253,12 +2253,13 @@ where
     let size: usize = 5;
     let mut source: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
+    let k = base2k * size;
     let zero: Vec<i64> = vec![0; n];
     let one_12_sqrt: f64 = 0.28867513459481287;
     (0..cols).for_each(|col_i| {
         let host_init = VecZnx::alloc(module.n(), cols, size);
         let mut a = upload_vec_znx::<B>(&host_init);
-        module.vec_znx_fill_uniform_source_backend(base2k, &mut vec_znx_backend_mut::<B>(&mut a), col_i, &mut source);
+        module.vec_znx_fill_uniform_source_backend(base2k, k, &mut vec_znx_backend_mut::<B>(&mut a), col_i, &mut source);
         let a = download_vec_znx::<B>(&a);
         (0..cols).for_each(|col_j| {
             if col_j != col_i {
@@ -2271,6 +2272,19 @@ where
             }
         })
     });
+
+    let k = 3 * base2k + 1;
+    let live_size = k.div_ceil(base2k);
+    let low_mask = (1i64 << (base2k - k % base2k)) - 1;
+    let mut host_init = VecZnx::alloc(module.n(), cols, size);
+    host_init.raw_mut().fill(0xff);
+    let mut a = upload_vec_znx::<B>(&host_init);
+    module.vec_znx_fill_uniform_source_backend(base2k, k, &mut vec_znx_backend_mut::<B>(&mut a), 0, &mut source);
+    let a = download_vec_znx::<B>(&a);
+    assert!(a.at(0, live_size - 1).iter().all(|value| value & low_mask == 0));
+    for limb in live_size..size {
+        assert_eq!(a.at(0, limb), zero);
+    }
 }
 
 pub fn test_vec_znx_seed_sampling_matches_source_wrappers<B: crate::test_suite::TestBackend>(
@@ -2287,6 +2301,7 @@ pub fn test_vec_znx_seed_sampling_matches_source_wrappers<B: crate::test_suite::
     let size: usize = 5;
     let cols: usize = 2;
     let col_i: usize = 1;
+    let k = 3 * base2k + 1;
 
     let mut seed_source = Source::new([0u8; 32]);
     let seed = seed_source.new_seed();
@@ -2297,17 +2312,18 @@ pub fn test_vec_znx_seed_sampling_matches_source_wrappers<B: crate::test_suite::
     let mut backend_uniform = upload_vec_znx::<B>(&host_init);
     module.vec_znx_fill_uniform_source_backend(
         base2k,
+        k,
         &mut vec_znx_backend_mut::<B>(&mut wrapper_uniform),
         col_i,
         &mut wrapper_source,
     );
-    module.vec_znx_fill_uniform_backend(base2k, &mut vec_znx_backend_mut::<B>(&mut backend_uniform), col_i, seed);
+    module.vec_znx_fill_uniform_backend(base2k, k, &mut vec_znx_backend_mut::<B>(&mut backend_uniform), col_i, seed);
     assert_eq!(
         download_vec_znx::<B>(&wrapper_uniform),
         download_vec_znx::<B>(&backend_uniform)
     );
 
-    let noise_infos = NoiseInfos::new(2 * 17, 3.2, 6.0 * 3.2).unwrap();
+    let noise_infos = NoiseInfos::new(2 * 17 - 3, 3.2, 6.0 * 3.2).unwrap();
     let mut seed_source = Source::new([1u8; 32]);
     let seed = seed_source.new_seed();
     let mut wrapper_source = Source::new([1u8; 32]);
@@ -2517,7 +2533,7 @@ where
     let n: usize = module.n();
     let base2k: usize = 17;
     let size: usize = 5;
-    let noise_infos = NoiseInfos::new(2 * 17, 3.2, 6.0 * 3.2).unwrap();
+    let noise_infos = NoiseInfos::new(2 * 17 - 3, 3.2, 6.0 * 3.2).unwrap();
     let mut source_xe: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
     let zero: Vec<i64> = vec![0; n];
@@ -2541,6 +2557,9 @@ where
             } else {
                 let std: f64 = a.stats(base2k, col_i).std() * k_f64;
                 assert!((std - noise_infos.sigma).abs() < 0.1, "std={std} ~!= {}", noise_infos.sigma);
+                let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
+                let low_mask = (1i64 << shift) - 1;
+                assert!(a.at(col_i, limb).iter().all(|value| value & low_mask == 0));
             }
         })
     });
@@ -2553,7 +2572,7 @@ where
     let n: usize = module.n();
     let base2k: usize = 17;
     let size: usize = 5;
-    let noise_infos = NoiseInfos::new(2 * 17, 3.2, 6.0 * 3.2).unwrap();
+    let noise_infos = NoiseInfos::new(2 * 17 - 3, 3.2, 6.0 * 3.2).unwrap();
     let mut source_xe: Source = Source::new([0u8; 32]);
     let cols: usize = 2;
     let zero: Vec<i64> = vec![0; n];
@@ -2589,6 +2608,9 @@ where
                     "std={std} ~!= {}",
                     noise_infos.sigma * sqrt2
                 );
+                let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
+                let low_mask = (1i64 << shift) - 1;
+                assert!(a.at(col_i, limb).iter().all(|value| value & low_mask == 0));
             }
         })
     });

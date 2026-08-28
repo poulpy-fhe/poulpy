@@ -61,8 +61,9 @@ where
             "fill_glwe_mask_from_source: res_col ({res_col}) + rank ({rank}) > GLWE data cols ({})",
             res.data.cols()
         );
+        let k = res.k().as_usize();
         for col in res_col..res_col + rank {
-            self.vec_znx_fill_uniform_source_backend(base2k, &mut res.data, col, source_xa);
+            self.vec_znx_fill_uniform_source_backend(base2k, k, &mut res.data, col, source_xa);
         }
     }
 
@@ -117,7 +118,7 @@ where
         + VecZnxNormalizeTmpBytes
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
-        + VecZnxFillUniformSourceBackend<BE>
+        + GLWEMaskFillDefault<BE>
         + GLWEEncryptSkInternal<BE>,
 {
     fn glwe_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
@@ -310,7 +311,7 @@ where
             source_xu,
             source_xe,
             scratch,
-        )
+        );
     }
 
     fn glwe_encrypt_zero_pk_default<R, K, E>(
@@ -332,7 +333,7 @@ where
             scratch.available(),
             self.glwe_encrypt_pk_tmp_bytes_default(res)
         );
-        self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch)
+        self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch);
     }
 }
 
@@ -398,6 +399,7 @@ where
         }
 
         let base2k: usize = pk.base2k().into();
+        let noise_infos = enc_infos.noise_infos();
         let size_pk: usize = pk.size();
         let cols: usize = (res.rank() + 1).into();
 
@@ -459,7 +461,7 @@ where
                 }
 
                 // ci_big = u * pk[i] + e
-                self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, enc_infos.noise_infos(), source_xe);
+                self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, noise_infos, source_xe);
 
                 let (mut ci, scratch_4) = scratch_3.take_vec_znx_scratch(self.n(), 1, size_pk);
                 let scratch_next = {
@@ -535,6 +537,7 @@ where
         S: GLWESecretPreparedToBackendRef<BE>,
     {
         let sk = sk.to_backend_ref();
+        let noise_infos = enc_infos.noise_infos();
 
         assert!(
             sk.dist != Distribution::NONE,
@@ -592,7 +595,7 @@ where
         }
 
         // c[0] += e
-        self.vec_znx_add_normal_source_backend(base2k, &mut c0.to_backend_mut(), 0, enc_infos.noise_infos(), source_xe);
+        self.vec_znx_add_normal_source_backend(base2k, &mut c0.to_backend_mut(), 0, noise_infos, source_xe);
 
         // c[0] += m if col = 0
         if let Some((pt, col)) = &pt
