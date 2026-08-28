@@ -120,11 +120,9 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// the bootstrap modulus (its `k()` sets the working width). When the compiled
     /// recipe enables sparse-secret encapsulation, `keys` must carry the matching
     /// [encapsulation keys](BootstrappingKeys::encapsulation_keys), which wrap ModUp
-    /// (`denseToSparse → ModUp → sparseToDense`). The `1/K`
-    /// amplitude bridge must be folded into the CoeffsToSlots plan's `scaling` by
-    /// the caller **before** compiling the context (see
-    /// [`BootstrappingContext::coeffs_to_slots`]); EvalMod applies its own scale
-    /// round-trip, so no further scaling is needed at call time.
+    /// (`denseToSparse → ModUp → sparseToDense`). [`BootstrappingPlan::new`](crate::layouts::BootstrappingPlan::new)
+    /// folds EvalMod's required input scaling into CoeffsToSlots, so no further
+    /// scaling is needed at call time.
     ///
     /// The pipeline is selected from [`BootstrappingContext::pipeline`]:
     ///
@@ -146,7 +144,8 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+        F: Sync,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync;
 
     /// Refreshes `ct_in` through an S2C-first context and applies each LUT of
     /// `luts` to it, writing the results into `ct_outs`.

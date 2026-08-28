@@ -4,8 +4,17 @@ use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
     prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
 };
-use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, ZnxWord};
+use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero, GiantStepTensorBounds};
+use poulpy_hal::{
+    api::{
+        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxRshCoeffBackend,
+        VecZnxRshTmpBytes,
+    },
+    layouts::{
+        Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        ZnxWord,
+    },
+};
 
 use crate::CKKSCtBounds;
 use crate::{
@@ -17,6 +26,23 @@ use crate::{
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPreparedRight},
     polynomial::ComplexBSGSPolynomial,
 };
+
+/// Scratch upper bound for [`BSGSOps::eval_baby_linear_combination`]: BIG
+/// accumulator, shifted-constant buffer and per-term convolution/shift/normalize
+/// scratch, for the widest term (`ct_size`) and constant (`pt_size`) in limbs.
+pub(crate) fn eval_baby_linear_combination_tmp_bytes<BE, M>(module: &M, ct_size: usize, pt_size: usize) -> usize
+where
+    BE: Backend,
+    M: ModuleN + Convolution<BE> + VecZnxRshTmpBytes + VecZnxBigNormalizeTmpBytes,
+{
+    let acc_size = ct_size + pt_size;
+    BE::bytes_of_vec_znx(1, 1, pt_size + 1)
+        + BE::bytes_of_vec_znx_big(module.n(), 1, acc_size)
+        + module
+            .cnv_by_const_apply_tmp_bytes(0, acc_size, ct_size, pt_size + 1)
+            .max(module.vec_znx_rsh_tmp_bytes())
+            .max(module.vec_znx_big_normalize_tmp_bytes())
+}
 
 struct EvaluatedBabyStep<D: poulpy_hal::layouts::Data, W: ZnxWord> {
     degree: usize,
@@ -53,7 +79,14 @@ struct CKKSBSGSOps;
 
 impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSCopyOps<BE> + GLWEZero<BE>,
+    Module<BE>: CKKSAddOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSMulAddOps<BE>
+        + CKKSCopyOps<BE>
+        + GLWEZero<BE>
+        + GiantStepTensorBounds<BE>
+        + VecZnxRshCoeffBackend<BE>
+        + VecZnxRshTmpBytes,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
@@ -73,6 +106,144 @@ where
         res.set_slots(seed.slots());
         module.glwe_zero(res);
         Ok(())
+    }
+
+    fn eval_baby_linear_combination(
+        &self,
+        module: &Module<BE>,
+        res: &mut V,
+        terms: &[(&A, usize)],
+        coeffs: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> anyhow::Result<bool> {
+        use crate::default::mul::mul_pt_params_raw;
+
+        let Some(&(seed, _)) = terms.last() else {
+            return Ok(false);
+        };
+        let kb: usize = res.base2k().into();
+        let delta = seed.log_delta();
+        if kb == 0 {
+            return Ok(false);
+        }
+
+        let mut budget = seed.log_budget();
+        let mut term_params = Vec::with_capacity(terms.len());
+        for (t, _) in terms {
+            if usize::from(t.base2k()) != kb || t.log_delta() != delta {
+                return Ok(false);
+            }
+            let Ok((b_i, d_i, off_i)) = mul_pt_params_raw(
+                budget + delta,
+                t.log_delta(),
+                t.log_budget(),
+                coeffs.log_delta(),
+                coeffs.log_budget(),
+                coeffs.encoded_k().as_usize(),
+            ) else {
+                return Ok(false);
+            };
+            if d_i != delta || off_i < kb {
+                return Ok(false);
+            }
+            budget = budget.min(b_i);
+            term_params.push((b_i, off_i));
+        }
+        for (term_budget, offset) in &mut term_params {
+            *offset += *term_budget - budget;
+        }
+
+        let cols: usize = res.rank().as_usize() + 1;
+        let mut sparsity = res.log_sparsity();
+        let mut slots = seed.slots();
+        for (t, _) in terms {
+            sparsity = sparsity.min(t.log_sparsity());
+            slots = slots.join(t.slots());
+        }
+        res.set_log_delta(delta);
+        res.set_log_budget(budget);
+        res.set_log_sparsity(sparsity);
+        res.set_slots(slots);
+        let pt_bk = coeffs.to_backend_ref();
+        let pt_size = pt_bk.data().size();
+        let res_size = res.to_backend_ref().data().size();
+        // Splits a term's total bit shift into the sub-limb right-shift of the
+        // constant (`r`) and the whole-limb convolution offset (`rho`).
+        let shift_split = |off: usize| {
+            let r = (kb - off % kb) % kb;
+            (r, (off + r) / kb - 1)
+        };
+        let mut acc_size = res_size;
+        for ((t, _), (_, off)) in terms.iter().zip(term_params.iter()) {
+            let (r, rho) = shift_split(*off);
+            let g_size = pt_size + usize::from(r != 0);
+            let needed = (t.to_backend_ref().data().size() + g_size - 1).saturating_sub(rho);
+            acc_size = acc_size.max(needed);
+        }
+
+        scratch.scope(|scratch_local| -> anyhow::Result<()> {
+            let (mut g, scratch_local) = scratch_local.take_vec_znx_scratch(1, 1, pt_size + 1);
+            let (mut acc, mut scratch_local) = scratch_local.take_vec_znx_big_scratch(module, 1, acc_size);
+            for col in 0..cols {
+                for (t_idx, ((t, coeff_idx), (_, off))) in terms.iter().zip(term_params.iter()).enumerate() {
+                    let (r, rho) = shift_split(*off);
+                    let t_bk = t.to_backend_ref();
+                    let mut acc_bk = acc.to_backend_mut();
+                    let (b_ref, b_coeff);
+                    if r == 0 {
+                        b_ref = poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(pt_bk.data());
+                        b_coeff = *coeff_idx;
+                    } else {
+                        {
+                            let mut g_bk = g.to_backend_mut();
+                            module.vec_znx_rsh_coeff_backend(
+                                kb,
+                                r,
+                                &mut g_bk,
+                                0,
+                                pt_bk.data(),
+                                0,
+                                *coeff_idx,
+                                &mut scratch_local.borrow(),
+                            );
+                        }
+                        b_ref = g.to_backend_ref();
+                        b_coeff = 0;
+                    }
+                    if t_idx == 0 {
+                        module.cnv_by_const_apply(
+                            rho,
+                            &mut acc_bk,
+                            0,
+                            t_bk.data(),
+                            col,
+                            &b_ref,
+                            0,
+                            b_coeff,
+                            &mut scratch_local.borrow(),
+                        );
+                    } else {
+                        module.cnv_by_const_apply_add(
+                            rho,
+                            &mut acc_bk,
+                            0,
+                            t_bk.data(),
+                            col,
+                            &b_ref,
+                            0,
+                            b_coeff,
+                            &mut scratch_local.borrow(),
+                        );
+                    }
+                }
+                let acc_ref = acc.to_backend_ref();
+                let mut res_bk = res.to_backend_mut();
+                module.vec_znx_big_normalize(res_bk.data_mut(), kb, 0, col, &acc_ref, kb, 0, &mut scratch_local.borrow());
+            }
+            Ok(())
+        })?;
+
+        Ok(true)
     }
 
     fn add_pt_const_assign(
@@ -157,7 +328,16 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEZero<BE> + CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSModuleAlloc<BE> + CKKSCopyOps<BE> + Sized,
+        Self: GLWEZero<BE>
+            + CKKSAddOps<BE>
+            + CKKSMulOps<BE>
+            + CKKSMulAddOps<BE>
+            + CKKSModuleAlloc<BE>
+            + CKKSCopyOps<BE>
+            + GiantStepTensorBounds<BE>
+            + VecZnxRshCoeffBackend<BE>
+            + VecZnxRshTmpBytes
+            + Sized,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
@@ -181,6 +361,9 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
+            + GiantStepTensorBounds<BE>
+            + VecZnxRshCoeffBackend<BE>
+            + VecZnxRshTmpBytes
             + Sized,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
@@ -206,6 +389,9 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
+            + GiantStepTensorBounds<BE>
+            + VecZnxRshCoeffBackend<BE>
+            + VecZnxRshTmpBytes
             + Sized,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
@@ -284,6 +470,9 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
+            + GiantStepTensorBounds<BE>
+            + VecZnxRshCoeffBackend<BE>
+            + VecZnxRshTmpBytes
             + Sized,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,

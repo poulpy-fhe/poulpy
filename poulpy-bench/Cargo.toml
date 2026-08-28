@@ -18,4 +18,4 @@ serde_json = {workspace = true}
 poulpy-hal = {workspace = true}
 poulpy-core = {workspace = true}
 poulpy-bin-fhe = {workspace = true}
-poulpy-ckks = {workspace = true}
+poulpy-ckks = {workspace = true, features = ["test-utils"]}
