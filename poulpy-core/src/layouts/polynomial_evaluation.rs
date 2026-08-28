@@ -502,6 +502,14 @@ fn power_basis_depth(i: usize) -> usize {
     }
 }
 
+/// `(ct×ct, ct×pt)` multiplication counts for a BSGS evaluation.
+pub fn bsgs_op_counts(degree: usize, strategy: SplitStrategy, parity: Parity, basis: Basis) -> (usize, usize) {
+    if degree == 0 {
+        return (0, 0);
+    }
+    estimate_op_counts(degree, split_for_strategy(strategy, degree, parity, basis), parity, basis)
+}
+
 pub fn bsgs_eval_depth(degree: usize, strategy: SplitStrategy) -> usize {
     if degree == 0 {
         return 0;
