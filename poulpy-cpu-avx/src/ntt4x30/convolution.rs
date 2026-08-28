@@ -6,6 +6,7 @@ use core::arch::x86_64::{
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
+use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut,
     HostDataRef, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
@@ -18,6 +19,18 @@ use super::{
     vec_znx_dft::pack_two_q120,
 };
 const GROUP: usize = 8;
+
+#[derive(Clone, Copy)]
+struct SendPtr<T>(*mut T);
+
+unsafe impl<T> Send for SendPtr<T> {}
+unsafe impl<T> Sync for SendPtr<T> {}
+
+impl<T> SendPtr<T> {
+    fn get(self) -> *mut T {
+        self.0
+    }
+}
 
 #[inline(always)]
 fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
@@ -83,7 +96,7 @@ unsafe fn load_coeff(row: *const u32, coeff: usize) -> __m256i {
 #[target_feature(enable = "avx2")]
 unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
     meta: &BbcMeta<Primes30>,
-    res: &mut [u32],
+    res: SendPtr<u32>,
     res_col: usize,
     n: usize,
     res_cols: usize,
@@ -128,9 +141,7 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
                 }
                 let value0 = reduce_accum(meta, lo0, hi0);
                 let value1 = reduce_accum(meta, lo1, hi1);
-                let dst = res
-                    .as_mut_ptr()
-                    .add((k * res_cols + res_col) * 4 * n + group * 4 * GROUP + pair * 8);
+                let dst = res.get().add((k * res_cols + res_col) * 4 * n + group * 4 * GROUP + pair * 8);
                 if ACC {
                     let old = _mm256_loadu_si256(dst as *const __m256i);
                     let old0 = _mm256_cvtepu32_epi64(_mm256_castsi256_si128(old));
@@ -182,7 +193,7 @@ unsafe fn pack_prepared_limb(dst: &mut [u32], src: &[u64], n: usize, size: usize
     }
 }
 
-fn prepare<BE>(
+fn prepare<BE, E: TaskExecutor>(
     module: &Module<BE>,
     left: Option<&mut CnvPVecLBackendMut<'_, BE>>,
     right: Option<&mut CnvPVecRBackendMut<'_, BE>>,
@@ -206,6 +217,46 @@ fn prepare<BE>(
     let min_size = size.min(a.size());
     let mut left = left.map(|res| cast_slice_mut::<_, u32>(res.raw_mut()));
     let mut right = right.map(|res| cast_slice_mut::<_, u32>(res.raw_mut()));
+    let task_count = cols * size;
+    if E::is_parallel() && task_count > 1 {
+        let stride = 4 * n * size;
+        let left_ptr = left.as_deref_mut().map(|data| SendPtr(data.as_mut_ptr()));
+        let right_ptr = right.as_deref_mut().map(|data| SendPtr(data.as_mut_ptr()));
+        E::for_each_chunked(task_count, tmp, 4 * n, |tmp, task| {
+            let col = task / size;
+            let limb = task % size;
+            let mut dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
+            let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
+            if limb < min_size {
+                if limb + 1 == min_size {
+                    BE::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
+                } else {
+                    BE::ntt_from_znx64(tmp, a.at(col, limb));
+                }
+                BE::ntt_dft_execute(module.get_ntt_table(), tmp);
+                if let Some(dst) = dst_l.as_deref_mut() {
+                    unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
+                }
+                if let Some(dst) = dst_r.as_deref_mut() {
+                    unsafe { pack_prepared_limb(dst, tmp, n, size, size - 1 - limb) };
+                }
+            } else {
+                for group in 0..n / GROUP {
+                    if let Some(dst) = dst_l.as_deref_mut() {
+                        let off = packed_row_offset(size, limb, group);
+                        dst[off..off + 4 * GROUP].fill(0);
+                    }
+                    if let Some(dst) = dst_r.as_deref_mut() {
+                        let off = packed_row_offset(size, size - 1 - limb, group);
+                        dst[off..off + 4 * GROUP].fill(0);
+                    }
+                }
+            }
+        });
+        return;
+    }
+
+    let tmp = &mut tmp[..4 * n];
     for col in 0..cols {
         let mut dst_l = left.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
@@ -238,7 +289,7 @@ fn prepare<BE>(
     }
 }
 
-pub(crate) fn cnv_prepare_left<BE>(
+pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -252,10 +303,10 @@ pub(crate) fn cnv_prepare_left<BE>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare(module, Some(res), None, a, mask, tmp);
+    prepare::<BE, E>(module, Some(res), None, a, mask, tmp);
 }
 
-pub(crate) fn cnv_prepare_right<BE>(
+pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -269,10 +320,10 @@ pub(crate) fn cnv_prepare_right<BE>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare(module, None, Some(res), a, mask, tmp);
+    prepare::<BE, E>(module, None, Some(res), a, mask, tmp);
 }
 
-pub(crate) fn cnv_prepare_self<BE>(
+pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     module: &Module<BE>,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
@@ -287,7 +338,7 @@ pub(crate) fn cnv_prepare_self<BE>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare(module, Some(left), Some(right), a, mask, tmp);
+    prepare::<BE, E>(module, Some(left), Some(right), a, mask, tmp);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
@@ -295,7 +346,7 @@ pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size:
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn apply<BE, const ACC: bool, const PAIRWISE: bool>(
+unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -331,27 +382,25 @@ unsafe fn apply<BE, const ACC: bool, const PAIRWISE: bool>(
     let b0 = col_slice(b_raw, n, b_size, b0_col);
     let b1 = col_slice(b_raw, n, b_size, b1_col);
     let res_cols = res.cols();
-    let res_raw: &mut [u32] = cast_slice_mut(res.raw_mut());
-    for group in 0..n / GROUP {
-        unsafe {
-            conv_group::<ACC, PAIRWISE>(
-                module.get_bbc_meta(),
-                res_raw,
-                res_col,
-                n,
-                res_cols,
-                min_size,
-                offset,
-                group,
-                a0,
-                a1,
-                a_size,
-                b0,
-                b1,
-                b_size,
-            )
-        };
-    }
+    let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr());
+    E::for_each(n / GROUP, |group| unsafe {
+        conv_group::<ACC, PAIRWISE>(
+            module.get_bbc_meta(),
+            res_ptr,
+            res_col,
+            n,
+            res_cols,
+            min_size,
+            offset,
+            group,
+            a0,
+            a1,
+            a_size,
+            b0,
+            b1,
+            b_size,
+        )
+    });
     if !ACC {
         for limb in min_size..res_size {
             zero_res_limb(res, res_col, limb);
@@ -360,7 +409,7 @@ unsafe fn apply<BE, const ACC: bool, const PAIRWISE: bool>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft<BE>(
+pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -375,11 +424,11 @@ pub(crate) unsafe fn cnv_apply_dft<BE>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    unsafe { apply::<BE, false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft_accumulate<BE>(
+pub(crate) unsafe fn cnv_apply_dft_accumulate<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -394,14 +443,14 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate<BE>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    unsafe { apply::<BE, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe { apply::<BE, E, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
 pub(crate) fn cnv_accumulate_dft_avx_tmp_bytes(_res_size: usize) -> usize {
     0
 }
 
-pub(crate) unsafe fn cnv_accumulate_dft_avx<BE>(
+pub(crate) unsafe fn cnv_accumulate_dft_avx<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -424,13 +473,13 @@ pub(crate) unsafe fn cnv_accumulate_dft_avx<BE>(
     for (index, term) in terms.iter().enumerate() {
         if index == 0 {
             unsafe {
-                apply::<BE, false, false>(
+                apply::<BE, E, false, false>(
                     module, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
                 )
             };
         } else {
             unsafe {
-                apply::<BE, true, false>(
+                apply::<BE, E, true, false>(
                     module, cnv_offset, res, res_col, &term.a, term.a_col, term.a_col, &term.b, term.b_col, term.b_col,
                 )
             };
@@ -439,7 +488,7 @@ pub(crate) unsafe fn cnv_accumulate_dft_avx<BE>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_pairwise_apply_dft<BE>(
+pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -455,9 +504,9 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE>(
     Module<BE>: NttModuleHandle,
 {
     if i == j {
-        unsafe { apply::<BE, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };
+        unsafe { apply::<BE, E, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };
     } else {
-        unsafe { apply::<BE, false, true>(module, cnv_offset, res, res_col, a, i, j, b, i, j) };
+        unsafe { apply::<BE, E, false, true>(module, cnv_offset, res, res_col, a, i, j, b, i, j) };
     }
 }
 
@@ -466,7 +515,7 @@ pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply<BE>(
+pub(crate) fn cnv_by_const_apply<BE, E: TaskExecutor>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -482,32 +531,39 @@ pub(crate) fn cnv_by_const_apply<BE>(
 {
     let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
     if res_size == 0 || a_size == 0 || b_size == 0 {
-        for limb in 0..res_size {
-            res.at_mut(res_col, limb).fill(0);
-        }
+        let n = res.n();
+        let cols = res.cols();
+        let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
+        E::for_each(res_size, |limb| unsafe {
+            std::slice::from_raw_parts_mut(res_ptr.get().add(n * (limb * cols + res_col)), n).fill(0)
+        });
         return;
     }
     let bound = a_size + b_size - 1;
     let min_size = res_size.min(bound);
     let offset = cnv_offset.min(bound);
-    for k in 0..res_size {
+    let n = res.n();
+    let cols = res.cols();
+    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
+    E::for_each(res_size, |k| {
+        let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * cols + res_col)), n) };
         if k < min_size {
             let k_abs = k + offset;
             let j_min = k_abs.saturating_sub(a_size - 1);
             let j_max = (k_abs + 1).min(b_size);
-            for (coeff, out) in res.at_mut(res_col, k).iter_mut().enumerate() {
+            for (coeff, out) in dst.iter_mut().enumerate() {
                 *out = (j_min..j_max)
                     .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
                     .sum();
             }
         } else {
-            res.at_mut(res_col, k).fill(0);
+            dst.fill(0);
         }
-    }
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply_add<BE>(
+pub(crate) fn cnv_by_const_apply_add<BE, E: TaskExecutor>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -528,14 +584,18 @@ pub(crate) fn cnv_by_const_apply_add<BE>(
     let bound = a_size + b_size - 1;
     let min_size = res_size.min(bound);
     let offset = cnv_offset.min(bound);
-    for k in 0..min_size {
+    let n = res.n();
+    let cols = res.cols();
+    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
+    E::for_each(min_size, |k| {
         let k_abs = k + offset;
         let j_min = k_abs.saturating_sub(a_size - 1);
         let j_max = (k_abs + 1).min(b_size);
-        for (coeff, out) in res.at_mut(res_col, k).iter_mut().enumerate() {
+        let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * cols + res_col)), n) };
+        for (coeff, out) in dst.iter_mut().enumerate() {
             *out += (j_min..j_max)
                 .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
                 .sum::<i128>();
         }
-    }
+    });
 }

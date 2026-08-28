@@ -403,13 +403,14 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_avx(
     dsize: usize,
     b_rows: usize,
     b_cols_in: usize,
+    workers: usize,
 ) -> usize {
     let nrows = b_rows * b_cols_in;
     let row_max = (0..dsize)
         .map(|di| (a_cols * ((a_size + di) / dsize).min(b_rows)).min(nrows))
         .max()
         .unwrap_or(0);
-    (4 * dsize + 16 + 16 * row_max) * size_of::<u64>()
+    (4 * dsize + workers * (16 + 16 * row_max)) * size_of::<u64>()
 }
 
 /// Applies all gadget digits directly from their interleaved source limbs.

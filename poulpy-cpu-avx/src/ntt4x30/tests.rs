@@ -254,7 +254,12 @@ cross_backend_test_suite! {
 
 #[cfg(feature = "enable-rayon")]
 #[test]
-fn test_convolution_by_const_add_rayon() {
+fn test_convolution_direct_rayon() {
     let module = Module::<crate::NTT4x30AvxRayon>::new(1 << 8);
+    test_convolution(&module, 50);
+    test_convolution_by_const(&module, 50);
     test_convolution_by_const_add(&module, 50);
+    test_convolution_pairwise(&module, 50);
+    test_convolution_accumulate(&module, 50);
+    test_convolution_accumulate_fused(&module, 50);
 }

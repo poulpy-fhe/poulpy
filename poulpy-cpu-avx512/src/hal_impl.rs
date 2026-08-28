@@ -7,6 +7,7 @@ use poulpy_cpu_ref::hal_defaults::{
 };
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
+    execution::SerialTaskExecutor,
     layouts::{
         Backend, DataView, DataViewMut, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena,
         SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -235,7 +236,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_left(module, res, a, mask, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_left::<SerialTaskExecutor>(module, res, a, mask, tmp);
     }
 
     fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -251,7 +252,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_right(module, res, a, mask, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_right::<SerialTaskExecutor>(module, res, a, mask, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes(
@@ -289,7 +290,9 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        crate::ntt4x30_avx512::convolution::cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff);
+        crate::ntt4x30_avx512::convolution::cnv_by_const_apply::<SerialTaskExecutor>(
+            cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -306,7 +309,9 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        crate::ntt4x30_avx512::convolution::cnv_by_const_apply_add(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff);
+        crate::ntt4x30_avx512::convolution::cnv_by_const_apply_add::<SerialTaskExecutor>(
+            cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -322,7 +327,11 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = scratch;
-        unsafe { crate::ntt4x30_avx512::convolution::cnv_apply_dft(module, cnv_offset, res, res_col, a, a_col, b, b_col) };
+        unsafe {
+            crate::ntt4x30_avx512::convolution::cnv_apply_dft::<SerialTaskExecutor>(
+                module, cnv_offset, res, res_col, a, a_col, b, b_col,
+            )
+        };
     }
 
     fn cnv_prepare_left_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -338,7 +347,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_left(module, res, a, mask, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_left::<SerialTaskExecutor>(module, res, a, mask, tmp);
     }
 
     fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -354,7 +363,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_right(module, res, a, mask, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_right::<SerialTaskExecutor>(module, res, a, mask, tmp);
     }
 
     fn cnv_apply_dft_lazy_tmp_bytes(
@@ -380,7 +389,11 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = scratch;
-        unsafe { crate::ntt4x30_avx512::convolution::cnv_apply_dft(module, cnv_offset, res, res_col, a, a_col, b, b_col) };
+        unsafe {
+            crate::ntt4x30_avx512::convolution::cnv_apply_dft::<SerialTaskExecutor>(
+                module, cnv_offset, res, res_col, a, a_col, b, b_col,
+            )
+        };
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -397,7 +410,9 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let _ = scratch;
         unsafe {
-            crate::ntt4x30_avx512::convolution::cnv_apply_dft_accumulate(module, cnv_offset, res, res_col, a, a_col, b, b_col)
+            crate::ntt4x30_avx512::convolution::cnv_apply_dft_accumulate::<SerialTaskExecutor>(
+                module, cnv_offset, res, res_col, a, a_col, b, b_col,
+            )
         };
     }
 
@@ -424,7 +439,11 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = scratch;
-        unsafe { crate::ntt4x30_avx512::convolution::cnv_pairwise_apply_dft(module, cnv_offset, res, res_col, a, b, i, j) };
+        unsafe {
+            crate::ntt4x30_avx512::convolution::cnv_pairwise_apply_dft::<SerialTaskExecutor>(
+                module, cnv_offset, res, res_col, a, b, i, j,
+            )
+        };
     }
 
     fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -441,7 +460,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_self(module, left, right, a, mask, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_self::<SerialTaskExecutor>(module, left, right, a, mask, tmp);
     }
 }
 
@@ -708,7 +727,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         a_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_automorphism_add(plan, res, res_col, a, a_col)
+        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_automorphism_add::<SerialTaskExecutor>(plan, res, res_col, a, a_col)
     }
 }
 

@@ -2,6 +2,7 @@
 
 use std::mem::size_of;
 
+use bytemuck::{cast_slice, cast_slice_mut};
 use rayon::prelude::*;
 
 use poulpy_cpu_ref::{
@@ -29,19 +30,19 @@ use poulpy_cpu_ref::{
 };
 use poulpy_hal::{
     api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
-    execution::SerialTaskExecutor,
+    execution::{SerialTaskExecutor, TaskExecutor},
     layouts::{
         Backend, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView,
         DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScalarZnx, ScalarZnxBackendRef, ScratchArena, SvpPPol,
         SvpPPolBackendMut, SvpPPolBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut,
         VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat,
-        VmpPMatBackendMut, VmpPMatBackendRef,
+        VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 use super::{NTT4x30Avx512, NTT4x30Avx512Rayon};
-use poulpy_cpu_rayon::RayonTaskExecutor;
+use poulpy_cpu_rayon::{RayonTaskExecutor, SendPtr, parallel_limb_tasks};
 
 poulpy_hal::impl_backend_from!(NTT4x30Avx512Rayon, NTT4x30Avx512, RayonTaskExecutor);
 
@@ -617,7 +618,14 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512Rayon> 
         _pmat_cols_out: usize,
         _pmat_size: usize,
     ) -> usize {
-        super::vmp::vmp_apply_digits_strided_tmp_bytes_avx(a_cols, a_size, dsize, pmat_rows, pmat_cols_in)
+        super::vmp::vmp_apply_digits_strided_tmp_bytes_avx(
+            a_cols,
+            a_size,
+            dsize,
+            pmat_rows,
+            pmat_cols_in,
+            poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::VMP),
+        )
     }
 
     fn gglwe_product_digits_strided(
@@ -629,17 +637,16 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512Rayon> 
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = Self::gglwe_product_digits_strided_tmp_bytes(
-            module,
-            res.size(),
-            a.cols(),
-            a.size(),
-            dsize,
-            pmat.rows(),
-            pmat.cols_in(),
-            pmat.cols_out(),
-            pmat.size(),
+        let metadata_bytes = 4 * dsize * size_of::<u64>();
+        let per_worker =
+            super::vmp::vmp_apply_digits_strided_tmp_bytes_avx(a.cols(), a.size(), dsize, pmat.rows(), pmat.cols_in(), 1)
+                - metadata_bytes;
+        let workers = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::VMP,
+            per_worker,
+            scratch.available().saturating_sub(metadata_bytes),
         );
+        let bytes = metadata_bytes + workers * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::vmp::vmp_apply_dft_to_dft_digits_strided_avx::<RayonTaskExecutor>(
             base_module(module),
@@ -655,7 +662,9 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512Rayon> 
 
 unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_prepare_left_tmp_bytes(base_module(module), res_size, a_size)
+        let _ = (res_size, a_size);
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
+            * super::convolution::cnv_prepare_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_left(
@@ -665,18 +674,26 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_prepare_left(
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        super::convolution::cnv_prepare_left::<RayonTaskExecutor>(
             base_module(module),
             &mut base_cnv_l_mut(res),
             &base_znx_ref(a),
             mask,
-            &mut base_scratch,
+            tmp,
         );
     }
 
     fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_prepare_right_tmp_bytes(base_module(module), res_size, a_size)
+        let _ = (res_size, a_size);
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
+            * super::convolution::cnv_prepare_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_right(
@@ -686,13 +703,19 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_prepare_right(
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        super::convolution::cnv_prepare_right::<RayonTaskExecutor>(
             base_module(module),
             &mut base_cnv_r_mut(res),
             &base_znx_ref(a),
             mask,
-            &mut base_scratch,
+            tmp,
         );
     }
 
@@ -730,7 +753,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -739,26 +762,36 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
         b_coeff: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_by_const_apply(
-            base_module(module),
-            cnv_offset,
-            &mut base_big_mut(res),
-            res_col,
-            &base_znx_ref(a),
-            a_col,
-            &base_znx_ref(b),
-            b_col,
-            b_coeff,
-            &mut base_scratch,
-        );
+        if RayonTaskExecutor::should_serialize_inner() {
+            super::convolution::cnv_by_const_apply::<SerialTaskExecutor>(
+                cnv_offset,
+                &mut base_big_mut(res),
+                res_col,
+                &base_znx_ref(a),
+                a_col,
+                &base_znx_ref(b),
+                b_col,
+                b_coeff,
+            );
+        } else {
+            super::convolution::cnv_by_const_apply::<RayonTaskExecutor>(
+                cnv_offset,
+                &mut base_big_mut(res),
+                res_col,
+                &base_znx_ref(a),
+                a_col,
+                &base_znx_ref(b),
+                b_col,
+                b_coeff,
+            );
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply_add(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -767,21 +800,31 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
         b_coeff: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_by_const_apply_add(
-            base_module(module),
-            cnv_offset,
-            &mut base_big_mut(res),
-            res_col,
-            &base_znx_ref(a),
-            a_col,
-            &base_znx_ref(b),
-            b_col,
-            b_coeff,
-            &mut base_scratch,
-        );
+        if RayonTaskExecutor::should_serialize_inner() {
+            super::convolution::cnv_by_const_apply_add::<SerialTaskExecutor>(
+                cnv_offset,
+                &mut base_big_mut(res),
+                res_col,
+                &base_znx_ref(a),
+                a_col,
+                &base_znx_ref(b),
+                b_col,
+                b_coeff,
+            );
+        } else {
+            super::convolution::cnv_by_const_apply_add::<RayonTaskExecutor>(
+                cnv_offset,
+                &mut base_big_mut(res),
+                res_col,
+                &base_znx_ref(a),
+                a_col,
+                &base_znx_ref(b),
+                b_col,
+                b_coeff,
+            );
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -794,28 +837,26 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_apply_dft(
-            base_module(module),
-            cnv_offset,
-            &mut base_dft_mut(res),
-            res_col,
-            &base_cnv_l_ref(a),
-            a_col,
-            &base_cnv_r_ref(b),
-            b_col,
-            &mut base_scratch,
-        );
+        unsafe {
+            super::convolution::cnv_apply_dft::<RayonTaskExecutor>(
+                base_module(module),
+                cnv_offset,
+                &mut base_dft_mut(res),
+                res_col,
+                &base_cnv_l_ref(a),
+                a_col,
+                &base_cnv_r_ref(b),
+                b_col,
+            )
+        };
     }
 
     fn cnv_prepare_left_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_prepare_left_lazy_tmp_bytes(
-            base_module(module),
-            _res_size,
-            _a_size,
-        )
+        let _ = (_res_size, _a_size);
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
+            * super::convolution::cnv_prepare_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_left_lazy(
@@ -825,22 +866,26 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_prepare_left_lazy(
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        super::convolution::cnv_prepare_left::<RayonTaskExecutor>(
             base_module(module),
             &mut base_cnv_l_mut(res),
             &base_znx_ref(a),
             mask,
-            &mut base_scratch,
+            tmp,
         );
     }
 
     fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_prepare_right_lazy_tmp_bytes(
-            base_module(module),
-            _res_size,
-            _a_size,
-        )
+        let _ = (_res_size, _a_size);
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
+            * super::convolution::cnv_prepare_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_right_lazy(
@@ -850,13 +895,19 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_prepare_right_lazy(
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        super::convolution::cnv_prepare_right::<RayonTaskExecutor>(
             base_module(module),
             &mut base_cnv_r_mut(res),
             &base_znx_ref(a),
             mask,
-            &mut base_scratch,
+            tmp,
         );
     }
 
@@ -886,20 +937,20 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_apply_dft_lazy(
-            base_module(module),
-            cnv_offset,
-            &mut base_dft_mut(res),
-            res_col,
-            &base_cnv_l_ref(a),
-            a_col,
-            &base_cnv_r_ref(b),
-            b_col,
-            &mut base_scratch,
-        );
+        unsafe {
+            super::convolution::cnv_apply_dft::<RayonTaskExecutor>(
+                base_module(module),
+                cnv_offset,
+                &mut base_dft_mut(res),
+                res_col,
+                &base_cnv_l_ref(a),
+                a_col,
+                &base_cnv_r_ref(b),
+                b_col,
+            )
+        };
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -912,20 +963,20 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_apply_dft_accumulate(
-            base_module(module),
-            cnv_offset,
-            &mut base_dft_mut(res),
-            res_col,
-            &base_cnv_l_ref(a),
-            a_col,
-            &base_cnv_r_ref(b),
-            b_col,
-            &mut base_scratch,
-        );
+        unsafe {
+            super::convolution::cnv_apply_dft_accumulate::<RayonTaskExecutor>(
+                base_module(module),
+                cnv_offset,
+                &mut base_dft_mut(res),
+                res_col,
+                &base_cnv_l_ref(a),
+                a_col,
+                &base_cnv_r_ref(b),
+                b_col,
+            )
+        };
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(
@@ -954,24 +1005,26 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         i: usize,
         j: usize,
-        scratch: &mut ScratchArena<'_, Self>,
+        _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_pairwise_apply_dft(
-            base_module(module),
-            cnv_offset,
-            &mut base_dft_mut(res),
-            res_col,
-            &base_cnv_l_ref(a),
-            &base_cnv_r_ref(b),
-            i,
-            j,
-            &mut base_scratch,
-        );
+        unsafe {
+            super::convolution::cnv_pairwise_apply_dft::<RayonTaskExecutor>(
+                base_module(module),
+                cnv_offset,
+                &mut base_dft_mut(res),
+                res_col,
+                &base_cnv_l_ref(a),
+                &base_cnv_r_ref(b),
+                i,
+                j,
+            )
+        };
     }
 
     fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_prepare_self_tmp_bytes(base_module(module), res_size, a_size)
+        let _ = (res_size, a_size);
+        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
+            * super::convolution::cnv_prepare_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_self(
@@ -982,14 +1035,20 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_prepare_self(
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
+        let bytes = poulpy_cpu_rayon::workers_within(
+            left.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
+            per_worker,
+            scratch.available(),
+        ) * per_worker;
+        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        super::convolution::cnv_prepare_self::<RayonTaskExecutor>(
             base_module(module),
             &mut base_cnv_l_mut(left),
             &mut base_cnv_r_mut(right),
             &base_znx_ref(a),
             mask,
-            &mut base_scratch,
+            tmp,
         );
     }
 }
@@ -1169,19 +1228,41 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_dft_apply(
-            base_module(module),
-            step,
-            offset,
-            &mut base_dft_mut(res),
-            res_col,
-            &base_znx_ref(a),
-            a_col,
+        if !parallel_limb_tasks(res.size()) {
+            return <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_dft_apply(
+                base_module(module),
+                step,
+                offset,
+                &mut base_dft_mut(res),
+                res_col,
+                &base_znx_ref(a),
+                a_col,
+            );
+        }
+
+        let n = res.n();
+        let cols = res.cols();
+        let a_size = a.size();
+        let module = base_module(module);
+        let data: &mut [u32] = cast_slice_mut(res.raw_mut());
+        data.par_chunks_mut(4 * n * cols).enumerate().for_each_init(
+            || vec![0u64; 4 * n],
+            |tmp, (limb, group)| {
+                let src_limb = offset + limb * step;
+                super::vec_znx_dft::dft_limb(
+                    module,
+                    &mut group[4 * n * res_col..][..4 * n],
+                    (src_limb < a_size).then(|| a.at(a_col, src_limb)),
+                    tmp,
+                );
+            },
         );
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
-        <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_idft_apply_tmp_bytes(base_module(module))
+        <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
+            poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 4 * module.n() * size_of::<u64>(),
+        )
     }
 
     fn vec_znx_idft_apply(
@@ -1192,15 +1273,46 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_idft_apply(
-            base_module(module),
-            &mut base_big_mut(res),
-            res_col,
-            &base_dft_ref(a),
-            a_col,
-            &mut base_scratch,
+        if !parallel_limb_tasks(res.size()) {
+            let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
+            return <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_idft_apply(
+                base_module(module),
+                &mut base_big_mut(res),
+                res_col,
+                &base_dft_ref(a),
+                a_col,
+                &mut base_scratch,
+            );
+        }
+
+        let n = res.n();
+        let res_cols = res.cols();
+        let a_cols = a.cols();
+        let size = res.size();
+        let min_size = size.min(a.size());
+        let a_data: &[u32] = cast_slice(a.raw());
+        let per_worker = 4 * n;
+        let workers = poulpy_cpu_rayon::workers_within(
+            size.min(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT),
+            per_worker * size_of::<u64>(),
+            scratch.available(),
         );
+        let (worker_tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), workers * per_worker);
+        let res_ptr = SendPtr::new(res.raw_mut().as_mut_ptr());
+        let module = base_module(module);
+        RayonTaskExecutor::for_each_chunked(size, worker_tmp, per_worker, |tmp, limb| {
+            let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (limb * res_cols + res_col)), n) };
+            if limb < min_size {
+                super::vec_znx_dft::idft_limb(
+                    module,
+                    dst,
+                    super::vec_znx_dft::packed_limb(a_data, n, a_cols, a_col, limb),
+                    tmp,
+                );
+            } else {
+                dst.fill(0);
+            }
+        });
     }
 
     fn vec_znx_idft_apply_tmpa(
@@ -1210,12 +1322,37 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_idft_apply_tmpa(
-            base_module(module),
-            &mut base_big_mut(res),
-            res_col,
-            &mut base_dft_mut(a),
-            a_col,
+        if !parallel_limb_tasks(res.size()) {
+            return <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_idft_apply_tmpa(
+                base_module(module),
+                &mut base_big_mut(res),
+                res_col,
+                &mut base_dft_mut(a),
+                a_col,
+            );
+        }
+
+        let n = res.n();
+        let res_cols = res.cols();
+        let a_cols = a.cols();
+        let min_size = res.size().min(a.size());
+        let a_data: &[u32] = cast_slice(a.raw());
+        let module = base_module(module);
+        res.raw_mut().par_chunks_mut(n * res_cols).enumerate().for_each_init(
+            || vec![0u64; 4 * n],
+            |tmp, (limb, group)| {
+                let dst = &mut group[n * res_col..][..n];
+                if limb < min_size {
+                    super::vec_znx_dft::idft_limb(
+                        module,
+                        dst,
+                        super::vec_znx_dft::packed_limb(a_data, n, a_cols, a_col, limb),
+                        tmp,
+                    );
+                } else {
+                    dst.fill(0);
+                }
+            },
         );
     }
 
@@ -1375,7 +1512,23 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        super::vec_znx_dft::vec_znx_dft_automorphism_add(plan, &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col);
+        if RayonTaskExecutor::should_serialize_inner() {
+            super::vec_znx_dft::vec_znx_dft_automorphism_add::<SerialTaskExecutor>(
+                plan,
+                &mut base_dft_mut(res),
+                res_col,
+                &base_dft_ref(a),
+                a_col,
+            );
+        } else {
+            super::vec_znx_dft::vec_znx_dft_automorphism_add::<RayonTaskExecutor>(
+                plan,
+                &mut base_dft_mut(res),
+                res_col,
+                &base_dft_ref(a),
+                a_col,
+            );
+        }
     }
 }
 

@@ -9,6 +9,7 @@ use poulpy_cpu_ref::reference::ntt4x30::{
     primes::{PrimeSet, Primes30},
     vec_znx_dft::{NttAutomorphismPlan, NttModuleHandle},
 };
+use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView,
     ZnxViewMut,
@@ -97,6 +98,23 @@ pub(crate) unsafe fn unpack_limb_q120(n: usize, dst: &mut [u64], src: &[u32]) {
             _mm256_storeu_si256(dst.as_mut_ptr().add(8 * pair + 4) as *mut __m256i, b);
         }
     }
+}
+
+pub(crate) fn dft_limb(module: &Module<NTT4x30Avx>, dst: &mut [u32], src: Option<&[i64]>, tmp: &mut [u64]) {
+    if let Some(src) = src {
+        NTT4x30Avx::ntt_from_znx64(tmp, src);
+        NTT4x30Avx::ntt_dft_execute(module.get_ntt_table(), tmp);
+        unsafe { pack_limb_q120(module.n(), dst, tmp) };
+    } else {
+        dst.fill(0);
+    }
+}
+
+pub(crate) fn idft_limb(module: &Module<NTT4x30Avx>, dst: &mut [i128], src: &[u32], tmp: &mut [u64]) {
+    let n = module.n();
+    unsafe { unpack_limb_q120(n, tmp, src) };
+    NTT4x30Avx::ntt_dft_execute(module.get_intt_table(), tmp);
+    NTT4x30Avx::ntt_to_znx128(dst, n, tmp);
 }
 
 #[inline(always)]
@@ -218,13 +236,7 @@ pub(crate) fn vec_znx_dft_apply(
     for limb in 0..res_size {
         let dst = packed_limb_mut(res_data, n, cols, res_col, limb);
         let src_limb = offset + limb * step;
-        if src_limb < a_size {
-            NTT4x30Avx::ntt_from_znx64(&mut tmp, a.at(a_col, src_limb));
-            NTT4x30Avx::ntt_dft_execute(module.get_ntt_table(), &mut tmp);
-            unsafe { pack_limb_q120(n, dst, &tmp) };
-        } else {
-            dst.fill(0);
-        }
+        dft_limb(module, dst, (src_limb < a_size).then(|| a.at(a_col, src_limb)), &mut tmp);
     }
 }
 
@@ -245,9 +257,12 @@ pub(crate) fn vec_znx_idft_apply(
     let a_cols = a.cols();
     let a_data: &[u32] = cast_slice(a.data());
     for limb in 0..min_size {
-        unsafe { unpack_limb_q120(n, tmp, packed_limb(a_data, n, a_cols, a_col, limb)) };
-        NTT4x30Avx::ntt_dft_execute(module.get_intt_table(), tmp);
-        NTT4x30Avx::ntt_to_znx128(res.at_mut(res_col, limb), n, tmp);
+        idft_limb(
+            module,
+            res.at_mut(res_col, limb),
+            packed_limb(a_data, n, a_cols, a_col, limb),
+            tmp,
+        );
     }
     for limb in min_size..res.size() {
         res.at_mut(res_col, limb).fill(0);
@@ -528,7 +543,7 @@ pub(crate) fn vec_znx_dft_automorphism(
     }
 }
 
-pub(crate) fn vec_znx_dft_automorphism_add(
+pub(crate) fn vec_znx_dft_automorphism_add<E: TaskExecutor>(
     plan: &NttAutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
     res_col: usize,
@@ -538,10 +553,11 @@ pub(crate) fn vec_znx_dft_automorphism_add(
     let n = res.n();
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
-    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
+    let res_ptr = cast_slice_mut::<_, u32>(res.data_mut()).as_mut_ptr() as usize;
     let ap: &[u32] = cast_slice(a.data());
-    for limb in 0..size {
-        let dst = packed_limb_mut(rp, n, rc, res_col, limb);
+    E::for_each(size, |limb| {
+        let start = 4 * n * (limb * rc + res_col);
+        let dst = unsafe { std::slice::from_raw_parts_mut((res_ptr as *mut u32).add(start), 4 * n) };
         let src = packed_limb(ap, n, ac, a_col, limb);
         for (i, &p) in plan.perm.iter().enumerate() {
             let p = p as usize;
@@ -551,5 +567,5 @@ pub(crate) fn vec_znx_dft_automorphism_add(
                 dst[4 * i + prime] = if sum >= q { (sum - q) as u32 } else { sum as u32 };
             }
         }
-    }
+    });
 }

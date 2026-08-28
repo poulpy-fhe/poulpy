@@ -7,6 +7,7 @@ use core::arch::x86_64::{
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
+use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
     VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
@@ -20,6 +21,18 @@ use super::{
 };
 
 const GROUP: usize = 8;
+
+#[derive(Clone, Copy)]
+struct SendPtr<T>(*mut T);
+
+unsafe impl<T> Send for SendPtr<T> {}
+unsafe impl<T> Sync for SendPtr<T> {}
+
+impl<T> SendPtr<T> {
+    fn get(self) -> *mut T {
+        self.0
+    }
+}
 
 #[inline(always)]
 fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
@@ -82,7 +95,7 @@ unsafe fn load_pair(row: *const u32, pair: usize) -> __m512i {
 #[target_feature(enable = "avx512f")]
 unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
     meta: &BbcMeta<Primes30>,
-    res: &mut [u32],
+    res: SendPtr<u32>,
     res_col: usize,
     n: usize,
     res_cols: usize,
@@ -119,9 +132,7 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
                     accumulate_product(&mut lo, &mut hi, av, bv);
                 }
                 let value = reduce_accum(meta, lo, hi);
-                let dst = res
-                    .as_mut_ptr()
-                    .add((k * res_cols + res_col) * 4 * n + group * 4 * GROUP + pair * 8);
+                let dst = res.get().add((k * res_cols + res_col) * 4 * n + group * 4 * GROUP + pair * 8);
                 if ACC {
                     let old = _mm512_cvtepu32_epi64(_mm256_loadu_si256(dst as *const __m256i));
                     _mm256_storeu_si256(
@@ -140,7 +151,7 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
 #[target_feature(enable = "avx512f")]
 unsafe fn conv_rank1_group(
     meta: &BbcMeta<Primes30>,
-    res: &mut [u32],
+    res: SendPtr<u32>,
     n: usize,
     res_cols: usize,
     min_size: usize,
@@ -189,9 +200,7 @@ unsafe fn conv_rank1_group(
                     (1, reduce_accum(meta, ps_lo, ps_hi)),
                     (2, reduce_accum(meta, d1_lo, d1_hi)),
                 ] {
-                    let dst = res
-                        .as_mut_ptr()
-                        .add((k * res_cols + col) * 4 * n + group * 4 * GROUP + pair * 8);
+                    let dst = res.get().add((k * res_cols + col) * 4 * n + group * 4 * GROUP + pair * 8);
                     _mm256_storeu_si256(dst as *mut __m256i, _mm512_cvtepi64_epi32(value));
                 }
             }
@@ -224,7 +233,7 @@ unsafe fn pack_prepared_limb(dst: &mut [u32], src: &[u64], n: usize, size: usize
     }
 }
 
-fn prepare(
+fn prepare<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     left: Option<&mut CnvPVecLBackendMut<'_, NTT4x30Avx512>>,
     right: Option<&mut CnvPVecRBackendMut<'_, NTT4x30Avx512>>,
@@ -241,6 +250,46 @@ fn prepare(
     let min_size = size.min(a.size());
     let mut left = left.map(|res| cast_slice_mut::<_, u32>(res.data_mut()));
     let mut right = right.map(|res| cast_slice_mut::<_, u32>(res.data_mut()));
+    let task_count = cols * size;
+    if E::is_parallel() && task_count > 1 {
+        let stride = 4 * n * size;
+        let left_ptr = left.as_deref_mut().map(|data| SendPtr(data.as_mut_ptr()));
+        let right_ptr = right.as_deref_mut().map(|data| SendPtr(data.as_mut_ptr()));
+        E::for_each_chunked(task_count, tmp, 4 * n, |tmp, task| {
+            let col = task / size;
+            let limb = task % size;
+            let mut dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
+            let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
+            if limb < min_size {
+                if limb + 1 == min_size {
+                    NTT4x30Avx512::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
+                } else {
+                    NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
+                }
+                NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), tmp);
+                if let Some(dst) = dst_l.as_deref_mut() {
+                    unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
+                }
+                if let Some(dst) = dst_r.as_deref_mut() {
+                    unsafe { pack_prepared_limb(dst, tmp, n, size, size - 1 - limb) };
+                }
+            } else {
+                for group in 0..n / GROUP {
+                    if let Some(dst) = dst_l.as_deref_mut() {
+                        let off = packed_row_offset(size, limb, group);
+                        dst[off..off + 4 * GROUP].fill(0);
+                    }
+                    if let Some(dst) = dst_r.as_deref_mut() {
+                        let off = packed_row_offset(size, size - 1 - limb, group);
+                        dst[off..off + 4 * GROUP].fill(0);
+                    }
+                }
+            }
+        });
+        return;
+    }
+
+    let tmp = &mut tmp[..4 * n];
     for col in 0..cols {
         let mut dst_l = left.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
@@ -273,27 +322,27 @@ fn prepare(
     }
 }
 
-pub(crate) fn cnv_prepare_left(
+pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     res: &mut CnvPVecLBackendMut<'_, NTT4x30Avx512>,
     a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
     mask: i64,
     tmp: &mut [u64],
 ) {
-    prepare(module, Some(res), None, a, mask, tmp);
+    prepare::<E>(module, Some(res), None, a, mask, tmp);
 }
 
-pub(crate) fn cnv_prepare_right(
+pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     res: &mut CnvPVecRBackendMut<'_, NTT4x30Avx512>,
     a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
     mask: i64,
     tmp: &mut [u64],
 ) {
-    prepare(module, None, Some(res), a, mask, tmp);
+    prepare::<E>(module, None, Some(res), a, mask, tmp);
 }
 
-pub(crate) fn cnv_prepare_self(
+pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     left: &mut CnvPVecLBackendMut<'_, NTT4x30Avx512>,
     right: &mut CnvPVecRBackendMut<'_, NTT4x30Avx512>,
@@ -301,7 +350,7 @@ pub(crate) fn cnv_prepare_self(
     mask: i64,
     tmp: &mut [u64],
 ) {
-    prepare(module, Some(left), Some(right), a, mask, tmp);
+    prepare::<E>(module, Some(left), Some(right), a, mask, tmp);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
@@ -309,7 +358,7 @@ pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size:
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn apply<const ACC: bool, const PAIRWISE: bool>(
+unsafe fn apply<E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     module: &Module<NTT4x30Avx512>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
@@ -340,27 +389,25 @@ unsafe fn apply<const ACC: bool, const PAIRWISE: bool>(
     let b0 = col_slice(b_raw, n, b_size, b0_col);
     let b1 = col_slice(b_raw, n, b_size, b1_col);
     let res_cols = res.cols();
-    let res_raw: &mut [u32] = cast_slice_mut(res.data_mut());
-    for group in 0..n / GROUP {
-        unsafe {
-            conv_group::<ACC, PAIRWISE>(
-                module.get_bbc_meta(),
-                res_raw,
-                res_col,
-                n,
-                res_cols,
-                min_size,
-                offset,
-                group,
-                a0,
-                a1,
-                a_size,
-                b0,
-                b1,
-                b_size,
-            )
-        };
-    }
+    let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.data_mut()).as_mut_ptr());
+    E::for_each(n / GROUP, |group| unsafe {
+        conv_group::<ACC, PAIRWISE>(
+            module.get_bbc_meta(),
+            res_ptr,
+            res_col,
+            n,
+            res_cols,
+            min_size,
+            offset,
+            group,
+            a0,
+            a1,
+            a_size,
+            b0,
+            b1,
+            b_size,
+        )
+    });
     if !ACC {
         for limb in min_size..res_size {
             zero_res_limb(res, res_col, limb);
@@ -369,7 +416,7 @@ unsafe fn apply<const ACC: bool, const PAIRWISE: bool>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft(
+pub(crate) unsafe fn cnv_apply_dft<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
@@ -379,11 +426,11 @@ pub(crate) unsafe fn cnv_apply_dft(
     b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
     b_col: usize,
 ) {
-    unsafe { apply::<false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe { apply::<E, false, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft_accumulate(
+pub(crate) unsafe fn cnv_apply_dft_accumulate<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
@@ -393,11 +440,11 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate(
     b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
     b_col: usize,
 ) {
-    unsafe { apply::<true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
+    unsafe { apply::<E, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_pairwise_apply_dft(
+pub(crate) unsafe fn cnv_pairwise_apply_dft<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
@@ -408,13 +455,13 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft(
     j: usize,
 ) {
     if i == j {
-        unsafe { apply::<false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };
+        unsafe { apply::<E, false, false>(module, cnv_offset, res, res_col, a, i, i, b, i, i) };
     } else {
-        unsafe { apply::<false, true>(module, cnv_offset, res, res_col, a, i, j, b, i, j) };
+        unsafe { apply::<E, false, true>(module, cnv_offset, res, res_col, a, i, j, b, i, j) };
     }
 }
 
-pub(crate) unsafe fn cnv_tensor_rank1_dft(
+pub(crate) unsafe fn cnv_tensor_rank1_dft<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
     cnv_offset: usize,
@@ -439,26 +486,24 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft(
     let (a0, a1) = (col_slice(a_raw, n, a_size, 0), col_slice(a_raw, n, a_size, 1));
     let (b0, b1) = (col_slice(b_raw, n, b_size, 0), col_slice(b_raw, n, b_size, 1));
     let res_cols = res.cols();
-    let res_raw: &mut [u32] = cast_slice_mut(res.data_mut());
-    for group in 0..n / GROUP {
-        unsafe {
-            conv_rank1_group(
-                module.get_bbc_meta(),
-                res_raw,
-                n,
-                res_cols,
-                min_size,
-                offset,
-                group,
-                a0,
-                a1,
-                a_size,
-                b0,
-                b1,
-                b_size,
-            )
-        };
-    }
+    let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.data_mut()).as_mut_ptr());
+    E::for_each(n / GROUP, |group| unsafe {
+        conv_rank1_group(
+            module.get_bbc_meta(),
+            res_ptr,
+            n,
+            res_cols,
+            min_size,
+            offset,
+            group,
+            a0,
+            a1,
+            a_size,
+            b0,
+            b1,
+            b_size,
+        )
+    });
     for col in 0..3 {
         for limb in min_size..res_size {
             zero_res_limb(res, col, limb);
@@ -470,7 +515,7 @@ pub(crate) fn cnv_tensor_rank1_dft_avx512_tmp_bytes(_res_size: usize, _a_size: u
     0
 }
 
-pub(crate) unsafe fn cnv_tensor_rank1_dft_avx512(
+pub(crate) unsafe fn cnv_tensor_rank1_dft_avx512<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
     cnv_offset: usize,
@@ -478,7 +523,7 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_avx512(
     b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
     _tmp: &mut [u8],
 ) {
-    unsafe { cnv_tensor_rank1_dft(module, res, cnv_offset, a, b) };
+    unsafe { cnv_tensor_rank1_dft::<E>(module, res, cnv_offset, a, b) };
 }
 
 pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
@@ -486,7 +531,7 @@ pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply(
+pub(crate) fn cnv_by_const_apply<E: TaskExecutor>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx512>,
     res_col: usize,
@@ -498,32 +543,39 @@ pub(crate) fn cnv_by_const_apply(
 ) {
     let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
     if res_size == 0 || a_size == 0 || b_size == 0 {
-        for limb in 0..res_size {
-            res.at_mut(res_col, limb).fill(0);
-        }
+        let n = res.n();
+        let cols = res.cols();
+        let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
+        E::for_each(res_size, |limb| unsafe {
+            std::slice::from_raw_parts_mut(res_ptr.get().add(n * (limb * cols + res_col)), n).fill(0)
+        });
         return;
     }
     let bound = a_size + b_size - 1;
     let min_size = res_size.min(bound);
     let offset = cnv_offset.min(bound);
-    for k in 0..res_size {
+    let n = res.n();
+    let cols = res.cols();
+    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
+    E::for_each(res_size, |k| {
+        let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * cols + res_col)), n) };
         if k < min_size {
             let k_abs = k + offset;
             let j_min = k_abs.saturating_sub(a_size - 1);
             let j_max = (k_abs + 1).min(b_size);
-            for (coeff, out) in res.at_mut(res_col, k).iter_mut().enumerate() {
+            for (coeff, out) in dst.iter_mut().enumerate() {
                 *out = (j_min..j_max)
                     .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
                     .sum();
             }
         } else {
-            res.at_mut(res_col, k).fill(0);
+            dst.fill(0);
         }
-    }
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply_add(
+pub(crate) fn cnv_by_const_apply_add<E: TaskExecutor>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, NTT4x30Avx512>,
     res_col: usize,
@@ -540,14 +592,18 @@ pub(crate) fn cnv_by_const_apply_add(
     let bound = a_size + b_size - 1;
     let min_size = res_size.min(bound);
     let offset = cnv_offset.min(bound);
-    for k in 0..min_size {
+    let n = res.n();
+    let cols = res.cols();
+    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
+    E::for_each(min_size, |k| {
         let k_abs = k + offset;
         let j_min = k_abs.saturating_sub(a_size - 1);
         let j_max = (k_abs + 1).min(b_size);
-        for (coeff, out) in res.at_mut(res_col, k).iter_mut().enumerate() {
+        let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * cols + res_col)), n) };
+        for (coeff, out) in dst.iter_mut().enumerate() {
             *out += (j_min..j_max)
                 .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
                 .sum::<i128>();
         }
-    }
+    });
 }
