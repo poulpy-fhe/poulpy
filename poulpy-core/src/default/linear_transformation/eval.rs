@@ -21,7 +21,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
+    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, GLWEShift, LinearTransformation,
     default::{
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
@@ -59,7 +59,8 @@ where
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftApplyTmpBytes,
+        + VecZnxIdftApplyTmpBytes
+        + GLWEShift<BE>,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,
@@ -118,7 +119,8 @@ where
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftApplyTmpBytes,
+        + VecZnxIdftApplyTmpBytes
+        + GLWEShift<BE>,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
@@ -152,6 +154,8 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + GLWECopy<BE>
+        + GLWEShift<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
@@ -257,7 +261,8 @@ where
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftApplyTmpBytes,
+        + VecZnxIdftApplyTmpBytes
+        + GLWEShift<BE>,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,

@@ -12,7 +12,7 @@ use poulpy_hal::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA,
     },
-    layouts::{GaloisElement, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx},
+    layouts::{DataView, GaloisElement, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -23,7 +23,7 @@ use crate::{
     LinearTransformationBabySteps,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESecretPrepared},
     },
     msb_mask_bottom_limb,
@@ -143,6 +143,28 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, &ct, &atks, &mut scratch.borrow());
     assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
 
+    let mask = msb_mask_bottom_limb(ct.base2k().as_usize(), k_in);
+    let mut ct_dirty: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct);
+    module.glwe_copy(&mut ct_dirty, &ct);
+    let bottom_limb = ct_dirty.size() - 1;
+    {
+        let mut dirty_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut ct_dirty);
+        for col in 0..rank + 1 {
+            for coefficient in dirty_ref.data.at_mut(col, bottom_limb) {
+                *coefficient ^= 1;
+            }
+        }
+    }
+    let mut dirty_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct_dirty);
+    module.glwe_prepare_linear_transformation_baby_steps(&mut dirty_babies, &ct_dirty, &atks, &mut scratch.borrow());
+    for &rot in &baby_steps {
+        assert!(
+            prepared_babies.baby_step(rot).to_backend_ref().data().as_ref()
+                == dirty_babies.baby_step(rot).to_backend_ref().data().as_ref(),
+            "prepared baby rotation {rot} depends on inactive bottom-limb bits"
+        );
+    }
+
     let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size());
     let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
     module.cnv_prepare_right(
@@ -152,7 +174,6 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         &mut scratch.borrow(),
     );
 
-    let mask = msb_mask_bottom_limb(ct.base2k().as_usize(), k_in);
     for &rot in &baby_steps {
         let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct);
         if rot == 0 {

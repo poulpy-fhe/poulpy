@@ -27,7 +27,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAutomorphism, ScratchArenaTakeCore,
+    GLWEAutomorphism, GLWECopy, GLWEShift, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     default::{
         keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
@@ -90,7 +90,8 @@ where
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftApplyTmpBytes,
+        + VecZnxIdftApplyTmpBytes
+        + GLWEShift<BE>,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
@@ -109,7 +110,14 @@ where
     let hoisted = hoisted_a_dft + baby + hoisted_rot.max(prepare);
 
     let fallback = baby + module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos).max(prepare);
-    hoisted.max(fallback).max(prepare)
+    let prepare_babies = hoisted.max(fallback).max(prepare);
+    let padding =
+        (a_infos.base2k().as_usize() - a_infos.k().as_usize() % a_infos.base2k().as_usize()) % a_infos.base2k().as_usize();
+    if padding == 0 {
+        prepare_babies
+    } else {
+        baby + prepare_babies.max(module.glwe_shift_tmp_bytes())
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -196,6 +204,51 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
 /// `cache`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
+    module: &M,
+    cache: &mut LinearTransformationBabySteps<BE>,
+    a: &A,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEBytesOf<BE>
+        + CnvPVecAlloc<BE>
+        + Convolution<BE>
+        + GaloisElement
+        + GLWEAutomorphism<BE>
+        + GGLWEProductDefault<BE>
+        + ModuleN
+        + GLWECopy<BE>
+        + GLWEShift<BE>
+        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftZero<BE>
+        + VecZnxIdftApply<BE>,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GLWEAutomorphismKeyHelper<K, BE>,
+{
+    let base2k = a.base2k().as_usize();
+    let padding = (base2k - a.k().as_usize() % base2k) % base2k;
+    if padding == 0 {
+        glwe_prepare_linear_transformation_baby_steps_inner(module, cache, a, keys, scratch);
+        return;
+    }
+
+    // The DFT and body-add paths below otherwise consume inactive bits from the partial bottom limb.
+    let (mut a_clean, mut clean_scratch) = scratch.borrow().take_glwe_scratch(a);
+    module.glwe_copy(&mut a_clean, a);
+    module.glwe_rsh(padding, &mut a_clean, &mut clean_scratch.borrow());
+    module.glwe_lsh_assign(&mut a_clean, padding, &mut clean_scratch.borrow());
+    glwe_prepare_linear_transformation_baby_steps_inner(module, cache, &a_clean, keys, &mut clean_scratch);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn glwe_prepare_linear_transformation_baby_steps_inner<BE, M, A, H, K>(
     module: &M,
     cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
