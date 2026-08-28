@@ -837,6 +837,22 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
+    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
+
+    /// `res[res_col] = normalize(idft(a[a_col]) + addend)`, clobbering `a[a_col]`.
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_idft_normalize_consume(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VecZnxBackendMut<'_, BE>,
+        res_base2k: usize,
+        res_col: usize,
+        a: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        a_col: usize,
+        a_base2k: usize,
+        addend: Option<(&crate::layouts::VecZnxBackendRef<'_, BE>, usize)>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
     fn vec_znx_dft_add_into(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
@@ -909,6 +925,17 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
     fn vec_znx_dft_automorphism_plan(module: &Module<BE>, p: i64) -> Self::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_with_plan(
+        module: &Module<BE>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    );
+
+    /// `res[res_col] += automorphism(a[a_col])` over `min(res.size(), a.size())` limbs;
+    /// res limbs beyond that are left untouched.
+    fn vec_znx_dft_automorphism_add_with_plan(
         module: &Module<BE>,
         plan: &Self::AutomorphismPlan,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
@@ -1085,6 +1112,22 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        res_col: usize,
+        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+        b_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    /// `res[res_col] +=` the [`Self::cnv_by_const_apply`] result; limbs the
+    /// convolution would zero-fill are left untouched.
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_by_const_apply_add(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,

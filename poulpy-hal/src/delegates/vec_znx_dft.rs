@@ -3,10 +3,11 @@ use crate::{
         VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAddScaledAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftFromBytes, VecZnxDftSub, VecZnxDftSubAssign,
         VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftOwned,
+        Backend, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, VecZnxDftOwned,
     },
     oep::HalVecZnxDftImpl,
 };
@@ -58,6 +59,30 @@ impl_vec_znx_dft_delegate!(
         scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_idft_apply(self, res, res_col, a, a_col, scratch)
+    }
+);
+
+impl_vec_znx_dft_delegate!(
+    VecZnxIdftNormalizeConsumeTmpBytes,
+    fn vec_znx_idft_normalize_consume_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
+        B::vec_znx_idft_normalize_consume_tmp_bytes(self, res_size, a_size)
+    }
+);
+
+impl_vec_znx_dft_delegate!(
+    VecZnxIdftNormalizeConsume<B>,
+    fn vec_znx_idft_normalize_consume(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_base2k: usize,
+        res_col: usize,
+        a: &mut VecZnxDftBackendMut<'_, B>,
+        a_col: usize,
+        a_base2k: usize,
+        addend: Option<(&VecZnxBackendRef<'_, B>, usize)>,
+        scratch: &mut ScratchArena<'_, B>,
+    ) {
+        B::vec_znx_idft_normalize_consume(self, res, res_base2k, res_col, a, a_col, a_base2k, addend, scratch);
     }
 );
 
@@ -218,5 +243,16 @@ where
         a_col: usize,
     ) {
         B::vec_znx_dft_automorphism_with_plan(self, plan, res, res_col, a, a_col);
+    }
+
+    fn vec_znx_dft_automorphism_add_with_plan(
+        &self,
+        plan: &Self::Plan,
+        res: &mut VecZnxDftBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, B>,
+        a_col: usize,
+    ) {
+        B::vec_znx_dft_automorphism_add_with_plan(self, plan, res, res_col, a, a_col);
     }
 }

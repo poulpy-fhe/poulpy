@@ -1,5 +1,6 @@
+/// HAL `VecZnxBig` methods other than full-width normalization.
 #[macro_export]
-macro_rules! hal_impl_vec_znx_big {
+macro_rules! hal_impl_vec_znx_big_without_normalize {
     ($defaults:ident) => {
         fn vec_znx_big_from_small_backend(
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -215,31 +216,6 @@ macro_rules! hal_impl_vec_znx_big {
             <Self as $defaults<Self>>::vec_znx_big_normalize_tmp_bytes_default(module)
         }
 
-        fn vec_znx_big_normalize(
-            module: &Module<Self>,
-            mut res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-            res_base2k: usize,
-            res_offset: i64,
-            res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
-            a_base2k: usize,
-            a_col: usize,
-            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
-        ) {
-            let mut scratch = scratch.borrow();
-            <Self as $defaults<Self>>::vec_znx_big_normalize_default(
-                module,
-                &mut res,
-                res_base2k,
-                res_offset,
-                res_col,
-                &a,
-                a_base2k,
-                a_col,
-                &mut scratch,
-            );
-        }
-
         fn vec_znx_big_automorphism(
             module: &Module<Self>,
             k: i64,
@@ -265,5 +241,44 @@ macro_rules! hal_impl_vec_znx_big {
             let mut scratch = scratch.borrow();
             <Self as $defaults<Self>>::vec_znx_big_automorphism_assign_default(module, k, &mut res, res_col, &mut scratch);
         }
+    };
+}
+
+/// Full-width HAL `VecZnxBig` normalization.
+#[macro_export]
+macro_rules! hal_impl_vec_znx_big_normalize {
+    ($defaults:ident) => {
+        fn vec_znx_big_normalize(
+            module: &Module<Self>,
+            mut res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_base2k: usize,
+            res_offset: i64,
+            res_col: usize,
+            a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
+            a_base2k: usize,
+            a_col: usize,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
+        ) {
+            let mut scratch = scratch.borrow();
+            <Self as $defaults<Self>>::vec_znx_big_normalize_default(
+                module,
+                &mut res,
+                res_base2k,
+                res_offset,
+                res_col,
+                &a,
+                a_base2k,
+                a_col,
+                &mut scratch,
+            );
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! hal_impl_vec_znx_big {
+    ($defaults:ident) => {
+        $crate::hal_impl_vec_znx_big_without_normalize!($defaults);
+        $crate::hal_impl_vec_znx_big_normalize!($defaults);
     };
 }

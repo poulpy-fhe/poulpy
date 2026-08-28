@@ -6,9 +6,9 @@ use crate::reference::{
     fft64::{
         convolution::{
             I64Ops, convolution_apply_dft, convolution_apply_dft_accumulate, convolution_apply_dft_tmp_bytes,
-            convolution_by_const_apply, convolution_by_const_apply_tmp_bytes, convolution_pairwise_apply_dft,
-            convolution_pairwise_apply_dft_tmp_bytes, convolution_prepare_left, convolution_prepare_right,
-            convolution_prepare_self,
+            convolution_by_const_apply, convolution_by_const_apply_add, convolution_by_const_apply_tmp_bytes,
+            convolution_pairwise_apply_dft, convolution_pairwise_apply_dft_tmp_bytes, convolution_prepare_left,
+            convolution_prepare_right, convolution_prepare_self,
         },
         module::FFTModuleHandle,
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
@@ -17,11 +17,12 @@ use crate::reference::{
     ntt4x30::{
         NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
         convolution::{
-            ntt4x30_cnv_accumulate_dft, ntt4x30_cnv_accumulate_dft_tmp_bytes, ntt4x30_cnv_apply_dft,
+            CNV_ACC_GROUP, ntt4x30_cnv_accumulate_dft, ntt4x30_cnv_accumulate_dft_tmp_bytes, ntt4x30_cnv_apply_dft,
             ntt4x30_cnv_apply_dft_accumulate, ntt4x30_cnv_apply_dft_tmp_bytes, ntt4x30_cnv_by_const_apply,
-            ntt4x30_cnv_by_const_apply_tmp_bytes, ntt4x30_cnv_pairwise_apply_dft, ntt4x30_cnv_pairwise_apply_dft_tmp_bytes,
-            ntt4x30_cnv_prepare_left, ntt4x30_cnv_prepare_left_tmp_bytes, ntt4x30_cnv_prepare_right,
-            ntt4x30_cnv_prepare_right_tmp_bytes, ntt4x30_cnv_prepare_self, ntt4x30_cnv_prepare_self_tmp_bytes,
+            ntt4x30_cnv_by_const_apply_add, ntt4x30_cnv_by_const_apply_tmp_bytes, ntt4x30_cnv_pairwise_apply_dft,
+            ntt4x30_cnv_pairwise_apply_dft_tmp_bytes, ntt4x30_cnv_prepare_left, ntt4x30_cnv_prepare_left_tmp_bytes,
+            ntt4x30_cnv_prepare_right, ntt4x30_cnv_prepare_right_tmp_bytes, ntt4x30_cnv_prepare_self,
+            ntt4x30_cnv_prepare_self_tmp_bytes,
         },
         ntt::NttTable,
         primes::Primes30,
@@ -31,6 +32,7 @@ use crate::reference::{
 };
 use poulpy_hal::{
     api::{HostBufMut, ModuleN, VecZnxDftBytesOf},
+    execution::{ScratchWorkers, SerialTaskExecutor, scratch_workers, scratch_workers_within},
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, Module,
         ScratchArena, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxDft, VecZnxDftToBackendMut,
@@ -65,7 +67,7 @@ where
     (slice, arena)
 }
 #[doc(hidden)]
-pub trait FFT64ConvolutionDefault<BE: Backend<ZnxWord = i64>>: Backend
+pub trait FFT64ConvolutionDefault<BE: Backend<ZnxWord = i64> + ScratchWorkers>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -131,7 +133,7 @@ where
     where
         BE: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        convolution_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        reim4_block_workers::<BE>(_module) * convolution_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes_default(
@@ -173,6 +175,31 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
+    fn cnv_by_const_apply_add_default<R>(
+        _module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+        b_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
+        for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
+        for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        R: VecZnxBigToBackendMut<BE>,
+    {
+        let mut res_ref = res.to_backend_mut();
+        let bytes = convolution_by_const_apply_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let (tmp, _) = take_host_typed::<BE, i64>(scratch.borrow(), bytes / size_of::<i64>());
+        convolution_by_const_apply_add::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_default<R>(
         _module: &Module<BE>,
         cnv_offset: usize,
@@ -191,7 +218,8 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = reim4_block_workers_within::<BE>(_module, per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<BE, f64>(scratch.borrow(), bytes / size_of::<f64>());
         convolution_apply_dft::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
@@ -215,7 +243,8 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = reim4_block_workers_within::<BE>(_module, per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<BE, f64>(scratch.borrow(), bytes / size_of::<f64>());
         convolution_apply_dft_accumulate::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
@@ -230,7 +259,7 @@ where
     where
         BE: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        reim4_block_workers::<BE>(_module) * convolution_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -252,7 +281,8 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = convolution_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = convolution_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = reim4_block_workers_within::<BE>(_module, per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<BE, f64>(scratch.borrow(), bytes / size_of::<f64>());
         convolution_pairwise_apply_dft::<BE>(cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
@@ -285,18 +315,58 @@ where
     }
 }
 
-impl<BE: Backend<ZnxWord = i64>> FFT64ConvolutionDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend<ZnxWord = i64> + ScratchWorkers> FFT64ConvolutionDefault<BE> for BE where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut
+{
+}
+
+/// Worker slices for the block-parallel reim4 convolution kernels.
+fn reim4_block_workers<BE: Backend + ScratchWorkers>(module: &Module<BE>) -> usize
+where
+    Module<BE>: ModuleN,
+{
+    scratch_workers::<BE::TaskExecutor>((module.n() / 8).min(BE::APPLY))
+}
+
+fn reim4_block_workers_within<BE: Backend + ScratchWorkers>(module: &Module<BE>, per_worker: usize, available: usize) -> usize
+where
+    Module<BE>: ModuleN,
+{
+    scratch_workers_within::<BE::TaskExecutor>((module.n() / 8).min(BE::APPLY), per_worker, available)
+}
+
+/// Worker slices for the block-group parallel convolution kernels.
+fn cnv_group_workers<BE: Backend + ScratchWorkers>(module: &Module<BE>) -> usize
+where
+    Module<BE>: ModuleN,
+{
+    scratch_workers::<BE::TaskExecutor>(cnv_groups(module).min(BE::APPLY))
+}
+
+fn cnv_group_workers_within<BE: Backend + ScratchWorkers>(module: &Module<BE>, per_worker: usize, available: usize) -> usize
+where
+    Module<BE>: ModuleN,
+{
+    scratch_workers_within::<BE::TaskExecutor>(cnv_groups(module).min(BE::APPLY), per_worker, available)
+}
+
+fn cnv_groups<BE: Backend>(module: &Module<BE>) -> usize
+where
+    Module<BE>: ModuleN,
+{
+    (module.n() / 2).div_ceil(CNV_ACC_GROUP)
+}
 
 #[doc(hidden)]
-pub trait NTT4x30ConvolutionDefault<BE: Backend<ZnxWord = i64>>: Backend
+pub trait NTT4x30ConvolutionDefault<BE: Backend<ZnxWord = i64> + ScratchWorkers>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    fn cnv_prepare_left_tmp_bytes_default(module: &Module<BE>, _res_size: usize, _a_size: usize) -> usize
+    fn cnv_prepare_left_tmp_bytes_default(module: &Module<BE>, res_size: usize, _a_size: usize) -> usize
     where
         BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_cnv_prepare_left_tmp_bytes(module.n())
+        scratch_workers::<BE::TaskExecutor>(res_size.min(BE::PREPARE)) * ntt4x30_cnv_prepare_left_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_left_default(
@@ -315,16 +385,18 @@ where
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt4x30_cnv_prepare_left_tmp_bytes(module.n());
+        let per_worker = ntt4x30_cnv_prepare_left_tmp_bytes(module.n());
+        let bytes =
+            scratch_workers_within::<BE::TaskExecutor>(res.size().min(BE::PREPARE), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
         ntt4x30_cnv_prepare_left::<BE>(module, res, a, mask, tmp);
     }
 
-    fn cnv_prepare_right_tmp_bytes_default(module: &Module<BE>, _res_size: usize, _a_size: usize) -> usize
+    fn cnv_prepare_right_tmp_bytes_default(module: &Module<BE>, res_size: usize, _a_size: usize) -> usize
     where
         BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_cnv_prepare_right_tmp_bytes(module.n())
+        scratch_workers::<BE::TaskExecutor>(res_size.min(BE::PREPARE)) * ntt4x30_cnv_prepare_right_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_right_default(
@@ -343,7 +415,9 @@ where
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt4x30_cnv_prepare_right_tmp_bytes(module.n());
+        let per_worker = ntt4x30_cnv_prepare_right_tmp_bytes(module.n());
+        let bytes =
+            scratch_workers_within::<BE::TaskExecutor>(res.size().min(BE::PREPARE), per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<BE, u64>(scratch.borrow(), bytes / size_of::<u64>());
         ntt4x30_cnv_prepare_right::<BE>(module, res, a, mask, tmp);
     }
@@ -358,7 +432,7 @@ where
     where
         BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        cnv_group_workers::<BE>(_module) * ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes_default(
@@ -396,7 +470,42 @@ where
         let mut res_ref = res.to_backend_mut();
         let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes(0, 0, 0);
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_by_const_apply::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+        ntt4x30_cnv_by_const_apply::<BE, SerialTaskExecutor>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_by_const_apply_add_default<R>(
+        _module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+        b_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: Backend<BigWord = i128, DftWord = Q120bScalar, ZnxWord = i64> + 'static,
+        for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
+        for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        R: VecZnxBigToBackendMut<BE>,
+    {
+        let mut res_ref = res.to_backend_mut();
+        let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes(0, 0, 0);
+        let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
+        ntt4x30_cnv_by_const_apply_add::<BE, SerialTaskExecutor>(
+            cnv_offset,
+            &mut res_ref,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            b_coeff,
+            tmp,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -419,7 +528,8 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = cnv_group_workers_within::<BE>(module, per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
         ntt4x30_cnv_apply_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
@@ -444,7 +554,8 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = cnv_group_workers_within::<BE>(module, per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
         ntt4x30_cnv_apply_dft_accumulate::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
@@ -493,7 +604,7 @@ where
     where
         BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        cnv_group_workers::<BE>(_module) * ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -516,16 +627,17 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let per_worker = ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = cnv_group_workers_within::<BE>(module, per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
         ntt4x30_cnv_pairwise_apply_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
 
-    fn cnv_prepare_self_tmp_bytes_default(module: &Module<BE>, _res_size: usize, _a_size: usize) -> usize
+    fn cnv_prepare_self_tmp_bytes_default(module: &Module<BE>, res_size: usize, _a_size: usize) -> usize
     where
         BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_cnv_prepare_self_tmp_bytes(module.n())
+        scratch_workers::<BE::TaskExecutor>(res_size.min(BE::PREPARE)) * ntt4x30_cnv_prepare_self_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_self_default(
@@ -546,10 +658,15 @@ where
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt4x30_cnv_prepare_self_tmp_bytes(module.n());
+        let per_worker = ntt4x30_cnv_prepare_self_tmp_bytes(module.n());
+        let bytes = scratch_workers_within::<BE::TaskExecutor>(left.size().min(BE::PREPARE), per_worker, scratch.available())
+            * per_worker;
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
         ntt4x30_cnv_prepare_self::<BE>(module, left, right, a, mask, tmp);
     }
 }
 
-impl<BE: Backend<ZnxWord = i64>> NTT4x30ConvolutionDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend<ZnxWord = i64> + ScratchWorkers> NTT4x30ConvolutionDefault<BE> for BE where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut
+{
+}

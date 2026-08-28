@@ -37,7 +37,10 @@ pub struct FFT64RefHandle {
     table_cache: crate::table_cache::ModuleTableCache,
 }
 
+impl poulpy_hal::execution::ScratchWorkers for FFT64Ref {}
+
 impl Backend for FFT64Ref {
+    type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
