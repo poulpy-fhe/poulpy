@@ -332,6 +332,15 @@ fn test_gglwe_product_digits_strided_bit_identical() {
 }
 
 #[test]
+fn test_glwe_keyswitch_noise_ntt3x42_ifma() {
+    let params = poulpy_hal::test_suite::TestParams {
+        size: 1 << 8,
+        base2k: 50,
+    };
+    poulpy_core::test_suite::noise::keyswitch::test_glwe_keyswitch(&params, &Module::<NTT3x42Ifma>::new(params.size as u64));
+}
+
+#[test]
 fn test_convolution_accumulate_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
     test_convolution_accumulate(&module, 12);

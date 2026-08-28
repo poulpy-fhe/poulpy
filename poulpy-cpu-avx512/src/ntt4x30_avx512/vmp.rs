@@ -22,7 +22,7 @@ use poulpy_hal::layouts::{
     ZnxView, ZnxViewMut,
 };
 
-use super::mat_vec_avx512::vec_mat1col_product_blkpair_bbc_pm_avx512;
+use super::mat_vec_avx512::{vec_mat1col_product_blkpair_bbc_pm_avx512, vec_mat1col_product_blkpair_bbc_pm_x2_avx512};
 use super::prim::{lazy_reduce_512, q_shifted_512};
 use crate::NTT4x30Avx512;
 
@@ -254,6 +254,20 @@ unsafe fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
     }
 }
 
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn save_blkpair_digit(n: usize, bp: usize, dst: &mut [u64], src: &[u64], overwrite: bool) {
+    unsafe {
+        if overwrite {
+            save_blk_overwrite(2 * bp, dst, &src[0..8]);
+            save_blk_overwrite(2 * bp + 1, dst, &src[8..16]);
+        } else {
+            save_blk_add(n, 2 * bp, dst, &src[0..8]);
+            save_blk_add(n, 2 * bp + 1, dst, &src[8..16]);
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512f")]
 unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
@@ -407,7 +421,8 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_avx(
         .map(|di| (a_cols * ((a_size + di) / dsize).min(b_rows)).min(nrows))
         .max()
         .unwrap_or(0);
-    (4 * dsize + 16 + 16 * row_max) * size_of::<u64>()
+    let rhs_count = dsize.clamp(1, 2);
+    (4 * dsize + rhs_count * 16 * (row_max + 1)) * size_of::<u64>()
 }
 
 /// Applies all gadget digits directly from their interleaved source limbs.
@@ -477,20 +492,142 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
         }
     }
 
-    let (blkpair_output, x_pm) = tmp.split_at_mut(16);
+    let rhs_count = dsize.clamp(1, 2);
+    let (blkpair_outputs, x_pm) = tmp.split_at_mut(16 * rhs_count);
+    let (output0, output1) = blkpair_outputs.split_at_mut(16);
+    let x_words = 16 * row_maxs.iter().copied().max().unwrap_or(0) as usize;
+    let (x0_pm, x1_pm) = x_pm[..rhs_count * x_words].split_at_mut(x_words);
     for bp in 0..n_block_pairs {
-        for di in 0..dsize {
+        let mut di = 0;
+        while di < dsize {
+            let pair = di + 1 < dsize
+                && row_maxs[di] != 0
+                && row_starts[di] == row_starts[di + 1]
+                && row_maxs[di] == row_maxs[di + 1]
+                && limb_offsets[di + 1] < col_maxs[di].min(col_maxs[di + 1]);
+
+            if pair {
+                let row_start = row_starts[di] as usize;
+                let row_max = row_maxs[di] as usize;
+                let x0_pm = &mut x0_pm[..16 * row_max];
+                let x1_pm = &mut x1_pm[..16 * row_max];
+                unsafe {
+                    extract_blk_pair_prime_major_strided_avx512(
+                        n,
+                        row_max,
+                        bp,
+                        a_u64,
+                        a_cols,
+                        dsize - 1 - di,
+                        dsize,
+                        row_start,
+                        x0_pm,
+                    );
+                    extract_blk_pair_prime_major_strided_avx512(
+                        n,
+                        row_max,
+                        bp,
+                        a_u64,
+                        a_cols,
+                        dsize - 2 - di,
+                        dsize,
+                        row_start,
+                        x1_pm,
+                    );
+                }
+
+                let limb_offset0 = limb_offsets[di] as usize;
+                let limb_offset1 = limb_offsets[di + 1] as usize;
+                let col_max0 = col_maxs[di] as usize;
+                let col_max1 = col_maxs[di + 1] as usize;
+                let prefix_end = limb_offset1.min(col_max0);
+                let shared_end = col_max0.min(col_max1);
+
+                for col_pmat in limb_offset0..prefix_end {
+                    let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
+                    unsafe {
+                        vec_mat1col_product_blkpair_bbc_pm_avx512(
+                            meta,
+                            row_max,
+                            output0,
+                            x0_pm,
+                            &pmat_u64[y_off..],
+                            plane_stride,
+                        );
+                        let base = (col_pmat - limb_offset0) * 4 * n;
+                        save_blkpair_digit(n, bp, &mut res_u64[base..], output0, di == 0);
+                    }
+                }
+
+                for col_pmat in limb_offset1..shared_end {
+                    let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
+                    unsafe {
+                        vec_mat1col_product_blkpair_bbc_pm_x2_avx512(
+                            meta,
+                            row_max,
+                            output0,
+                            output1,
+                            x0_pm,
+                            x1_pm,
+                            &pmat_u64[y_off..],
+                            plane_stride,
+                        );
+                        let base0 = (col_pmat - limb_offset0) * 4 * n;
+                        let base1 = (col_pmat - limb_offset1) * 4 * n;
+                        save_blkpair_digit(n, bp, &mut res_u64[base0..], output0, di == 0);
+                        save_blkpair_digit(n, bp, &mut res_u64[base1..], output1, false);
+                    }
+                }
+
+                for col_pmat in shared_end..col_max0 {
+                    let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
+                    unsafe {
+                        vec_mat1col_product_blkpair_bbc_pm_avx512(
+                            meta,
+                            row_max,
+                            output0,
+                            x0_pm,
+                            &pmat_u64[y_off..],
+                            plane_stride,
+                        );
+                        let base = (col_pmat - limb_offset0) * 4 * n;
+                        save_blkpair_digit(n, bp, &mut res_u64[base..], output0, di == 0);
+                    }
+                }
+
+                for col_pmat in shared_end.max(limb_offset1)..col_max1 {
+                    let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
+                    unsafe {
+                        vec_mat1col_product_blkpair_bbc_pm_avx512(
+                            meta,
+                            row_max,
+                            output1,
+                            x1_pm,
+                            &pmat_u64[y_off..],
+                            plane_stride,
+                        );
+                        let base = (col_pmat - limb_offset1) * 4 * n;
+                        save_blkpair_digit(n, bp, &mut res_u64[base..], output1, false);
+                    }
+                }
+
+                di += 2;
+                continue;
+            }
+
             let limb_offset = limb_offsets[di] as usize;
             let col_max = col_maxs[di] as usize;
             if limb_offset >= col_max {
+                di += 1;
                 continue;
             }
             let row_max = row_maxs[di] as usize;
             if row_max == 0 {
+                di += 1;
                 continue;
             }
             let row_start = row_starts[di] as usize;
-            let x_pm = &mut x_pm[..16 * row_max];
+            let x0_pm = &mut x0_pm[..16 * row_max];
             unsafe {
                 extract_blk_pair_prime_major_strided_avx512(
                     n,
@@ -501,7 +638,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
                     dsize - 1 - di,
                     dsize,
                     row_start,
-                    x_pm,
+                    x0_pm,
                 );
             }
 
@@ -510,26 +647,12 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
                 // `row_start` is an offset within each prime plane.
                 let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
                 unsafe {
-                    vec_mat1col_product_blkpair_bbc_pm_avx512(
-                        meta,
-                        row_max,
-                        blkpair_output,
-                        x_pm,
-                        &pmat_u64[y_off..],
-                        plane_stride,
-                    );
+                    vec_mat1col_product_blkpair_bbc_pm_avx512(meta, row_max, output0, x0_pm, &pmat_u64[y_off..], plane_stride);
                     let base = col_res * 4 * n;
-                    let blk0 = 2 * bp;
-                    let blk1 = blk0 + 1;
-                    if di == 0 {
-                        save_blk_overwrite(blk0, &mut res_u64[base..], &blkpair_output[0..8]);
-                        save_blk_overwrite(blk1, &mut res_u64[base..], &blkpair_output[8..16]);
-                    } else {
-                        save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
-                        save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
-                    }
+                    save_blkpair_digit(n, bp, &mut res_u64[base..], output0, di == 0);
                 }
             }
+            di += 1;
         }
     }
 }
