@@ -478,6 +478,35 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx<E: TaskExecutor>(
     pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
     tmp: &mut [u64],
 ) {
+    vmp_apply_dft_to_dft_digits_strided_avx_inner::<E>(module, res, a, dsize, product_limbs, pmat, None, tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix<E: TaskExecutor>(
+    module: &Module<NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
+    zero_prefix: usize,
+    tmp: &mut [u64],
+) {
+    assert!(zero_prefix <= a.size());
+    vmp_apply_dft_to_dft_digits_strided_avx_inner::<E>(module, res, a, dsize, product_limbs, pmat, Some(zero_prefix), tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn vmp_apply_dft_to_dft_digits_strided_avx_inner<E: TaskExecutor>(
+    module: &Module<NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
+    zero_prefix: Option<usize>,
+    tmp: &mut [u64],
+) {
     let n = res.n();
     let output_size = res.size();
     if dsize == 0 || n < 4 {
@@ -512,12 +541,17 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx<E: TaskExecutor>(
         let limb_offset = di * cols_out;
         let row_end = (a_cols * digit_limbs).min(nrows);
         let limb_base = dsize - 1 - di;
-        let row_start = (0..row_end)
-            .take_while(|&row| {
-                let flat = (limb_base + (row / a_cols) * dsize) * a_cols + row % a_cols;
-                a_u64[flat * 4 * n..(flat + 1) * 4 * n].iter().all(|&x| x == 0)
-            })
-            .count();
+        let row_start = zero_prefix.map_or_else(
+            || {
+                (0..row_end)
+                    .take_while(|&row| {
+                        let flat = (limb_base + (row / a_cols) * dsize) * a_cols + row % a_cols;
+                        a_u64[flat * 4 * n..(flat + 1) * 4 * n].iter().all(|&x| x == 0)
+                    })
+                    .count()
+            },
+            |prefix| (a_cols * ((prefix + di) / dsize).min(digit_limbs)).min(row_end),
+        );
         row_starts[di] = row_start as u64;
         row_maxs[di] = (row_end - row_start) as u64;
         limb_offsets[di] = limb_offset as u64;

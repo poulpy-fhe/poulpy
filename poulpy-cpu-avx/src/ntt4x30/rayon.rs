@@ -617,6 +617,41 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30AvxRayon> for
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_digits_strided_known_zero_prefix(
+    module: &Module<NTT4x30AvxRayon>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30AvxRayon>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30AvxRayon>,
+    dsize: usize,
+    zero_prefix: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30AvxRayon>,
+    scratch: &mut ScratchArena<'_, NTT4x30AvxRayon>,
+) {
+    let bytes = <NTT4x30AvxRayon as poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30AvxRayon>>::gglwe_product_digits_strided_tmp_bytes(
+        module,
+        res.size(),
+        a.cols(),
+        a.size(),
+        dsize,
+        pmat.rows(),
+        pmat.cols_in(),
+        pmat.cols_out(),
+        pmat.size(),
+    );
+    let (tmp, _) = crate::hal_impl::take_host_typed::<NTT4x30AvxRayon, u64>(scratch.borrow(), bytes / size_of::<u64>());
+    super::vmp::vmp_apply_dft_to_dft_digits_strided_avx_known_zero_prefix::<RayonTaskExecutor>(
+        base_module(module),
+        &mut base_dft_mut(res),
+        &base_dft_ref(a),
+        dsize,
+        product_limbs,
+        &base_vmp_ref(pmat),
+        zero_prefix,
+        tmp,
+    );
+}
+
 unsafe impl HalConvolutionImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
         <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_tmp_bytes_default(module, res_size, a_size)
