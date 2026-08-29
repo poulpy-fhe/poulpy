@@ -32,6 +32,8 @@ use crate::{
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(crate) struct DelegatingFFT64Ref;
 
+impl poulpy_hal::execution::ScratchWorkers for DelegatingFFT64Ref {}
+
 poulpy_hal::impl_backend_from!(DelegatingFFT64Ref, FFT64Ref);
 
 macro_rules! impl_forward_znx_trait {

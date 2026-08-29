@@ -15,7 +15,7 @@ use poulpy_hal::{
         VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
         VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
         VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
-        VecZnxIdftApplyTmpBytes,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{Backend, GaloisElement, ScratchArena},
 };
@@ -60,6 +60,7 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftNormalizeConsumeTmpBytes
         + GLWEShift<BE>,
     R: GLWEInfos,
     A: GLWEInfos,
@@ -121,6 +122,7 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftNormalizeConsumeTmpBytes
         + GLWEShift<BE>,
     A: GLWEInfos,
     K: GGLWEInfos,
@@ -161,7 +163,10 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
-        + GaloisElement,
+        + VecZnxIdftNormalizeConsume<BE>
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + GaloisElement
+        + Sync,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -265,6 +270,7 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftNormalizeConsumeTmpBytes
         + GLWEShift<BE>,
     R: GLWEInfos,
     A: GLWEInfos,

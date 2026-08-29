@@ -85,6 +85,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     key: &K,
     output_size: usize,
     term_count: usize,
+    accumulate: bool,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -106,7 +107,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     assert_eq!(prod_base2k, key_base2k, "lazy DFT path requires prod_base2k == key.base2k()");
     assert_eq!(prod_dft.cols(), cols);
     let output_size = output_size.min(key.size());
-    assert_eq!(res_dft.size(), output_size);
+    assert!(res_dft.size() >= output_size);
     let mask_small_size = prod_dft.size().min(output_size);
 
     let scratch = scratch.borrow();
@@ -148,7 +149,11 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     let plan = module.vec_znx_dft_automorphism_plan(key.p());
     let ks_dft_ref = ks_dft.to_backend_ref();
     for col in 0..cols {
-        module.vec_znx_dft_automorphism_with_plan(&plan, res_dft, col, &ks_dft_ref, col);
+        if accumulate {
+            module.vec_znx_dft_automorphism_add_with_plan(&plan, res_dft, col, &ks_dft_ref, col);
+        } else {
+            module.vec_znx_dft_automorphism_with_plan(&plan, res_dft, col, &ks_dft_ref, col);
+        }
     }
 }
 

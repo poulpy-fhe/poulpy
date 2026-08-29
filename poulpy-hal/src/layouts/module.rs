@@ -26,6 +26,8 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// the [`DftWord`](crate::layouts::DftWord) byte-layout marker.
     const DFT_IS_EXACT: bool = false;
 
+    /// Task executor selected by this backend.
+    type TaskExecutor: crate::execution::TaskExecutor;
     /// Word type for coefficient-domain (small) polynomial representations.
     type ZnxWord: crate::layouts::ZnxWord;
     /// Word type for extended-precision (big) polynomial representations.

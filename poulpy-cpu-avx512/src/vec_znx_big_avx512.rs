@@ -219,6 +219,7 @@ const INTERLEAVE_HI: [i64; 8] = [4, 12, 5, 13, 6, 14, 7, 15]; // second 4 pairs
 /// Fields with `__m128i` type are variable shift counts for `_mm512_srl/sll_epi64`.
 /// Fields with `__m128i` type (sra) are shift counts for `_mm512_sra_epi64`.
 struct NfcShifts512 {
+    lsh_is_zero: bool,
     /// `_mm_cvtsi64_si128((64 - base2k_lsh) as i64)` -- left-shift for digit extraction.
     sll_b2klsh: __m128i,
     /// `_mm_cvtsi64_si128((64 - base2k_lsh) as i64)` -- arithmetic right-shift count for digit extraction.
@@ -249,6 +250,7 @@ impl NfcShifts512 {
         unsafe {
             let b2klsh = base2k - lsh;
             Self {
+                lsh_is_zero: lsh == 0,
                 sll_b2klsh: _mm_cvtsi64_si128((64 - b2klsh) as i64),
                 sra_b2klsh: _mm_cvtsi64_si128((64 - b2klsh) as i64),
                 srl_b2klsh: _mm_cvtsi64_si128(b2klsh as i64),
@@ -280,6 +282,22 @@ unsafe fn nfc_middle_chunk_512(
     hi_c: __m512i,
 ) -> (__m512i, __m512i, __m512i) {
     unsafe {
+        if s.lsh_is_zero {
+            let lo_sum = _mm512_add_epi64(lo_a, lo_c);
+            let carry_mask = _mm512_cmp_epu64_mask(lo_sum, lo_a, _MM_CMPINT_LT);
+            let carry = _mm512_maskz_set1_epi64(carry_mask, 1);
+            let hi_sum = _mm512_add_epi64(_mm512_add_epi64(hi_a, hi_c), carry);
+            let lo_out = _mm512_sra_epi64(_mm512_sll_epi64(lo_sum, s.sll_b2k), s.sra_b2k);
+            let hi_out = _mm512_sra_epi64(lo_out, s.sra_63);
+            let diff_lo = _mm512_sub_epi64(lo_sum, lo_out);
+            let borrow_mask = _mm512_cmp_epu64_mask(lo_out, lo_sum, _MM_CMPINT_NLE);
+            let borrow = _mm512_maskz_set1_epi64(borrow_mask, 1);
+            let diff_hi = _mm512_sub_epi64(_mm512_sub_epi64(hi_sum, hi_out), borrow);
+            let new_lo_c = _mm512_or_si512(_mm512_srl_epi64(diff_lo, s.srl_b2k), _mm512_sll_epi64(diff_hi, s.sll_b2k));
+            let new_hi_c = _mm512_sra_epi64(diff_hi, s.sra_b2k_val);
+            return (lo_out, new_lo_c, new_hi_c);
+        }
+
         // digit = get_digit_i128(base2k_lsh, a)
         let lo_dig = _mm512_sra_epi64(_mm512_sll_epi64(lo_a, s.sll_b2klsh), s.sra_b2klsh);
         let hi_dig = _mm512_sra_epi64(lo_dig, s.sra_63);

@@ -177,7 +177,14 @@ unsafe impl HalVmpImpl<NTT4x30Avx> for NTT4x30Avx {
     ) {
         let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_avx(module, res, a, b, limb_offset, tmp);
+        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+            module,
+            res,
+            a,
+            b,
+            limb_offset,
+            tmp,
+        );
     }
 
     fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
@@ -202,7 +209,14 @@ unsafe impl HalVmpImpl<NTT4x30Avx> for NTT4x30Avx {
     ) {
         let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_accumulate_avx(module, res, a, b, limb_offset, tmp);
+        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_accumulate_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+            module,
+            res,
+            a,
+            b,
+            limb_offset,
+            tmp,
+        );
     }
 
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
@@ -278,6 +292,34 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
     ) {
         let mut scratch = scratch.borrow();
         <Self as NTT4x30ConvolutionDefault<Self>>::cnv_by_const_apply_default(
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            b_coeff,
+            &mut scratch,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_by_const_apply_add(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, Self>,
+        b_col: usize,
+        b_coeff: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let mut scratch = scratch.borrow();
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_by_const_apply_add_default(
             module,
             cnv_offset,
             &mut res,

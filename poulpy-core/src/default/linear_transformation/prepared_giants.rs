@@ -246,7 +246,6 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                     &mut scratch_phase,
                 );
             }
-
             let rot = rhs.giant_steps[g].rot;
             if rot == 0 {
                 let prod_dft_ref = prod_dft.to_backend_ref();
@@ -261,30 +260,19 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                     .get_automorphism_key(module.galois_element(rot))
                     .unwrap_or_else(|| panic!("missing automorphism key for giant-step rotation {rot}"));
                 {
-                    let (mut rot_dft, mut scratch_rot) =
-                        scratch_phase.borrow().take_vec_znx_dft_scratch(module, cols, key_output_size);
-                    {
-                        let mut rot_dft_backend = rot_dft.to_backend_mut();
-                        let prod_dft_ref = prod_dft.to_backend_ref();
-                        glwe_lazy_giant_automorphism_from_dft(
-                            module,
-                            &mut rot_dft_backend,
-                            &prod_dft_ref,
-                            prod_base2k.as_usize(),
-                            key,
-                            key_output_size,
-                            nonzero_giant_rotations,
-                            &mut scratch_rot,
-                        );
-                    }
-
-                    let rot_dft_ref = rot_dft.to_backend_ref();
                     let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
-                    if res_initialized {
-                        glwe_dft_add_dft_assign(module, &mut lazy_acc_dft_backend, &rot_dft_ref);
-                    } else {
-                        glwe_dft_copy_dft(module, &mut lazy_acc_dft_backend, &rot_dft_ref);
-                    }
+                    let prod_dft_ref = prod_dft.to_backend_ref();
+                    glwe_lazy_giant_automorphism_from_dft(
+                        module,
+                        &mut lazy_acc_dft_backend,
+                        &prod_dft_ref,
+                        prod_base2k.as_usize(),
+                        key,
+                        key_output_size,
+                        nonzero_giant_rotations,
+                        res_initialized,
+                        &mut scratch_phase,
+                    );
                 }
             }
             res_initialized = true;

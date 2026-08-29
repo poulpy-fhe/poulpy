@@ -569,8 +569,10 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-avx512",
  "poulpy-hal",
  "rand",
+ "rayon",
  "serde",
  "serde_json",
 ]
@@ -636,12 +638,14 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-rayon",
  "poulpy-cpu-ref",
  "poulpy-hal",
  "rand",
  "rand_chacha",
  "rand_core",
  "rand_distr",
+ "rayon",
 ]
 
 [[package]]
@@ -659,12 +663,14 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-rayon",
  "poulpy-cpu-ref",
  "poulpy-hal",
  "rand",
  "rand_chacha",
  "rand_core",
  "rand_distr",
+ "rayon",
 ]
 
 [[package]]
@@ -682,12 +688,24 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-rayon",
  "poulpy-cpu-ref",
  "poulpy-hal",
  "rand",
  "rand_chacha",
  "rand_core",
  "rand_distr",
+ "rayon",
+]
+
+[[package]]
+name = "poulpy-cpu-rayon"
+version = "0.8.2"
+dependencies = [
+ "bytemuck",
+ "poulpy-cpu-ref",
+ "poulpy-hal",
+ "rayon",
 ]
 
 [[package]]

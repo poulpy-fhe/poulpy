@@ -14,10 +14,10 @@ use poulpy_hal::{
 
 use crate::NTT3x42Ifma;
 use crate::ntt3x42_ifma::{
+    execution::{SendPtr, for_index_exec},
     kernels::{cond_sub_2q_si512, harvey_modmul_si512, ntt_avx512},
     module::handle,
     primes::Primes42,
-    serial::for_index,
     tables::harvey_quotient,
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
     vec_znx_dft::{MASK20, MASK22, MASK42},
@@ -90,7 +90,7 @@ pub(crate) fn svp_ppol_copy_backend(
 
 /// Lift `a` (`VecZnx`) to DFT-domain via the forward NTT, then apply the
 /// prepared SVP factor: `res = svp ⊙ NTT(a)`.
-pub(crate) fn svp_apply_dft(
+pub(crate) fn svp_apply_dft<E: poulpy_hal::execution::TaskExecutor>(
     module: &Module<NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
@@ -104,11 +104,11 @@ pub(crate) fn svp_apply_dft(
     let mut b_dft = b_dft_owned.to_backend_mut();
     <Module<NTT3x42Ifma> as VecZnxDftApply<NTT3x42Ifma>>::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
     let b_dft_ref = b_dft.reborrow_backend_ref();
-    svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft_ref, 0);
+    svp_apply_dft_to_dft::<E>(module, res, res_col, a, a_col, &b_dft_ref, 0);
 }
 
 /// Pointwise DFT-domain multiply: `res = a ⊙ b` (`b` and `res` packed).
-pub(crate) fn svp_apply_dft_to_dft(
+pub(crate) fn svp_apply_dft_to_dft<E: poulpy_hal::execution::TaskExecutor>(
     _module: &Module<NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
@@ -128,10 +128,11 @@ pub(crate) fn svp_apply_dft_to_dft(
     let prepared = &a_u64[6 * n * a_col..][..6 * n];
     let b_u64: &[u64] = cast_slice(b.data());
     let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
+    let res_ptr = SendPtr(res_data.as_mut_ptr());
 
-    for_index(res_size, 2 * n * res_size, |j| {
+    for_index_exec::<E>(res_size, 2 * n * res_size, |j| {
         let start = 2 * n * (j * res_cols + res_col);
-        let res_u64 = &mut res_data[start..start + 2 * n];
+        let res_u64 = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), 2 * n) };
         if j < min_size {
             let b_limb: &[u64] = &b_u64[2 * n * (j * b_cols + b_col)..][..2 * n];
             unsafe { mul_packed_limb(n, res_u64.as_mut_ptr(), b_limb.as_ptr(), prepared) };
@@ -142,7 +143,7 @@ pub(crate) fn svp_apply_dft_to_dft(
 }
 
 /// Pointwise DFT-domain multiply in place: `res = a ⊙ res`.
-pub(crate) fn svp_apply_dft_to_dft_assign(
+pub(crate) fn svp_apply_dft_to_dft_assign<E: poulpy_hal::execution::TaskExecutor>(
     _module: &Module<NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
@@ -156,10 +157,11 @@ pub(crate) fn svp_apply_dft_to_dft_assign(
     let a_u64: &[u64] = cast_slice(a.data());
     let prepared = &a_u64[6 * n * a_col..][..6 * n];
     let res_data: &mut [u64] = cast_slice_mut(res.data_mut());
+    let res_ptr = SendPtr(res_data.as_mut_ptr());
 
-    for_index(res_size, 2 * n * res_size, |j| {
+    for_index_exec::<E>(res_size, 2 * n * res_size, |j| {
         let start = 2 * n * (j * res_cols + res_col);
-        let res_u64 = &mut res_data[start..start + 2 * n];
+        let res_u64 = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), 2 * n) };
         let ptr = res_u64.as_mut_ptr();
         unsafe { mul_packed_limb(n, ptr, ptr, prepared) };
     });

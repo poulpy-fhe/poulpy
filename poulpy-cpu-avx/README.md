@@ -53,19 +53,19 @@ RUSTFLAGS="-C target-feature=+avx2,+fma" \
 cargo test -p poulpy-cpu-avx --features enable-avx
 ```
 
-To include CKKS backend wiring in the AVX test build:
+To include CKKS and Rayon backend wiring in the AVX test build:
 
 ```bash
 RUSTFLAGS="-C target-feature=+avx2,+fma" \
-cargo test -p poulpy-cpu-avx --features enable-avx,enable-ckks
+cargo test -p poulpy-cpu-avx --features enable-avx,enable-rayon,enable-ckks
 ```
 
 ## Basic Usage
 
-This crate exposes two AVX2-accelerated backends:
+This crate exposes two AVX2-accelerated backends and Rayon-scheduled variants of both:
 
 ```rust
-use poulpy_cpu_avx::{FFT64Avx, NTT4x30Avx};
+use poulpy_cpu_avx::{FFT64Avx, FFT64AvxRayon, NTT4x30Avx, NTT4x30AvxRayon};
 use poulpy_hal::{api::ModuleNew, layouts::Module};
 
 let log_n: usize = 10;
@@ -75,9 +75,13 @@ let module: Module<FFT64Avx> = Module::<FFT64Avx>::new(1 << log_n);
 
 // Q120 NTT backend (AVX2, CRT over four ~30-bit primes)
 let module: Module<NTT4x30Avx> = Module::<NTT4x30Avx>::new(1 << log_n);
+
+// Rayon variants use the same AVX2 kernels with backend-owned scheduling
+let module: Module<FFT64AvxRayon> = Module::<FFT64AvxRayon>::new(1 << log_n);
+let module: Module<NTT4x30AvxRayon> = Module::<NTT4x30AvxRayon>::new(1 << log_n);
 ```
 
-Once compiled with `enable-avx`, both backends are usable anywhere Poulpy expects a backend type in the HAL/core/CKKS/bin-FHE layers.
+The serial backends require `enable-avx`; the Rayon variants additionally require `enable-rayon`. All four are usable anywhere Poulpy expects a backend type in the HAL/core/CKKS/bin-FHE layers.
 
 ## 🤝 Contributors
 

@@ -184,6 +184,7 @@ unsafe fn nfc_final_chunk(s: &NfcShifts, lo_a: int64x2_t, lo_c: int64x2_t) -> in
 /// `nfc_middle_step` — i128 input + i128 carry → i64 output.
 /// Falls back to the scalar reference default for `n % 2 != 0` or
 /// `base2k > 64`. Caller must satisfy `lsh < base2k`.
+#[inline]
 pub(crate) fn nfc_middle_step_neon(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
     if base2k > 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step(base2k, lsh, res, a, carry);
@@ -214,6 +215,7 @@ pub(crate) fn nfc_middle_step_neon(base2k: usize, lsh: usize, res: &mut [i64], a
 }
 
 /// `nfc_middle_step_into` — fused middle step for `res ±= normalize(a)`.
+#[inline]
 pub(crate) fn nfc_middle_step_into_neon<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
     if base2k > 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step_into::<O>(base2k, lsh, res, a, carry);
@@ -257,6 +259,7 @@ pub(crate) fn nfc_middle_step_into_neon<O: AssignOp>(base2k: usize, lsh: usize, 
 }
 
 /// `nfc_middle_step_assign` — in-place `i64` `res` update with `i128` carry.
+#[inline]
 pub(crate) fn nfc_middle_step_assign_neon(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
     if base2k > 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step_assign(base2k, lsh, res, carry);
@@ -285,6 +288,7 @@ pub(crate) fn nfc_middle_step_assign_neon(base2k: usize, lsh: usize, res: &mut [
 }
 
 /// `nfc_final_step_assign` — flush i128 carry into the last i64 limb.
+#[inline]
 pub(crate) fn nfc_final_step_assign_neon(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
     if base2k > 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_final_step_assign(base2k, lsh, res, carry);
@@ -315,6 +319,7 @@ pub(crate) fn nfc_final_step_assign_neon(base2k: usize, lsh: usize, res: &mut [i
 }
 
 /// `nfc_final_step_into` — fused final step for `res ±= normalize(a)`.
+#[inline]
 pub(crate) fn nfc_final_step_into_neon<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
     if base2k > 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_final_step_into::<O>(base2k, lsh, res, carry);

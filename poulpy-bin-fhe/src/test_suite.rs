@@ -214,3 +214,64 @@ macro_rules! bin_fhe_backend_test_suite {
         }
     };
 }
+
+/// Asserts that two backends produce byte-identical blind rotations.
+///
+/// ```ignore
+/// poulpy_bin_fhe::bin_fhe_parity_test_suite!(
+///     mod bin_fhe_parity_fft64,
+///     backend_ref = crate::FFT64Avx,
+///     backend_test = crate::FFT64AvxRayon,
+/// );
+/// ```
+#[macro_export]
+macro_rules! bin_fhe_parity_test_suite {
+    (
+        mod $modname:ident,
+        backend_ref = $backend_ref:ty,
+        backend_test = $backend_test:ty $(,)?
+    ) => {
+        mod $modname {
+            use poulpy_core::layouts::{GLWE, GLWEInfos};
+            use poulpy_hal::{
+                api::ModuleNew,
+                layouts::{Module, ZnxInfos, ZnxView},
+            };
+
+            use $crate::blind_rotation::{CGGI, test_suite::generic_blind_rotation::test_blind_rotation};
+
+            fn coeffs(ct: &GLWE<Vec<u8>, i64>) -> Vec<i64> {
+                let mut out: Vec<i64> = Vec::new();
+                for col in 0..(ct.rank().as_usize() + 1) {
+                    for limb in 0..ct.data().size() {
+                        out.extend_from_slice(ct.data().at(col, limb));
+                    }
+                }
+                out
+            }
+
+            fn assert_parity(n: usize, n_lwe: usize, block_size: usize, extension_factor: usize) {
+                let module_ref: Module<$backend_ref> = Module::new(n as u64);
+                let module_test: Module<$backend_test> = Module::new(n as u64);
+                let want = test_blind_rotation::<CGGI, _, $backend_ref>(&module_ref, n_lwe, block_size, extension_factor);
+                let have = test_blind_rotation::<CGGI, _, $backend_test>(&module_test, n_lwe, block_size, extension_factor);
+                assert_eq!(coeffs(&want), coeffs(&have));
+            }
+
+            #[test]
+            fn blind_rotation_standard() {
+                assert_parity(512, 224, 1, 1);
+            }
+
+            #[test]
+            fn blind_rotation_block_binary() {
+                assert_parity(512, 224, 7, 1);
+            }
+
+            #[test]
+            fn blind_rotation_block_binary_extended() {
+                assert_parity(512, 224, 7, 2);
+            }
+        }
+    };
+}
