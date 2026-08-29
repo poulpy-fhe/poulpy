@@ -13,9 +13,6 @@ use poulpy_ckks::{
 };
 
 impl_ckks_encapsulated_mod_up_default!(FFT64Avx512);
-impl_ckks_encapsulated_mod_up_default!(NTT4x30Avx512);
-#[cfg(feature = "enable-ifma")]
-impl_ckks_encapsulated_mod_up_default!(NTT3x42Ifma);
 #[cfg(feature = "enable-rayon")]
 impl_ckks_encapsulated_mod_up_default!(FFT64Avx512Rayon);
 
@@ -149,7 +146,6 @@ impl_ckks_dft_defaults!(FFT64Avx512Rayon);
 mod ntt4x30_rayon_defaults {
     use super::*;
 
-    impl_ckks_encapsulated_mod_up_default!(NTT4x30Avx512Rayon);
     impl_ckks_conjugate_defaults!(NTT4x30Avx512Rayon);
     impl_ckks_copy_defaults!(NTT4x30Avx512Rayon);
     impl_ckks_encryption_defaults!(NTT4x30Avx512Rayon);
@@ -172,7 +168,6 @@ mod ntt4x30_rayon_defaults {
 mod ifma_rayon_defaults {
     use super::*;
 
-    impl_ckks_encapsulated_mod_up_default!(NTT3x42IfmaRayon);
     impl_ckks_conjugate_defaults!(NTT3x42IfmaRayon);
     impl_ckks_copy_defaults!(NTT3x42IfmaRayon);
     impl_ckks_encryption_defaults!(NTT3x42IfmaRayon);

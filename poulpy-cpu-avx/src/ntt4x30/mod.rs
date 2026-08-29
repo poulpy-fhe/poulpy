@@ -28,6 +28,8 @@ pub(crate) mod ntt;
 mod prim;
 #[cfg(feature = "enable-rayon")]
 mod rayon;
+#[cfg(feature = "enable-rayon")]
+pub(crate) use rayon::vmp_apply_digits_strided_known_zero_prefix;
 pub(crate) mod svp;
 mod vec_znx_big;
 pub(crate) mod vec_znx_big_avx;

@@ -923,6 +923,33 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma<E: TaskExecutor>(
     pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
     tmp: &mut [u64],
 ) {
+    vmp_apply_dft_to_dft_digits_strided_ifma_inner::<E>(res, a, dsize, product_limbs, pmat, None, tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix<E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    zero_prefix: usize,
+    tmp: &mut [u64],
+) {
+    assert!(zero_prefix <= a.size());
+    vmp_apply_dft_to_dft_digits_strided_ifma_inner::<E>(res, a, dsize, product_limbs, pmat, Some(zero_prefix), tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    zero_prefix: Option<usize>,
+    tmp: &mut [u64],
+) {
     let n = res.n();
     let output_size = res.size();
 
@@ -954,12 +981,17 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma<E: TaskExecutor>(
         let limb_off = di * cols_out;
         let row_end = nrows.min(a_cols * digit_limbs);
         let limb_base = dsize - 1 - di;
-        let row_start = (0..row_end)
-            .take_while(|&row| {
-                let flat = (limb_base + (row / a_cols) * dsize) * a_cols + row % a_cols;
-                a_u64[flat * 2 * n..(flat + 1) * 2 * n].iter().all(|&x| x == 0)
-            })
-            .count();
+        let row_start = zero_prefix.map_or_else(
+            || {
+                (0..row_end)
+                    .take_while(|&row| {
+                        let flat = (limb_base + (row / a_cols) * dsize) * a_cols + row % a_cols;
+                        a_u64[flat * 2 * n..(flat + 1) * 2 * n].iter().all(|&x| x == 0)
+                    })
+                    .count()
+            },
+            |prefix| (a_cols * ((prefix + di) / dsize).min(digit_limbs)).min(row_end),
+        );
         row_starts[di] = row_start as u64;
         row_maxs[di] = (row_end - row_start) as u64;
         limb_offs[di] = limb_off as u64;
