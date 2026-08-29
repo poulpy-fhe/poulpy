@@ -7,9 +7,11 @@ use poulpy_cpu_ref::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
 use poulpy_hal::execution::TaskExecutor;
+#[cfg(feature = "enable-rayon")]
+use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
-    Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut,
-    HostDataRef, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
+    Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
+    Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
 };
 use std::mem::size_of;
 
@@ -446,10 +448,12 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate<BE, E: TaskExecutor>(
     unsafe { apply::<BE, E, true, false>(module, cnv_offset, res, res_col, a, a_col, a_col, b, b_col, b_col) };
 }
 
+#[cfg(feature = "enable-rayon")]
 pub(crate) fn cnv_accumulate_dft_avx_tmp_bytes(_res_size: usize) -> usize {
     0
 }
 
+#[cfg(feature = "enable-rayon")]
 pub(crate) unsafe fn cnv_accumulate_dft_avx<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
