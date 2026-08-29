@@ -1,21 +1,22 @@
 //! Full-slot CKKS bootstrapping benchmark.
+//!
+//! The benchmark sweep includes both logN16 presets. Criterion's name filter
+//! can select `c2s_16_levels` or `s2c_16_levels` individually.
 
 use std::hint::black_box;
 
 use criterion::{BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
 use poulpy_ckks::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos, SlotsKind,
+    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
         CKKSEncryptOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
-        SparseSecretEncapsulation,
-        eval_mod::{EvalModPlan, EvalModType},
+        BootstrappingContext, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
+        EncapsulationKeysLayout,
     },
-    polynomial::SplitStrategy,
+    presets::bootstrapping::{BootstrappingPreset, log_n16},
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -37,65 +38,13 @@ use poulpy_hal::{
     source::Source,
 };
 
-use super::params::{CkksBootstrappingBenchParams, default_bench_params_ckks_bootstrapping};
+use super::params::{CkksBootstrappingBenchParams, CkksBootstrappingPreset, default_bench_params_ckks_bootstrapping};
 
-const N: usize = 1 << 16;
-const LOG_N: usize = 16;
-const LOG_DELTA: usize = 38;
-const LOG_MSG_RATIO: usize = 11;
-const SECRET_WEIGHT: usize = 1024;
-const EPHEMERAL_SECRET_WEIGHT: usize = 32;
-const OVERFLOW_BOUND: usize = 16;
-const RESTORED_LEVELS: usize = 16;
-const MAX_SECURE_MODULUS: usize = 1714;
-const MAX_DENSE_TO_SPARSE_MODULUS: usize = 349;
-
-fn meta(log_delta: usize, log_budget: usize) -> CoeffsMeta {
-    CoeffsMeta::from_delta_budget(log_delta, log_budget)
-}
-
-fn plan() -> BootstrappingPlan {
-    let slots_to_coeffs = DFTPlan::new(
-        DFTType::Decode,
-        vec![(3, 4), (4, 32), (4, 512), (4, 8192)],
-        DFTOutputFormat::SplitRealAndImag,
-        meta(28, 2),
-    )
-    .unwrap()
-    .with_scaling(0.5)
-    .unwrap();
-    let coeffs_to_slots = DFTPlan::new(
-        DFTType::Encode,
-        vec![(4, 8192), (4, 512), (4, 32), (3, 4)],
-        DFTOutputFormat::SplitRealAndImag,
-        meta(44, 3),
-    )
-    .unwrap();
-    let eval_mod = EvalModPlan {
-        eval_mod_type: EvalModType::CosHKEven,
-        log_msg_ratio: LOG_MSG_RATIO,
-        f_mod_degree: 30,
-        f_mod_interval: OVERFLOW_BOUND,
-        f_mod_log_interval_reduction: 3,
-        f_mod_inv_degree: None,
-        scaling: None,
-        split_strategy: SplitStrategy::MinDepth,
-        coeffs_meta: meta(42, 4),
-        f_mod_log_delta: 58,
-    };
-
-    BootstrappingPlan::new(
-        BootstrappingPipeline::S2CFirst,
-        BootstrappingTechniques {
-            sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
-                hamming_weight: EPHEMERAL_SECRET_WEIGHT,
-            }),
-            eval_round_plus: None,
-        },
-        coeffs_to_slots,
-        eval_mod,
-        slots_to_coeffs,
-    )
+fn preset(kind: CkksBootstrappingPreset) -> BootstrappingPreset {
+    match kind {
+        CkksBootstrappingPreset::C2S16Levels => log_n16::c2s_16_levels(),
+        CkksBootstrappingPreset::S2C16Levels => log_n16::s2c_16_levels(),
+    }
     .unwrap()
 }
 
@@ -112,42 +61,41 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let CkksBootstrappingBenchParams {
+        preset: preset_kind,
         base2k,
         dsize,
         dense_to_sparse_dsize,
     } = config;
+    let preset = preset(preset_kind);
+    let plan = preset.plan();
+    let n = preset.n();
+    let log_delta = preset.log_delta();
+    let log_modulus = preset.log_modulus();
+    let k_in = preset.input_k();
+    let k_boot = preset.bootstrap_k();
     let mut state = None;
     let mut precision = None;
     group.bench_with_input(BenchmarkId::from_parameter(config), &config, |bencher, _| {
         let (module, context, keys, scratch, input, output, sk, want_re, want_im, k_boot, prec_log_budget) = state
             .get_or_insert_with(|| {
                 assert!(base2k > 0 && dsize > 0 && dense_to_sparse_dsize > 0);
-                let plan = plan();
-                let log_modulus_in = LOG_DELTA + LOG_MSG_RATIO;
-                let k_in = plan.input_k(log_modulus_in);
-                let k_boot = plan.consumed_bits() + (RESTORED_LEVELS + 1) * LOG_DELTA;
-                let gadget_width = dsize * base2k;
-                let key_dnum = (k_boot + gadget_width) / gadget_width;
-                let k_aux = gadget_width + LOG_N;
-                let key_k = key_dnum * gadget_width + k_aux;
-                assert!(k_boot <= MAX_SECURE_MODULUS && k_aux <= MAX_SECURE_MODULUS && key_k <= MAX_SECURE_MODULUS);
 
                 let params = CKKSTestParams {
-                    n: N,
+                    n,
                     base2k,
                     k: k_boot,
                     prec_meta: CKKSMeta {
                         log_sparsity: 0,
-                        log_delta: LOG_DELTA,
+                        log_delta,
                         slots: SlotsKind::Complex,
                     },
                     prec_log_budget: 8,
-                    hw: SECRET_WEIGHT,
+                    hw: preset.dense_secret_hamming_weight(),
                     dsize,
                     rank: 1,
                 };
-                let module = Module::<BE>::new(N as u64);
-                let host_module = Module::<HostBytesBackend>::new(N as u64);
+                let module = Module::<BE>::new(n as u64);
+                let host_module = Module::<HostBytesBackend>::new(n as u64);
 
                 let scratch_size = {
                     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
@@ -157,7 +105,7 @@ where
                         &params.tsk_layout(),
                         &params.atk_layout(),
                         &ckks_spec(
-                            N,
+                            n,
                             base2k,
                             plan.eval_mod().coeffs_meta.log_delta(),
                             plan.eval_mod().coeffs_meta.log_budget(),
@@ -166,29 +114,44 @@ where
                 };
                 let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
                 let context =
-                    BootstrappingContext::<BE, f64>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+                    BootstrappingContext::<BE, f64>::compile(&module, base2k.into(), plan, &mut scratch.borrow()).unwrap();
                 let dense_to_sparse = CKKSTestParams {
                     dsize: dense_to_sparse_dsize,
                     ..params
                 }
-                .ksk_layout(log_modulus_in)
+                .ksk_layout(log_modulus)
                 .layout;
-                let dense_to_sparse_modulus = dense_to_sparse.k().as_usize();
-                assert!(
-                    dense_to_sparse_modulus <= MAX_DENSE_TO_SPARSE_MODULUS,
-                    "dense-to-sparse key modulus {dense_to_sparse_modulus} exceeds {MAX_DENSE_TO_SPARSE_MODULUS}"
-                );
-                let keys_layout = BootstrappingKeysLayout {
-                    automorphism_key: params.atk_layout().layout,
-                    tensor_key: params.tsk_layout().layout,
-                    encapsulation: Some(EncapsulationKeysLayout {
-                        dense_to_sparse,
-                        sparse_to_dense: params.ksk_layout(k_boot).layout,
-                    }),
+                let keys_layout = if base2k == preset.base2k()
+                    && dsize == preset.keys_layout().automorphism_key.dsize.as_usize()
+                    && dense_to_sparse_dsize
+                        == preset
+                            .keys_layout()
+                            .encapsulation
+                            .as_ref()
+                            .unwrap()
+                            .dense_to_sparse
+                            .dsize
+                            .as_usize()
+                {
+                    *preset.keys_layout()
+                } else {
+                    BootstrappingKeysLayout {
+                        automorphism_key: params.atk_layout().layout,
+                        tensor_key: params.tsk_layout().layout,
+                        encapsulation: Some(EncapsulationKeysLayout {
+                            dense_to_sparse,
+                            sparse_to_dense: params.ksk_layout(k_boot).layout,
+                        }),
+                    }
                 };
+                assert!(keys_layout.automorphism_key.k().as_usize() <= preset.max_dense_modulus());
+                assert!(keys_layout.tensor_key.k().as_usize() <= preset.max_dense_modulus());
+                let encapsulation = keys_layout.encapsulation.as_ref().unwrap();
+                assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.max_sparse_modulus());
+                assert!(encapsulation.sparse_to_dense.k().as_usize() <= preset.max_dense_modulus());
                 let boot_scratch = module.ckks_bootstrap_tmp_bytes(
-                    &ckks_spec(N, base2k, LOG_DELTA, k_boot - LOG_DELTA),
-                    &ckks_spec(N, base2k, LOG_DELTA, k_in - LOG_DELTA),
+                    &ckks_spec(n, base2k, log_delta, k_boot - log_delta),
+                    &ckks_spec(n, base2k, log_delta, k_in - log_delta),
                     &context,
                     &keys_layout,
                 );
@@ -212,8 +175,8 @@ where
                     .unwrap()
                     .prepare(&module, &mut scratch.borrow());
 
-                let (want_re, want_im) = test_vector_1::<f64>(N / 2);
-                let input_spec = ckks_spec(N, base2k, LOG_DELTA, k_in - LOG_DELTA);
+                let (want_re, want_im) = test_vector_1::<f64>(n / 2);
+                let input_spec = ckks_spec(n, base2k, log_delta, k_in - log_delta);
                 let mut input_pt = module.ckks_pt_vec_alloc(base2k.into(), input_spec.k());
                 input_pt.set_meta(input_spec.meta());
                 module
@@ -239,6 +202,7 @@ where
                 module
                     .ckks_bootstrap(&mut output, &input, &context, &keys, &mut scratch.borrow())
                     .unwrap();
+                assert_eq!(output.k().as_usize(), preset.output_k());
                 (
                     module,
                     context,
@@ -278,20 +242,27 @@ where
         module
             .ckks_decrypt(&mut output_pt, output, sk, &mut scratch.borrow())
             .unwrap();
-        let (mut got_re, mut got_im) = (vec![0.0; N / 2], vec![0.0; N / 2]);
+        let (mut got_re, mut got_im) = (vec![0.0; n / 2], vec![0.0; n / 2]);
         module
             .ckks_decode_reim_into(&output_pt, &mut got_re, &mut got_im, &mut scratch.borrow())
             .unwrap();
         precision = Some((
-            precision_stats(&got_re, want_re, LOG_DELTA),
-            precision_stats(&got_im, want_im, LOG_DELTA),
+            precision_stats(&got_re, want_re, log_delta),
+            precision_stats(&got_im, want_im, log_delta),
         ));
     });
     if let Some((re_precision, im_precision)) = precision {
         let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
         println!(
-            "PRECISION backend={backend} base2k={base2k} dsize={dsize} re_avg={:.2}b re_min={:.2}b im_avg={:.2}b im_min={:.2}b",
-            re_precision.avg_log2_prec, re_precision.min_log2_prec, im_precision.avg_log2_prec, im_precision.min_log2_prec,
+            "PRECISION backend={backend} preset={preset_kind} base2k={base2k} dsize={dsize} re_avg={:.2}b re_min={:.2}b re_worst_idx={} re_worst_err={:.3e} im_avg={:.2}b im_min={:.2}b im_worst_idx={} im_worst_err={:.3e}",
+            re_precision.avg_log2_prec,
+            re_precision.min_log2_prec,
+            re_precision.worst_idx,
+            re_precision.worst_err,
+            im_precision.avg_log2_prec,
+            im_precision.min_log2_prec,
+            im_precision.worst_idx,
+            im_precision.worst_err,
         );
     }
 }
@@ -315,4 +286,22 @@ where
         runner_ckks_bootstrapping::<BE>(&mut group, params);
     }
     group.finish();
+}
+
+#[cfg(test)]
+mod tests {
+    use poulpy_ckks::layouts::BootstrappingPipeline;
+
+    use super::*;
+
+    #[test]
+    fn preset_selector_covers_both_pipelines() {
+        let c2s = preset(CkksBootstrappingPreset::C2S16Levels);
+        let s2c = preset(CkksBootstrappingPreset::S2C16Levels);
+
+        assert_eq!(c2s.plan().pipeline(), BootstrappingPipeline::C2SFirst);
+        assert_eq!(s2c.plan().pipeline(), BootstrappingPipeline::S2CFirst);
+        assert_eq!(c2s.restored_levels(), 16);
+        assert_eq!(s2c.restored_levels(), 16);
+    }
 }

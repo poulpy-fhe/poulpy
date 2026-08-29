@@ -32,16 +32,33 @@ impl Display for CkksBenchParams {
 
 #[derive(Clone, Copy)]
 pub struct CkksBootstrappingBenchParams {
+    pub preset: CkksBootstrappingPreset,
     pub base2k: usize,
     pub dsize: usize,
     pub dense_to_sparse_dsize: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CkksBootstrappingPreset {
+    C2S16Levels,
+    S2C16Levels,
+}
+
+impl Display for CkksBootstrappingPreset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::C2S16Levels => write!(f, "c2s_16_levels"),
+            Self::S2C16Levels => write!(f, "s2c_16_levels"),
+        }
+    }
 }
 
 impl Display for CkksBootstrappingBenchParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "(n={},base2k={},dsize={},dense_to_sparse_dsize={})",
+            "(preset={},n={},base2k={},dsize={},dense_to_sparse_dsize={})",
+            self.preset,
             1 << 16,
             self.base2k,
             self.dsize,
@@ -181,20 +198,14 @@ pub fn default_bench_params_ckks() -> Vec<CkksBenchParams> {
     ]
 }
 
-pub fn default_bench_params_ckks_bootstrapping<BE: Backend>() -> [CkksBootstrappingBenchParams; 1] {
-    [if BE::DFT_IS_EXACT {
-        CkksBootstrappingBenchParams {
-            base2k: 52,
-            dsize: 4,
-            dense_to_sparse_dsize: 3,
-        }
-    } else {
-        CkksBootstrappingBenchParams {
-            base2k: 19,
-            dsize: 7,
-            dense_to_sparse_dsize: 7,
-        }
-    }]
+pub fn default_bench_params_ckks_bootstrapping<BE: Backend>() -> [CkksBootstrappingBenchParams; 2] {
+    let (base2k, dsize, dense_to_sparse_dsize) = if BE::DFT_IS_EXACT { (52, 4, 3) } else { (19, 7, 7) };
+    [CkksBootstrappingPreset::C2S16Levels, CkksBootstrappingPreset::S2C16Levels].map(|preset| CkksBootstrappingBenchParams {
+        preset,
+        base2k,
+        dsize,
+        dense_to_sparse_dsize,
+    })
 }
 
 /// Blind-rotation benchmark points. Unlike the other `default_bench_params_*`
