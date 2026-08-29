@@ -6,7 +6,7 @@
 use criterion::{criterion_group, criterion_main};
 use poulpy_bench::core::suites::{bench_core_binfhe, bench_core_ckks};
 use poulpy_bench::hal::suites::{bench_hal_binfhe, bench_hal_ckks};
-use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks};
+use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks, bench_ckks_bootstrapping};
 use poulpy_bin_fhe::blind_rotation::CGGI;
 
 use poulpy_cpu_avx512::FFT64Avx512 as Fft;
@@ -21,6 +21,8 @@ criterion_group! {
      bench_core_ckks::<Ntt>,
      bench_core_binfhe::<Fft>,
      bench_ckks::<Ntt>,
+     bench_ckks_bootstrapping::<Ntt>,
+     bench_ckks_bootstrapping::<Fft>,
      bench_binfhe::<Fft, CGGI>
 }
 
