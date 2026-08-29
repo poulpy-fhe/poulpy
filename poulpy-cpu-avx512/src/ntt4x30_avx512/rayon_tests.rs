@@ -205,15 +205,16 @@ fn test_convolution_direct() {
 fn test_gglwe_product_digits_strided_bit_identical() {
     poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT4x30Avx512Rayon>::new(64), 50);
 }
+#[test]
+fn test_gglwe_product_digits_strided_scratch_workers() {
+    use poulpy_core::oep::GGLWEProductDigitsStridedImpl;
 
-cross_backend_test_suite! {
-    mod word_compat,
-    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
-    backend_test = crate::NTT4x30Avx512Rayon,
-    params = TestParams { size: 1<<8, base2k: 50 },
-    tests = {
-        test_word_compat_dft_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_dft_bytes,
-        test_word_compat_svp_prepare_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_bytes,
-        test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
-    }
+    type BE = NTT4x30Avx512Rayon;
+    let module = Module::<BE>::new(64);
+    let dsize = 4;
+    let metadata = 4 * dsize * std::mem::size_of::<u64>();
+    let one_worker = crate::ntt4x30_avx512::vmp::vmp_apply_digits_strided_tmp_bytes_avx(1, 28, dsize, 7, 1, 1);
+    let workers = poulpy_cpu_rayon::workers(<BE as poulpy_hal::execution::ScratchWorkers>::VMP);
+    let actual = BE::gglwe_product_digits_strided_tmp_bytes(&module, 28, 1, 28, dsize, 7, 1, 2, 28);
+    assert_eq!(actual, metadata + workers * (one_worker - metadata));
 }

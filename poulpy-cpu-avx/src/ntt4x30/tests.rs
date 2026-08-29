@@ -1,6 +1,8 @@
+use std::mem::size_of;
+
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 use poulpy_hal::{
-    layouts::Module,
+    layouts::{Backend, Module},
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
         test_convolution_by_const_add, test_convolution_pairwise,
@@ -52,6 +54,28 @@ cross_backend_test_suite! {
         test_vec_znx_split_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_split_ring,
         test_vec_znx_copy => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy,
     }
+}
+
+#[test]
+fn test_vmp_pmat_packed_byte_size() {
+    let (n, rows, cols_in, cols_out, size) = (256, 3, 2, 4, 5);
+    assert_eq!(
+        <NTT4x30Avx as Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size),
+        n * rows * cols_in * cols_out * size * 2 * size_of::<u64>()
+    );
+}
+
+#[test]
+fn test_transform_domain_packed_byte_sizes() {
+    let (n, cols, size) = (256, 3, 5);
+    let packed_bytes = n * cols * size * 4 * size_of::<u32>();
+    assert_eq!(<NTT4x30Avx as Backend>::bytes_of_vec_znx_dft(n, cols, size), packed_bytes);
+    assert_eq!(<NTT4x30Avx as Backend>::bytes_of_cnv_pvec_left(n, cols, size), packed_bytes);
+    assert_eq!(<NTT4x30Avx as Backend>::bytes_of_cnv_pvec_right(n, cols, size), packed_bytes);
+    assert_eq!(
+        <NTT4x30Avx as Backend>::bytes_of_svp_ppol(n, cols),
+        n * cols * 4 * size_of::<u32>()
+    );
 }
 
 cross_backend_test_suite! {
@@ -215,17 +239,25 @@ fn test_convolution_direct() {
 fn test_gglwe_product_digits_strided_bit_identical() {
     poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT4x30Avx>::new(64), 50);
 }
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_gglwe_product_digits_strided_bit_identical_rayon() {
+    poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<crate::NTT4x30AvxRayon>::new(64), 50);
+}
 
-cross_backend_test_suite! {
-    mod word_compat,
-    backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
-    backend_test = crate::NTT4x30Avx,
-    params = TestParams { size: 1<<8, base2k: 50 },
-    tests = {
-        test_word_compat_dft_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_dft_bytes,
-        test_word_compat_svp_prepare_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_bytes,
-        test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
-    }
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn test_gglwe_product_digits_strided_rayon_scratch_workers() {
+    use poulpy_core::oep::GGLWEProductDigitsStridedImpl;
+
+    type BE = crate::NTT4x30AvxRayon;
+    let module = Module::<BE>::new(64);
+    let dsize = 4;
+    let metadata = 4 * dsize * std::mem::size_of::<u64>();
+    let one_worker = crate::ntt4x30::vmp::vmp_apply_digits_strided_tmp_bytes_avx(1, 28, dsize, 7, 1, 1);
+    let workers = poulpy_cpu_rayon::workers(<BE as poulpy_hal::execution::ScratchWorkers>::VMP);
+    let actual = BE::gglwe_product_digits_strided_tmp_bytes(&module, 28, 1, 28, dsize, 7, 1, 2, 28);
+    assert_eq!(actual, metadata + workers * (one_worker - metadata));
 }
 
 // Fused-op conformance on the Rayon variant; the size crosses the parallel-work floors of the overrides that have them.
@@ -243,7 +275,12 @@ cross_backend_test_suite! {
 
 #[cfg(feature = "enable-rayon")]
 #[test]
-fn test_convolution_by_const_add_rayon() {
+fn test_convolution_direct_rayon() {
     let module = Module::<crate::NTT4x30AvxRayon>::new(1 << 8);
+    test_convolution(&module, 50);
+    test_convolution_by_const(&module, 50);
     test_convolution_by_const_add(&module, 50);
+    test_convolution_pairwise(&module, 50);
+    test_convolution_accumulate(&module, 50);
+    test_convolution_accumulate_fused(&module, 50);
 }

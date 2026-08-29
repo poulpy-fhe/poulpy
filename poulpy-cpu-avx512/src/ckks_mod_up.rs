@@ -124,6 +124,7 @@ impl ModUpBackend for NTT3x42Ifma {
             dsize,
             pmat.rows(),
             pmat.cols_in(),
+            1,
         );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix::<SerialTaskExecutor>(

@@ -984,8 +984,14 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42IfmaRayon> fo
         _pmat_cols_out: usize,
         _pmat_size: usize,
     ) -> usize {
-        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::VMP)
-            * super::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a_cols, a_size, dsize, pmat_rows, pmat_cols_in)
+        super::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(
+            a_cols,
+            a_size,
+            dsize,
+            pmat_rows,
+            pmat_cols_in,
+            poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::VMP),
+        )
     }
 
     fn gglwe_product_digits_strided(
@@ -997,17 +1003,16 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42IfmaRayon> fo
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = Self::gglwe_product_digits_strided_tmp_bytes(
-            module,
-            res.size(),
-            a.cols(),
-            a.size(),
-            dsize,
-            pmat.rows(),
-            pmat.cols_in(),
-            pmat.cols_out(),
-            pmat.size(),
+        let metadata_bytes = 4 * dsize * size_of::<u64>();
+        let per_worker =
+            super::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a.cols(), a.size(), dsize, pmat.rows(), pmat.cols_in(), 1)
+                - metadata_bytes;
+        let workers = poulpy_cpu_rayon::workers_within(
+            <Self as poulpy_hal::execution::ScratchWorkers>::VMP,
+            per_worker,
+            scratch.available().saturating_sub(metadata_bytes),
         );
+        let bytes = metadata_bytes + workers * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::vmp::vmp_apply_dft_to_dft_digits_strided_ifma::<NTT3x42IfmaRayonExecutor>(
             base_module(module),
