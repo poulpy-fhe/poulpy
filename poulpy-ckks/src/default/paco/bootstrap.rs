@@ -413,21 +413,13 @@ where
     // one multiply by the share-scaled μ mask).
     match context.psi_tail() {
         PaCoPsiTailMaterial::Pair(pair) => {
-            module.ckks_conjugate_into(&mut temporary, output, -1, keys.rotation_keys(), scratch)?;
+            module.ckks_conjugate_into(&mut temporary, output, keys.rotation_keys(), scratch)?;
             module.ckks_eval_linear_transformation_self_assign(output, &pair[0], keys.rotation_keys(), scratch)?;
             module.ckks_eval_linear_transformation_self_assign(&mut temporary, &pair[1], keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
         }
-        PaCoPsiTailMaterial::Mask { mu, galois_element } => {
-            let _conj_rotate_key = keys
-                .rotation_keys()
-                .get_automorphism_key(*galois_element, output.k())
-                .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
-                    op: "ckks_paco_bootstrap",
-                    rotation: *galois_element,
-                    k: output.k().into(),
-                })?;
-            module.ckks_conjugate_into(&mut temporary, output, *galois_element, keys.rotation_keys(), scratch)?;
+        PaCoPsiTailMaterial::Mask { mu, rotation } => {
+            module.ckks_conjugate_rotate_into(&mut temporary, output, *rotation, keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
             module.ckks_mul_pt_vec_assign(output, mu, scratch)?;
         }
@@ -449,7 +441,7 @@ where
     // Step 7 — Imaginary-part extraction. `output ← output − conj(output) =
     // 2i·Im(output)`, isolating the imaginary component that carries the
     // recovered coefficients.
-    module.ckks_conjugate_into(&mut temporary, output, -1, keys.rotation_keys(), scratch)?;
+    module.ckks_conjugate_into(&mut temporary, output, keys.rotation_keys(), scratch)?;
     module.ckks_sub_assign(output, &temporary, scratch)?;
 
     // Step 8 — SlotsToCoeffs′. Apply the compiled S2C factor chain, moving the

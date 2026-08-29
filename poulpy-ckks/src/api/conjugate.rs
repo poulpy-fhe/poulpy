@@ -34,25 +34,42 @@ pub trait CKKSConjugateOps<BE: Backend> {
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
-    /// Computes `dst = phi_p(src)`: the automorphism of Galois element `p`, with
-    /// conjugation metadata. `p = -1` is the plain complex conjugation; a fused
-    /// conjugate-and-rotate element is the other use.
+    /// Computes `dst = conj(src)`, the automorphism of Galois element `-1`.
     fn ckks_conjugate_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        p: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>,
+    {
+        self.ckks_conjugate_rotate_into(dst, src, 0, keys, scratch)
+    }
 
-    /// Computes `dst = conj(dst)` in-place.  Metadata is unchanged.
-    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, p: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    /// Computes `dst = conj(dst)` in-place. Metadata is unchanged.
+    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<BE>;
+
+    /// Computes `dst = conj(rot_k(src))`: conjugation composed with a rotation
+    /// of `k` slots, as one key switch under the Galois element
+    /// `-galois_element(k)`. PaCo's psi tail is the caller; `k = 0` is plain
+    /// conjugation, spelled [`Self::ckks_conjugate_into`].
+    fn ckks_conjugate_rotate_into<Dst, Src, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        k: i64,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 }

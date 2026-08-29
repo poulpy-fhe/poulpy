@@ -58,7 +58,7 @@ where
     let (want_re, want_im) = want_conjugate(&re1, &im1);
     let mut ct_res = alloc_ct(&params, module, params.k);
     module
-        .ckks_conjugate_into(&mut ct_res, &ct1, -1, &conj_key, &mut scratch.borrow())
+        .ckks_conjugate_into(&mut ct_res, &ct1, &conj_key, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("conjugate", &ct_res, &ct1);
     assert_decrypt_precision(
@@ -108,7 +108,7 @@ pub fn test_conjugate_smaller_output<BE, F, E>(
     let (want_re, want_im) = want_conjugate(&re1, &im1);
     let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
     module
-        .ckks_conjugate_into(&mut ct_res, &ct1, -1, &conj_key, &mut scratch.borrow())
+        .ckks_conjugate_into(&mut ct_res, &ct1, &conj_key, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("conjugate smaller_output", &ct_res, &ct1);
     assert_decrypt_precision(
@@ -156,7 +156,7 @@ where
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
     module
-        .ckks_conjugate_assign(&mut ct, -1, &conj_key, &mut scratch.borrow())
+        .ckks_conjugate_assign(&mut ct, &conj_key, &mut scratch.borrow())
         .unwrap();
     assert_ct_meta("conjugate_assign", &ct, expected_log_delta, expected_log_budget);
     assert_decrypt_precision(

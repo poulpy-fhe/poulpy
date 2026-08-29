@@ -101,7 +101,7 @@ where
     })?;
     scratch.scope(|scratch| {
         let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
-        module.ckks_conjugate_into(&mut conj, &*res, -1, conj_key, &mut scratch)?;
+        module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
         module.ckks_add_assign(res, &conj, &mut scratch)
     })?;
     // `T + conj(T) = 2·Re(T)` interpolates the (real) table.
@@ -198,7 +198,7 @@ where
     };
     scratch.scope(|scratch| {
         let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
-        module.ckks_conjugate_into(&mut conj, &*res, -1, conj_key, &mut scratch)?;
+        module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
         module.ckks_add_assign(res, &conj, &mut scratch)
     })?;
     // `T + conj(T) = 2·Re(T)` interpolates the (real) table.

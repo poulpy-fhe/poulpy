@@ -305,7 +305,7 @@ where
         );
         let mut out = module.ckks_ciphertext_alloc_from_infos(&ct);
         module
-            .ckks_conjugate_into(&mut out, &ct, -galois_element(k, order), &key, &mut scratch.borrow())
+            .ckks_conjugate_rotate_into(&mut out, &ct, k, &key, &mut scratch.borrow())
             .unwrap();
         assert_eq!(out.log_budget(), ct.log_budget(), "conj_rotate must consume no budget");
         assert_slots::<BE, F, E>(

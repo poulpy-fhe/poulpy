@@ -4,9 +4,11 @@ use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSConjugateImpl};
+use crate::{
+    CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, default::paco::ops::conj_rotate_galois_element, oep::CKKSConjugateImpl,
+};
 
 use crate::api::CKKSConjugateOps;
 
@@ -22,11 +24,11 @@ where
         BE::ckks_conjugate_tmp_bytes_impl(self, ct_infos, key_infos)
     }
 
-    fn ckks_conjugate_into<Dst, Src, H>(
+    fn ckks_conjugate_rotate_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        p: i64,
+        k: i64,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -35,14 +37,21 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
+        let p: i64 = conj_rotate_galois_element(k, self.cyclotomic_order());
+        keys.get_automorphism_key(p, src.k())
+            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+                op: "conjugate",
+                rotation: k,
+                k: src.k().into(),
+            })?;
         BE::ckks_conjugate_into_impl(self, dst, src, p, keys, scratch)
     }
 
-    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, p: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_conjugate_assign_impl(self, dst, p, keys, scratch)
+        BE::ckks_conjugate_assign_impl(self, dst, -1, keys, scratch)
     }
 }

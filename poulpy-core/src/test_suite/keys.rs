@@ -29,7 +29,7 @@ impl<BE: Backend, D: Data> GetAutomorphismKey<BE> for AtDsize<'_, HashMap<i64, G
 where
     GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
 {
-    fn get_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
         self.0
             .get(&p)
             .ok_or(CoreError::GGLWEKeyUse {
@@ -44,7 +44,7 @@ impl<BE: Backend, D: Data> GetAutomorphismKey<BE> for AtDsize<'_, GLWEAutomorphi
 where
     GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
 {
-    fn get_automorphism_key(&self, _p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+    fn lookup_automorphism_key(&self, _p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
         self.0.with_dsize(self.1)
     }
 }

@@ -372,7 +372,7 @@ where
     ckks_dft_evaluate_assign(module, ct_real, dft, keys, scratch)?;
 
     // ct_imag := conj(z).
-    module.ckks_conjugate_into(ct_imag, ct_real, -1, conj_key, scratch)?;
+    module.ckks_conjugate_into(ct_imag, ct_real, conj_key, scratch)?;
 
     // tmp := z − conj(z); ct_real := z + conj(z) = 2·Re(z); ct_imag := −i·tmp = 2·Im(z).
     let mut tmp = module.ckks_ciphertext_alloc_from_infos(ct_real);
@@ -455,7 +455,7 @@ where
 
     // conj := conj(z); imag := −i·(z − conj) = 2·Im(z); ct_out := z + conj = 2·Re(z).
     let mut conj = module.ckks_ciphertext_alloc_from_infos(ct_out);
-    module.ckks_conjugate_into(&mut conj, ct_out, -1, conj_key, scratch)?;
+    module.ckks_conjugate_into(&mut conj, ct_out, conj_key, scratch)?;
     let mut imag = module.ckks_ciphertext_alloc_from_infos(ct_out);
     module.ckks_sub_into(&mut imag, ct_out, &conj, scratch)?;
     module.ckks_div_i_assign(&mut imag, scratch)?;

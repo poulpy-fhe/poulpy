@@ -405,7 +405,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         self.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
-        self.ckks_conjugate_into(conjugate, &*ct, -1, keys.conjugation_key(), scratch)?;
+        self.ckks_conjugate_into(conjugate, &*ct, keys.conjugation_key(), scratch)?;
         self.ckks_add_assign(ct, &*conjugate, scratch)?;
         // `z + conj(z) = 2·Re(z)` holds the input polynomial's coefficients.
         ct.set_slots(SlotsKind::Real);

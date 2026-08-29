@@ -227,7 +227,7 @@ struct QueryLog<K> {
 }
 
 impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphismKey<BE> for QueryLog<K> {
-    fn get_automorphism_key(
+    fn lookup_automorphism_key(
         &self,
         p: i64,
         k: TorusPrecision,

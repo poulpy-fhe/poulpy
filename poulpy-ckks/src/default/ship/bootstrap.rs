@@ -264,7 +264,7 @@ where
 
     let root = roots.pop().expect("real bootstrap has one root");
     let mut conj = module.ckks_ciphertext_alloc(base2k, root.k());
-    module.ckks_conjugate_into(&mut conj, &root, -1, keys.conjugation_key(), scratch)?;
+    module.ckks_conjugate_into(&mut conj, &root, keys.conjugation_key(), scratch)?;
     module.ckks_add_into(output, &root, &conj, scratch)?;
     // `root + conj(root) = 2·Re(root)`.
     output.set_slots(SlotsKind::Real);
@@ -324,7 +324,7 @@ where
     let mut w_minus = module.ckks_ciphertext_alloc(base2k, k_eff);
     module.ckks_sub_into(&mut w_minus, &v1, &iv2, scratch)?;
     let mut conj = module.ckks_ciphertext_alloc(base2k, w_minus.k());
-    module.ckks_conjugate_into(&mut conj, &w_minus, -1, keys.conjugation_key(), scratch)?;
+    module.ckks_conjugate_into(&mut conj, &w_minus, keys.conjugation_key(), scratch)?;
     module.ckks_add_into(output, &w_plus, &conj, scratch)?;
     Ok(())
 }

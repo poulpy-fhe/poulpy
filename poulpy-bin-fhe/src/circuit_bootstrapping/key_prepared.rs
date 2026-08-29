@@ -153,7 +153,7 @@ pub struct CircuitBootstrappingKeyPrepared<D: Data, BRA: BlindRotationAlgo, B: B
 }
 
 impl<BRA: BlindRotationAlgo, BE: Backend> GetAutomorphismKey<BE> for CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> {
-    fn get_automorphism_key(
+    fn lookup_automorphism_key(
         &self,
         p: i64,
         k: poulpy_core::layouts::TorusPrecision,

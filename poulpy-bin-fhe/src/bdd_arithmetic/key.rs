@@ -383,7 +383,7 @@ impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepare
 }
 
 impl<BRA: BlindRotationAlgo, BE: Backend> GetAutomorphismKey<BE> for BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
-    fn get_automorphism_key(
+    fn lookup_automorphism_key(
         &self,
         p: i64,
         k: poulpy_core::layouts::TorusPrecision,
