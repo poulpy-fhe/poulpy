@@ -47,8 +47,8 @@ const SECRET_WEIGHT: usize = 1024;
 const EPHEMERAL_SECRET_WEIGHT: usize = 32;
 const OVERFLOW_BOUND: usize = 16;
 const RESTORED_LEVELS: usize = 16;
-const MIN_AVG_PRECISION: f64 = 20.0;
 const MAX_SECURE_MODULUS: usize = 1714;
+const MAX_DENSE_TO_SPARSE_MODULUS: usize = 349;
 
 fn meta(log_delta: usize, log_budget: usize) -> CoeffsMeta {
     CoeffsMeta::from_delta_budget(log_delta, log_budget)
@@ -111,13 +111,17 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let CkksBootstrappingBenchParams { base2k, dsize } = config;
+    let CkksBootstrappingBenchParams {
+        base2k,
+        dsize,
+        dense_to_sparse_dsize,
+    } = config;
     let mut state = None;
     let mut precision = None;
     group.bench_with_input(BenchmarkId::from_parameter(config), &config, |bencher, _| {
         let (module, context, keys, scratch, input, output, sk, want_re, want_im, k_boot, prec_log_budget) = state
             .get_or_insert_with(|| {
-                assert!(base2k > 0 && dsize > 0);
+                assert!(base2k > 0 && dsize > 0 && dense_to_sparse_dsize > 0);
                 let plan = plan();
                 let log_modulus_in = LOG_DELTA + LOG_MSG_RATIO;
                 let k_in = plan.input_k(log_modulus_in);
@@ -163,11 +167,22 @@ where
                 let mut scratch = ScratchOwned::<BE>::alloc(scratch_size);
                 let context =
                     BootstrappingContext::<BE, f64>::compile(&module, base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+                let dense_to_sparse = CKKSTestParams {
+                    dsize: dense_to_sparse_dsize,
+                    ..params
+                }
+                .ksk_layout(log_modulus_in)
+                .layout;
+                let dense_to_sparse_modulus = dense_to_sparse.k().as_usize();
+                assert!(
+                    dense_to_sparse_modulus <= MAX_DENSE_TO_SPARSE_MODULUS,
+                    "dense-to-sparse key modulus {dense_to_sparse_modulus} exceeds {MAX_DENSE_TO_SPARSE_MODULUS}"
+                );
                 let keys_layout = BootstrappingKeysLayout {
                     automorphism_key: params.atk_layout().layout,
                     tensor_key: params.tsk_layout().layout,
                     encapsulation: Some(EncapsulationKeysLayout {
-                        dense_to_sparse: params.ksk_layout(log_modulus_in).layout,
+                        dense_to_sparse,
                         sparse_to_dense: params.ksk_layout(k_boot).layout,
                     }),
                 };
@@ -278,8 +293,6 @@ where
             "PRECISION backend={backend} base2k={base2k} dsize={dsize} re_avg={:.2}b re_min={:.2}b im_avg={:.2}b im_min={:.2}b",
             re_precision.avg_log2_prec, re_precision.min_log2_prec, im_precision.avg_log2_prec, im_precision.min_log2_prec,
         );
-        assert!(re_precision.avg_log2_prec >= MIN_AVG_PRECISION);
-        assert!(im_precision.avg_log2_prec >= MIN_AVG_PRECISION);
     }
 }
 

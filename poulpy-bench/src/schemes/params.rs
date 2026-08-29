@@ -34,11 +34,19 @@ impl Display for CkksBenchParams {
 pub struct CkksBootstrappingBenchParams {
     pub base2k: usize,
     pub dsize: usize,
+    pub dense_to_sparse_dsize: usize,
 }
 
 impl Display for CkksBootstrappingBenchParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(n={},base2k={},dsize={})", 1 << 16, self.base2k, self.dsize)
+        write!(
+            f,
+            "(n={},base2k={},dsize={},dense_to_sparse_dsize={})",
+            1 << 16,
+            self.base2k,
+            self.dsize,
+            self.dense_to_sparse_dsize
+        )
     }
 }
 
@@ -175,9 +183,17 @@ pub fn default_bench_params_ckks() -> Vec<CkksBenchParams> {
 
 pub fn default_bench_params_ckks_bootstrapping<BE: Backend>() -> [CkksBootstrappingBenchParams; 1] {
     [if BE::DFT_IS_EXACT {
-        CkksBootstrappingBenchParams { base2k: 52, dsize: 4 }
+        CkksBootstrappingBenchParams {
+            base2k: 52,
+            dsize: 4,
+            dense_to_sparse_dsize: 3,
+        }
     } else {
-        CkksBootstrappingBenchParams { base2k: 19, dsize: 7 }
+        CkksBootstrappingBenchParams {
+            base2k: 19,
+            dsize: 7,
+            dense_to_sparse_dsize: 7,
+        }
     }]
 }
 
