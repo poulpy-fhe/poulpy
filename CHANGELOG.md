@@ -22,6 +22,7 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 
 - Add `poulpy-cpu-rayon`, which provides the shared Rayon executor, nested-parallelism guard, scheduling thresholds, FFT64 kernels, coefficient normalization, and tuning utilities used by the accelerated CPU crates.
 - Add the opt-in `FFT64AvxRayon`, `NTT4x30AvxRayon`, `FFT64Avx512Rayon`, `NTT4x30Avx512Rayon`, `NTT3x42IfmaRayon`, `FFT64NeonRayon` and `NTT4x30NeonRayon` backends. `enable-rayon` exposes them while retaining the serial backend types.
+- Pack the four NTT4x30 transform-domain residues into `u32` words on AVX2 and AVX-512, halving DFT and prepared-key storage from 32 to 16 bytes per coefficient; update the serial and Rayon transform, convolution, SVP and VMP kernels for the packed layout.
 - Parallelize the transform, convolution, VMP, normalization and coefficient-domain kernels that scale within one operation. A one-thread pool follows the serial path, and nested Rayon operations serialize their inner level rather than oversubscribing the pool.
 - Fuse adjacent gadget digits in strided VMP key-switch kernels for AVX2 NTT4x30, AVX-512 NTT4x30 and AVX-512-IFMA NTT3x42, reusing each prepared key column for both products; the Rayon variants distribute the fused block work across workers.
 - Declare the Rayon variants layout-compatible with their serial/reference families and wire them into the HAL, core, CKKS and bin-FHE operation surfaces. Backend parity suites cover the parallel types against the corresponding serial/reference result.

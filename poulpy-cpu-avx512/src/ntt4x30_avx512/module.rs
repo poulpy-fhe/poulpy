@@ -16,10 +16,12 @@ use std::ptr::NonNull;
 use poulpy_cpu_ref::reference::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
-    types::Q120bScalar,
     vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
 };
-use poulpy_hal::{alloc_aligned, assert_alignment, layouts::Backend};
+use poulpy_hal::{
+    alloc_aligned, assert_alignment,
+    layouts::{Backend, CrtWord},
+};
 
 use super::NTT4x30Avx512;
 
@@ -45,7 +47,7 @@ impl Backend for NTT4x30Avx512 {
     const DFT_IS_EXACT: bool = true;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
-    type DftWord = Q120bScalar;
+    type DftWord = CrtWord<Primes30, u32>;
     type ZnxWord = i64;
     type BigWord = i128;
     type OwnedBuf = Vec<u8>;
@@ -145,6 +147,7 @@ impl Backend for NTT4x30Avx512 {
     {
         &mut buf[offset..offset + len]
     }
+
     unsafe fn destroy(handle: NonNull<Self::Handle>) {
         unsafe {
             drop(Box::from_raw(handle.as_ptr()));

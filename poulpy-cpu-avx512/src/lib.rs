@@ -31,7 +31,7 @@
 //! # Scalar types
 //!
 //! - `FFT64Avx512`: `DftWord = f64`, `BigWord = i64`.
-//! - `NTT4x30Avx512`: `DftWord = Q120bScalar`, `BigWord = i128`.
+//! - `NTT4x30Avx512`: `DftWord = CrtWord<Primes30, u32>`, `BigWord = i128`.
 //! - `NTT3x42Ifma`: `DftWord = Q126Scalar`, `BigWord = i128`.
 //!
 //! # CPU requirements

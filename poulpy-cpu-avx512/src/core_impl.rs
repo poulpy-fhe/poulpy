@@ -65,7 +65,11 @@ impl RankOneTensorDft for NTT4x30Avx512 {
     ) {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        unsafe { crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512(module, res, cnv_offset, a, b, tmp) };
+        unsafe {
+            crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<poulpy_hal::execution::SerialTaskExecutor>(
+                module, res, cnv_offset, a, b, tmp,
+            )
+        };
     }
 }
 
@@ -86,7 +90,7 @@ impl RankOneTensorDft for NTT4x30Avx512Rayon {
         let bytes = Self::rank_one_tensor_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512(
+            crate::ntt4x30_avx512::convolution::cnv_tensor_rank1_dft_avx512::<poulpy_cpu_rayon::RayonTaskExecutor>(
                 module.reinterpret(),
                 &mut crate::ntt4x30_avx512::rayon::base_dft_mut(res),
                 cnv_offset,
