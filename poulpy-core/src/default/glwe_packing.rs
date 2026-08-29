@@ -8,7 +8,7 @@ use poulpy_hal::{
 
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace,
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, ModuleCoreAlloc},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc},
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -49,13 +49,19 @@ fn pack_internal<M, A, B, H, BE: Backend>(
             module.glwe_add_assign(a, b);
             module.glwe_rsh(1, a, scratch);
             module.glwe_normalize_assign(&mut tmp_b, scratch);
-            module.glwe_automorphism_assign(&mut tmp_b, p, keys, scratch);
+            let key = keys
+                .get_automorphism_key(p, tmp_b.k())
+                .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
+            module.glwe_automorphism_assign(&mut tmp_b, &&key, scratch);
             module.glwe_sub_assign(a, &tmp_b);
             module.glwe_normalize_assign(a, scratch);
             module.glwe_rotate_assign(t, a, scratch);
         } else {
             module.glwe_rsh(1, a, scratch);
-            module.glwe_automorphism_add_assign(a, p, keys, scratch)
+            let key = keys
+                .get_automorphism_key(p, a.k())
+                .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
+            module.glwe_automorphism_add_assign(a, &&key, scratch)
         }
     } else if let Some(b) = b.as_deref_mut() {
         let t: i64 = 1 << (b.n().log2() - i - 1);
@@ -64,7 +70,10 @@ fn pack_internal<M, A, B, H, BE: Backend>(
         let mut tmp_b = module.glwe_alloc_from_infos(&b_layout);
         module.glwe_rotate(t, &mut tmp_b, b);
         module.glwe_rsh(1, &mut tmp_b, scratch);
-        module.glwe_automorphism_sub_negate(b, &tmp_b, p, keys, scratch)
+        let key = keys
+            .get_automorphism_key(p, tmp_b.k())
+            .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
+        module.glwe_automorphism_sub_negate(b, &tmp_b, &&key, scratch)
     }
 }
 

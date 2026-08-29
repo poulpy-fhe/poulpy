@@ -337,10 +337,11 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
 
         let rot = rhs.giant_steps[g].rot;
         if rot != 0 {
-            let _key = keys
-                .get_automorphism_key(module.galois_element(rot), res.k())
+            let p = module.galois_element(rot);
+            let key = keys
+                .get_automorphism_key(p, fallback_acc.k())
                 .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
-            module.glwe_automorphism_assign(&mut fallback_acc, module.galois_element(rot), keys, &mut scratch_phase);
+            module.glwe_automorphism_assign(&mut fallback_acc, &&key, &mut scratch_phase);
         }
 
         if res_initialized {

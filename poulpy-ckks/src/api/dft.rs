@@ -84,22 +84,20 @@ pub trait CKKSDFTOps<BE: Backend> {
 
     /// `CoeffsToSlots`, `SplitRealAndImag` — real/imag in two ciphertexts.
     #[allow(clippy::too_many_arguments)]
-    fn ckks_coeffs_to_slots_split<P, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_split<P, Dst, Src, H>(
         &self,
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
         keys: &H,
-        conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
-        K: GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, `SplitRealAndImag` — combine two ciphertexts then Decode.
     fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
@@ -119,21 +117,19 @@ pub trait CKKSDFTOps<BE: Backend> {
 
     /// `CoeffsToSlots`, sparse `RepackImagAsReal` — imag packed into the right half.
     #[allow(clippy::too_many_arguments)]
-    fn ckks_coeffs_to_slots_repack<P, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_repack<P, Dst, Src, H>(
         &self,
         ct_out: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
         keys: &H,
-        conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
-        K: GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, sparse `RepackImagAsReal` — inverse of [`Self::ckks_coeffs_to_slots_repack`].
     fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(

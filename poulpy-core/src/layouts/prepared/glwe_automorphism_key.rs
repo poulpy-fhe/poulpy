@@ -6,6 +6,7 @@ use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
     GGLWEPreparedFactory, GGLWEToBackendRef, GLWEInfos, GetGaloisElement, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
 };
+use poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref;
 
 #[derive(PartialEq)]
 pub struct GLWEAutomorphismKeyPrepared<D: Data, B: Backend> {
@@ -199,6 +200,19 @@ where
 {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         self.key.to_backend_ref()
+    }
+}
+
+impl<'b, B: Backend + 'b> GGLWEPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B::BufRef<'b>, B> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
+        GGLWEPrepared {
+            base2k: self.key.base2k,
+            k_aux: self.key.k_aux,
+            dsize: self.key.dsize,
+            dnum: self.key.dnum,
+            stride: self.key.stride,
+            data: vmp_pmat_backend_ref_from_ref::<B>(&self.key.data),
+        }
     }
 }
 

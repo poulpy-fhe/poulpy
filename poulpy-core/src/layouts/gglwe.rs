@@ -94,18 +94,70 @@ where
             ..self.gglwe_layout()
         })
     }
+}
 
-    /// Every `dsize` this key can be read at, with the digits each reaches.
-    ///
-    /// Ascending, always starting with the stored `(dsize(), dnum())`.
-    fn valid_dsizes(&self) -> Vec<(Dsize, Dnum)> {
-        let stored: usize = self.dsize().as_usize();
-        (1..=self.dnum().as_usize())
-            .filter_map(|stride| {
-                let dsize = Dsize((stride * stored) as u32);
-                self.gglwe_layout_at_dsize(dsize).ok().map(|l| (dsize, l.dnum))
-            })
-            .collect()
+/// Every `dsize` this key can be read at, with the digits each reaches.
+///
+/// Ascending, always starting with the stored `(dsize(), dnum())`.
+pub(crate) fn valid_dsizes<A: GGLWEInfos + ?Sized>(infos: &A) -> Vec<(Dsize, Dnum)> {
+    let stored: usize = infos.dsize().as_usize();
+    (1..=infos.dnum().as_usize())
+        .filter_map(|stride| {
+            let dsize = Dsize((stride * stored) as u32);
+            infos.gglwe_layout_at_dsize(dsize).ok().map(|l| (dsize, l.dnum))
+        })
+        .collect()
+}
+
+impl<T: GGLWEInfos + ?Sized> GGLWEInfos for &T {
+    fn k_aux(&self) -> TorusPrecision {
+        (**self).k_aux()
+    }
+
+    fn dnum(&self) -> Dnum {
+        (**self).dnum()
+    }
+
+    fn dsize(&self) -> Dsize {
+        (**self).dsize()
+    }
+
+    fn rank_in(&self) -> Rank {
+        (**self).rank_in()
+    }
+
+    fn rank_out(&self) -> Rank {
+        (**self).rank_out()
+    }
+
+    fn stride(&self) -> usize {
+        (**self).stride()
+    }
+}
+
+impl<T: GGLWEInfos + ?Sized> GGLWEInfos for &mut T {
+    fn k_aux(&self) -> TorusPrecision {
+        (**self).k_aux()
+    }
+
+    fn dnum(&self) -> Dnum {
+        (**self).dnum()
+    }
+
+    fn dsize(&self) -> Dsize {
+        (**self).dsize()
+    }
+
+    fn rank_in(&self) -> Rank {
+        (**self).rank_in()
+    }
+
+    fn rank_out(&self) -> Rank {
+        (**self).rank_out()
+    }
+
+    fn stride(&self) -> usize {
+        (**self).stride()
     }
 }
 

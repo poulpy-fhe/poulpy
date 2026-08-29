@@ -1,6 +1,7 @@
 use crate::{error::Result, layouts::GGLWELayout};
 use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
+use poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
     layouts::{Backend, Data, Module, ScratchArena, VmpPMat},
@@ -221,8 +222,7 @@ impl<D: Data, B: Backend> GGLWEPrepared<D, B> {
 
 impl<D: Data, B: Backend> GGLWEPrepared<D, B> {
     /// This key read through a coarser `dsize`. No row is copied, only the
-    /// scalars change; see [`GGLWEInfos::gglwe_layout_at_dsize`] for the rule
-    /// and [`GGLWEInfos::valid_dsizes`] for what a key admits.
+    /// scalars change; see [`GGLWEInfos::gglwe_layout_at_dsize`] for the rule.
     pub fn with_dsize(&self, dsize: Dsize) -> Result<GGLWEPreparedBackendRef<'_, B>>
     where
         Self: GGLWEPreparedToBackendRef<B>,
@@ -250,6 +250,19 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
             dnum: self.dnum,
             stride: self.stride,
             data: self.data.to_backend_ref(),
+        }
+    }
+}
+
+impl<'b, B: Backend + 'b> GGLWEPreparedToBackendRef<B> for &GGLWEPrepared<B::BufRef<'b>, B> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
+        GGLWEPrepared {
+            base2k: self.base2k,
+            k_aux: self.k_aux,
+            dsize: self.dsize,
+            dnum: self.dnum,
+            stride: self.stride,
+            data: vmp_pmat_backend_ref_from_ref::<B>(&self.data),
         }
     }
 }

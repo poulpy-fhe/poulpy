@@ -76,14 +76,13 @@ impl<BE: Backend + DFTImpl<BE>> CKKSDFTOps<BE> for Module<BE> {
         BE::ckks_slots_to_coeffs_impl(self, ct, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_split<P, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_split<P, Dst, Src, H>(
         &self,
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
         keys: &H,
-        conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -91,9 +90,8 @@ impl<BE: Backend + DFTImpl<BE>> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
-        K: GetAutomorphismKey<BE>,
     {
-        BE::ckks_coeffs_to_slots_split_impl(self, ct_real, ct_imag, ct_in, dft, keys, conj_key, scratch)
+        BE::ckks_coeffs_to_slots_split_impl(self, ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_split<P, Dst, Src, H>(
@@ -114,13 +112,12 @@ impl<BE: Backend + DFTImpl<BE>> CKKSDFTOps<BE> for Module<BE> {
         BE::ckks_slots_to_coeffs_split_impl(self, op_out, ct_real, ct_imag, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_repack<P, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_repack<P, Dst, Src, H>(
         &self,
         ct_out: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
         keys: &H,
-        conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -128,9 +125,8 @@ impl<BE: Backend + DFTImpl<BE>> CKKSDFTOps<BE> for Module<BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
-        K: GetAutomorphismKey<BE>,
     {
-        BE::ckks_coeffs_to_slots_repack_impl(self, ct_out, ct_in, dft, keys, conj_key, scratch)
+        BE::ckks_coeffs_to_slots_repack_impl(self, ct_out, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_repack<P, Dst, Src, H>(

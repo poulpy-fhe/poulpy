@@ -105,7 +105,10 @@ where
 
     for p in trace_rotations(module, skip) {
         module.glwe_rsh(1, res, scratch);
-        module.glwe_automorphism_add_assign(res, p, keys, scratch);
+        let key = keys
+            .get_automorphism_key(p, res.k())
+            .unwrap_or_else(|e| panic!("trace rotation {p}: {e}"));
+        module.glwe_automorphism_add_assign(res, &&key, scratch);
     }
 }
 

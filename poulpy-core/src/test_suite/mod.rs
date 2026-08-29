@@ -17,8 +17,6 @@ pub mod keys;
 pub mod noise;
 pub mod parity;
 
-pub use keys::AtDsize;
-
 #[macro_export]
 macro_rules! core_backend_test_suite {
     (

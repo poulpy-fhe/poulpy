@@ -292,7 +292,11 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
                 module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, scratch);
             } else {
                 let (mut baby, mut baby_scratch) = scratch.borrow().take_glwe_scratch(a);
-                module.glwe_automorphism(&mut baby, a, module.galois_element(rot), keys, &mut baby_scratch.borrow());
+                let p = module.galois_element(rot);
+                let key = keys
+                    .get_automorphism_key(p, a.k())
+                    .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
+                module.glwe_automorphism(&mut baby, a, &&key, &mut baby_scratch.borrow());
                 let baby_ref = baby.to_backend_ref();
                 module.cnv_prepare_left(
                     &mut prepared.to_backend_mut(),

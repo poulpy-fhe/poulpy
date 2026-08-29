@@ -341,14 +341,13 @@ where
 /// key (Galois element `−1`). On return, `ct_real` holds the real parts and
 /// `ct_imag` the imaginary parts. Consumes `ct_in` by reference (copied).
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H, K>(
+pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     ct_real: &mut Dst,
     ct_imag: &mut Dst,
     ct_in: &Src,
     dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
     keys: &H,
-    conj_key: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -365,14 +364,13 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
-    K: GetAutomorphismKey<BE>,
 {
     // ct_real := z = Encode(ct_in).
     module.ckks_copy(ct_real, ct_in, scratch)?;
     ckks_dft_evaluate_assign(module, ct_real, dft, keys, scratch)?;
 
     // ct_imag := conj(z).
-    module.ckks_conjugate_into(ct_imag, ct_real, conj_key, scratch)?;
+    module.ckks_conjugate_into(ct_imag, ct_real, keys, scratch)?;
 
     // tmp := z − conj(z); ct_real := z + conj(z) = 2·Re(z); ct_imag := −i·tmp = 2·Im(z).
     let mut tmp = module.ckks_ciphertext_alloc_from_infos(ct_real);
@@ -421,13 +419,12 @@ where
 /// `Re` in the left `slots` and `Im` in the right `slots` of each `2·slots` period.
 /// The live slot count doubles, so `ct_out.log_sparsity` is decremented by one.
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H, K>(
+pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     ct_out: &mut Dst,
     ct_in: &Src,
     dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
     keys: &H,
-    conj_key: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -445,7 +442,6 @@ where
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     H: GetAutomorphismKey<BE>,
-    K: GetAutomorphismKey<BE>,
 {
     let slots = 1i64 << dft.plan().log_slots();
 
@@ -455,7 +451,7 @@ where
 
     // conj := conj(z); imag := −i·(z − conj) = 2·Im(z); ct_out := z + conj = 2·Re(z).
     let mut conj = module.ckks_ciphertext_alloc_from_infos(ct_out);
-    module.ckks_conjugate_into(&mut conj, ct_out, conj_key, scratch)?;
+    module.ckks_conjugate_into(&mut conj, ct_out, keys, scratch)?;
     let mut imag = module.ckks_ciphertext_alloc_from_infos(ct_out);
     module.ckks_sub_into(&mut imag, ct_out, &conj, scratch)?;
     module.ckks_div_i_assign(&mut imag, scratch)?;

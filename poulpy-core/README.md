@@ -97,9 +97,9 @@ flowchart TD
 Equivalent Rust:
 
 ```rust
-let mut atk_compressed: GLWEAutomorphismKeyCompressed<Vec<u8>> = 
+let mut atk_compressed: GLWEAutomorphismKeyCompressed<Vec<u8>> =
     GLWEAutomorphismKeyCompressed::alloc(...);
-let mut atk: GLWEAutomorphismKey<Vec<u8>> = 
+let mut atk: GLWEAutomorphismKey<Vec<u8>> =
     GLWEAutomorphismKey::alloc(...);
     module.decompress_automorphism_key(&mut atk, &atk_compressed);
 let mut atk_prep = atk.prepare_alloc(module);

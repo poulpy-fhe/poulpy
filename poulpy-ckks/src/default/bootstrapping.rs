@@ -379,15 +379,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        self.ckks_coeffs_to_slots_split(
-            r0,
-            i0,
-            ct,
-            ctx.coeffs_to_slots(),
-            keys.rotation_keys(),
-            keys.conjugation_key(),
-            scratch,
-        )
+        self.ckks_coeffs_to_slots_split(r0, i0, ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)
     }
 
     fn ckks_bootstrap_coeffs_to_slots_real<F, K, R1, R2>(
@@ -405,7 +397,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         self.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
-        self.ckks_conjugate_into(conjugate, &*ct, keys.conjugation_key(), scratch)?;
+        self.ckks_conjugate_into(conjugate, &*ct, keys.rotation_keys(), scratch)?;
         self.ckks_add_assign(ct, &*conjugate, scratch)?;
         // `z + conj(z) = 2·Re(z)` holds the input polynomial's coefficients.
         ct.set_slots(SlotsKind::Real);
@@ -521,7 +513,6 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                         &ct_raised,
                         bypass,
                         keys.rotation_keys(),
-                        keys.conjugation_key(),
                         &mut scratch_local,
                     )?;
 
@@ -719,7 +710,6 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                         &ct,
                         bypass,
                         keys.rotation_keys(),
-                        keys.conjugation_key(),
                         &mut scratch_local,
                     )?;
 
@@ -932,7 +922,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                         &mut ct_raised,
                         lut,
                         &basis,
-                        keys.conjugation_key(),
+                        keys.rotation_keys(),
                         keys.tensor_key(),
                         &mut scratch_local,
                     )?;
@@ -1097,7 +1087,7 @@ where
             ct_in,
             ctx.eval_mod(),
             series,
-            keys.conjugation_key(),
+            keys.rotation_keys(),
             keys.tensor_key(),
             scratch,
         )?,
@@ -1159,7 +1149,7 @@ where
         };
         let basis = ckks_lut_power_basis(module, ct, &layout, ctx.eval_mod(), luts, keys.tensor_key(), scratch)?;
         for (out, lut) in outs.iter_mut().zip(luts) {
-            ckks_eval_lut_from_basis(module, out, lut, &basis, keys.conjugation_key(), keys.tensor_key(), scratch)?;
+            ckks_eval_lut_from_basis(module, out, lut, &basis, keys.rotation_keys(), keys.tensor_key(), scratch)?;
         }
         return Ok(());
     }

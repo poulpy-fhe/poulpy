@@ -90,22 +90,20 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>;
 
-    fn ckks_coeffs_to_slots_split_impl<P, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_split_impl<P, Dst, Src, H>(
         module: &Module<BE>,
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
         keys: &H,
-        conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
-        K: GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     fn ckks_slots_to_coeffs_split_impl<P, Dst, Src, H>(
         module: &Module<BE>,
@@ -122,21 +120,19 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 
-    fn ckks_coeffs_to_slots_repack_impl<P, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_repack_impl<P, Dst, Src, H>(
         module: &Module<BE>,
         ct_out: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
         keys: &H,
-        conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>,
-        K: GetAutomorphismKey<BE>;
+        H: GetAutomorphismKey<BE>;
 
     fn ckks_slots_to_coeffs_repack_impl<P, Dst, Src, H>(
         module: &Module<BE>,
@@ -302,14 +298,13 @@ pub trait DFTDefault<BE: Backend> {
         crate::default::dft::ckks_slots_to_coeffs_assign(self.borrow(), ct, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_split_default<P, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_split_default<P, Dst, Src, H>(
         &self,
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
         keys: &H,
-        conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -317,7 +312,6 @@ pub trait DFTDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
-        K: GetAutomorphismKey<BE>,
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE>
             + CnvPVecAlloc<BE>
@@ -328,7 +322,7 @@ pub trait DFTDefault<BE: Backend> {
             + CKKSSubOps<BE>
             + CKKSImagOps<BE>,
     {
-        crate::default::dft::ckks_coeffs_to_slots_split(self.borrow(), ct_real, ct_imag, ct_in, dft, keys, conj_key, scratch)
+        crate::default::dft::ckks_coeffs_to_slots_split(self.borrow(), ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_split_default<P, Dst, Src, H>(
@@ -351,13 +345,12 @@ pub trait DFTDefault<BE: Backend> {
         crate::default::dft::ckks_slots_to_coeffs_split(self.borrow(), op_out, ct_real, ct_imag, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_repack_default<P, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_repack_default<P, Dst, Src, H>(
         &self,
         ct_out: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
         keys: &H,
-        conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -365,7 +358,6 @@ pub trait DFTDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
-        K: GetAutomorphismKey<BE>,
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE>
             + CnvPVecAlloc<BE>
@@ -377,7 +369,7 @@ pub trait DFTDefault<BE: Backend> {
             + CKKSImagOps<BE>
             + CKKSRotateOps<BE>,
     {
-        crate::default::dft::ckks_coeffs_to_slots_repack(self.borrow(), ct_out, ct_in, dft, keys, conj_key, scratch)
+        crate::default::dft::ckks_coeffs_to_slots_repack(self.borrow(), ct_out, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_repack_default<P, Dst, Src, H>(
@@ -470,14 +462,13 @@ where
         module.ckks_slots_to_coeffs_default(ct, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_split_impl<P, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_split_impl<P, Dst, Src, H>(
         module: &Module<BE>,
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
         keys: &H,
-        conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -485,9 +476,8 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
-        K: GetAutomorphismKey<BE>,
     {
-        module.ckks_coeffs_to_slots_split_default(ct_real, ct_imag, ct_in, dft, keys, conj_key, scratch)
+        module.ckks_coeffs_to_slots_split_default(ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_split_impl<P, Dst, Src, H>(
@@ -508,13 +498,12 @@ where
         module.ckks_slots_to_coeffs_split_default(op_out, ct_real, ct_imag, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_repack_impl<P, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_repack_impl<P, Dst, Src, H>(
         module: &Module<BE>,
         ct_out: &mut Dst,
         ct_in: &Src,
         dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
         keys: &H,
-        conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -522,9 +511,8 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
-        K: GetAutomorphismKey<BE>,
     {
-        module.ckks_coeffs_to_slots_repack_default(ct_out, ct_in, dft, keys, conj_key, scratch)
+        module.ckks_coeffs_to_slots_repack_default(ct_out, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_repack_impl<P, Dst, Src, H>(

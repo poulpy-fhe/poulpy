@@ -15,21 +15,62 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, FillUniform, HostDataMut, HostDataRef, Module, ScratchOwned, ZnxView, ZnxViewMut},
+    layouts::{Backend, CyclotomicOrder, Data, FillUniform, HostDataMut, HostDataRef, Module, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::{
     GLWEAutomorphism, GLWETensoring, GLWETrace,
+    error::{CoreError, Result},
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyLayout,
-        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank,
-        TorusPrecision,
-        prepared::{GLWEAutomorphismKeyPrepared, GLWETensorKeyPrepared},
+        GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, GetAutomorphismKey,
+        GetTensorKey, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        prepared::{
+            GGLWEPrepared, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef,
+            GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef,
+        },
+        valid_dsizes,
     },
-    test_suite::keys::{AtDsize, fill_by_digit},
+    test_suite::keys::fill_by_digit,
 };
+
+/// Answers from `keys`, every key read through `dsize`.
+struct AtDsize<'a, K>(&'a K, Dsize);
+
+impl<BE: Backend, D: Data> GetAutomorphismKey<BE> for AtDsize<'_, HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>>
+where
+    GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
+{
+    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.0
+            .get(&p)
+            .ok_or(CoreError::GGLWEKeyUse {
+                op: "get_automorphism_key",
+                detail: format!("no automorphism key for p={p}"),
+            })?
+            .with_dsize(self.1)
+    }
+}
+
+impl<BE: Backend, D: Data> GetAutomorphismKey<BE> for AtDsize<'_, GLWEAutomorphismKeyPrepared<D, BE>>
+where
+    GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
+{
+    fn lookup_automorphism_key(&self, _p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.0.with_dsize(self.1)
+    }
+}
+
+impl<BE: Backend, D: Data> GetTensorKey<BE> for AtDsize<'_, GLWETensorKeyPrepared<D, BE>>
+where
+    GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
+{
+    fn get_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
+        self.0.with_dsize(self.1)
+    }
+}
 
 /// Backends this suite can run on: host-resident coefficients, so rows can be
 /// filled and outputs compared without a transfer.
@@ -104,7 +145,7 @@ where
         // `valid_dsizes` is exactly the set `with_dsize` accepts.
         for stride in 1..stored.dnum.as_usize() + 3 {
             let d = Dsize((stride * dsize) as u32);
-            let listed = stored.valid_dsizes().into_iter().find(|(x, _)| *x == d);
+            let listed = valid_dsizes(&stored).into_iter().find(|(x, _)| *x == d);
             match (listed, key_prep.with_dsize(d)) {
                 (Some((_, dnum)), Ok(view)) => assert_eq!(view.dnum(), dnum, "dnum disagrees at dsize={d}"),
                 (None, Err(_)) => {}
@@ -139,8 +180,12 @@ where
                 .max(module.glwe_automorphism_tmp_bytes(&ct_infos, &ct_infos, &twin)),
         );
 
-        module.glwe_automorphism(&mut have, &ct_in, p, &AtDsize(&key_prep, effective), &mut scratch.borrow());
-        module.glwe_automorphism(&mut want, &ct_in, p, &twin_prep, &mut scratch.borrow());
+        let have_keys = AtDsize(&key_prep, effective);
+        let have_key = have_keys
+            .get_automorphism_key(p, ct_in.k())
+            .unwrap_or_else(|e| panic!("coarsened automorphism key: {e}"));
+        module.glwe_automorphism(&mut have, &ct_in, &&have_key, &mut scratch.borrow());
+        module.glwe_automorphism(&mut want, &ct_in, &twin_prep, &mut scratch.borrow());
         same(
             &have,
             &want,
@@ -149,8 +194,12 @@ where
 
         have.data.raw_mut().copy_from_slice(ct_in.data.raw());
         want.data.raw_mut().copy_from_slice(ct_in.data.raw());
-        module.glwe_automorphism_add_assign(&mut have, p, &AtDsize(&key_prep, effective), &mut scratch.borrow());
-        module.glwe_automorphism_add_assign(&mut want, p, &twin_prep, &mut scratch.borrow());
+        let have_keys = AtDsize(&key_prep, effective);
+        let have_key = have_keys
+            .get_automorphism_key(p, have.k())
+            .unwrap_or_else(|e| panic!("coarsened automorphism key: {e}"));
+        module.glwe_automorphism_add_assign(&mut have, &&have_key, &mut scratch.borrow());
+        module.glwe_automorphism_add_assign(&mut want, &twin_prep, &mut scratch.borrow());
         same(
             &have,
             &want,
@@ -159,8 +208,12 @@ where
 
         have.data.raw_mut().copy_from_slice(ct_in.data.raw());
         want.data.raw_mut().copy_from_slice(ct_in.data.raw());
-        module.glwe_automorphism_assign(&mut have, p, &AtDsize(&key_prep, effective), &mut scratch.borrow());
-        module.glwe_automorphism_assign(&mut want, p, &twin_prep, &mut scratch.borrow());
+        let have_keys = AtDsize(&key_prep, effective);
+        let have_key = have_keys
+            .get_automorphism_key(p, have.k())
+            .unwrap_or_else(|e| panic!("coarsened automorphism key: {e}"));
+        module.glwe_automorphism_assign(&mut have, &&have_key, &mut scratch.borrow());
+        module.glwe_automorphism_assign(&mut want, &twin_prep, &mut scratch.borrow());
         same(&have, &want, &format!("assign dsize={dsize} dnum={dnum} s={s} rank={rank}"));
     }
 }

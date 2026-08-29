@@ -76,7 +76,7 @@ pub fn runner_glwe_automorphism<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHos
     host_glwe(&host, &glwe_infos, &mut source).transfer_into(&mut ct_in);
 
     bencher.iter(|| {
-        module.glwe_automorphism(&mut ct_out, &ct_in, P, &atk_prepared, &mut scratch.borrow());
+        module.glwe_automorphism(&mut ct_out, &ct_in, &atk_prepared, &mut scratch.borrow());
         black_box(());
     });
 }

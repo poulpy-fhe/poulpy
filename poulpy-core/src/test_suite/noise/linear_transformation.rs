@@ -23,7 +23,7 @@ use crate::{
     LinearTransformationBabySteps,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
-        GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESecretPrepared},
     },
     msb_mask_bottom_limb,
@@ -158,7 +158,11 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         if rot == 0 {
             module.glwe_copy(&mut expected, &ct);
         } else {
-            module.glwe_automorphism(&mut expected, &ct, module.galois_element(rot), &atks, &mut scratch.borrow());
+            let p = module.galois_element(rot);
+            let key = atks
+                .get_automorphism_key(p, ct.k())
+                .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
+            module.glwe_automorphism(&mut expected, &ct, &&key, &mut scratch.borrow());
         }
 
         let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size());

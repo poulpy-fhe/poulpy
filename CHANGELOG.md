@@ -33,16 +33,16 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 
 - Refactor GLWE key switching to consume inverse-DFT results directly into normalized outputs, and use DFT automorphism accumulation in lazy/prepared-giant linear transformations. These paths avoid temporary big-polynomial copies while preserving the serial/reference behavior.
 - Add an optional one-pass baby-step linear-combination hook to generic polynomial evaluation, falling back to the existing multiply-add sequence when an operation family does not override it. Extend the HAL parity suites for the new fused operations.
-- Add `GGLWEInfos::stride`, the row map a key is read through: digit `i` is stored row `(i + 1) * stride - 1`. Defaults to 1, so a key used as stored is unaffected.
-- `GGLWEPrepared` carries its own `dnum` and `stride`, and `with_dsize` re-tags a prepared key as one read at a coarser `dsize`, deriving the digits and guard that decomposition leaves. It returns the same backend view every operation already takes; no new key type.
+- `GGLWEInfos` gains `stride`, the row map a coarser read uses (digit `i` is stored row `(i + 1) * stride - 1`, defaulting to 1), plus `gglwe_layout_at_dsize` and `valid_dsizes`: the layout a key reports at a coarser `dsize` and the decompositions it admits.
+- `GGLWEPrepared` carries its own `dnum` and `stride`, and `with_dsize` re-tags a prepared key as one read at a coarser `dsize`, or fails if the key does not admit it. It returns the same backend view every operation already takes; no new key type.
 - A GGLWE product over a view gathers the selected rows once, then runs the ordinary kernels on them; its scratch query adds that gather. Query it with the key the operation will run through, coarsened or not.
 - Add `GetAutomorphismKey` and `GetTensorKey`: a caller names a function and the precision it will use the key at, and the source answers with the backend view of a prepared key. A map and a bare key implement them as stored, so which key and which decomposition a precision gets is entirely the source's rule. Implementors write `lookup_automorphism_key`; `get_automorphism_key` checks the answer is a key for the element asked for, since operations rotate by the element they were given.
 - **Breaking:** every operation that consumes an evaluation key takes the source and the Galois element rather than the key: `glwe_automorphism*(res, a, p, keys, scratch)`, `ggsw_automorphism*`, `glwe_tensor_relinearize(res, a, tsk, scratch)`. A bare key is a source of itself, so a single-key caller only adds `p`.
 - **Breaking:** `GLWEAutomorphismKeyHelper` and its `automorphism_key_infos()` are removed, along with the key type parameter every automorphism-consuming signature carried: no single layout describes a key set whose rotations resolve independently.
 - **Breaking:** `glwe_keyswitch{,_assign}` take `&GGLWEPreparedBackendRef` (`&key.to_backend_ref()` at the call site), the same backend view the products already take.
-- Linear-transformation baby rotations resolve their key at the source precision and giant rotations at the post-product destination precision, the values each actually rotates.
+- Linear transformations resolve each rotation's key at the precision that rotation actually works at: baby steps at the source, giant steps at the post-product destination.
 - Fix cross-radix tensor relinearization: the DFT operand width came from the storage precision rounded to the key's radix instead of from `a.k()`, handing the product one limb too many.
-- `error` is now a module of the crate; `CoreError`/`Result` were previously unreachable.
+- Add the `error` module, exporting `CoreError` and `Result`.
 
 ### `poulpy-bin-fhe`
 
@@ -57,11 +57,11 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 - Fuse each BSGS baby-step linear combination into one accumulator and use constant-convolution accumulation to avoid repeated ciphertext temporaries.
 - Run the real and imaginary EvalMod halves concurrently on parallel backends, with per-half scratch arenas; serial backends retain the existing order.
 - **Breaking:** the ciphertext-ciphertext operations (`ckks_mul_*`, `ckks_square_*`, the `mul_add`/`mul_sub`/`dot_product` composites, polynomial evaluation, approximation, EvalMod and the PaCo slot product) take a tensor-key source rather than one key, and resolve it at the precision they work at.
-- **Breaking:** `ckks_conjugate_{into,assign}` take a key source and no element. Add `ckks_conjugate_rotate_into(dst, src, k, ..)`, the fused conjugate-and-rotate PaCo's psi tail needs, taking the rotation like `ckks_rotate` and resolving `-galois_element(k)` itself; `k = 0` is plain conjugation. `PaCoPsiTailMaterial::Mask` carries that rotation rather than the derived element.
+- **Breaking:** `ckks_coeffs_to_slots_{split,repack}` drop their separate `conj_key`: one source answers every element, `-1` included. `BootstrappingKeys::conjugation_key` and its `AutomorphismKey` type are removed, and generation puts the conjugation key in `rotation_keys`.
+- **Breaking:** add `ckks_conjugate_rotate_into(dst, src, k, ..)` for the fused conjugate-and-rotate PaCo's psi tail needs, which was previously expressed by handing `ckks_conjugate_into` a different key. It takes the rotation like `ckks_rotate` and resolves `-galois_element(k)` itself; `k = 0` is plain conjugation. `PaCoPsiTailMaterial::Mask` carries that rotation rather than the derived element.
 - **Breaking:** `CKKSAtkBounds` is removed: a key type is now constrained as `GetAutomorphismKey<BE>`.
 - **Breaking:** `CKKSCompositionError::MissingAutomorphismKey` carries the precision the lookup was made at; add `MissingRelinearizationKey`.
 - `ckks_mul_tmp_bytes` sizes its tensor intermediate from the operands' precision; `res`'s pre-call precision no longer widens it.
-- Linear-transformation and PaCo preflight resolve giant rotations at the destination precision the evaluation uses.
 
 
 ## [0.8.2] - 2026-08-22

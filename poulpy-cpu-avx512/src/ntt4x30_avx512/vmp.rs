@@ -740,33 +740,6 @@ fn vmp_apply_dft_to_dft_digits_strided_avx_inner<E: TaskExecutor>(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::extract_1blk_from_contiguous_q120b_avx512;
-    use poulpy_cpu_ref::reference::ntt4x30::mat_vec::extract_1blk_from_contiguous_q120b_ref;
-
-    #[test]
-    fn extract_1blk_from_contiguous_q120b_avx2_vs_ref() {
-        for &n in &[256usize, 4096, 16384] {
-            for &row_max in &[1usize, 3, 7] {
-                let src: Vec<u64> = (0..row_max * 4 * n)
-                    .map(|i| (0x9e37_79b9_7f4a_7c15u64.wrapping_mul(i as u64 + 1)) ^ ((i as u64) << 17))
-                    .collect();
-
-                for &blk in &[0usize, n / 4, n / 2 - 1] {
-                    let mut dst_ref = vec![0u64; 8 * row_max];
-                    let mut dst_avx = vec![0u64; 8 * row_max];
-
-                    extract_1blk_from_contiguous_q120b_ref(n, row_max, blk, &mut dst_ref, &src);
-                    unsafe { extract_1blk_from_contiguous_q120b_avx512(n, row_max, blk, &mut dst_avx, &src) };
-
-                    assert_eq!(dst_avx, dst_ref, "n={n}, row_max={row_max}, blk={blk}");
-                }
-            }
-        }
-    }
-}
-
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
 /// limbs, into rows `i` of `res`, in the prime-major prepared layout.
 pub(crate) fn vmp_extract_selected_rows_avx512_pm(
@@ -797,6 +770,33 @@ pub(crate) fn vmp_extract_selected_rows_avx512_pm(
                 for i in 0..res_rows {
                     let (d, s) = (dst_base + i * span, src_base + (first_row + i * row_step) * span);
                     dst[d..d + span].copy_from_slice(&src[s..s + span]);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_1blk_from_contiguous_q120b_avx512;
+    use poulpy_cpu_ref::reference::ntt4x30::mat_vec::extract_1blk_from_contiguous_q120b_ref;
+
+    #[test]
+    fn extract_1blk_from_contiguous_q120b_avx2_vs_ref() {
+        for &n in &[256usize, 4096, 16384] {
+            for &row_max in &[1usize, 3, 7] {
+                let src: Vec<u64> = (0..row_max * 4 * n)
+                    .map(|i| (0x9e37_79b9_7f4a_7c15u64.wrapping_mul(i as u64 + 1)) ^ ((i as u64) << 17))
+                    .collect();
+
+                for &blk in &[0usize, n / 4, n / 2 - 1] {
+                    let mut dst_ref = vec![0u64; 8 * row_max];
+                    let mut dst_avx = vec![0u64; 8 * row_max];
+
+                    extract_1blk_from_contiguous_q120b_ref(n, row_max, blk, &mut dst_ref, &src);
+                    unsafe { extract_1blk_from_contiguous_q120b_avx512(n, row_max, blk, &mut dst_avx, &src) };
+
+                    assert_eq!(dst_avx, dst_ref, "n={n}, row_max={row_max}, blk={blk}");
                 }
             }
         }

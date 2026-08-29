@@ -1,62 +1,9 @@
-//! A key source that coarsens what it holds.
-//!
-//! The shape a caller writes to put a policy in front of its key set: the
-//! provider decides which key a request gets and which decomposition it is read
-//! through, and nothing above it has a say.
-
-use std::collections::HashMap;
-
 use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, ZnxWord},
+    layouts::{FillUniform, HostDataMut, ZnxWord},
     source::Source,
 };
 
-use crate::{
-    error::{CoreError, Result},
-    layouts::{
-        Dsize, GGLWE, GetAutomorphismKey, GetTensorKey, TorusPrecision,
-        prepared::{
-            GGLWEPrepared, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef,
-            GLWETensorKeyPrepared, GLWETensorKeyPreparedBackendRef,
-        },
-    },
-};
-
-/// Answers from `keys`, every key read through `dsize`.
-pub struct AtDsize<'a, K>(pub &'a K, pub Dsize);
-
-impl<BE: Backend, D: Data> GetAutomorphismKey<BE> for AtDsize<'_, HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>>
-where
-    GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
-{
-    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        self.0
-            .get(&p)
-            .ok_or(CoreError::GGLWEKeyUse {
-                op: "get_automorphism_key",
-                detail: format!("no automorphism key for p={p}"),
-            })?
-            .with_dsize(self.1)
-    }
-}
-
-impl<BE: Backend, D: Data> GetAutomorphismKey<BE> for AtDsize<'_, GLWEAutomorphismKeyPrepared<D, BE>>
-where
-    GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
-{
-    fn lookup_automorphism_key(&self, _p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
-        self.0.with_dsize(self.1)
-    }
-}
-
-impl<BE: Backend, D: Data> GetTensorKey<BE> for AtDsize<'_, GLWETensorKeyPrepared<D, BE>>
-where
-    GGLWEPrepared<D, BE>: GGLWEPreparedToBackendRef<BE>,
-{
-    fn get_tensor_key(&self, _k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>> {
-        self.0.with_dsize(self.1)
-    }
-}
+use crate::layouts::GGLWE;
 
 /// Fills `key` from `source`, one draw per digit a `stride`-strided read
 /// reaches, in digit order; every row no digit maps to is poisoned from an

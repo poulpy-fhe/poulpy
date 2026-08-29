@@ -47,6 +47,18 @@ pub trait GetGaloisElement {
     fn p(&self) -> i64;
 }
 
+impl<T: GetGaloisElement + ?Sized> GetGaloisElement for &T {
+    fn p(&self) -> i64 {
+        (**self).p()
+    }
+}
+
+impl<T: GetGaloisElement + ?Sized> GetGaloisElement for &mut T {
+    fn p(&self) -> i64 {
+        (**self).p()
+    }
+}
+
 /// Provides write access to the Galois element index `p`.
 pub trait SetGaloisElement {
     /// Sets the Galois element index.

@@ -370,7 +370,6 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &ct,
             ctx.coeffs_to_slots(),
             bsk.rotation_keys(),
-            bsk.conjugation_key(),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -769,7 +768,6 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &ct,
             ctx.coeffs_to_slots(),
             bsk.rotation_keys(),
-            bsk.conjugation_key(),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -782,7 +780,6 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &ct,
             ctx.coeffs_to_slots_bypass().unwrap(),
             bsk.rotation_keys(),
-            bsk.conjugation_key(),
             &mut scratch.borrow(),
         )
         .unwrap();
