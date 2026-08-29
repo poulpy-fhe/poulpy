@@ -7,8 +7,8 @@
 //!
 //! # Layout strategy
 //!
-//! Each Q120bScalar coefficient occupies a 256-bit half (4 × u64, one CRT residue per lane).
-//! The AVX-512F widening packs **two coefficients per 512-bit register**:
+//! Transform-domain coefficients store four canonical u32 CRT residues (16 bytes).
+//! Kernels widen **two coefficients per 512-bit register**:
 //!
 //! ```text
 //! __m512i = [r0_A, r1_A, r2_A, r3_A,  r0_B, r1_B, r2_B, r3_B]
@@ -39,7 +39,7 @@
 //!
 //! # Scalar types
 //!
-//! - `DftWord = Q120bScalar` — NTT-domain coefficients (4 × u64, 32 bytes/coeff).
+//! - `DftWord = CrtWord<Primes30, u32>` — NTT-domain coefficients (4 × u32, 16 bytes/coeff).
 //! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
 pub(crate) mod arithmetic_avx512;
@@ -50,8 +50,11 @@ pub(crate) mod ntt;
 mod prim;
 #[cfg(feature = "enable-rayon")]
 pub(crate) mod rayon;
+#[cfg(feature = "enable-rayon")]
+pub(crate) use rayon::vmp_apply_digits_strided_known_zero_prefix;
+pub(crate) mod svp;
 mod vec_znx_big;
-pub(crate) mod vec_znx_dft_consume;
+pub(crate) mod vec_znx_dft;
 pub(crate) mod vmp;
 mod znx;
 
@@ -64,7 +67,7 @@ mod znx;
 ///
 /// # Backend characteristics
 ///
-/// - **DftWord**: `Q120bScalar` — NTT-domain coefficients stored as 4 × u64 CRT residues.
+/// - **DftWord**: `CrtWord<Primes30, u32>` — NTT-domain coefficients stored as 4 × u32 CRT residues.
 /// - **BigWord**: `i128` — large-coefficient ring elements use 128-bit signed integers.
 /// - **Prime set**: `Primes30` (four ~30-bit primes, Q ≈ 2^120).
 ///

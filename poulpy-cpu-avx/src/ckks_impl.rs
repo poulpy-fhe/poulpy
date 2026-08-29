@@ -9,7 +9,6 @@ use poulpy_ckks::{
 };
 
 impl_ckks_encapsulated_mod_up_default!(FFT64Avx);
-impl_ckks_encapsulated_mod_up_default!(NTT4x30Avx);
 impl_ckks_conjugate_defaults!(FFT64Avx);
 impl_ckks_conjugate_defaults!(NTT4x30Avx);
 impl_ckks_copy_defaults!(FFT64Avx);
@@ -81,7 +80,6 @@ mod rayon_defaults {
     impl_ckks_plaintext_defaults!(FFT64AvxRayon);
     impl_ckks_dft_defaults!(FFT64AvxRayon);
 
-    impl_ckks_encapsulated_mod_up_default!(NTT4x30AvxRayon);
     impl_ckks_conjugate_defaults!(NTT4x30AvxRayon);
     impl_ckks_copy_defaults!(NTT4x30AvxRayon);
     impl_ckks_encryption_defaults!(NTT4x30AvxRayon);

@@ -35,6 +35,7 @@ use poulpy_hal::{
 use super::{
     kernels::cond_sub_2q_si512,
     mat_vec_ifma::{PrimeConsts512, reduce_bbc_single_prime_512},
+    vec_znx_dft::MASK22,
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -103,6 +104,18 @@ unsafe fn save_planar_overwrite(dst_base: *mut u64, bq: usize, red0: __m512i, re
 
 #[target_feature(enable = "avx512f")]
 #[inline]
+unsafe fn save_planar_digit(dst_base: *mut u64, bq: usize, pc: &[PrimeConsts512; 3], overwrite: bool, red: [__m512i; 3]) {
+    unsafe {
+        if overwrite {
+            save_planar_overwrite(dst_base, bq, red[0], red[1], red[2]);
+        } else {
+            save_planar_add(dst_base, bq, pc, red[0], red[1], red[2]);
+        }
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+#[inline]
 unsafe fn save_planar_result<const OVERWRITE: bool>(
     dst_base: *mut u64,
     bq: usize,
@@ -134,9 +147,6 @@ pub(crate) fn vmp_apply_tmp_bytes_ifma(a_size: usize, b_rows: usize, b_cols_in: 
     // + 3 * 8 * row_max u64 for prime-major x extract (3 primes × 8 u64 × nrows)
     (32 + 3 * 8 * row_max) * size_of::<u64>()
 }
-
-/// Packed 42-bit masks: `w0 = p0 | p1_lo22 << 42`, `w1 = p1_hi20 | p2 << 20`.
-const MASK22: u64 = (1 << 22) - 1;
 
 /// Row-prime-local VMP prepare, packed.
 ///
@@ -361,6 +371,82 @@ unsafe fn madd_reduce_col(x_pm: &[u64], row_max: usize, y_base: *const u64, pc: 
                 pc[2].pow52,
                 pc[2].pow52_quot,
             ),
+        ]
+    }
+}
+
+/// Two right-hand sides against one packed key column.
+#[target_feature(enable = "avx512ifma,avx512vl")]
+#[inline]
+unsafe fn madd_reduce_col_x2(
+    x0_pm: &[u64],
+    x1_pm: &[u64],
+    row_max: usize,
+    y_base: *const u64,
+    pc: &[PrimeConsts512; 3],
+) -> [[__m512i; 3]; 2] {
+    unsafe {
+        let x_plane_sz = 8 * row_max;
+        let x00 = x0_pm.as_ptr() as *const __m512i;
+        let x01 = x0_pm.as_ptr().add(x_plane_sz) as *const __m512i;
+        let x02 = x0_pm.as_ptr().add(2 * x_plane_sz) as *const __m512i;
+        let x10 = x1_pm.as_ptr() as *const __m512i;
+        let x11 = x1_pm.as_ptr().add(x_plane_sz) as *const __m512i;
+        let x12 = x1_pm.as_ptr().add(2 * x_plane_sz) as *const __m512i;
+        let m42 = _mm512_set1_epi64(((1u64 << 42) - 1) as i64);
+        let m20 = _mm512_set1_epi64(((1u64 << 20) - 1) as i64);
+
+        let mut lo00 = _mm512_setzero_si512();
+        let mut hi00 = _mm512_setzero_si512();
+        let mut lo01 = _mm512_setzero_si512();
+        let mut hi01 = _mm512_setzero_si512();
+        let mut lo02 = _mm512_setzero_si512();
+        let mut hi02 = _mm512_setzero_si512();
+        let mut lo10 = _mm512_setzero_si512();
+        let mut hi10 = _mm512_setzero_si512();
+        let mut lo11 = _mm512_setzero_si512();
+        let mut hi11 = _mm512_setzero_si512();
+        let mut lo12 = _mm512_setzero_si512();
+        let mut hi12 = _mm512_setzero_si512();
+
+        for r in 0..row_max {
+            let y_row = y_base.add(r * 16);
+            let w0 = _mm512_loadu_si512(y_row as *const __m512i);
+            let w1 = _mm512_loadu_si512(y_row.add(8) as *const __m512i);
+            let [y0, y1, y2] = unpack_y(w0, w1, m42, m20);
+            let a00 = _mm512_loadu_si512(x00.add(r));
+            let a01 = _mm512_loadu_si512(x01.add(r));
+            let a02 = _mm512_loadu_si512(x02.add(r));
+            let a10 = _mm512_loadu_si512(x10.add(r));
+            let a11 = _mm512_loadu_si512(x11.add(r));
+            let a12 = _mm512_loadu_si512(x12.add(r));
+
+            lo00 = _mm512_madd52lo_epu64(lo00, a00, y0);
+            hi00 = _mm512_madd52hi_epu64(hi00, a00, y0);
+            lo01 = _mm512_madd52lo_epu64(lo01, a01, y1);
+            hi01 = _mm512_madd52hi_epu64(hi01, a01, y1);
+            lo02 = _mm512_madd52lo_epu64(lo02, a02, y2);
+            hi02 = _mm512_madd52hi_epu64(hi02, a02, y2);
+            lo10 = _mm512_madd52lo_epu64(lo10, a10, y0);
+            hi10 = _mm512_madd52hi_epu64(hi10, a10, y0);
+            lo11 = _mm512_madd52lo_epu64(lo11, a11, y1);
+            hi11 = _mm512_madd52hi_epu64(hi11, a11, y1);
+            lo12 = _mm512_madd52lo_epu64(lo12, a12, y2);
+            hi12 = _mm512_madd52hi_epu64(hi12, a12, y2);
+        }
+
+        let reduce = |lo, hi, p: &PrimeConsts512| reduce_bbc_single_prime_512(lo, hi, p.q, p.q2, p.pow42, p.pow52, p.pow52_quot);
+        [
+            [
+                reduce(lo00, hi00, &pc[0]),
+                reduce(lo01, hi01, &pc[1]),
+                reduce(lo02, hi02, &pc[2]),
+            ],
+            [
+                reduce(lo10, hi10, &pc[0]),
+                reduce(lo11, hi11, &pc[1]),
+                reduce(lo12, hi12, &pc[2]),
+            ],
         ]
     }
 }
@@ -816,13 +902,15 @@ pub(crate) fn vmp_apply_digits_strided_tmp_bytes_ifma(
     dsize: usize,
     b_rows: usize,
     b_cols_in: usize,
+    workers: usize,
 ) -> usize {
     let nrows = b_rows * b_cols_in;
     let row_max_all = (0..dsize)
         .map(|di| (a_cols * ((a_size + di) / dsize).min(b_rows)).min(nrows))
         .max()
         .unwrap_or(0);
-    (4 * dsize + 32 + 3 * 8 * row_max_all) * size_of::<u64>()
+    let rhs_count = if dsize >= 2 { 2 } else { 1 };
+    (4 * dsize + workers * rhs_count * 3 * 8 * row_max_all) * size_of::<u64>()
 }
 
 /// Fused multi-digit VMP over strided digit rows.
@@ -833,6 +921,33 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma<E: TaskExecutor>(
     dsize: usize,
     product_limbs: usize,
     pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    tmp: &mut [u64],
+) {
+    vmp_apply_dft_to_dft_digits_strided_ifma_inner::<E>(res, a, dsize, product_limbs, pmat, None, tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma_known_zero_prefix<E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    zero_prefix: usize,
+    tmp: &mut [u64],
+) {
+    assert!(zero_prefix <= a.size());
+    vmp_apply_dft_to_dft_digits_strided_ifma_inner::<E>(res, a, dsize, product_limbs, pmat, Some(zero_prefix), tmp)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    zero_prefix: Option<usize>,
     tmp: &mut [u64],
 ) {
     let n = res.n();
@@ -866,12 +981,17 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma<E: TaskExecutor>(
         let limb_off = di * cols_out;
         let row_end = nrows.min(a_cols * digit_limbs);
         let limb_base = dsize - 1 - di;
-        let row_start = (0..row_end)
-            .take_while(|&row| {
-                let flat = (limb_base + (row / a_cols) * dsize) * a_cols + row % a_cols;
-                a_u64[flat * 2 * n..(flat + 1) * 2 * n].iter().all(|&x| x == 0)
-            })
-            .count();
+        let row_start = zero_prefix.map_or_else(
+            || {
+                (0..row_end)
+                    .take_while(|&row| {
+                        let flat = (limb_base + (row / a_cols) * dsize) * a_cols + row % a_cols;
+                        a_u64[flat * 2 * n..(flat + 1) * 2 * n].iter().all(|&x| x == 0)
+                    })
+                    .count()
+            },
+            |prefix| (a_cols * ((prefix + di) / dsize).min(digit_limbs)).min(row_end),
+        );
         row_starts[di] = row_start as u64;
         row_maxs[di] = (row_end - row_start) as u64;
         limb_offs[di] = limb_off as u64;
@@ -892,49 +1012,113 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma<E: TaskExecutor>(
 
     let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
     let row_max_all = row_maxs.iter().copied().max().unwrap_or(0) as usize;
+    let x_words = 3 * 8 * row_max_all;
+    let rhs_count = if dsize >= 2 { 2 } else { 1 };
+    let task_tmp_len = rhs_count * x_words;
     let res_ptr = SendPtr(res_u64.as_mut_ptr());
-    let process_bq = |x_pm: &mut [u64], bq: usize| {
-        for di in 0..dsize {
-            let limb_off = limb_offs[di] as usize;
-            let col_max = col_maxs[di] as usize;
-            if limb_off >= col_max {
+    let process_bq = |task_tmp: &mut [u64], bq: usize| {
+        let (x0_pm, x1_pm) = task_tmp[..task_tmp_len].split_at_mut(x_words);
+        let mut di = 0;
+        while di < dsize {
+            let pair = di + 1 < dsize
+                && row_maxs[di] != 0
+                && row_starts[di] == row_starts[di + 1]
+                && row_maxs[di] == row_maxs[di + 1]
+                && limb_offs[di + 1] < col_maxs[di].min(col_maxs[di + 1]);
+
+            if pair {
+                let row_start = row_starts[di] as usize;
+                let row_max = row_maxs[di] as usize;
+                let x0_pm = &mut x0_pm[..3 * 8 * row_max];
+                let x1_pm = &mut x1_pm[..3 * 8 * row_max];
+                unsafe {
+                    extract_blk_quad_prime_major_strided(n, row_max, bq, a_u64, a_cols, dsize - 1 - di, dsize, row_start, x0_pm);
+                    extract_blk_quad_prime_major_strided(n, row_max, bq, a_u64, a_cols, dsize - 2 - di, dsize, row_start, x1_pm);
+                }
+
+                let limb_off0 = limb_offs[di] as usize;
+                let limb_off1 = limb_offs[di + 1] as usize;
+                let col_max0 = col_maxs[di] as usize;
+                let col_max1 = col_maxs[di + 1] as usize;
+                let prefix_end = limb_off1.min(col_max0);
+                let shared_start = limb_off1;
+                let shared_end = col_max0.min(col_max1);
+                let tail0_start = prefix_end.max(shared_end);
+                let tail1_start = shared_start.max(shared_end);
+
+                for col_pmat in limb_off0..prefix_end {
+                    let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
+                    unsafe {
+                        let red = madd_reduce_col(x0_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
+                        let dst = res_ptr.get().add((col_pmat - limb_off0) * 2 * n);
+                        save_planar_digit(dst, bq, &pc, di == 0, red);
+                    }
+                }
+
+                for col_pmat in shared_start..shared_end {
+                    let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
+                    unsafe {
+                        let [red0, red1] = madd_reduce_col_x2(x0_pm, x1_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
+                        let dst0 = res_ptr.get().add((col_pmat - limb_off0) * 2 * n);
+                        let dst1 = res_ptr.get().add((col_pmat - limb_off1) * 2 * n);
+                        save_planar_digit(dst0, bq, &pc, di == 0, red0);
+                        save_planar_add(dst1, bq, &pc, red1[0], red1[1], red1[2]);
+                    }
+                }
+
+                for col_pmat in tail0_start..col_max0 {
+                    let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
+                    unsafe {
+                        let red = madd_reduce_col(x0_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
+                        let dst = res_ptr.get().add((col_pmat - limb_off0) * 2 * n);
+                        save_planar_digit(dst, bq, &pc, di == 0, red);
+                    }
+                }
+
+                for col_pmat in tail1_start..col_max1 {
+                    let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
+                    unsafe {
+                        let red = madd_reduce_col(x1_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
+                        let dst = res_ptr.get().add((col_pmat - limb_off1) * 2 * n);
+                        save_planar_add(dst, bq, &pc, red[0], red[1], red[2]);
+                    }
+                }
+
+                di += 2;
                 continue;
             }
+
+            let limb_off = limb_offs[di] as usize;
+            let col_max = col_maxs[di] as usize;
             let row_max = row_maxs[di] as usize;
-            if row_max == 0 {
+            if limb_off >= col_max || row_max == 0 {
+                di += 1;
                 continue;
             }
             let row_start = row_starts[di] as usize;
-            let x_pm = &mut x_pm[..3 * 8 * row_max];
+            let x0_pm = &mut x0_pm[..3 * 8 * row_max];
             unsafe {
-                extract_blk_quad_prime_major_strided(n, row_max, bq, a_u64, a_cols, dsize - 1 - di, dsize, row_start, x_pm)
-            };
+                extract_blk_quad_prime_major_strided(n, row_max, bq, a_u64, a_cols, dsize - 1 - di, dsize, row_start, x0_pm);
+            }
 
             for col_pmat in limb_off..col_max {
-                let col_res = col_pmat - limb_off;
                 let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
-
                 unsafe {
-                    let red = madd_reduce_col(x_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                    let dst_base = res_ptr.get().add(col_res * 2 * n);
-                    if di == 0 {
-                        save_planar_overwrite(dst_base, bq, red[0], red[1], red[2]);
-                    } else {
-                        save_planar_add(dst_base, bq, &pc, red[0], red[1], red[2]);
-                    }
+                    let red = madd_reduce_col(x0_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
+                    let dst = res_ptr.get().add((col_pmat - limb_off) * 2 * n);
+                    save_planar_digit(dst, bq, &pc, di == 0, red);
                 }
             }
+            di += 1;
         }
     };
 
     if !E::is_parallel() || n_blk_quads < 2 {
-        let (_kernel_output, x_pm) = tmp.split_at_mut(32);
-        let x_pm = &mut x_pm[..3 * 8 * row_max_all];
         for bq in 0..n_blk_quads {
-            process_bq(x_pm, bq);
+            process_bq(tmp, bq);
         }
     } else {
-        E::for_each_chunked(n_blk_quads, tmp, 3 * 8 * row_max_all, process_bq);
+        E::for_each_chunked(n_blk_quads, tmp, task_tmp_len, process_bq);
     }
 }
 

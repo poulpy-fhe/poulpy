@@ -7,7 +7,7 @@ Use the [diagnostic](#measuring-your-own-thread-count) for numbers from your own
 ## The short version
 
 1. Use `FFT64` for bin-FHE and gate-level work, and `NTT3x42` for CKKS and leveled work where IFMA is available.
-   Without IFMA the choice between `FFT64` and `NTT4x30` for CKKS depends on your operation mix; see below.
+   Without IFMA, start with packed `NTT4x30` on x86 for a full CKKS pipeline; `FFT64` can be faster for a small, switch-heavy workload.
 2. Within a family, take the widest ISA your CPU supports — run the [capability report](#3-compilation-options) to see which ones this machine has.
    In our measurements the ordering between backends did not change with the thread count.
 3. Use the largest `base2k` the backend allows — 19 bits for `FFT64`, 52 for `NTT4x30` and `NTT3x42`.
@@ -23,31 +23,36 @@ At realistic parameters those keys are hundreds of megabytes, far beyond any cac
 The size of a prepared key is therefore the first thing to look at, and the backend decides it.
 A prepared key holds one DFT-domain word per coefficient per limb, so what matters is the number of bytes it spends per bit of torus precision:
 
-| family | bytes per coefficient | max `base2k` | bytes per torus bit |
+| backend / layout | bytes per coefficient | max `base2k` | bytes per torus bit |
 | --- | --- | --- | --- |
 | `NTT3x42` (IFMA) | 16 | 52 | 0.31 |
+| `NTT4x30` (AVX2 / AVX-512) | 16 | 52 | 0.31 |
 | `FFT64` | 8 | 19 | 0.42 |
-| `NTT4x30` | 32 | 52 | 0.62 |
+| `NTT4x30` (reference / Neon) | 32 | 52 | 0.62 |
 
 A wider limb is only worth what it costs to store.
-`NTT4x30` halves the limb count relative to `FFT64` and more, but spends four times the bytes on each one, so its keys end up the largest of the three.
-`NTT3x42` gets the wide limbs at half the storage and has the smallest keys.
+The AVX2 and AVX-512 `NTT4x30` backends store their four residues as `u32` and widen them only while computing, so each transformed coefficient occupies 16 bytes.
+They therefore have the same storage density as `NTT3x42`; the reference and Neon implementations store four `u64` residues and occupy 32 bytes per transformed coefficient.
 
-This ranking applies to leveled work, where a parameter set fixes the torus precision and the limb counts follow from it.
-In our measurements the CKKS key-switch came out in that order: `NTT3x42` fastest, `FFT64` next, `NTT4x30` last.
+For leveled work, where a parameter set fixes the torus precision and the limb counts follow from it, either packed NTT backend uses about 27% less prepared-key storage per bit than `FFT64`.
+`NTT3x42` remains the fastest because it evaluates three residue streams rather than four.
+Packed `NTT4x30` has denser keys than `FFT64`, but its four modular transforms can leave it behind `FFT64` on an isolated key-switch or relinearized multiplication, especially at smaller ring degrees.
 
 Gate-level parameters fix a handful of limbs rather than a precision, and the ranking changes accordingly.
-`FFT64` needs three narrow limbs where the NTT families need two wide ones, which gives it the smallest key of the three; it was also the fastest, ahead of `NTT3x42` and far ahead of `NTT4x30`.
+`FFT64` needs three narrow limbs where the NTT families need two wide ones; at the parameters we measured that is 24 bytes per coefficient for the FFT key against 32 for either packed NTT key.
+It was also the fastest, ahead of `NTT3x42` and far ahead of `NTT4x30`.
 Compare the size of the prepared key at your own parameters rather than the per-bit figure alone.
 
 Key size governs only half of the cost.
 Everything that works in the coefficient domain instead — addition, encoding and decoding, plaintext operations, normalization — costs one pass per limb, so there the limb count is what matters and a small `base2k` is a straight penalty.
-The two halves pull in opposite directions for `FFT64`, whose limbs are the cheapest to store and the most numerous, so its ranking depends on which operations a circuit spends its time in.
+Packed `NTT4x30` has the advantage in both limb count and prepared-key traffic, while `FFT64` has the cheaper transform.
+Which side determines the runtime depends on the operation and ring degree.
 
 ## 1. Arithmetic family
 
 `FFT64` stores a limb as one `f64` polynomial; the NTT families store it as several word-sized residues, `4 × 30` bits or `3 × 42` bits with IFMA.
-The NTT limbs are wider, so a given torus precision needs fewer of them, but each limb costs several transforms instead of one and, per the table above, more bytes.
+The NTT limbs are wider, so a given torus precision needs fewer of them, but each limb costs several modular transforms instead of one.
+On x86, compact residue storage lets the accelerated NTT backends keep that wider limb without paying more prepared-key bytes per bit.
 
 **Gate-level and bin-FHE work: use `FFT64`.**
 Blind rotation runs at a few limbs on a small ring, where the NTT's wider limbs cannot pay for themselves.
@@ -57,15 +62,14 @@ Blind rotation runs at a few limbs on a small ring, where the NTT's wider limbs 
 It was roughly twice as fast as either alternative on a full bootstrap at equal output precision, and fastest on every individual operation from moderate ring degrees upward, with its lead growing as the ring grows.
 At small ring degrees `FFT64` can win an isolated key-switch, though not the surrounding pipeline.
 
-**Without IFMA, the choice depends on your operation mix.**
-`FFT64` and `NTT4x30` each win a different half of the workload:
+**Without IFMA, packed `NTT4x30` is a strong x86 choice.**
+Its `u32` transformed representation uses half the prepared-key storage and traffic of a four-`u64` representation.
+At realistic leveled parameters its keys are smaller than `FFT64` keys, while its wider limbs reduce coefficient-domain passes.
+This reduces the FFT advantage on key-switch-heavy work and can put NTT4 ahead on a mixed pipeline such as bootstrapping.
+It is not universal: the FFT's cheaper transform can still win an isolated key-switch or relinearized multiplication, and the margin depends on the ring degree and ISA.
 
-- Key-switch-dominated work — rotations, conjugation, relinearized multiplication — favors `FFT64` by a factor of two or more, since its keys are the smallest and the loop streams keys.
-  The margin shrinks as the ring degree grows.
-- Coefficient-domain work — addition, encoding and decoding, plaintext multiplication — favors `NTT4x30` by a similar factor, because `FFT64` needs roughly three times the limbs to reach the same precision and every one of them costs a pass.
-
-On a full bootstrapping, which mixes both, the two landed within about fifteen percent of each other in our measurements.
-Profile your own circuit, or start from whichever half dominates it.
+The qualification matters: `NTT4x30Ref` and `NTT4x30Neon` use the 32-byte transformed representation, so their choice against `FFT64` is operation- and machine-dependent.
+For AVX2 and AVX-512, start with NTT4 for a full CKKS pipeline and FFT for a small, switch-heavy one, then benchmark the actual circuit.
 
 ## 2. Backend
 

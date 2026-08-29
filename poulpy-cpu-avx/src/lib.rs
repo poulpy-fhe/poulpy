@@ -32,6 +32,7 @@
 //! - `DftWord = f64`: coefficients in the DFT / frequency domain.
 //! - `BigWord  = i64`: coefficients in the large-integer (multi-word) domain.
 //!   meaning each coefficient occupies exactly one scalar word.
+//! - `NTT4x30Avx` uses `CrtWord<Primes30, u32>` in the transform domain and `i128` for large coefficients.
 //!
 //! # CPU requirements
 //!
@@ -179,6 +180,8 @@ compile_error!("feature `enable-avx` requires FMA. Build with RUSTFLAGS=\"-C tar
 // AVX modules or their unit tests are compiled.
 #[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]
 mod ckks_impl;
+#[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]
+mod ckks_mod_up;
 #[cfg(feature = "enable-avx")]
 mod core_impl;
 #[cfg(feature = "enable-avx")]
