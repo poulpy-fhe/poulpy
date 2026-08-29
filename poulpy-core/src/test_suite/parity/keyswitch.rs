@@ -48,9 +48,15 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let mut source = Source::new([2u8; 32]);
-    let cases: [(usize, usize, usize, usize); 6] = [
+    let cases: [(usize, usize, usize, usize); 12] = [
         (2, 1, 2, 4),
         (2, 2, 1, 5),
+        (2, 1, 2, 24),
+        (3, 1, 2, 39),
+        (4, 1, 2, 48),
+        (5, 1, 2, 60),
+        (6, 1, 2, 72),
+        (7, 1, 2, 84),
         (3, 1, 1, 7),
         (3, 2, 2, 2),
         (2, 1, 1, 1),
