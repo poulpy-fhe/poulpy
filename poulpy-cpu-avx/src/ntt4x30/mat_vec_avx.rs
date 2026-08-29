@@ -373,8 +373,81 @@ pub(crate) unsafe fn vec_mat1col_product_blkpair_bbc_pm_avx2(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// x2-block, two columns: two q120b × four q120c pairs → four q120b results
+// Block-pair, one column, two right-hand sides
 // ─────────────────────────────────────────────────────────────────────────────
+
+/// Applies one prepared-key column to two input digit spectra.
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx2")]
+pub(crate) unsafe fn vec_mat1col_product_blkpair_bbc_pm_x2_avx2(
+    meta: &BbcMeta<Primes30>,
+    ell: usize,
+    res0: &mut [u64],
+    res1: &mut [u64],
+    x0_pm: &[u64],
+    x1_pm: &[u64],
+    y_pm: &[u64],
+    y_pair_stride: usize,
+) {
+    unsafe {
+        debug_assert!(res0.len() >= 16);
+        debug_assert!(res1.len() >= 16);
+        debug_assert!(x0_pm.len() >= 16 * ell);
+        debug_assert!(x1_pm.len() >= 16 * ell);
+        debug_assert!(y_pm.len() >= y_pair_stride + 4 * ell);
+
+        let mask32 = _mm256_set1_epi64x(u32::MAX as i64);
+        let mask_h2 = _mm256_set1_epi64x(((1u64 << meta.h) - 1) as i64);
+        let x_plane_stride = 4 * ell;
+        let mut prime_outputs0 = [0u64; 16];
+        let mut prime_outputs1 = [0u64; 16];
+
+        for p in 0..4usize {
+            let s2l_pow_red = _mm256_set1_epi64x(meta.s2l_pow_red[p] as i64);
+            let s2h_pow_red = _mm256_set1_epi64x(meta.s2h_pow_red[p] as i64);
+            let x0_ptr = x0_pm.as_ptr().add(p * x_plane_stride) as *const __m256i;
+            let x1_ptr = x1_pm.as_ptr().add(p * x_plane_stride) as *const __m256i;
+            let y_ptr = y_pm.as_ptr().add((p / 2) * y_pair_stride) as *const __m256i;
+            let odd_prime = p & 1 != 0;
+            let mut lo0 = _mm256_setzero_si256();
+            let mut hi0 = _mm256_setzero_si256();
+            let mut lo1 = _mm256_setzero_si256();
+            let mut hi1 = _mm256_setzero_si256();
+
+            for row in 0..ell {
+                let x0 = _mm256_loadu_si256(x0_ptr.add(row));
+                let x1 = _mm256_loadu_si256(x1_ptr.add(row));
+                let y = _mm256_loadu_si256(y_ptr.add(row));
+                let y = if odd_prime {
+                    _mm256_srli_epi64::<32>(y)
+                } else {
+                    _mm256_and_si256(y, mask32)
+                };
+
+                for (x, lo, hi) in [(x0, &mut lo0, &mut hi0), (x1, &mut lo1, &mut hi1)] {
+                    let prod = _mm256_mul_epu32(x, y);
+                    *lo = _mm256_add_epi64(*lo, _mm256_and_si256(prod, mask32));
+                    *hi = _mm256_add_epi64(*hi, _mm256_srli_epi64::<32>(prod));
+                }
+            }
+
+            let out0 = reduce_bbc(lo0, hi0, mask_h2, meta.h, s2l_pow_red, s2h_pow_red);
+            let out1 = reduce_bbc(lo1, hi1, mask_h2, meta.h, s2l_pow_red, s2h_pow_red);
+            _mm256_storeu_si256(prime_outputs0.as_mut_ptr().add(4 * p) as *mut __m256i, out0);
+            _mm256_storeu_si256(prime_outputs1.as_mut_ptr().add(4 * p) as *mut __m256i, out1);
+        }
+
+        for (res, prime_outputs) in [(res0, prime_outputs0), (res1, prime_outputs1)] {
+            for coeff in 0..4 {
+                for prime in 0..4 {
+                    res[4 * coeff + prime] = prime_outputs[4 * prime + coeff];
+                }
+            }
+        }
+    }
+}
+
+// x2-block, two columns: two q120b × four q120c pairs → four q120b results
 
 /// AVX2 x2-block inner product: two columns simultaneously.
 ///
@@ -689,5 +762,13 @@ mod tests {
         }
 
         assert_eq!(res_avx, res_ref, "vec_mat1col_product_blkpair_bbc_pm: AVX2 vs ref mismatch");
+
+        let mut res_pair0 = vec![0u64; 16];
+        let mut res_pair1 = vec![0u64; 16];
+        unsafe {
+            vec_mat1col_product_blkpair_bbc_pm_x2_avx2(&meta, ell, &mut res_pair0, &mut res_pair1, &x_pm, &x_pm, &y_pm, 4 * ell)
+        };
+        assert_eq!(res_pair0, res_ref);
+        assert_eq!(res_pair1, res_ref);
     }
 }

@@ -585,7 +585,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42Ifma> for NTT
         _pmat_cols_out: usize,
         _pmat_size: usize,
     ) -> usize {
-        crate::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a_cols, a_size, dsize, pmat_rows, pmat_cols_in)
+        crate::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a_cols, a_size, dsize, pmat_rows, pmat_cols_in, 1)
     }
 
     fn gglwe_product_digits_strided(
