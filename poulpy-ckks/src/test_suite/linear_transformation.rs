@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use poulpy_core::layouts::{Diagonals, Evaluate, GLWEToBackendRef, LWEInfos, LinearTransformationStrategy};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, HostDataRef, Module, ScratchArena, ZnxView},
+    layouts::{CyclotomicOrder, HostBytesBackend, HostDataRef, Module, ScratchArena, ZnxView, ZnxViewMut},
 };
 
 use crate::{
@@ -71,6 +71,12 @@ where
             ct_ref.data().at(col, bottom_limb).iter().all(|value| value & low_mask == 0),
             "linear transformation produced noncanonical padding in column {col}"
         );
+        for limb in ct.size()..ct_ref.data().size() {
+            assert!(
+                ct_ref.data().at(col, limb).iter().all(|&value| value == 0),
+                "linear transformation left stale data in column {col}, limb {limb}"
+            );
+        }
     }
 }
 
@@ -181,6 +187,7 @@ where
     // transpose = false: dec(lt(enc(a), B)) ≈ B·a. Resident path (prepared RHS).
     let prepared_left = prepare_lt(module, &lt_left, &mut scratch.borrow());
     let mut ct_left = alloc_ct(&params, module, params.k);
+    ct_left.data_mut().raw_mut().fill(1);
     module
         .ckks_eval_linear_transformation_self_into(&mut ct_left, &ct, &prepared_left, &atks, &mut scratch.borrow())
         .unwrap();

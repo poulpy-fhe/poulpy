@@ -11,11 +11,12 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, VecZnxDftToBackendRef, VecZnxToBackendRef,
+        Backend, ScratchArena, VecZnxBackendMut, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef,
+        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef, VecZnxToBackendRef, vec_znx_backend_mut_with_size,
+        vec_znx_reborrow_backend_mut,
     },
 };
 
@@ -215,7 +216,7 @@ pub(super) fn glwe_normalize_big_into<BE, M, R>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: VecZnxBigNormalize<BE> + GLWEShift<BE>,
+    M: VecZnxBigNormalize<BE> + VecZnxZeroBackend<BE> + GLWEShift<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
     let cols = res.rank().as_usize() + 1;
@@ -223,32 +224,53 @@ pub(super) fn glwe_normalize_big_into<BE, M, R>(
     let padding = (res_base2k - res_k % res_base2k) % res_base2k;
     let active_size = res_k.div_ceil(res_base2k);
     {
-        let mut active = GLWEViewMut::<BE>::from_inner(glwe_backend_mut_with_size::<BE>(res.to_backend_mut(), active_size));
-        let mut res_ref = active.to_backend_mut();
-        for col in 0..cols {
-            if padding != 0 && res_base2k == a_base2k {
-                module.vec_znx_big_normalize_partial(
-                    &mut res_ref.data,
-                    res_base2k,
-                    cnv_offset_lo,
-                    padding,
-                    col,
-                    a,
-                    a_base2k,
-                    col,
-                    &mut scratch.borrow(),
-                );
-            } else {
-                module.vec_znx_big_normalize(
-                    &mut res_ref.data,
-                    res_base2k,
-                    cnv_offset_lo,
-                    col,
-                    a,
-                    a_base2k,
-                    col,
-                    &mut scratch.borrow(),
-                );
+        let mut res_ref = res.to_backend_mut();
+        let res_size = res_ref.data.size();
+        {
+            let mut active =
+                vec_znx_backend_mut_with_size::<BE>(vec_znx_reborrow_backend_mut::<BE>(&mut res_ref.data), active_size);
+            for col in 0..cols {
+                if padding != 0 && res_base2k == a_base2k {
+                    module.vec_znx_big_normalize_partial(
+                        &mut active,
+                        res_base2k,
+                        cnv_offset_lo,
+                        padding,
+                        col,
+                        a,
+                        a_base2k,
+                        col,
+                        &mut scratch.borrow(),
+                    );
+                } else {
+                    module.vec_znx_big_normalize(
+                        &mut active,
+                        res_base2k,
+                        cnv_offset_lo,
+                        col,
+                        a,
+                        a_base2k,
+                        col,
+                        &mut scratch.borrow(),
+                    );
+                }
+            }
+        }
+        if active_size < res_size {
+            // Scratch-backed outputs are copied at allocation width.
+            let n = res_ref.data.n();
+            let data_cols = res_ref.data.cols();
+            let tail_size = res_size - active_size;
+            let offset = BE::bytes_of_vec_znx(n, data_cols, active_size);
+            let len = BE::bytes_of_vec_znx(n, data_cols, tail_size);
+            let mut tail = VecZnxBackendMut::<BE>::from_data(
+                BE::region_mut_ref(&mut res_ref.data.data, offset, len),
+                n,
+                data_cols,
+                tail_size,
+            );
+            for col in 0..cols {
+                module.vec_znx_zero_backend(&mut tail, col);
             }
         }
     }

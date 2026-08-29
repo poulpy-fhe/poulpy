@@ -12,7 +12,7 @@ use poulpy_hal::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
         VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxZeroBackend,
     },
     layouts::{
         Backend, GaloisElement, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -169,6 +169,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
+        + VecZnxZeroBackend<BE>
         + GLWEMulPlain<BE>
         + GLWEShift<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,

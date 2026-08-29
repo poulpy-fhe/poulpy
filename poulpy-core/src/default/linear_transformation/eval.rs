@@ -15,7 +15,7 @@ use poulpy_hal::{
         VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
         VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
         VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxZeroBackend,
     },
     layouts::{Backend, GaloisElement, ScratchArena},
 };
@@ -226,6 +226,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
+        + VecZnxZeroBackend<BE>
         + GLWEMulPlain<BE>
         + GLWEShift<BE>
         + GaloisElement,
