@@ -83,8 +83,9 @@ where
 
         let mut key = module.glwe_automorphism_key_alloc_from_infos(&stored);
         let mut key_twin = module.glwe_automorphism_key_alloc_from_infos(&twin);
-        fill_by_digit(&mut key.key, stride, 0);
-        fill_by_digit(&mut key_twin.key, 1, 0);
+        let seed: [u8; 32] = [7u8; 32];
+        fill_by_digit(&mut key.key, stride, &mut Source::new(seed));
+        fill_by_digit(&mut key_twin.key, 1, &mut Source::new(seed));
         key.p = p;
         key_twin.p = p;
 
@@ -208,8 +209,11 @@ where
 
         let mut key = module.glwe_automorphism_key_alloc_from_infos(&stored);
         let mut key_twin = module.glwe_automorphism_key_alloc_from_infos(&twin);
-        fill_by_digit(&mut key.key, stride, salt as u64);
-        fill_by_digit(&mut key_twin.key, 1, salt as u64);
+        // A distinct stream per rotation: the keys of a trace must differ.
+        let mut seed: [u8; 32] = [11u8; 32];
+        seed[0..8].copy_from_slice(&(salt as u64).to_le_bytes());
+        fill_by_digit(&mut key.key, stride, &mut Source::new(seed));
+        fill_by_digit(&mut key_twin.key, 1, &mut Source::new(seed));
         key.p = *gal_el;
         key_twin.p = *gal_el;
 
@@ -276,8 +280,9 @@ where
 
         let mut tsk = module.glwe_tensor_key_alloc_from_infos(&stored);
         let mut tsk_twin = module.glwe_tensor_key_alloc_from_infos(&twin);
-        fill_by_digit(&mut tsk.0, stride, 0);
-        fill_by_digit(&mut tsk_twin.0, 1, 0);
+        let seed: [u8; 32] = [13u8; 32];
+        fill_by_digit(&mut tsk.0, stride, &mut Source::new(seed));
+        fill_by_digit(&mut tsk_twin.0, 1, &mut Source::new(seed));
 
         let mut prep = ScratchOwned::<BE>::alloc(
             module
