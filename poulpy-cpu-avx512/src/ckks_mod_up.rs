@@ -197,7 +197,7 @@ where
         return ckks_encapsulated_mod_up_default(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch);
     }
 
-    module.glwe_keyswitch_assign(src, dense_to_sparse, scratch);
+    module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     let shift = k_large - k_small - scale_up;
     module.glwe_copy(dst, src);
     module.glwe_rsh(shift, dst, scratch);
