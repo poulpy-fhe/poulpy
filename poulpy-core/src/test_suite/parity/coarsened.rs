@@ -11,6 +11,7 @@
 //! key on the right is already pinned by the noise suite, so nothing here
 //! needs a secret, an encryption or a bound.
 
+use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -184,8 +185,13 @@ where
         let have_key = have_keys
             .get_automorphism_key(p, ct_in.k())
             .unwrap_or_else(|e| panic!("coarsened automorphism key: {e}"));
-        module.glwe_automorphism(&mut have, &ct_in, &&have_key, &mut scratch.borrow());
-        module.glwe_automorphism(&mut want, &ct_in, &twin_prep, &mut scratch.borrow());
+        module.glwe_automorphism(&mut have, &ct_in, &have_key, &mut scratch.borrow());
+        module.glwe_automorphism(
+            &mut want,
+            &ct_in,
+            &GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(&twin_prep),
+            &mut scratch.borrow(),
+        );
         same(
             &have,
             &want,
@@ -198,8 +204,12 @@ where
         let have_key = have_keys
             .get_automorphism_key(p, have.k())
             .unwrap_or_else(|e| panic!("coarsened automorphism key: {e}"));
-        module.glwe_automorphism_add_assign(&mut have, &&have_key, &mut scratch.borrow());
-        module.glwe_automorphism_add_assign(&mut want, &twin_prep, &mut scratch.borrow());
+        module.glwe_automorphism_add_assign(&mut have, &have_key, &mut scratch.borrow());
+        module.glwe_automorphism_add_assign(
+            &mut want,
+            &GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(&twin_prep),
+            &mut scratch.borrow(),
+        );
         same(
             &have,
             &want,
@@ -212,8 +222,12 @@ where
         let have_key = have_keys
             .get_automorphism_key(p, have.k())
             .unwrap_or_else(|e| panic!("coarsened automorphism key: {e}"));
-        module.glwe_automorphism_assign(&mut have, &&have_key, &mut scratch.borrow());
-        module.glwe_automorphism_assign(&mut want, &twin_prep, &mut scratch.borrow());
+        module.glwe_automorphism_assign(&mut have, &have_key, &mut scratch.borrow());
+        module.glwe_automorphism_assign(
+            &mut want,
+            &GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(&twin_prep),
+            &mut scratch.borrow(),
+        );
         same(&have, &want, &format!("assign dsize={dsize} dnum={dnum} s={s} rank={rank}"));
     }
 }

@@ -144,7 +144,7 @@ where
                     k: ct.k().into(),
                 }
             })?;
-            self.glwe_automorphism_add_assign(ct, &&key, scratch);
+            self.glwe_automorphism_add_assign(ct, &key, scratch);
         }
         Ok(())
     }

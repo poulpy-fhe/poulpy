@@ -16,7 +16,10 @@ use poulpy_ckks::{
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     default::keyswitching::glwe::gglwe_product_output_size,
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GGLWEPreparedToBackendRef},
+    layouts::{
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
+    },
     oep::GGLWEProductDigitsStridedImpl,
 };
 use poulpy_hal::{
@@ -165,13 +168,13 @@ impl ModUpBackend for NTT3x42IfmaRayon {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn encapsulated_mod_up<BE, Dst, Src, D2S, S2D>(
+fn encapsulated_mod_up<BE, Dst, Src>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,
     scale_up: usize,
-    dense_to_sparse: &D2S,
-    sparse_to_dense: &S2D,
+    dense_to_sparse: &GGLWEPreparedBackendRef<'_, BE>,
+    sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<()>
 where
@@ -188,8 +191,6 @@ where
         + VecZnxIdftApply<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    D2S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    S2D: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let k_large = dst.k().as_usize();
     let k_small = src.k().as_usize();
@@ -301,20 +302,18 @@ macro_rules! impl_encapsulated_mod_up {
                 )
             }
 
-            fn ckks_encapsulated_mod_up<Dst, Src, D2S, S2D>(
+            fn ckks_encapsulated_mod_up<Dst, Src>(
                 module: &Module<$be>,
                 dst: &mut Dst,
                 src: &mut Src,
                 scale_up: usize,
-                dense_to_sparse: &D2S,
-                sparse_to_dense: &S2D,
+                dense_to_sparse: &GGLWEPreparedBackendRef<'_, $be>,
+                sparse_to_dense: &GGLWEPreparedBackendRef<'_, $be>,
                 scratch: &mut ScratchArena<'_, $be>,
             ) -> CKKSResult<()>
             where
                 Dst: GLWEToBackendMut<$be> + GLWEToBackendRef<$be> + CKKSCtBounds + SetCKKSInfos,
                 Src: GLWEToBackendMut<$be> + GLWEToBackendRef<$be> + CKKSCtBounds + SetCKKSInfos,
-                D2S: GGLWEPreparedToBackendRef<$be> + GGLWEInfos,
-                S2D: GGLWEPreparedToBackendRef<$be> + GGLWEInfos,
             {
                 encapsulated_mod_up(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch)
             }

@@ -162,7 +162,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             let key = atks
                 .get_automorphism_key(p, ct.k())
                 .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
-            module.glwe_automorphism(&mut expected, &ct, &&key, &mut scratch.borrow());
+            module.glwe_automorphism(&mut expected, &ct, &key, &mut scratch.borrow());
         }
 
         let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size());

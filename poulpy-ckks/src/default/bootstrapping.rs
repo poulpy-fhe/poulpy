@@ -4,7 +4,7 @@ use poulpy_core::{
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
         SetBSGSMeta,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -346,7 +346,15 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
 
         match keys.encapsulation_keys() {
             Some((dense_to_sparse, sparse_to_dense)) => {
-                BE::ckks_encapsulated_mod_up(self.0, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch)?;
+                BE::ckks_encapsulated_mod_up(
+                    self.0,
+                    dst,
+                    src,
+                    scale_up,
+                    &dense_to_sparse.to_backend_ref(),
+                    &sparse_to_dense.to_backend_ref(),
+                    scratch,
+                )?;
             }
             None => self.ckks_mod_up_into_default(dst, src, scale_up, scratch)?,
         }
@@ -954,13 +962,13 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
 /// Reference SSE pipeline: switch to the sparse secret before ModUp to bound
 /// wrap-around, then restore the dense secret afterward.
 #[doc(hidden)]
-pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src, D2S, S2D>(
+pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,
     scale_up: usize,
-    dense_to_sparse: &D2S,
-    sparse_to_dense: &S2D,
+    dense_to_sparse: &GGLWEPreparedBackendRef<'_, BE>,
+    sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -968,8 +976,6 @@ where
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    D2S: poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    S2D: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     // The lift is fused into ModUp, so the message is already at its final scale

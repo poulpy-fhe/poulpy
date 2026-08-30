@@ -19,6 +19,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
     EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWESwitchingKeyEncryptSk,
     layouts::{
@@ -285,10 +286,20 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
         // 0x00 then 0xFF: as `f64` the poison is NaN and as `i64` it is -1, so any
         // limb read before being written shows up in the digest.
         <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut scratch.data).fill(0x00);
-        module.glwe_external_product(&mut over_zeroed, &glwe_in, &ggsw_prepared, &mut scratch.borrow());
+        module.glwe_external_product(
+            &mut over_zeroed,
+            &glwe_in,
+            &ggsw_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
 
         <BE::OwnedBuf as AsMut<[u8]>>::as_mut(&mut scratch.data).fill(0xFF);
-        module.glwe_external_product(&mut over_poisoned, &glwe_in, &ggsw_prepared, &mut scratch.borrow());
+        module.glwe_external_product(
+            &mut over_poisoned,
+            &glwe_in,
+            &ggsw_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
 
         assert_eq!(
             over_zeroed.data().digest_u64(),

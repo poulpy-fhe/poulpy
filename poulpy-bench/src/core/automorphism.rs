@@ -19,6 +19,7 @@ use criterion::{Bencher, measurement::Measurement};
 
 use crate::core::fill::{host_glwe, host_glwe_automorphism_key, staging};
 use crate::core::params::{CoreParams, key_dnum_k_aux};
+use poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 
 /// Times the GLWE automorphism with a fixed Galois element (`X -> X^3`).
 ///
@@ -76,7 +77,7 @@ pub fn runner_glwe_automorphism<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHos
     host_glwe(&host, &glwe_infos, &mut source).transfer_into(&mut ct_in);
 
     bencher.iter(|| {
-        module.glwe_automorphism(&mut ct_out, &ct_in, &atk_prepared, &mut scratch.borrow());
+        module.glwe_automorphism(&mut ct_out, &ct_in, &atk_prepared.to_backend_ref(), &mut scratch.borrow());
         black_box(());
     });
 }

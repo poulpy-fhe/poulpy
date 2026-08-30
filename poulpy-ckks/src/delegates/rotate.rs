@@ -42,7 +42,7 @@ where
                 rotation: k,
                 k: src.k().into(),
             })?;
-        BE::ckks_rotate_into_impl(self, dst, src, &&key, scratch)
+        BE::ckks_rotate_into_impl(self, dst, src, &key, scratch)
     }
 
     fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -58,6 +58,6 @@ where
                 rotation: k,
                 k: dst.k().into(),
             })?;
-        BE::ckks_rotate_assign_impl(self, dst, &&key, scratch)
+        BE::ckks_rotate_assign_impl(self, dst, &key, scratch)
     }
 }

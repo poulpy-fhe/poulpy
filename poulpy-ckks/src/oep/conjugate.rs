@@ -3,7 +3,7 @@ use crate::default::conjugate::CKKSConjugateDefault;
 
 use poulpy_core::{
     GLWEAutomorphism,
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, prepared::GGLWEPreparedToBackendRef},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWEAutomorphismKeyPreparedBackendRef},
 };
 use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
@@ -20,27 +20,25 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 pub unsafe trait CKKSConjugateImpl<BE: Backend>: Backend {
     fn ckks_conjugate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize;
 
-    fn ckks_conjugate_into_impl<Dst, Src, K>(
+    fn ckks_conjugate_into_impl<Dst, Src>(
         module: &Module<BE>,
         dst: &mut Dst,
         src: &Src,
-        key: &K,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds;
 
-    fn ckks_conjugate_assign_impl<Dst, K>(
+    fn ckks_conjugate_assign_impl<Dst>(
         module: &Module<BE>,
         dst: &mut Dst,
-        key: &K,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
 unsafe impl<BE: Backend> CKKSConjugateImpl<BE> for BE
@@ -52,30 +50,28 @@ where
         module.ckks_conjugate_tmp_bytes_default(ct_infos, key_infos)
     }
 
-    fn ckks_conjugate_into_impl<Dst, Src, K>(
+    fn ckks_conjugate_into_impl<Dst, Src>(
         module: &Module<BE>,
         dst: &mut Dst,
         src: &Src,
-        key: &K,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     {
         module.ckks_conjugate_into_default(dst, src, key, scratch)
     }
 
-    fn ckks_conjugate_assign_impl<Dst, K>(
+    fn ckks_conjugate_assign_impl<Dst>(
         module: &Module<BE>,
         dst: &mut Dst,
-        key: &K,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     {
         module.ckks_conjugate_assign_default(dst, key, scratch)
     }

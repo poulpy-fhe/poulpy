@@ -341,7 +341,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
             let key = keys
                 .get_automorphism_key(p, fallback_acc.k())
                 .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
-            module.glwe_automorphism_assign(&mut fallback_acc, &&key, &mut scratch_phase);
+            module.glwe_automorphism_assign(&mut fallback_acc, &key, &mut scratch_phase);
         }
 
         if res_initialized {

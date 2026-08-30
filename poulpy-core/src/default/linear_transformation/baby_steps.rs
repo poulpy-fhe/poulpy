@@ -296,7 +296,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
                 let key = keys
                     .get_automorphism_key(p, a.k())
                     .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
-                module.glwe_automorphism(&mut baby, a, &&key, &mut baby_scratch.borrow());
+                module.glwe_automorphism(&mut baby, a, &key, &mut baby_scratch.borrow());
                 let baby_ref = baby.to_backend_ref();
                 module.cnv_prepare_left(
                     &mut prepared.to_backend_mut(),

@@ -13,8 +13,9 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEViewRef, GetGaloisElement, SetGaloisElement,
-        glwe_backend_ref_from_mut, prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEViewRef, GetGaloisElement, SetGaloisElement,
+        glwe_backend_ref_from_mut,
+        prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
     oep::{GGLWEAutomorphismDefault, GLWEKeyswitchDefault},
 };
@@ -46,11 +47,11 @@ where
     }
 }
 
-pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
+pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
-    key: &K,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -64,7 +65,6 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
         + CyclotomicOrder,
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
     A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
 {
     assert!(
         res.dnum().as_u32() <= a.dnum().as_u32(),
@@ -130,16 +130,15 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
     res.set_p((p * key.p()) % module.cyclotomic_order());
 }
 
-pub fn glwe_automorphism_key_automorphism_assign_default<BE, M, R, K>(
+pub fn glwe_automorphism_key_automorphism_assign_default<BE, M, R>(
     module: &M,
     res: &mut R,
-    key: &K,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GaloisElement + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE> + CyclotomicOrder,
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
 {
     assert_eq!(res.rank(), key.rank(), "key rank: {} != key rank: {}", res.rank(), key.rank());
 

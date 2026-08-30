@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 use poulpy_core::{
     GLWECopy,
     layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
@@ -177,7 +178,7 @@ fn add_core<A, S, M, BE>(
         }
         1 => {
             let selector_bit = selector.get_bit(i + offset);
-            module.cmux_assign_neg(&mut acc_prev[0].data, a, selector_bit, scratch);
+            module.cmux_assign_neg(&mut acc_prev[0].data, a, &selector_bit.to_backend_ref(), scratch);
 
             if !acc_next.is_empty() {
                 add_core(module, &acc_prev[0].data, acc_next, i + 1, selector, offset, scratch);
@@ -246,7 +247,7 @@ where
             for j in 0..t {
                 if j + t < res.len() {
                     let (lo, hi) = res.split_at_mut(j + t);
-                    self.cswap(&mut lo[j], &mut hi[0], bit, &mut scratch.borrow());
+                    self.cswap(&mut lo[j], &mut hi[0], &bit.to_backend_ref(), &mut scratch.borrow());
                 }
             }
         }
@@ -276,7 +277,7 @@ where
             for j in 0..t {
                 if j < res.len() && j + t < res.len() {
                     let (lo, hi) = res.split_at_mut(j + t);
-                    self.cswap(&mut lo[j], &mut hi[0], bit, &mut scratch.borrow());
+                    self.cswap(&mut lo[j], &mut hi[0], &bit.to_backend_ref(), &mut scratch.borrow());
                 }
             }
         }

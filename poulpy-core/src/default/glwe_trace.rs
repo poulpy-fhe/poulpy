@@ -108,7 +108,7 @@ where
         let key = keys
             .get_automorphism_key(p, res.k())
             .unwrap_or_else(|e| panic!("trace rotation {p}: {e}"));
-        module.glwe_automorphism_add_assign(res, &&key, scratch);
+        module.glwe_automorphism_add_assign(res, &key, scratch);
     }
 }
 

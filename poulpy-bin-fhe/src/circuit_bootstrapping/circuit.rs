@@ -23,6 +23,7 @@ use crate::{
     circuit_bootstrapping::{CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyPrepared},
 };
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::prepared::GGLWEToGGSWKeyPreparedToBackendRef;
 
 /// Trait for evaluating a complete circuit bootstrapping.
 ///
@@ -403,7 +404,7 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
     }
 
     // Expands GGLWE to GGSW using GGLWE(s^2)
-    module.ggsw_expand_row(res, &key.tsk, &mut scratch_1.borrow());
+    module.ggsw_expand_row(res, &key.tsk.to_backend_ref(), &mut scratch_1.borrow());
 }
 
 #[allow(clippy::too_many_arguments)]

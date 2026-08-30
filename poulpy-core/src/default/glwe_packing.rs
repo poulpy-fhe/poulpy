@@ -52,7 +52,7 @@ fn pack_internal<M, A, B, H, BE: Backend>(
             let key = keys
                 .get_automorphism_key(p, tmp_b.k())
                 .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
-            module.glwe_automorphism_assign(&mut tmp_b, &&key, scratch);
+            module.glwe_automorphism_assign(&mut tmp_b, &key, scratch);
             module.glwe_sub_assign(a, &tmp_b);
             module.glwe_normalize_assign(a, scratch);
             module.glwe_rotate_assign(t, a, scratch);
@@ -61,7 +61,7 @@ fn pack_internal<M, A, B, H, BE: Backend>(
             let key = keys
                 .get_automorphism_key(p, a.k())
                 .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
-            module.glwe_automorphism_add_assign(a, &&key, scratch)
+            module.glwe_automorphism_add_assign(a, &key, scratch)
         }
     } else if let Some(b) = b.as_deref_mut() {
         let t: i64 = 1 << (b.n().log2() - i - 1);
@@ -73,7 +73,7 @@ fn pack_internal<M, A, B, H, BE: Backend>(
         let key = keys
             .get_automorphism_key(p, tmp_b.k())
             .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
-        module.glwe_automorphism_sub_negate(b, &tmp_b, &&key, scratch)
+        module.glwe_automorphism_sub_negate(b, &tmp_b, &key, scratch)
     }
 }
 

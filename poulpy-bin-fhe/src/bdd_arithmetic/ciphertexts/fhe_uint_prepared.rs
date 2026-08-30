@@ -18,6 +18,7 @@ use crate::bdd_arithmetic::{Cmux, FromBits, UnsignedInteger};
 use crate::blind_rotation::BlindRotationAlgo;
 use crate::circuit_bootstrapping::{CircuitBootstrappingExecute, CircuitBootstrappingKeyInfos};
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 
 /// A DFT-prepared FHE ciphertext encoding each bit of a [`UnsignedInteger`]
 /// as a separate GGSW ciphertext.
@@ -488,7 +489,15 @@ where
             &|bit, res_bit, scratch| {
                 let (mut tmp_ggsw, scratch_bit) = scratch.borrow().take_ggsw_scratch(ggsw_infos);
                 let (mut tmp_lwe, mut scratch_bit) = scratch_bit.take_lwe_scratch(bits);
-                bits.get_bit_lwe(self, bit, &mut tmp_lwe, ks_glwe, ks_lwe, &mut scratch_bit);
+                let ks_glwe_ref = ks_glwe.map(|k| k.to_backend_ref());
+                bits.get_bit_lwe(
+                    self,
+                    bit,
+                    &mut tmp_lwe,
+                    ks_glwe_ref.as_ref(),
+                    &ks_lwe.to_backend_ref(),
+                    &mut scratch_bit,
+                );
                 cbt.execute_to_constant(self, &mut tmp_ggsw.to_backend_mut(), &tmp_lwe, 1, 1, &mut scratch_bit);
                 self.ggsw_prepare(res_bit, &tmp_ggsw, &mut scratch_bit);
             },

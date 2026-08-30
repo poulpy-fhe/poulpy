@@ -45,7 +45,7 @@ where
                 rotation: k,
                 k: src.k().into(),
             })?;
-        BE::ckks_conjugate_into_impl(self, dst, src, &&key, scratch)
+        BE::ckks_conjugate_into_impl(self, dst, src, &key, scratch)
     }
 
     fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -60,6 +60,6 @@ where
                 rotation: 0,
                 k: dst.k().into(),
             })?;
-        BE::ckks_conjugate_assign_impl(self, dst, &&key, scratch)
+        BE::ckks_conjugate_assign_impl(self, dst, &key, scratch)
     }
 }
