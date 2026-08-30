@@ -82,7 +82,7 @@ impl<BE: Backend<ZnxWord = i64, OwnedBuf: HostDataMut>> CoarsenBackend for BE {}
 /// The coarsened twin of `parent`, and the stride the parent must be filled at
 /// to match it.
 fn twin_layout(parent: &GGLWELayout, dsize: Dsize) -> (GGLWELayout, usize) {
-    let twin: GGLWELayout = parent.gglwe_layout_at_dsize(dsize).unwrap();
+    let twin: GGLWELayout = parent.at_dsize(dsize).unwrap();
     (twin, dsize.as_usize() / parent.dsize().as_usize())
 }
 

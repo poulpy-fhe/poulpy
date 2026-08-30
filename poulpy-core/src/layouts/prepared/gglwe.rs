@@ -222,14 +222,14 @@ impl<D: Data, B: Backend> GGLWEPrepared<D, B> {
 
 impl<D: Data, B: Backend> GGLWEPrepared<D, B> {
     /// This key read through a coarser `dsize`. No row is copied, only the
-    /// scalars change; see [`GGLWEInfos::gglwe_layout_at_dsize`] for the rule.
+    /// scalars change; see [`GGLWELayout::at_dsize`] for the rule.
     pub fn with_dsize(&self, dsize: Dsize) -> Result<GGLWEPreparedBackendRef<'_, B>>
     where
         Self: GGLWEPreparedToBackendRef<B>,
     {
         let mut key: GGLWEPreparedBackendRef<'_, B> = self.to_backend_ref();
-        let coarse: GGLWELayout = key.gglwe_layout_at_dsize(dsize)?;
-        key.stride *= dsize.as_usize() / key.dsize.as_usize();
+        let coarse: GGLWELayout = key.gglwe_layout().at_dsize(dsize)?;
+        key.stride = coarse.stride;
         key.dsize = coarse.dsize;
         key.dnum = coarse.dnum;
         key.k_aux = coarse.k_aux;

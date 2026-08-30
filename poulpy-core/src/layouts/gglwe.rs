@@ -53,61 +53,18 @@ where
             stride,
         }
     }
-
-    /// This layout read at a coarser `dsize`, where digit `i` is stored row
-    /// `(i + 1) * dsize / self.dsize() - 1`.
-    ///
-    /// The last coarse digit still needs a full digit of padding behind it, so
-    /// the digits the stride allows are capped by what the precision can guard
-    /// and the rest stays as that guard: `k()` and `max_size()` do not move.
-    ///
-    /// Fails unless `dsize` is a multiple of the stored one and the key is wide
-    /// enough for a digit of that size plus its guard.
-    fn gglwe_layout_at_dsize(&self, dsize: Dsize) -> Result<GGLWELayout> {
-        let (stored, base2k) = (self.dsize().as_usize(), self.base2k().as_usize());
-        let fail = |detail: String| CoreError::GGLWEKeyUse {
-            op: "gglwe_layout_at_dsize",
-            detail,
-        };
-
-        if stored == 0 || !dsize.as_usize().is_multiple_of(stored) {
-            return Err(fail(format!("dsize={dsize} is not a multiple of the key's dsize={stored}")));
-        }
-        let stride: usize = dsize.as_usize() / stored;
-        if stride == 1 {
-            return Ok(self.gglwe_layout());
-        }
-
-        let (total, digit) = (self.k().as_usize(), dsize.as_usize() * base2k);
-        if total <= digit {
-            return Err(fail(format!(
-                "key holds {total} bits, too few for a digit of {digit} plus its guard"
-            )));
-        }
-        let dnum: usize = (self.dnum().as_usize() / stride).min(total / digit - 1);
-        if dnum == 0 {
-            return Err(fail(format!("key has no digit reachable at dsize={dsize}")));
-        }
-
-        Ok(GGLWELayout {
-            dnum: Dnum(dnum as u32),
-            dsize,
-            k_aux: TorusPrecision((total - dnum * digit) as u32),
-            stride: self.stride() * stride,
-            ..self.gglwe_layout()
-        })
-    }
 }
 
 /// Every `dsize` this key can be read at, with the digits each reaches.
 ///
 /// Ascending, always starting with the stored `(dsize(), dnum())`.
 pub(crate) fn valid_dsizes<A: GGLWEInfos + ?Sized>(infos: &A) -> Vec<(Dsize, Dnum)> {
-    let stored: usize = infos.dsize().as_usize();
+    let layout = infos.gglwe_layout();
+    let stored: usize = layout.dsize.as_usize();
     (1..=infos.dnum().as_usize())
         .filter_map(|stride| {
             let dsize = Dsize((stride * stored) as u32);
-            infos.gglwe_layout_at_dsize(dsize).ok().map(|l| (dsize, l.dnum))
+            layout.at_dsize(dsize).ok().map(|l| (dsize, l.dnum))
         })
         .collect()
 }
@@ -180,6 +137,52 @@ pub struct GGLWELayout {
     /// Row stride for a coarsened view of a stored key. `1` means the key is
     /// used as stored.
     pub stride: usize,
+}
+
+impl GGLWELayout {
+    /// This layout read at a coarser `dsize`, where digit `i` is stored row
+    /// `(i + 1) * dsize / self.dsize - 1`.
+    ///
+    /// The last coarse digit still needs a full digit of padding behind it, so
+    /// the digits the stride allows are capped by what the precision can guard
+    /// and the rest stays as that guard: `k()` and `max_size()` do not move.
+    ///
+    /// Fails unless `dsize` is a multiple of the stored one and the key is wide
+    /// enough for a digit of that size plus its guard.
+    pub fn at_dsize(&self, dsize: Dsize) -> Result<Self> {
+        let (stored, base2k) = (self.dsize.as_usize(), self.base2k.as_usize());
+        let fail = |detail: String| CoreError::GGLWEKeyUse {
+            op: "GGLWELayout::at_dsize",
+            detail,
+        };
+
+        if stored == 0 || !dsize.as_usize().is_multiple_of(stored) {
+            return Err(fail(format!("dsize={dsize} is not a multiple of the key's dsize={stored}")));
+        }
+        let stride: usize = dsize.as_usize() / stored;
+        if stride == 1 {
+            return Ok(*self);
+        }
+
+        let (total, digit) = (self.k().as_usize(), dsize.as_usize() * base2k);
+        if total <= digit {
+            return Err(fail(format!(
+                "key holds {total} bits, too few for a digit of {digit} plus its guard"
+            )));
+        }
+        let dnum: usize = (self.dnum.as_usize() / stride).min(total / digit - 1);
+        if dnum == 0 {
+            return Err(fail(format!("key has no digit reachable at dsize={dsize}")));
+        }
+
+        Ok(Self {
+            dnum: Dnum(dnum as u32),
+            dsize,
+            k_aux: TorusPrecision((total - dnum * digit) as u32),
+            stride: self.stride * stride,
+            ..*self
+        })
+    }
 }
 
 impl LWEInfos for GGLWELayout {

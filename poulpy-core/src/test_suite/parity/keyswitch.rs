@@ -21,8 +21,8 @@ use crate::{
     api::TransferInto,
     default::keyswitching::GGLWEProductDefault,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWELayout, LWEInfos,
-        ModuleCoreAlloc, Rank, TorusPrecision, gadget_product_limbs, key_size, prepared::GGLWEPreparedFactory,
+        Base2K, Degree, Dnum, Dsize, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWELayout, LWEInfos, ModuleCoreAlloc,
+        Rank, TorusPrecision, gadget_product_limbs, key_size, prepared::GGLWEPreparedFactory,
     },
     oep::GGLWEProductDigitsStridedImpl,
     test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe},
@@ -421,7 +421,7 @@ where
             stride: 1,
         };
         let effective = Dsize(dsize * s);
-        let coarse: GGLWELayout = parent.gglwe_layout_at_dsize(effective).unwrap();
+        let coarse: GGLWELayout = parent.at_dsize(effective).unwrap();
         let (stride, sel_dnum, sel_k_aux) = (s as usize, coarse.dnum, coarse.k_aux);
         let (cols_in, cols_out) = (parent.rank_in.as_usize(), (parent.rank_out + 1).as_usize());
         let (rows, size) = (parent.dnum.as_usize(), parent.max_size());
