@@ -52,6 +52,7 @@ pub fn runner_glwe_automorphism<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHos
         rank_out: Rank(cp.rank),
         dnum: Dnum(dnum),
         dsize: Dsize(cp.dsize),
+        stride: 1,
     };
 
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);

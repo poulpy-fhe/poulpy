@@ -156,6 +156,7 @@ fn key_layout(n: u32, base2k: usize, k: usize, dsize: usize, rank_in: usize, ran
         k_aux: TorusPrecision((dsize * base2k) as u32),
         rank_in: Rank(rank_in as u32),
         rank_out: Rank(rank_out as u32),
+        stride: 1,
     }
 }
 
@@ -417,6 +418,7 @@ where
             k_aux: TorusPrecision(dsize * base2k as u32 + n.ilog2()),
             rank_in: Rank(1),
             rank_out: Rank(1),
+            stride: 1,
         };
         let effective = Dsize(dsize * s);
         let coarse: GGLWELayout = parent.gglwe_layout_at_dsize(effective).unwrap();
@@ -502,6 +504,7 @@ where
             dnum: sel_dnum,
             dsize: effective,
             k_aux: sel_k_aux,
+            stride,
             ..parent
         };
 

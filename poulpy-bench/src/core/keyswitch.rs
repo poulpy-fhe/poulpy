@@ -54,6 +54,7 @@ pub fn runner_glwe_keyswitch<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
         rank_out: Rank(cp.rank),
         dnum: Dnum(dnum),
         dsize: Dsize(cp.dsize),
+        stride: 1,
     };
 
     let glwe_in = &glwe;

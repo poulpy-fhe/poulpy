@@ -206,6 +206,7 @@ pub(crate) trait GGSWNoiseModel: GGSWInfos {
             dsize: self.dsize(),
             rank_in: self.rank() + 1,
             rank_out: self.rank(),
+            stride: 1,
         }
     }
 

@@ -369,6 +369,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in,
             rank_out,
+            stride: 1,
         })
     }
 
@@ -535,6 +536,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in,
             rank_out,
+            stride: 1,
         })
     }
 
@@ -560,6 +562,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: rank,
             rank_out: rank,
             dsize,
+            stride: 1,
         })
     }
 
@@ -583,6 +586,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: Rank(pairs),
             rank_out: rank,
             dsize,
+            stride: 1,
         })
     }
 
@@ -606,6 +610,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in,
             rank_out: Rank(1),
             dsize: Dsize(1),
+            stride: 1,
         })
     }
 
@@ -637,6 +642,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: rank,
             rank_out: rank,
             dsize,
+            stride: 1,
         })
     }
 
@@ -749,6 +755,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: Rank(1),
             rank_out,
             dsize: Dsize(1),
+            stride: 1,
         })
     }
 }

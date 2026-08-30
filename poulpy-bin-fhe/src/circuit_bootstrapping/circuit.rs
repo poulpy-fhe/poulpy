@@ -180,6 +180,7 @@ where
             dsize: Dsize(1),
             rank_in: res_infos.rank().max(Rank(1)),
             rank_out: res_infos.rank(),
+            stride: 1,
         };
 
         self.blind_rotation_execute_tmp_bytes(block_size, extension_factor, res_infos, &cbt_infos.brk_infos())

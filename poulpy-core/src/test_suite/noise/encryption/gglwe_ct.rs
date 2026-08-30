@@ -52,6 +52,7 @@ where
                     dsize: di.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
+                    stride: 1,
                 })
                 .unwrap();
 
@@ -125,6 +126,7 @@ where
             dsize: 1_u32.into(),
             rank_in: 1_u32.into(),
             rank_out: 1_u32.into(),
+            stride: 1,
         })
         .unwrap();
 
@@ -188,6 +190,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
                     dsize: dsize.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
+                    stride: 1,
                 })
                 .unwrap();
 
@@ -266,6 +269,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
             dsize: 1_u32.into(),
             rank_in: 1_u32.into(),
             rank_out: 1_u32.into(),
+            stride: 1,
         })
         .unwrap();
 
@@ -329,6 +333,7 @@ where
                     dsize: dsize.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
+                    stride: 1,
                 })
                 .unwrap();
 

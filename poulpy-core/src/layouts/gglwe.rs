@@ -41,6 +41,7 @@ where
         1
     }
     fn gglwe_layout(&self) -> GGLWELayout {
+        let stride = self.stride();
         GGLWELayout {
             n: self.n(),
             base2k: self.base2k(),
@@ -49,6 +50,7 @@ where
             rank_in: self.rank_in(),
             rank_out: self.rank_out(),
             dsize: self.dsize(),
+            stride,
         }
     }
 
@@ -91,6 +93,7 @@ where
             dnum: Dnum(dnum as u32),
             dsize,
             k_aux: TorusPrecision((total - dnum * digit) as u32),
+            stride: self.stride() * stride,
             ..self.gglwe_layout()
         })
     }
@@ -174,6 +177,9 @@ pub struct GGLWELayout {
     pub rank_in: Rank,
     pub rank_out: Rank,
     pub dsize: Dsize,
+    /// Row stride for a coarsened view of a stored key. `1` means the key is
+    /// used as stored.
+    pub stride: usize,
 }
 
 impl LWEInfos for GGLWELayout {
@@ -219,6 +225,10 @@ impl GGLWEInfos for GGLWELayout {
 
     fn rank_out(&self) -> Rank {
         self.rank_out
+    }
+
+    fn stride(&self) -> usize {
+        self.stride
     }
 }
 
