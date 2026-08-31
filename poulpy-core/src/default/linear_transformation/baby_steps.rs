@@ -138,8 +138,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
     let cols = a.rank().as_usize() + 1;
     assert_eq!(key_ref.base2k(), a.base2k());
 
-    // `key_size` is the widest product over every baby key; a narrower key's
-    // product leaves the limbs above its own width zeroed.
+    // `key_size` is this key's own product width; limbs above it stay zeroed.
     let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
     module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
 
@@ -204,9 +203,9 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
     // Baby rotations rotate the source, so their keys are the ones the source's
     // precision asks for. Every key is resolved once, in cache order, because
     // the rotations need not share a layout: the hoisted route is only taken
-    // when all of them carry the source's base2k, and the product is sized by
-    // the widest key, since a narrower `res_dft` would silently truncate the
-    // wider keys' products (the kernel zeroes past a narrower key's width).
+    // when all of them carry the source's base2k, and every rotation is sized by
+    // its own key. A shared width would evaluate one key's product against
+    // another key's output size, a pair the per-key scratch query never sizes.
     let key_refs: Vec<Option<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>>> = cache
         .values
         .keys()
@@ -219,12 +218,13 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         .collect();
     let use_hoisted =
         key_refs.iter().flatten().next().is_some() && key_refs.iter().flatten().all(|key| key.base2k() == a.base2k());
-    let key_size = key_refs
+    let key_sizes: Vec<usize> = key_refs
         .iter()
-        .flatten()
-        .map(|key| gglwe_product_output_size::<BE, _, _, _>(a, a, key))
-        .max()
-        .unwrap_or(a_size);
+        .map(|key| {
+            key.as_ref()
+                .map_or(a_size, |key| gglwe_product_output_size::<BE, _, _, _>(a, a, key))
+        })
+        .collect();
 
     if use_hoisted {
         let scratch = scratch.borrow();
@@ -236,14 +236,20 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         let a_dft_ref = a_dft.to_backend_ref();
         let mut tasks: Vec<_> = cache.values.iter_mut().map(|(&rot, prepared)| (rot, prepared)).collect();
         let workers = worker_count::<BE::TaskExecutor>(BABY_ROTATION_WORKERS, tasks.len());
-        let product_bytes = key_refs
+        // Sized exactly as the per-key scratch query sizes one rotation, so the
+        // caller's max over its key layouts covers whatever this loop visits.
+        let rotation_bytes = key_refs
             .iter()
-            .flatten()
-            .map(|key| module.gglwe_product_dft_tmp_bytes_default(key_size, a_size, key))
+            .zip(&key_sizes)
+            .filter_map(|(key, &key_size)| key.as_ref().map(|key| (key, key_size)))
+            .map(|(key, key_size)| {
+                module.bytes_of_vec_znx_dft(cols, key_size)
+                    + module
+                        .gglwe_product_dft_tmp_bytes_default(key_size, a_size, key)
+                        .max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size))
+            })
             .max()
             .unwrap_or(0);
-        let rotation_bytes = module.bytes_of_vec_znx_dft(cols, key_size)
-            + product_bytes.max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size));
         let task_bytes = worker_scratch_bytes::<BE>(
             module.glwe_bytes_of_from_infos(a) + rotation_bytes.max(module.cnv_prepare_left_tmp_bytes(a_size, a_size)),
         );
@@ -264,7 +270,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
                     &a_dft_ref,
                     key.p,
                     &key.key,
-                    key_size,
+                    key_sizes[index],
                     &mut baby_scratch.borrow(),
                 );
                 let baby_ref = baby.to_backend_ref();

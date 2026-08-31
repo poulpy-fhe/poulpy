@@ -12,7 +12,7 @@ use poulpy_hal::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA,
     },
-    layouts::{GaloisElement, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx},
+    layouts::{Backend, GaloisElement, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -21,13 +21,39 @@ use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformations,
     LinearTransformationBabySteps,
+    error::{CoreError, Result},
     layouts::{
-        GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
-        GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc,
-        prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESecretPrepared},
+        Dsize, GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret,
+        GLWESecretPreparedFactory, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        prepared::{
+            GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedFactory,
+            GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared,
+        },
     },
     msb_mask_bottom_limb,
 };
+
+/// The stored keys, with the rotations listed in `coarse_ps` answered through a
+/// coarser `dsize`: one baby-step key set carrying two different layouts.
+struct MixedDsize<'a, BE: Backend> {
+    atks: &'a HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    coarse: Dsize,
+    coarse_ps: &'a [i64],
+}
+
+impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<'_, BE> {
+    fn lookup_automorphism_key(&self, p: i64, _k: TorusPrecision) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        let key = self.atks.get(&p).ok_or(CoreError::GGLWEKeyUse {
+            op: "get_automorphism_key",
+            detail: format!("no automorphism key for p={p}"),
+        })?;
+        if self.coarse_ps.contains(&p) {
+            key.with_dsize(self.coarse)
+        } else {
+            Ok(key.to_backend_ref())
+        }
+    }
+}
 
 pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite::noise::TestBackend>(
     params: &TestParams,
@@ -56,10 +82,16 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n = module.n();
-    let rank = 2usize;
-    let in_base2k = params.base2k;
-    let key_base2k = params.base2k;
-    let k_in = 2 * in_base2k + 1;
+    let rank = 3usize;
+    // Pinned rather than taken from `params`: at this radix the stored and the
+    // coarsened key resolve to different product widths, which is what makes
+    // the mixed key set below a real test of the scratch the query promises.
+    let _ = params;
+    let in_base2k: usize = 12;
+    let key_base2k = in_base2k;
+    // Wide enough that the keys still expose a digit when read at twice their
+    // stored `dsize`, which the mixed key set below does.
+    let k_in = 4 * in_base2k + 1;
     let dsize = 2;
     let dnum = k_in.div_ceil(key_base2k * dsize);
 
@@ -89,8 +121,12 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let baby_steps = vec![0, 1, 3, 5];
     let product_size = ct_infos.size() + pt.size();
 
+    let coarse_dsize = Dsize(2 * dsize as u32);
+    let coarse_infos = atk_infos.gglwe_layout().at_dsize(coarse_dsize).unwrap();
+
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
+            | module.glwe_automorphism_tmp_bytes(&ct_infos, &ct_infos, &coarse_infos)
             | module.glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
             | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
             | module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
@@ -139,105 +175,130 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         atks.insert(module.galois_element(rot), prepared);
     }
 
-    let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct);
-    module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, &ct, &atks, &mut scratch.borrow());
-    assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
+    // Two key sets over the same stored keys: all rotations at the stored
+    // layout, then half of them read through a coarser `dsize`. The public
+    // query sizes one layout at a time, so a caller holding several takes the
+    // max over them; both sets must fit in exactly that budget.
+    let prep_bytes = module
+        .glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &atk_infos)
+        .max(module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(&ct_infos, &coarse_infos));
+    let coarse_sets: [Vec<i64>; 2] = [
+        Vec::new(),
+        baby_steps
+            .iter()
+            .filter(|&&rot| rot != 0)
+            .skip(1)
+            .map(|&rot| module.galois_element(rot))
+            .collect(),
+    ];
 
-    let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size());
-    let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
-    module.cnv_prepare_right(
-        &mut right_prepared.to_backend_mut(),
-        &pt_ref.data,
-        !0i64,
-        &mut scratch.borrow(),
-    );
+    for coarse_ps in coarse_sets {
+        let keys = MixedDsize::<BE> {
+            atks: &atks,
+            coarse: coarse_dsize,
+            coarse_ps: &coarse_ps,
+        };
+        let mut prep_scratch: ScratchOwned<BE> = ScratchOwned::alloc(prep_bytes);
+        let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct);
+        module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, &ct, &keys, &mut prep_scratch.borrow());
+        assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
 
-    let mask = msb_mask_bottom_limb(ct.base2k().as_usize(), k_in);
-    for &rot in &baby_steps {
-        let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct);
-        if rot == 0 {
-            module.glwe_copy(&mut expected, &ct);
-        } else {
-            let p = module.galois_element(rot);
-            let key = atks
-                .get_automorphism_key(p, ct.k())
-                .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
-            module.glwe_automorphism(&mut expected, &ct, &key, &mut scratch.borrow());
-        }
-
-        let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size());
-        let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
-        module.cnv_prepare_left(
-            &mut expected_prepared.to_backend_mut(),
-            &expected_ref.data,
-            mask,
+        let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size());
+        let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
+        module.cnv_prepare_right(
+            &mut right_prepared.to_backend_mut(),
+            &pt_ref.data,
+            !0i64,
             &mut scratch.borrow(),
         );
 
-        let baby = prepared_babies.baby_step(rot);
-        assert_eq!(
-            baby.shape(),
-            expected_prepared.shape(),
-            "prepared baby rotation {rot} has wrong shape"
-        );
+        let mask = msb_mask_bottom_limb(ct.base2k().as_usize(), k_in);
+        for &rot in &baby_steps {
+            let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct);
+            if rot == 0 {
+                module.glwe_copy(&mut expected, &ct);
+            } else {
+                let p = module.galois_element(rot);
+                let key = keys
+                    .get_automorphism_key(p, ct.k())
+                    .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"));
+                module.glwe_automorphism(&mut expected, &ct, &key, &mut scratch.borrow());
+            }
 
-        for col in 0..rank + 1 {
-            let mut have: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, product_size);
-            let mut want: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, product_size);
-            let mut have_dft = module.vec_znx_dft_alloc(1, product_size);
-            let mut want_dft = module.vec_znx_dft_alloc(1, product_size);
-            let mut have_big = module.vec_znx_big_alloc(1, product_size);
-            let mut want_big = module.vec_znx_big_alloc(1, product_size);
-            let right_ref = right_prepared.to_backend_ref();
-
-            module.cnv_apply_dft(
-                0,
-                &mut have_dft.to_backend_mut(),
-                0,
-                &baby.to_backend_ref(),
-                col,
-                &right_ref,
-                0,
-                &mut scratch.borrow(),
-            );
-            module.vec_znx_idft_apply_tmpa(&mut have_big.to_backend_mut(), 0, &mut have_dft.to_backend_mut(), 0);
-            module.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut have),
-                ct.base2k().as_usize(),
-                0,
-                0,
-                &have_big.to_backend_ref(),
-                ct.base2k().as_usize(),
-                0,
+            let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size());
+            let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
+            module.cnv_prepare_left(
+                &mut expected_prepared.to_backend_mut(),
+                &expected_ref.data,
+                mask,
                 &mut scratch.borrow(),
             );
 
-            module.cnv_apply_dft(
-                0,
-                &mut want_dft.to_backend_mut(),
-                0,
-                &expected_prepared.to_backend_ref(),
-                col,
-                &right_ref,
-                0,
-                &mut scratch.borrow(),
-            );
-            module.vec_znx_idft_apply_tmpa(&mut want_big.to_backend_mut(), 0, &mut want_dft.to_backend_mut(), 0);
-            module.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut want),
-                ct.base2k().as_usize(),
-                0,
-                0,
-                &want_big.to_backend_ref(),
-                ct.base2k().as_usize(),
-                0,
-                &mut scratch.borrow(),
-            );
-
+            let baby = prepared_babies.baby_step(rot);
             assert_eq!(
-                have, want,
-                "prepared baby rotation {rot} column {col} differs from on-the-fly automorphism"
+                baby.shape(),
+                expected_prepared.shape(),
+                "prepared baby rotation {rot} has wrong shape"
             );
+
+            for col in 0..rank + 1 {
+                let mut have: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, product_size);
+                let mut want: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, product_size);
+                let mut have_dft = module.vec_znx_dft_alloc(1, product_size);
+                let mut want_dft = module.vec_znx_dft_alloc(1, product_size);
+                let mut have_big = module.vec_znx_big_alloc(1, product_size);
+                let mut want_big = module.vec_znx_big_alloc(1, product_size);
+                let right_ref = right_prepared.to_backend_ref();
+
+                module.cnv_apply_dft(
+                    0,
+                    &mut have_dft.to_backend_mut(),
+                    0,
+                    &baby.to_backend_ref(),
+                    col,
+                    &right_ref,
+                    0,
+                    &mut scratch.borrow(),
+                );
+                module.vec_znx_idft_apply_tmpa(&mut have_big.to_backend_mut(), 0, &mut have_dft.to_backend_mut(), 0);
+                module.vec_znx_big_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut have),
+                    ct.base2k().as_usize(),
+                    0,
+                    0,
+                    &have_big.to_backend_ref(),
+                    ct.base2k().as_usize(),
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                module.cnv_apply_dft(
+                    0,
+                    &mut want_dft.to_backend_mut(),
+                    0,
+                    &expected_prepared.to_backend_ref(),
+                    col,
+                    &right_ref,
+                    0,
+                    &mut scratch.borrow(),
+                );
+                module.vec_znx_idft_apply_tmpa(&mut want_big.to_backend_mut(), 0, &mut want_dft.to_backend_mut(), 0);
+                module.vec_znx_big_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut want),
+                    ct.base2k().as_usize(),
+                    0,
+                    0,
+                    &want_big.to_backend_ref(),
+                    ct.base2k().as_usize(),
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                assert_eq!(
+                    have, want,
+                    "prepared baby rotation {rot} column {col} differs from on-the-fly automorphism"
+                );
+            }
         }
     }
 }
