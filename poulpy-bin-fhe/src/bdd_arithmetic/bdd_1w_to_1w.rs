@@ -1,19 +1,14 @@
 use poulpy_core::{
-    GLWECopy, GLWEPacking,
-    layouts::{
-        GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GetGaloisElement,
-        ModuleCoreAlloc,
-    },
+    GLWEBytesOf, GLWECopy, GLWEPacking, ScratchArenaTakeCore,
+    layouts::{GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GetGaloisElement},
 };
 use poulpy_hal::{
     api::ModuleLogN,
-    layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena},
+    layouts::{Backend, Module, ScratchArena},
 };
 
 use crate::bdd_arithmetic::{ExecuteBDDCircuit, FheUint, FheUintPrepared, GetBitCircuitInfo, UnsignedInteger, circuits};
-use poulpy_core::GLWEBytesOf;
-
-impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> ExecuteBDDCircuit1WTo1W<BE> for Module<BE> where
+impl<BE: Backend<ZnxWord = i64>> ExecuteBDDCircuit1WTo1W<BE> for Module<BE> where
     Self: Sized + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>
 {
 }
@@ -24,15 +19,10 @@ impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> ExecuteBDD
 /// one encrypted integer.  After evaluating the per-bit BDD levels, the
 /// output bits are repacked into a single [`FheUint`] polynomial via
 /// [`GLWEPacking`].
-pub trait ExecuteBDDCircuit1WTo1W<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>>
+pub trait ExecuteBDDCircuit1WTo1W<BE: Backend>
 where
     Self: GLWEBytesOf<BE>,
-    Self: Sized
-        + ModuleLogN
-        + ExecuteBDDCircuit<BE>
-        + GLWEPacking<BE>
-        + GLWECopy<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+    Self: Sized + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>,
 {
     fn execute_bdd_circuit_1w_to_1w<C, K, H, T>(
         &self,
@@ -46,8 +36,7 @@ where
         C: GetBitCircuitInfo,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
-        BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
+        BE: Backend<ZnxWord = i64>,
     {
         self.execute_bdd_circuit_1w_to_1w_multi_thread(1, out, circuit, a, key, scratch);
     }
@@ -67,14 +56,9 @@ where
         C: GetBitCircuitInfo,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
-        BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
+        BE: Backend<ZnxWord = i64>,
     {
-        // TODO(device): this wrapper still repacks through host-owned
-        // temporary GLWEs before the final backend-generic packing step.
-        let mut out_bits: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> =
-            (0..T::BITS as usize).map(|_| self.glwe_alloc_from_infos(out)).collect();
-        let mut scratch_1 = scratch.borrow();
+        let (mut out_bits, mut scratch_1) = scratch.borrow().take_glwe_slice_scratch(T::BITS as usize, out);
 
         // Evaluates out[i] = circuit[i](a, b)
         self.execute_bdd_circuit_multi_thread(threads, &mut out_bits, a, circuit, &mut scratch_1);
@@ -102,9 +86,8 @@ macro_rules! define_bdd_1w_to_1w_trait {
                     M: ExecuteBDDCircuit1WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
                     H: GLWEAutomorphismKeyHelper<K, BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-                    Self: GLWEToBackendMut<BE>,
-                    for<'a> BE::BufMut<'a>: HostDataMut;
+                    BE: Backend<ZnxWord = i64>,
+                    Self: GLWEToBackendMut<BE>;
 
                 /// Multithreaded version – same vis, method_name + "_multi_thread"
                 fn [<$method_name _multi_thread>]<M, K, H>(
@@ -118,9 +101,8 @@ macro_rules! define_bdd_1w_to_1w_trait {
                     M: ExecuteBDDCircuit1WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
                     H: GLWEAutomorphismKeyHelper<K, BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-                    Self: GLWEToBackendMut<BE>,
-                    for<'a> BE::BufMut<'a>: HostDataMut;
+                    BE: Backend<ZnxWord = i64>,
+                    Self: GLWEToBackendMut<BE>;
             }
         }
     };
@@ -130,7 +112,7 @@ macro_rules! define_bdd_1w_to_1w_trait {
 macro_rules! impl_bdd_1w_to_1w_trait {
     ($trait_name:ident, $method_name:ident, $ty:ty, $circuit_ty:ty, $output_circuits:path) => {
         paste::paste! {
-            impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> $trait_name<$ty, BE> for FheUint<BE::OwnedBuf, $ty, BE::ZnxWord> {
+            impl<BE: Backend<ZnxWord = i64>> $trait_name<$ty, BE> for FheUint<BE::OwnedBuf, $ty, BE::ZnxWord> {
 
                 fn $method_name<M, K, H>(
                     &mut self,
@@ -142,8 +124,7 @@ macro_rules! impl_bdd_1w_to_1w_trait {
                     M: ExecuteBDDCircuit1WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
                     H: GLWEAutomorphismKeyHelper<K, BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-                    for<'a> BE::BufMut<'a>: HostDataMut,
+                    BE: Backend<ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_1w_to_1w(self, &$output_circuits, a, key, scratch)
                 }
@@ -159,8 +140,7 @@ macro_rules! impl_bdd_1w_to_1w_trait {
                     M: ExecuteBDDCircuit1WTo1W<BE>,
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
                     H: GLWEAutomorphismKeyHelper<K, BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-                    for<'a> BE::BufMut<'a>: HostDataMut,
+                    BE: Backend<ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_1w_to_1w_multi_thread(threads, self, &$output_circuits, a, key, scratch)
                 }

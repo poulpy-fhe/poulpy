@@ -2,11 +2,13 @@ mod cggi;
 
 pub use cggi::*;
 
+use std::mem::size_of;
+
 use itertools::izip;
-use poulpy_core::layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, LWE, LWEInfos, LWEToBackendRef, ModuleCoreAlloc};
+use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef, ModuleCoreAlloc};
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, Data, HostDataRef, ScratchArena, ZnxView},
+    layouts::{Backend, Host, ScratchArena},
 };
 
 use crate::blind_rotation::{
@@ -50,7 +52,7 @@ pub trait BlindRotationExecute<BRA: BlindRotationAlgo, BE: Backend> {
     ) -> usize
     where
         G: GLWEInfos,
-        B: GGSWInfos;
+        B: BlindRotationKeyInfos;
 
     /// Evaluates the lookup table `lut` at the index encrypted in `lwe`,
     /// writing the result GLWE ciphertext into `res`.
@@ -62,38 +64,33 @@ pub trait BlindRotationExecute<BRA: BlindRotationAlgo, BE: Backend> {
     ///
     /// Panics in debug mode if dimension mismatches are detected between `res`,
     /// `lwe`, `lut`, and `brk`.
-    fn blind_rotation_execute<R, DL>(
+    fn blind_rotation_execute<R, L>(
         &self,
         res: &mut R,
-        lwe: &LWE<DL, i64>,
+        lwe: &L,
         lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
         brk: &BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        DL: Data,
-        LWE<DL, i64>: LWEToBackendRef<BE>;
+        L: LWEToBackendRef<BE> + LWEInfos;
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>
-where
-    BE::OwnedBuf: Data,
-{
+impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE> {
     /// Performs blind rotation using `self` as the bootstrapping key.
     ///
     /// Convenience wrapper around [`BlindRotationExecute::blind_rotation_execute`].
-    pub fn execute<R, DI, M>(
+    pub fn execute<R, L, M>(
         &self,
         module: &M,
         res: &mut R,
-        lwe: &LWE<DI, i64>,
+        lwe: &L,
         lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: BlindRotationExecute<BRA, BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        DI: Data,
-        LWE<DI, i64>: LWEToBackendRef<BE>,
+        L: LWEToBackendRef<BE> + LWEInfos,
     {
         module.blind_rotation_execute(res, lwe, lut, self, scratch);
     }
@@ -140,18 +137,29 @@ impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<BE::OwnedBuf,
 /// - `rot_dir`: Rotation sign convention.
 pub fn mod_switch_2n<BE, A>(n: usize, res: &mut [i64], lwe: &A, rot_dir: LookUpTableRotationDirection)
 where
-    BE: Backend,
     A: LWEToBackendRef<BE> + LWEInfos,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    BE: Backend<ZnxWord = i64>,
+    BE: Backend<Location = Host, ZnxWord = i64>,
 {
     let lwe = lwe.to_backend_ref();
     let base2k: usize = lwe.base2k().into();
 
+    let body_bytes = BE::bytes_of_vec_znx(lwe.body().n(), lwe.body().cols(), lwe.body().size());
+    let mask_bytes = BE::bytes_of_vec_znx(lwe.mask().n(), lwe.mask().cols(), lwe.mask().size());
+    let mut body_host = vec![0u8; body_bytes];
+    let mut mask_host = vec![0u8; mask_bytes];
+    BE::copy_view_to_host(&BE::region_ref(&lwe.body().data, 0, body_bytes), &mut body_host);
+    BE::copy_view_to_host(&BE::region_ref(&lwe.mask().data, 0, mask_bytes), &mut mask_host);
+    let word = |bytes: &[u8], index: usize| {
+        let start = index * size_of::<i64>();
+        i64::from_ne_bytes(bytes[start..start + size_of::<i64>()].try_into().unwrap())
+    };
+
     let log2n: usize = usize::BITS as usize - (n - 1).leading_zeros() as usize + 1;
 
-    res[0] = lwe.body().at(0, 0)[0];
-    res[1..].copy_from_slice(lwe.mask().at(0, 0));
+    res[0] = word(&body_host, 0);
+    for (index, value) in res[1..].iter_mut().enumerate() {
+        *value = word(&mask_host, index);
+    }
 
     match rot_dir {
         LookUpTableRotationDirection::Left => {
@@ -169,9 +177,8 @@ where
         let rem: usize = base2k - (log2n % base2k);
         let size: usize = log2n.div_ceil(base2k);
         (1..size).for_each(|i| {
-            let body_i = lwe.body().at(0, i)[0];
-            let mask_i = lwe.mask().at(0, i);
-            let coeffs = std::iter::once(&body_i).chain(mask_i.iter());
+            let body_i = word(&body_host, i);
+            let coeffs = std::iter::once(body_i).chain((0..lwe.mask().n()).map(|j| word(&mask_host, i * lwe.mask().n() + j)));
             if i == size - 1 && rem != base2k {
                 let k_rem: usize = base2k - rem;
                 izip!(coeffs, res.iter_mut()).for_each(|(x, y)| {

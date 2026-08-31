@@ -1,13 +1,13 @@
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord},
+    layouts::{CopyFromHost, CopyToHost, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord},
     source::Source,
 };
 
 use std::{fmt, marker::PhantomData};
 
 use poulpy_core::{
-    Distribution, EncryptionLayout,
+    Distribution, EncryptionLayout, TransferInto,
     layouts::{Base2K, Degree, Dnum, Dsize, GGSW, GGSWInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
@@ -190,6 +190,22 @@ impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> PartialEq for BlindRotationKey
 
 impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> Eq for BlindRotationKey<D, BRT, W> {}
 
+impl<D1, D2, BRT, W> TransferInto<BlindRotationKey<D2, BRT, W>> for BlindRotationKey<D1, BRT, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    BRT: BlindRotationAlgo,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut BlindRotationKey<D2, BRT, W>) {
+        assert_eq!(self.keys.len(), dst.keys.len());
+        for (src, dst) in self.keys.iter().zip(&mut dst.keys) {
+            src.transfer_into(dst);
+        }
+        dst.dist = self.dist;
+    }
+}
+
 impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> fmt::Display for BlindRotationKey<D, BRT, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (i, key) in self.keys.iter().enumerate() {
@@ -236,7 +252,7 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> WriterTo for BlindRotat
     }
 }
 
-impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyInfos for BlindRotationKey<D, BRT, W> {
+impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyInfos for BlindRotationKey<D, BRT, W> {
     fn n_glwe(&self) -> Degree {
         self.n()
     }
@@ -246,7 +262,7 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyInfos f
     }
 }
 
-impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRT, W> {
+impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRT, W> {
     pub fn block_size(&self) -> usize {
         match self.dist {
             Distribution::BinaryBlock(value) => value,
@@ -255,7 +271,7 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRT
     }
 }
 
-impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> LWEInfos for BlindRotationKey<D, BRT, W> {
+impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> LWEInfos for BlindRotationKey<D, BRT, W> {
     fn base2k(&self) -> Base2K {
         self.keys[0].base2k()
     }
@@ -273,12 +289,12 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> LWEInfos for BlindRotat
     }
 }
 
-impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> GLWEInfos for BlindRotationKey<D, BRT, W> {
+impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> GLWEInfos for BlindRotationKey<D, BRT, W> {
     fn rank(&self) -> Rank {
         self.keys[0].rank()
     }
 }
-impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRotationKey<D, BRT, W> {
+impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRotationKey<D, BRT, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.keys[0].k_aux()
     }

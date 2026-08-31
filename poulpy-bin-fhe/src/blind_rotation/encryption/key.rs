@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, HostBackend, HostDataMut, ScratchArena, ZnxWord},
+    layouts::{Backend, Data, ScratchArena, ZnxWord},
     source::Source,
 };
 
@@ -53,7 +53,7 @@ pub trait BlindRotationKeyEncryptSk<BRA: BlindRotationAlgo, B: Backend> {
         S1: LWESecretToBackendRef<B> + LWEInfos + GetDistribution;
 }
 
-impl<D: HostDataMut, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn encrypt_sk<M, S0, S1, E, BE>(
         &mut self,
@@ -69,7 +69,7 @@ impl<D: HostDataMut, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA
         S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
         E: EncryptionInfos,
         M: BlindRotationKeyEncryptSk<BRA, BE>,
-        BE: Backend<OwnedBuf = D, ZnxWord = W> + HostBackend,
+        BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         module.blind_rotation_key_encrypt_sk(self, sk_glwe, sk_lwe, enc_infos, source_xe, source_xa, scratch);
     }
