@@ -162,7 +162,15 @@ where
 
         let view = key_prep.with_dsize(effective).unwrap();
         assert_eq!(view.stride(), s);
-        assert_eq!(view.gglwe_layout(), twin.gglwe_layout());
+        // The twin is stored at the coarse dsize (stride 1); the view reads the
+        // stored key at stride `s`. Everything else in the layout must agree.
+        assert_eq!(
+            view.gglwe_layout(),
+            GGLWELayout {
+                stride: s,
+                ..twin.gglwe_layout()
+            }
+        );
 
         let ct_infos = GLWELayout {
             n: Degree(n as u32),
