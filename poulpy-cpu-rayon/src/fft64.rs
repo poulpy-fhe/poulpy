@@ -685,6 +685,16 @@ unsafe impl HalVmpImpl<$rayon> for $rayon {
         )
     }
 
+    fn vmp_extract_selected_rows(
+        module: &Module<Self>,
+        res: &mut VmpPMatBackendMut<'_, Self>,
+        a: &VmpPMatBackendRef<'_, Self>,
+        first_row: usize,
+        row_step: usize,
+    ) {
+        <Self as FFT64VmpDefault<Self>>::vmp_extract_selected_rows_default(module, res, a, first_row, row_step)
+    }
+
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
         <Self as FFT64VmpDefault<Self>>::vmp_zero_default(module, res)
     }
