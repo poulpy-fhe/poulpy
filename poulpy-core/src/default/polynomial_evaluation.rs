@@ -7,6 +7,7 @@
 //! copy) is supplied by the scheme through [`BSGSOps`], which owns all precision
 //! bookkeeping and normalization.
 
+use crate::layouts::GetTensorKey;
 use anyhow::{Result, ensure};
 use poulpy_hal::{
     api::{
@@ -18,10 +19,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    layouts::{
-        BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
-    },
+    layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
     oep::PolynomialEvaluationDefault,
 };
 
@@ -131,16 +129,16 @@ where
 
     /// Computes `dst *= prepared` (ct × ct), relinearizing with `tsk` and
     /// stamping the consumed budget on the result.
-    fn mul_prepared_assign<T>(
+    fn mul_prepared_assign<H>(
         &self,
         module: &Module<BE>,
         dst: &mut V,
         prepared: &Self::Prepared,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GetTensorKey<BE>;
 
     /// Computes `dst += a` with budget alignment, normalizing `dst`.
     fn add_assign(&self, module: &Module<BE>, dst: &mut V, a: &V, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
@@ -211,13 +209,13 @@ where
 /// level via [`BSGSOps::prepare_right`] and reused across the level's
 /// sibling pairs); the per-pair `ct×ct`/`ct+ct` arithmetic and the final copy are
 /// delegated to the scheme.
-pub(crate) fn eval_giant_steps<R, B, V, P, A, G, T, BE: Backend, Ops>(
+pub(crate) fn eval_giant_steps<R, B, V, P, A, G, H, BE: Backend, Ops>(
     module: &Module<BE>,
     ops: &Ops,
     res: &mut R,
     baby_steps: &mut [B],
     power_basis: &G,
-    tsk: &T,
+    tsk: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -228,7 +226,7 @@ where
     P: GLWEToBackendRef<BE>,
     A: GLWEToBackendRef<BE>,
     G: PowerBasisHelper<BE, A>,
-    T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+    H: GetTensorKey<BE>,
 {
     ensure!(
         !baby_steps.is_empty(),
@@ -325,13 +323,13 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         eval_baby_step::<BE, Ops, R, P, G, A>(self, ops, res, parity, coeffs, power_basis, scratch)
     }
 
-    fn glwe_eval_giant_steps_default<Ops, R, B, V, P, A, G, T>(
+    fn glwe_eval_giant_steps_default<Ops, R, B, V, P, A, G, H>(
         &self,
         ops: &Ops,
         res: &mut R,
         baby_steps: &mut [B],
         power_basis: &G,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -342,8 +340,8 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
-        eval_giant_steps::<R, B, V, P, A, G, T, BE, Ops>(self, ops, res, baby_steps, power_basis, tsk, scratch)
+        eval_giant_steps::<R, B, V, P, A, G, H, BE, Ops>(self, ops, res, baby_steps, power_basis, tsk, scratch)
     }
 }

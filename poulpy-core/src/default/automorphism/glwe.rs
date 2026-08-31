@@ -26,7 +26,10 @@ use crate::{
         keyswitching::{GLWEKeyswitchInternal, gglwe_product_output_size},
         operations::GLWENormalizeDefault,
     },
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, prepared::GGLWEPreparedToBackendRef},
+    layouts::{
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+        prepared::{GGLWEPreparedToBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
+    },
     oep::{GLWEAutomorphismDefault, GLWEKeyswitchDefault},
 };
 
@@ -57,54 +60,70 @@ where
     lvl_auto.max(lvl_conv + lvl_ks)
 }
 
-pub fn glwe_automorphism_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_automorphism_default<BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    let p = key.p();
+    let key = key.to_backend_ref();
     assert!(
-        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, a, key),
+        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, a, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_automorphism_tmp_bytes_default(res, a, key)
+        module.glwe_automorphism_tmp_bytes_default(res, a, &key)
     );
 
-    module.glwe_keyswitch_default(res, a, key, scratch);
+    module.glwe_keyswitch_default(res, a, &key, scratch);
     let cols = res.rank().as_usize() + 1;
     let mut res_ref = res.to_backend_mut();
     for i in 0..cols {
-        module.vec_znx_automorphism_assign_backend(key.p(), &mut res_ref.data, i, &mut scratch.borrow());
+        module.vec_znx_automorphism_assign_backend(p, &mut res_ref.data, i, &mut scratch.borrow());
     }
 }
 
-pub fn glwe_automorphism_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_automorphism_assign_default<BE, M, R>(
+    module: &M,
+    res: &mut R,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    let p = key.p();
+    let key = key.to_backend_ref();
     assert!(
-        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, res, key),
+        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, res, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_automorphism_tmp_bytes_default(res, res, key)
+        module.glwe_automorphism_tmp_bytes_default(res, res, &key)
     );
 
-    module.glwe_keyswitch_assign_default(res, key, scratch);
+    module.glwe_keyswitch_assign_default(res, &key, scratch);
 
     let cols = res.rank().as_usize() + 1;
     let mut res_ref = res.to_backend_mut();
     for i in 0..cols {
-        module.vec_znx_automorphism_assign_backend(key.p(), &mut res_ref.data, i, &mut scratch.borrow());
+        module.vec_znx_automorphism_assign_backend(p, &mut res_ref.data, i, &mut scratch.borrow());
     }
 }
 
-pub fn glwe_automorphism_add_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_automorphism_add_default<BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEAutomorphismDefault<BE>
@@ -119,13 +138,14 @@ where
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    let p = key.p();
+    let key = key.to_backend_ref();
     assert!(
-        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, a, key),
+        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, a, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_automorphism_tmp_bytes_default(res, a, key)
+        module.glwe_automorphism_tmp_bytes_default(res, a, &key)
     );
 
     let key_base2k: usize = key.base2k().into();
@@ -133,7 +153,7 @@ where
     let cols: usize = (res.rank() + 1).into();
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &key);
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2);
@@ -141,7 +161,7 @@ where
 
     {
         let mut scratch = scratch_2;
-        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, key, &mut scratch);
+        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, &key, &mut scratch);
         let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
@@ -150,7 +170,7 @@ where
         module.vec_znx_big_add_small_assign(&mut res_big, 0, &a_norm.data, 0);
 
         for i in 0..cols {
-            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch));
+            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(p, &mut res_big, i, scratch));
             module.vec_znx_big_add_small_assign(&mut res_big, i, &a_norm.data, i);
         }
 
@@ -171,8 +191,12 @@ where
     }
 }
 
-pub fn glwe_automorphism_add_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_automorphism_add_assign_default<BE, M, R>(
+    module: &M,
+    res: &mut R,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEAutomorphismDefault<BE>
@@ -186,13 +210,14 @@ where
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    let p = key.p();
+    let key = key.to_backend_ref();
     assert!(
-        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, res, key),
+        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, res, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_automorphism_tmp_bytes_default(res, res, key)
+        module.glwe_automorphism_tmp_bytes_default(res, res, &key)
     );
 
     let key_base2k: usize = key.base2k().into();
@@ -200,11 +225,11 @@ where
     let cols: usize = (res.rank() + 1).into();
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &key);
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
-    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_2);
+    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, &key, &mut scratch_2);
 
     {
         let res_norm = res_conv.to_backend_ref();
@@ -216,7 +241,7 @@ where
         module.vec_znx_big_add_small_assign(&mut res_big, 0, &res_norm.data, 0);
 
         for i in 0..cols {
-            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch));
+            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(p, &mut res_big, i, scratch));
             module.vec_znx_big_add_small_assign(&mut res_big, i, &res_norm.data, i);
         }
 
@@ -237,8 +262,13 @@ where
     }
 }
 
-pub fn glwe_automorphism_sub_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_automorphism_sub_default<BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEAutomorphismDefault<BE>
@@ -253,13 +283,14 @@ where
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    let p = key.p();
+    let key = key.to_backend_ref();
     assert!(
-        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, a, key),
+        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, a, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_automorphism_tmp_bytes_default(res, a, key)
+        module.glwe_automorphism_tmp_bytes_default(res, a, &key)
     );
 
     let key_base2k: usize = key.base2k().into();
@@ -267,7 +298,7 @@ where
     let cols: usize = (res.rank() + 1).into();
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &key);
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2);
@@ -275,7 +306,7 @@ where
 
     {
         let mut scratch = scratch_2;
-        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, key, &mut scratch);
+        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, &key, &mut scratch);
         let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
@@ -283,7 +314,7 @@ where
         }
 
         for i in 0..cols {
-            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch));
+            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(p, &mut res_big, i, scratch));
             module.vec_znx_big_sub_small_assign(&mut res_big, i, &a_norm.data, i);
         }
 
@@ -304,11 +335,11 @@ where
     }
 }
 
-pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
+pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
-    key: &K,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -325,13 +356,14 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    let p = key.p();
+    let key = key.to_backend_ref();
     assert!(
-        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, a, key),
+        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, a, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_automorphism_tmp_bytes_default(res, a, key)
+        module.glwe_automorphism_tmp_bytes_default(res, a, &key)
     );
 
     let key_base2k: usize = key.base2k().into();
@@ -339,7 +371,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
     let cols: usize = (res.rank() + 1).into();
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &key);
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2);
@@ -347,7 +379,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
 
     {
         let mut scratch = scratch_2;
-        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, key, &mut scratch);
+        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, &key, &mut scratch);
         let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
@@ -355,7 +387,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
         }
 
         for i in 0..cols {
-            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch));
+            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(p, &mut res_big, i, scratch));
             module.vec_znx_big_sub_small_negate_assign(&mut res_big, i, &a_norm.data, i);
         }
 
@@ -376,8 +408,12 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
     }
 }
 
-pub fn glwe_automorphism_sub_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
+    module: &M,
+    res: &mut R,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEAutomorphismDefault<BE>
@@ -391,13 +427,14 @@ where
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    let p = key.p();
+    let key = key.to_backend_ref();
     assert!(
-        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, res, key),
+        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, res, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_automorphism_tmp_bytes_default(res, res, key)
+        module.glwe_automorphism_tmp_bytes_default(res, res, &key)
     );
 
     let key_base2k: usize = key.base2k().into();
@@ -405,11 +442,11 @@ where
     let cols: usize = (res.rank() + 1).into();
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &key);
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
-    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_2);
+    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, &key, &mut scratch_2);
 
     {
         let res_norm = res_conv.to_backend_ref();
@@ -420,7 +457,7 @@ where
         }
 
         for i in 0..cols {
-            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch));
+            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(p, &mut res_big, i, scratch));
             module.vec_znx_big_sub_small_assign(&mut res_big, i, &res_norm.data, i);
         }
 
@@ -441,10 +478,10 @@ where
     }
 }
 
-pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R, K>(
+pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R>(
     module: &M,
     res: &mut R,
-    key: &K,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -460,13 +497,14 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R, K>(
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
+    let p = key.p();
+    let key = key.to_backend_ref();
     assert!(
-        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, res, key),
+        scratch.available() >= module.glwe_automorphism_tmp_bytes_default(res, res, &key),
         "scratch.available(): {} < GLWEAutomorphism::glwe_automorphism_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_automorphism_tmp_bytes_default(res, res, key)
+        module.glwe_automorphism_tmp_bytes_default(res, res, &key)
     );
 
     let key_base2k: usize = key.base2k().into();
@@ -474,11 +512,11 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R, K>(
     let cols: usize = (res.rank() + 1).into();
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
-    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, key);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &key);
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
-    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_2);
+    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, &key, &mut scratch_2);
 
     {
         let res_norm = res_conv.to_backend_ref();
@@ -489,7 +527,7 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R, K>(
         }
 
         for i in 0..cols {
-            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch));
+            scratch = scratch.apply_mut(|scratch| module.vec_znx_big_automorphism_assign(p, &mut res_big, i, scratch));
             module.vec_znx_big_sub_small_negate_assign(&mut res_big, i, &res_norm.data, i);
         }
 

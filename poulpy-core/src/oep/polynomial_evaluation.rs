@@ -1,12 +1,10 @@
+use crate::layouts::GetTensorKey;
 use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     default::polynomial_evaluation::BSGSOps,
-    layouts::{
-        BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
-    },
+    layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
 };
 
 /// Backend-provided Baby-Step / Giant-Step polynomial-evaluation phases.
@@ -33,13 +31,13 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
         G: PowerBasisHelper<BE, A>;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, T>(
+    fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, H>(
         module: &Module<BE>,
         ops: &Ops,
         res: &mut R,
         baby_steps: &mut [B],
         power_basis: &G,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -50,7 +48,7 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GetTensorKey<BE>;
 }
 
 /// Override surface carrying the reference BSGS phase implementations.
@@ -72,13 +70,13 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>;
 
-    fn glwe_eval_giant_steps_default<Ops, R, B, V, P, A, G, T>(
+    fn glwe_eval_giant_steps_default<Ops, R, B, V, P, A, G, H>(
         &self,
         ops: &Ops,
         res: &mut R,
         baby_steps: &mut [B],
         power_basis: &G,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -89,7 +87,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GetTensorKey<BE>;
 }
 
 unsafe impl<BE: Backend> PolynomialEvaluationImpl<BE> for BE
@@ -115,13 +113,13 @@ where
         module.glwe_eval_baby_step_default::<Ops, R, P, A, G>(ops, res, parity, coeffs, power_basis, scratch)
     }
 
-    fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, T>(
+    fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, H>(
         module: &Module<BE>,
         ops: &Ops,
         res: &mut R,
         baby_steps: &mut [B],
         power_basis: &G,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -132,8 +130,8 @@ where
         P: GLWEToBackendRef<BE>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
-        module.glwe_eval_giant_steps_default::<Ops, R, B, V, P, A, G, T>(ops, res, baby_steps, power_basis, tsk, scratch)
+        module.glwe_eval_giant_steps_default::<Ops, R, B, V, P, A, G, H>(ops, res, baby_steps, power_basis, tsk, scratch)
     }
 }

@@ -1,4 +1,5 @@
 use poulpy_core::api::TransferInto;
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch,
     layouts::{
@@ -53,6 +54,7 @@ pub fn runner_glwe_keyswitch<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
         rank_out: Rank(cp.rank),
         dnum: Dnum(dnum),
         dsize: Dsize(cp.dsize),
+        stride: 1,
     };
 
     let glwe_in = &glwe;
@@ -79,7 +81,7 @@ pub fn runner_glwe_keyswitch<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
     module.gglwe_prepare(&mut key, &key_coeffs, &mut scratch.borrow());
 
     bencher.iter(|| {
-        module.glwe_keyswitch(&mut ct_out, &ct_in, &key, &mut scratch.borrow());
+        module.glwe_keyswitch(&mut ct_out, &ct_in, &key.to_backend_ref(), &mut scratch.borrow());
         black_box(());
     });
 }

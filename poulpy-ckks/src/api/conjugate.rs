@@ -1,6 +1,6 @@
-use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GGLWEInfos;
+use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -34,22 +34,42 @@ pub trait CKKSConjugateOps<BE: Backend> {
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
-    /// Computes `dst = conj(src)`: takes the complex conjugate of every slot.
-    fn ckks_conjugate_into<Dst, Src, K>(
+    /// Computes `dst = conj(src)`, the automorphism of Galois element `-1`.
+    fn ckks_conjugate_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        key: &K,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: CKKSAtkBounds<BE>;
+        H: GetAutomorphismKey<BE>,
+    {
+        self.ckks_conjugate_rotate_into(dst, src, 0, keys, scratch)
+    }
 
-    /// Computes `dst = conj(dst)` in-place.  Metadata is unchanged.
-    fn ckks_conjugate_assign<Dst, K>(&self, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    /// Computes `dst = conj(dst)` in-place. Metadata is unchanged.
+    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>;
+        H: GetAutomorphismKey<BE>;
+
+    /// Computes `dst = conj(rot_k(src))`: conjugation composed with a rotation
+    /// of `k` slots, as one key switch under the Galois element
+    /// `-galois_element(k)`. PaCo's psi tail is the caller; `k = 0` is plain
+    /// conjugation, spelled [`Self::ckks_conjugate_into`].
+    fn ckks_conjugate_rotate_into<Dst, Src, H>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        k: i64,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        H: GetAutomorphismKey<BE>;
 }

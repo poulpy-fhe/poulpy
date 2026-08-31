@@ -340,3 +340,42 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_neon<E: TaskExecutor>(
         tmp,
     );
 }
+
+/// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`
+/// limbs, into rows `i` of `res`, in the prime-major prepared layout.
+pub(crate) fn vmp_extract_selected_rows_neon_pm(
+    res: &mut VmpPMatBackendMut<'_, NTT4x30Neon>,
+    a: &VmpPMatBackendRef<'_, NTT4x30Neon>,
+    first_row: usize,
+    row_step: usize,
+) {
+    let n: usize = a.n();
+
+    let cols_in: usize = a.cols_in();
+    let (res_rows, res_nrows, res_ncols) = (res.rows(), res.rows() * cols_in, res.cols_out() * res.size());
+    let (a_nrows, a_ncols) = (a.rows() * cols_in, a.cols_out() * a.size());
+    let n_block_pairs: usize = n / 4;
+    // Same strides as the prepare kernel above, per matrix shape.
+    let (res_plane, res_bp, res_col) = (
+        n_block_pairs * res_ncols * res_nrows * 4,
+        res_ncols * res_nrows * 4,
+        res_nrows * 4,
+    );
+    let (a_plane, a_bp, a_col) = (n_block_pairs * a_ncols * a_nrows * 4, a_ncols * a_nrows * 4, a_nrows * 4);
+    let span: usize = cols_in * 4;
+
+    let src: &[u64] = cast_slice(a.raw());
+    let dst: &mut [u64] = cast_slice_mut(res.data_mut());
+    for p in 0..4 {
+        for bp in 0..n_block_pairs {
+            for col in 0..res_ncols {
+                let dst_base: usize = p * res_plane + bp * res_bp + col * res_col;
+                let src_base: usize = p * a_plane + bp * a_bp + col * a_col;
+                for i in 0..res_rows {
+                    let (d, s) = (dst_base + i * span, src_base + (first_row + i * row_step) * span);
+                    dst[d..d + span].copy_from_slice(&src[s..s + span]);
+                }
+            }
+        }
+    }
+}

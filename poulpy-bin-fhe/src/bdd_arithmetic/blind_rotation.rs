@@ -12,6 +12,7 @@ use poulpy_hal::{
 
 use crate::bdd_arithmetic::{Cmux, GetGGSWBit, UnsignedInteger};
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 use poulpy_hal::layouts::HostDataRef;
 
 impl<T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> GGSWBlindRotation<T, BE> for Module<BE>
@@ -267,7 +268,7 @@ where
                 }
 
                 let bit = value.get_bit(i + bit_rsh);
-                self.cmux_assign(&mut tmp_res, &res_cur, bit, &mut scratch_1.borrow());
+                self.cmux_assign(&mut tmp_res, &res_cur, &bit.to_backend_ref(), &mut scratch_1.borrow());
             } else {
                 match sign {
                     true => self.glwe_rotate(1 << (i + bit_lsh), &mut res_cur, &tmp_res),
@@ -275,7 +276,7 @@ where
                 }
 
                 let bit = value.get_bit(i + bit_rsh);
-                self.cmux_assign(&mut res_cur, &tmp_res, bit, &mut scratch_1.borrow());
+                self.cmux_assign(&mut res_cur, &tmp_res, &bit.to_backend_ref(), &mut scratch_1.borrow());
             }
 
             // ping-pong roles for next iter

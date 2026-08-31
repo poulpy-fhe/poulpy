@@ -1,8 +1,8 @@
 use itertools::Itertools;
 use poulpy_core::layouts::{
     GGLWEInfos, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSWInfos,
-    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos,
-    GLWETensorKeyPreparedFactory, LWEInfos, prepared::GLWEAutomorphismKeyPrepared,
+    GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWETensorKeyPreparedFactory, GetAutomorphismKey,
+    LWEInfos, prepared::GLWEAutomorphismKeyPrepared,
 };
 use std::collections::HashMap;
 
@@ -152,15 +152,13 @@ pub struct CircuitBootstrappingKeyPrepared<D: Data, BRA: BlindRotationAlgo, B: B
     pub(crate) atk: HashMap<i64, GLWEAutomorphismKeyPrepared<D, B>>,
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>, BE>
-    for CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
-{
-    fn get_automorphism_key(&self, k: i64) -> Option<&GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> {
-        self.atk.get_automorphism_key(k)
-    }
-
-    fn automorphism_key_infos(&self) -> poulpy_core::layouts::GGLWELayout {
-        self.atk.automorphism_key_infos()
+impl<BRA: BlindRotationAlgo, BE: Backend> GetAutomorphismKey<BE> for CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: poulpy_core::layouts::TorusPrecision,
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.atk.get_automorphism_key(p, k)
     }
 }
 

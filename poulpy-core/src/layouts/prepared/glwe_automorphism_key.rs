@@ -1,27 +1,12 @@
-use std::collections::HashMap;
-
+use crate::error::Result;
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
-    GGLWEPreparedFactory, GGLWEToBackendRef, GLWEAutomorphismKeyHelper, GLWEInfos, GetGaloisElement, LWEInfos, Rank,
-    SetGaloisElement, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
+    GGLWEPreparedFactory, GGLWEToBackendRef, GLWEInfos, GetGaloisElement, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
 };
-
-impl<K, BE: Backend> GLWEAutomorphismKeyHelper<K, BE> for HashMap<i64, K>
-where
-    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-{
-    fn get_automorphism_key(&self, k: i64) -> Option<&K> {
-        self.get(&k)
-    }
-
-    fn automorphism_key_infos(&self) -> GGLWELayout {
-        let first_key = self.keys().min().copied().expect("automorphism key map is empty");
-        self.get(&first_key).unwrap().gglwe_layout()
-    }
-}
+use poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref;
 
 #[derive(PartialEq)]
 pub struct GLWEAutomorphismKeyPrepared<D: Data, B: Backend> {
@@ -84,6 +69,10 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
 
     fn dnum(&self) -> Dnum {
         self.key.dnum()
+    }
+
+    fn stride(&self) -> usize {
+        self.key.stride()
     }
 }
 
@@ -176,6 +165,19 @@ impl<B: Backend> GLWEAutomorphismKeyPreparedFactory<B> for Module<B> where Modul
 pub type GLWEAutomorphismKeyPreparedBackendRef<'a, B> = GLWEAutomorphismKeyPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GLWEAutomorphismKeyPreparedBackendMut<'a, B> = GLWEAutomorphismKeyPrepared<<B as Backend>::BufMut<'a>, B>;
 
+impl<D: Data, B: Backend> GLWEAutomorphismKeyPrepared<D, B> {
+    /// This key read through a coarser `dsize`. See [`GGLWEPrepared::with_dsize`].
+    pub fn with_dsize(&self, dsize: Dsize) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'_, B>>
+    where
+        GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
+    {
+        Ok(GLWEAutomorphismKeyPrepared {
+            key: self.key.with_dsize(dsize)?,
+            p: self.p,
+        })
+    }
+}
+
 pub trait GLWEAutomorphismKeyPreparedToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> GLWEAutomorphismKeyPreparedBackendRef<'_, B>;
 }
@@ -198,6 +200,19 @@ where
 {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         self.key.to_backend_ref()
+    }
+}
+
+impl<'b, B: Backend + 'b> GGLWEPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B::BufRef<'b>, B> {
+    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
+        GGLWEPrepared {
+            base2k: self.key.base2k,
+            k_aux: self.key.k_aux,
+            dsize: self.key.dsize,
+            dnum: self.key.dnum,
+            stride: self.key.stride,
+            data: vmp_pmat_backend_ref_from_ref::<B>(&self.key.data),
+        }
     }
 }
 

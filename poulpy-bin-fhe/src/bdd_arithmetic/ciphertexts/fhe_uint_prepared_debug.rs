@@ -13,6 +13,7 @@ use poulpy_core::{
     layouts::{GGSWInfos, GGSWPreparedFactory, GLWEInfos, LWEInfos},
 };
 
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_hal::api::ModuleN;
 use poulpy_hal::layouts::{
     Backend, Data, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef,
@@ -157,7 +158,15 @@ where
         let mut scratch_1 = scratch.borrow();
         for (bit, dst) in res.bits.iter_mut().enumerate() {
             let mut scratch_bit = scratch_1.borrow();
-            bits.get_bit_lwe(self, bit, &mut tmp_lwe, key.ks_glwe.as_ref(), &key.ks_lwe, &mut scratch_bit);
+            let ks_glwe_ref = key.ks_glwe.as_ref().map(|k| k.to_backend_ref());
+            bits.get_bit_lwe(
+                self,
+                bit,
+                &mut tmp_lwe,
+                ks_glwe_ref.as_ref(),
+                &key.ks_lwe.to_backend_ref(),
+                &mut scratch_bit,
+            );
             key.cbt.execute_to_constant(self, dst, &tmp_lwe, 1, 1, &mut scratch_bit);
         }
     }

@@ -601,6 +601,22 @@ unsafe impl HalVmpImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         }
     }
 
+    fn vmp_extract_selected_rows(
+        module: &Module<Self>,
+        res: &mut VmpPMatBackendMut<'_, Self>,
+        a: &VmpPMatBackendRef<'_, Self>,
+        first_row: usize,
+        row_step: usize,
+    ) {
+        <NTT4x30Avx512 as HalVmpImpl<NTT4x30Avx512>>::vmp_extract_selected_rows(
+            base_module(module),
+            &mut base_vmp_mut(res),
+            &base_vmp_ref(a),
+            first_row,
+            row_step,
+        )
+    }
+
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
         <Self as NTT4x30VmpDefault<Self>>::vmp_zero_default(module, res)
     }

@@ -4,7 +4,7 @@ use poulpy_core::{
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
         SetBSGSMeta,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+        prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -346,7 +346,15 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
 
         match keys.encapsulation_keys() {
             Some((dense_to_sparse, sparse_to_dense)) => {
-                BE::ckks_encapsulated_mod_up(self.0, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch)?;
+                BE::ckks_encapsulated_mod_up(
+                    self.0,
+                    dst,
+                    src,
+                    scale_up,
+                    &dense_to_sparse.to_backend_ref(),
+                    &sparse_to_dense.to_backend_ref(),
+                    scratch,
+                )?;
             }
             None => self.ckks_mod_up_into_default(dst, src, scale_up, scratch)?,
         }
@@ -379,15 +387,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        self.ckks_coeffs_to_slots_split(
-            r0,
-            i0,
-            ct,
-            ctx.coeffs_to_slots(),
-            keys.rotation_keys(),
-            keys.conjugation_key(),
-            scratch,
-        )
+        self.ckks_coeffs_to_slots_split(r0, i0, ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)
     }
 
     fn ckks_bootstrap_coeffs_to_slots_real<F, K, R1, R2>(
@@ -405,7 +405,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         self.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
-        self.ckks_conjugate_into(conjugate, &*ct, keys.conjugation_key(), scratch)?;
+        self.ckks_conjugate_into(conjugate, &*ct, keys.rotation_keys(), scratch)?;
         self.ckks_add_assign(ct, &*conjugate, scratch)?;
         // `z + conj(z) = 2·Re(z)` holds the input polynomial's coefficients.
         ct.set_slots(SlotsKind::Real);
@@ -521,7 +521,6 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                         &ct_raised,
                         bypass,
                         keys.rotation_keys(),
-                        keys.conjugation_key(),
                         &mut scratch_local,
                     )?;
 
@@ -719,7 +718,6 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                         &ct,
                         bypass,
                         keys.rotation_keys(),
-                        keys.conjugation_key(),
                         &mut scratch_local,
                     )?;
 
@@ -932,7 +930,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                         &mut ct_raised,
                         lut,
                         &basis,
-                        keys.conjugation_key(),
+                        keys.rotation_keys(),
                         keys.tensor_key(),
                         &mut scratch_local,
                     )?;
@@ -964,13 +962,13 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
 /// Reference SSE pipeline: switch to the sparse secret before ModUp to bound
 /// wrap-around, then restore the dense secret afterward.
 #[doc(hidden)]
-pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src, D2S, S2D>(
+pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,
     scale_up: usize,
-    dense_to_sparse: &D2S,
-    sparse_to_dense: &S2D,
+    dense_to_sparse: &GGLWEPreparedBackendRef<'_, BE>,
+    sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -978,14 +976,12 @@ where
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    D2S: poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    S2D: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    module.glwe_keyswitch_assign(src, dense_to_sparse, scratch);
+    module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     // The lift is fused into ModUp, so the message is already at its final scale
     // when sparse-to-dense adds its noise.
     BootstrappingDefault::new(module).ckks_mod_up_into_default(dst, src, scale_up, scratch)?;
-    module.glwe_keyswitch_assign(dst, sparse_to_dense, scratch);
+    module.glwe_keyswitch_assign(dst, &sparse_to_dense.to_backend_ref(), scratch);
     Ok(())
 }
 
@@ -1097,7 +1093,7 @@ where
             ct_in,
             ctx.eval_mod(),
             series,
-            keys.conjugation_key(),
+            keys.rotation_keys(),
             keys.tensor_key(),
             scratch,
         )?,
@@ -1159,7 +1155,7 @@ where
         };
         let basis = ckks_lut_power_basis(module, ct, &layout, ctx.eval_mod(), luts, keys.tensor_key(), scratch)?;
         for (out, lut) in outs.iter_mut().zip(luts) {
-            ckks_eval_lut_from_basis(module, out, lut, &basis, keys.conjugation_key(), keys.tensor_key(), scratch)?;
+            ckks_eval_lut_from_basis(module, out, lut, &basis, keys.rotation_keys(), keys.tensor_key(), scratch)?;
         }
         return Ok(());
     }

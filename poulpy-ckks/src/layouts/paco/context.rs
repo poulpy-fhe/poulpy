@@ -28,10 +28,7 @@ use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::plan::{PaCoDFTPlan, PaCoPlan};
 use crate::SlotsKind;
-use crate::default::paco::{
-    lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors},
-    ops::conj_rotate_galois_element,
-};
+use crate::default::paco::lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors};
 use crate::{
     CKKSMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, LinearTransformation, PaCoScalar},
@@ -70,12 +67,9 @@ pub(crate) enum PaCoPsiTailMaterial<BE: Backend> {
     /// keyswitch, then `A·w + B·conj(w)` at one level.
     Pair([LinearTransformation<CKKSPlaintextOwned<BE>>; 2]),
     /// The operation-lean unfused tail (ψ scheduled alone): one fused
-    /// conj-rotate keyswitch (`galois_element`), one addition, and one
+    /// conj-rotate keyswitch of `rotation` slots, one addition, and one
     /// multiplication by the share-scaled μ mask plaintext.
-    Mask {
-        mu: CKKSPlaintextOwned<BE>,
-        galois_element: i64,
-    },
+    Mask { mu: CKKSPlaintextOwned<BE>, rotation: i64 },
 }
 
 /// Rejects generated factors that the host CKKS codec would overflow or
@@ -319,7 +313,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     .context("cannot encode the PaCo ψ mask plaintext")?;
                 PaCoPsiTailMaterial::Mask {
                     mu: pt,
-                    galois_element: conj_rotate_galois_element(plan.c() as i64, module.cyclotomic_order()),
+                    rotation: plan.c() as i64,
                 }
             }
         };

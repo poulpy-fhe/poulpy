@@ -359,7 +359,9 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
         atks.entry(p)
             .or_insert_with(|| gen_atk(&params, &module, p, &sk_raw, &mut scratch.borrow()));
     }
-    let conj_key = gen_atk(&params, &module, -1, &sk_raw, &mut scratch.borrow());
+    // Conjugation is a rotation like any other: it lives in the same map.
+    atks.entry(-1)
+        .or_insert_with(|| gen_atk(&params, &module, -1, &sk_raw, &mut scratch.borrow()));
 
     let (re, im) = test_vector_1::<F>(m);
     let coeffs = coeff_layout(&re, &im, params.n);
@@ -377,15 +379,7 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
     let mut ct_real = alloc_ct(&params, &module, params.k);
     let mut ct_imag = alloc_ct(&params, &module, params.k);
     module
-        .ckks_coeffs_to_slots_split(
-            &mut ct_real,
-            &mut ct_imag,
-            &ct_in,
-            &enc_dft,
-            &atks,
-            &conj_key,
-            &mut scratch.borrow(),
-        )
+        .ckks_coeffs_to_slots_split(&mut ct_real, &mut ct_imag, &ct_in, &enc_dft, &atks, &mut scratch.borrow())
         .unwrap();
 
     // Reference: ct_real holds slots (re, 0), ct_imag holds slots (im, 0). Measure
@@ -452,7 +446,9 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
         atks.entry(p)
             .or_insert_with(|| gen_atk(&params, &module, p, &sk_raw, &mut scratch.borrow()));
     }
-    let conj_key = gen_atk(&params, &module, -1, &sk_raw, &mut scratch.borrow());
+    // Conjugation is a rotation like any other: it lives in the same map.
+    atks.entry(-1)
+        .or_insert_with(|| gen_atk(&params, &module, -1, &sk_raw, &mut scratch.borrow()));
 
     // Sparse coefficient layout: bitrev(re) at gap, bitrev(im) at N/2 + gap.
     let (re_full, im_full) = test_vector_1::<F>(params.n / 2);
@@ -478,7 +474,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
 
     let mut ct_out = alloc_ct(&params, &module, params.k);
     module
-        .ckks_coeffs_to_slots_repack(&mut ct_out, &ct_in, &enc_dft, &atks, &conj_key, &mut scratch.borrow())
+        .ckks_coeffs_to_slots_repack(&mut ct_out, &ct_in, &enc_dft, &atks, &mut scratch.borrow())
         .unwrap();
 
     // Reference at 2·slots resolution: real part = [re | im], imag part = 0.

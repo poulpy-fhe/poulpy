@@ -1,12 +1,14 @@
-use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSConjugateImpl};
+use crate::{
+    CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, default::paco::ops::conj_rotate_galois_element, oep::CKKSConjugateImpl,
+};
 
 use crate::api::CKKSConjugateOps;
 
@@ -22,26 +24,42 @@ where
         BE::ckks_conjugate_tmp_bytes_impl(self, ct_infos, key_infos)
     }
 
-    fn ckks_conjugate_into<Dst, Src, K>(
+    fn ckks_conjugate_rotate_into<Dst, Src, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        key: &K,
+        k: i64,
+        keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: CKKSAtkBounds<BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_conjugate_into_impl(self, dst, src, key, scratch)
+        let p: i64 = conj_rotate_galois_element(k, self.cyclotomic_order());
+        let key = keys
+            .get_automorphism_key(p, src.k())
+            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+                op: "conjugate",
+                rotation: k,
+                k: src.k().into(),
+            })?;
+        BE::ckks_conjugate_into_impl(self, dst, src, &key, scratch)
     }
 
-    fn ckks_conjugate_assign<Dst, K>(&self, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        BE::ckks_conjugate_assign_impl(self, dst, key, scratch)
+        let key = keys
+            .get_automorphism_key(-1, dst.k())
+            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+                op: "conjugate_assign",
+                rotation: 0,
+                k: dst.k().into(),
+            })?;
+        BE::ckks_conjugate_assign_impl(self, dst, &key, scratch)
     }
 }

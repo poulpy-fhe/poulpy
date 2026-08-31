@@ -21,7 +21,7 @@ use poulpy_hal::{
 
 use crate::{
     default::keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetGaloisElement, prepared::GGLWEPreparedToBackendRef},
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, LWEInfos, prepared::GGLWEPreparedBackendRef},
 };
 
 pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(module: &M, a_infos: &R, key_infos: &K) -> usize
@@ -73,12 +73,13 @@ where
 /// automorphism is applied in DFT before the caller folds the contribution into
 /// the accumulator.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
+pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
     module: &M,
     res_dft: &mut VecZnxDftBackendMut<'_, BE>,
     prod_dft: &VecZnxDftBackendRef<'_, BE>,
     prod_base2k: usize,
-    key: &K,
+    p: i64,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
     output_size: usize,
     term_count: usize,
     accumulate: bool,
@@ -95,7 +96,6 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let cols = res_dft.cols();
     let rank = cols - 1;
@@ -129,20 +129,13 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     }
 
     let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols, output_size);
-    let key_ref = key.to_backend_ref();
-    module.gglwe_product_dft_default(
-        &mut ks_dft,
-        &a_dft.to_backend_ref(),
-        &key_ref,
-        term_count,
-        &mut scratch_2.borrow(),
-    );
+    module.gglwe_product_dft_default(&mut ks_dft, &a_dft.to_backend_ref(), key, term_count, &mut scratch_2.borrow());
 
     // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `output_size`,
     // matching the existing BIG lazy path's rotated contribution size.
     module.vec_znx_dft_add_assign(&mut ks_dft, 0, prod_dft, 0);
 
-    let plan = module.vec_znx_dft_automorphism_plan(key.p());
+    let plan = module.vec_znx_dft_automorphism_plan(p);
     let ks_dft_ref = ks_dft.to_backend_ref();
     for col in 0..cols {
         if accumulate {

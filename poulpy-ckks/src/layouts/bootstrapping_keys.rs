@@ -27,7 +27,6 @@
 //! (lazy / streaming / on-the-fly-prepared) can implement [`BootstrappingKeys`]
 //! directly instead of materializing the whole bundle.
 
-use crate::CKKSAtkBounds;
 use std::collections::{BTreeSet, HashMap};
 
 use anyhow::Result;
@@ -35,10 +34,10 @@ use poulpy_core::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     layouts::{
         BackendGLWESecret, GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
-        GLWEInfos, GLWESecretLayout, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
+        GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecretLayout,
+        GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared,
         GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
-        GetGaloisElement, LWEInfos, ModuleCoreAlloc,
+        GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
@@ -60,26 +59,17 @@ use poulpy_core::{Distribution, GetDistributionMut};
 /// back them with any data representation and to prepare them lazily / on the fly.
 /// [`BootstrappingKeysPrepared`] is the eager in-memory implementation.
 pub trait BootstrappingKeys<BE: Backend> {
-    /// The prepared automorphism-key type returned for rotations and conjugation.
-    type AutomorphismKey: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-        + GGLWEPreparedToBackendRef<BE>
-        + GetGaloisElement
-        + GGLWEInfos;
-
     /// The rotation-key collection passed to the homomorphic DFT stages.
-    type RotationKeys: GLWEAutomorphismKeyHelper<Self::AutomorphismKey, BE>;
+    type RotationKeys: GetAutomorphismKey<BE>;
 
     /// The prepared tensor (relinearization) key type for EvalMod.
-    type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+    type TensorKey: GetTensorKey<BE>;
 
     /// The prepared key-switching key type for sparse-secret encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    /// Rotation (automorphism) keys for `CoeffsToSlots` / `SlotsToCoeffs`.
+    /// Rotation (automorphism) keys, Galois element `−1` among them.
     fn rotation_keys(&self) -> &Self::RotationKeys;
-
-    /// Conjugation key (Galois element `−1`) for the split `CoeffsToSlots`.
-    fn conjugation_key(&self) -> &Self::AutomorphismKey;
 
     /// Relinearization (tensor) key for EvalMod's `ct×ct` squaring.
     fn tensor_key(&self) -> &Self::TensorKey;
@@ -97,10 +87,9 @@ pub trait BootstrappingKeys<BE: Backend> {
 /// [`BootstrappingKeysPrepared`] the pipeline consumes, or prepare individual keys
 /// on the fly.
 pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
-    /// Rotation keys indexed by Galois element (the engine-wide convention).
+    /// Rotation keys indexed by Galois element (the engine-wide convention),
+    /// conjugation (`−1`) among them.
     pub rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
-    /// Conjugation key (Galois element `−1`).
-    pub conjugation_key: GLWEAutomorphismKey<D, W>,
     /// Relinearization (tensor) key for EvalMod.
     pub tensor_key: GLWETensorKey<D, W>,
     /// `(denseToSparse, sparseToDense)` encapsulation keys, or `None`.
@@ -112,10 +101,8 @@ pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
 /// Generic over the key data buffer `D`; implements [`BootstrappingKeys`]. Built
 /// eagerly by [`BootstrappingKeySet::prepare`].
 pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
-    /// Prepared rotation keys indexed by Galois element.
+    /// Prepared rotation keys indexed by Galois element, conjugation among them.
     pub rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
-    /// Prepared conjugation key (Galois element `−1`).
-    pub conjugation_key: GLWEAutomorphismKeyPrepared<D, BE>,
     /// Prepared relinearization (tensor) key for EvalMod.
     pub tensor_key: GLWETensorKeyPrepared<D, BE>,
     /// Prepared `(denseToSparse, sparseToDense)` encapsulation keys, or `None`.
@@ -124,21 +111,16 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
 
 impl<D: Data, BE: Backend> BootstrappingKeys<BE> for BootstrappingKeysPrepared<D, BE>
 where
-    GLWEAutomorphismKeyPrepared<D, BE>: CKKSAtkBounds<BE>,
-    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    type AutomorphismKey = GLWEAutomorphismKeyPrepared<D, BE>;
     type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
     type TensorKey = GLWETensorKeyPrepared<D, BE>;
     type SwitchingKey = GLWESwitchingKeyPrepared<D, BE>;
 
     fn rotation_keys(&self) -> &Self::RotationKeys {
         &self.rotation_keys
-    }
-
-    fn conjugation_key(&self) -> &Self::AutomorphismKey {
-        &self.conjugation_key
     }
 
     fn tensor_key(&self) -> &Self::TensorKey {
@@ -178,12 +160,6 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
             rotation_keys.insert(p, prepared);
         }
 
-        let conjugation_key = {
-            let mut prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&self.conjugation_key);
-            module.glwe_automorphism_key_prepare(&mut prepared, &self.conjugation_key, scratch);
-            prepared
-        };
-
         let tensor_key = {
             let mut prepared = module.alloc_tensor_key_prepared_from_infos(&self.tensor_key);
             module.prepare_tensor_key(&mut prepared, &self.tensor_key, scratch);
@@ -200,7 +176,6 @@ impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
 
         BootstrappingKeysPrepared {
             rotation_keys,
-            conjugation_key,
             tensor_key,
             encapsulation_keys,
         }
@@ -298,6 +273,8 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             gal_set.extend(bypass.galois_elements(order));
         }
         gal_set.extend(self.slots_to_coeffs().galois_elements(order));
+        // Conjugation, for the split forward transform.
+        gal_set.insert(-1);
 
         let mut rotation_keys = HashMap::with_capacity(gal_set.len());
         for p in gal_set {
@@ -305,10 +282,6 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             module.glwe_automorphism_key_encrypt_sk(&mut atk, p, sk_dense, &atk_enc, source_xe, source_xa, scratch);
             rotation_keys.insert(p, atk);
         }
-
-        // Conjugation key for the split forward transform (Galois element −1).
-        let mut conjugation_key = module.glwe_automorphism_key_alloc_from_infos(&atk_enc);
-        module.glwe_automorphism_key_encrypt_sk(&mut conjugation_key, -1, sk_dense, &atk_enc, source_xe, source_xa, scratch);
 
         // Tensor (relinearization) key for EvalMod's ct×ct squaring.
         let tsk_enc = EncryptionLayout::new_from_default_sigma(layout.tensor_key)?;
@@ -357,7 +330,6 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
 
         Ok(BootstrappingKeySet {
             rotation_keys,
-            conjugation_key,
             tensor_key,
             encapsulation_keys,
         })

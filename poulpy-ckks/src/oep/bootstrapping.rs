@@ -3,7 +3,7 @@
 //! ModUp's known-zero low limbs are a CKKS pipeline property, not a general
 //! Core key-switch operation.
 
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGLWEPreparedToBackendRef};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGLWEPreparedBackendRef};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, CKKSResult, SetCKKSInfos};
@@ -34,20 +34,18 @@ pub unsafe trait CKKSEncapsulatedModUpImpl<BE: Backend>: Backend {
     /// `scale_up` is applied to the raised ciphertext between ModUp and the
     /// sparse-to-dense switch, so the message is already at its final scale when
     /// that key-switch's noise is added.
-    fn ckks_encapsulated_mod_up<Dst, Src, D2S, S2D>(
+    fn ckks_encapsulated_mod_up<Dst, Src>(
         module: &Module<BE>,
         dst: &mut Dst,
         src: &mut Src,
         scale_up: usize,
-        dense_to_sparse: &D2S,
-        sparse_to_dense: &S2D,
+        dense_to_sparse: &GGLWEPreparedBackendRef<'_, BE>,
+        sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        D2S: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        S2D: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
 /// Opts a backend into the CKKS reference encapsulated-ModUp pipeline.
@@ -77,13 +75,13 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
                 )
             }
 
-            fn ckks_encapsulated_mod_up<Dst, Src, D2S, S2D>(
+            fn ckks_encapsulated_mod_up<Dst, Src>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 dst: &mut Dst,
                 src: &mut Src,
                 scale_up: usize,
-                dense_to_sparse: &D2S,
-                sparse_to_dense: &S2D,
+                dense_to_sparse: &::poulpy_core::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
+                sparse_to_dense: &::poulpy_core::layouts::prepared::GGLWEPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
             where
@@ -95,8 +93,6 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
                     + ::poulpy_core::layouts::GLWEToBackendRef<$be>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
-                D2S: ::poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<$be> + ::poulpy_core::layouts::GGLWEInfos,
-                S2D: ::poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<$be> + ::poulpy_core::layouts::GGLWEInfos,
             {
                 $crate::default::bootstrapping::ckks_encapsulated_mod_up_default(
                     module,

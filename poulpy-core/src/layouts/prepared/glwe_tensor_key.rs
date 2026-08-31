@@ -1,3 +1,4 @@
+use crate::error::Result;
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
@@ -56,6 +57,10 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWETensorKeyPrepared<D, B> {
 
     fn dnum(&self) -> Dnum {
         self.0.dnum()
+    }
+
+    fn stride(&self) -> usize {
+        self.0.stride()
     }
 }
 
@@ -131,6 +136,16 @@ impl<B: Backend> GLWETensorKeyPreparedFactory<B> for Module<B> where Module<B>: 
 
 pub type GLWETensorKeyPreparedBackendRef<'a, B> = GLWETensorKeyPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GLWETensorKeyPreparedBackendMut<'a, B> = GLWETensorKeyPrepared<<B as Backend>::BufMut<'a>, B>;
+
+impl<D: Data, B: Backend> GLWETensorKeyPrepared<D, B> {
+    /// This key read through a coarser `dsize`. See [`GGLWEPrepared::with_dsize`].
+    pub fn with_dsize(&self, dsize: Dsize) -> Result<GLWETensorKeyPreparedBackendRef<'_, B>>
+    where
+        GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
+    {
+        Ok(GLWETensorKeyPrepared(self.0.with_dsize(dsize)?))
+    }
+}
 
 pub trait GLWETensorKeyPreparedToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> GLWETensorKeyPreparedBackendRef<'_, B>;

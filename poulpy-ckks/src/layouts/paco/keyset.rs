@@ -7,15 +7,14 @@
 //! [`PaCoKeys`] access trait. Custom key managers may implement [`PaCoKeys`]
 //! directly to prepare or stream keys on demand.
 
-use crate::CKKSAtkBounds;
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyHelper,
-    GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyDegrees,
-    GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyPrepared,
-    GLWETensorKeyPreparedFactory, GLWETensorKeyPreparedToBackendRef, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+    GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyPrepared,
+    GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyPrepared,
+    GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory,
+    GLWETensorKeyPreparedToBackendRef, GLWEToBackendRef, GetAutomorphismKey, GetGaloisElement, GetTensorKey, LWEInfos,
     ModuleCoreAlloc, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, Module, ScratchArena, ZnxWord};
@@ -103,16 +102,13 @@ pub trait PaCoKeys<BE: Backend> {
     type BootstrappingKey: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Prepared automorphism-key type used by PaCo rotations and folds.
-    type AutomorphismKey: GLWEAutomorphismKeyPreparedToBackendRef<BE>
-        + GGLWEPreparedToBackendRef<BE>
-        + GetGaloisElement
-        + GGLWEInfos;
+    type AutomorphismKey: GetAutomorphismKey<BE>;
 
     /// Collection that resolves automorphism keys by Galois element.
-    type RotationKeys: GLWEAutomorphismKeyHelper<Self::AutomorphismKey, BE>;
+    type RotationKeys: GetAutomorphismKey<BE>;
 
     /// Prepared tensor (relinearization) key used by the product fold.
-    type TensorKey: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+    type TensorKey: GetTensorKey<BE>;
 
     /// Prepared dense-to-PaCo switching key used by optional encapsulation.
     type SwitchingKey: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees;
@@ -513,8 +509,8 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
 impl<D: Data, BE: Backend> PaCoKeys<BE> for PaCoKeysPrepared<D, BE>
 where
     CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + CKKSCtBounds,
-    GLWEAutomorphismKeyPrepared<D, BE>: CKKSAtkBounds<BE>,
-    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
+    GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
     type BootstrappingKey = CKKSCiphertext<D, BE::ZnxWord>;

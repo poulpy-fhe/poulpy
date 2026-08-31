@@ -8,8 +8,8 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
     layouts::{
-        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GetGaloisElement,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
+        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef,
+        prepared::{GGLWEToGGSWKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
     oep::{ConversionDefault, GGSWAutomorphismDefault, GLWEAutomorphismDefault},
 };
@@ -35,20 +35,18 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ggsw_automorphism_default<BE, M, R, A, K, T>(
+pub fn ggsw_automorphism_default<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
-    key: &K,
-    tsk: &T,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GGSWAutomorphismDefault<BE> + GLWEAutomorphismDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     A: GGSWToBackendRef<BE> + GGSWInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     {
         let a_backend = a.to_backend_ref();
@@ -63,18 +61,16 @@ pub fn ggsw_automorphism_default<BE, M, R, A, K, T>(
     module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, scratch);
 }
 
-pub fn ggsw_automorphism_assign_default<BE, M, R, K, T>(
+pub fn ggsw_automorphism_assign_default<BE, M, R>(
     module: &M,
     res: &mut R,
-    key: &K,
-    tsk: &T,
+    key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GGSWAutomorphismDefault<BE> + GLWEAutomorphismDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     {
         let rows = res.dnum().as_usize();

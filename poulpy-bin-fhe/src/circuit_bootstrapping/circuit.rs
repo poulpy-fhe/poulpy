@@ -8,9 +8,9 @@ use poulpy_hal::{
 use poulpy_core::{
     GGSWExpandRows, GGSWFromGGLWE, GLWECopy, GLWEDecrypt, GLWENormalize, GLWEPacking, GLWERotate, GLWETrace,
     layouts::{
-        Dsize, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
-        GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWEToBackendMut, GLWEToBackendRef,
-        GetGaloisElement, LWEInfos, LWEToBackendRef, ModuleCoreAlloc, Rank,
+        Dsize, GGLWELayout, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout,
+        GLWESecretPreparedFactory, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendRef,
+        ModuleCoreAlloc, Rank,
     },
 };
 
@@ -23,6 +23,7 @@ use crate::{
     circuit_bootstrapping::{CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyPrepared},
 };
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::prepared::GGLWEToGGSWKeyPreparedToBackendRef;
 
 /// Trait for evaluating a complete circuit bootstrapping.
 ///
@@ -179,6 +180,7 @@ where
             dsize: Dsize(1),
             rank_in: res_infos.rank().max(Rank(1)),
             rank_out: res_infos.rank(),
+            stride: 1,
         };
 
         self.blind_rotation_execute_tmp_bytes(block_size, extension_factor, res_infos, &cbt_infos.brk_infos())
@@ -331,11 +333,15 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
         rank: key.brk.rank(),
     };
 
-    let atk_layout: &GGLWELayout = &key.atk.automorphism_key_infos();
-
+    // Every rotation's key shares the radix; read it off the first one.
+    let atk_base2k = key
+        .atk
+        .get_automorphism_key(-1, glwe_brk_layout.k())
+        .map(|layout| layout.base2k())
+        .unwrap_or_else(|e| panic!("{e}"));
     let glwe_atk_layout: &GLWELayout = &GLWELayout {
         n: glwe_brk_layout.n(),
-        base2k: atk_layout.base2k(),
+        base2k: atk_base2k,
         k: glwe_brk_layout.k(),
         rank: glwe_brk_layout.rank(),
     };
@@ -399,11 +405,11 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
     }
 
     // Expands GGLWE to GGSW using GGLWE(s^2)
-    module.ggsw_expand_row(res, &key.tsk, &mut scratch_1.borrow());
+    module.ggsw_expand_row(res, &key.tsk.to_backend_ref(), &mut scratch_1.borrow());
 }
 
 #[allow(clippy::too_many_arguments)]
-fn post_process<R, A, M, H, K, BE>(
+fn post_process<R, A, M, H, BE>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -416,8 +422,7 @@ fn post_process<R, A, M, H, K, BE>(
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
-    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    H: GetAutomorphismKey<BE>,
     M: ModuleLogN
         + GLWETrace<BE>
         + GLWEPacking<BE>
