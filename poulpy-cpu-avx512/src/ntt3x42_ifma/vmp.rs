@@ -1150,7 +1150,7 @@ pub(crate) fn vmp_extract_selected_rows_ifma(
     let (a_bq, a_col) = (a_ncols * a_nrows * 16, a_nrows * 16);
     let span: usize = cols_in * 16;
 
-    let src: &[u64] = cast_slice(a.raw());
+    let src: &[u64] = cast_slice(a.data());
     let dst: &mut [u64] = cast_slice_mut(res.data_mut());
     for bq in 0..n_blk_quads {
         for col in 0..res_ncols {
