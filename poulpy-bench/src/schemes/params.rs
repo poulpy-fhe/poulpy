@@ -1,15 +1,15 @@
 use std::fmt::Display;
 
 use poulpy_ckks::SlotsKind;
-use poulpy_hal::layouts::Backend;
 use serde::{Deserialize, Serialize};
 
 /// One point of the CKKS benchmark sweep.
 ///
 /// The number of limbs (`k = limbs * base2k`) and the gadget split (`dsize`,
 /// `dnum`) are scaled down with `n`, so the benchmark shape stays representative
-/// across sizes (smaller rings support smaller moduli / fewer limbs). `dnum` is
-/// derived as `⌈k / (dsize * base2k)⌉`, matching `tsk_layout`.
+/// across sizes (smaller rings support smaller moduli / fewer limbs). The key
+/// shapes (`dnum`, `k_aux`) are split off `k + dsize * base2k` by
+/// [`crate::core::params::key_dnum_k_aux`].
 #[derive(Clone, Copy)]
 pub struct CkksBenchParams {
     pub n: usize,
@@ -26,43 +26,6 @@ impl Display for CkksBenchParams {
             f,
             "(n={},base2k={},k={},log_delta={},dsize={})",
             self.n, self.base2k, self.k, self.log_delta, self.dsize
-        )
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct CkksBootstrappingBenchParams {
-    pub preset: CkksBootstrappingPreset,
-    pub base2k: usize,
-    pub dsize: usize,
-    pub dense_to_sparse_dsize: usize,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CkksBootstrappingPreset {
-    C2S16Levels,
-    S2C16Levels,
-}
-
-impl Display for CkksBootstrappingPreset {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::C2S16Levels => write!(f, "c2s_16_levels"),
-            Self::S2C16Levels => write!(f, "s2c_16_levels"),
-        }
-    }
-}
-
-impl Display for CkksBootstrappingBenchParams {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "(preset={},n={},base2k={},dsize={},dense_to_sparse_dsize={})",
-            self.preset,
-            1 << 16,
-            self.base2k,
-            self.dsize,
-            self.dense_to_sparse_dsize
         )
     }
 }
@@ -196,16 +159,6 @@ pub fn default_bench_params_ckks() -> Vec<CkksBenchParams> {
             slots: SlotsKind::Complex,
         },
     ]
-}
-
-pub fn default_bench_params_ckks_bootstrapping<BE: Backend>() -> [CkksBootstrappingBenchParams; 2] {
-    let (base2k, dsize, dense_to_sparse_dsize) = if BE::DFT_IS_EXACT { (52, 4, 3) } else { (19, 7, 7) };
-    [CkksBootstrappingPreset::C2S16Levels, CkksBootstrappingPreset::S2C16Levels].map(|preset| CkksBootstrappingBenchParams {
-        preset,
-        base2k,
-        dsize,
-        dense_to_sparse_dsize,
-    })
 }
 
 /// Blind-rotation benchmark points. Unlike the other `default_bench_params_*`

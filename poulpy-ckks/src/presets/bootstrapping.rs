@@ -6,8 +6,8 @@
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout,
-    LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout,
+    GLWETensorKeyLayout, LWEInfos, Rank, TorusPrecision,
 };
 
 use crate::{
@@ -43,7 +43,8 @@ struct PresetSpec {
     base2k: usize,
     rank: usize,
     log_delta: usize,
-    restored_levels: usize,
+    restored_bits: usize,
+    log2_precision: usize,
     dense_secret_hamming_weight: usize,
     sparse_secret_hamming_weight: usize,
     max_dense_modulus: usize,
@@ -64,9 +65,8 @@ struct PresetSpec {
 /// A complete CKKS bootstrapping parameter set.
 ///
 /// The input and output widths are composable: consuming
-/// [`restored_levels`](Self::restored_levels) levels from the output leaves
-/// exactly [`input_k`](Self::input_k) bits, enough to invoke the same preset
-/// again. The bootstrap allocation is wider than the logical output because it
+/// [`restored_bits`](Self::restored_bits) bits from the output leaves exactly
+/// [`input_k`](Self::input_k) bits, enough to invoke the same preset again. The bootstrap allocation is wider than the logical output because it
 /// also carries the post-ModUp circuit.
 #[derive(Clone, Debug)]
 pub struct BootstrappingPreset {
@@ -115,9 +115,19 @@ impl BootstrappingPreset {
         self.spec.log_delta + self.spec.log_msg_ratio
     }
 
-    /// Number of usable multiplication/rescale levels before the next bootstrap.
-    pub fn restored_levels(&self) -> usize {
-        self.spec.restored_levels
+    /// Bits of width handed back by the bootstrap (`output_k - input_k`).
+    ///
+    /// At the input scale this is `restored_bits / log_delta` rescales.
+    pub fn restored_bits(&self) -> usize {
+        self.spec.restored_bits
+    }
+
+    /// Advertised output precision in bits: the minimum slot-wise precision
+    /// measured on the reference vector at the nominal shape with `f64` DFT
+    /// matrices, rounded down. Pinned by
+    /// `test_suite::presets::bootstrapping_presets_meet_precision`.
+    pub fn log2_precision(&self) -> usize {
+        self.spec.log2_precision
     }
 
     /// Hamming weight of the dense application secret.
@@ -138,6 +148,36 @@ impl BootstrappingPreset {
     /// Configured modulus bound for objects under the ephemeral sparse secret.
     pub fn max_sparse_modulus(&self) -> usize {
         self.spec.max_sparse_modulus
+    }
+
+    /// Gadget digit size (in limbs) of the automorphism, tensor, and sparse-to-dense keys.
+    pub fn key_dsize(&self) -> usize {
+        self.spec.key_dsize
+    }
+
+    /// Gadget digit size (in limbs) of the dense-to-sparse key.
+    pub fn dense_to_sparse_dsize(&self) -> usize {
+        self.spec.dense_to_sparse_dsize
+    }
+
+    /// Re-derives the preset at limb radix `base2k`.
+    ///
+    /// The plan and every bit width are unchanged; the ciphertext and key
+    /// layouts are rebuilt and re-validated against the modulus bounds, so a
+    /// radix whose key shapes overflow them is rejected.
+    pub fn with_base2k(&self, base2k: usize) -> Result<Self> {
+        build(PresetSpec { base2k, ..self.spec })
+    }
+
+    /// Re-derives the preset with gadget digit sizes `key_dsize` for the
+    /// high-modulus keys and `dense_to_sparse_dsize` for the dense-to-sparse
+    /// key, re-validating the key moduli against the bounds.
+    pub fn with_dsizes(&self, key_dsize: usize, dense_to_sparse_dsize: usize) -> Result<Self> {
+        build(PresetSpec {
+            key_dsize,
+            dense_to_sparse_dsize,
+            ..self.spec
+        })
     }
 
     /// Width required by an input ciphertext.
@@ -215,7 +255,8 @@ pub mod log_n16 {
             base2k: 52,
             rank: 1,
             log_delta: 35,
-            restored_levels: 16,
+            restored_bits: 560,
+            log2_precision: 0,
             dense_secret_hamming_weight: 1024,
             sparse_secret_hamming_weight: 32,
             max_dense_modulus: 1714,
@@ -246,7 +287,8 @@ pub mod log_n16 {
             base2k: 52,
             rank: 1,
             log_delta: 35,
-            restored_levels: 16,
+            restored_bits: 560,
+            log2_precision: 0,
             dense_secret_hamming_weight: 1024,
             sparse_secret_hamming_weight: 32,
             max_dense_modulus: 1714,
@@ -264,6 +306,12 @@ pub mod log_n16 {
             eval_mod: optimized_han_ki(),
         })
     }
+}
+
+/// Every preset, in a stable order.
+pub fn all() -> Result<Vec<BootstrappingPreset>> {
+    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[log_n16::c2s_16_levels, log_n16::s2c_16_levels];
+    PRESETS.iter().map(|build| build()).collect()
 }
 
 const fn optimized_han_ki() -> EvalModSpec {
@@ -347,12 +395,8 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         .checked_add(spec.log_msg_ratio)
         .context("bootstrapping preset input modulus overflow")?;
     let input_k = plan.input_k(log_modulus);
-    let restored_bits = spec
-        .restored_levels
-        .checked_mul(spec.log_delta)
-        .context("bootstrapping preset restored width overflow")?;
     let output_k = input_k
-        .checked_add(restored_bits)
+        .checked_add(spec.restored_bits)
         .context("bootstrapping preset output width overflow")?;
     let bootstrap_k = plan.bootstrap_k(output_k);
     let keys_layout = keys_layout(&spec, n, bootstrap_k, log_modulus);
@@ -419,10 +463,21 @@ fn keys_layout(spec: &PresetSpec, n: usize, bootstrap_k: usize, log_modulus: usi
     }
 }
 
+/// Gadget shape of a key covering an input of `input_k` bits: the digit count
+/// from [`GGLWELayout::dnum_for_input`] and the preset's guard convention
+/// `dsize * base2k + log_n`.
 fn key_shape(spec: &PresetSpec, input_k: usize, dsize: usize) -> (Dnum, TorusPrecision) {
-    let digit_width = dsize * spec.base2k;
-    let dnum = input_k.div_ceil(digit_width);
-    (Dnum(dnum as u32), TorusPrecision((digit_width + spec.log_n) as u32))
+    let dnum = GGLWELayout::dnum_for_input(
+        Base2K(spec.base2k as u32),
+        TorusPrecision(input_k as u32),
+        Dsize(dsize as u32),
+    );
+    (dnum, TorusPrecision((dsize * spec.base2k + spec.log_n) as u32))
+}
+
+/// Gadget precision of `key` (see [`GGLWELayout::gadget_k`]).
+fn gadget_k<K: GGLWEInfos>(key: &K) -> usize {
+    key.gglwe_layout().gadget_k().as_usize()
 }
 
 fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &BootstrappingKeysLayout) -> Result<()> {
@@ -442,8 +497,8 @@ fn validate_modulus_bounds(spec: &PresetSpec, bootstrap_k: usize, keys: &Bootstr
 }
 
 fn validate_key<K: GGLWEInfos + LWEInfos>(name: &str, key: &K, limit: usize) -> Result<()> {
-    let rounded_k = key.dnum().as_usize() * key.dsize().as_usize() * key.base2k().as_usize();
-    ensure!(rounded_k <= limit, "{name} key rounded modulus {rounded_k} exceeds {limit}");
+    let rounded_k = gadget_k(key);
+    ensure!(rounded_k <= limit, "{name} key gadget modulus {rounded_k} exceeds {limit}");
     ensure!(
         key.k_aux().as_usize() <= limit,
         "{name} key auxiliary modulus {} exceeds {limit}",
@@ -467,10 +522,7 @@ mod tests {
         assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 200);
         assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 140);
         assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (40, 600, 1404));
-        assert_eq!(
-            preset.output_k() - preset.restored_levels() * preset.log_delta(),
-            preset.input_k()
-        );
+        assert_eq!(preset.output_k() - preset.restored_bits(), preset.input_k());
 
         assert_layouts_within_bounds(&preset);
     }
@@ -485,10 +537,7 @@ mod tests {
         assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 176);
         assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 112);
         assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (158, 718, 1358));
-        assert_eq!(
-            preset.output_k() - preset.restored_levels() * preset.log_delta(),
-            preset.input_k()
-        );
+        assert_eq!(preset.output_k() - preset.restored_bits(), preset.input_k());
 
         assert_layouts_within_bounds(&preset);
     }
@@ -498,7 +547,7 @@ mod tests {
         let encapsulation = keys.encapsulation.as_ref().unwrap();
 
         assert_eq!(keys.automorphism_key.dsize.as_usize(), 4);
-        assert_eq!(rounded_k(&keys.automorphism_key), 1456);
+        assert_eq!(gadget_k(&keys.automorphism_key), 1456);
         assert_eq!(keys.automorphism_key.k_aux.as_usize(), 224);
         assert_eq!(keys.automorphism_key.k().as_usize(), 1680);
         assert_eq!(keys.tensor_key.k().as_usize(), 1680);
@@ -506,13 +555,34 @@ mod tests {
         assert!(keys.automorphism_key.k().as_usize() <= preset.max_dense_modulus());
 
         assert_eq!(encapsulation.dense_to_sparse.dsize.as_usize(), 3);
-        assert_eq!(rounded_k(&encapsulation.dense_to_sparse), 156);
+        assert_eq!(gadget_k(&encapsulation.dense_to_sparse), 156);
         assert_eq!(encapsulation.dense_to_sparse.k_aux.as_usize(), 172);
         assert_eq!(encapsulation.dense_to_sparse.k().as_usize(), 328);
         assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.max_sparse_modulus());
     }
 
-    fn rounded_k<K: GGLWEInfos + LWEInfos>(key: &K) -> usize {
-        key.dnum().as_usize() * key.dsize().as_usize() * key.base2k().as_usize()
+    #[test]
+    fn all_lists_every_preset_once() {
+        let names: Vec<&str> = all().unwrap().iter().map(|p| p.name()).collect();
+        assert_eq!(names, ["c2s_16_levels", "s2c_16_levels"]);
+    }
+
+    #[test]
+    fn rederived_key_shape_keeps_widths_and_revalidates() {
+        let preset = log_n16::c2s_16_levels().unwrap();
+        let widths = (preset.input_k(), preset.output_k(), preset.bootstrap_k());
+
+        // The FFT64 shape used by the benchmarks: radix 19, digits of 7 limbs.
+        let fft = preset.with_base2k(19).unwrap().with_dsizes(7, 7).unwrap();
+        assert_eq!((fft.input_k(), fft.output_k(), fft.bootstrap_k()), widths);
+        assert_eq!((fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()), (19, 7, 7));
+        assert_eq!(fft.bootstrap_layout().glwe_layout.base2k.as_usize(), 19);
+        let keys = fft.keys_layout();
+        assert_eq!(keys.automorphism_key.dnum.as_usize(), 1404usize.div_ceil(7 * 19));
+        assert_eq!(keys.automorphism_key.k_aux.as_usize(), 7 * 19 + 16);
+        assert!(keys.automorphism_key.k().as_usize() <= fft.max_dense_modulus());
+
+        // A digit too wide for the dense bound is rejected by the same validation.
+        assert!(preset.with_dsizes(10, 3).is_err());
     }
 }

@@ -8,7 +8,8 @@
 use poulpy_core::{
     EncryptionLayout,
     layouts::{
-        Base2K, Degree, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout,
+        GLWETensorKeyLayout, Rank, TorusPrecision,
     },
 };
 
@@ -64,15 +65,24 @@ impl CKKSTestParams {
         .unwrap()
     }
 
+    /// Gadget shape of a key covering an input of `k_in` bits: the digit count
+    /// from [`GGLWELayout::dnum_for_input`] and the guard `dsize * base2k + log_n`.
+    fn key_shape(&self, k_in: usize) -> (Dnum, TorusPrecision) {
+        let dnum = GGLWELayout::dnum_for_input(
+            Base2K(self.base2k as u32),
+            TorusPrecision(k_in as u32),
+            Dsize(self.dsize as u32),
+        );
+        (dnum, TorusPrecision((self.dsize * self.base2k + self.log_n()) as u32))
+    }
+
     pub fn tsk_layout(&self) -> EncryptionLayout<GLWETensorKeyLayout> {
-        let total = self.k + self.dsize * self.base2k;
-        let dnum = total / (self.dsize * self.base2k);
-        let k_aux = self.dsize * self.base2k + self.log_n();
+        let (dnum, k_aux) = self.key_shape(self.k);
         EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
-            dnum: dnum.into(),
-            k_aux: k_aux.into(),
+            dnum,
+            k_aux,
             rank: Rank(self.rank as u32),
             dsize: self.dsize.into(),
         })
@@ -80,14 +90,12 @@ impl CKKSTestParams {
     }
 
     pub fn atk_layout(&self) -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
-        let total = self.k + self.dsize * self.base2k;
-        let dnum = total / (self.dsize * self.base2k);
-        let k_aux = self.dsize * self.base2k + self.log_n();
+        let (dnum, k_aux) = self.key_shape(self.k);
         EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
-            dnum: dnum.into(),
-            k_aux: k_aux.into(),
+            dnum,
+            k_aux,
             rank: Rank(self.rank as u32),
             dsize: self.dsize.into(),
         })
@@ -98,14 +106,12 @@ impl CKKSTestParams {
     /// modulus `k_in` bits (e.g. the encapsulation `denseToSparse` /
     /// `sparseToDense` keys, sized at the input level and at `k_boot`).
     pub fn ksk_layout(&self, k_in: usize) -> EncryptionLayout<GLWESwitchingKeyLayout> {
-        let total = k_in + self.dsize * self.base2k;
-        let dnum = total / (self.dsize * self.base2k);
-        let k_aux = self.dsize * self.base2k + self.log_n();
+        let (dnum, k_aux) = self.key_shape(k_in);
         EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
-            dnum: dnum.into(),
-            k_aux: k_aux.into(),
+            dnum,
+            k_aux,
             rank_in: Rank(self.rank as u32),
             rank_out: Rank(self.rank as u32),
             dsize: self.dsize.into(),
@@ -1001,6 +1007,7 @@ pub mod paco_parallel;
 pub mod paco_reference;
 pub(crate) mod paco_reference_model;
 pub mod polynomial_evaluation;
+pub mod presets;
 #[doc(hidden)]
 pub mod reference_encoder;
 pub mod rotate;
