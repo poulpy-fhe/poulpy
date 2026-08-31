@@ -35,7 +35,7 @@ use crate::{
     },
     layouts::{
         GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc,
-        prepared::PreparedDiagonal,
+        prepared::{GLWEAutomorphismKeyPreparedBackendRef, PreparedDiagonal},
     },
 };
 
@@ -185,35 +185,47 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, prod_base2k.as_usize());
     let prod_size = baby_size + diagonal_size - cnv_offset_hi;
 
-    let num_giant_steps = rhs.giant_steps.len();
     let nonzero_giant_rotations = rhs.giant_steps.iter().filter(|gs| gs.rot != 0).count();
     let has_nonzero_giant_rotation = nonzero_giant_rotations != 0;
     // Giant rotations rotate the post-product destination, so their keys are
-    // the ones the destination's precision asks for. Only look one up when a
-    // rotation actually needs it: an identity-only transform legitimately has
-    // no key at all.
-    let (use_lazy_giant_rotation, key_output_size) =
-        if let Some(rot) = rhs.giant_steps.iter().map(|gs| gs.rot).find(|&rot| rot != 0) {
-            let key_infos = keys
-                .get_automorphism_key(module.galois_element(rot), res.k())
-                .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
-            let key_base2k = key_infos.base2k();
-            let bases_match = res_base2k == key_base2k && prod_base2k == key_base2k;
-            // PROD may carry a partial low limb beyond the destination's live
-            // precision. Preserve the same guard below that wider input while the
-            // sizing helper applies the key's work-region cap.
-            let output_size = crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(
+    // the ones the destination's precision asks for. Every rotating step's key
+    // is resolved once, indexed by step, because the steps need not share a
+    // layout: the lazy route is only taken when all of them carry the
+    // destination's base2k, and the accumulator is sized by the widest key
+    // (each key-switch then clamps to its own width). An identity-only
+    // transform legitimately resolves no key at all.
+    let giant_keys: Vec<Option<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>>> = rhs
+        .giant_steps
+        .iter()
+        .map(|gs| {
+            (gs.rot != 0).then(|| {
+                keys.get_automorphism_key(module.galois_element(gs.rot), res.k())
+                    .unwrap_or_else(|e| panic!("giant-step rotation {}: {e}", gs.rot))
+            })
+        })
+        .collect();
+    // No giant rotation: BIG-flow accumulator is always valid (no key required).
+    let use_lazy_giant_rotation = giant_keys
+        .iter()
+        .flatten()
+        .all(|key| res_base2k == key.base2k() && prod_base2k == key.base2k());
+    // PROD may carry a partial low limb beyond the destination's live
+    // precision. Preserve the same guard below that wider input while the
+    // sizing helper applies the key's work-region cap.
+    let key_output_size = giant_keys
+        .iter()
+        .flatten()
+        .map(|key| {
+            crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(
                 res,
                 res,
-                &key_infos,
+                key,
                 nonzero_giant_rotations,
                 prod_size.saturating_sub(res.size()),
-            );
-            (bases_match, output_size)
-        } else {
-            // No giant rotation: BIG-flow accumulator is always valid (no key required).
-            (true, res.size())
-        };
+            )
+        })
+        .max()
+        .unwrap_or(res.size());
     let use_final_lazy_accumulator = !has_nonzero_giant_rotation || use_lazy_giant_rotation;
     let lazy_size = if use_lazy_giant_rotation {
         key_output_size.max(prod_size)
@@ -234,7 +246,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         }
 
         let mut res_initialized = false;
-        for g in 0..num_giant_steps {
+        for (g, giant_key) in giant_keys.iter().enumerate() {
             {
                 let mut prod_dft_backend = prod_dft.to_backend_mut();
                 P::accumulate_giant_prod(
@@ -256,9 +268,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
                     glwe_dft_copy_dft(module, &mut lazy_acc_dft_backend, &prod_dft_ref);
                 }
             } else {
-                let key = keys
-                    .get_automorphism_key(module.galois_element(rot), res.k())
-                    .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
+                let key = giant_key.as_ref().unwrap();
                 {
                     let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
                     let prod_dft_ref = prod_dft.to_backend_ref();
@@ -307,7 +317,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     let mut fallback_acc: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
     let mut res_initialized = false;
 
-    for g in 0..num_giant_steps {
+    for (g, giant_key) in giant_keys.iter().enumerate() {
         {
             let mut prod_dft_backend = prod_dft.to_backend_mut();
             P::accumulate_giant_prod(
@@ -335,13 +345,8 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
             }
         }
 
-        let rot = rhs.giant_steps[g].rot;
-        if rot != 0 {
-            let p = module.galois_element(rot);
-            let key = keys
-                .get_automorphism_key(p, fallback_acc.k())
-                .unwrap_or_else(|e| panic!("giant-step rotation {rot}: {e}"));
-            module.glwe_automorphism_assign(&mut fallback_acc, &key, &mut scratch_phase);
+        if let Some(key) = giant_key.as_ref() {
+            module.glwe_automorphism_assign(&mut fallback_acc, key, &mut scratch_phase);
         }
 
         if res_initialized {
