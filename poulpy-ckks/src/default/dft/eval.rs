@@ -20,13 +20,12 @@
 //! packing (imag packed into the right half) through `coeffs_to_slots_repack` /
 //! `slots_to_coeffs_repack`.
 
-use crate::CKKSAtkBounds;
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{
-        Base2K, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation, LinearTransformationStrategy,
+        Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation, LinearTransformationStrategy,
     },
 };
 use poulpy_hal::{
@@ -244,7 +243,7 @@ impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransfor
 /// factor's baby-step keyswitches, which scale with the operand limb count) is
 /// smaller than its storage. After every factor `ct` is therefore compacted in
 /// place.
-pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H, K>(
+pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
@@ -256,8 +255,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     // One factor at a time, in place on `ct`; compact `ct` after each so the next
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
@@ -271,7 +269,7 @@ where
 /// and prepares the baby rotations of the current operand, then applies the
 /// unified linear-transformation eval. `P` only decides how the factor's RHS is
 /// materialized inside the eval (resident vs streamed).
-fn eval_factor<BE, P, Dst, H, K>(
+fn eval_factor<BE, P, Dst, H>(
     module: &Module<BE>,
     running: &mut Dst,
     factor: &LinearTransformation<P>,
@@ -283,8 +281,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), running);
     module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
@@ -297,7 +294,7 @@ where
 /// [`DFTType::Encode`](crate::layouts::DFTType::Encode) and the
 /// format [`DFTOutputFormat::Standard`] (the real/imag-splitting formats are a later
 /// increment).
-pub fn ckks_coeffs_to_slots_assign<BE, P, Dst, H, K>(
+pub fn ckks_coeffs_to_slots_assign<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
@@ -309,8 +306,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     ckks_dft_evaluate_assign(module, ct, dft, keys, scratch)
 }
@@ -318,7 +314,7 @@ where
 /// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode
 /// (DFT) matrix in place. `dft.literal.kind` must be
 /// [`DFTType::Decode`](crate::layouts::DFTType::Decode).
-pub fn ckks_slots_to_coeffs_assign<BE, P, Dst, H, K>(
+pub fn ckks_slots_to_coeffs_assign<BE, P, Dst, H>(
     module: &Module<BE>,
     ct: &mut Dst,
     dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
@@ -330,8 +326,7 @@ where
     P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     ckks_dft_evaluate_assign(module, ct, dft, keys, scratch)
 }
@@ -346,14 +341,13 @@ where
 /// key (Galois element `−1`). On return, `ct_real` holds the real parts and
 /// `ct_imag` the imaginary parts. Consumes `ct_in` by reference (copied).
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H, K>(
+pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     ct_real: &mut Dst,
     ct_imag: &mut Dst,
     ct_in: &Src,
     dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
     keys: &H,
-    conj_key: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -369,15 +363,14 @@ where
         + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     // ct_real := z = Encode(ct_in).
     module.ckks_copy(ct_real, ct_in, scratch)?;
     ckks_dft_evaluate_assign(module, ct_real, dft, keys, scratch)?;
 
     // ct_imag := conj(z).
-    module.ckks_conjugate_into(ct_imag, ct_real, conj_key, scratch)?;
+    module.ckks_conjugate_into(ct_imag, ct_real, keys, scratch)?;
 
     // tmp := z − conj(z); ct_real := z + conj(z) = 2·Re(z); ct_imag := −i·tmp = 2·Im(z).
     let mut tmp = module.ckks_ciphertext_alloc_from_infos(ct_real);
@@ -395,7 +388,7 @@ where
 ///
 /// Combines `ct_real + i·ct_imag`, then evaluates the Decode matrix. Writes the
 /// result into `op_out`.
-pub fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H, K>(
+pub fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     op_out: &mut Dst,
     ct_real: &Src,
@@ -410,8 +403,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     // op_out := ct_real + i·ct_imag, then Decode.
     module.ckks_mul_i_into(op_out, ct_imag, scratch)?;
@@ -427,13 +419,12 @@ where
 /// `Re` in the left `slots` and `Im` in the right `slots` of each `2·slots` period.
 /// The live slot count doubles, so `ct_out.log_sparsity` is decremented by one.
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H, K>(
+pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     ct_out: &mut Dst,
     ct_in: &Src,
     dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
     keys: &H,
-    conj_key: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -450,8 +441,7 @@ where
         + CKKSRotateOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     let slots = 1i64 << dft.plan().log_slots();
 
@@ -461,7 +451,7 @@ where
 
     // conj := conj(z); imag := −i·(z − conj) = 2·Im(z); ct_out := z + conj = 2·Re(z).
     let mut conj = module.ckks_ciphertext_alloc_from_infos(ct_out);
-    module.ckks_conjugate_into(&mut conj, ct_out, conj_key, scratch)?;
+    module.ckks_conjugate_into(&mut conj, ct_out, keys, scratch)?;
     let mut imag = module.ckks_ciphertext_alloc_from_infos(ct_out);
     module.ckks_sub_into(&mut imag, ct_out, &conj, scratch)?;
     module.ckks_div_i_assign(&mut imag, scratch)?;
@@ -486,7 +476,7 @@ where
 /// `[Re | Im]` real packing into the complex form, so this is just an in-place
 /// evaluation. The live slot count halves, so `op_out.log_sparsity` is incremented
 /// by one.
-pub fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H, K>(
+pub fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H>(
     module: &Module<BE>,
     op_out: &mut Dst,
     ct_in: &Src,
@@ -500,8 +490,7 @@ where
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-    K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     module.ckks_copy(op_out, ct_in, scratch)?;
     ckks_dft_evaluate_assign(module, op_out, dft, keys, scratch)?;

@@ -44,6 +44,7 @@ mod glwe_switching_key;
 mod glwe_tensor;
 mod glwe_tensor_key;
 mod glwe_to_lwe_key;
+mod key_helpers;
 mod linear_transformation;
 mod lwe;
 mod lwe_matrix;
@@ -82,6 +83,7 @@ pub use glwe_switching_key::*;
 pub use glwe_tensor::*;
 pub use glwe_tensor_key::*;
 pub use glwe_to_lwe_key::*;
+pub use key_helpers::*;
 pub use linear_transformation::*;
 #[cfg(test)]
 pub(crate) use linear_transformation::{linear_transformation_plan, normalize_linear_transform_diagonal};
@@ -367,6 +369,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in,
             rank_out,
+            stride: 1,
         })
     }
 
@@ -533,6 +536,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k_aux,
             rank_in,
             rank_out,
+            stride: 1,
         })
     }
 
@@ -558,6 +562,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: rank,
             rank_out: rank,
             dsize,
+            stride: 1,
         })
     }
 
@@ -581,6 +586,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: Rank(pairs),
             rank_out: rank,
             dsize,
+            stride: 1,
         })
     }
 
@@ -604,6 +610,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in,
             rank_out: Rank(1),
             dsize: Dsize(1),
+            stride: 1,
         })
     }
 
@@ -635,6 +642,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: rank,
             rank_out: rank,
             dsize,
+            stride: 1,
         })
     }
 
@@ -747,6 +755,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             rank_in: Rank(1),
             rank_out,
             dsize: Dsize(1),
+            stride: 1,
         })
     }
 }
@@ -1320,7 +1329,6 @@ pub(crate) struct GadgetProductOutputSizeParams {
     pub(crate) output_k: TorusPrecision,
     pub(crate) dsize: Dsize,
     pub(crate) k_aux: TorusPrecision,
-    pub(crate) dft_is_exact: bool,
     pub(crate) product_terms: usize,
     pub(crate) extra_live_limbs: usize,
 }
@@ -1343,12 +1351,13 @@ pub(crate) fn gadget_product_limbs(key_base2k: Base2K, product_terms: usize) -> 
 /// normalization.
 ///
 /// All lower limbs can, in principle, affect the rounded result through a
-/// sufficiently long carry chain. For exact transform backends, this keeps a
-/// conservative practical window: the live input/output precision, converted
-/// to the key radix, plus the worst-case limb growth of the signed polynomial
-/// products accumulated into one coefficient. Approximate transform backends
-/// retain the complete work region because their rounding error does not obey
-/// that exact carry model.
+/// sufficiently long carry chain. This keeps a conservative practical window:
+/// the live input/output precision, converted to the key radix, plus the
+/// worst-case limb growth of the signed polynomial products accumulated into
+/// one coefficient. The window is backend-independent: a dropped limb sits
+/// below the output precision by construction, and an approximate transform's
+/// rounding error scales with each limb's own magnitude, so it neither
+/// reaches the retained limbs nor grows by dropping the lower ones.
 pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) -> usize {
     let GadgetProductOutputSizeParams {
         key_size,
@@ -1357,14 +1366,10 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         output_k,
         dsize,
         k_aux,
-        dft_is_exact,
         product_terms,
         extra_live_limbs,
     } = params;
     let work_size = key_size.min(key_work_size(key_base2k, input_k, dsize, k_aux));
-    if !dft_is_exact {
-        return work_size;
-    }
 
     let base2k = key_base2k.as_usize();
     let live_limbs = input_k
@@ -1388,19 +1393,19 @@ mod gadget_sizing_tests {
 
     #[test]
     fn output_size_converts_precision_to_the_key_radix_and_caps_at_work_size() {
-        let params = |dft_is_exact| GadgetProductOutputSizeParams {
-            key_size: 12,
-            key_base2k: Base2K(30),
-            input_k: TorusPrecision(61),
-            output_k: TorusPrecision(91),
-            dsize: Dsize(2),
-            k_aux: TorusPrecision(31),
-            dft_is_exact,
-            product_terms: 1,
-            extra_live_limbs: 0,
-        };
-        assert_eq!(gadget_product_output_size(params(true)), 6);
-        assert_eq!(gadget_product_output_size(params(false)), 6);
+        assert_eq!(
+            gadget_product_output_size(GadgetProductOutputSizeParams {
+                key_size: 12,
+                key_base2k: Base2K(30),
+                input_k: TorusPrecision(61),
+                output_k: TorusPrecision(91),
+                dsize: Dsize(2),
+                k_aux: TorusPrecision(31),
+                product_terms: 1,
+                extra_live_limbs: 0,
+            }),
+            6
+        );
     }
 
     #[test]
@@ -1413,7 +1418,6 @@ mod gadget_sizing_tests {
                 output_k: TorusPrecision(90),
                 dsize: Dsize(1),
                 k_aux: TorusPrecision(180),
-                dft_is_exact: true,
                 product_terms: 1,
                 extra_live_limbs: 0,
             }),
@@ -1427,7 +1431,6 @@ mod gadget_sizing_tests {
                 output_k: TorusPrecision(90),
                 dsize: Dsize(1),
                 k_aux: TorusPrecision(180),
-                dft_is_exact: true,
                 product_terms: 1 << 16,
                 extra_live_limbs: 0,
             }),

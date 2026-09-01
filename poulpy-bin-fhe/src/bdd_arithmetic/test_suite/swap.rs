@@ -18,6 +18,7 @@ use crate::{
     },
     blind_rotation::BlindRotationAlgo,
 };
+use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
 pub fn test_cmux_direct<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
@@ -90,7 +91,7 @@ where
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
         let mut ct_res = module.glwe_alloc_from_infos(&glwe_infos);
-        module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared, &mut scratch.borrow());
+        module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared.to_backend_ref(), &mut scratch.borrow());
 
         let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         module.glwe_decrypt(&ct_res, &mut pt_have, sk, &mut scratch.borrow());
@@ -170,7 +171,7 @@ where
         );
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
-        module.cswap(&mut ct_a, &mut ct_b, &s_prepared, &mut scratch.borrow());
+        module.cswap(&mut ct_a, &mut ct_b, &s_prepared.to_backend_ref(), &mut scratch.borrow());
 
         let mut pt_a_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         let mut pt_b_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
@@ -252,7 +253,7 @@ where
         );
         module.ggsw_prepare(&mut s_prepared, &s, &mut scratch.borrow());
 
-        module.cswap(&mut a_enc, &mut b_enc, &s_prepared, &mut scratch.borrow());
+        module.cswap(&mut a_enc, &mut b_enc, &s_prepared.to_backend_ref(), &mut scratch.borrow());
 
         let (a_want, b_want) = if bit == 0 { (a, b) } else { (b, a) };
 
@@ -264,7 +265,12 @@ where
 pub fn test_glwe_blind_retrieval_statefull<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
-    Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + GLWEBlindRetrieval<BE> + GGSWEncryptSk<BE> + GGSWPreparedFactory<BE>,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + poulpy_core::GLWEZero<BE>
+        + GLWEBlindRetrieval<BE>
+        + GGSWEncryptSk<BE>
+        + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -331,7 +337,12 @@ where
 pub fn test_glwe_blind_retriever<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
-    Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + GLWEBlindRetrieval<BE> + GGSWEncryptSk<BE> + GGSWPreparedFactory<BE>,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + poulpy_core::GLWEZero<BE>
+        + GLWEBlindRetrieval<BE>
+        + GGSWEncryptSk<BE>
+        + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,

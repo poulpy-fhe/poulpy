@@ -1,6 +1,7 @@
 //! Backend-generic SHIP half-bootstrap circuit (Algorithm 1).
 
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
     default::keyswitching::glwe::GGLWEProductDefault,
@@ -137,7 +138,7 @@ where
     // Encapsulation: switch the bottom ciphertext from the dense to the
     // sparse secret at the bottom modulus.
     let mut a_sparse = module.ckks_ciphertext_alloc(b2k_t, TorusPrecision(base2k as u32));
-    module.glwe_keyswitch(&mut a_sparse, input, keys.dense_to_sparse(), scratch);
+    module.glwe_keyswitch(&mut a_sparse, input, &keys.dense_to_sparse().to_backend_ref(), scratch);
     a_sparse.set_meta_checked(input.meta())?;
 
     let enc = BE::ckks_ship_coeff_encodings_impl::<F, _>(module, &a_sparse, &plan, b2k_t, complex, scratch)?;

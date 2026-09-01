@@ -9,8 +9,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
-    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWETensorKeyPreparedToBackendRef,
-    GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision,
+    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
@@ -22,7 +21,7 @@ use crate::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
         paco::{
             context::{PaCoContext, PaCoPsiTailMaterial},
-            keyset::{PaCoKeyParameters, PaCoKeys, validate_backend_storage_capacity, validate_gadget_backend_view},
+            keyset::{PaCoKeyParameters, PaCoKeys, validate_backend_storage_capacity},
             plan::PaCoPlan,
         },
     },
@@ -90,6 +89,75 @@ pub(crate) fn branch_working_k(plan: &PaCoPlan, output_k: usize) -> Result<usize
         .checked_add(circuit_depth)
         .context("PaCo working torus width overflows usize")
         .map_err(Into::into)
+}
+
+fn validate_key_shape<K>(name: &str, key: &K, n: usize, base2k: poulpy_core::layouts::Base2K) -> Result<()>
+where
+    K: GGLWEInfos,
+{
+    ckks_ensure!(
+        key.n().as_usize() == n,
+        "{name} degree {} does not match the PaCo degree {n}",
+        key.n(),
+    );
+    ckks_ensure!(
+        key.rank_in().as_usize() == 1 && key.rank_out().as_usize() == 1,
+        "{name} must have rank_in=rank_out=1, got rank_in={} and rank_out={}",
+        key.rank_in(),
+        key.rank_out(),
+    );
+    ckks_ensure!(
+        key.base2k() == base2k,
+        "{name} base2k {} does not match the PaCo base2k {base2k}",
+        key.base2k(),
+    );
+    Ok(())
+}
+
+fn validate_automorphism_use<BE, K>(
+    keys: &K,
+    element: i64,
+    input_k: TorusPrecision,
+    n: usize,
+    base2k: poulpy_core::layouts::Base2K,
+) -> Result<()>
+where
+    BE: Backend,
+    K: PaCoKeys<BE>,
+{
+    let key = keys.rotation_keys().get_automorphism_key(element, input_k).map_err(|_| {
+        CKKSCompositionError::MissingAutomorphismKey {
+            op: "ckks_paco_bootstrap",
+            rotation: element,
+            k: input_k.into(),
+        }
+    })?;
+    validate_key_shape(
+        &format!("PaCo automorphism key {element} at precision {input_k}"),
+        &key,
+        n,
+        base2k,
+    )
+}
+
+fn validate_relinearization_use<BE, K>(
+    keys: &K,
+    input_k: TorusPrecision,
+    n: usize,
+    base2k: poulpy_core::layouts::Base2K,
+) -> Result<()>
+where
+    BE: Backend,
+    K: PaCoKeys<BE>,
+{
+    let key = keys
+        .tensor_key()
+        .get_tensor_key(input_k)
+        .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+            op: "ckks_paco_bootstrap",
+            k: input_k.into(),
+        })?;
+    validate_key_shape(&format!("PaCo relinearization key at precision {input_k}"), &key, n, base2k)
 }
 
 /// Validates the runtime ciphertexts and every key reachable through a custom
@@ -224,50 +292,20 @@ where
         );
     }
 
-    // Automorphism and multiplication keyswitches size their working result from the
-    // working accumulator's limb capacity (`branch_working_k`). `output.k() <= k_out`
-    // keeps this within the gadget keys' capacity, but re-validate defensively (custom
-    // key managers may under-size).
-    let working_size = branch_working_k(plan, output_meta.1)?.div_ceil(context.base2k().as_usize());
-
-    let tensor_view = GLWETensorKeyPreparedToBackendRef::to_backend_ref(keys.tensor_key());
-    validate_gadget_backend_view(
-        "PaCo tensor key",
-        keys.tensor_key(),
-        &tensor_view,
-        plan.n(),
-        context.base2k(),
-        working_size,
-    )?;
-
+    // Every key is checked once, at the branch's working precision. A key that
+    // binds there binds at every lower one the branch reaches: the resolver's
+    // failure conditions depend on the effective `dsize` alone, and its one
+    // precision-dependent outcome, whether the bind covers the input, only
+    // relaxes as precision falls.
+    let working_k = TorusPrecision(
+        u32::try_from(branch_working_k(plan, output_meta.1)?).context("PaCo branch working width does not fit u32")?,
+    );
+    let (n, base2k) = (plan.n(), context.base2k());
     for &element in context.galois_elements() {
-        let key = keys
-            .rotation_keys()
-            .get_automorphism_key(element)
-            .ok_or(CKKSCompositionError::MissingAutomorphismKey {
-                op: "ckks_paco_bootstrap",
-                rotation: element,
-            })?;
-        ckks_ensure!(
-            key.p() == element,
-            "PaCo rotation-key map returned Galois element {} for label {element}",
-            key.p()
-        );
-        let key_view = GLWEAutomorphismKeyPreparedToBackendRef::to_backend_ref(key);
-        ckks_ensure!(
-            key_view.p() == element,
-            "PaCo automorphism-key backend view returned Galois element {} for label {element}",
-            key_view.p(),
-        );
-        validate_gadget_backend_view(
-            "PaCo automorphism key",
-            key,
-            &key_view,
-            plan.n(),
-            context.base2k(),
-            working_size,
-        )?;
+        validate_automorphism_use::<BE, _>(keys, element, working_k, n, base2k)?;
     }
+    validate_automorphism_use::<BE, _>(keys, -1, working_k, n, base2k)?;
+    validate_relinearization_use::<BE, _>(keys, working_k, n, base2k)?;
 
     Ok(output_meta)
 }
@@ -354,16 +392,19 @@ where
         module.ckks_eval_linear_transformation_self_assign(output, factor, keys.rotation_keys(), scratch)?;
     }
 
-    // Fetched once and reused by both the ψ tail (Pair form) and the
-    // imaginary-part extraction (step 7): `conj(·)` via the order `-1`
-    // automorphism key.
-    let conjugation_key = keys
-        .rotation_keys()
-        .get_automorphism_key(-1)
-        .ok_or(CKKSCompositionError::MissingAutomorphismKey {
-            op: "ckks_paco_bootstrap",
-            rotation: -1,
-        })?;
+    // `conj(·)` via the order `-1` automorphism key. Resolved at each point of
+    // use, not once: the product fold between the two uses spends budget, so the
+    // second conjugation runs at a narrower precision and can legitimately
+    // resolve to a different key or a different effective decomposition.
+    let _conjugation_key_for = |k: TorusPrecision| {
+        keys.rotation_keys()
+            .get_automorphism_key(-1, k)
+            .map_err(|_| CKKSCompositionError::MissingAutomorphismKey {
+                op: "ckks_paco_bootstrap",
+                rotation: -1,
+                k: k.into(),
+            })
+    };
 
     // Step 5 — CoeffsToSlots (ψ tail). The conjugation-augmented final C2S
     // factor, scheduled apart from the body. Either the fused `Pair` form
@@ -372,19 +413,13 @@ where
     // one multiply by the share-scaled μ mask).
     match context.psi_tail() {
         PaCoPsiTailMaterial::Pair(pair) => {
-            module.ckks_conjugate_into(&mut temporary, output, conjugation_key, scratch)?;
+            module.ckks_conjugate_into(&mut temporary, output, keys.rotation_keys(), scratch)?;
             module.ckks_eval_linear_transformation_self_assign(output, &pair[0], keys.rotation_keys(), scratch)?;
             module.ckks_eval_linear_transformation_self_assign(&mut temporary, &pair[1], keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
         }
-        PaCoPsiTailMaterial::Mask { mu, galois_element } => {
-            let conj_rotate_key = keys.rotation_keys().get_automorphism_key(*galois_element).ok_or(
-                CKKSCompositionError::MissingAutomorphismKey {
-                    op: "ckks_paco_bootstrap",
-                    rotation: *galois_element,
-                },
-            )?;
-            module.ckks_conjugate_into(&mut temporary, output, conj_rotate_key, scratch)?;
+        PaCoPsiTailMaterial::Mask { mu, rotation } => {
+            module.ckks_conjugate_rotate_into(&mut temporary, output, *rotation, keys.rotation_keys(), scratch)?;
             module.ckks_add_assign(output, &temporary, scratch)?;
             module.ckks_mul_pt_vec_assign(output, mu, scratch)?;
         }
@@ -406,7 +441,7 @@ where
     // Step 7 — Imaginary-part extraction. `output ← output − conj(output) =
     // 2i·Im(output)`, isolating the imaginary component that carries the
     // recovered coefficients.
-    module.ckks_conjugate_into(&mut temporary, output, conjugation_key, scratch)?;
+    module.ckks_conjugate_into(&mut temporary, output, keys.rotation_keys(), scratch)?;
     module.ckks_sub_assign(output, &temporary, scratch)?;
 
     // Step 8 — SlotsToCoeffs′. Apply the compiled S2C factor chain, moving the

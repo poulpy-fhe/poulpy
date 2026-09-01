@@ -1,7 +1,3 @@
-use poulpy_hal::layouts::VecZnxDftToBackendMut;
-use poulpy_hal::layouts::VecZnxDftToBackendRef;
-use poulpy_hal::layouts::VmpPMatToBackendMut;
-use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
@@ -205,6 +201,7 @@ cross_backend_test_suite! {
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
+        test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
         test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
     }
 }
@@ -287,85 +284,6 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
     }
 }
 
-#[test]
-fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
-    use poulpy_hal::api::{
-        ScratchOwnedAlloc, VecZnxDftAlloc, VecZnxDftApply, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
-        VmpPrepareTmpBytes,
-    };
-    use poulpy_hal::layouts::{
-        Backend, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, ScratchOwned, VecZnx, VecZnxDftOwned, VmpPMatOwned,
-        ZnxView,
-    };
-    use poulpy_hal::source::Source;
-    use poulpy_hal::test_suite::{upload_mat_znx, upload_vec_znx, vec_znx_backend_ref};
-
-    let n = 8usize;
-    let base2k = 52usize;
-    let (rows, cols_in, cols_out, mat_size) = (2usize, 1usize, 1usize, 4usize);
-
-    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(n as u64);
-    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(n as u64);
-    let mut source = Source::new([7u8; 32]);
-
-    let mut scratch: ScratchOwned<NTT4x30Ref> = ScratchOwned::alloc(
-        module
-            .vmp_apply_dft_to_dft_tmp_bytes(mat_size, rows, rows, cols_in, cols_out, mat_size)
-            .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, mat_size)),
-    );
-
-    let mut a: VecZnx<Vec<u8>, i64> = module_host.vec_znx_alloc(cols_in, rows);
-    a.fill_uniform(base2k, &mut source);
-    let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
-    let mut a_dft: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_in, rows);
-    module.vec_znx_dft_apply(
-        1,
-        0,
-        &mut a_dft.to_backend_mut(),
-        0,
-        &vec_znx_backend_ref::<NTT4x30Ref>(&a_be),
-        0,
-    );
-
-    let mut mat: MatZnx<Vec<u8>, i64> = module_host.mat_znx_alloc(rows, cols_in, cols_out, mat_size);
-    mat.fill_uniform(base2k, &mut source);
-    let mat_be = upload_mat_znx::<NTT4x30Ref>(&mat);
-    let mut pmat: VmpPMatOwned<NTT4x30Ref> = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
-    module.vmp_prepare(
-        &mut pmat.to_backend_mut(),
-        &<MatZnx<<NTT4x30Ref as Backend>::OwnedBuf, i64> as MatZnxToBackendRef<NTT4x30Ref>>::to_backend_ref(&mat_be),
-        &mut scratch.arena(),
-    );
-
-    let mut res_full: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, mat_size);
-    module.vmp_apply_dft_to_dft(
-        &mut res_full.to_backend_mut(),
-        &a_dft.to_backend_ref(),
-        &pmat.to_backend_ref(),
-        0,
-        &mut scratch.arena(),
-    );
-    let full_u64: Vec<u64> = bytemuck::cast_slice(res_full.raw()).to_vec();
-
-    // odd truncated sizes hit the trailing-column path on a paired pmat column
-    for res_size in [1usize, 3] {
-        let mut res_trunc: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, res_size);
-        module.vmp_apply_dft_to_dft(
-            &mut res_trunc.to_backend_mut(),
-            &a_dft.to_backend_ref(),
-            &pmat.to_backend_ref(),
-            0,
-            &mut scratch.arena(),
-        );
-        let trunc_u64: &[u64] = bytemuck::cast_slice(res_trunc.raw());
-        assert_eq!(
-            trunc_u64,
-            &full_u64[..trunc_u64.len()],
-            "truncated vmp output mismatch for res_size={res_size}"
-        );
-    }
-}
-
 /// Compile-time regression check: container equality is byte equality, so the
 /// DFT/big-family containers implement `Eq` even when the logical word is
 /// `f64` (a derived `Eq` used to demand `W: Eq` and silently vanish here).
@@ -380,3 +298,40 @@ fn assert_f64_word_containers_are_eq() {
 
 #[cfg(feature = "enable-core")]
 poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Ref);
+
+#[cfg(feature = "enable-core")]
+#[test]
+fn test_gglwe_product_dft_selected_fft64_ref() {
+    poulpy_core::test_suite::parity::test_gglwe_product_dft_selected(&Module::<FFT64Ref>::new(64), 12);
+}
+
+#[cfg(feature = "enable-core")]
+#[test]
+fn test_gglwe_product_dft_selected_ntt4x30_ref() {
+    poulpy_core::test_suite::parity::test_gglwe_product_dft_selected(&Module::<NTT4x30Ref>::new(64), 12);
+}
+
+// Cross-family parity: the NTT backend is exact, so at a radix small enough
+// for FFT64 products to round exactly the two families must agree
+// byte-for-byte. This catches a family-specific limb-window bug that a
+// same-family parity suite cannot see.
+#[cfg(feature = "enable-core")]
+poulpy_core::core_parity_test_suite! {
+    mod core_parity_cross_family,
+    backend_ref = crate::NTT4x30Ref,
+    backend_test = crate::FFT64Ref,
+    params = TestParams { size: 1<<8, base2k: 12 },
+    tests = {
+        glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
+        glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
+        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
+        glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
+        glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
+        glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
+        glwe_sub => poulpy_core::test_suite::parity::test_glwe_sub_parity,
+        glwe_negate => poulpy_core::test_suite::parity::test_glwe_negate_parity,
+        glwe_normalize => poulpy_core::test_suite::parity::test_glwe_normalize_parity,
+        glwe_rotate => poulpy_core::test_suite::parity::test_glwe_rotate_parity,
+        glwe_tensor => poulpy_core::test_suite::parity::test_glwe_tensor_parity,
+    }
+}

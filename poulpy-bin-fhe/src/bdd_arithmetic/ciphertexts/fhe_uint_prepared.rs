@@ -4,10 +4,7 @@ use poulpy_core::layouts::{
     Base2K, Dnum, Dsize, GGSWInfos, GGSWPreparedFactory, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     prepared::{GGSWPrepared, GGSWPreparedBackendMut},
 };
-use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GGSW, GGSWLayout, GGSWPreparedToBackendMut, GGSWToBackendMut,
-    GLWEAutomorphismKeyHelper, GetGaloisElement,
-};
+use poulpy_core::layouts::{GGSW, GGSWLayout, GGSWPreparedToBackendMut, GGSWToBackendMut, GetAutomorphismKey};
 use poulpy_core::{EncryptionInfos, GLWECopy, GLWEDecrypt, GLWEKeyswitch, GLWEPacking, LWEFromGLWE, ScratchArenaTakeCore};
 
 use poulpy_core::{GGSWEncryptSk, layouts::GLWESecretPreparedToBackendRef};
@@ -18,9 +15,10 @@ use poulpy_hal::{api::ModuleN, layouts::ScratchArena, source::Source};
 
 use crate::bdd_arithmetic::{BDDKey, BDDKeyHelper, BDDKeyInfos, BDDKeyPrepared, BDDKeyPreparedFactory, BitSize, FheUint, ToBits};
 use crate::bdd_arithmetic::{Cmux, FromBits, UnsignedInteger};
-use crate::blind_rotation::BlindRotationAlgo;
+use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos};
 use crate::circuit_bootstrapping::{CircuitBootstrappingExecute, CircuitBootstrappingKeyInfos};
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 
 /// A DFT-prepared FHE ciphertext encoding each bit of a [`UnsignedInteger`]
 /// as a separate GGSW ciphertext.
@@ -59,7 +57,7 @@ impl<T: UnsignedInteger, BE: Backend> FheUintPreparedFactory<T, BE> for Module<B
 /// Implemented by [`FheUintPrepared`] and by the internal `FheUintHelper`
 /// used during two-word BDD evaluation.  Required by `ExecuteBDDCircuit`
 /// and `GLWEBlindRotation`.
-pub trait GetGGSWBit<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>>: Sync {
+pub trait GetGGSWBit<BE: Backend>: Sync {
     /// Returns a shared reference view of the GGSW ciphertext for bit `bit`.
     ///
     /// # Panics
@@ -68,9 +66,7 @@ pub trait GetGGSWBit<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>>: Sync {
     fn get_bit(&self, bit: usize) -> &GGSWPrepared<BE::OwnedBuf, BE>;
 }
 
-impl<T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> GetGGSWBit<BE>
-    for FheUintPrepared<BE::OwnedBuf, T, BE>
-{
+impl<T: UnsignedInteger, BE: Backend<ZnxWord = i64>> GetGGSWBit<BE> for FheUintPrepared<BE::OwnedBuf, T, BE> {
     fn get_bit(&self, bit: usize) -> &GGSWPrepared<BE::OwnedBuf, BE> {
         assert!(
             bit < self.bits.len(),
@@ -280,7 +276,7 @@ impl<T: UnsignedInteger + FromBits, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i6
 where
     BE::OwnedBuf: HostDataRef,
 {
-    pub fn decrypt<M, S, H, K>(&self, module: &M, sk: &S, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> T
+    pub fn decrypt<M, S, H>(&self, module: &M, sk: &S, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> T
     where
         M: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ModuleLogN
@@ -289,8 +285,7 @@ where
             + GLWEPacking<BE>
             + GLWECopy<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
         BE: 'static,
         BE::OwnedBuf: HostDataRef + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
@@ -303,7 +298,7 @@ where
     }
 }
 
-impl<D: HostDataRef, T: UnsignedInteger, B: Backend> LWEInfos for FheUintPrepared<D, T, B> {
+impl<D: Data, T: UnsignedInteger, B: Backend> LWEInfos for FheUintPrepared<D, T, B> {
     fn base2k(&self) -> poulpy_core::layouts::Base2K {
         self.bits[0].base2k()
     }
@@ -321,13 +316,13 @@ impl<D: HostDataRef, T: UnsignedInteger, B: Backend> LWEInfos for FheUintPrepare
     }
 }
 
-impl<D: HostDataRef, T: UnsignedInteger, B: Backend> GLWEInfos for FheUintPrepared<D, T, B> {
+impl<D: Data, T: UnsignedInteger, B: Backend> GLWEInfos for FheUintPrepared<D, T, B> {
     fn rank(&self) -> poulpy_core::layouts::Rank {
         self.bits[0].rank()
     }
 }
 
-impl<D: HostDataRef, T: UnsignedInteger, B: Backend> GGSWInfos for FheUintPrepared<D, T, B> {
+impl<D: Data, T: UnsignedInteger, B: Backend> GGSWInfos for FheUintPrepared<D, T, B> {
     fn k_aux(&self) -> TorusPrecision {
         self.bits[0].k_aux()
     }
@@ -341,9 +336,7 @@ impl<D: HostDataRef, T: UnsignedInteger, B: Backend> GGSWInfos for FheUintPrepar
     }
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>>
-    BDDKeyPrepared<BE::OwnedBuf, BRA, BE>
-{
+impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn prepare<M>(&mut self, module: &M, other: &BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>, scratch: &mut ScratchArena<'_, BE>)
     where
         M: BDDKeyPreparedFactory<BRA, BE>,
@@ -362,7 +355,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, Zn
 /// The `_custom` and `_multi_thread` variants allow partial updates (only a
 /// contiguous range of bits) and backend-selected parallel execution,
 /// respectively. Serial backends execute these methods serially.
-pub trait FheUintPrepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
+pub trait FheUintPrepare<BRA: BlindRotationAlgo, BE: Backend> {
     /// Returns the aligned scratch-space size in bytes required per worker for
     /// [`fhe_uint_prepare`][Self::fhe_uint_prepare].
     fn fhe_uint_prepare_tmp_bytes<R, A, B>(
@@ -418,9 +411,7 @@ pub trait FheUintPrepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataM
 impl<BRA: BlindRotationAlgo, BE: Backend> FheUintPrepare<BRA, BE> for Module<BE>
 where
     Self: LWEFromGLWE<BE> + GLWEKeyswitch<BE> + CircuitBootstrappingExecute<BRA, BE> + GGSWPreparedFactory<BE>,
-    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-    BE::OwnedBuf: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
+    BE: Backend<ZnxWord = i64>,
 {
     fn fhe_uint_prepare_tmp_bytes<R, A, B>(
         &self,
@@ -435,10 +426,12 @@ where
         A: GLWEInfos,
         B: BDDKeyInfos,
     {
+        let mut lwe_infos = bits_infos.lwe_layout();
+        lwe_infos.n = bdd_infos.cbt_infos().brk_infos().n_lwe();
         poulpy_hal::execution::worker_scratch_bytes::<BE>(
             self.circuit_bootstrapping_execute_tmp_bytes(block_size, extension_factor, res_infos, &bdd_infos.cbt_infos())
                 + self.ggsw_bytes_of_from_infos(res_infos)
-                + self.lwe_bytes_of_from_infos(bits_infos),
+                + self.lwe_bytes_of_from_infos(&lwe_infos),
         )
     }
 
@@ -456,6 +449,8 @@ where
     {
         let bit_end = bit_start + bit_count;
         let (cbt, ks_glwe, ks_lwe) = key.get_cbt_key();
+        let mut lwe_infos = bits.lwe_layout();
+        lwe_infos.n = cbt.brk_infos().n_lwe();
 
         assert!(bit_end <= T::BITS as usize);
 
@@ -491,8 +486,16 @@ where
             worker_scratch,
             &|bit, res_bit, scratch| {
                 let (mut tmp_ggsw, scratch_bit) = scratch.borrow().take_ggsw_scratch(ggsw_infos);
-                let (mut tmp_lwe, mut scratch_bit) = scratch_bit.take_lwe_scratch(bits);
-                bits.get_bit_lwe(self, bit, &mut tmp_lwe, ks_glwe, ks_lwe, &mut scratch_bit);
+                let (mut tmp_lwe, mut scratch_bit) = scratch_bit.take_lwe_scratch(&lwe_infos);
+                let ks_glwe_ref = ks_glwe.map(|k| k.to_backend_ref());
+                bits.get_bit_lwe(
+                    self,
+                    bit,
+                    &mut tmp_lwe,
+                    ks_glwe_ref.as_ref(),
+                    &ks_lwe.to_backend_ref(),
+                    &mut scratch_bit,
+                );
                 cbt.execute_to_constant(self, &mut tmp_ggsw.to_backend_mut(), &tmp_lwe, 1, 1, &mut scratch_bit);
                 self.ggsw_prepare(res_bit, &tmp_ggsw, &mut scratch_bit);
             },
@@ -500,7 +503,7 @@ where
     }
 }
 
-impl<T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> FheUintPrepared<BE::OwnedBuf, T, BE> {
+impl<T: UnsignedInteger, BE: Backend<ZnxWord = i64>> FheUintPrepared<BE::OwnedBuf, T, BE> {
     pub fn prepare<BRA, M, K>(
         &mut self,
         module: &M,

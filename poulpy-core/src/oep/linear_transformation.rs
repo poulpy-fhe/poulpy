@@ -3,9 +3,8 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
-    LinearTransformation,
-    prepared::{GGLWEPreparedToBackendRef, LinearTransformationBabySteps, PreparedDiagonal},
+    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
+    prepared::{LinearTransformationBabySteps, PreparedDiagonal},
 };
 
 /// Backend hook for the linear-transformation family.
@@ -51,7 +50,7 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_prepare_linear_transformation_baby_steps<A, H, K>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H>(
         module: &Module<BE>,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
@@ -59,10 +58,9 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
-    fn glwe_eval_linear_transformation_into<R, P, H, K>(
+    fn glwe_eval_linear_transformation_into<R, P, H>(
         module: &Module<BE>,
         cnv_offset: usize,
         res_k: usize,
@@ -74,8 +72,7 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: crate::default::linear_transformation::DiagonalProd<BE>,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 }
 
 /// Override surface for the linear-transformation family.
@@ -122,7 +119,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_prepare_linear_transformation_baby_steps_default<A, H, K>(
+    fn glwe_prepare_linear_transformation_baby_steps_default<A, H>(
         &self,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
@@ -130,10 +127,9 @@ pub trait LinearTransformationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
-    fn glwe_eval_linear_transformation_into_default<R, P, H, K>(
+    fn glwe_eval_linear_transformation_into_default<R, P, H>(
         &self,
         cnv_offset: usize,
         res_k: usize,
@@ -145,8 +141,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: crate::default::linear_transformation::DiagonalProd<BE>,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 }
 
 unsafe impl<BE> LinearTransformationImpl<BE> for BE
@@ -206,7 +201,7 @@ where
         module.glwe_prepare_linear_transformation_rhs_default(prepared, lt, scratch)
     }
 
-    fn glwe_prepare_linear_transformation_baby_steps<A, H, K>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H>(
         module: &Module<BE>,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
@@ -214,13 +209,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         module.glwe_prepare_linear_transformation_baby_steps_default(cache, a, keys, scratch)
     }
 
-    fn glwe_eval_linear_transformation_into<R, P, H, K>(
+    fn glwe_eval_linear_transformation_into<R, P, H>(
         module: &Module<BE>,
         cnv_offset: usize,
         res_k: usize,
@@ -232,8 +226,7 @@ where
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: crate::default::linear_transformation::DiagonalProd<BE>,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         module.glwe_eval_linear_transformation_into_default(cnv_offset, res_k, res, lhs, rhs, keys, scratch)
     }
@@ -321,7 +314,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 )
             }
 
-            fn glwe_prepare_linear_transformation_baby_steps_default<A, H, K>(
+            fn glwe_prepare_linear_transformation_baby_steps_default<A, H>(
                 &self,
                 cache: &mut $crate::layouts::prepared::LinearTransformationBabySteps<$be>,
                 a: &A,
@@ -329,17 +322,14 @@ macro_rules! impl_linear_transformation_defaults_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                K: $crate::layouts::GetGaloisElement
-                    + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
-                    + $crate::layouts::GGLWEInfos,
-                H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
+                H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::default::linear_transformation::glwe_prepare_linear_transformation_baby_steps_default::<$be, _, _, _, _>(
+                $crate::default::linear_transformation::glwe_prepare_linear_transformation_baby_steps_default::<$be, _, _, _>(
                     self, cache, a, keys, scratch,
                 )
             }
 
-            fn glwe_eval_linear_transformation_into_default<R, P, H, K>(
+            fn glwe_eval_linear_transformation_into_default<R, P, H>(
                 &self,
                 cnv_offset: usize,
                 res_k: usize,
@@ -351,12 +341,9 @@ macro_rules! impl_linear_transformation_defaults_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 P: $crate::default::linear_transformation::DiagonalProd<$be>,
-                K: $crate::layouts::GetGaloisElement
-                    + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
-                    + $crate::layouts::GGLWEInfos,
-                H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
+                H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::default::linear_transformation::glwe_eval_linear_transformation_into_default::<$be, _, _, _, _, _>(
+                $crate::default::linear_transformation::glwe_eval_linear_transformation_into_default::<$be, _, _, _, _>(
                     self, cnv_offset, res_k, res, lhs, rhs, keys, scratch,
                 )
             }

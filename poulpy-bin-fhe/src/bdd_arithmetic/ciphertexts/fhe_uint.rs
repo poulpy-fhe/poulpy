@@ -1,22 +1,23 @@
+use poulpy_core::layouts::prepared::GGLWEPreparedBackendRef;
 use poulpy_core::{
     EncryptionInfos, GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEKeyswitch, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
-    GLWETrace, LWEFromGLWE, ScratchArenaTakeCore,
+    GLWETrace, LWEFromGLWE, ScratchArenaTakeCore, TransferInto,
     layouts::{
-        Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEPlaintext,
-        GLWEPlaintextLayout, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
-        LWEToBackendMut, ModuleCoreAlloc, Rank, TorusPrecision,
+        Base2K, GGLWEInfos, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextLayout, GLWESecretPreparedToBackendRef,
+        GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     api::{ModuleLogN, ModuleN},
-    layouts::{Backend, Data, HostBackend, HostDataMut, HostDataRef, ScratchArena, Stats},
+    layouts::{Backend, CopyFromHost, CopyToHost, Data, HostBackend, HostDataMut, HostDataRef, ScratchArena, Stats},
     source::Source,
 };
 use std::{collections::HashMap, marker::PhantomData};
 
 use crate::bdd_arithmetic::{Cmux, FheUintPrepared, FromBits, GetGGSWBit, ToBits, UnsignedInteger};
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
 /// A packed GLWE ciphertext encrypting the bits of a [`UnsignedInteger`].
 ///
@@ -68,6 +69,18 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
     }
 }
 
+impl<D1, D2, T, W> TransferInto<FheUint<D2, T, W>> for FheUint<D1, T, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    T: UnsignedInteger,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut FheUint<D2, T, W>) {
+        self.bits.transfer_into(&mut dst.bits);
+    }
+}
+
 impl<'a, T: UnsignedInteger> FheUint<&'a mut [u8], T, i64> {
     pub fn from_glwe_to_mut<G>(glwe: &'a mut G) -> Self
     where
@@ -92,7 +105,7 @@ impl<'a, T: UnsignedInteger> FheUint<&'a [u8], T, i64> {
     }
 }
 
-impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> LWEInfos for FheUint<D, T, W> {
+impl<D: Data, T: UnsignedInteger, W: ZnxWord> LWEInfos for FheUint<D, T, W> {
     fn base2k(&self) -> poulpy_core::layouts::Base2K {
         self.bits.base2k()
     }
@@ -110,7 +123,7 @@ impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> LWEInfos for FheUint<D, T, 
     }
 }
 
-impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> GLWEInfos for FheUint<D, T, W> {
+impl<D: Data, T: UnsignedInteger, W: ZnxWord> GLWEInfos for FheUint<D, T, W> {
     fn rank(&self) -> poulpy_core::layouts::Rank {
         self.bits.rank()
     }
@@ -269,17 +282,15 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
     }
 }
 
-impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
+impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
     /// Packs `Vec<GLWE(bit[i])>` into [`FheUint`].
-    pub fn pack<G, M, K, H, BE>(&mut self, module: &M, mut bits: Vec<G>, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    pub fn pack<G, M, H, BE>(&mut self, module: &M, mut bits: Vec<G>, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         G: GLWEToBackendMut<BE> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + GLWEPacking<BE> + GLWECopy<BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
         GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
     {
         // Repacks the GLWE ciphertexts bits
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
@@ -293,7 +304,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
 
     #[allow(clippy::too_many_arguments)]
     // Self <- ((a.rotate_right(dst<<4) & 0xFFFF_0000) | (b.rotate_right(src<<4) & 0x0000_FFFF)).rotate_left(dst<<4);
-    pub fn splice_u16<A, B, H, K, M, BE>(
+    pub fn splice_u16<A, B, H, M, BE>(
         &mut self,
         module: &M,
         dst: usize,
@@ -307,8 +318,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
         Self: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
+        H: GetAutomorphismKey<BE>,
         M: GLWEBytesOf<BE>
             + ModuleLogN
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -318,7 +328,6 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
             + GLWEAdd<BE>
             + GLWECopy<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
     {
         assert!(dst < (T::BITS >> 4) as usize);
         assert!(src < (T::BITS >> 4) as usize);
@@ -331,7 +340,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
 
     #[allow(clippy::too_many_arguments)]
     // Self <- ((a.rotate_right(dst<<3) & 0xFFFF_FF00) | (b.rotate_right(src<<3) & 0x0000_00FF)).rotate_left(dst<<3);
-    pub fn splice_u8<A, B, H, K, M, BE>(
+    pub fn splice_u8<A, B, H, M, BE>(
         &mut self,
         module: &M,
         dst: usize,
@@ -345,8 +354,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
         Self: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
+        H: GetAutomorphismKey<BE>,
         M: GLWEBytesOf<BE>
             + ModuleLogN
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -356,7 +364,6 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
             + GLWEAdd<BE>
             + GLWECopy<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
     {
         assert!(dst < (T::BITS >> 3) as usize);
         assert!(src < (T::BITS >> 3) as usize);
@@ -371,8 +378,6 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
         self.zero_byte(module, dst, keys, scratch);
 
         // Isolate the byte to transfer from a
-        // TODO(device): this byte splice still relies on a host-owned
-        // temporary packed ciphertext to satisfy the backend-native rotate API.
         let mut tmp_fhe_uint_byte: FheUint<BE::OwnedBuf, T, BE::ZnxWord> = FheUint::alloc_from_infos(module, b);
         let mut scratch_1 = scratch.borrow();
 
@@ -437,32 +442,27 @@ impl<'a, T: UnsignedInteger, BE: Backend> ScratchArenaTakeBDD<'a, T, BE> for Scr
 {
 }
 
-impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
-    pub fn get_bit_lwe<R, KGLWE, KLWE, M, BE>(
+impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
+    pub fn get_bit_lwe<R, M, BE>(
         &self,
         module: &M,
         bit: usize,
         res: &mut R,
-        ks_glwe: Option<&KGLWE>,
-        ks_lwe: &KLWE,
+        ks_glwe: Option<&GGLWEPreparedBackendRef<'_, BE>>,
+        ks_lwe: &GGLWEPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         R: LWEToBackendMut<BE> + LWEInfos,
         Self: GLWEToBackendRef<BE>,
-        KGLWE: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        KLWE: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         M: GLWEBytesOf<BE>
             + ModuleLogN
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + LWEFromGLWE<BE>
             + GLWEKeyswitch<BE>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
     {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         if let Some(ks_glwe) = ks_glwe {
-            // TODO(device): this extraction path still stages the rank-1 GLWE
-            // in host-owned memory for compatibility with the current core API.
             let mut res_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_alloc(ks_glwe.base2k(), ks_glwe.k(), ks_glwe.rank_out());
             let mut scratch_1 = scratch.borrow();
@@ -477,16 +477,13 @@ impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         }
     }
 
-    pub fn get_bit_glwe<R, K, M, H, BE>(&self, module: &M, bit: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    pub fn get_bit_glwe<R, M, H, BE>(&self, module: &M, bit: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         Self: GLWEToBackendRef<BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + GLWERotate<BE> + GLWETrace<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
-        for<'a> BE::BufMut<'a>: HostDataMut,
+        H: GetAutomorphismKey<BE>,
     {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         let rot = (T::bit_index(bit) << log_gap) as i64;
@@ -494,16 +491,13 @@ impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
         module.glwe_trace_assign(res, 0, keys, scratch);
     }
 
-    pub fn get_byte<R, K, M, H, BE>(&self, module: &M, byte: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    pub fn get_byte<R, M, H, BE>(&self, module: &M, byte: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         Self: GLWEToBackendRef<BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + GLWERotate<BE> + GLWETrace<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
-        for<'a> BE::BufMut<'a>: HostDataMut,
+        H: GetAutomorphismKey<BE>,
     {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         let trace_start = (T::LOG_BITS - T::LOG_BYTES) as usize;
@@ -514,7 +508,7 @@ impl<D: HostDataRef, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
 }
 
 impl<T: UnsignedInteger> FheUint<Vec<u8>, T, i64> {
-    pub fn from_fhe_uint_prepared<M, H, K, BE>(
+    pub fn from_fhe_uint_prepared<M, H, BE>(
         &mut self,
         module: &M,
         other: &FheUintPrepared<BE::OwnedBuf, T, BE>,
@@ -531,8 +525,7 @@ impl<T: UnsignedInteger> FheUint<Vec<u8>, T, i64> {
         GLWE<Vec<u8>, BE::ZnxWord>: GLWEToBackendMut<BE>,
         Self: GLWEToBackendMut<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -547,20 +540,19 @@ impl<T: UnsignedInteger> FheUint<Vec<u8>, T, i64> {
         let mut scratch_1 = scratch.borrow();
 
         for (i, bits) in out_bits.iter_mut().enumerate().take(T::BITS as usize) {
-            module.cmux(bits, &one, &zero, other.get_bit(i), &mut scratch_1.borrow());
+            module.cmux(bits, &one, &zero, &other.get_bit(i).to_backend_ref(), &mut scratch_1.borrow());
         }
 
         self.pack(module, out_bits, keys, &mut scratch_1);
     }
 }
 
-impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
-    pub fn zero_byte<M, K, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
+    pub fn zero_byte<M, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         Self: GLWEToBackendMut<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
+        H: GetAutomorphismKey<BE>,
         M: GLWEBytesOf<BE>
             + ModuleLogN
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -570,7 +562,6 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
             + GLWEAdd<BE>
             + GLWECopy<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
     {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         let trace_start = (T::LOG_BITS - T::LOG_BYTES) as usize;
@@ -590,12 +581,11 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
         module.glwe_rotate_assign(rot, self, scratch);
     }
 
-    pub fn sext<M, H, K, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    pub fn sext<M, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         Self: GLWEToBackendRef<BE>,
         Self: GLWEToBackendMut<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
+        H: GetAutomorphismKey<BE>,
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         M: GLWEBytesOf<BE>
             + ModuleLogN
@@ -606,7 +596,6 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T, i64> {
             + GLWESub<BE>
             + GLWECopy<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
     {
         assert!(byte < (1 << T::LOG_BYTES));
 

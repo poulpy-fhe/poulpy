@@ -9,7 +9,10 @@ use poulpy_hal::{
 
 use crate::{
     default::operations::GLWEZeroDefault,
-    layouts::{GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, prepared::GGSWPreparedToBackendRef},
+    layouts::{
+        GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, LWEInfos,
+        prepared::GGSWPreparedBackendRef,
+    },
     oep::{GGSWExternalProductDefault, GLWEExternalProductDefault},
 };
 
@@ -24,13 +27,17 @@ where
     module.glwe_external_product_tmp_bytes_default(res_infos, a_infos, b_infos)
 }
 
-pub fn ggsw_external_product_default<BE, M, R, A, B>(module: &M, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn ggsw_external_product_default<BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    b: &GGSWPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GGSWExternalProductDefault<BE> + GLWEExternalProductDefault<BE> + GLWEZeroDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
-    B: GGSWPreparedToBackendRef<BE> + GGSWInfos,
 {
     assert_eq!(res.rank(), a.rank(), "res rank: {} != a rank: {}", res.rank(), a.rank());
     assert_eq!(res.rank(), b.rank(), "res rank: {} != b rank: {}", res.rank(), b.rank());
@@ -62,12 +69,15 @@ where
     }
 }
 
-pub fn ggsw_external_product_assign_default<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn ggsw_external_product_assign_default<BE, M, R>(
+    module: &M,
+    res: &mut R,
+    a: &GGSWPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GGSWExternalProductDefault<BE> + GLWEExternalProductDefault<BE> + ModuleN,
     R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-    A: GGSWPreparedToBackendRef<BE> + GGSWInfos,
 {
     assert_eq!(res.n(), module.n() as u32);
     assert_eq!(a.n(), module.n() as u32);

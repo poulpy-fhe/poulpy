@@ -12,10 +12,10 @@ use crate::{
 use anyhow::Result;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPrepared, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout,
-    GLWESwitchingKeyPrepared, ModuleCoreAlloc,
+    GGLWEInfos, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout, GLWESwitchingKeyPrepared, GetAutomorphismKey,
+    ModuleCoreAlloc,
 };
-use poulpy_core::{DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWESwitchingKeyEncryptSk};
+use poulpy_core::{DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWESwitchingKeyEncryptSk, TransferInto};
 use poulpy_core::{
     GLWEToLWESwitchingKeyEncryptSk, GetDistribution,
     layouts::{
@@ -27,7 +27,10 @@ use poulpy_core::{
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_hal::layouts::NoiseInfos;
 use poulpy_hal::{
-    layouts::{Backend, Data, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchArena, WriterTo, ZnxWord},
+    layouts::{
+        Backend, CopyFromHost, CopyToHost, Data, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchArena,
+        WriterTo, ZnxWord,
+    },
     source::Source,
 };
 
@@ -137,10 +140,10 @@ where
     pub(crate) ks_lwe: GLWEToLWEKey<D, W>,
 }
 
-impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA, i64> {
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BDDKey<D, BRA, W> {
     pub fn alloc_from_infos<M, A: BDDKeyInfos>(module: &M, infos: &A) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64> + poulpy_hal::api::ModuleN,
+        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + poulpy_hal::api::ModuleN,
     {
         Self {
             cbt: CircuitBootstrappingKey::alloc_from_infos(module, &infos.cbt_infos()),
@@ -149,6 +152,24 @@ impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA, i64> {
                 .as_ref()
                 .map(|infos| module.glwe_switching_key_alloc_from_infos(infos)),
             ks_lwe: module.glwe_to_lwe_key_alloc_from_infos(&infos.ks_lwe_infos()),
+        }
+    }
+}
+
+impl<D1, D2, BRA, W> TransferInto<BDDKey<D2, BRA, W>> for BDDKey<D1, BRA, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    BRA: BlindRotationAlgo,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut BDDKey<D2, BRA, W>) {
+        self.cbt.transfer_into(&mut dst.cbt);
+        self.ks_lwe.transfer_into(&mut dst.ks_lwe);
+        match (&self.ks_glwe, &mut dst.ks_glwe) {
+            (Some(src), Some(dst)) => src.transfer_into(dst),
+            (None, None) => {}
+            _ => panic!("transfer_into: GLWE switching key"),
         }
     }
 }
@@ -382,15 +403,13 @@ impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepare
     }
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>, BE>
-    for BDDKeyPrepared<BE::OwnedBuf, BRA, BE>
-{
-    fn automorphism_key_infos(&self) -> poulpy_core::layouts::GGLWELayout {
-        self.cbt.automorphism_key_infos()
-    }
-
-    fn get_automorphism_key(&self, k: i64) -> Option<&GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> {
-        self.cbt.get_automorphism_key(k)
+impl<BRA: BlindRotationAlgo, BE: Backend> GetAutomorphismKey<BE> for BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: poulpy_core::layouts::TorusPrecision,
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.cbt.get_automorphism_key(p, k)
     }
 }
 
@@ -399,7 +418,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<GLWEAutomorp
 /// Implemented for `Module<BE>` when the backend supports preparation of all
 /// three constituent sub-keys.  Default method implementations delegate to
 /// the corresponding sub-key factories.
-pub trait BDDKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef>>
+pub trait BDDKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend>
 where
     Self: Sized + CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>,
 {
@@ -447,16 +466,12 @@ where
         self.glwe_to_lwe_key_prepare(&mut res.ks_lwe, &other.ks_lwe, scratch);
     }
 }
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> BDDKeyPreparedFactory<BRA, BE>
-    for Module<BE>
-where
-    Self: Sized + CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>,
+impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyPreparedFactory<BRA, BE> for Module<BE> where
+    Self: Sized + CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>
 {
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>>
-    BDDKeyPrepared<BE::OwnedBuf, BRA, BE>
-{
+impl<BRA: BlindRotationAlgo, BE: Backend<ZnxWord = i64>> BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn alloc_from_infos<M, A>(module: &M, infos: &A) -> Self
     where
         M: BDDKeyPreparedFactory<BRA, BE>,

@@ -23,6 +23,7 @@ use poulpy_core::{
     },
 };
 
+use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 use poulpy_core::layouts::{
     GGSW, GLWE, GLWEPlaintext, GLWESecret, LWE, LWEPlaintext, LWESecret,
     prepared::{GGSWPrepared, GLWESecretPrepared},
@@ -226,7 +227,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
     module.ggsw_prepare(&mut res_prepared, &res, &mut scratch.borrow());
 
     {
-        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, &mut scratch.borrow());
+        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared.to_backend_ref(), &mut scratch.borrow());
     }
 
     let mut pt_res: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
@@ -425,7 +426,7 @@ pub fn test_circuit_bootstrapping_to_constant<
     module.ggsw_prepare(&mut res_prepared, &res, &mut scratch.borrow());
 
     {
-        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, &mut scratch.borrow());
+        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared.to_backend_ref(), &mut scratch.borrow());
     }
 
     let mut pt_res: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);

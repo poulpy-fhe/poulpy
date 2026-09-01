@@ -33,10 +33,7 @@ use crate::{
             prepared_giants::{DiagonalProd, glwe_eval_giant_steps},
         },
     },
-    layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, ModuleCoreAlloc,
-        prepared::GGLWEPreparedToBackendRef,
-    },
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, ModuleCoreAlloc},
 };
 
 use super::LinearTransformationBabySteps;
@@ -139,7 +136,7 @@ where
 /// across transforms that share the input. `a_k` is the CKKS-supplied
 /// base2k alignment for the input. Forwards to the internal
 /// `glwe_prepare_linear_transformation_baby_steps`.
-pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
+pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
     module: &M,
     cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
@@ -168,8 +165,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
         + GaloisElement
         + Sync,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     glwe_prepare_linear_transformation_baby_steps(module, cache, a, keys, scratch);
 }
@@ -187,7 +183,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
 ///
 /// Asserts at least one non-empty giant step (a fully-pruned transform is a
 /// caller bug), then delegates to the shared `glwe_eval_giant_steps` loop.
-pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
+pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
     module: &M,
     cnv_offset: usize,
     res_k: usize,
@@ -232,8 +228,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
         + GaloisElement,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     assert!(
         rhs.giant_steps.iter().any(|gs| !gs.diagonals.is_empty()),

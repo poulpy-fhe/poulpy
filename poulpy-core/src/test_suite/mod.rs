@@ -13,6 +13,7 @@
 //! accumulator one limb too narrow passes the key-switch noise sweep), and
 //! parity alone cannot tell you the reference is right.
 
+pub mod keys;
 pub mod noise;
 pub mod parity;
 
@@ -35,12 +36,16 @@ macro_rules! core_backend_test_suite {
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 test_glwe_tensoring => $crate::test_suite::noise::glwe_tensor::test_glwe_tensoring,
                 test_glwe_tensor_square => $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_square,
+                glwe_tensor_relinearize_coarsened => $crate::test_suite::parity::test_glwe_tensor_relinearize_coarsened,
                 test_glwe_mul_plain => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_plain,
                 test_glwe_mul_const => $crate::test_suite::noise::glwe_tensor::test_glwe_mul_const,
                 glwe_keyswitch => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch,
                 glwe_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_glwe_keyswitch_assign,
                 glwe_automorphism => $crate::test_suite::noise::automorphism::test_glwe_automorphism,
                 glwe_automorphism_assign => $crate::test_suite::noise::automorphism::test_glwe_automorphism_assign,
+                glwe_automorphism_coarsened => $crate::test_suite::parity::test_glwe_automorphism_coarsened,
+                glwe_tensor_relinearize_cross_radix =>
+                    $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_relinearize_cross_radix,
                 glwe_external_product => $crate::test_suite::noise::external_product::test_glwe_external_product,
                 glwe_external_product_assign => $crate::test_suite::noise::external_product::test_glwe_external_product_assign,
                 glwe_keyswitch_ignores_dirty_scratch =>
@@ -49,6 +54,7 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::keyswitch::test_glwe_external_product_ignores_dirty_scratch,
                 glwe_rotate => $crate::test_suite::noise::test_glwe_rotate,
                 glwe_trace_assign => $crate::test_suite::noise::test_glwe_trace_assign,
+                glwe_trace_coarsened => $crate::test_suite::parity::test_glwe_trace_coarsened,
                 glwe_hoisted_baby_rotations_match_automorphism =>
                     $crate::test_suite::noise::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,
                 glwe_packing => $crate::test_suite::noise::test_glwe_packing,

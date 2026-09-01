@@ -32,12 +32,11 @@
 //! module.ckks_eval_linear_transformation_into(&mut dst, &ct, &babies, &prepared, &atks, &mut scratch)?;
 //! ```
 
-use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -132,7 +131,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// `babies` must have been sized via
     /// [`LinearTransformationBabySteps::alloc`] for the rotations the caller wants
     /// populated. Performs zero `CnvPVecL` allocations.
-    fn ckks_prepare_linear_transformation_baby_steps<Src, H, K>(
+    fn ckks_prepare_linear_transformation_baby_steps<Src, H>(
         &self,
         babies: &mut LinearTransformationBabySteps<BE>,
         src: &Src,
@@ -141,8 +140,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
     // ----- eval (caller-supplied baby cache) -----
 
@@ -157,7 +155,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// `keys` must contain an automorphism key for every non-zero giant rotation
     /// of `lt`. `babies` must cover at least `lt`'s baby rotations; supersets are
     /// allowed (e.g. when sharing a cache across several transforms).
-    fn ckks_eval_linear_transformation_into<Dst, Src, P, H, K>(
+    fn ckks_eval_linear_transformation_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -170,12 +168,11 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
     /// [`Self::ckks_eval_linear_transformation_into`]).
-    fn ckks_eval_linear_transformation_assign<Dst, P, H, K>(
+    fn ckks_eval_linear_transformation_assign<Dst, P, H>(
         &self,
         dst: &mut Dst,
         babies: &LinearTransformationBabySteps<BE>,
@@ -186,8 +183,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
     // ----- eval (self-allocated baby cache) -----
 
@@ -198,7 +194,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     /// evaluations; for repeated evaluation that shares a baby cache, use that
     /// method. A plaintext `lt` takes the streamed path; a prepared `lt` the
     /// resident path.
-    fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H, K>(
+    fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -210,12 +206,11 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// In-place `dst = M · dst`, self-allocating the baby cache (see
     /// [`Self::ckks_eval_linear_transformation_self_into`]).
-    fn ckks_eval_linear_transformation_self_assign<Dst, P, H, K>(
+    fn ckks_eval_linear_transformation_self_assign<Dst, P, H>(
         &self,
         dst: &mut Dst,
         lt: &LinearTransformation<P>,
@@ -225,6 +220,5 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 }

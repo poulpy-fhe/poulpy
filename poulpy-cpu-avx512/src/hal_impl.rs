@@ -217,6 +217,16 @@ unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         );
     }
 
+    fn vmp_extract_selected_rows(
+        _module: &Module<Self>,
+        res: &mut VmpPMatBackendMut<'_, Self>,
+        a: &VmpPMatBackendRef<'_, Self>,
+        first_row: usize,
+        row_step: usize,
+    ) {
+        crate::ntt4x30_avx512::vmp::vmp_extract_selected_rows_avx512_pm(res, a, first_row, row_step)
+    }
+
     fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
         res.data_mut().fill(Default::default());
     }
@@ -891,6 +901,16 @@ mod ifma_impl {
                 limb_offset,
                 tmp,
             );
+        }
+
+        fn vmp_extract_selected_rows(
+            _module: &Module<Self>,
+            res: &mut VmpPMatBackendMut<'_, Self>,
+            a: &VmpPMatBackendRef<'_, Self>,
+            first_row: usize,
+            row_step: usize,
+        ) {
+            crate::ntt3x42_ifma::vmp::vmp_extract_selected_rows_ifma(res, a, first_row, row_step)
         }
 
         fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {

@@ -13,9 +13,9 @@ use crate::{
     EncryptionInfos, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt,
     GLWETensorKeyEncryptSk, GLWETensoring,
     layouts::{
-        Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory,
-        GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        Dnum, Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor,
+        GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey,
+        GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::GLWESecretPrepared,
     },
     log2_std_noise_glwe_tensor,
@@ -650,5 +650,135 @@ where
 
             assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
         }
+    }
+}
+
+/// **Cross-radix relinearization: the bound and the operand width agree.**
+///
+/// The tensor operand is stored at one `base2k` and the key at another, with a
+/// precision that is not a whole number of key limbs. The operand fed to the
+/// product then carries `ceil(a.k() / key_base2k)` limbs, which is what the
+/// bound resolves; deriving it from the operand's *storage* width instead gives
+/// a different limb count and the product rejects it outright.
+///
+/// The check is the width identity plus completion: under the defect the
+/// product is handed one limb too many and rejects the call outright.
+pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWETensoring<BE>
+        + GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESub<BE>
+        + VecZnxNormalizeAssignBackend<BE>
+        + GLWESecretTensorFactory<BE>
+        + VecZnxNormalize<BE>
+        + GLWETensorKeyEncryptSk<BE>
+        + GLWETensorKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let rank: usize = 1;
+    let n: usize = module.n();
+
+    // Keep both radices inside the envelope selected by each backend suite. In
+    // particular, FFT64's configured radix is 17; the old hard-coded radix 30
+    // overflowed its i64 BIG accumulator before exercising this regression.
+    let hi: usize = params.base2k;
+    let lo: usize = hi.checked_sub(1).expect("cross-radix test requires base2k >= 2");
+
+    // (operand radix, key radix, operand precision), chosen so that the storage
+    // width and the exact precision round to different key-limb counts.
+    for (a_base2k, key_base2k) in [(hi, lo), (lo, hi)] {
+        let k: usize = a_base2k
+            .checked_mul(4)
+            .and_then(|v| v.checked_add(1))
+            .expect("cross-radix test precision overflows usize");
+        let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            n: n.into(),
+            base2k: a_base2k.into(),
+            k: k.into(),
+            rank: rank.into(),
+        })
+        .unwrap();
+        assert_ne!(
+            (glwe_infos.size() * a_base2k).div_ceil(key_base2k),
+            k.div_ceil(key_base2k),
+            "the case must separate the storage width from the exact precision"
+        );
+
+        let key_infos = |base2k: usize| {
+            EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
+                n: n.into(),
+                base2k: base2k.into(),
+                dnum: Dnum(k.div_ceil(base2k) as u32),
+                k_aux: (base2k + module.log_n()).into(),
+                rank: rank.into(),
+                dsize: Dsize(1),
+            })
+            .unwrap()
+        };
+        let cross_infos = key_infos(key_base2k);
+
+        let mut a: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+        let mut res_tensor: GLWETensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_alloc_from_infos(&glwe_infos);
+        let mut res_cross: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
+        let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .glwe_encrypt_sk_tmp_bytes(&glwe_infos)
+                .max(module.glwe_decrypt_tmp_bytes(&glwe_infos))
+                .max(module.glwe_tensor_apply_tmp_bytes(&res_tensor, &a, &a))
+                .max(module.glwe_secret_tensor_prepare_tmp_bytes(rank.into()))
+                .max(module.glwe_tensor_key_encrypt_sk_tmp_bytes(&cross_infos))
+                .max(module.glwe_tensor_relinearize_tmp_bytes(&res_cross, &res_tensor, &cross_infos)),
+        );
+
+        let mut source_xs: Source = Source::new([0u8; 32]);
+        let mut source_xe: Source = Source::new([1u8; 32]);
+        let mut source_xa: Source = Source::new([2u8; 32]);
+
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
+        let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
+        module.glwe_secret_prepare(&mut sk_dft, &sk);
+
+        let scale: usize = 2 * a_base2k;
+        let mut data = vec![0i64; n];
+        for i in data.iter_mut() {
+            *i = (source_xa.next_i64() & 3) - 2;
+        }
+        pt_in.encode_vec_i64(&data, TorusPrecision(scale as u32));
+        module.glwe_encrypt_sk(
+            &mut a,
+            &pt_in,
+            &sk_dft,
+            &glwe_infos,
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.borrow(),
+        );
+        module.glwe_tensor_apply(scale, &mut res_tensor, &a, &a, &mut scratch.borrow());
+
+        let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&cross_infos);
+        module.glwe_tensor_key_encrypt_sk(
+            &mut tsk,
+            &sk,
+            &cross_infos,
+            &mut source_xe,
+            &mut source_xa,
+            &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
+        );
+        let mut tsk_prep: GLWETensorKeyPrepared<BE::OwnedBuf, BE> = module.alloc_tensor_key_prepared_from_infos(&cross_infos);
+        module.prepare_tensor_key(&mut tsk_prep, &tsk, &mut scratch.borrow());
+        // Reaching the end is the regression: deriving the operand width from
+        // the storage precision hands the product a limb count its bound does
+        // not accept, and it rejects the call before doing any work.
+        module.glwe_tensor_relinearize(&mut res_cross, &res_tensor, &tsk_prep, &mut scratch.borrow());
     }
 }

@@ -68,6 +68,10 @@ impl<D: Data, BE: Backend> GGLWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
     fn dnum(&self) -> Dnum {
         self.keys[0].dnum()
     }
+
+    fn stride(&self) -> usize {
+        self.keys[0].stride()
+    }
 }
 
 /// Factory trait for allocating and preparing [`GGLWEToGGSWKeyPrepared`] instances.

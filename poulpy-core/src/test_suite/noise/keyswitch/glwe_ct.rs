@@ -1,3 +1,4 @@
+use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
     layouts::{Module, ScratchOwned},
@@ -136,7 +137,7 @@ where
                     module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
                 module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-                module.glwe_keyswitch(&mut glwe_out, &glwe_in, &ksk_prepared, &mut scratch.borrow());
+                module.glwe_keyswitch(&mut glwe_out, &glwe_in, &ksk_prepared.to_backend_ref(), &mut scratch.borrow());
 
                 let noise_max: f64 = ksk_infos.log2_std_noise_keyswitch(
                     &glwe_in_infos,
@@ -265,7 +266,7 @@ where
                 module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
             module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-            module.glwe_keyswitch_assign(&mut glwe_out, &ksk_prepared, &mut scratch.borrow());
+            module.glwe_keyswitch_assign(&mut glwe_out, &ksk_prepared.to_backend_ref(), &mut scratch.borrow());
 
             let noise_max: f64 = ksk_infos.log2_std_noise_keyswitch(
                 &glwe_out_infos,

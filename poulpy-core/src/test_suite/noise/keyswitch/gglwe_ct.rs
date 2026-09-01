@@ -6,6 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::{
     EncryptionLayout, GGLWEKeyswitch, GGLWENoise, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
@@ -141,7 +142,7 @@ where
                     module.gglwe_keyswitch(
                         &mut gglwe_s0s2,
                         &gglwe_s0s1,
-                        &gglwe_s1s2_prepared,
+                        &gglwe_s1s2_prepared.to_backend_ref(),
                         &mut scratch_apply.borrow(),
                     );
 
@@ -312,7 +313,11 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                     gglwe_s1s2_prepared.k(),
                     gglwe_s1s2_prepared.size()
                 );
-                module.gglwe_keyswitch_assign(&mut gglwe_s0s1, &gglwe_s1s2_prepared, &mut scratch_apply.borrow());
+                module.gglwe_keyswitch_assign(
+                    &mut gglwe_s0s1,
+                    &gglwe_s1s2_prepared.to_backend_ref(),
+                    &mut scratch_apply.borrow(),
+                );
 
                 let gglwe_s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = gglwe_s0s1;
 

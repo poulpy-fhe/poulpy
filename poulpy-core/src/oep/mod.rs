@@ -29,15 +29,14 @@
 //!                        impl_ggsw_keyswitch_defaults_full, impl_lwe_keyswitch_defaults_full};
 //!
 //! impl GLWEKeyswitchDefault<MyBackend> for Module<MyBackend> {
-//!     fn glwe_keyswitch_default<R, A, K>(&self, res: &mut R, a: &A, key: &K,
-//!                                        scratch: &mut ScratchArena<'_, MyBackend>)
+//!     fn glwe_keyswitch_default<R, A>(&self, res: &mut R, a: &A,
+//!                                     key: &GGLWEPreparedBackendRef<'_, MyBackend>,
+//!                                     scratch: &mut ScratchArena<'_, MyBackend>)
 //!     where
 //!         R: GLWEToBackendMut<MyBackend> + GLWEInfos,
 //!         A: GLWEToBackendRef<MyBackend> + GLWEInfos,
-//!         K: GGLWEPreparedToBackendRef<MyBackend> + GGLWEInfos,
 //!     {
-//!         let key_ref = key.to_backend_ref();
-//!         my_fused_keyswitch(self, res, a, key_ref.data(), scratch);
+//!         my_fused_keyswitch(self, res, a, key.data(), scratch);
 //!     }
 //!     // ... tmp_bytes and assign
 //! }

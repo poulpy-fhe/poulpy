@@ -215,6 +215,8 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
                 k_aux: infos.k_aux(),
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
+                dnum: infos.dnum(),
+                stride: 1,
                 data: data.into_inner(),
             }),
             scratch,

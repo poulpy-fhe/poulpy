@@ -8,12 +8,19 @@
 //! which the homomorphic engine must match up to CKKS precision.
 
 use crate::api::CKKSEncodingOps;
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 
-use poulpy_core::layouts::{Diagonals, Evaluate, GLWEToBackendRef, LWEInfos, LinearTransformationStrategy};
+use poulpy_core::layouts::{
+    Diagonals, Dsize, Evaluate, GGLWEInfos, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformationStrategy,
+    TorusPrecision,
+    prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedToBackendRef},
+};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, HostDataRef, Module, ScratchArena, ZnxView, ZnxViewMut},
+    layouts::{
+        Backend, CyclotomicOrder, HostBytesBackend, HostDataRef, Module, ScratchArena, ZnxView, ZnxViewMut, galois_element,
+    },
 };
 
 use crate::{
@@ -144,8 +151,7 @@ where
     let (a_re, a_im) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     // Exercise multi-limb automorphism products and multiple non-identity
-    // giant rotations. Exact backends then cover the shortened shared
-    // accumulator, while approximate backends retain the full key width.
+    // giant rotations, so the shortened shared accumulator is covered.
     let key_params = CKKSTestParams {
         dsize: params.dsize.max(4),
         ..params
@@ -244,4 +250,221 @@ where
         &want_right_im,
         &mut scratch.borrow(),
     );
+}
+
+/// The stored keys, with the Galois elements listed in `coarse_ps` answered
+/// through a coarser `dsize`: one key set carrying two different layouts.
+struct MixedDsize<BE: Backend> {
+    keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    coarse: Dsize,
+    coarse_ps: HashSet<i64>,
+}
+
+impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<BE> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        let key = self.keys.get(&p).ok_or(poulpy_core::CoreError::GGLWEKeyUse {
+            op: "get_automorphism_key",
+            detail: format!("no automorphism key for p={p}"),
+        })?;
+        let _ = k;
+        if self.coarse_ps.contains(&p) {
+            key.with_dsize(self.coarse)
+        } else {
+            Ok(key.to_backend_ref())
+        }
+    }
+}
+
+/// Key set that records the precision each lookup was made at.
+struct QueryLog<K> {
+    keys: HashMap<i64, K>,
+    seen: RefCell<Vec<(i64, TorusPrecision)>>,
+}
+
+impl<BE: Backend, K: GLWEAutomorphismKeyPreparedToBackendRef<BE>> GetAutomorphismKey<BE> for QueryLog<K> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: TorusPrecision,
+    ) -> poulpy_core::Result<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.seen.borrow_mut().push((p, k));
+        self.keys.get_automorphism_key(p, k)
+    }
+}
+
+/// Baby rotations resolve at the source precision, giant rotations at the
+/// destination one.
+///
+/// The two sides of a factor operate on different values: baby steps rotate the
+/// input, giant steps rotate the post-product accumulator. The destination is
+/// narrower than the input here, so a giant step resolving at `ct.k()` would
+/// size its product for a value that no longer exists.
+pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (a_re, a_im) = test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let key_params = CKKSTestParams {
+        dsize: params.dsize.max(4),
+        ..params
+    };
+    let mut scratch = alloc_scratch(&key_params, module);
+
+    let n1 = 2;
+    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m);
+    let lt = encode_lt(module, &params, &b, n1, false, &mut scratch.borrow());
+
+    let order = module.cyclotomic_order();
+    let mut keys = HashMap::new();
+    for p in lt.galois_elements(order) {
+        keys.entry(p)
+            .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
+    }
+    let keys = QueryLog {
+        keys,
+        seen: RefCell::new(Vec::new()),
+    };
+
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &a_re,
+        &a_im,
+        &mut scratch.borrow(),
+    );
+
+    let prepared = prepare_lt(module, &lt, &mut scratch.borrow());
+    let mut res = alloc_ct(&params, module, params.k - params.base2k);
+    // The evaluation stamps its own result metadata onto `res`, so the giant
+    // precision to compare against is the one it was given, not the one left.
+    let dst_k = res.k();
+    module
+        .ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, &mut scratch.borrow())
+        .unwrap();
+
+    let baby_elements: HashSet<i64> = lt
+        .baby_steps()
+        .iter()
+        .copied()
+        .filter(|&rot| rot != 0)
+        .map(|rot| galois_element(rot, order))
+        .collect();
+    let giant_elements: HashSet<i64> = lt
+        .giant_steps
+        .iter()
+        .filter(|gs| gs.rot != 0 && !gs.diagonals.is_empty())
+        .map(|gs| galois_element(gs.rot, order))
+        .collect();
+
+    let seen = keys.seen.borrow();
+    assert!(!seen.is_empty(), "the factor consulted no key");
+    for &(p, k) in seen.iter() {
+        match (baby_elements.contains(&p), giant_elements.contains(&p)) {
+            (true, false) => assert_eq!(k, ct.k(), "baby key p={p} resolved at {k}, not at the source precision"),
+            (false, true) => assert_eq!(k, dst_k, "giant key p={p} resolved at {k}, not at the destination precision"),
+            (true, true) => assert!(
+                k == ct.k() || k == dst_k,
+                "shared baby/giant key p={p} resolved at unrelated precision {k}"
+            ),
+            (false, false) => panic!("unexpected key lookup p={p} at k={k}"),
+        }
+    }
+}
+
+/// A key set carrying two layouts must fit the scratch the public query
+/// promises: a caller holding several key layouts can only take the max over
+/// the per-layout queries, so no route may cost more than that.
+pub fn test_linear_transformation_mixed_key_layouts<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (a_re, a_im) = test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    // Stored at the smallest `dsize` that still leaves a digit when read at
+    // twice that value, so the coarsened twin below is always reachable.
+    let key_params = CKKSTestParams {
+        dsize: params.dsize.max(2),
+        ..params
+    };
+    let mut scratch = alloc_scratch(&key_params, module);
+
+    let n1 = 2;
+    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m);
+    let lt = encode_lt(module, &params, &b, n1, false, &mut scratch.borrow());
+
+    // Half the rotations answer through twice their stored `dsize`, so baby and
+    // giant steps both see a key set that is not of one shape.
+    let order = module.cyclotomic_order();
+    let mut keys = HashMap::new();
+    for p in lt.galois_elements(order) {
+        keys.entry(p)
+            .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
+    }
+    let mut elements: Vec<i64> = keys.keys().copied().collect();
+    elements.sort_unstable();
+    let coarse_ps: HashSet<i64> = elements.iter().copied().step_by(2).collect();
+    let stored_infos = key_params.atk_layout();
+    let coarse_dsize = Dsize(2 * key_params.dsize as u32);
+    let coarse_infos = stored_infos.gglwe_layout().at_dsize(coarse_dsize).unwrap();
+    let keys = MixedDsize::<BE> {
+        keys,
+        coarse: coarse_dsize,
+        coarse_ps,
+    };
+
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &a_re,
+        &a_im,
+        &mut scratch.borrow(),
+    );
+    let prepared = prepare_lt(module, &lt, &mut scratch.borrow());
+    let mut res = alloc_ct(&params, module, params.k - params.base2k);
+
+    // Exactly the budget a caller can derive: the larger of the two per-layout
+    // queries, nothing rounded up on top.
+    let mut eval_scratch = <poulpy_hal::layouts::ScratchOwned<BE> as poulpy_hal::api::ScratchOwnedAlloc<BE>>::alloc(
+        module
+            .ckks_eval_linear_transformation_tmp_bytes(&ct, &stored_infos)
+            .max(module.ckks_eval_linear_transformation_tmp_bytes(&ct, &coarse_infos)),
+    );
+    module
+        .ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, &mut eval_scratch.borrow())
+        .unwrap();
 }

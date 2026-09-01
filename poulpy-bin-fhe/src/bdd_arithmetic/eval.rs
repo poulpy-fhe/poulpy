@@ -1,23 +1,22 @@
 use core::panic;
-use poulpy_hal::layouts::HostDataRef;
-
 use poulpy_core::{
-    GLWECopy, GLWENormalize, GLWESub, ScratchArenaTakeCore,
+    GLWECopy, GLWENormalize, GLWESub, GLWEZero, ScratchArenaTakeCore,
     api::GLWEExternalProductInternal,
     default::external_product::glwe::glwe_external_product_output_size,
     layouts::{
-        GGSWInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
-        prepared::GGSWPreparedToBackendRef,
+        GGSWInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        prepared::{GGSWPreparedBackendRef, GGSWPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend, VecZnxBigBytesOf,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallABackend, VecZnxDftAddAssign, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeBasic, VecZnxAddScalarAssignBackend, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend,
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallABackend, VecZnxDftAddAssign,
+        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftTmpBytes,
     },
     layouts::{
-        Backend, HostDataMut, Module, ScratchArena, VecZnxBigViewMut, ZnxZero, vec_znx_backend_ref_from_mut,
+        Backend, Host, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, VecZnxBigViewMut, vec_znx_backend_ref_from_mut,
         vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
     },
 };
@@ -107,7 +106,7 @@ where
 /// producing one GLWE ciphertext per output bit.  The circuit is represented as
 /// a sequence of [`Node`] entries arranged in BDD levels; each level is evaluated
 /// using [`Cmux`] gates.
-pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
+pub trait ExecuteBDDCircuit<BE: Backend> {
     /// Returns the minimum scratch-space size in bytes required by a single
     /// thread of BDD circuit evaluation.
     ///
@@ -118,6 +117,15 @@ pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
         R: GLWEInfos,
         G: GGSWInfos;
 
+    fn execute_bdd_circuit_tmp_bytes_for<R, G, C>(&self, res_infos: &R, circuit: &C, ggsw_infos: &G) -> usize
+    where
+        R: GLWEInfos,
+        G: GGSWInfos,
+        C: GetBitCircuitInfo,
+    {
+        self.execute_bdd_circuit_tmp_bytes(res_infos, circuit.max_state_size(), ggsw_infos)
+    }
+
     /// Single-threaded BDD circuit evaluation.
     ///
     /// Evaluates `circuit` on `inputs`, writing one GLWE ciphertext per output
@@ -126,17 +134,11 @@ pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
     ///
     /// Delegates to [`execute_bdd_circuit_multi_thread`][Self::execute_bdd_circuit_multi_thread]
     /// with `threads = 1`.
-    fn execute_bdd_circuit<C, G, O>(
-        &self,
-        out: &mut [GLWE<O, BE::ZnxWord>],
-        inputs: &G,
-        circuit: &C,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn execute_bdd_circuit<C, G, O>(&self, out: &mut [O], inputs: &G, circuit: &C, scratch: &mut ScratchArena<'_, BE>)
+    where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: HostDataMut + Send,
-        GLWE<O, BE::ZnxWord>: GLWEToBackendMut<BE>,
+        O: GLWEToBackendMut<BE> + GLWEInfos + Send,
     {
         self.execute_bdd_circuit_multi_thread(1, out, inputs, circuit, scratch);
     }
@@ -154,29 +156,106 @@ pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
     fn execute_bdd_circuit_multi_thread<C, G, O>(
         &self,
         threads: usize,
-        out: &mut [GLWE<O, BE::ZnxWord>],
+        out: &mut [O],
         inputs: &G,
         circuit: &C,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: HostDataMut + Send,
-        GLWE<O, BE::ZnxWord>: GLWEToBackendMut<BE>;
+        O: GLWEToBackendMut<BE> + GLWEInfos + Send;
 }
 
 pub trait BitSize {
     fn bit_size(&self) -> usize;
 }
 
-impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> ExecuteBDDCircuit<BE> for Module<BE>
+pub(super) trait BddEvaluator<BE: Backend, L> {
+    fn tmp_bytes<R, G>(&self, res_infos: &R, state_size: usize, ggsw_infos: &G) -> usize
+    where
+        R: GLWEInfos,
+        G: GGSWInfos;
+
+    fn tmp_bytes_for<R, G, C>(&self, res_infos: &R, circuit: &C, ggsw_infos: &G) -> usize
+    where
+        R: GLWEInfos,
+        G: GGSWInfos,
+        C: GetBitCircuitInfo;
+
+    fn execute<C, G, O>(&self, threads: usize, out: &mut [O], inputs: &G, circuit: &C, scratch: &mut ScratchArena<'_, BE>)
+    where
+        G: GetGGSWBit<BE> + BitSize,
+        C: GetBitCircuitInfo,
+        O: GLWEToBackendMut<BE> + GLWEInfos + Send;
+}
+
+pub(super) trait BddTrivialOne<BE: Backend, L> {
+    type Prepared: Sync;
+
+    fn prepare_bdd_trivial_one<R: GLWEInfos>(&self, infos: &R) -> Self::Prepared;
+
+    fn set_bdd_trivial_one<R>(&self, res: &mut R, prepared: &Self::Prepared)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos;
+}
+
+pub(super) fn bdd_parallel_tmp_bytes<BE: Backend>(threads: usize, output_size: usize, worker_bytes: usize) -> usize {
+    let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(threads, output_size);
+    workers
+        .checked_mul(poulpy_hal::execution::worker_scratch_bytes::<BE>(worker_bytes))
+        .expect("BDD scratch size overflow")
+}
+
+#[allow(private_bounds)]
+impl<BE: Backend<ZnxWord = i64>> ExecuteBDDCircuit<BE> for Module<BE>
 where
-    Self: GLWEBytesOf<BE> + Cmux<BE> + GLWECopy<BE>,
-    BE: 'static,
-    for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
+    Self: BddEvaluator<BE, BE::Location>,
 {
     fn execute_bdd_circuit_tmp_bytes<R, G>(&self, res_infos: &R, state_size: usize, ggsw_infos: &G) -> usize
+    where
+        R: GLWEInfos,
+        G: GGSWInfos,
+    {
+        <Self as BddEvaluator<BE, BE::Location>>::tmp_bytes(self, res_infos, state_size, ggsw_infos)
+    }
+
+    fn execute_bdd_circuit_tmp_bytes_for<R, G, C>(&self, res_infos: &R, circuit: &C, ggsw_infos: &G) -> usize
+    where
+        R: GLWEInfos,
+        G: GGSWInfos,
+        C: GetBitCircuitInfo,
+    {
+        <Self as BddEvaluator<BE, BE::Location>>::tmp_bytes_for(self, res_infos, circuit, ggsw_infos)
+    }
+
+    fn execute_bdd_circuit_multi_thread<C, G, O>(
+        &self,
+        threads: usize,
+        out: &mut [O],
+        inputs: &G,
+        circuit: &C,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        G: GetGGSWBit<BE> + BitSize,
+        C: GetBitCircuitInfo,
+        O: GLWEToBackendMut<BE> + GLWEInfos + Send,
+    {
+        <Self as BddEvaluator<BE, BE::Location>>::execute(self, threads, out, inputs, circuit, scratch);
+    }
+}
+
+impl<BE: Backend<Location = Host, ZnxWord = i64>> BddEvaluator<BE, Host> for Module<BE>
+where
+    Self: GLWEBytesOf<BE>
+        + Cmux<BE>
+        + GLWECopy<BE>
+        + GLWEZero<BE>
+        + VecZnxAddScalarAssignBackend<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + Sync,
+    BE: 'static,
+{
+    fn tmp_bytes<R, G>(&self, res_infos: &R, state_size: usize, ggsw_infos: &G) -> usize
     where
         R: GLWEInfos,
         G: GGSWInfos,
@@ -184,98 +263,111 @@ where
         2 * state_size * self.glwe_bytes_of_from_infos(res_infos) + self.cmux_tmp_bytes(res_infos, res_infos, ggsw_infos)
     }
 
-    fn execute_bdd_circuit_multi_thread<C, G, O>(
-        &self,
-        threads: usize,
-        out: &mut [GLWE<O, BE::ZnxWord>],
-        inputs: &G,
-        circuit: &C,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn tmp_bytes_for<R, G, C>(&self, res_infos: &R, circuit: &C, ggsw_infos: &G) -> usize
+    where
+        R: GLWEInfos,
+        G: GGSWInfos,
+        C: GetBitCircuitInfo,
+    {
+        <Self as BddEvaluator<BE, Host>>::tmp_bytes(self, res_infos, circuit.max_state_size(), ggsw_infos)
+    }
+
+    fn execute<C, G, O>(&self, threads: usize, out: &mut [O], inputs: &G, circuit: &C, scratch: &mut ScratchArena<'_, BE>)
+    where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: HostDataMut + Send,
-        GLWE<O, BE::ZnxWord>: GLWEToBackendMut<BE>,
+        O: GLWEToBackendMut<BE> + GLWEInfos + Send,
     {
-        #[cfg(debug_assertions)]
-        {
-            assert!(
-                inputs.bit_size() >= circuit.input_size(),
-                "inputs.bit_size(): {} < circuit.input_size():{}",
-                inputs.bit_size(),
-                circuit.input_size()
-            );
-            assert!(
-                out.len() >= circuit.output_size(),
-                "out.len(): {} < circuit.output_size(): {}",
-                out.len(),
-                circuit.output_size()
-            );
-        }
-
-        let output_size = circuit.output_size();
-        for out_i in out.iter_mut().skip(output_size) {
-            out_i.data_mut().zero();
-        }
-        if output_size == 0 {
-            return;
-        }
-
-        let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(threads, output_size);
-        let scratch_thread_size = poulpy_hal::execution::worker_scratch_bytes::<BE>(self.execute_bdd_circuit_tmp_bytes(
-            &out[0],
-            circuit.max_state_size(),
-            inputs.get_bit(0),
-        ));
-        let needed = workers
-            .checked_mul(scratch_thread_size)
-            .expect("BDD parallel scratch size overflows usize");
-        assert!(
-            scratch.available() >= needed,
-            "scratch.available():{} < parallel BDD scratch bytes:{needed}",
-            scratch.available()
-        );
-        let (worker_scratch, _) = scratch.borrow().split(workers, scratch_thread_size);
-
-        poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
-            &mut out[..output_size],
-            0,
-            worker_scratch,
-            &|bit_idx, out_i, scratch| {
-                let (nodes, state_size) = circuit.get_circuit(bit_idx);
-                if state_size == 0 {
-                    out_i.data_mut().zero();
-                } else {
-                    eval_level(self, out_i, inputs, nodes, state_size, scratch);
-                }
-            },
-        );
+        execute_bdd_circuit_default(self, threads, out, inputs, circuit, scratch);
     }
 }
 
-fn eval_level<M, G, R, BE>(
+impl<BE: Backend<Location = Host, ZnxWord = i64>> BddTrivialOne<BE, Host> for Module<BE>
+where
+    Self: GLWEZero<BE> + VecZnxAddScalarAssignBackend<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+{
+    type Prepared = ScalarZnx<BE::OwnedBuf, i64>;
+
+    fn prepare_bdd_trivial_one<R: GLWEInfos>(&self, infos: &R) -> Self::Prepared {
+        trivial_one_scalar::<BE, _>(infos)
+    }
+
+    fn set_bdd_trivial_one<R>(&self, res: &mut R, prepared: &Self::Prepared)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+    {
+        glwe_set_trivial_one_with_scalar(self, res, prepared);
+    }
+}
+
+pub(super) fn execute_bdd_circuit_default<BE, M, C, G, O, L>(
+    module: &M,
+    threads: usize,
+    out: &mut [O],
+    inputs: &G,
+    circuit: &C,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend<ZnxWord = i64> + 'static,
+    M: GLWEBytesOf<BE> + Cmux<BE> + GLWECopy<BE> + GLWEZero<BE> + BddTrivialOne<BE, L> + Sync,
+    G: GetGGSWBit<BE> + BitSize,
+    C: GetBitCircuitInfo,
+    O: GLWEToBackendMut<BE> + GLWEInfos + Send,
+{
+    assert!(inputs.bit_size() >= circuit.input_size());
+    assert!(out.len() >= circuit.output_size());
+    let output_size = circuit.output_size();
+    for out_i in out.iter_mut().skip(output_size) {
+        module.glwe_zero(out_i);
+    }
+    if output_size == 0 {
+        return;
+    }
+
+    let one = module.prepare_bdd_trivial_one(&out[0]);
+    let scratch_thread_size = poulpy_hal::execution::worker_scratch_bytes::<BE>(
+        2 * circuit.max_state_size() * module.glwe_bytes_of_from_infos(&out[0])
+            + module.cmux_tmp_bytes(&out[0], &out[0], inputs.get_bit(0)),
+    );
+    let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(threads, output_size);
+    let needed = bdd_parallel_tmp_bytes::<BE>(threads, output_size, scratch_thread_size);
+    assert!(scratch.available() >= needed);
+    let (worker_scratch, _) = scratch.borrow().split(workers, scratch_thread_size);
+    poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
+        &mut out[..output_size],
+        0,
+        worker_scratch,
+        &|bit_idx, out_i, scratch| {
+            let (nodes, state_size) = circuit.get_circuit(bit_idx);
+            if state_size == 0 {
+                module.glwe_zero(out_i);
+            } else {
+                eval_level(module, out_i, inputs, nodes, state_size, &one, scratch);
+            }
+        },
+    );
+}
+
+fn eval_level<M, G, R, BE, L>(
     module: &M,
     res: &mut R,
     inputs: &G,
     nodes: &[Node],
     state_size: usize,
+    one: &M::Prepared,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: Cmux<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static,
+    M: Cmux<BE> + GLWECopy<BE> + GLWEZero<BE> + BddTrivialOne<BE, L>,
+    BE: Backend<ZnxWord = i64> + 'static,
     G: GetGGSWBit<BE> + BitSize,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
     assert!(nodes.len().is_multiple_of(state_size));
 
     let (mut level, mut scratch_1) = scratch.borrow().take_glwe_slice_scratch(2 * state_size, res);
 
-    level.iter_mut().for_each(|ct| ct.data_mut().zero());
-
-    // TODO: implement API on GLWE
-    level[1].data_mut().encode_coeff_i64(res.base2k().into(), 0, 2, 0, 1);
+    level.iter_mut().for_each(|ct| module.glwe_zero(ct));
+    module.set_bdd_trivial_one(&mut level[1], one);
 
     let (mut prev_level, mut next_level) = level.split_at_mut(state_size);
 
@@ -289,7 +381,7 @@ fn eval_level<M, G, R, BE>(
                         &mut next_level[j],
                         &prev_level[*hi_idx],
                         &prev_level[*lo_idx],
-                        inputs.get_bit(*in_idx),
+                        &inputs.get_bit(*in_idx).to_backend_ref(),
                         &mut scratch_1.borrow(),
                     );
                 }
@@ -309,13 +401,41 @@ fn eval_level<M, G, R, BE>(
                 res,
                 &prev_level[*hi_idx],
                 &prev_level[*lo_idx],
-                inputs.get_bit(*in_idx),
+                &inputs.get_bit(*in_idx).to_backend_ref(),
                 &mut scratch_1.borrow(),
             );
         }
         _ => {
             panic!("invalid last node, should be CMUX")
         }
+    }
+}
+
+fn trivial_one_scalar<BE, R>(infos: &R) -> ScalarZnx<BE::OwnedBuf, i64>
+where
+    BE: Backend<ZnxWord = i64>,
+    R: GLWEInfos,
+{
+    let base2k = infos.base2k().as_usize();
+    let value = if base2k == 1 { -1 } else { 1i64 << (base2k - 2) };
+    let mut bytes = vec![0u8; infos.n().as_usize() * size_of::<i64>()];
+    bytes[..size_of::<i64>()].copy_from_slice(&value.to_ne_bytes());
+    ScalarZnx::from_data(BE::from_host_bytes(&bytes), infos.n().as_usize(), 1)
+}
+
+fn glwe_set_trivial_one_with_scalar<BE, R, M>(module: &M, res: &mut R, one: &ScalarZnx<BE::OwnedBuf, i64>)
+where
+    BE: Backend<ZnxWord = i64>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    M: GLWEZero<BE> + VecZnxAddScalarAssignBackend<BE>,
+{
+    module.glwe_zero(res);
+    let limbs = 2usize.div_ceil(res.base2k().as_usize());
+    assert!(limbs <= res.size());
+    let scalar = <ScalarZnx<BE::OwnedBuf, i64> as ScalarZnxToBackendRef<BE>>::to_backend_ref(one);
+    let mut res = res.to_backend_mut();
+    for limb in 0..limbs {
+        module.vec_znx_add_scalar_assign_backend(res.data_mut(), 0, limb, &scalar, 0);
     }
 }
 
@@ -346,7 +466,7 @@ pub enum Node {
     None,
 }
 
-impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> Cswap<BE> for Module<BE> where
+impl<BE: Backend<ZnxWord = i64>> Cswap<BE> for Module<BE> where
     Self: GLWEBytesOf<BE>
         + Sized
         + ModuleN
@@ -382,7 +502,7 @@ impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> Cswap<BE> 
 ///
 /// but is performed entirely in the ciphertext domain.  Used by
 /// `GLWEBlindRetrieval` to implement oblivious array access.
-pub trait Cswap<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>>
+pub trait Cswap<BE: Backend>
 where
     Self: GLWEBytesOf<BE>
         + Sized
@@ -447,12 +567,16 @@ where
         tot + self.bytes_of_vec_znx_big(1, output_size)
     }
 
-    fn cswap<A, B, S>(&self, res_a: &mut A, res_b: &mut B, s: &S, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn cswap<'k, A, B>(
+        &self,
+        res_a: &mut A,
+        res_b: &mut B,
+        s: &GGSWPreparedBackendRef<'k, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        for<'a> BE::BufMut<'a>: HostDataMut,
+        BE: 'k,
     {
         assert_eq!(res_a.base2k(), res_b.base2k());
         assert_eq!(res_a.n(), self.n() as u32);
@@ -646,7 +770,7 @@ where
 ///
 /// so that `res` encrypts `t` when `b = 1` and `f` when `b = 0`.  This is the
 /// fundamental gate used throughout BDD circuit evaluation.
-pub trait Cmux<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>>
+pub trait Cmux<BE: Backend>
 where
     Self: GLWEBytesOf<BE>
         + Sized
@@ -692,14 +816,12 @@ where
     }
 
     // res = (t - f) * s + f
-    fn cmux<R, T, F, S>(&self, res: &mut R, t: &T, f: &F, s: &S, scratch: &mut ScratchArena<'_, BE>)
+    fn cmux<'k, R, T, F>(&self, res: &mut R, t: &T, f: &F, s: &GGSWPreparedBackendRef<'k, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         T: GLWEToBackendRef<BE>,
         F: GLWEToBackendRef<BE>,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos + 'static,
-        for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
-        for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
+        BE: 'k,
     {
         let f_backend = f.to_backend_ref();
 
@@ -746,13 +868,16 @@ where
     }
 
     // res = (a - res) * s + res
-    fn cmux_assign_neg<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn cmux_assign_neg<'k, R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        s: &GGSWPreparedBackendRef<'k, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos + 'static,
-        for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
-        for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
+        BE: 'k,
     {
         let a_backend = a.to_backend_ref();
 
@@ -805,13 +930,11 @@ where
     }
 
     // res = (res - a) * s + a
-    fn cmux_assign<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut ScratchArena<'_, BE>)
+    fn cmux_assign<'k, R, A>(&self, res: &mut R, a: &A, s: &GGSWPreparedBackendRef<'k, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos + 'static,
-        for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
-        for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
+        BE: 'k,
     {
         let a_backend = a.to_backend_ref();
         let scratch = scratch.borrow();
@@ -856,8 +979,7 @@ where
     }
 }
 
-impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> Cmux<BE> for Module<BE>
-where
+impl<BE: Backend<ZnxWord = i64>> Cmux<BE> for Module<BE> where
     Self: GLWEBytesOf<BE>
         + Sized
         + GLWEExternalProductInternal<BE>
@@ -870,7 +992,6 @@ where
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxBigNormalizeTmpBytes,
-    for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
+        + VecZnxBigNormalizeTmpBytes
 {
 }

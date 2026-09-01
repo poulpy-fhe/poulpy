@@ -1,8 +1,8 @@
 use itertools::Itertools;
 use poulpy_core::layouts::{
     GGLWEInfos, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSWInfos,
-    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos,
-    GLWETensorKeyPreparedFactory, LWEInfos, prepared::GLWEAutomorphismKeyPrepared,
+    GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GetAutomorphismKey, LWEInfos, SetGaloisElement,
+    prepared::GLWEAutomorphismKeyPrepared,
 };
 use std::collections::HashMap;
 
@@ -22,7 +22,6 @@ impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyPrepared<BE::Ow
     where
         A: CircuitBootstrappingKeyInfos,
         M: CircuitBootstrappingKeyPreparedFactory<BRA, BE>,
-        BE::OwnedBuf: AsMut<[u8]> + AsRef<[u8]>,
     {
         module.circuit_bootstrapping_key_prepared_alloc_from_infos(infos)
     }
@@ -36,19 +35,16 @@ impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyPrepared<BE::Ow
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: CircuitBootstrappingKeyPreparedFactory<BRA, BE>,
-        BE::OwnedBuf: AsMut<[u8]> + AsRef<[u8]>,
     {
         module.circuit_bootstrapping_key_prepare(self, other, scratch);
     }
 }
 
-impl<BE: Backend, BRA: BlindRotationAlgo> CircuitBootstrappingKeyPreparedFactory<BRA, BE> for Module<BE>
-where
+impl<BE: Backend, BRA: BlindRotationAlgo> CircuitBootstrappingKeyPreparedFactory<BRA, BE> for Module<BE> where
     Self: Sized
         + BlindRotationKeyPreparedFactory<BRA, BE>
-        + GLWETensorKeyPreparedFactory<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>,
-    BE::OwnedBuf: AsMut<[u8]> + AsRef<[u8]>,
+        + GGLWEToGGSWKeyPreparedFactory<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
 {
 }
 
@@ -64,7 +60,6 @@ where
         + BlindRotationKeyPreparedFactory<BRA, BE>
         + GGLWEToGGSWKeyPreparedFactory<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>,
-    BE::OwnedBuf: AsMut<[u8]> + AsRef<[u8]>,
 {
     /// Allocates a zero-filled prepared key bundle from a dimension descriptor.
     fn circuit_bootstrapping_key_prepared_alloc_from_infos<A>(
@@ -83,7 +78,8 @@ where
             atk: gal_els
                 .iter()
                 .map(|&gal_el| {
-                    let key = self.glwe_automorphism_key_prepared_alloc_from_infos(atk_infos);
+                    let mut key = self.glwe_automorphism_key_prepared_alloc_from_infos(atk_infos);
+                    key.set_p(gal_el);
                     (gal_el, key)
                 })
                 .collect(),
@@ -105,11 +101,6 @@ where
         other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        // TODO(device): the prepared CBT bundle is still assembled from the
-        // host-backed prepared blind-rotation / automorphism / tensor-switching
-        // key factories. Keep the public factory generic, but leave the
-        // current implementation owned-buffer-only until those sub-factories
-        // grow true backend-generic prepared outputs.
         res.brk.prepare(self, &other.brk, scratch);
         self.gglwe_to_ggsw_key_prepare(&mut res.tsk, &other.tsk, scratch);
 
@@ -152,15 +143,13 @@ pub struct CircuitBootstrappingKeyPrepared<D: Data, BRA: BlindRotationAlgo, B: B
     pub(crate) atk: HashMap<i64, GLWEAutomorphismKeyPrepared<D, B>>,
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>, BE>
-    for CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
-{
-    fn get_automorphism_key(&self, k: i64) -> Option<&GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> {
-        self.atk.get_automorphism_key(k)
-    }
-
-    fn automorphism_key_infos(&self) -> poulpy_core::layouts::GGLWELayout {
-        self.atk.automorphism_key_infos()
+impl<BRA: BlindRotationAlgo, BE: Backend> GetAutomorphismKey<BE> for CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> {
+    fn lookup_automorphism_key(
+        &self,
+        p: i64,
+        k: poulpy_core::layouts::TorusPrecision,
+    ) -> poulpy_core::Result<poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, BE>> {
+        self.atk.get_automorphism_key(p, k)
     }
 }
 

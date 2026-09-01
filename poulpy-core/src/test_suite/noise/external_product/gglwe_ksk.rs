@@ -6,6 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
     EncryptionLayout, GGLWEExternalProduct, GGLWENoise, GGSWEncryptSk, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
@@ -139,7 +140,12 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                 module.ggsw_prepare(&mut ct_rgsw_prepared, &ct_rgsw, &mut scratch.borrow());
 
                 // gglwe_(m) (x) RGSW_(X^k) = gglwe_(m * X^k)
-                module.gglwe_external_product(&mut ct_gglwe_out, &ct_gglwe_in, &ct_rgsw_prepared, &mut scratch.borrow());
+                module.gglwe_external_product(
+                    &mut ct_gglwe_out,
+                    &ct_gglwe_in,
+                    &ct_rgsw_prepared.to_backend_ref(),
+                    &mut scratch.borrow(),
+                );
 
                 {
                     let mut sk_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);
@@ -297,7 +303,7 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                 module.ggsw_prepare(&mut ct_rgsw_prepared, &ct_rgsw, &mut scratch.borrow());
 
                 // gglwe_(m) (x) RGSW_(X^k) = gglwe_(m * X^k)
-                module.gglwe_external_product_assign(&mut ct_gglwe, &ct_rgsw_prepared, &mut scratch.borrow());
+                module.gglwe_external_product_assign(&mut ct_gglwe, &ct_rgsw_prepared.to_backend_ref(), &mut scratch.borrow());
 
                 {
                     let mut sk_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);

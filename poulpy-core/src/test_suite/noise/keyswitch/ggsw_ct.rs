@@ -6,6 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef};
 use crate::{
     EncryptionLayout, GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
@@ -159,7 +160,13 @@ where
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
-            module.ggsw_keyswitch(&mut ggsw_out, &ggsw_in, &ksk_prepared, &tsk_prepared, &mut scratch.borrow());
+            module.ggsw_keyswitch(
+                &mut ggsw_out,
+                &ggsw_in,
+                &ksk_prepared.to_backend_ref(),
+                &tsk_prepared.to_backend_ref(),
+                &mut scratch.borrow(),
+            );
 
             let max_noise = |col_j: usize| -> f64 {
                 ksk_apply_infos.log2_std_noise_ggsw_keyswitch(
@@ -331,7 +338,12 @@ where
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
-            module.ggsw_keyswitch_assign(&mut ggsw_out, &ksk_prepared, &tsk_prepared, &mut scratch.borrow());
+            module.ggsw_keyswitch_assign(
+                &mut ggsw_out,
+                &ksk_prepared.to_backend_ref(),
+                &tsk_prepared.to_backend_ref(),
+                &mut scratch.borrow(),
+            );
 
             let max_noise = |col_j: usize| -> f64 {
                 ksk_apply_infos.log2_std_noise_ggsw_keyswitch(

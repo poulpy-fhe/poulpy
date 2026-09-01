@@ -1,18 +1,17 @@
 use std::collections::HashMap;
 
 use poulpy_core::{
-    GLWECopy, GLWEDecrypt,
-    layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
+    GLWECopy, GLWEZero, ScratchArenaTakeCore,
+    layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena, ZnxZero};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::bdd_arithmetic::{Cmux, GetGGSWBit, UnsignedInteger};
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
-impl<T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static> GLWEBlindSelection<T, BE>
-    for Module<BE>
-where
-    Self: GLWECopy<BE> + Cmux<BE> + GLWEDecrypt<BE>,
+impl<T: UnsignedInteger, BE: Backend<ZnxWord = i64> + 'static> GLWEBlindSelection<T, BE> for Module<BE> where
+    Self: GLWECopy<BE> + Cmux<BE> + GLWEZero<BE>
 {
 }
 
@@ -29,9 +28,9 @@ where
 /// `bit_mask` most-significant bits of the selected index sub-field, traversing
 /// from MSB to LSB.  Indices absent from the map are treated as encryptions of
 /// zero.
-pub trait GLWEBlindSelection<T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef> + 'static>
+pub trait GLWEBlindSelection<T: UnsignedInteger, BE: Backend + 'static>
 where
-    Self: GLWECopy<BE> + Cmux<BE> + GLWEDecrypt<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+    Self: GLWECopy<BE> + Cmux<BE> + GLWEZero<BE>,
 {
     /// Returns the minimum scratch-space size in bytes required by
     /// [`glwe_blind_selection`][Self::glwe_blind_selection].
@@ -57,10 +56,9 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGGSWBit<BE> + 'static,
-        for<'a> BE::BufMut<'a>: HostDataMut,
-        for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
         assert!(bit_rsh + bit_mask <= T::BITS as usize);
+        let (mut zero, mut scratch) = scratch.borrow().take_glwe_scratch(res);
 
         for i in 0..bit_mask {
             let t: usize = 1 << (bit_mask - i - 1);
@@ -73,21 +71,19 @@ where
 
                 match (lo, hi) {
                     (Some(lo), Some(hi)) => {
-                        self.cmux_assign(lo, hi, bit, scratch);
+                        self.cmux_assign(lo, hi, &bit.to_backend_ref(), &mut scratch.borrow());
                         a.insert(j, lo);
                     }
 
                     (Some(lo), None) => {
-                        let mut zero: GLWE<BE::OwnedBuf, BE::ZnxWord> = self.glwe_alloc_from_infos(res);
-                        zero.data_mut().zero();
-                        self.cmux_assign(lo, &zero, bit, scratch);
+                        self.glwe_zero(&mut zero);
+                        self.cmux_assign(lo, &zero, &bit.to_backend_ref(), &mut scratch.borrow());
                         a.insert(j, lo);
                     }
 
                     (None, Some(hi)) => {
-                        let mut zero: GLWE<BE::OwnedBuf, BE::ZnxWord> = self.glwe_alloc_from_infos(res);
-                        zero.data_mut().zero();
-                        self.cmux_assign(&mut zero, hi, bit, scratch);
+                        self.glwe_zero(&mut zero);
+                        self.cmux_assign(&mut zero, hi, &bit.to_backend_ref(), &mut scratch.borrow());
                         self.glwe_copy(hi, &zero);
                         a.insert(j, hi);
                     }
@@ -105,7 +101,7 @@ where
         if let Some(out) = out {
             self.glwe_copy(res, out);
         } else {
-            res.to_backend_mut().data_mut().zero();
+            self.glwe_zero(res);
         }
     }
 }

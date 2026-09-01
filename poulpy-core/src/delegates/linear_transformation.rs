@@ -5,9 +5,8 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     api::GLWELinearTransformations,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
-        LinearTransformation,
-        prepared::{GGLWEPreparedToBackendRef, LinearTransformationBabySteps, PreparedDiagonal},
+        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
+        prepared::{LinearTransformationBabySteps, PreparedDiagonal},
     },
     oep::LinearTransformationImpl,
 };
@@ -62,7 +61,7 @@ where
         BE::glwe_prepare_linear_transformation_rhs(self, prepared, lt, scratch)
     }
 
-    fn glwe_prepare_linear_transformation_baby_steps<A, H, K>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H>(
         &self,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
@@ -70,13 +69,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, keys, scratch)
     }
 
-    fn glwe_eval_linear_transformation_into<R, P, H, K>(
+    fn glwe_eval_linear_transformation_into<R, P, H>(
         &self,
         cnv_offset: usize,
         res_k: usize,
@@ -88,8 +86,7 @@ where
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: crate::default::linear_transformation::DiagonalProd<BE>,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         BE::glwe_eval_linear_transformation_into(self, cnv_offset, res_k, res, lhs, rhs, keys, scratch)
     }

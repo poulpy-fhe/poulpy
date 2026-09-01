@@ -967,6 +967,22 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         }
     }
 
+    fn vmp_extract_selected_rows(
+        module: &Module<Self>,
+        res: &mut VmpPMatBackendMut<'_, Self>,
+        a: &VmpPMatBackendRef<'_, Self>,
+        first_row: usize,
+        row_step: usize,
+    ) {
+        <NTT3x42Ifma as HalVmpImpl<NTT3x42Ifma>>::vmp_extract_selected_rows(
+            base_module(module),
+            &mut base_vmp_mut(res),
+            &base_vmp_ref(a),
+            first_row,
+            row_step,
+        )
+    }
+
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
         <NTT3x42Ifma as HalVmpImpl<NTT3x42Ifma>>::vmp_zero(base_module(module), &mut base_vmp_mut(res))
     }

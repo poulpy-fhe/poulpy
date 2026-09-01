@@ -34,9 +34,8 @@ use crate::{
         operations::msb_mask_bottom_limb,
     },
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        LWEInfos,
-        prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
+        GGLWEInfos, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
+        prepared::{GGLWEPreparedBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
 };
 
@@ -147,11 +146,8 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
     let cols = a.rank().as_usize() + 1;
     assert_eq!(key_ref.base2k(), a.base2k());
 
+    // `key_size` is this key's own product width; limbs above it stay zeroed.
     let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
-    if key_ref.dsize().as_usize() > 1 {
-        // See `glwe_hoisted_baby_rotations`: multi-digit VMP accumulates into
-        // top limbs that must not contain stale scratch contents.
-    }
     module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
 
     let baby_base2k = baby.base2k().as_usize();
@@ -184,7 +180,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
 /// performs zero `CnvPVecL` allocations because the slots are owned by
 /// `cache`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
+pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
     module: &M,
     cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
@@ -209,8 +205,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
         + VecZnxIdftNormalizeConsumeTmpBytes
         + Sync,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     let base2k = a.base2k().as_usize();
     let padding = (base2k - a.k().as_usize() % base2k) % base2k;
@@ -228,7 +223,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn glwe_prepare_linear_transformation_baby_steps_inner<BE, M, A, H, K>(
+fn glwe_prepare_linear_transformation_baby_steps_inner<BE, M, A, H>(
     module: &M,
     cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
@@ -251,22 +246,36 @@ fn glwe_prepare_linear_transformation_baby_steps_inner<BE, M, A, H, K>(
         + VecZnxIdftNormalizeConsumeTmpBytes
         + Sync,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
+    H: GetAutomorphismKey<BE>,
 {
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
     let mask = msb_mask_bottom_limb(a.base2k().as_usize(), a.k().as_usize());
-    let has_nonzero_rotation = cache.values.keys().any(|&rot| rot != 0);
-    let (use_hoisted, key_size) = if has_nonzero_rotation {
-        let key_infos = keys.automorphism_key_infos();
-        (
-            a.base2k() == key_infos.base2k(),
-            gglwe_product_output_size::<BE, _, _, _>(a, a, &key_infos),
-        )
-    } else {
-        (false, a.size())
-    };
+    // Baby rotations rotate the source, so their keys are the ones the source's
+    // precision asks for. Every key is resolved once, in cache order, because
+    // the rotations need not share a layout: the hoisted route is only taken
+    // when all of them carry the source's base2k, and every rotation is sized by
+    // its own key. A shared width would evaluate one key's product against
+    // another key's output size, a pair the per-key scratch query never sizes.
+    let key_refs: Vec<Option<GLWEAutomorphismKeyPreparedBackendRef<'_, BE>>> = cache
+        .values
+        .keys()
+        .map(|&rot| {
+            (rot != 0).then(|| {
+                keys.get_automorphism_key(module.galois_element(rot), a.k())
+                    .unwrap_or_else(|e| panic!("baby-step rotation {rot}: {e}"))
+            })
+        })
+        .collect();
+    let use_hoisted =
+        key_refs.iter().flatten().next().is_some() && key_refs.iter().flatten().all(|key| key.base2k() == a.base2k());
+    let key_sizes: Vec<usize> = key_refs
+        .iter()
+        .map(|key| {
+            key.as_ref()
+                .map_or(a_size, |key| gglwe_product_output_size::<BE, _, _, _>(a, a, key))
+        })
+        .collect();
 
     if use_hoisted {
         let scratch = scratch.borrow();
@@ -276,25 +285,22 @@ fn glwe_prepare_linear_transformation_baby_steps_inner<BE, M, A, H, K>(
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, &a_ref.data, col_i + 1);
         }
         let a_dft_ref = a_dft.to_backend_ref();
-        let key_refs: Vec<_> = cache
-            .values
-            .keys()
-            .map(|&rot| {
-                (rot != 0).then(|| {
-                    let key: &K = keys
-                        .get_automorphism_key(module.galois_element(rot))
-                        .unwrap_or_else(|| panic!("missing automorphism key for baby-step rotation {rot}"));
-                    (key.p(), key.to_backend_ref())
-                })
-            })
-            .collect();
         let mut tasks: Vec<_> = cache.values.iter_mut().map(|(&rot, prepared)| (rot, prepared)).collect();
         let workers = worker_count::<BE::TaskExecutor>(BABY_ROTATION_WORKERS, tasks.len());
-        let key_infos = keys.automorphism_key_infos();
-        let rotation_bytes = module.bytes_of_vec_znx_dft(cols, key_size)
-            + module
-                .gglwe_product_dft_tmp_bytes_default(key_size, a_size, &key_infos)
-                .max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size));
+        // Sized exactly as the per-key scratch query sizes one rotation, so the
+        // caller's max over its key layouts covers whatever this loop visits.
+        let rotation_bytes = key_refs
+            .iter()
+            .zip(&key_sizes)
+            .filter_map(|(key, &key_size)| key.as_ref().map(|key| (key, key_size)))
+            .map(|(key, key_size)| {
+                module.bytes_of_vec_znx_dft(cols, key_size)
+                    + module
+                        .gglwe_product_dft_tmp_bytes_default(key_size, a_size, key)
+                        .max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size))
+            })
+            .max()
+            .unwrap_or(0);
         let task_bytes = worker_scratch_bytes::<BE>(
             module.glwe_bytes_of_from_infos(a) + rotation_bytes.max(module.cnv_prepare_left_tmp_bytes(a_size, a_size)),
         );
@@ -306,16 +312,16 @@ fn glwe_prepare_linear_transformation_baby_steps_inner<BE, M, A, H, K>(
             if *rot == 0 {
                 module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, task_scratch);
             } else {
-                let (key_p, key_ref) = key_refs[index].as_ref().unwrap();
+                let key = key_refs[index].as_ref().unwrap();
                 let (mut baby, mut baby_scratch) = task_scratch.borrow().take_glwe_scratch(&a_ref);
                 glwe_hoisted_baby_rotation(
                     module,
                     &mut baby,
                     &a_ref,
                     &a_dft_ref,
-                    *key_p,
-                    key_ref,
-                    key_size,
+                    key.p,
+                    &key.key,
+                    key_sizes[index],
                     &mut baby_scratch.borrow(),
                 );
                 let baby_ref = baby.to_backend_ref();
@@ -328,17 +334,15 @@ fn glwe_prepare_linear_transformation_baby_steps_inner<BE, M, A, H, K>(
             }
         });
     } else {
-        for (&rot, prepared) in cache.values.iter_mut() {
+        for ((&rot, prepared), key) in cache.values.iter_mut().zip(&key_refs) {
             assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
             assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if rot == 0 {
                 let a_ref = a.to_backend_ref();
                 module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, scratch);
             } else {
-                let key: &K = keys
-                    .get_automorphism_key(module.galois_element(rot))
-                    .unwrap_or_else(|| panic!("missing automorphism key for baby-step rotation {rot}"));
                 let (mut baby, mut baby_scratch) = scratch.borrow().take_glwe_scratch(a);
+                let key = key.as_ref().unwrap();
                 module.glwe_automorphism(&mut baby, a, key, &mut baby_scratch.borrow());
                 let baby_ref = baby.to_backend_ref();
                 module.cnv_prepare_left(

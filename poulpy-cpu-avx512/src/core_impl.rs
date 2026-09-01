@@ -15,7 +15,7 @@ use poulpy_core::{
     impl_ggsw_keyswitch_defaults_full, impl_glwe_automorphism_defaults_full, impl_glwe_external_product_defaults_full,
     impl_glwe_keyswitch_defaults_full, impl_glwe_packing_defaults_full, impl_glwe_tensoring_default,
     impl_glwe_trace_defaults_full, impl_linear_transformation_defaults_full, impl_lwe_keyswitch_defaults_full,
-    layouts::{Degree, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef},
+    layouts::{Degree, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
     oep::GLWETensoringImpl,
 };
 use poulpy_hal::{
@@ -499,7 +499,7 @@ macro_rules! impl_rank_one_tensoring {
             ) where
                 R: GLWEToBackendMut<$be> + GLWEInfos,
                 A: GLWEToBackendRef<$be> + GLWEInfos,
-                T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<$be>,
+                T: poulpy_core::layouts::GetTensorKey<$be>,
             {
                 module.glwe_tensor_relinearize_default(res, a, tsk, scratch)
             }

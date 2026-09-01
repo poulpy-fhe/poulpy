@@ -21,7 +21,6 @@ use crate::{
     layouts::{
         GGSWInfos, GGSWPreparedBackendRef, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
         GadgetProductOutputSizeParams, LWEInfos, gadget_product_limbs, gadget_product_output_size,
-        prepared::GGSWPreparedToBackendRef,
     },
     oep::{GLWEExternalProductDefault, gglwe_product_digit_output_size},
 };
@@ -55,7 +54,6 @@ where
         output_k: res_infos.k(),
         dsize: ggsw_infos.dsize(),
         k_aux: ggsw_infos.k_aux(),
-        dft_is_exact: BE::DFT_IS_EXACT,
         product_terms,
         extra_live_limbs: 0,
     })
@@ -164,19 +162,17 @@ where
         (lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2).max(lvl_3)
     }
 
-    fn glwe_external_product_dft<'r, A, G>(
+    fn glwe_external_product_dft<'r, A>(
         &self,
         res_dft: &mut VecZnxDftBackendMut<'r, BE>,
         a: &A,
-        ggsw: &G,
+        ggsw: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE>,
-        G: GGSWPreparedToBackendRef<BE>,
     {
-        let ggsw: GGSWPreparedBackendRef<'_, BE> = ggsw.to_backend_ref();
         let a = a.to_backend_ref();
-        glwe_external_product_dft_fill(self, res_dft, a, &ggsw, scratch);
+        glwe_external_product_dft_fill(self, res_dft, a, ggsw, scratch);
     }
 }
 
@@ -246,8 +242,13 @@ where
     lvl_0.next_multiple_of(align) + lvl_1.max(lvl_2)
 }
 
-pub fn glwe_external_product_default<BE, M, R, A, G>(module: &M, res: &mut R, a: &A, ggsw: &G, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_external_product_default<BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    ggsw: &GGSWPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEExternalProductDefault<BE>
@@ -260,7 +261,6 @@ where
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    G: GGSWPreparedToBackendRef<BE> + GGSWInfos,
 {
     assert_eq!(ggsw.rank(), a.rank());
     assert_eq!(ggsw.rank(), res.rank());
@@ -320,8 +320,12 @@ where
     }
 }
 
-pub fn glwe_external_product_assign_default<BE, M, R, G>(module: &M, res: &mut R, ggsw: &G, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_external_product_assign_default<BE, M, R>(
+    module: &M,
+    res: &mut R,
+    ggsw: &GGSWPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + GLWEExternalProductDefault<BE>
@@ -333,7 +337,6 @@ where
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    G: GGSWPreparedToBackendRef<BE> + GGSWInfos,
 {
     assert_eq!(ggsw.rank(), res.rank());
     assert_eq!(ggsw.n(), res.n());

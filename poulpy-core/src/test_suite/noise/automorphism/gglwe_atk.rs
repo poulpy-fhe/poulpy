@@ -6,6 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef;
 use crate::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk,
     layouts::{
@@ -136,7 +137,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
             module.glwe_automorphism_key_automorphism(
                 &mut auto_key_out,
                 &auto_key_in,
-                &auto_key_apply_prepared,
+                &auto_key_apply_prepared.to_backend_ref(),
                 &mut scratch.borrow(),
             );
 
@@ -290,7 +291,11 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::no
             module.glwe_automorphism_key_prepare(&mut auto_key_apply_prepared, &auto_key_apply, &mut scratch.borrow());
 
             // gglwe_{s1}(s0) (x) gglwe_{s2}(s1) = gglwe_{s2}(s0)
-            module.glwe_automorphism_key_automorphism_assign(&mut auto_key, &auto_key_apply_prepared, &mut scratch.borrow());
+            module.glwe_automorphism_key_automorphism_assign(
+                &mut auto_key,
+                &auto_key_apply_prepared.to_backend_ref(),
+                &mut scratch.borrow(),
+            );
 
             let mut sk_auto: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&auto_key);
             module.glwe_secret_fill_zero(&mut sk_auto); // Necessary to avoid panic of unfilled sk

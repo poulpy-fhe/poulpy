@@ -229,6 +229,13 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     // Public-entry validation must reject malformed schedules and layouts
     // before touching the caller's output.
     let mut rejected = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
+    // Sized by the operation, not the generic all-ops budget: PaCo's branch
+    // working precision is wider than any single op that budget covers.
+    let paco_bytes: usize = module
+        .ckks_paco_bootstrap_direct_tmp_bytes(&rejected, &ct_in, &ctx, &keys)
+        .unwrap()
+        .max(scratch.borrow().available());
+    let mut scratch = ScratchOwned::<BE>::alloc(paco_bytes);
     let mut too_sparse = ct_in.clone();
     too_sparse.set_log_sparsity((p.n() / p.c()).trailing_zeros() as usize + 1);
     let before = rejected.to_host_owned::<BE>();
@@ -305,7 +312,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     // Worker modules and scratch are preflighted before any branch starts.
     let mut worker_rejected = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     let before = worker_rejected.to_host_owned::<BE>();
-    let mut rejected_caller_scratch = alloc_scratch(&params, &module);
+    let mut rejected_caller_scratch = ScratchOwned::<BE>::alloc(paco_bytes);
     let mut undersized_workers = vec![PaCoWorker::new(
         Module::<BE>::new(params.n as u64),
         ScratchOwned::<BE>::alloc(0),
@@ -381,7 +388,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     // Two background workers may complete branches out of order while the
     // caller recombines them in canonical sequential order.
     let mut workers = (0..2)
-        .map(|_| PaCoWorker::new(Module::<BE>::new(params.n as u64), alloc_scratch(&params, &module)))
+        .map(|_| PaCoWorker::new(Module::<BE>::new(params.n as u64), ScratchOwned::<BE>::alloc(paco_bytes)))
         .collect::<Vec<_>>();
     module
         .ckks_paco_bootstrap_parallel_direct_into::<_, _>(&mut par, &ct_in, &ctx, &keys, &mut workers, &mut scratch.borrow())
@@ -568,6 +575,11 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     ct_in.set_log_sparsity(stride.trailing_zeros() as usize);
 
     let mut out = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
+    let paco_bytes: usize = module
+        .ckks_paco_bootstrap_tmp_bytes(&out, &ct_in, &ctx, &prepared)
+        .unwrap()
+        .max(scratch.borrow().available());
+    let mut scratch = ScratchOwned::<BE>::alloc(paco_bytes);
     module
         .ckks_paco_bootstrap_into::<_, _>(&mut out, &ct_in, &ctx, &prepared, &mut scratch.borrow())
         .unwrap();
@@ -579,7 +591,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     let mut par = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     let mut workers = vec![PaCoWorker::new(
         Module::<BE>::new(params.n as u64),
-        alloc_scratch(&params, &module),
+        ScratchOwned::<BE>::alloc(paco_bytes),
     )];
     module
         .ckks_paco_bootstrap_parallel_into::<_, _>(&mut par, &ct_in, &ctx, &prepared, &mut workers, &mut scratch.borrow())

@@ -15,6 +15,7 @@
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use std::{sync::mpsc::sync_channel, thread};
 
 use anyhow::Context;
@@ -265,7 +266,7 @@ where
     let switching_key = validate_encapsulation_key(input, context, keys)?;
 
     let mut structured = module.ckks_ciphertext_alloc(context.base2k(), input.k());
-    module.glwe_keyswitch(&mut structured, input, switching_key, scratch);
+    module.glwe_keyswitch(&mut structured, input, &switching_key.to_backend_ref(), scratch);
     structured.set_meta_checked(input.meta())?;
     Ok(structured)
 }

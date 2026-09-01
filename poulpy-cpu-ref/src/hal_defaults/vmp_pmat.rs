@@ -10,7 +10,8 @@ use crate::reference::{
         reim4::Reim4BlkMatVec,
         vmp::{
             vmp_apply_dft_to_dft_tmp_bytes as fft64_vmp_apply_dft_to_dft_tmp_bytes,
-            vmp_apply_dft_to_dft_with_kernel as fft64_vmp_apply_dft_to_dft_with_kernel, vmp_prepare as fft64_vmp_prepare,
+            vmp_apply_dft_to_dft_with_kernel as fft64_vmp_apply_dft_to_dft_with_kernel,
+            vmp_extract_selected_rows as fft64_vmp_extract_selected_rows, vmp_prepare as fft64_vmp_prepare,
             vmp_prepare_tmp_bytes as fft64_vmp_prepare_tmp_bytes, vmp_zero as fft64_vmp_zero,
         },
     },
@@ -21,8 +22,8 @@ use crate::reference::{
         types::Q120bScalar,
         vec_znx_dft::NttModuleHandle,
         vmp::{
-            ntt4x30_vmp_apply_dft_to_dft, ntt4x30_vmp_apply_dft_to_dft_tmp_bytes, ntt4x30_vmp_prepare,
-            ntt4x30_vmp_prepare_tmp_bytes, ntt4x30_vmp_zero,
+            ntt4x30_vmp_apply_dft_to_dft, ntt4x30_vmp_apply_dft_to_dft_tmp_bytes, ntt4x30_vmp_extract_selected_rows,
+            ntt4x30_vmp_prepare, ntt4x30_vmp_prepare_tmp_bytes, ntt4x30_vmp_zero,
         },
     },
 };
@@ -226,6 +227,20 @@ where
         }
     }
 
+    fn vmp_extract_selected_rows_default(
+        _module: &Module<BE>,
+        res: &mut VmpPMatBackendMut<'_, BE>,
+        a: &VmpPMatBackendRef<'_, BE>,
+        first_row: usize,
+        row_step: usize,
+    ) where
+        BE: Backend<DftWord = f64, ZnxWord = i64>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    {
+        fft64_vmp_extract_selected_rows::<BE>(res, a, first_row, row_step);
+    }
+
     fn vmp_zero_default(_module: &Module<BE>, res: &mut VmpPMatBackendMut<'_, BE>)
     where
         BE: Backend<DftWord = f64, ZnxWord = i64>,
@@ -315,14 +330,15 @@ where
         b_rows: usize,
         b_cols_in: usize,
         b_cols_out: usize,
-        b_size: usize,
+        _b_size: usize,
     ) -> usize
     where
         BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
         Module<BE>: VecZnxDftBytesOf,
     {
-        module.bytes_of_vec_znx_dft(b_cols_out, res_size.min(b_size))
-            + ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
+        // The staging accumulator below is allocated at the full `res_size`,
+        // so the bound must not shrink it to the matrix size.
+        module.bytes_of_vec_znx_dft(b_cols_out, res_size) + ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
     }
 
     fn vmp_apply_dft_to_dft_accumulate_default(
@@ -352,6 +368,19 @@ where
         for col in 0..cols_out {
             module.vec_znx_dft_add_assign(res, col, &tmp_ref, col);
         }
+    }
+
+    fn vmp_extract_selected_rows_default(
+        _module: &Module<BE>,
+        res: &mut VmpPMatBackendMut<'_, BE>,
+        a: &VmpPMatBackendRef<'_, BE>,
+        first_row: usize,
+        row_step: usize,
+    ) where
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    {
+        ntt4x30_vmp_extract_selected_rows::<BE>(res, a, first_row, row_step);
     }
 
     fn vmp_zero_default(_module: &Module<BE>, res: &mut VmpPMatBackendMut<'_, BE>)

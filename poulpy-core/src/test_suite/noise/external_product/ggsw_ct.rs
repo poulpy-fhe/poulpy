@@ -6,6 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
     EncryptionLayout, GGSWEncryptSk, GGSWExternalProduct, GGSWNoise,
     encryption::DEFAULT_SIGMA_XE,
@@ -124,7 +125,12 @@ where
             let mut ct_rhs_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_rhs_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.ggsw_external_product(&mut ggsw_out, &ggsw_in, &ct_rhs_prepared, &mut scratch.borrow());
+            module.ggsw_external_product(
+                &mut ggsw_out,
+                &ggsw_in,
+                &ct_rhs_prepared.to_backend_ref(),
+                &mut scratch.borrow(),
+            );
 
             {
                 let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
@@ -271,7 +277,7 @@ where
             let mut ct_rhs_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_rhs_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.ggsw_external_product_assign(&mut ggsw_out, &ct_rhs_prepared, &mut scratch.borrow());
+            module.ggsw_external_product_assign(&mut ggsw_out, &ct_rhs_prepared.to_backend_ref(), &mut scratch.borrow());
 
             {
                 let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);

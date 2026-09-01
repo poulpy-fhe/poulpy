@@ -70,6 +70,7 @@ pub mod api;
 pub mod default;
 mod delegates;
 mod dist;
+pub mod error;
 pub mod oep;
 mod scratch;
 mod utils;
@@ -82,6 +83,7 @@ pub(crate) use default::noise::log2_std_noise_glwe_tensor;
 pub use default::operations::*;
 pub use default::polynomial_evaluation::{BSGSOps, GiantStepTensorBounds};
 pub use dist::*;
+pub use error::{CoreError, Result};
 pub use scratch::*;
 
 pub(crate) mod decryption {
