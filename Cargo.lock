@@ -569,10 +569,8 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
- "poulpy-cpu-avx512",
  "poulpy-hal",
  "rand",
- "rayon",
  "serde",
  "serde_json",
 ]

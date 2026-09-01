@@ -39,3 +39,20 @@ ckks_backend_test_suite!(
     params = poulpy_ckks::test_suite::NTT4X30_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
+
+/// Full logN16 bootstraps per preset: slow, so opt in with `--ignored`.
+mod bootstrapping_presets {
+    use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+
+    #[test]
+    #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
+    fn ntt4x30_presets_meet_precision() {
+        bootstrapping_presets_meet_precision::<crate::NTT4x30Avx>();
+    }
+
+    #[test]
+    #[ignore = "runs a full logN16 bootstrap per preset; opt in with --ignored"]
+    fn fft64_presets_meet_precision() {
+        bootstrapping_presets_meet_precision::<crate::FFT64Avx>();
+    }
+}

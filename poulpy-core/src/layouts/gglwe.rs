@@ -185,6 +185,34 @@ impl GGLWELayout {
     }
 }
 
+impl GGLWELayout {
+    /// Number of gadget digits a key needs to cover an input ciphertext of
+    /// precision `input_k`: `ceil(input_k / (dsize * base2k))`.
+    ///
+    /// This is the inverse of [`Self::gadget_k`] and the rounding rule used by
+    /// [`key_work_size`](crate::layouts::key_work_size): the gadget is consumed
+    /// in whole digits, so a partial digit counts as a full one. The auxiliary
+    /// guard `k_aux` is chosen by the caller (typically `dsize * base2k + log2(n)`)
+    /// and is not part of this derivation. The digit width must be nonzero.
+    pub fn dnum_for_input(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize) -> Dnum {
+        let digit_bits: u32 = dsize.0 * base2k.0;
+        debug_assert!(
+            digit_bits > 0,
+            "dnum_for_input requires a nonzero gadget digit (dsize * base2k)"
+        );
+        Dnum(input_k.0.div_ceil(digit_bits))
+    }
+
+    /// Gadget precision of the key: `dnum * dsize * base2k`, i.e. the width
+    /// covered by its `dnum` digits of `dsize` limbs at radix `base2k`, excluding
+    /// the auxiliary guard `k_aux`. An input ciphertext of at most this many bits
+    /// is decomposed entirely by the key. Any [`GGLWEInfos`] reaches it through
+    /// [`GGLWEInfos::gglwe_layout`].
+    pub fn gadget_k(&self) -> TorusPrecision {
+        TorusPrecision(self.dnum.0 * self.dsize.0 * self.base2k.0)
+    }
+}
+
 impl LWEInfos for GGLWELayout {
     fn base2k(&self) -> Base2K {
         self.base2k
