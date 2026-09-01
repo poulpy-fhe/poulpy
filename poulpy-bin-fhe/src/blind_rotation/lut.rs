@@ -8,8 +8,8 @@ use poulpy_hal::{
         VecZnxRotateAssignTmpBytes,
     },
     layouts::{
-        Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx, VecZnxToBackendMut,
-        ZnxViewMut, vec_znx_host_backend_mut,
+        Backend, CopyFromHost, CopyToHost, Data, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, ZnxViewMut,
+        vec_znx_host_backend_mut,
     },
 };
 
@@ -285,7 +285,7 @@ fn max_bit_size(vec: &[i64]) -> u32 {
         .unwrap_or(0)
 }
 
-impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> LookupTableFactory<BE::OwnedBuf, BE::ZnxWord> for Module<BE>
+impl<BE: Backend<ZnxWord = i64>> LookupTableFactory<BE::OwnedBuf, BE::ZnxWord> for Module<BE>
 where
     Self: VecZnxRotateAssignBackend<BE>
         + VecZnxNormalizeAssignBackend<BE>
@@ -296,8 +296,6 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     fn lookup_table_set(&self, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>, f: &[i64], k: usize) {
-        // TODO: add a direct backend-native LUT construction path. This builder
-        // still materializes host-owned `Vec<u8>` polynomials before any upload.
         assert!(f.len() <= self.n());
 
         let base2k: usize = res.base2k.into();
@@ -352,10 +350,23 @@ where
             let mut tmp: Vec<i64> = vec![0i64; domain_size];
 
             for i in 0..res.extension_factor() {
-                let mut res_at = vec_znx_host_backend_mut(res.data[i].data_mut());
-                for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
-                    ZnxRef::znx_switch_ring(res_at.at_mut(0, limb), limb_data);
+                let mut host = VecZnx::<Vec<u8>, i64>::from_bytes(
+                    res.data[i].n().as_usize(),
+                    1,
+                    res.data[i].size(),
+                    poulpy_hal::alloc_aligned::<u8>(VecZnx::<Vec<u8>, i64>::bytes_of(
+                        res.data[i].n().as_usize(),
+                        1,
+                        res.data[i].size(),
+                    )),
+                );
+                {
+                    let mut res_at = vec_znx_host_backend_mut(&mut host);
+                    for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
+                        ZnxRef::znx_switch_ring(res_at.at_mut(0, limb), limb_data);
+                    }
                 }
+                BE::copy_from_host(&mut res.data[i].data_mut().data, &host.data);
                 if i + 1 < res.extension_factor() {
                     for limb_data in &mut lut_full_limbs {
                         ZnxRef::znx_rotate(-1, &mut tmp, limb_data);
@@ -364,10 +375,23 @@ where
                 }
             }
         } else {
-            let mut res_at = vec_znx_host_backend_mut(res.data[0].data_mut());
-            for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
-                res_at.at_mut(0, limb).copy_from_slice(limb_data);
+            let mut host = VecZnx::<Vec<u8>, i64>::from_bytes(
+                res.data[0].n().as_usize(),
+                1,
+                res.data[0].size(),
+                poulpy_hal::alloc_aligned::<u8>(VecZnx::<Vec<u8>, i64>::bytes_of(
+                    res.data[0].n().as_usize(),
+                    1,
+                    res.data[0].size(),
+                )),
+            );
+            {
+                let mut res_at = vec_znx_host_backend_mut(&mut host);
+                for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
+                    res_at.at_mut(0, limb).copy_from_slice(limb_data);
+                }
             }
+            BE::copy_from_host(&mut res.data[0].data_mut().data, &host.data);
         }
 
         for a in res.data.iter_mut() {
@@ -381,8 +405,6 @@ where
     }
 
     fn lookup_table_rotate(&self, k: i64, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>) {
-        // TODO: make LUT rotation backend-native once lookup tables can be
-        // constructed and stored directly in backend-owned buffers.
         let extension_factor: usize = res.extension_factor();
         let two_n: usize = 2 * res.data[0].n().as_usize();
         let two_n_ext: usize = two_n * extension_factor;

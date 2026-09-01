@@ -265,7 +265,12 @@ where
 pub fn test_glwe_blind_retrieval_statefull<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
-    Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + GLWEBlindRetrieval<BE> + GGSWEncryptSk<BE> + GGSWPreparedFactory<BE>,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + poulpy_core::GLWEZero<BE>
+        + GLWEBlindRetrieval<BE>
+        + GGSWEncryptSk<BE>
+        + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -332,7 +337,12 @@ where
 pub fn test_glwe_blind_retriever<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
-    Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + GLWEBlindRetrieval<BE> + GGSWEncryptSk<BE> + GGSWPreparedFactory<BE>,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + poulpy_core::GLWEZero<BE>
+        + GLWEBlindRetrieval<BE>
+        + GGSWEncryptSk<BE>
+        + GGSWPreparedFactory<BE>,
     BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,

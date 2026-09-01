@@ -2,6 +2,7 @@ use anyhow::Result;
 use itertools::Itertools;
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, Distribution, GGLWEToGGSWKeyEncryptSk, GLWEAutomorphismKeyEncryptSk, GetDistribution,
+    TransferInto,
     layouts::{
         GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGSWInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos,
         GLWESecretPreparedFactory, GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef, ModuleCoreAlloc,
@@ -16,8 +17,8 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::{
     api::{ModuleN, ScratchOwnedAlloc},
     layouts::{
-        Backend, Data, HostBackend, HostDataMut, HostDataRef, Module, NoiseInfos, ReaderFrom, ScratchArena, ScratchOwned,
-        WriterTo,
+        Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, Module, NoiseInfos, ReaderFrom, ScratchArena,
+        ScratchOwned, WriterTo,
     },
     source::Source,
 };
@@ -195,6 +196,23 @@ pub struct CircuitBootstrappingKey<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> 
     pub(crate) atk: HashMap<i64, GLWEAutomorphismKey<D, W>>,
 }
 
+impl<D1, D2, BRA, W> TransferInto<CircuitBootstrappingKey<D2, BRA, W>> for CircuitBootstrappingKey<D1, BRA, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    BRA: BlindRotationAlgo,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut CircuitBootstrappingKey<D2, BRA, W>) {
+        self.brk.transfer_into(&mut dst.brk);
+        self.tsk.transfer_into(&mut dst.tsk);
+        assert_eq!(self.atk.len(), dst.atk.len());
+        for (p, src) in &self.atk {
+            src.transfer_into(dst.atk.get_mut(p).expect("transfer_into: automorphism key"));
+        }
+    }
+}
+
 impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn encrypt_sk<M, S0, S1, BE>(
@@ -210,7 +228,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,
         M: CircuitBootstrappingKeyEncryptSk<BRA, BE>,
-        BE: Backend<OwnedBuf = D, ZnxWord = W> + HostBackend,
+        BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         module.circuit_bootstrapping_key_encrypt_sk(self, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch);
     }
@@ -222,7 +240,6 @@ where
         + BlindRotationKeyEncryptSk<BRA, BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>,
-    BE::OwnedBuf: HostDataMut + HostDataRef,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     fn circuit_bootstrapping_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -247,11 +264,6 @@ where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,
     {
-        // TODO(device): this bundle encryptor is still effectively host-backed
-        // through the current blind-rotation / automorphism / tensor key
-        // encryptors. Keep the public trait backend-generic and move the host
-        // assumptions down into the sub-key implementations until each path is
-        // migrated.
         let brk_infos: &BlindRotationKeyLayout = &res.brk_infos();
         let atk_infos: &GLWEAutomorphismKeyLayout = &res.atk_infos();
         let tsk_infos: &GGLWEToGGSWKeyLayout = &res.tsk_infos();
@@ -303,7 +315,7 @@ where
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKeyInfos for CircuitBootstrappingKey<D, BRA, W> {
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKeyInfos for CircuitBootstrappingKey<D, BRA, W> {
     fn block_size(&self) -> usize {
         self.brk.block_size()
     }
