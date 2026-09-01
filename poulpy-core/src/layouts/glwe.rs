@@ -6,12 +6,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{
-    GLWENormalize,
-    layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision},
-};
+use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::{api::VecZnxNormalizeAssignBackend, layouts::ZnxWord};
 use std::fmt;
 
 /// Trait providing the parameter accessors for a GLWE (Generalised LWE) ciphertext.
@@ -125,28 +122,26 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> GLWE<D, W, S> {
             base2k: self.base2k,
         }
     }
-
-    /// Relabels as [`Normalized`] without normalizing; see [`VecZnx::assume_normalized`].
-    pub fn assume_normalized(self) -> GLWE<D, W, Normalized> {
-        GLWE {
-            data: self.data.assume_normalized(),
-            k: self.k,
-            base2k: self.base2k,
-        }
-    }
 }
 
 impl<D: Data, W: ZnxWord> GLWE<D, W, Unnormalized> {
     /// Propagates carries through every column and returns the ciphertext relabelled as [`Normalized`].
+    ///
+    /// Delegates to [`VecZnx::normalize`], the sole [`Unnormalized`] to
+    /// [`Normalized`] transition available to scheme code; the only bypass is
+    /// the backend-implementor extension point [`crate::oep::SetNormalizationState`].
     pub fn normalize<M, BE>(self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> GLWE<D, W, Normalized>
     where
         BE: Backend<ZnxWord = W>,
-        M: GLWENormalize<BE> + ?Sized,
-        Self: GLWEToBackendMut<BE>,
+        M: VecZnxNormalizeAssignBackend<BE> + ?Sized,
+        VecZnx<D, W, Unnormalized>: VecZnxToBackendMut<BE>,
     {
-        let mut me = self;
-        module.glwe_normalize_assign(&mut me, scratch);
-        me.assume_normalized()
+        let base2k: usize = self.base2k.into();
+        GLWE {
+            data: self.data.normalize(module, base2k, scratch),
+            k: self.k,
+            base2k: self.base2k,
+        }
     }
 }
 
@@ -251,10 +246,8 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> GLWE<D, W, S> {
     where
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        let shape = self.data.shape();
-        let data = self.data.data;
         GLWE {
-            data: VecZnx::from_data(data, shape.n(), shape.cols(), shape.size()),
+            data: self.data,
             base2k: self.base2k,
             k: self.k,
         }

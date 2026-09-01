@@ -16,7 +16,10 @@ use poulpy_core::layouts::{
     SetBSGSMeta, SetK, TorusPrecision,
 };
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
-use poulpy_hal::layouts::{Backend, Data, HostDataRef, ScratchArena, ZnxWord};
+use poulpy_hal::{
+    api::VecZnxNormalizeAssignBackend,
+    layouts::{Backend, Data, HostDataRef, ScratchArena, VecZnx, VecZnxToBackendMut, ZnxWord},
+};
 
 use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, error::CKKSCompositionError};
 
@@ -497,8 +500,8 @@ impl<D: Data, W: ZnxWord> CKKSCiphertext<D, W, Unnormalized> {
     pub fn normalize<M, BE>(self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> CKKSCiphertext<D, W>
     where
         BE: Backend<ZnxWord = W>,
-        M: GLWENormalize<BE>,
-        GLWE<D, W, Unnormalized>: GLWEToBackendMut<BE>,
+        M: VecZnxNormalizeAssignBackend<BE> + ?Sized,
+        VecZnx<D, W, Unnormalized>: VecZnxToBackendMut<BE>,
     {
         let meta = self.meta;
         CKKSCiphertext::from_inner(self.inner.normalize(module, scratch), meta)

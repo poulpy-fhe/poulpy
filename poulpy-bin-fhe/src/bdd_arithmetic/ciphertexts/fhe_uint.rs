@@ -10,7 +10,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
-    api::{ModuleLogN, ModuleN},
+    api::{ModuleLogN, ModuleN, VecZnxNormalizeAssignBackend},
     layouts::{Backend, CopyFromHost, CopyToHost, Data, HostBackend, HostDataMut, HostDataRef, ScratchArena, Stats},
     source::Source,
 };
@@ -608,7 +608,8 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
             + GLWEAdd<BE>
             + GLWESub<BE>
             + GLWECopy<BE>
-            + GLWENormalize<BE>,
+            + GLWENormalize<BE>
+            + VecZnxNormalizeAssignBackend<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
     {
         assert!(byte < (1 << T::LOG_BYTES));

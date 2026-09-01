@@ -2,7 +2,7 @@ use crate::api::GLWEBytesOf;
 use std::collections::HashMap;
 
 use poulpy_hal::{
-    api::ModuleLogN,
+    api::{ModuleLogN, VecZnxNormalizeAssignBackend},
     layouts::{Backend, GaloisElement, Normalized, ScratchArena},
 };
 
@@ -28,6 +28,7 @@ fn pack_internal<M, A, B, H, BE: Backend>(
         + GLWEShift<BE>
         + GLWEAdd<BE>
         + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + ?Sized,
     A: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
@@ -136,6 +137,8 @@ pub mod glwe_packing_defaults_impl {
             + GLWERotate<BE>
             + GLWEShift<BE>
             + GLWENormalize<BE>
+            + VecZnxNormalizeAssignBackend<BE>
+            + VecZnxNormalizeAssignBackend<BE>
             + GLWETrace<BE>,
         R: GLWEInfos,
         K: GGLWEInfos,
@@ -172,6 +175,8 @@ pub mod glwe_packing_defaults_impl {
             + GLWEShift<BE>
             + GLWEAdd<BE>
             + GLWENormalize<BE>
+            + VecZnxNormalizeAssignBackend<BE>
+            + VecZnxNormalizeAssignBackend<BE>
             + GLWECopy<BE>
             + GLWETrace<BE>,
         R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,

@@ -57,14 +57,13 @@ fn base_dft_ref<'a>(a: &'a VecZnxDftBackendRef<'_, NTT4x30Avx512Rayon>) -> VecZn
 fn base_znx_ref<'a, S: NormalizationState>(
     a: &'a VecZnxBackendRef<'_, NTT4x30Avx512Rayon, S>,
 ) -> VecZnxBackendRef<'a, NTT4x30Avx512, S> {
-    VecZnx::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    a.from_data_like(&**a.data())
 }
 
 fn base_znx_mut<'a, S: NormalizationState>(
     a: &'a mut VecZnxBackendMut<'_, NTT4x30Avx512Rayon, S>,
 ) -> VecZnxBackendMut<'a, NTT4x30Avx512, S> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnx::from_data(&mut **a.data_mut(), n, cols, size)
+    a.map_data_mut(|d| &mut **d)
 }
 
 fn base_scalar_ref<'a>(a: &'a ScalarZnxBackendRef<'_, NTT4x30Avx512Rayon>) -> ScalarZnxBackendRef<'a, NTT4x30Avx512> {

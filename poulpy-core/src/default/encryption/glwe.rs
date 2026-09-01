@@ -464,8 +464,8 @@ where
                 // ci_big = u * pk[i] + e
                 self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, noise_infos, source_xe);
 
-                let (ci, scratch_4) = scratch_3.take_vec_znx_scratch(self.n(), 1, size_pk);
-                let mut ci = ci.into_unnormalized();
+                // `vec_znx_big_normalize` writes normalized digits whatever the destination label.
+                let (mut ci, scratch_4) = scratch_3.take_vec_znx_scratch(self.n(), 1, size_pk);
                 let mut scratch_next = {
                     let ci_big_ref = ci_big.to_backend_ref();
                     scratch_4
@@ -474,12 +474,12 @@ where
 
                 let ci = match &pt {
                     Some((pt, col)) if *col == i => {
-                        // Adding the message can overflow a limb: normalize before copying out.
+                        // Adding the message can overflow a limb: accumulate unnormalized, then normalize.
+                        let mut ci = ci.into_unnormalized();
                         self.vec_znx_add_assign_backend(&mut ci.to_backend_mut(), 0, &pt.data, 0);
                         ci.normalize(self, base2k, &mut scratch_next)
                     }
-                    // `ci` holds the output of `vec_znx_big_normalize`: already within the digit bound.
-                    _ => ci.assume_normalized(),
+                    _ => ci,
                 };
                 scratch_1 = scratch_next;
 

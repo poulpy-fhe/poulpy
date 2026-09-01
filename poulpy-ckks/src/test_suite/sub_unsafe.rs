@@ -1,7 +1,7 @@
 //! Subtraction tests for the unnormalized `CKKSSubOps` API.
 
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow, VecZnxNormalizeAssignBackend},
     layouts::{HostBytesBackend, Module},
 };
 
@@ -20,7 +20,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE> + VecZnxNormalizeAssignBackend<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -81,7 +81,7 @@ pub fn test_sub_ct_assign_aligned_unsafe<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE> + VecZnxNormalizeAssignBackend<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -141,7 +141,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE> + VecZnxNormalizeAssignBackend<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -197,7 +197,7 @@ pub fn test_sub_pt_const_into_aligned_unsafe<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE>,
+    Module<BE>: TestContextModule<BE> + VecZnxNormalizeAssignBackend<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {

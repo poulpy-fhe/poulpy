@@ -13,8 +13,8 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxAddScalarAssignBackend, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend,
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallABackend, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftTmpBytes,
+        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, Host, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, VecZnxBigViewMut, vec_znx_backend_ref_from_mut,
@@ -477,6 +477,7 @@ impl<BE: Backend<ZnxWord = i64>> Cswap<BE> for Module<BE> where
         + GLWESub<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + VecZnxBigAddSmallIntoBackend<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
@@ -514,6 +515,7 @@ where
         + GLWESub<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + VecZnxBigAddSmallIntoBackend<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
@@ -790,6 +792,7 @@ where
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>
         + VecZnxBigNormalize<BE>
@@ -1005,6 +1008,7 @@ impl<BE: Backend<ZnxWord = i64>> Cmux<BE> for Module<BE> where
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>
         + VecZnxBigNormalize<BE>

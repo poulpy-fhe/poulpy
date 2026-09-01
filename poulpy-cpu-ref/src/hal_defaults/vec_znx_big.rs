@@ -88,7 +88,7 @@ where
     BE: Backend<ZnxWord = i64> + 'b,
     for<'x> BE::BufRef<'x>: AsRef<[u8]>,
 {
-    VecZnx::from_data(a.data.as_ref(), a.n(), a.cols(), a.size())
+    a.from_data_like(a.data.as_ref())
 }
 
 fn vec_znx_big_inner_sum_default_impl<R, A, BE>(res: &mut R, res_col: usize, res_coeff: usize, a: &A, a_col: usize)

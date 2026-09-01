@@ -64,3 +64,26 @@ pub use rotate::impl_ckks_rotate_defaults;
 pub use ship::CKKSShipCoeffEncodingImpl;
 pub use sub::CKKSSubImpl;
 pub use sub::impl_ckks_sub_defaults;
+
+pub use poulpy_hal::oep::SetNormalizationState;
+
+use poulpy_hal::layouts::{Data, NormalizationState, Normalized, Unnormalized, ZnxWord};
+
+use crate::layouts::CKKSCiphertext;
+
+/// See [`SetNormalizationState`]: `set_normalized` is the backend-implementor
+/// relabel with no normalization pass, reserved for fused kernels inside
+/// backend crates. Scheme code must go through [`CKKSCiphertext::normalize`].
+impl<D: Data, W: ZnxWord, S: NormalizationState> SetNormalizationState for CKKSCiphertext<D, W, S> {
+    type WithState<T: NormalizationState> = CKKSCiphertext<D, W, T>;
+
+    fn set_unnormalized(self) -> CKKSCiphertext<D, W, Unnormalized> {
+        self.into_unnormalized()
+    }
+
+    unsafe fn set_normalized(self) -> CKKSCiphertext<D, W, Normalized> {
+        let meta = self.meta;
+        // SAFETY: forwarded caller contract.
+        CKKSCiphertext::from_inner(unsafe { self.inner.set_normalized() }, meta)
+    }
+}

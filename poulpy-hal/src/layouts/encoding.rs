@@ -55,7 +55,8 @@ impl<D: HostDataMut, S: NormalizationState> VecZnx<D, i64, S> {
         }
 
         let shape = self.shape();
-        let mut a: VecZnx<&mut [u8], i64, S> = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+        let mut a: VecZnx<&mut [u8], i64, S> =
+            VecZnx::from_data_with_state(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size: usize = a.size();
 
         // Zeroes coefficients of the col-th column
@@ -122,7 +123,8 @@ impl<D: HostDataMut, S: NormalizationState> VecZnx<D, i64, S> {
         }
 
         let shape = self.shape();
-        let mut a: VecZnx<&mut [u8], i64, S> = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+        let mut a: VecZnx<&mut [u8], i64, S> =
+            VecZnx::from_data_with_state(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size: usize = a.size();
 
         {
@@ -183,7 +185,8 @@ impl<D: HostDataMut, S: NormalizationState> VecZnx<D, i64, S> {
         }
 
         let shape = self.shape();
-        let mut a: VecZnx<&mut [u8], i64, S> = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+        let mut a: VecZnx<&mut [u8], i64, S> =
+            VecZnx::from_data_with_state(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size = a.size();
 
         for j in 0..a_size {

@@ -195,17 +195,12 @@ impl<'a, B: Backend + 'a, S: NormalizationState> VecZnxViewMut<'a, B, S> {
             inner: self.inner.into_unnormalized(),
         }
     }
-
-    /// Relabels the view as [`Normalized`] without normalizing; see [`VecZnx::assume_normalized`].
-    pub fn assume_normalized(self) -> VecZnxViewMut<'a, B, Normalized> {
-        VecZnxViewMut {
-            inner: self.inner.assume_normalized(),
-        }
-    }
 }
 
 impl<'a, B: Backend + 'a> VecZnxViewMut<'a, B, Unnormalized> {
     /// Propagates carries through every column and returns the view relabelled as [`Normalized`].
+    ///
+    /// Together with [`VecZnx::normalize`], the only path from [`Unnormalized`] to [`Normalized`].
     pub fn normalize<M>(self, module: &M, base2k: usize, scratch: &mut ScratchArena<'_, B>) -> VecZnxViewMut<'a, B, Normalized>
     where
         M: VecZnxNormalizeAssignBackend<B> + ?Sized,
@@ -218,7 +213,7 @@ impl<'a, B: Backend + 'a> VecZnxViewMut<'a, B, Unnormalized> {
             }
         }
         VecZnxViewMut {
-            inner: me.inner.assume_normalized(),
+            inner: me.inner.relabel_unchecked(),
         }
     }
 }

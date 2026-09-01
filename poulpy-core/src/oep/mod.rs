@@ -101,3 +101,42 @@ pub use crate::{
     impl_glwe_packing_defaults_full, impl_glwe_trace_defaults_full, impl_linear_transformation_defaults_full,
     impl_lwe_keyswitch_defaults_full,
 };
+
+use poulpy_hal::layouts::{Backend, Data, NormalizationState, Normalized, Unnormalized, ZnxWord};
+pub use poulpy_hal::oep::SetNormalizationState;
+
+use crate::layouts::{GLWE, GLWEViewMut};
+
+/// See [`SetNormalizationState`]: `set_normalized` is the backend-implementor
+/// relabel with no normalization pass, reserved for fused kernels inside
+/// backend crates. Scheme code must go through [`GLWE::normalize`].
+impl<D: Data, W: ZnxWord, S: NormalizationState> SetNormalizationState for GLWE<D, W, S> {
+    type WithState<T: NormalizationState> = GLWE<D, W, T>;
+
+    fn set_unnormalized(self) -> GLWE<D, W, Unnormalized> {
+        self.into_unnormalized()
+    }
+
+    unsafe fn set_normalized(self) -> GLWE<D, W, Normalized> {
+        let GLWE { data, k, base2k } = self;
+        GLWE {
+            // SAFETY: forwarded caller contract.
+            data: unsafe { data.set_normalized() },
+            k,
+            base2k,
+        }
+    }
+}
+
+impl<'a, BE: Backend + 'a, S: NormalizationState> SetNormalizationState for GLWEViewMut<'a, BE, S> {
+    type WithState<T: NormalizationState> = GLWEViewMut<'a, BE, T>;
+
+    fn set_unnormalized(self) -> GLWEViewMut<'a, BE, Unnormalized> {
+        self.into_unnormalized()
+    }
+
+    unsafe fn set_normalized(self) -> GLWEViewMut<'a, BE, Normalized> {
+        // SAFETY: forwarded caller contract.
+        GLWEViewMut::from_inner(unsafe { self.into_inner().set_normalized() })
+    }
+}

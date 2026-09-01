@@ -2,14 +2,13 @@ use itertools::izip;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
-use poulpy_hal::layouts::Unnormalized;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotateBackend, VecZnxZeroBackend, VmpApplyDftToDft,
-        VmpApplyDftToDftTmpBytes,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssignBackend, VecZnxRotateBackend, VecZnxZeroBackend,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, Host, HostDataMut, HostDataRef, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut,
@@ -21,7 +20,7 @@ use poulpy_hal::{
 
 use poulpy_core::{
     Distribution, GLWEAdd, GLWECopy, GLWEExternalProduct, GLWEMulXpMinusOne, GLWENormalize, ScratchArenaTakeCore,
-    layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
+    layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
 };
 
 use crate::blind_rotation::{
@@ -54,6 +53,7 @@ where
         + GLWEAdd<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + VecZnxZeroBackend<BE>
         + Sync,
     // TODO(device): CGGI blind rotation still contains host-visible sub-steps
@@ -600,6 +600,7 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
         + GLWEMulXpMinusOne<BE>
         + GLWEAdd<BE>
         + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + GLWECopy<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
     // TODO(device): the standard CGGI path still uses host-visible
@@ -637,9 +638,6 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     let mut lwe_2n: Vec<i64> = vec![0i64; (lwe.n() + 1).into()]; // TODO: from scratch space
     let mut out_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
     module.glwe_copy(&mut out_tmp, res);
-    // The accumulator sums one external product per LWE coefficient and is normalized once
-    // at the end (see the bound argument below), hence the unnormalized label.
-    let mut out_tmp = out_tmp.into_unnormalized();
 
     mod_switch_2n::<BE, _>(2 * lut.domain_size(), &mut lwe_2n, lwe, lut.rotation_direction());
 
@@ -652,8 +650,7 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     let lut_ref: poulpy_hal::layouts::VecZnxBackendRef<'_, BE> =
         <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(lut.data[0].data());
     {
-        let mut out_backend =
-            <GLWE<BE::OwnedBuf, BE::ZnxWord, Unnormalized> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
+        let mut out_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
         module.vec_znx_rotate_backend(b, out_backend.data_mut(), 0, &lut_ref, 0);
     }
 
@@ -667,26 +664,25 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     for (ai, ski) in izip!(a.iter(), brk.data.iter()) {
         // acc_tmp = sk[i] * acc
         //
-        // `acc` is deliberately fed to the external product without normalization: it is a
-        // sum of at most `n` values whose digits lie in [-2^{base2k-1}, 2^{base2k-1}], so its
-        // digits stay far below the DFT precision limit (~2^{63-base2k} additions fit) and a
-        // per-iteration normalization is not worth its cost. This relabel is the one place in
-        // the blind rotation where that bound argument replaces the type-level guarantee.
-        {
-            let acc_in = <GLWE<BE::OwnedBuf, BE::ZnxWord, Unnormalized> as GLWEToBackendRef<BE>>::to_backend_ref(&out_tmp)
-                .assume_normalized();
-            module.glwe_external_product(&mut acc_tmp, &&acc_in, &ski.to_backend_ref(), &mut scratch_1.borrow());
-        }
+        // The external product reads a `Normalized` accumulator: `out_tmp` is normalized at the
+        // end of every iteration (see below), there is no relabel that could bypass this.
+        module.glwe_external_product(&mut acc_tmp, &out_tmp, &ski.to_backend_ref(), &mut scratch_1.borrow());
 
         // acc_tmp = (sk[i] * acc) * (X^{ai} - 1)
         module.glwe_mul_xp_minus_one_assign(*ai, &mut acc_tmp, &mut scratch_1.borrow());
 
         // acc = acc + (sk[i] * acc) * (X^{ai} - 1)
-        module.glwe_add_assign(&mut out_tmp, &acc_tmp);
+        //
+        // The sum is carry-producing, so the accumulator is relabelled `Unnormalized` for the
+        // addition and normalized back before it feeds the next external product. A single
+        // normalization at the end would be numerically fine (digits in
+        // [-2^{base2k-1}, 2^{base2k-1}] tolerate ~2^{63-base2k} additions before overflow), but
+        // it would amount to asserting the `Normalized` label without a normalization pass,
+        // which the type system deliberately does not allow.
+        let mut acc = out_tmp.into_unnormalized();
+        module.glwe_add_assign(&mut acc, &acc_tmp);
+        out_tmp = acc.normalize(module, &mut scratch_1.borrow());
     }
 
-    // We can normalize only at the end because we add normalized values in [-2^{base2k-1}, 2^{base2k-1}]
-    // on top of each others, thus ~ 2^{63-base2k} additions are supported before overflow.
-    let out_tmp = out_tmp.normalize(module, &mut scratch_1.borrow());
     module.glwe_copy(res, &out_tmp);
 }

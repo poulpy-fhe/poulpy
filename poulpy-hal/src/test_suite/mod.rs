@@ -80,7 +80,7 @@ pub fn scalar_znx_backend_mut<'a, BE: Backend>(
 /// uploaded to `BE`, and a backend with a narrower word needs a proportionally
 /// smaller buffer for the same shape.
 pub fn alloc_host_vec_znx<BE: Backend>(n: usize, cols: usize, size: usize) -> VecZnxOwned<BE::ZnxWord> {
-    VecZnx::from_data(
+    VecZnx::from_data_with_state(
         crate::alloc_aligned::<u8>(VecZnxOwned::<BE::ZnxWord>::bytes_of(n, cols, size)),
         n,
         cols,
@@ -103,7 +103,7 @@ pub fn upload_vec_znx<BE: Backend, S: NormalizationState>(
     host: &VecZnx<impl HostDataRef, BE::ZnxWord, S>,
 ) -> VecZnx<BE::OwnedBuf, BE::ZnxWord, S> {
     let shape = host.shape();
-    VecZnx::from_data(BE::from_host_bytes(host.data.as_ref()), shape.n(), shape.cols(), shape.size())
+    VecZnx::from_data_with_state(BE::from_host_bytes(host.data.as_ref()), shape.n(), shape.cols(), shape.size())
 }
 
 pub fn download_vec_znx<BE: Backend, S: NormalizationState>(
@@ -111,7 +111,7 @@ pub fn download_vec_znx<BE: Backend, S: NormalizationState>(
 ) -> VecZnx<Vec<u8>, BE::ZnxWord, S> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(&backend.data);
-    VecZnx::from_data(
+    VecZnx::from_data_with_state(
         HostBytesBackend::from_host_bytes(&host_bytes),
         shape.n(),
         shape.cols(),

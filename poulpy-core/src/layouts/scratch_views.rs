@@ -1,11 +1,12 @@
+use poulpy_hal::api::VecZnxNormalizeAssignBackend;
 use poulpy_hal::layouts::{
     Backend, NormalizationState, Normalized, ScalarZnx, ScratchArena, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef,
-    Unnormalized, VmpPMatReborrowBackendMut, VmpPMatReborrowBackendRef, mat_znx_backend_mut_from_mut,
+    Unnormalized, VecZnxViewMut, VmpPMatReborrowBackendMut, VmpPMatReborrowBackendRef, mat_znx_backend_mut_from_mut,
     mat_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
 };
 
 use crate::{
-    GLWENormalize, GetDistribution, GetDistributionMut,
+    GetDistribution, GetDistributionMut,
     dist::Distribution,
     layouts::{
         Base2K, GGLWE, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut,
@@ -134,14 +135,18 @@ impl<'a, BE: Backend + 'a, S: NormalizationState> GLWEViewMut<'a, BE, S> {
 
 impl<'a, BE: Backend + 'a> GLWEViewMut<'a, BE, Unnormalized> {
     /// Propagates carries and returns the view relabelled as [`Normalized`]; see [`GLWE::normalize`].
+    ///
+    /// Delegates to [`VecZnxViewMut::normalize`], so the relabel itself stays in `poulpy-hal`.
     pub fn normalize<M>(self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> GLWEViewMut<'a, BE, Normalized>
     where
-        M: GLWENormalize<BE> + ?Sized,
+        M: VecZnxNormalizeAssignBackend<BE> + ?Sized,
     {
-        let mut me = self;
-        module.glwe_normalize_assign(&mut me, scratch);
+        let GLWE { data, k, base2k } = self.inner;
+        let data = VecZnxViewMut::<'a, BE, Unnormalized>::from_inner(data)
+            .normalize(module, base2k.into(), scratch)
+            .into_inner();
         GLWEViewMut {
-            inner: me.inner.assume_normalized(),
+            inner: GLWE { data, k, base2k },
         }
     }
 }

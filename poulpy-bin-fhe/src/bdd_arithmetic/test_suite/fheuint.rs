@@ -4,7 +4,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssignBackend},
     layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
     source::Source,
 };
@@ -28,6 +28,7 @@ pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostData
         + GLWEAdd<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -108,6 +109,7 @@ pub fn test_fhe_uint_splice_u8<
         + GLWEAdd<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -183,6 +185,7 @@ pub fn test_fhe_uint_splice_u16<
         + GLWEAdd<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -248,8 +251,14 @@ pub fn test_fhe_uint_get_bit_glwe<
 >(
     test_context: &TestContext<BRA, BE>,
 ) where
-    Module<BE>:
-        GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWENormalize<BE> + GLWEDecrypt<BE>,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWERotate<BE>
+        + GLWETrace<BE>
+        + GLWESub<BE>
+        + GLWEAdd<BE>
+        + GLWENormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
+        + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

@@ -97,10 +97,24 @@ mod sealed {
 /// Both markers are sealed: only [`Normalized`] and [`Unnormalized`] exist.
 ///
 /// Relabelling [`Normalized`] as [`Unnormalized`] is always sound and free
-/// ([`VecZnx::into_unnormalized`]); the only way back is a normalization pass
-/// ([`VecZnx::normalize`]). State changes are by value: borrowed backend views
-/// inherit the state of their owner, so a `&mut VecZnx<_, _, Normalized>`
-/// cannot accumulate carries without first being relabelled.
+/// ([`VecZnx::into_unnormalized`], [`VecZnx::into_state`]). The **only** way
+/// back is a normalization pass: [`VecZnx::normalize`] (and the scratch-view
+/// twin `VecZnxViewMut::normalize`) consume the [`Unnormalized`] value, run the
+/// backend's normalization op over every column and return it relabelled. No
+/// public constructor, conversion or method turns an [`Unnormalized`] value
+/// into a [`Normalized`] one without that pass: the state field is private,
+/// [`VecZnx::from_data`] and every allocator produce [`Normalized`] values, and
+/// the relabel used internally by `normalize` is crate-private. The single
+/// sanctioned exception is the backend-implementor extension point
+/// [`crate::oep::SetNormalizationState`]: a fused backend kernel that
+/// guarantees the digit bound by construction may set the state without the
+/// pass, under an `unsafe` contract and only inside a backend crate.
+///
+/// State changes are by value: borrowed backend views inherit the state of
+/// their owner, so a `&mut VecZnx<_, _, Normalized>` cannot accumulate carries
+/// without first being relabelled. Relabelling a *borrowed view* leaves the
+/// owner's label untouched; the digits behind a [`Normalized`] owner must then
+/// be normalized in place (`vec_znx_normalize_assign`) before the borrow ends.
 pub trait NormalizationState:
     sealed::Sealed + Copy + Clone + Default + fmt::Debug + PartialEq + Eq + std::hash::Hash + Send + Sync + 'static
 {
@@ -136,7 +150,7 @@ impl<S: NormalizationState> FitsIn<Unnormalized> for S {}
 pub struct VecZnx<D: Data, W: ZnxWord, S: NormalizationState = Normalized> {
     pub data: D,
     shape: VecZnxShape,
-    pub _phantom: PhantomData<(W, S)>,
+    _phantom: PhantomData<(W, S)>,
 }
 
 impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
@@ -167,13 +181,17 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
             _phantom: PhantomData,
         }
     }
+}
 
-    /// Relabels this vector as [`Normalized`] without normalizing it.
+impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+    /// Relabels to an arbitrary state with no normalization pass.
     ///
-    /// The caller guarantees every digit already satisfies the `base2k` bound,
-    /// typically because the buffer was just normalized in place through a
-    /// wrapper's own normalization op. Prefer [`Self::normalize`].
-    pub fn assume_normalized(self) -> VecZnx<D, W, Normalized> {
+    /// Crate-private on purpose: this is the only state relabel in the
+    /// workspace. Its callers are [`Self::normalize`] and
+    /// `VecZnxViewMut::normalize` (right after an in-place normalization pass)
+    /// and the backend-implementor extension point
+    /// [`crate::oep::SetNormalizationState`].
+    pub(crate) fn relabel_unchecked<T: NormalizationState>(self) -> VecZnx<D, W, T> {
         VecZnx {
             data: self.data,
             shape: self.shape,
@@ -185,6 +203,7 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
 impl<D: Data, W: ZnxWord> VecZnx<D, W, Unnormalized> {
     /// Propagates carries through every column and returns the vector relabelled as [`Normalized`].
     ///
+    /// This is the only public path from [`Unnormalized`] to [`Normalized`].
     /// Only the top limb discards overflow. `scratch` must hold at least
     /// `vec_znx_normalize_tmp_bytes` bytes.
     pub fn normalize<M, B>(self, module: &M, base2k: usize, scratch: &mut ScratchArena<'_, B>) -> VecZnx<D, W, Normalized>
@@ -200,7 +219,7 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W, Unnormalized> {
                 module.vec_znx_normalize_assign_backend(base2k, &mut view, col, scratch);
             }
         }
-        me.assume_normalized()
+        me.relabel_unchecked()
     }
 }
 
@@ -258,7 +277,7 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
         BE: Backend<OwnedBuf = D>,
     {
         let shape = self.shape();
-        VecZnx::from_data(
+        VecZnx::from_data_with_state(
             crate::layouts::HostBytesBackend::from_bytes(BE::to_host_bytes(&self.data)),
             shape.n(),
             shape.cols(),
@@ -397,7 +416,54 @@ impl<W: ZnxWord> VecZnx<Vec<u8>, W> {
 }
 
 impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+    /// Rebuilds a vector around new storage while keeping the state of the value it was copied
+    /// or borrowed from (transfers, host views). Crate-private so that no external path can pick
+    /// an arbitrary state for raw data; see [`VecZnx::from_data`].
+    pub(crate) fn from_data_with_state(data: D, n: usize, cols: usize, size: usize) -> Self {
+        Self {
+            data,
+            shape: VecZnxShape::new(n, cols, size),
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+    /// Wraps `data` with this vector's shape and [`NormalizationState`].
+    ///
+    /// For views and transfers that re-express the *same digits* through
+    /// different storage (host slice, other backend buffer). The state travels
+    /// with the value it is read from; this never turns an [`Unnormalized`]
+    /// value into a [`Normalized`] one.
+    pub fn from_data_like<D2: Data>(&self, data: D2) -> VecZnx<D2, W, S> {
+        VecZnx {
+            data,
+            shape: self.shape,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Mutable sibling of [`Self::from_data_like`]: re-wraps storage extracted
+    /// from this vector's own data (a reborrow, an inner buffer) under the same
+    /// shape and [`NormalizationState`]. Never changes the label.
+    pub fn map_data_mut<'a, D2: Data>(&'a mut self, f: impl FnOnce(&'a mut D) -> D2) -> VecZnx<D2, W, S> {
+        let shape = self.shape;
+        VecZnx {
+            data: f(&mut self.data),
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<D: Data, W: ZnxWord> VecZnx<D, W, Normalized> {
     /// Constructs a `VecZnx` from raw parts without validation.
+    ///
+    /// Raw ingestion is a trust boundary (like deserialization): the result is
+    /// labelled [`Normalized`]. Call [`Self::into_unnormalized`] on it to obtain a
+    /// carry-accumulating destination; there is no way to build an
+    /// [`Unnormalized`] value and later claim it normalized without
+    /// [`Self::normalize`].
     pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
         Self {
             data,
