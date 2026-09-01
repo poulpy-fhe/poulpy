@@ -8,7 +8,7 @@ use itertools::izip;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef, ModuleCoreAlloc};
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, Host, ScratchArena},
+    layouts::{Backend, ScratchArena},
 };
 
 use crate::blind_rotation::{
@@ -135,10 +135,15 @@ impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<BE::OwnedBuf,
 /// - `res`: Output slice of length `lwe.n() + 1` (b, a_0, …, a_{n-1}).
 /// - `lwe`: The LWE ciphertext to switch.
 /// - `rot_dir`: Rotation sign convention.
+///
+/// The body and mask are copied separately through
+/// [`Backend::copy_view_to_host`]. Device backends may therefore incur two
+/// synchronizations and downloads here, while the subsequent blind-rotation
+/// arithmetic remains backend-resident.
 pub fn mod_switch_2n<BE, A>(n: usize, res: &mut [i64], lwe: &A, rot_dir: LookUpTableRotationDirection)
 where
     A: LWEToBackendRef<BE> + LWEInfos,
-    BE: Backend<Location = Host, ZnxWord = i64>,
+    BE: Backend<ZnxWord = i64>,
 {
     let lwe = lwe.to_backend_ref();
     let base2k: usize = lwe.base2k().into();

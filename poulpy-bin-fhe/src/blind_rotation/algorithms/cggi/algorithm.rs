@@ -5,20 +5,19 @@ use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotateBackend, VecZnxZeroBackend, VmpApplyDftToDft,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign,
+        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotateBackend, VecZnxZeroBackend, VmpApplyDftToDft,
         VmpApplyDftToDftTmpBytes,
     },
     layouts::{
-        Backend, Host, HostDataMut, HostDataRef, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VecZnxToBackendRef, ZnxView, ZnxViewMut, ZnxZero, vec_znx_backend_ref_from_mut,
-        vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
+        Backend, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef,
+        vec_znx_backend_ref_from_mut, vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
 };
 
 use poulpy_core::{
-    Distribution, GLWEAdd, GLWECopy, GLWEExternalProduct, GLWEMulXpMinusOne, GLWENormalize, ScratchArenaTakeCore,
+    Distribution, GLWEAdd, GLWECopy, GLWEExternalProduct, GLWEMulXpMinusOne, GLWENormalize, GLWEZero, ScratchArenaTakeCore,
     layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
 };
 
@@ -28,9 +27,8 @@ use crate::blind_rotation::{
 use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
-impl<BE: Backend<Location = Host, ZnxWord = i64> + 'static> BlindRotationExecute<CGGI, BE> for Module<BE>
+impl<BE: Backend<ZnxWord = i64> + 'static> BlindRotationExecute<CGGI, BE> for Module<BE>
 where
-    BE::OwnedBuf: HostDataMut + HostDataRef,
     Self: VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VmpApplyDftToDftTmpBytes
@@ -51,16 +49,11 @@ where
         + GLWEMulXpMinusOne<BE>
         + GLWEAdd<BE>
         + GLWECopy<BE>
+        + GLWEZero<BE>
         + GLWENormalize<BE>
+        + VecZnxCopyBackend<BE>
         + VecZnxZeroBackend<BE>
         + Sync,
-    // TODO(device): CGGI blind rotation still contains host-visible sub-steps
-    // (notably LUT/accumulator staging and coefficient-level glue). Keep the
-    // public blind-rotation API backend-generic, but leave this implementation
-    // host-backed until those helpers are migrated.
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::OwnedBuf: HostDataRef,
     BE: HalVecZnxImpl<BE>,
 {
     fn blind_rotation_execute_tmp_bytes<G, B>(
@@ -126,10 +119,6 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         L: LWEToBackendRef<BE> + LWEInfos,
     {
-        // TODO(device): make the full execute path 100% backend-native. The
-        // current implementation still relies on host-visible scratch/result
-        // views for parts of CGGI that do not yet have backend-native
-        // add/copy helpers.
         match brk.dist {
             Distribution::BinaryBlock(_) | Distribution::BinaryFixed(_) | Distribution::BinaryProb(_) | Distribution::ZERO => {
                 if lut.extension_factor() > 1 {
@@ -151,7 +140,7 @@ where
     }
 }
 
-fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + 'static>(
+fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     module: &M,
     res: &mut R,
     lwe: &L,
@@ -175,12 +164,10 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord =
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
         + GLWECopy<BE>
-        + VecZnxBigBytesOf,
-    // TODO(device): this extended block-binary path still performs host-side
-    // coefficient orchestration over temporary accumulators.
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    BE::OwnedBuf: HostDataMut + HostDataRef,
+        + GLWEZero<BE>
+        + VecZnxBigBytesOf
+        + VecZnxCopyBackend<BE>
+        + VecZnxZeroBackend<BE>,
 {
     let n_glwe: usize = brk.n_glwe().into();
     let extension_factor: usize = lut.extension_factor();
@@ -195,9 +182,11 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord =
     let (mut acc_add_dft, scratch_4) = scratch_3.take_vec_znx_dft_slice_scratch(module, extension_factor, cols, brk.size());
     let (mut vmp_xai, mut scratch_5) = scratch_4.take_vec_znx_dft_scratch(module, 1, brk.size());
 
-    (0..extension_factor).for_each(|i| {
-        acc[i].zero();
-    });
+    for acc_i in &mut acc {
+        for col in 0..cols {
+            module.vec_znx_zero_backend(acc_i, col);
+        }
+    }
 
     let x_pow_a: &Vec<SvpPPolOwned<BE>>;
     if let Some(b) = &brk.x_pow_a {
@@ -349,19 +338,13 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord =
     }
 
     let mut res_mut = res.to_backend_mut();
+    let acc_ref = vec_znx_backend_ref_from_mut::<BE>(&acc[0]);
     for i in 0..cols {
-        let res_data = res_mut.data_mut();
-        let min_size = res_data.size().min(acc[0].size());
-        for j in 0..min_size {
-            res_data.at_mut(i, j).copy_from_slice(acc[0].at(i, j));
-        }
-        for j in min_size..res_data.size() {
-            res_data.at_mut(i, j).fill(0);
-        }
+        module.vec_znx_copy_backend(res_mut.data_mut(), i, &acc_ref, i);
     }
 }
 
-fn execute_block_binary<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + 'static>(
+fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     module: &M,
     res: &mut R,
     lwe: &L,
@@ -385,14 +368,10 @@ fn execute_block_binary<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + '
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
         + GLWECopy<BE>
+        + GLWEZero<BE>
         + VecZnxBigBytesOf
         + VmpApplyDftToDftTmpBytes
         + Sync,
-    // TODO(device): this block-binary path still assumes host-visible
-    // temporary accumulators and LUT buffers.
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    BE::OwnedBuf: HostDataMut + HostDataRef,
 {
     let n_glwe: usize = brk.n_glwe().into();
     let mut lwe_2n: Vec<i64> = vec![0i64; (lwe.n() + 1).into()]; // TODO: from scratch space
@@ -408,7 +387,7 @@ fn execute_block_binary<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + '
     let a: &[i64] = &lwe_2n[1..];
     let b: i64 = lwe_2n[0];
 
-    out_tmp.data_mut().zero();
+    module.glwe_zero(&mut out_tmp);
 
     // Initialize out to X^{b} * LUT(X)
     let lut_ref: poulpy_hal::layouts::VecZnxBackendRef<'_, BE> =
@@ -450,6 +429,7 @@ fn execute_block_binary<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + '
             }
 
             let (worker_scratch, _) = scratch_3.borrow().split(workers, worker_scratch_bytes);
+            let acc_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_dft);
             poulpy_hal::execution::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
                 &mut tasks,
                 0,
@@ -457,7 +437,7 @@ fn execute_block_binary<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + '
                 &|index, task, scratch| {
                     let (vmp_res, contribution) = task;
                     let skii_ref = ski[index].data().to_backend_ref();
-                    module.vmp_apply_dft_to_dft(vmp_res, &acc_dft.to_backend_ref(), &skii_ref, 0, scratch);
+                    module.vmp_apply_dft_to_dft(vmp_res, &acc_dft_ref, &skii_ref, 0, scratch);
 
                     let ai_pos = ((ai[index] + two_n as i64) & (two_n - 1) as i64) as usize;
                     let x_pow_a_ref = x_pow_a[ai_pos].to_backend_ref();
@@ -583,7 +563,7 @@ fn execute_block_binary<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + '
     module.glwe_copy(res, &out_tmp);
 }
 
-fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
+fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
     module: &M,
     res: &mut R,
     lwe: &L,
@@ -599,12 +579,8 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
         + GLWEAdd<BE>
         + GLWENormalize<BE>
         + GLWECopy<BE>
+        + GLWEZero<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-    // TODO(device): the standard CGGI path still uses host-visible
-    // coefficient staging for the accumulator.
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    BE::OwnedBuf: HostDataMut + HostDataRef,
 {
     #[cfg(debug_assertions)]
     {
@@ -641,7 +617,7 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     let a: &[i64] = &lwe_2n[1..];
     let b: i64 = lwe_2n[0];
 
-    out_tmp.data_mut().zero();
+    module.glwe_zero(&mut out_tmp);
 
     // Initialize out to X^{b} * LUT(X)
     let lut_ref: poulpy_hal::layouts::VecZnxBackendRef<'_, BE> =
