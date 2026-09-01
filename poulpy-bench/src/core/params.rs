@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use poulpy_core::layouts::{Base2K, Dsize, GGLWELayout, TorusPrecision};
 use serde::{Deserialize, Serialize};
 
 /// Core GLWE layout parameters used by all core-layer and scheme-layer benchmarks.
@@ -35,14 +36,19 @@ impl Default for CoreParams {
     }
 }
 
+/// Splits a total key width `k` into `(dnum, k_aux)` so that
+/// `dnum * dsize * base2k + k_aux == k` exactly: the guard `k_aux` is one gadget
+/// digit plus the remainder of `k` modulo the digit width, and `dnum` covers
+/// the rest via [`GGLWELayout::dnum_for_input`].
 pub fn key_dnum_k_aux(k: u32, base2k: u32, dsize: u32) -> (u32, u32) {
     let digit: u32 = dsize * base2k;
     assert!(
         k >= 2 * digit,
         "k ({k}) must hold at least one gadget digit plus one digit of guard ({digit} bits each)"
     );
-    let dnum: u32 = k / digit - 1;
-    (dnum, k - dnum * digit)
+    let k_aux: u32 = digit + k % digit;
+    let dnum: u32 = GGLWELayout::dnum_for_input(Base2K(base2k), TorusPrecision(k - k_aux), Dsize(dsize)).0;
+    (dnum, k_aux)
 }
 
 pub fn default_bench_params_core() -> Vec<CoreParams> {
