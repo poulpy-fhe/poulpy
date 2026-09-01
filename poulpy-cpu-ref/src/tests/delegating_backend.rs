@@ -29,8 +29,8 @@ fn delegating_backend_manual_family_matches_fft64_ref() {
     let module_ref: Module<FFT64Ref> = Module::new(256);
 
     let input = sample_glwe();
-    let mut delegating_out = module_delegating.glwe_alloc_from_infos(&input);
-    let mut ref_out = module_ref.glwe_alloc_from_infos(&input);
+    let mut delegating_out = module_delegating.glwe_alloc_from_infos(&input).into_unnormalized();
+    let mut ref_out = module_ref.glwe_alloc_from_infos(&input).into_unnormalized();
 
     module_delegating.glwe_mul_xp_minus_one(-7, &mut delegating_out, &input);
     module_ref.glwe_mul_xp_minus_one(-7, &mut ref_out, &input);
@@ -44,8 +44,8 @@ fn delegating_backend_delegated_family_matches_fft64_ref() {
     let module_ref: Module<FFT64Ref> = Module::new(256);
 
     let input = sample_glwe();
-    let mut delegating_out = module_delegating.glwe_alloc_from_infos(&input);
-    let mut ref_out = module_ref.glwe_alloc_from_infos(&input);
+    let mut delegating_out = module_delegating.glwe_alloc_from_infos(&input).into_unnormalized();
+    let mut ref_out = module_ref.glwe_alloc_from_infos(&input).into_unnormalized();
 
     module_delegating.glwe_rotate(11, &mut delegating_out, &input);
     module_ref.glwe_rotate(11, &mut ref_out, &input);

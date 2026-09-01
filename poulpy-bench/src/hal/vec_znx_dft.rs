@@ -77,7 +77,7 @@ where
     let a = upload_host_vec_znx::<B>(&a);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
+        let a = vec_znx_backend_ref::<B, _>(&a);
         let mut res = vec_znx_dft_backend_mut(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_dft_apply(1, 0, &mut res, i, &a, i);

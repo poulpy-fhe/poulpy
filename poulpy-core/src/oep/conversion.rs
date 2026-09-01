@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Normalized, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -16,7 +16,7 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
     fn lwe_sample_extract<R, A>(module: &Module<BE>, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn glwe_from_lwe_tmp_bytes<R, A, K>(module: &Module<BE>, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
     where
@@ -49,7 +49,7 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn ggsw_from_gglwe_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, tsk_infos: &A) -> usize
     where
@@ -74,7 +74,7 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
     fn glwe_expand_lwe<R, A>(module: &Module<BE>, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn glwe_expand_lwe_matrix_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, a_infos: &A) -> usize
     where
@@ -84,7 +84,7 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
     fn glwe_expand_lwe_matrix<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn ggsw_expand_rows_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, tsk_infos: &A) -> usize
     where
@@ -108,7 +108,7 @@ pub trait ConversionDefault<BE: Backend> {
     fn lwe_sample_extract_default<R, A>(&self, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn glwe_from_lwe_tmp_bytes_default<R, A, K>(&self, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
     where
@@ -141,7 +141,7 @@ pub trait ConversionDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn ggsw_from_gglwe_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
@@ -166,7 +166,7 @@ pub trait ConversionDefault<BE: Backend> {
     fn glwe_expand_lwe_default<R, A>(&self, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn glwe_expand_lwe_matrix_tmp_bytes_default<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
     where
@@ -176,7 +176,7 @@ pub trait ConversionDefault<BE: Backend> {
     fn glwe_expand_lwe_matrix_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn ggsw_expand_rows_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
@@ -199,7 +199,7 @@ where
     fn lwe_sample_extract<R, A>(module: &Module<BE>, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         module.lwe_sample_extract_default(res, a)
     }
@@ -244,7 +244,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         module.lwe_from_glwe_default(res, a, a_idx, key, scratch)
     }
@@ -281,7 +281,7 @@ where
     fn glwe_expand_lwe<R, A>(module: &Module<BE>, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         module.glwe_expand_lwe_default(res, a, scratch)
     }
@@ -297,7 +297,7 @@ where
     fn glwe_expand_lwe_matrix<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         module.glwe_expand_lwe_matrix_default(res, a, scratch)
     }
@@ -331,7 +331,7 @@ macro_rules! impl_conversion_defaults_full {
             fn lwe_sample_extract_default<R, A>(&self, res: &mut R, a: &A)
             where
                 R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
             {
                 $crate::default::conversion::lwe_sample_extract_default::<$be, _, _, _>(self, res, a)
             }
@@ -380,7 +380,7 @@ macro_rules! impl_conversion_defaults_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
             {
                 $crate::default::conversion::lwe_from_glwe_default::<$be, _, _, _>(self, res, a, a_idx, key, scratch)
             }
@@ -421,7 +421,7 @@ macro_rules! impl_conversion_defaults_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
             {
                 $crate::default::conversion::glwe_expand_lwe_default::<$be, _, _, _>(self, res, a, scratch)
             }
@@ -441,7 +441,7 @@ macro_rules! impl_conversion_defaults_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::LWEMatrixToBackendMut<$be> + $crate::layouts::LWEMatrixInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
             {
                 $crate::default::conversion::glwe_expand_lwe_matrix_default::<$be, _, _, _>(self, res, a, scratch)
             }

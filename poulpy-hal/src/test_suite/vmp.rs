@@ -85,8 +85,8 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     let mut a = module_host.vec_znx_alloc(cols_in, size_in);
                     a.fill_uniform(base2k, &mut source);
                     let a_digest: u64 = a.digest_u64();
-                    let a_ref_backend = upload_vec_znx::<BR>(&a);
-                    let a_test_backend = upload_vec_znx::<BT>(&a);
+                    let a_ref_backend = upload_vec_znx::<BR, _>(&a);
+                    let a_test_backend = upload_vec_znx::<BT, _>(&a);
 
                     let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size_out);
                     mat.fill_uniform(base2k, &mut source);
@@ -115,13 +115,13 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
 
                     module_ref.vmp_apply_dft(
                         &mut res_dft_ref,
-                        &vec_znx_backend_ref::<BR>(&a_ref_backend),
+                        &vec_znx_backend_ref::<BR, _>(&a_ref_backend),
                         &pmat_ref.to_backend_ref(),
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_apply_dft(
                         &mut res_dft_test,
-                        &vec_znx_backend_ref::<BT>(&a_test_backend),
+                        &vec_znx_backend_ref::<BT, _>(&a_test_backend),
                         &pmat_test.to_backend_ref(),
                         &mut scratch_test.arena(),
                     );
@@ -132,12 +132,12 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
                     let res_host_template = module_host.vec_znx_alloc(cols_out, size_out);
-                    let mut res_small_ref_backend = upload_vec_znx::<BR>(&res_host_template);
-                    let mut res_small_test_backend = upload_vec_znx::<BT>(&res_host_template);
+                    let mut res_small_ref_backend = upload_vec_znx::<BR, _>(&res_host_template);
+                    let mut res_small_test_backend = upload_vec_znx::<BT, _>(&res_host_template);
 
                     for j in 0..cols_out {
                         module_ref.vec_znx_big_normalize(
-                            &mut vec_znx_backend_mut::<BR>(&mut res_small_ref_backend),
+                            &mut vec_znx_backend_mut::<BR, _>(&mut res_small_ref_backend),
                             base2k,
                             0,
                             j,
@@ -147,7 +147,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                             &mut scratch_ref.arena(),
                         );
                         module_test.vec_znx_big_normalize(
-                            &mut vec_znx_backend_mut::<BT>(&mut res_small_test_backend),
+                            &mut vec_znx_backend_mut::<BT, _>(&mut res_small_test_backend),
                             base2k,
                             0,
                             j,
@@ -158,8 +158,8 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                         );
                     }
 
-                    let res_small_ref = download_vec_znx::<BR>(&res_small_ref_backend);
-                    let res_small_test = download_vec_znx::<BT>(&res_small_test_backend);
+                    let res_small_ref = download_vec_znx::<BR, _>(&res_small_ref_backend);
+                    let res_small_test = download_vec_znx::<BT, _>(&res_small_test_backend);
                     assert_eq!(res_small_ref, res_small_test);
                 }
             }
@@ -232,8 +232,8 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let mut a = module_host.vec_znx_alloc(cols_in, size_in);
                     a.fill_uniform(base2k, &mut source);
                     let a_digest: u64 = a.digest_u64();
-                    let a_ref_backend = upload_vec_znx::<BR>(&a);
-                    let a_test_backend = upload_vec_znx::<BT>(&a);
+                    let a_ref_backend = upload_vec_znx::<BR, _>(&a);
+                    let a_test_backend = upload_vec_znx::<BT, _>(&a);
 
                     let mut a_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols_in, size_in);
                     let mut a_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols_in, size_in);
@@ -244,7 +244,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                             0,
                             &mut a_dft_ref.to_backend_mut(),
                             j,
-                            &vec_znx_backend_ref::<BR>(&a_ref_backend),
+                            &vec_znx_backend_ref::<BR, _>(&a_ref_backend),
                             j,
                         );
                         module_test.vec_znx_dft_apply(
@@ -252,7 +252,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                             0,
                             &mut a_dft_test.to_backend_mut(),
                             j,
-                            &vec_znx_backend_ref::<BT>(&a_test_backend),
+                            &vec_znx_backend_ref::<BT, _>(&a_test_backend),
                             j,
                         );
                     }
@@ -313,12 +313,12 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
                     let res_host_template = module_host.vec_znx_alloc(cols_out, size_out);
-                    let mut res_small_ref_backend = upload_vec_znx::<BR>(&res_host_template);
-                    let mut res_small_test_backend = upload_vec_znx::<BT>(&res_host_template);
+                    let mut res_small_ref_backend = upload_vec_znx::<BR, _>(&res_host_template);
+                    let mut res_small_test_backend = upload_vec_znx::<BT, _>(&res_host_template);
 
                     for j in 0..cols_out {
                         module_ref.vec_znx_big_normalize(
-                            &mut vec_znx_backend_mut::<BR>(&mut res_small_ref_backend),
+                            &mut vec_znx_backend_mut::<BR, _>(&mut res_small_ref_backend),
                             base2k,
                             0,
                             j,
@@ -328,7 +328,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                             &mut scratch_ref.arena(),
                         );
                         module_test.vec_znx_big_normalize(
-                            &mut vec_znx_backend_mut::<BT>(&mut res_small_test_backend),
+                            &mut vec_znx_backend_mut::<BT, _>(&mut res_small_test_backend),
                             base2k,
                             0,
                             j,
@@ -339,8 +339,8 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                         );
                     }
 
-                    let res_small_ref = download_vec_znx::<BR>(&res_small_ref_backend);
-                    let res_small_test = download_vec_znx::<BT>(&res_small_test_backend);
+                    let res_small_ref = download_vec_znx::<BR, _>(&res_small_ref_backend);
+                    let res_small_test = download_vec_znx::<BT, _>(&res_small_test_backend);
                     assert_eq!(res_small_ref, res_small_test);
                 }
             }
@@ -551,13 +551,13 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
 
                             let mut a = module_host.vec_znx_alloc(cols_in, size_in);
                             a.fill_uniform(base2k, &mut source);
-                            let a_ref_backend = upload_vec_znx::<BR>(&a);
-                            let a_test_backend = upload_vec_znx::<BT>(&a);
+                            let a_ref_backend = upload_vec_znx::<BR, _>(&a);
+                            let a_test_backend = upload_vec_znx::<BT, _>(&a);
 
                             let mut res_init = module_host.vec_znx_alloc(cols_out, size_out);
                             res_init.fill_uniform(base2k, &mut source);
-                            let res_init_ref_backend = upload_vec_znx::<BR>(&res_init);
-                            let res_init_test_backend = upload_vec_znx::<BT>(&res_init);
+                            let res_init_ref_backend = upload_vec_znx::<BR, _>(&res_init);
+                            let res_init_test_backend = upload_vec_znx::<BT, _>(&res_init);
 
                             let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, mat_size);
                             mat.fill_uniform(base2k, &mut source);
@@ -572,7 +572,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                     0,
                                     &mut a_dft_ref.to_backend_mut(),
                                     j,
-                                    &vec_znx_backend_ref::<BR>(&a_ref_backend),
+                                    &vec_znx_backend_ref::<BR, _>(&a_ref_backend),
                                     j,
                                 );
                                 module_test.vec_znx_dft_apply(
@@ -580,7 +580,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                     0,
                                     &mut a_dft_test.to_backend_mut(),
                                     j,
-                                    &vec_znx_backend_ref::<BT>(&a_test_backend),
+                                    &vec_znx_backend_ref::<BT, _>(&a_test_backend),
                                     j,
                                 );
                             }
@@ -593,7 +593,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                     0,
                                     &mut res_init_dft_ref.to_backend_mut(),
                                     j,
-                                    &vec_znx_backend_ref::<BR>(&res_init_ref_backend),
+                                    &vec_znx_backend_ref::<BR, _>(&res_init_ref_backend),
                                     j,
                                 );
                                 module_test.vec_znx_dft_apply(
@@ -601,7 +601,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                     0,
                                     &mut res_init_dft_test.to_backend_mut(),
                                     j,
-                                    &vec_znx_backend_ref::<BT>(&res_init_test_backend),
+                                    &vec_znx_backend_ref::<BT, _>(&res_init_test_backend),
                                     j,
                                 );
                             }
@@ -673,14 +673,14 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                             let res_acc_big_test = idft_into_alloc(module_test, &mut res_acc_test);
 
                             let res_host_template = module_host.vec_znx_alloc(cols_out, size_out);
-                            let mut res_apply_small_ref = upload_vec_znx::<BR>(&res_host_template);
-                            let mut res_apply_small_test = upload_vec_znx::<BT>(&res_host_template);
-                            let mut res_acc_small_ref = upload_vec_znx::<BR>(&res_host_template);
-                            let mut res_acc_small_test = upload_vec_znx::<BT>(&res_host_template);
+                            let mut res_apply_small_ref = upload_vec_znx::<BR, _>(&res_host_template);
+                            let mut res_apply_small_test = upload_vec_znx::<BT, _>(&res_host_template);
+                            let mut res_acc_small_ref = upload_vec_znx::<BR, _>(&res_host_template);
+                            let mut res_acc_small_test = upload_vec_znx::<BT, _>(&res_host_template);
 
                             for j in 0..cols_out {
                                 module_ref.vec_znx_big_normalize(
-                                    &mut vec_znx_backend_mut::<BR>(&mut res_apply_small_ref),
+                                    &mut vec_znx_backend_mut::<BR, _>(&mut res_apply_small_ref),
                                     base2k,
                                     0,
                                     j,
@@ -690,7 +690,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                     &mut scratch_ref.arena(),
                                 );
                                 module_test.vec_znx_big_normalize(
-                                    &mut vec_znx_backend_mut::<BT>(&mut res_apply_small_test),
+                                    &mut vec_znx_backend_mut::<BT, _>(&mut res_apply_small_test),
                                     base2k,
                                     0,
                                     j,
@@ -700,7 +700,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                     &mut scratch_test.arena(),
                                 );
                                 module_ref.vec_znx_big_normalize(
-                                    &mut vec_znx_backend_mut::<BR>(&mut res_acc_small_ref),
+                                    &mut vec_znx_backend_mut::<BR, _>(&mut res_acc_small_ref),
                                     base2k,
                                     0,
                                     j,
@@ -710,7 +710,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                     &mut scratch_ref.arena(),
                                 );
                                 module_test.vec_znx_big_normalize(
-                                    &mut vec_znx_backend_mut::<BT>(&mut res_acc_small_test),
+                                    &mut vec_znx_backend_mut::<BT, _>(&mut res_acc_small_test),
                                     base2k,
                                     0,
                                     j,
@@ -721,10 +721,10 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                 );
                             }
 
-                            let res_apply_small_ref_v = download_vec_znx::<BR>(&res_apply_small_ref);
-                            let res_apply_small_test_v = download_vec_znx::<BT>(&res_apply_small_test);
-                            let res_acc_small_ref_v = download_vec_znx::<BR>(&res_acc_small_ref);
-                            let res_acc_small_test_v = download_vec_znx::<BT>(&res_acc_small_test);
+                            let res_apply_small_ref_v = download_vec_znx::<BR, _>(&res_apply_small_ref);
+                            let res_apply_small_test_v = download_vec_znx::<BT, _>(&res_apply_small_test);
+                            let res_acc_small_ref_v = download_vec_znx::<BR, _>(&res_acc_small_ref);
+                            let res_acc_small_test_v = download_vec_znx::<BT, _>(&res_acc_small_test);
 
                             assert_eq!(res_apply_small_ref_v, res_acc_small_ref_v);
                             assert_eq!(res_apply_small_test_v, res_acc_small_test_v);

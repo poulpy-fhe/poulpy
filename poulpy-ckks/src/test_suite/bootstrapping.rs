@@ -32,6 +32,7 @@
 use crate::api::CKKSEncodingOps;
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
+use poulpy_hal::layouts::Normalized;
 use std::time::Instant;
 
 use poulpy_core::layouts::{
@@ -104,8 +105,9 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>:
+        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let coeffs_to_slots = DFTPlan::new(
@@ -529,8 +531,9 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>:
+        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     // `coeffs_to_slots` here is the LP transform feeding EvalMod: `log_delta = 29`
@@ -866,8 +869,9 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>:
+        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     for (eval_round_plus, case) in [(false, "standard"), (true, "evalround+")] {
@@ -899,8 +903,9 @@ where
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>:
+        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let coeffs_to_slots = DFTPlan::new(
@@ -1137,7 +1142,7 @@ fn decrypt<BE: Backend<ZnxWord = i64>, C, F, E, S>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> (Vec<F>, Vec<F>)
 where
-    C: GLWEToBackendRef<BE> + CKKSInfos + CKKSCtBounds,
+    C: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + CKKSCtBounds,
     F: TestScalar,
     Module<BE>: CKKSDecryptOps<BE>,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1163,7 +1168,7 @@ where
 fn decrypt_coeffs<BE, C, S>(module: &Module<BE>, ct: &C, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Vec<f64>
 where
     BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
-    C: GLWEToBackendRef<BE> + CKKSInfos + CKKSCtBounds,
+    C: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + CKKSCtBounds,
     Module<BE>: CKKSDecryptOps<BE>,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,

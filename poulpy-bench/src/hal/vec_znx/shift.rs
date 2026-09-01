@@ -31,7 +31,7 @@ where
     let mut b = upload_host_vec_znx::<B>(&b);
 
     bencher.iter(|| {
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let mut b = vec_znx_backend_mut::<B, _>(&mut b);
         for i in 0..sweep.cols {
             module.vec_znx_lsh_assign_backend(base2k, base2k - 1, &mut b, i, &mut scratch.borrow());
         }
@@ -57,8 +57,8 @@ where
     let mut res = module.vec_znx_alloc(sweep.cols, sweep.size);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, _>(&a);
+        let mut res = vec_znx_backend_mut::<B, _>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_lsh_backend(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
@@ -83,7 +83,7 @@ where
     let mut b = upload_host_vec_znx::<B>(&b);
 
     bencher.iter(|| {
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let mut b = vec_znx_backend_mut::<B, _>(&mut b);
         for i in 0..sweep.cols {
             module.vec_znx_rsh_assign_backend(base2k, base2k - 1, &mut b, i, &mut scratch.borrow());
         }
@@ -109,8 +109,8 @@ where
     let mut res = module.vec_znx_alloc(sweep.cols, sweep.size);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, _>(&a);
+        let mut res = vec_znx_backend_mut::<B, _>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_rsh_backend(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }

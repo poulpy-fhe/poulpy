@@ -5,7 +5,7 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
         fn vec_znx_big_from_small_backend(
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
             a_col: usize,
         ) {
             <Self as $defaults<Self>>::vec_znx_big_from_small_default(&mut res, res_col, a, a_col)
@@ -57,7 +57,7 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             res_col: usize,
             a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
             a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
             b_col: usize,
         ) {
             <Self as $defaults<Self>>::vec_znx_big_add_small_into_default(module, &mut res, res_col, &a, a_col, b, b_col)
@@ -67,7 +67,7 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
             a_col: usize,
         ) {
             <Self as $defaults<Self>>::vec_znx_big_add_small_assign_default(module, &mut res, res_col, a, a_col)
@@ -109,7 +109,7 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
             a_col: usize,
             b: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
             b_col: usize,
@@ -121,7 +121,7 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
             a_col: usize,
         ) {
             <Self as $defaults<Self>>::vec_znx_big_sub_small_assign_default(module, &mut res, res_col, a, a_col)
@@ -133,7 +133,7 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             res_col: usize,
             a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
             a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
             b_col: usize,
         ) {
             <Self as $defaults<Self>>::vec_znx_big_sub_small_b_default(module, &mut res, res_col, &a, a_col, b, b_col)
@@ -143,7 +143,7 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
             a_col: usize,
         ) {
             <Self as $defaults<Self>>::vec_znx_big_sub_small_negate_assign_default(module, &mut res, res_col, a, a_col)
@@ -164,7 +164,7 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
             a_col: usize,
             b: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
             b_col: usize,
@@ -176,7 +176,7 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
             weights: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
             weights_col: usize,
             cols: usize,
@@ -250,7 +250,7 @@ macro_rules! hal_impl_vec_znx_big_normalize {
     ($defaults:ident) => {
         fn vec_znx_big_normalize(
             module: &Module<Self>,
-            mut res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            mut res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
             res_base2k: usize,
             res_offset: i64,
             res_col: usize,

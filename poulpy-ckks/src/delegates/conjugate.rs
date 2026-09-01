@@ -4,7 +4,7 @@ use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, Normalized, ScratchArena};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, default::paco::ops::conj_rotate_galois_element, oep::CKKSConjugateImpl,
@@ -33,8 +33,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
         let p: i64 = conj_rotate_galois_element(k, self.cyclotomic_order());
@@ -50,7 +50,7 @@ where
 
     fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
         let key = keys

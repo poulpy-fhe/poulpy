@@ -2,6 +2,7 @@
 
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta};
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos, layouts::PolynomialApproximation};
@@ -33,8 +34,8 @@ pub trait CKKSApproximationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        I: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>;
 }

@@ -1,7 +1,7 @@
 use std::fmt;
 
 use poulpy_hal::layouts::{
-    Backend, Data, FillUniform, HostDataMut, HostDataRef, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef,
+    Backend, Data, FillUniform, HostDataMut, HostDataRef, Normalized, VecZnx, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef,
     VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord,
 };
 use poulpy_hal::source::Source;
@@ -279,8 +279,9 @@ impl<W: ZnxWord> GLWEPlaintext<Vec<u8>, W> {
 
 impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWEPlaintext<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized>,
 {
+    type State = Normalized;
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         GLWE {
             base2k: self.base2k,
@@ -292,7 +293,7 @@ where
 
 impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWEPlaintext<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized> + VecZnxToBackendMut<BE, State = Normalized>,
 {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         GLWE {
@@ -334,6 +335,7 @@ impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendMut<BE> for GLWEPlaintext
 }
 
 impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
+    type State = Normalized;
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         <GLWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> as GLWEPlaintextReborrowBackendRef<BE>>::reborrow_backend_ref(*self)
     }

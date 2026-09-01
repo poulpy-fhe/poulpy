@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
+    layouts::{Backend, Module, Normalized, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
 
@@ -116,8 +116,8 @@ impl_encryption_delegate!(
         source_xa: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized>,
+        P: GLWEToBackendRef<BE, State = Normalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
@@ -132,7 +132,7 @@ impl_encryption_delegate!(
         source_xa: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
@@ -159,8 +159,8 @@ impl_encryption_delegate!(
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
@@ -175,7 +175,7 @@ impl_encryption_delegate!(
         source_xe: &mut Source,
         scratch: &mut ScratchArena<BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
@@ -194,7 +194,7 @@ impl_encryption_delegate!(
         source_xe: &mut Source,
         source_xa: &mut Source,
     ) where
-        R: GLWEToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
     {
@@ -491,7 +491,7 @@ impl_encryption_delegate!(
         scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        P: GLWEToBackendRef<BE>,
+        P: GLWEToBackendRef<BE, State = Normalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {

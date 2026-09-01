@@ -11,7 +11,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, VecZnxCopyBackend},
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Normalized, ScratchArena},
 };
 
 use crate::SlotsKind;
@@ -64,9 +64,9 @@ pub trait CKKSMulDefault<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
@@ -92,8 +92,12 @@ pub trait CKKSMulDefault<BE: Backend> {
     fn ckks_mul_assign_default<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized>
+            + GLWEToBackendRef<BE, State = Normalized>
+            + CKKSInfos
+            + SetCKKSInfos
+            + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
@@ -119,7 +123,7 @@ pub trait CKKSMulDefault<BE: Backend> {
     fn ckks_prepare_right_default<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
         Self: Convolution<BE> + CnvPVecAlloc<BE> + Sized,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
     {
         // Hoist `a` once into a backend-resident right operand. `glwe_prepare_right`
         // reads only the top `k` limbs, so the operand is sized to that
@@ -154,7 +158,11 @@ pub trait CKKSMulDefault<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWETensoring<BE> + GiantStepTensorBounds<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized>
+            + GLWEToBackendRef<BE, State = Normalized>
+            + CKKSInfos
+            + SetCKKSInfos
+            + GLWEInfos,
         T: GetTensorKey<BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
@@ -212,8 +220,8 @@ pub trait CKKSMulDefault<BE: Backend> {
     fn ckks_square_into_default<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
@@ -238,7 +246,11 @@ pub trait CKKSMulDefault<BE: Backend> {
     fn ckks_square_assign_default<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized>
+            + GLWEToBackendRef<BE, State = Normalized>
+            + CKKSInfos
+            + SetCKKSInfos
+            + GLWEInfos,
         T: GetTensorKey<BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
@@ -302,13 +314,13 @@ pub trait CKKSMulDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
         Self: GLWECopy<BE>
             + GLWEMulPlain<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + VecZnxCopyBackend<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
@@ -325,12 +337,12 @@ pub trait CKKSMulDefault<BE: Backend> {
 
     fn ckks_mul_pt_vec_assign_default<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
         Self: GLWECopy<BE>
             + GLWEMulPlain<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + VecZnxCopyBackend<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, pt)?;
         self.glwe_mul_plain_assign(cnv_offset, dst, pt, scratch);
@@ -351,10 +363,10 @@ pub trait CKKSMulDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
         Self: GLWEMulConst<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
@@ -379,9 +391,13 @@ pub trait CKKSMulDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
         Self: GLWEMulConst<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized>
+            + GLWEToBackendRef<BE, State = Normalized>
+            + CKKSInfos
+            + SetCKKSInfos
+            + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, cnst)?;
 
@@ -438,7 +454,7 @@ fn tensor_mul_core<BE, M, Dst, T>(
 where
     BE: Backend,
     M: GLWETensoring<BE> + ?Sized,
-    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+    Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     T: GetTensorKey<BE>,
 {
     let do_stamp = |dst: &mut Dst| {

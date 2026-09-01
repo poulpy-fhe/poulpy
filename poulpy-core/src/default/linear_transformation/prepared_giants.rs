@@ -7,6 +7,7 @@
 //! only mask preparation uses scratch BIG/SMALL before key-switching. Incompatible
 //! bases fall back to the regular normalized GLWE automorphism path.
 
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
@@ -21,7 +22,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation, LinearTransformationGiantStep,
+    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, GLWENormalize, LinearTransformation, LinearTransformationGiantStep,
     default::{
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
@@ -101,7 +102,7 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 ) where
     BE: Backend,
     M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    P: GLWEToBackendRef<BE> + crate::layouts::IntPolyInfos + GLWEInfos,
+    P: GLWEToBackendRef<BE, State = Normalized> + crate::layouts::IntPolyInfos + GLWEInfos,
 {
     glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
 }
@@ -139,7 +140,8 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEAutomorphism<BE>
+    M: GLWENormalize<BE>
+        + GLWEAutomorphism<BE>
         + GaloisElement
         + GLWEAdd<BE>
         + GLWECopy<BE>
@@ -315,6 +317,9 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     let (mut prod_dft, scratch_phase) = scratch.take_vec_znx_dft_scratch(module, cols, prod_size);
     let (mut prod_col_big, mut scratch_phase) = scratch_phase.take_vec_znx_big_scratch(module, 1, prod_size);
     let mut fallback_acc: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
+    // Sum of the rotated giant-step products: carries accumulate across giants and are
+    // propagated once, when the sum is normalized into `res` below.
+    let mut res_acc = module.glwe_alloc_from_infos(res).into_unnormalized();
     let mut res_initialized = false;
 
     for (g, giant_key) in giant_keys.iter().enumerate() {
@@ -350,10 +355,12 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         }
 
         if res_initialized {
-            module.glwe_add_assign(res, &fallback_acc);
+            module.glwe_add_assign(&mut res_acc, &fallback_acc);
         } else {
-            module.glwe_copy(res, &fallback_acc);
+            module.glwe_copy(&mut res_acc, &fallback_acc);
             res_initialized = true;
         }
     }
+    assert!(res_initialized, "linear transformation has no giant steps");
+    module.glwe_normalize(res, &res_acc, &mut scratch_phase);
 }

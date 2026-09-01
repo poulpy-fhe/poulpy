@@ -4,6 +4,24 @@
 
 ### `poulpy-hal`
 
+- **Breaking:** `VecZnx` gains a type-level normalization state, `VecZnx<D, W, S: NormalizationState = Normalized>`, with sealed markers `Normalized` and `Unnormalized` and the `FitsIn<S>` relation between them. Carry-producing ops (`add`, `sub`, `add_scalar`, `mul_xp_minus_one`, `lsh_add`/`rsh_add`, `add_normal`, ...) only accept `Unnormalized` destinations, bound-preserving ops (`copy`, `negate`, `rotate`, `automorphism`, `switch_ring`, ...) map an input state into any state it fits in, normalizing ops (`normalize`, `big_normalize`, `lsh`, `rsh`) accept any destination, and DFT-domain inputs (`vec_znx_dft_apply`, VMP, SVP, convolution) require `Normalized`. Feeding un-normalized digits to the DFT pipeline is now a compile error. `VecZnxToBackendRef`/`VecZnxToBackendMut` carry the state through a `State` associated type; `into_unnormalized` is the free relabel and `normalize(self, ..)` the only way back. A scratch destination that will accumulate carries is `take_vec_znx_scratch(..)` followed by `into_unnormalized()`.
+
+### `poulpy-core`
+
+- **Breaking:** `GLWE<D, W, S = Normalized>` propagates the HAL normalization state; `GLWEToBackendRef`/`GLWEToBackendMut` expose it as `State`. `glwe_add`/`glwe_sub`/`glwe_mul_xp_minus_one`/`glwe_lsh_add`/`glwe_lsh_sub` require `State = Unnormalized` destinations, keyswitching, external products, automorphisms, convolutions, tensoring and decryption require `State = Normalized` inputs, and encryption produces `Normalized` ciphertexts. `GLWE::into_unnormalized` (also on `take_glwe_scratch` views) and `GLWE::normalize` cover the fusion pattern.
+- Secret-key encryption normalizes the body after adding the noise (it previously left one bit of slack when no plaintext was added), public-key encryption normalizes after adding the plaintext, the tensor product normalizes its off-diagonal columns, and the prepared-giants fallback and packing loops normalize their accumulators before the next DFT-domain step.
+- Remove the unused `CoreError::PendingLinearTermsOverflow` and `CoreError::NonNormalizedCiphertextInput` variants.
+
+### `poulpy-ckks`
+
+- The CKKS-local `Normalized`/`Unnormalized` markers are now re-exports of the HAL ones and `CKKSCiphertext<D, W, S>` wraps `GLWE<D, W, S>`; `UnnormalizedCKKSCiphertext` implements the backend-access traits with `State = Unnormalized`, the compile-time guard against DFT-domain misuse now coming from `poulpy-core`'s bounds.
+
+### `poulpy-bin-fhe`
+
+- The CMUX family and `FheUint` byte splicing normalize their fused differences before the next external product; the standard CGGI blind rotation keeps its single end-of-loop normalization behind an explicit, documented relabel.
+
+### `poulpy-hal`
+
 - **Breaking:** uniform `VecZnx` sampling now takes the target precision `k`; the sampler masks the unused low bits of the last live limb and clears limbs above `k`.
 - The cross-backend `test_vmp_apply_dft_to_dft_accumulate` now sweeps `res` sizes that differ from the prepared matrix size and non-zero `limb_offset`, so the output limb window is compared across transform families.
 

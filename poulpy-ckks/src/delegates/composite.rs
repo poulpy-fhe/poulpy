@@ -5,6 +5,8 @@ use poulpy_core::{
     GLWENormalize, GLWETensoring,
     layouts::{GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
+use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::Unnormalized;
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
@@ -75,8 +77,8 @@ where
 
     fn ckks_add_many<Dst, Src>(&self, dst: &mut Dst, inputs: &[&Src], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
     {
         match inputs.len() {
             0 => ckks_bail!("ckks_add_many: inputs must contain at least one ciphertext"),
@@ -138,9 +140,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
         mul_then_combine(
@@ -153,9 +155,9 @@ where
 
     fn ckks_mul_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         mul_then_combine(
             dst,
@@ -174,9 +176,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         mul_then_combine(
             dst,
@@ -195,9 +197,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        GLWE<Dst, BE::ZnxWord, Unnormalized>: GLWEToBackendMut<BE, State = Unnormalized>,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         mul_then_combine(
             dst,
@@ -215,9 +217,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        GLWE<Dst, BE::ZnxWord, Unnormalized>: GLWEToBackendMut<BE, State = Unnormalized>,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         mul_then_combine(
             dst,
@@ -254,9 +256,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         self.ckks_mul_pt_const_into(dst, a, affine_const, scale_coeff, scratch)?;
         self.ckks_add_pt_const_assign(dst, 0, affine_const, offset_coeff, scratch)
@@ -271,8 +273,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         self.ckks_mul_pt_const_assign(dst, affine_const, scale_coeff, scratch)?;
         self.ckks_add_pt_const_assign(dst, 0, affine_const, offset_coeff, scratch)
@@ -297,10 +299,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         self.ckks_mul_pt_vec_into(dst, a, scale, scratch)?;
         self.ckks_add_pt_vec_assign(dst, offset, scratch)
@@ -314,9 +316,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         self.ckks_mul_pt_vec_assign(dst, scale, scratch)?;
         self.ckks_add_pt_vec_assign(dst, offset, scratch)
@@ -366,9 +368,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         H: GetTensorKey<BE>,
     {
         mul_then_combine(
@@ -381,9 +383,9 @@ where
 
     fn ckks_mul_sub_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         mul_then_combine(
             dst,
@@ -402,9 +404,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         mul_then_combine(
             dst,
@@ -439,7 +441,7 @@ where
     D: Data,
     BE: CKKSAddImpl<BE>,
     Module<BE>: GLWENormalize<BE>,
-    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
     F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
 {
     if n <= 1 {
@@ -519,9 +521,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
+        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         H: GetTensorKey<BE>,
     {
         check_lengths("ckks_dot_product_ct", a.len(), b.len())?;
@@ -539,9 +541,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
+        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        E: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         check_lengths("ckks_dot_product_pt_vec", a.len(), b.len())?;
         let n: usize = a.len();
@@ -561,9 +563,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
+        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        E: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
     {
         check_lengths("ckks_dot_product_pt_const", a.len(), b.len())?;
         check_lengths("ckks_dot_product_pt_const coeffs", a.len(), pt_coeffs.len())?;

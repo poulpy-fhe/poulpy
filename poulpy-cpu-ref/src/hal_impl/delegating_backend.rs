@@ -1,7 +1,8 @@
 use poulpy_hal::{
     api::{VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos,
+        Backend, FitsIn, Module, NoiseInfos, NormalizationState, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, ZnxInfos,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
@@ -148,7 +149,11 @@ impl BigWordHadamardProduct for DelegatingFFT64Ref {
 unsafe impl HalVecZnxImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
     crate::hal_impl_vec_znx!();
 
-    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+    fn vec_znx_transpose_backend<S: NormalizationState>(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self, S>,
+        a: &VecZnxBackendRef<'_, Self, impl FitsIn<S>>,
+    ) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
 }

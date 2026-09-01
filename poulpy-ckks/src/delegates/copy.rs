@@ -3,7 +3,8 @@ use poulpy_core::{
     GLWECopy, GLWEShift,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::{Backend, FitsIn, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSCopyOps, oep::CKKSCopyImpl};
 
@@ -17,8 +18,9 @@ where
 
     fn ckks_copy<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        <Src as GLWEToBackendRef<BE>>::State: FitsIn<<Dst as GLWEToBackendRef<BE>>::State>,
     {
         BE::ckks_copy_impl(self, dst, src, scratch)
     }

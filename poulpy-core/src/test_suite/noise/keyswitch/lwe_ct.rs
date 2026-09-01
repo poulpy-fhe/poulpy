@@ -122,11 +122,11 @@ where
 
     let mut lwe_pt_want: LWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.lwe_plaintext_alloc_from_infos(&lwe_out_infos);
     module.vec_znx_normalize(
-        &mut vec_znx_backend_mut::<BE>(&mut lwe_pt_want.data),
+        &mut vec_znx_backend_mut::<BE, _>(&mut lwe_pt_want.data),
         out_base2k,
         0,
         0,
-        &vec_znx_backend_ref::<BE>(&lwe_pt_in.data),
+        &vec_znx_backend_ref::<BE, _>(&lwe_pt_in.data),
         in_base2k,
         0,
         &mut scratch.borrow(),

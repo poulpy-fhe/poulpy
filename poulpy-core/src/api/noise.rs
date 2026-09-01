@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, HostBackend, HostDataMut, HostDataRef, ScalarZnx, ScratchArena, Stats};
+use poulpy_hal::layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Normalized, ScalarZnx, ScratchArena, Stats};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendRef, GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendRef,
@@ -11,8 +11,8 @@ pub trait GLWENoise<BE: Backend> {
 
     fn glwe_noise<R, P, S>(&self, res: &R, pt_want: &P, sk_prepared: &S, scratch: &mut ScratchArena<'_, BE>) -> Stats
     where
-        R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE>,
+        R: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = Normalized>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         BE: HostBackend<ZnxWord = i64>,
         for<'a> BE::BufRef<'a>: HostDataRef,

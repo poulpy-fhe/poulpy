@@ -1,6 +1,6 @@
 use dashu_float::{FBig, round::mode::HalfEven};
 
-use crate::layouts::{Backend, HostDataRef, VecZnx, VecZnxBig};
+use crate::layouts::{Backend, HostDataRef, NormalizationState, VecZnx, VecZnxBig};
 
 /// Summary statistics (max absolute value and standard deviation) of a
 /// polynomial vector's decoded floating-point coefficients.
@@ -21,7 +21,7 @@ impl Stats {
     }
 }
 
-impl<D: HostDataRef> VecZnx<D, i64> {
+impl<D: HostDataRef, S: NormalizationState> VecZnx<D, i64, S> {
     /// Computes [`Stats`] (max absolute value and standard deviation) for
     /// column `col` by decoding all limbs into arbitrary-precision floats.
     pub fn stats(&self, base2k: usize, col: usize) -> Stats {

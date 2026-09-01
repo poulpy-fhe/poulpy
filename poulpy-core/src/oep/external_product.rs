@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Normalized, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
@@ -25,7 +25,7 @@ pub unsafe trait GLWEExternalProductImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn glwe_external_product_assign<R>(
         module: &Module<BE>,
@@ -33,7 +33,7 @@ pub unsafe trait GLWEExternalProductImpl<BE: Backend>: Backend {
         ggsw: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
 }
 
 /// Backend hook for batched GGLWE external products.
@@ -122,7 +122,7 @@ pub trait GLWEExternalProductDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn glwe_external_product_assign_default<R>(
         &self,
@@ -130,7 +130,7 @@ pub trait GLWEExternalProductDefault<BE: Backend> {
         ggsw: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
 }
 
 /// Override surface for the GGLWE external-product sub-family.
@@ -208,7 +208,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         module.glwe_external_product_default(res, a, ggsw, scratch)
     }
@@ -219,7 +219,7 @@ where
         ggsw: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
     {
         module.glwe_external_product_assign_default(res, ggsw, scratch)
     }
@@ -336,7 +336,7 @@ macro_rules! impl_glwe_external_product_defaults_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
             {
                 $crate::default::external_product::glwe::glwe_external_product_default::<$be, _, _, _>(
                     self, res, a, ggsw, scratch,
@@ -349,7 +349,7 @@ macro_rules! impl_glwe_external_product_defaults_full {
                 ggsw: &$crate::layouts::prepared::GGSWPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
             {
                 $crate::default::external_product::glwe::glwe_external_product_assign_default::<$be, _, _>(
                     self, res, ggsw, scratch,

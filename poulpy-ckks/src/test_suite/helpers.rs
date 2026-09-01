@@ -1232,7 +1232,11 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     // head-room, so any corruption there fails here.
     let mut pt_noise = module.ckks_plaintext_alloc_from_infos(ct);
     module.ckks_extract_pt(&mut pt_noise, &full_pt, scratch).unwrap();
-    module.glwe_sub_assign(&mut pt_noise, &pt_want);
+    // Raw residual: the statistics below read the un-propagated digits directly.
+    module.glwe_sub_assign(
+        &mut crate::layouts::ciphertext::CKKSUnnormalizedWriteView::new(&mut pt_noise),
+        &pt_want,
+    );
 
     let noise = pt_noise.inner.data().stats(pt_noise.base2k().into(), 0);
     let noise_log2 = if noise.std() == 0.0 {

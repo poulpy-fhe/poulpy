@@ -13,7 +13,7 @@ use poulpy_hal::{
         VecZnxRotateBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
+        Backend, Normalized, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
         VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos,
     },
 };
@@ -38,7 +38,7 @@ where
     BE: Backend,
     M: ModuleN + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
@@ -107,7 +107,7 @@ where
     BE: Backend,
     M: ModuleN + VecZnxExtractCoeffBackend<BE> + VecZnxRotateBackend<BE> + VecZnxCopyRangeBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
 {
     let a = a.to_backend_ref();
     let n = module.n();
@@ -160,7 +160,7 @@ where
     BE: Backend,
     M: ModuleN + VecZnxRotateBackend<BE> + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
     R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
 {
     let a = a.to_backend_ref();
     let mut res = res.to_backend_mut();
@@ -344,7 +344,7 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
     };
 
     let mut res_backend = res.to_backend_mut();
-    let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
+    let glwe_ref = glwe_backend_ref_from_mut::<BE, _>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
     module.glwe_keyswitch_default(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
@@ -392,7 +392,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A>(
         + VecZnxCopyRangeBackend<BE>
         + VecZnxZeroBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
 {
     let a_backend = a.to_backend_ref();
 
@@ -423,7 +423,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A>(
     }
 
     let mut res_backend = res.to_backend_mut();
-    let tmp_glwe_rank_1_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe_rank_1);
+    let tmp_glwe_rank_1_ref = glwe_backend_ref_from_mut::<BE, _>(&tmp_glwe_rank_1);
     let min_size: usize = res_backend.size().min(tmp_glwe_rank_1_ref.size());
     let n: usize = res_backend.n().into();
 

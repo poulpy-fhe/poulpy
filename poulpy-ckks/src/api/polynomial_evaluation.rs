@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Normalized, ScratchArena};
 
 use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 
@@ -19,10 +19,10 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;
 
@@ -38,9 +38,9 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;
 
@@ -55,12 +55,13 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         H: GetTensorKey<BE>,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+        CKKSCiphertextOwned<BE>:
+            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
 
     /// Builds the power basis internally then evaluates a complex-coefficient
     /// polynomial.
@@ -73,9 +74,10 @@ pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        C: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
         H: GetTensorKey<BE>,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+        CKKSCiphertextOwned<BE>:
+            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
 }

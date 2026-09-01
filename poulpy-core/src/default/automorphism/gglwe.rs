@@ -115,7 +115,7 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A>(
                         module.vec_znx_automorphism_backend(p, &mut tmp_glwe.data, i, &a_ct_backend.data, i);
                     }
 
-                    let tmp_glwe_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe);
+                    let tmp_glwe_ref = glwe_backend_ref_from_mut::<BE, _>(&tmp_glwe);
                     let tmp_glwe_view = &tmp_glwe_ref;
                     module.glwe_keyswitch_default(&mut res_tmp, &tmp_glwe_view, &key.to_backend_ref(), &mut scratch_iter);
 

@@ -3,7 +3,7 @@ use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
 };
-use poulpy_hal::layouts::{Backend, GaloisElement, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, GaloisElement, Module, Normalized, ScratchArena};
 
 use crate::{CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, oep::CKKSRotateImpl};
 
@@ -31,8 +31,8 @@ where
     ) -> Result<()>
     where
         H: GetAutomorphismKey<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
     {
         let p = self.galois_element(k);
         let key = keys
@@ -48,7 +48,7 @@ where
     fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         H: GetAutomorphismKey<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
     {
         let p = self.galois_element(k);
         let key = keys

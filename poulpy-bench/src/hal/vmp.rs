@@ -71,7 +71,7 @@ where
 
     bencher.iter(|| {
         let pmat = pmat.to_backend_ref();
-        let a = vec_znx_backend_ref::<B>(&a);
+        let a = vec_znx_backend_ref::<B, _>(&a);
         module.vmp_apply_dft(&mut res, &a, &pmat, &mut scratch.borrow());
         black_box(());
     });

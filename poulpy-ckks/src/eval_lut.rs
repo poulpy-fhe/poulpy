@@ -9,6 +9,7 @@ use num_traits::{Float, FloatConst, FromPrimitive};
 use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -79,8 +80,12 @@ where
     BE: Backend,
     Module<BE>: CKKSEvalModOps<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
     K: GetAutomorphismKey<BE>,
-    C: GLWEToBackendRef<BE> + CKKSCtBounds,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    R: GLWEToBackendMut<BE, State = Normalized>
+        + GLWEToBackendRef<BE, State = Normalized>
+        + CKKSCtBounds
+        + SetCKKSInfos
+        + SetBSGSMeta,
     H: GetTensorKey<BE>,
 {
     // Work at the destination's effective width. `res` may reuse a wider
@@ -135,7 +140,7 @@ where
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
         + CKKSModuleAlloc<BE>,
-    C: GLWEToBackendRef<BE> + CKKSCtBounds,
+    C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
     H: GetTensorKey<BE>,
 {
     let series = luts
@@ -177,7 +182,11 @@ where
     BE: Backend,
     Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
     K: GetAutomorphismKey<BE>,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    R: GLWEToBackendMut<BE, State = Normalized>
+        + GLWEToBackendRef<BE, State = Normalized>
+        + CKKSCtBounds
+        + SetCKKSInfos
+        + SetBSGSMeta,
     H: GetTensorKey<BE>,
 {
     let series = lut
@@ -244,8 +253,12 @@ pub(crate) fn ckks_eval_lut_binary<BE, C, R, H>(
 where
     BE: Backend,
     Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSAffineOps<BE>,
-    C: GLWEToBackendRef<BE> + CKKSCtBounds,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    R: GLWEToBackendMut<BE, State = Normalized>
+        + GLWEToBackendRef<BE, State = Normalized>
+        + CKKSCtBounds
+        + SetCKKSInfos
+        + SetBSGSMeta,
     H: GetTensorKey<BE>,
 {
     module.ckks_eval_poly_real_const_coeffs(res, ct, cos_bsgs, tsk, scratch)?;

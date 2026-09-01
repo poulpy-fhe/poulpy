@@ -18,10 +18,12 @@ use poulpy_core::{
     layouts::{Degree, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
     oep::GLWETensoringImpl,
 };
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNormalize,
+        VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend,
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
@@ -182,19 +184,28 @@ fn rank_one_tensor_work_bytes<BE: RankOneTensorDft>(
     b_size: usize,
 ) -> usize
 where
-    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
     let kernel = BE::rank_one_tensor_dft_tmp_bytes(dft_size, a_size, b_size);
     let normalize = module.bytes_of_vec_znx_big(1, dft_size)
         + BE::bytes_of_vec_znx(module.n(), 1, res_size)
-        + module.vec_znx_big_normalize_tmp_bytes();
+        + module
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module.vec_znx_normalize_tmp_bytes());
     BE::bytes_of_vec_znx(module.n(), 2, res_size) + module.bytes_of_vec_znx_dft(3, dft_size) + kernel.max(normalize)
 }
 
 fn rank_one_tensor_apply_tmp_bytes<BE, R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
 where
     BE: RankOneTensorDft,
-    Module<BE>: ModuleN + CnvPVecBytesOf + Convolution<BE> + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: ModuleN
+        + CnvPVecBytesOf
+        + Convolution<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,
@@ -215,7 +226,14 @@ where
 fn rank_one_tensor_square_tmp_bytes<BE, R, A>(module: &Module<BE>, res: &R, a: &A) -> usize
 where
     BE: RankOneTensorDft,
-    Module<BE>: ModuleN + CnvPVecBytesOf + Convolution<BE> + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: ModuleN
+        + CnvPVecBytesOf
+        + Convolution<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
 {
@@ -247,6 +265,8 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes
         + VecZnxCopyBackend<BE>
         + VecZnxSubAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -294,7 +314,8 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
 
     let (mut product_big, scratch) = work.borrow().take_vec_znx_big_scratch(module, 1, dft_size);
     module.vec_znx_idft_apply_tmpa(&mut product_big.to_backend_mut(), 0, &mut tensor_dft.to_backend_mut(), 1);
-    let (mut pairwise, mut norm_scratch) = scratch.take_vec_znx_scratch(module.n(), 1, res.size());
+    let (pairwise, mut norm_scratch) = scratch.take_vec_znx_scratch(module.n(), 1, res.size());
+    let mut pairwise = pairwise.into_unnormalized();
     module.vec_znx_big_normalize(
         &mut pairwise.to_backend_mut(),
         res_base2k,
@@ -311,7 +332,17 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 0);
         module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 2);
     }
-    module.vec_znx_copy_backend(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
+    // pairwise - diag_0 - diag_2 carries up to two extra bits: normalize it into res.
+    module.vec_znx_normalize(
+        res.to_backend_mut().data_mut(),
+        res_base2k,
+        0,
+        1,
+        &pairwise.to_backend_ref(),
+        res_base2k,
+        0,
+        &mut norm_scratch,
+    );
 }
 
 fn rank_one_tensor_apply<BE, R, A, B>(
@@ -331,11 +362,13 @@ fn rank_one_tensor_apply<BE, R, A, B>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes
         + VecZnxCopyBackend<BE>
         + VecZnxSubAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
-    B: GLWEToBackendRef<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
 {
     assert_degrees(module, [res.n(), a.n(), b.n()]);
     assert!(scratch.available() >= rank_one_tensor_apply_tmp_bytes(module, res, a, b));
@@ -391,10 +424,12 @@ fn rank_one_tensor_square<BE, R, A>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes
         + VecZnxCopyBackend<BE>
         + VecZnxSubAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
 {
     assert_degrees(module, [res.n(), a.n(), a.n()]);
     assert!(scratch.available() >= rank_one_tensor_square_tmp_bytes(module, res, a));
@@ -463,8 +498,8 @@ macro_rules! impl_rank_one_tensoring {
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
                 R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be> + GLWEInfos,
-                B: GLWEToBackendRef<$be> + GLWEInfos,
+                A: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + GLWEInfos,
+                B: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + GLWEInfos,
             {
                 if rank_one_tensor_supported(module, res) {
                     rank_one_tensor_apply(module, cnv_offset, res, a, b, scratch)
@@ -481,7 +516,7 @@ macro_rules! impl_rank_one_tensoring {
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
                 R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be> + GLWEInfos,
+                A: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + GLWEInfos,
             {
                 if rank_one_tensor_supported(module, res) {
                     rank_one_tensor_square(module, cnv_offset, res, a, scratch)
@@ -498,7 +533,7 @@ macro_rules! impl_rank_one_tensoring {
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
                 R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be> + GLWEInfos,
+                A: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + GLWEInfos,
                 T: poulpy_core::layouts::GetTensorKey<$be>,
             {
                 module.glwe_tensor_relinearize_default(res, a, tsk, scratch)

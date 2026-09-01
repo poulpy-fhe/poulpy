@@ -11,7 +11,9 @@ use poulpy_cpu_ref::reference::{
         ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxZero,
     },
 };
-use poulpy_hal::layouts::{Backend, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef};
+use poulpy_hal::layouts::{
+    Backend, NormalizationState, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef,
+};
 use rayon::prelude::*;
 
 use crate::{RayonTaskExecutor, RayonTuning, SendPtr};
@@ -44,11 +46,11 @@ where
 /// Parallel [`vec_znx_normalize`], `B` being the serial kernel backend.
 #[allow(clippy::too_many_arguments)]
 pub fn vec_znx_normalize_par<B, T>(
-    res: &mut VecZnxBackendMut<'_, B>,
+    res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
     res_base2k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, B>,
+    a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
     a_base2k: usize,
     a_col: usize,
     carry: &mut [i64],
@@ -104,8 +106,12 @@ pub fn vec_znx_normalize_par<B, T>(
 }
 
 /// Parallel [`vec_znx_normalize_assign`], `B` being the serial kernel backend.
-pub fn vec_znx_normalize_assign_par<B, T>(base2k: usize, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, carry: &mut [i64])
-where
+pub fn vec_znx_normalize_assign_par<B, T>(
+    base2k: usize,
+    res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+    res_col: usize,
+    carry: &mut [i64],
+) where
     B: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
     for<'x> B: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
     B: 'static,
@@ -128,7 +134,7 @@ where
 /// backend.
 #[allow(clippy::too_many_arguments)]
 pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
-    res: &mut VecZnxBackendMut<'_, B>,
+    res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
     res_base2k: usize,
     res_offset: i64,
     res_col: usize,
@@ -145,7 +151,7 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        let mut res_ref: &mut VecZnxBackendMut<'_, B> = res;
+        let mut res_ref: &mut VecZnxBackendMut<'_, B, _> = res;
         let a_ref: &VecZnxBigBackendRef<'_, B> = a;
         return ntt4x30_vec_znx_big_normalize::<_, _, B>(
             &mut res_ref,

@@ -1,6 +1,7 @@
 use crate::CKKSResult as Result;
 use crate::default::plaintext::CKKSPlaintextDefault;
 use poulpy_core::layouts::IntPolyInfos;
+use poulpy_hal::layouts::Normalized;
 
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::{
@@ -25,8 +26,8 @@ pub unsafe trait CKKSPlaintextZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos;
 }
 
 unsafe impl<BE: Backend> CKKSPlaintextZnxImpl<BE> for BE
@@ -45,8 +46,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos,
     {
         module.ckks_extract_pt_default(dst, src, scratch)
     }

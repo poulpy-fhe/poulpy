@@ -142,9 +142,9 @@ need explicit overrides; everything else is inherited for free.
 The main CKKS-facing types are:
 
 - `CKKSCiphertext<D>` — encrypted CKKS value; wraps a core GLWE ciphertext
-- `UnnormalizedCKKSCiphertext<D>` — typestate wrapper for ciphertexts produced
-  by unnormalized linear operations; cannot be passed to DFT-domain primitives
-  until `.normalize(module, scratch)` is called
+- `UnnormalizedCKKSCiphertext<D>` — `CKKSCiphertext` in the `Unnormalized`
+  state, produced by unnormalized linear operations; cannot be passed to
+  DFT-domain primitives until `.normalize(module, scratch)` is called
 - `CKKSPlaintext<D>` — quantized CKKS plaintext in the torus / ZNX domain
 - `CKKSMeta` — semantic precision metadata
 - `CKKSPlaintextVecHostCodec<F>` — trait for encoding/decoding host floats
@@ -344,11 +344,14 @@ module.ckks_add_assign(&mut lhs, &rhs, scratch)?;
 
 The `*_unnormalized` methods on `CKKSAddOps` and `CKKSSubOps` (e.g.
 `ckks_add_into_unnormalized`, `ckks_sub_assign_unnormalized`) write into an
-`UnnormalizedCKKSCiphertext`. This type does not implement
-`GLWEToBackendRef`/`GLWEToBackendMut`, so it cannot be accidentally passed to
-any DFT-domain primitive (keyswitching, convolution, automorphisms). Call
-`.normalize(module, scratch)` to propagate carries and recover a
-`CKKSCiphertext`.
+`UnnormalizedCKKSCiphertext`, which is `CKKSCiphertext<D, W, Unnormalized>`: the
+normalization state is the `poulpy_hal::layouts::NormalizationState` parameter
+carried by the underlying `VecZnx` and `GLWE`. Its backend views report
+`State = Unnormalized`, and every DFT-domain primitive in `poulpy-core`
+(keyswitching, convolution, automorphisms) requires `State = Normalized`, so
+passing it there is a compile error. Call `.normalize(module, scratch)` to
+propagate carries and recover a `CKKSCiphertext`; `CKKSCiphertext::into_unnormalized`
+is the free relabel in the other direction.
 
 Note that `.normalize()` is an exception to the principle stated above:
 it is a method on the struct rather than on `Module<BE>`. It lives there

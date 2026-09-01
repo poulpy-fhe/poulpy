@@ -6,8 +6,8 @@ use crate::{
         VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, VecZnxDftOwned,
+        Backend, Module, NormalizationState, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftOwned,
     },
     oep::HalVecZnxDftImpl,
 };
@@ -73,13 +73,13 @@ impl_vec_znx_dft_delegate!(
     VecZnxIdftNormalizeConsume<B>,
     fn vec_znx_idft_normalize_consume(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
         res_base2k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, B>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, B>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, B, impl NormalizationState>, usize)>,
         scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_idft_normalize_consume(self, res, res_base2k, res_col, a, a_col, a_base2k, addend, scratch);

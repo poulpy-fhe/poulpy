@@ -15,6 +15,7 @@
 //! allocator and population routines.
 
 use poulpy_hal::layouts::CnvPVecLToBackendMut;
+use poulpy_hal::layouts::Normalized;
 use std::collections::BTreeMap;
 
 use poulpy_hal::{
@@ -194,7 +195,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         + VecZnxIdftNormalizeConsume<BE>
         + VecZnxIdftNormalizeConsumeTmpBytes
         + Sync,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
     let cols = a.rank().as_usize() + 1;

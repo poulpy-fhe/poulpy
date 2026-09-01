@@ -7,6 +7,7 @@
 //! supplied by the scheme layer through the closure passed to
 //! [`Polynomial::decompose_bsgs_with`].
 
+use poulpy_hal::layouts::Normalized;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
@@ -903,7 +904,7 @@ pub struct BSGSPolynomial<C> {
 
 impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
 where
-    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + IntPolyInfos,
+    C: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + BSGSMeta + IntPolyInfos,
 {
     type Coeffs = C;
 
@@ -1068,7 +1069,7 @@ pub trait SetBSGSMeta: BSGSMeta {
 
 /// Read access to a decomposed BSGS polynomial during evaluation.
 pub trait BSGSPolynomialInfos<BE: Backend> {
-    type Coeffs: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos + BSGSMeta;
+    type Coeffs: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + GLWEInfos + BSGSMeta;
     fn degree(&self) -> usize;
     fn baby_steps(&self) -> usize;
     fn baby_step(&self, i: usize) -> &Self::Coeffs;

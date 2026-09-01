@@ -89,7 +89,7 @@ where
             module.vec_znx_fill_uniform_source_backend(
                 in_base2k,
                 pt_in.k().as_usize(),
-                &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+                &mut vec_znx_backend_mut::<BE, _>(&mut pt_in.data),
                 0,
                 &mut source_xa,
             );
@@ -145,7 +145,7 @@ where
             module.glwe_normalize(&mut pt_out, &pt_in, &mut scratch.borrow());
             module.vec_znx_automorphism_assign_backend(
                 p,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_out.data),
+                &mut vec_znx_backend_mut::<BE, _>(&mut pt_out.data),
                 0,
                 &mut scratch.borrow(),
             );
@@ -220,7 +220,7 @@ where
             module.vec_znx_fill_uniform_source_backend(
                 out_base2k,
                 pt_want.k().as_usize(),
-                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                &mut vec_znx_backend_mut::<BE, _>(&mut pt_want.data),
                 0,
                 &mut source_xa,
             );
@@ -275,7 +275,7 @@ where
 
             module.vec_znx_automorphism_assign_backend(
                 p,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                &mut vec_znx_backend_mut::<BE, _>(&mut pt_want.data),
                 0,
                 &mut scratch.borrow(),
             );

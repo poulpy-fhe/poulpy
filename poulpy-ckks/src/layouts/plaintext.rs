@@ -9,7 +9,7 @@ use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextReborrowBackendMut, GLWEPlaintextReborrowBackendRef,
     GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta, SetBase2k, SetK, TorusPrecision,
 };
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Normalized, ZnxWord};
 
 use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos};
 
@@ -66,8 +66,9 @@ impl<D: Data, W: ZnxWord> CKKSPlaintext<D, W> {
 
 impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for CKKSPlaintext<D, BE::ZnxWord>
 where
-    GLWEPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    GLWEPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized>,
 {
+    type State = Normalized;
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         GLWEToBackendRef::to_backend_ref(&self.inner)
     }
@@ -75,7 +76,7 @@ where
 
 impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for CKKSPlaintext<D, BE::ZnxWord>
 where
-    GLWEPlaintext<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+    GLWEPlaintext<D, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
 {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         GLWEToBackendMut::to_backend_mut(&mut self.inner)
@@ -111,6 +112,7 @@ impl<'a, BE: Backend + 'a> SetBase2k for CKKSPlaintextViewMut<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for CKKSPlaintextViewMut<'a, BE> {
+    type State = Normalized;
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         <GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord> as GLWEPlaintextReborrowBackendRef<BE>>::reborrow_backend_ref(
             &self.inner.inner,

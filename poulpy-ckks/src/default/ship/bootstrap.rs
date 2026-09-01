@@ -13,7 +13,7 @@ use poulpy_hal::{
         VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA,
         VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, Normalized, ScratchArena},
 };
 
 use super::{
@@ -121,9 +121,9 @@ where
         + VecZnxBigBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
+    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
 {
     const OP: &str = "ckks_ship_bootstrap";
     let params = keys.parameters();
@@ -254,9 +254,9 @@ where
         + VecZnxBigBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
+    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
 {
     validate_runtime(module, output, input, keys, false)?;
     let base2k: poulpy_core::layouts::Base2K = keys.parameters().base2k().into();
@@ -306,9 +306,9 @@ where
         + VecZnxBigBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
+    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
 {
     validate_runtime(module, output, input, keys, true)?;
     let base2k: poulpy_core::layouts::Base2K = keys.parameters().base2k().into();

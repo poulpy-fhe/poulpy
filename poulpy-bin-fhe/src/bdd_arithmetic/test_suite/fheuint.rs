@@ -1,5 +1,5 @@
 use poulpy_core::{
-    EncryptionLayout, GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWERotate, GLWESub, GLWETrace,
+    EncryptionLayout, GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, GLWERotate, GLWESub, GLWETrace,
     layouts::{GLWELayout, GLWESecretPrepared},
 };
 use poulpy_hal::layouts::HostDataRef;
@@ -21,7 +21,14 @@ use crate::{
 pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend>(
     test_context: &TestContext<BRA, BE>,
 ) where
-    Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWERotate<BE>
+        + GLWETrace<BE>
+        + GLWESub<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + GLWENormalize<BE>
+        + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -94,7 +101,14 @@ pub fn test_fhe_uint_splice_u8<
 >(
     test_context: &TestContext<BRA, BE>,
 ) where
-    Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWERotate<BE>
+        + GLWETrace<BE>
+        + GLWESub<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + GLWENormalize<BE>
+        + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -162,7 +176,14 @@ pub fn test_fhe_uint_splice_u16<
 >(
     test_context: &TestContext<BRA, BE>,
 ) where
-    Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWERotate<BE>
+        + GLWETrace<BE>
+        + GLWESub<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + GLWENormalize<BE>
+        + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -227,7 +248,8 @@ pub fn test_fhe_uint_get_bit_glwe<
 >(
     test_context: &TestContext<BRA, BE>,
 ) where
-    Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWEDecrypt<BE>,
+    Module<BE>:
+        GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWENormalize<BE> + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

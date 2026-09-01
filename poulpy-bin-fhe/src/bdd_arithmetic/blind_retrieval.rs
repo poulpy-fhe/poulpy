@@ -4,6 +4,7 @@ use poulpy_core::{
     GLWECopy, GLWEZero,
     layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
 };
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::bdd_arithmetic::{Cmux, Cswap, GetGGSWBit};
@@ -69,8 +70,8 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
     ) where
         M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWEZero<BE> + Cmux<BE>,
         BE: Backend<OwnedBuf = D, ZnxWord = i64> + 'static,
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized>,
+        A: GLWEToBackendRef<BE, State = Normalized>,
         S: GetGGSWBit<BE>,
     {
         self.reset();
@@ -82,7 +83,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
 
     pub fn add<A, S, M, BE>(&mut self, module: &M, a: &A, selector: &S, offset: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        A: GLWEToBackendRef<BE>,
+        A: GLWEToBackendRef<BE, State = Normalized>,
         S: GetGGSWBit<BE>,
         M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
         BE: Backend<OwnedBuf = D, ZnxWord = i64> + 'static,
@@ -99,7 +100,7 @@ impl<D: Data> GLWEBlindRetriever<D, i64> {
 
     pub fn flush<R, M, S, BE>(&mut self, module: &M, res: &mut R, selector: &S, offset: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized>,
         S: GetGGSWBit<BE>,
         M: GLWEBytesOf<BE> + GLWECopy<BE> + GLWEZero<BE> + Cmux<BE>,
         BE: Backend<OwnedBuf = D, ZnxWord = i64> + 'static,
@@ -155,7 +156,7 @@ fn add_core<A, S, M, BE>(
     offset: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    A: GLWEToBackendRef<BE>,
+    A: GLWEToBackendRef<BE, State = Normalized>,
     S: GetGGSWBit<BE>,
     M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
     BE: Backend<ZnxWord = i64> + 'static,
@@ -228,7 +229,7 @@ where
         bit_mask: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         K: GetGGSWBit<BE> + 'static,
     {
         for i in 0..bit_mask {
@@ -256,7 +257,7 @@ where
         bit_mask: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         K: GetGGSWBit<BE> + 'static,
     {
         for i in (0..bit_mask).rev() {

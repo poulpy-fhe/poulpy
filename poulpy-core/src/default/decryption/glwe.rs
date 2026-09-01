@@ -3,7 +3,7 @@ use poulpy_hal::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
     },
-    layouts::{Backend, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut},
+    layouts::{Backend, Normalized, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut},
 };
 
 pub use crate::api::GLWEDecrypt;
@@ -39,8 +39,8 @@ where
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    R: GLWEToBackendRef<BE> + GLWEInfos,
-    P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+    R: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    P: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
 {
     let res_backend = res.to_backend_ref();

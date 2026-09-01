@@ -3,6 +3,7 @@ use poulpy_core::{
     GLWECopy, GLWEShift,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSPow2Impl};
@@ -25,15 +26,15 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
     {
         BE::ckks_mul_pow2_into_impl(self, dst, src, bits, scratch)
     }
 
     fn ckks_mul_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_mul_pow2_assign_impl(self, dst, bits, scratch)
     }
@@ -50,15 +51,15 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
     {
         BE::ckks_div_pow2_into_impl(self, dst, src, bits, scratch)
     }
 
     fn ckks_div_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_div_pow2_assign_impl(self, dst, bits)
     }

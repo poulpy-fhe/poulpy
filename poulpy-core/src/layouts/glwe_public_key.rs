@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, WriterTo, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, Normalized, ReaderFrom, VecZnx, WriterTo, ZnxWord};
 
 use crate::{
     GetDistribution, GetDistributionMut,
@@ -130,8 +130,9 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKey<D, W> {
 
 impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWEPublicKey<D, BE::ZnxWord>
 where
-    GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized>,
 {
+    type State = Normalized;
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         self.key.to_backend_ref()
     }
@@ -139,7 +140,7 @@ where
 
 impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWEPublicKey<D, BE::ZnxWord>
 where
-    GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
+    GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
 {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         self.key.to_backend_mut()

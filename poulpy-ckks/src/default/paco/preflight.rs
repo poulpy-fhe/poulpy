@@ -5,6 +5,7 @@
 
 use crate::layouts::CKKSCiphertextOwned;
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_hal::layouts::Normalized;
 
 use anyhow::Context;
 use poulpy_core::layouts::prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef};
@@ -254,7 +255,7 @@ where
         + GLWEKeyswitch<BE>
         + CyclotomicOrder,
     K: PaCoKeys<BE>,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
 {
     validate_runtime(module, context, output, input, keys)?;
     let direct = direct_tmp_bytes_validated(module, output, context, keys)?;
@@ -295,7 +296,7 @@ where
         + GLWEKeyswitch<BE>
         + CyclotomicOrder,
     K: PaCoKeys<BE>,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
 {
     let output_meta = validate_runtime(module, context, output, input, keys)?;
     let direct = direct_tmp_bytes_validated(module, output, context, keys)?;

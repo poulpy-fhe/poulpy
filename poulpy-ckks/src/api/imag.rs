@@ -1,6 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::{Backend, FitsIn, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -31,24 +32,25 @@ pub trait CKKSImagOps<BE: Backend> {
     /// Computes `dst = i · src` (multiply every slot by the imaginary unit).
     fn ckks_mul_i_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        <Src as GLWEToBackendRef<BE>>::State: FitsIn<<Dst as GLWEToBackendRef<BE>>::State>;
 
     /// Computes `dst = i · dst` in-place.  Metadata is unchanged.
     fn ckks_mul_i_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
 
     fn ckks_div_i_tmp_bytes(&self) -> usize;
 
     /// Computes `dst = src / i = −i · src` (multiply every slot by `−i`).
     fn ckks_div_i_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 
     /// Computes `dst = dst / i` in-place.  Metadata is unchanged.
     fn ckks_div_i_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
 }

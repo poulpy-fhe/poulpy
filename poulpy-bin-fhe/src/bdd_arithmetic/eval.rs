@@ -8,6 +8,7 @@ use poulpy_core::{
         prepared::{GGSWPreparedBackendRef, GGSWPreparedToBackendRef},
     },
 };
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxAddScalarAssignBackend, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend,
@@ -138,7 +139,7 @@ pub trait ExecuteBDDCircuit<BE: Backend> {
     where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: GLWEToBackendMut<BE> + GLWEInfos + Send,
+        O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send,
     {
         self.execute_bdd_circuit_multi_thread(1, out, inputs, circuit, scratch);
     }
@@ -163,7 +164,7 @@ pub trait ExecuteBDDCircuit<BE: Backend> {
     ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: GLWEToBackendMut<BE> + GLWEInfos + Send;
+        O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send;
 }
 
 pub trait BitSize {
@@ -186,7 +187,7 @@ pub(super) trait BddEvaluator<BE: Backend, L> {
     where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: GLWEToBackendMut<BE> + GLWEInfos + Send;
+        O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send;
 }
 
 pub(super) trait BddTrivialOne<BE: Backend, L> {
@@ -196,7 +197,7 @@ pub(super) trait BddTrivialOne<BE: Backend, L> {
 
     fn set_bdd_trivial_one<R>(&self, res: &mut R, prepared: &Self::Prepared)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
 }
 
 pub(super) fn bdd_parallel_tmp_bytes<BE: Backend>(threads: usize, output_size: usize, worker_bytes: usize) -> usize {
@@ -238,7 +239,7 @@ where
     ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: GLWEToBackendMut<BE> + GLWEInfos + Send,
+        O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send,
     {
         <Self as BddEvaluator<BE, BE::Location>>::execute(self, threads, out, inputs, circuit, scratch);
     }
@@ -276,7 +277,7 @@ where
     where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: GLWEToBackendMut<BE> + GLWEInfos + Send,
+        O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send,
     {
         execute_bdd_circuit_default(self, threads, out, inputs, circuit, scratch);
     }
@@ -294,7 +295,7 @@ where
 
     fn set_bdd_trivial_one<R>(&self, res: &mut R, prepared: &Self::Prepared)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
     {
         glwe_set_trivial_one_with_scalar(self, res, prepared);
     }
@@ -312,7 +313,7 @@ pub(super) fn execute_bdd_circuit_default<BE, M, C, G, O, L>(
     M: GLWEBytesOf<BE> + Cmux<BE> + GLWECopy<BE> + GLWEZero<BE> + BddTrivialOne<BE, L> + Sync,
     G: GetGGSWBit<BE> + BitSize,
     C: GetBitCircuitInfo,
-    O: GLWEToBackendMut<BE> + GLWEInfos + Send,
+    O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send,
 {
     assert!(inputs.bit_size() >= circuit.input_size());
     assert!(out.len() >= circuit.output_size());
@@ -360,7 +361,7 @@ fn eval_level<M, G, R, BE, L>(
     M: Cmux<BE> + GLWECopy<BE> + GLWEZero<BE> + BddTrivialOne<BE, L>,
     BE: Backend<ZnxWord = i64> + 'static,
     G: GetGGSWBit<BE> + BitSize,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
 {
     assert!(nodes.len().is_multiple_of(state_size));
 
@@ -426,14 +427,16 @@ where
 fn glwe_set_trivial_one_with_scalar<BE, R, M>(module: &M, res: &mut R, one: &ScalarZnx<BE::OwnedBuf, i64>)
 where
     BE: Backend<ZnxWord = i64>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
     M: GLWEZero<BE> + VecZnxAddScalarAssignBackend<BE>,
 {
     module.glwe_zero(res);
     let limbs = 2usize.div_ceil(res.base2k().as_usize());
     assert!(limbs <= res.size());
     let scalar = <ScalarZnx<BE::OwnedBuf, i64> as ScalarZnxToBackendRef<BE>>::to_backend_ref(one);
-    let mut res = res.to_backend_mut();
+    // Writing a small scalar onto zeroed limbs stays within the base2k digit bound, so the
+    // Normalized owner label remains valid after this unnormalized-typed write.
+    let mut res = res.to_backend_mut().into_unnormalized();
     for limb in 0..limbs {
         module.vec_znx_add_scalar_assign_backend(res.data_mut(), 0, limb, &scalar, 0);
     }
@@ -574,8 +577,8 @@ where
         s: &GGSWPreparedBackendRef<'k, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         BE: 'k,
     {
         assert_eq!(res_a.base2k(), res_b.base2k());
@@ -613,8 +616,11 @@ where
 
             let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
             {
-                let (mut tmp_c, scratch_5) = scratch_4.take_glwe_scratch(&tmp_c_infos);
+                // (b - a) is carry-producing: normalize it before it enters the DFT domain.
+                let (tmp_c, mut scratch_5) = scratch_4.take_glwe_scratch(&tmp_c_infos);
+                let mut tmp_c = tmp_c.into_unnormalized();
                 self.glwe_sub(&mut tmp_c, res_b, res_a);
+                let tmp_c = tmp_c.normalize(self, &mut scratch_5.borrow());
                 let (tmp_res_big, mut scratch_6) = scratch_5.take_vec_znx_big_scratch(self, cols, output_size);
                 let mut tmp_res_big = tmp_res_big;
                 self.glwe_external_product_dft(&mut res_dft, &tmp_c, s, &mut scratch_6.borrow());
@@ -635,7 +641,7 @@ where
                     0,
                     &res_big_ref,
                     j,
-                    &vec_znx_backend_ref_from_mut::<BE>(a_prev.data()),
+                    &vec_znx_backend_ref_from_mut::<BE, _>(a_prev.data()),
                     j,
                 );
                 let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big_tmp);
@@ -656,7 +662,7 @@ where
                 self.vec_znx_big_sub_small_a_backend(
                     &mut res_big_tmp,
                     0,
-                    &vec_znx_backend_ref_from_mut::<BE>(b_prev.data()),
+                    &vec_znx_backend_ref_from_mut::<BE, _>(b_prev.data()),
                     j,
                     &res_big_ref,
                     j,
@@ -695,8 +701,11 @@ where
 
             let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
             {
-                let (mut tmp_c, scratch_5) = scratch_4.take_glwe_scratch(&tmp_c_infos);
+                // (b - a) is carry-producing: normalize it before it enters the DFT domain.
+                let (tmp_c, mut scratch_5) = scratch_4.take_glwe_scratch(&tmp_c_infos);
+                let mut tmp_c = tmp_c.into_unnormalized();
                 self.glwe_sub(&mut tmp_c, &tmp_b, &tmp_a);
+                let tmp_c = tmp_c.normalize(self, &mut scratch_5.borrow());
                 let (tmp_res_big, mut scratch_6) = scratch_5.take_vec_znx_big_scratch(self, cols, output_size);
                 let mut tmp_res_big = tmp_res_big;
                 self.glwe_external_product_dft(&mut res_dft, &tmp_c, s, &mut scratch_6.borrow());
@@ -717,7 +726,7 @@ where
                     0,
                     &res_big_ref,
                     j,
-                    &vec_znx_backend_ref_from_mut::<BE>(tmp_a.data()),
+                    &vec_znx_backend_ref_from_mut::<BE, _>(tmp_a.data()),
                     j,
                 );
                 let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big_tmp);
@@ -738,7 +747,7 @@ where
                 self.vec_znx_big_sub_small_a_backend(
                     &mut res_big_tmp,
                     0,
-                    &vec_znx_backend_ref_from_mut::<BE>(tmp_b.data()),
+                    &vec_znx_backend_ref_from_mut::<BE, _>(tmp_b.data()),
                     j,
                     &res_big_ref,
                     j,
@@ -818,9 +827,9 @@ where
     // res = (t - f) * s + f
     fn cmux<'k, R, T, F>(&self, res: &mut R, t: &T, f: &F, s: &GGSWPreparedBackendRef<'k, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        T: GLWEToBackendRef<BE>,
-        F: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        T: GLWEToBackendRef<BE, State = Normalized>,
+        F: GLWEToBackendRef<BE, State = Normalized>,
         BE: 'k,
     {
         let f_backend = f.to_backend_ref();
@@ -829,11 +838,13 @@ where
         let res_base2k: usize = res.base2k().into();
         let ggsw_base2k: usize = s.base2k().into();
 
-        self.glwe_sub(res, t, f);
         let cols: usize = (res.rank() + 1).into();
-        let (mut tmp_in, scratch_1) = scratch.take_glwe_scratch(res);
+        // tmp_in = t - f, normalized before it enters the DFT domain.
+        let (tmp_in, mut scratch_1) = scratch.take_glwe_scratch(res);
+        let mut tmp_in = tmp_in.into_unnormalized();
+        self.glwe_sub(&mut tmp_in, t, f);
+        let mut tmp_in = tmp_in.normalize(self, &mut scratch_1.borrow());
         let (mut tmp_f, scratch_2) = scratch_1.take_glwe_scratch(&f_backend);
-        self.glwe_copy(&mut tmp_in, res);
         self.glwe_copy(&mut tmp_f, f);
         let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, res, s);
         let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, output_size);
@@ -849,7 +860,7 @@ where
             (res_big, scratch_norm) = (tmp_res_big, scratch_4);
         }
         let mut res_big = res_big;
-        let tmp_f_ref = vec_znx_backend_ref_from_mut::<BE>(tmp_f.data());
+        let tmp_f_ref = vec_znx_backend_ref_from_mut::<BE, _>(tmp_f.data());
         for j in 0..cols {
             self.vec_znx_big_add_small_assign(&mut res_big, j, &tmp_f_ref, j);
             let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
@@ -875,8 +886,8 @@ where
         s: &GGSWPreparedBackendRef<'k, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized>,
         BE: 'k,
     {
         let a_backend = a.to_backend_ref();
@@ -892,10 +903,13 @@ where
             k: res.k().max(a_backend.k()),
             rank: res.rank(),
         };
-        let (mut tmp, scratch_1) = scratch.take_glwe_scratch(&tmp_infos);
-        let (mut res_prev, scratch_2) = scratch_1.take_glwe_scratch(res);
+        // tmp = a - res, normalized before it enters the DFT domain.
+        let (tmp, scratch_1) = scratch.take_glwe_scratch(&tmp_infos);
+        let mut tmp = tmp.into_unnormalized();
+        let (mut res_prev, mut scratch_2) = scratch_1.take_glwe_scratch(res);
         self.glwe_copy(&mut res_prev, res);
         self.glwe_sub(&mut tmp, a, res);
+        let mut tmp = tmp.normalize(self, &mut scratch_2.borrow());
         let cols: usize = (res.rank() + 1).into();
         let output_size = glwe_external_product_output_size::<BE, _, _, _>(&tmp_infos, &tmp_infos, s);
         let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, output_size);
@@ -911,7 +925,7 @@ where
             (res_big, scratch_norm) = (tmp_res_big, scratch_4);
         }
         let mut res_big = res_big;
-        let res_prev_ref = vec_znx_backend_ref_from_mut::<BE>(res_prev.data());
+        let res_prev_ref = vec_znx_backend_ref_from_mut::<BE, _>(res_prev.data());
         for j in 0..cols {
             self.vec_znx_big_add_small_assign(&mut res_big, j, &res_prev_ref, j);
             let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
@@ -932,19 +946,21 @@ where
     // res = (res - a) * s + a
     fn cmux_assign<'k, R, A>(&self, res: &mut R, a: &A, s: &GGSWPreparedBackendRef<'k, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized>,
         BE: 'k,
     {
         let a_backend = a.to_backend_ref();
         let scratch = scratch.borrow();
         let res_base2k: usize = res.base2k().into();
         let ggsw_base2k: usize = s.base2k().into();
-        self.glwe_sub_assign(res, a);
         let cols: usize = (res.rank() + 1).into();
-        let (mut tmp, scratch_1) = scratch.take_glwe_scratch(res);
+        // tmp = res - a, normalized before it enters the DFT domain.
+        let (tmp, mut scratch_1) = scratch.take_glwe_scratch(res);
+        let mut tmp = tmp.into_unnormalized();
+        self.glwe_sub(&mut tmp, res, a);
+        let mut tmp = tmp.normalize(self, &mut scratch_1.borrow());
         let (mut tmp_a, scratch_2) = scratch_1.take_glwe_scratch(&a_backend);
-        self.glwe_copy(&mut tmp, res);
         self.glwe_copy(&mut tmp_a, a);
         let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, res, s);
         let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, output_size);
@@ -960,7 +976,7 @@ where
             (res_big, scratch_norm) = (tmp_res_big, scratch_4);
         }
         let mut res_big = res_big;
-        let tmp_a_ref = vec_znx_backend_ref_from_mut::<BE>(tmp_a.data());
+        let tmp_a_ref = vec_znx_backend_ref_from_mut::<BE, _>(tmp_a.data());
         for j in 0..cols {
             self.vec_znx_big_add_small_assign(&mut res_big, j, &tmp_a_ref, j);
             let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);

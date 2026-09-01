@@ -8,8 +8,8 @@ use crate::{
         VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend, VecZnxBigSubSmallNegateAssign, VecZnxScalarProduct,
     },
     layouts::{
-        Backend, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-        VecZnxBigBackendRef, VecZnxBigOwned,
+        Backend, Module, NoiseInfos, NormalizationState, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
+        VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned,
     },
     oep::HalVecZnxBigImpl,
     source::Source,
@@ -32,7 +32,7 @@ impl_vec_znx_big_delegate!(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
     ) {
         B::vec_znx_big_from_small_backend(res, res_col, a, a_col);
@@ -133,7 +133,7 @@ impl_vec_znx_big_delegate!(
         res_col: usize,
         a: &VecZnxBigBackendRef<'_, B>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B>,
+        b: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         b_col: usize,
     ) {
         B::vec_znx_big_add_small_into_backend(self, res, res_col, a, a_col, b, b_col);
@@ -146,7 +146,7 @@ impl_vec_znx_big_delegate!(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
     ) {
         B::vec_znx_big_add_small_assign(self, res, res_col, a, a_col);
@@ -200,7 +200,7 @@ impl_vec_znx_big_delegate!(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
         b: &VecZnxBigBackendRef<'_, B>,
         b_col: usize,
@@ -215,7 +215,7 @@ impl_vec_znx_big_delegate!(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
     ) {
         B::vec_znx_big_sub_small_assign(self, res, res_col, a, a_col);
@@ -230,7 +230,7 @@ impl_vec_znx_big_delegate!(
         res_col: usize,
         a: &VecZnxBigBackendRef<'_, B>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B>,
+        b: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         b_col: usize,
     ) {
         B::vec_znx_big_sub_small_b_backend(self, res, res_col, a, a_col, b, b_col);
@@ -243,7 +243,7 @@ impl_vec_znx_big_delegate!(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
     ) {
         B::vec_znx_big_sub_small_negate_assign(self, res, res_col, a, a_col);
@@ -270,7 +270,7 @@ impl_vec_znx_big_delegate!(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         weights: &ScalarZnxBackendRef<'_, B>,
         weights_col: usize,
         cols: usize,
@@ -286,7 +286,7 @@ impl_vec_znx_big_delegate!(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
         b: &ScalarZnxBackendRef<'_, B>,
         b_col: usize,
@@ -326,7 +326,7 @@ impl_vec_znx_big_delegate!(
     VecZnxBigNormalize<B>,
     fn vec_znx_big_normalize(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,

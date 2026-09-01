@@ -434,7 +434,7 @@ where
         // Built on the host and uploaded, so a device backend runs this too.
         let mut a_host = host.vec_znx_alloc(cols_in, input_size);
         a_host.fill_uniform(base2k, &mut source);
-        let a = upload_vec_znx::<BE>(&a_host);
+        let a = upload_vec_znx::<BE, _>(&a_host);
         let mut a_dft = module.vec_znx_dft_alloc(cols_in, input_size);
         for col in 0..cols_in {
             let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&a);

@@ -275,11 +275,11 @@ where
     let mut lwe_pt_conv = module.lwe_plaintext_alloc(glwe_pt.base2k(), lwe_pt.k());
 
     module.vec_znx_normalize(
-        &mut vec_znx_backend_mut::<BE>(&mut lwe_pt_conv.data),
+        &mut vec_znx_backend_mut::<BE, _>(&mut lwe_pt_conv.data),
         glwe_pt.base2k().as_usize(),
         0,
         0,
-        &vec_znx_backend_ref::<BE>(&lwe_pt.data),
+        &vec_znx_backend_ref::<BE, _>(&lwe_pt.data),
         lwe_pt.base2k().as_usize(),
         0,
         &mut scratch.borrow(),
@@ -405,11 +405,11 @@ where
     let mut glwe_pt_conv: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc(lwe_pt.base2k(), lwe_pt.k());
 
     module.vec_znx_normalize(
-        &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
+        &mut vec_znx_backend_mut::<BE, _>(&mut glwe_pt_conv.data),
         lwe_pt.base2k().as_usize(),
         0,
         0,
-        &vec_znx_backend_ref::<BE>(&glwe_pt.data),
+        &vec_znx_backend_ref::<BE, _>(&glwe_pt.data),
         glwe_ct.base2k().as_usize(),
         0,
         &mut scratch.borrow(),
@@ -495,11 +495,11 @@ where
 
         let mut glwe_pt_conv: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc(lwe_pt.base2k(), lwe_pt.k());
         module.vec_znx_normalize(
-            &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
+            &mut vec_znx_backend_mut::<BE, _>(&mut glwe_pt_conv.data),
             lwe_pt.base2k().as_usize(),
             0,
             0,
-            &vec_znx_backend_ref::<BE>(&glwe_pt.data),
+            &vec_znx_backend_ref::<BE, _>(&glwe_pt.data),
             glwe_ct.base2k().as_usize(),
             0,
             &mut scratch.borrow(),

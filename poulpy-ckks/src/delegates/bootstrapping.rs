@@ -6,7 +6,7 @@ use poulpy_core::{
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, Normalized, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -42,7 +42,12 @@ where
         + CKKSMulOps<BE>
         + CKKSAffineOps<BE>
         + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized>
+        + GLWEToBackendRef<BE, State = Normalized>
+        + CKKSCtBounds
+        + SetCKKSInfos
+        + SetBSGSMeta
+        + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     fn ckks_mod_up_tmp_bytes(&self) -> usize {
@@ -86,8 +91,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
     {
         let scale_up = eval_mod.raised_scale_up(src.log_delta())?;
         BootstrappingDefault::new(self).ckks_mod_up_into_default(dst, src, scale_up, scratch)?;
@@ -108,8 +113,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         K: BootstrappingKeys<BE>,
     {
         BootstrappingDefault::new(self).ckks_bootstrap_mod_up_default(dst, src, eval_mod, keys, scratch)

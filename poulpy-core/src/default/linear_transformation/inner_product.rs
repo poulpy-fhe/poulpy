@@ -8,6 +8,7 @@
 //! materialized.
 
 use poulpy_hal::layouts::CnvPVecLToBackendRef;
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
     layouts::{Backend, CnvDftAccTerm, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut},
@@ -104,7 +105,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
 ) where
     BE: Backend,
     M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    P: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
+    P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + GLWEInfos,
 {
     let cols = lhs.cols();
     let first = gs

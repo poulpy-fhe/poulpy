@@ -1,12 +1,15 @@
 use poulpy_hal::{
     layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx, VecZnxToBackendMut,
-        VecZnxToBackendRef, WriterTo,
+        Backend, Data, FillUniform, FitsIn, HostDataMut, HostDataRef, NormalizationState, Normalized, ReaderFrom, ScratchArena,
+        ToOwnedDeep, Unnormalized, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo,
     },
     source::Source,
 };
 
-use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision};
+use crate::{
+    GLWENormalize,
+    layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision},
+};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
@@ -89,54 +92,103 @@ impl GLWEInfos for GLWELayout {
 ///
 /// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWE<D: Data, W: ZnxWord> {
-    pub(crate) data: VecZnx<D, W>,
+pub struct GLWE<D: Data, W: ZnxWord, S: NormalizationState = Normalized> {
+    pub(crate) data: VecZnx<D, W, S>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
-pub type GLWEBackendRef<'a, BE> = GLWE<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
-pub type GLWEBackendMut<'a, BE> = GLWE<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+pub type GLWEBackendRef<'a, BE, S = Normalized> = GLWE<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord, S>;
+pub type GLWEBackendMut<'a, BE, S = Normalized> = GLWE<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord, S>;
 
-impl<D: Data, W: ZnxWord> SetBase2k for GLWE<D, W> {
+/// A GLWE whose limb digits may hold un-propagated carries; see [`NormalizationState`].
+pub type UnnormalizedGLWE<D, W> = GLWE<D, W, Unnormalized>;
+
+impl<D: Data, W: ZnxWord, S: NormalizationState> GLWE<D, W, S> {
+    /// Relabels this ciphertext as [`Unnormalized`] (free; see [`VecZnx::into_unnormalized`]).
+    pub fn into_unnormalized(self) -> GLWE<D, W, Unnormalized> {
+        GLWE {
+            data: self.data.into_unnormalized(),
+            k: self.k,
+            base2k: self.base2k,
+        }
+    }
+
+    /// Relabels this ciphertext into any state its current state [`FitsIn`].
+    pub fn into_state<T: NormalizationState>(self) -> GLWE<D, W, T>
+    where
+        S: FitsIn<T>,
+    {
+        GLWE {
+            data: self.data.into_state(),
+            k: self.k,
+            base2k: self.base2k,
+        }
+    }
+
+    /// Relabels as [`Normalized`] without normalizing; see [`VecZnx::assume_normalized`].
+    pub fn assume_normalized(self) -> GLWE<D, W, Normalized> {
+        GLWE {
+            data: self.data.assume_normalized(),
+            k: self.k,
+            base2k: self.base2k,
+        }
+    }
+}
+
+impl<D: Data, W: ZnxWord> GLWE<D, W, Unnormalized> {
+    /// Propagates carries through every column and returns the ciphertext relabelled as [`Normalized`].
+    pub fn normalize<M, BE>(self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> GLWE<D, W, Normalized>
+    where
+        BE: Backend<ZnxWord = W>,
+        M: GLWENormalize<BE> + ?Sized,
+        Self: GLWEToBackendMut<BE>,
+    {
+        let mut me = self;
+        module.glwe_normalize_assign(&mut me, scratch);
+        me.assume_normalized()
+    }
+}
+
+impl<D: Data, W: ZnxWord, S: NormalizationState> SetBase2k for GLWE<D, W, S> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data, W: ZnxWord> SetBase2k for &mut GLWE<D, W> {
+impl<D: Data, W: ZnxWord, S: NormalizationState> SetBase2k for &mut GLWE<D, W, S> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data, W: ZnxWord> SetK for GLWE<D, W> {
+impl<D: Data, W: ZnxWord, S: NormalizationState> SetK for GLWE<D, W, S> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.k = k
     }
 }
 
-impl<D: Data, W: ZnxWord> SetK for &mut GLWE<D, W> {
+impl<D: Data, W: ZnxWord, S: NormalizationState> SetK for &mut GLWE<D, W, S> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.k = k
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWE<D, W> {
+impl<D: Data, W: ZnxWord, S: NormalizationState> GLWE<D, W, S> {
     /// Returns a shared reference to the underlying [`VecZnx`].
-    pub fn data(&self) -> &VecZnx<D, W> {
+    pub fn data(&self) -> &VecZnx<D, W, S> {
         &self.data
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWE<D, W> {
+impl<D: Data, W: ZnxWord, S: NormalizationState> GLWE<D, W, S> {
     /// Returns a mutable reference to the underlying [`VecZnx`].
-    pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
+    pub fn data_mut(&mut self) -> &mut VecZnx<D, W, S> {
         &mut self.data
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWE<D, W> {
+impl<D: Data, W: ZnxWord, S: NormalizationState> LWEInfos for GLWE<D, W, S> {
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -154,14 +206,14 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWE<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWE<D, W> {
+impl<D: Data, W: ZnxWord, S: NormalizationState> GLWEInfos for GLWE<D, W, S> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32 - 1)
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for GLWE<D, W> {
-    type Owned = GLWE<Vec<u8>, W>;
+impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> ToOwnedDeep for GLWE<D, W, S> {
+    type Owned = GLWE<Vec<u8>, W, S>;
     fn to_owned_deep(&self) -> Self::Owned {
         GLWE {
             data: self.data.to_owned_deep(),
@@ -171,9 +223,9 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for GLWE<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWE<D, W> {
+impl<D: Data, W: ZnxWord, S: NormalizationState> GLWE<D, W, S> {
     /// Rebuilds this backend-owned ciphertext as a host-owned [`GLWE<Vec<u8>, W>`].
-    pub fn to_host_owned<BE>(&self) -> GLWE<Vec<u8>, W>
+    pub fn to_host_owned<BE>(&self) -> GLWE<Vec<u8>, W, S>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -193,9 +245,9 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWE<D, W> {
+impl<D: Data, W: ZnxWord, S: NormalizationState> GLWE<D, W, S> {
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
-    pub fn reinterpret<To>(self) -> GLWE<To::OwnedBuf, To::ZnxWord>
+    pub fn reinterpret<To>(self) -> GLWE<To::OwnedBuf, To::ZnxWord, S>
     where
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
@@ -209,19 +261,19 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWE<D, W> {
+impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> fmt::Debug for GLWE<D, W, S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWE<D, W> {
+impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> fmt::Display for GLWE<D, W, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "GLWE: base2k={} k={}: {}", self.base2k().0, self.k().0, self.data)
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWE<D, W> {
+impl<D: HostDataMut, W: ZnxWord, S: NormalizationState> FillUniform for GLWE<D, W, S> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.data.fill_uniform(log_bound, source);
     }
@@ -283,7 +335,7 @@ impl<W: ZnxWord> GLWE<Vec<u8>, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
+impl<D: HostDataMut, W: ZnxWord, S: NormalizationState> ReaderFrom for GLWE<D, W, S> {
     /// Deserialises a [`GLWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
@@ -292,7 +344,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWE<D, W> {
+impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> WriterTo for GLWE<D, W, S> {
     /// Serialises the [`GLWE`] in little-endian binary format.
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
@@ -300,15 +352,23 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWE<D, W> {
     }
 }
 
+/// Borrow a GLWE using the backend's native view type.
+///
+/// [`Self::State`] carries the [`NormalizationState`] of the storage: an op
+/// that consumes DFT-domain inputs bounds its parameters with
+/// `A: GLWEToBackendRef<BE, State = Normalized>`, while a carry-producing op
+/// bounds its destination with `R: GLWEToBackendMut<BE, State = Unnormalized>`.
 pub trait GLWEToBackendRef<BE: Backend>: Sized {
-    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE>;
+    type State: NormalizationState;
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, Self::State>;
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWE<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, S: NormalizationState> GLWEToBackendRef<BE> for GLWE<D, BE::ZnxWord, S>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord, S>: VecZnxToBackendRef<BE, State = S>,
 {
-    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
+    type State = S;
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, S> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
@@ -317,37 +377,43 @@ where
     }
 }
 
-pub fn glwe_backend_ref_from_ref<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufRef<'b>, BE::ZnxWord>) -> GLWEBackendRef<'a, BE> {
+pub fn glwe_backend_ref_from_ref<'a, 'b, BE: Backend, S: NormalizationState>(
+    glwe: &'a GLWE<BE::BufRef<'b>, BE::ZnxWord, S>,
+) -> GLWEBackendRef<'a, BE, S> {
     GLWE {
         base2k: glwe.base2k,
         k: glwe.k,
-        data: poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(&glwe.data),
+        data: poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE, S>(&glwe.data),
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &GLWE<BE::BufRef<'b>, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
-        glwe_backend_ref_from_ref::<BE>(self)
+impl<'b, BE: Backend + 'b, S: NormalizationState> GLWEToBackendRef<BE> for &GLWE<BE::BufRef<'b>, BE::ZnxWord, S> {
+    type State = S;
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, S> {
+        glwe_backend_ref_from_ref::<BE, S>(self)
     }
 }
 
-pub fn glwe_backend_ref_from_mut<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufMut<'b>, BE::ZnxWord>) -> GLWEBackendRef<'a, BE> {
+pub fn glwe_backend_ref_from_mut<'a, 'b, BE: Backend, S: NormalizationState>(
+    glwe: &'a GLWE<BE::BufMut<'b>, BE::ZnxWord, S>,
+) -> GLWEBackendRef<'a, BE, S> {
     GLWE {
         base2k: glwe.base2k,
         k: glwe.k,
-        data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&glwe.data),
+        data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE, S>(&glwe.data),
     }
 }
 
+/// Mutably borrow a GLWE using the backend's native view type; see [`GLWEToBackendRef`].
 pub trait GLWEToBackendMut<BE: Backend>: GLWEToBackendRef<BE> {
-    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE>;
+    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE, Self::State>;
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWE<D, BE::ZnxWord>
+impl<BE: Backend, D: Data, S: NormalizationState> GLWEToBackendMut<BE> for GLWE<D, BE::ZnxWord, S>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
+    VecZnx<D, BE::ZnxWord, S>: VecZnxToBackendRef<BE, State = S> + VecZnxToBackendMut<BE, State = S>,
 {
-    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
+    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE, S> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
@@ -356,22 +422,25 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWE<BE::BufMut<'b>, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
-        glwe_backend_ref_from_mut::<BE>(self)
+impl<'b, BE: Backend + 'b, S: NormalizationState> GLWEToBackendRef<BE> for &mut GLWE<BE::BufMut<'b>, BE::ZnxWord, S> {
+    type State = S;
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, S> {
+        glwe_backend_ref_from_mut::<BE, S>(self)
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWE<BE::BufMut<'b>, BE::ZnxWord> {
-    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
-        glwe_backend_mut_from_mut::<BE>(self)
+impl<'b, BE: Backend + 'b, S: NormalizationState> GLWEToBackendMut<BE> for &mut GLWE<BE::BufMut<'b>, BE::ZnxWord, S> {
+    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE, S> {
+        glwe_backend_mut_from_mut::<BE, S>(self)
     }
 }
 
-pub fn glwe_backend_mut_from_mut<'a, 'b, BE: Backend>(glwe: &'a mut GLWE<BE::BufMut<'b>, BE::ZnxWord>) -> GLWEBackendMut<'a, BE> {
+pub fn glwe_backend_mut_from_mut<'a, 'b, BE: Backend, S: NormalizationState>(
+    glwe: &'a mut GLWE<BE::BufMut<'b>, BE::ZnxWord, S>,
+) -> GLWEBackendMut<'a, BE, S> {
     GLWE {
         base2k: glwe.base2k,
         k: glwe.k,
-        data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut glwe.data),
+        data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, S>(&mut glwe.data),
     }
 }

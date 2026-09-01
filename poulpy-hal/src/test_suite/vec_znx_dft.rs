@@ -46,7 +46,7 @@ where
 {
     let cols = host.cols();
     let size = host.size();
-    let backend = upload_vec_znx::<BE>(host);
+    let backend = upload_vec_znx::<BE, _>(host);
     let mut out = module.vec_znx_dft_alloc(cols, size);
     for j in 0..cols {
         module.vec_znx_dft_apply(
@@ -85,7 +85,7 @@ where
             &mut scratch.arena(),
         );
     }
-    download_vec_znx::<BE>(&backend)
+    download_vec_znx::<BE, _>(&backend)
 }
 
 fn idft_tmpa_to_host<BE>(
@@ -689,19 +689,19 @@ fn contract_check_one_backend<BE>(
             let _ = idft_tmpa_to_host(module, base2k, &mut a_dft, scratch);
 
             // Pipeline B: coefficient-domain automorphism on the same backend.
-            let a_backend = upload_vec_znx::<BE>(&a);
+            let a_backend = upload_vec_znx::<BE, _>(&a);
             let res_coeff_backend_host = module_host.vec_znx_alloc(cols, size);
-            let mut res_coeff_backend = upload_vec_znx::<BE>(&res_coeff_backend_host);
+            let mut res_coeff_backend = upload_vec_znx::<BE, _>(&res_coeff_backend_host);
             for j in 0..cols {
                 module.vec_znx_automorphism_backend(
                     p,
-                    &mut vec_znx_backend_mut::<BE>(&mut res_coeff_backend),
+                    &mut vec_znx_backend_mut::<BE, _>(&mut res_coeff_backend),
                     j,
-                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    &vec_znx_backend_ref::<BE, _>(&a_backend),
                     j,
                 );
             }
-            let res_coeff = download_vec_znx::<BE>(&res_coeff_backend);
+            let res_coeff = download_vec_znx::<BE, _>(&res_coeff_backend);
 
             assert_eq!(
                 res_dft_normalized, res_coeff,
@@ -888,8 +888,8 @@ fn idft_normalize_consume_check_one_backend<BE>(
                 let mut addend = module_host.vec_znx_alloc(1, a_size);
                 a.fill_uniform(base2k, &mut source);
                 addend.fill_uniform(base2k, &mut source);
-                let addend_backend = upload_vec_znx::<BE>(&addend);
-                let addend_ref = vec_znx_backend_ref::<BE>(&addend_backend);
+                let addend_backend = upload_vec_znx::<BE, _>(&addend);
+                let addend_ref = vec_znx_backend_ref::<BE, _>(&addend_backend);
 
                 let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                     module
@@ -902,9 +902,9 @@ fn idft_normalize_consume_check_one_backend<BE>(
                     // Fused: res = normalize(idft(a) + addend), clobbering a.
                     let mut a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
                     let res_host_template = VecZnx::alloc(module.n(), 1, res_size);
-                    let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
+                    let mut res_have_backend = upload_vec_znx::<BE, _>(&res_host_template);
                     module.vec_znx_idft_normalize_consume(
-                        &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
+                        &mut vec_znx_backend_mut::<BE, _>(&mut res_have_backend),
                         res_base2k,
                         0,
                         &mut a_dft.to_backend_mut(),
@@ -913,7 +913,7 @@ fn idft_normalize_consume_check_one_backend<BE>(
                         with_addend.then_some((&addend_ref, 0)),
                         &mut scratch.arena(),
                     );
-                    let res_have = download_vec_znx::<BE>(&res_have_backend);
+                    let res_have = download_vec_znx::<BE, _>(&res_have_backend);
 
                     // Composition: idft into BIG, small add, normalize.
                     let a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
@@ -928,9 +928,9 @@ fn idft_normalize_consume_check_one_backend<BE>(
                     if with_addend {
                         module.vec_znx_big_add_small_assign(&mut big.to_backend_mut(), 0, &addend_ref, 0);
                     }
-                    let mut res_want_backend = upload_vec_znx::<BE>(&res_host_template);
+                    let mut res_want_backend = upload_vec_znx::<BE, _>(&res_host_template);
                     module.vec_znx_big_normalize(
-                        &mut vec_znx_backend_mut::<BE>(&mut res_want_backend),
+                        &mut vec_znx_backend_mut::<BE, _>(&mut res_want_backend),
                         res_base2k,
                         0,
                         0,
@@ -939,7 +939,7 @@ fn idft_normalize_consume_check_one_backend<BE>(
                         0,
                         &mut scratch.arena(),
                     );
-                    let res_want = download_vec_znx::<BE>(&res_want_backend);
+                    let res_want = download_vec_znx::<BE, _>(&res_want_backend);
 
                     assert_eq!(
                         res_want, res_have,

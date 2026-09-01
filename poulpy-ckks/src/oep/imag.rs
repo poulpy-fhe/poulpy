@@ -1,5 +1,6 @@
 use crate::CKKSResult as Result;
 use crate::default::imag::CKKSImagDefault;
+use poulpy_hal::layouts::Normalized;
 
 use poulpy_core::{
     GLWECopy, GLWENegate, GLWERotate, GLWEShift,
@@ -7,7 +8,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, FitsIn, Module, ScratchArena},
 };
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
@@ -27,12 +28,13 @@ pub unsafe trait CKKSImagImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSCtBounds,
+        <Src as GLWEToBackendRef<BE>>::State: FitsIn<<Dst as GLWEToBackendRef<BE>>::State>;
 
     fn ckks_mul_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
 
     fn ckks_div_i_tmp_bytes_impl(module: &Module<BE>) -> usize;
 
@@ -43,12 +45,12 @@ pub unsafe trait CKKSImagImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSCtBounds;
 
     fn ckks_div_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
 }
 
 unsafe impl<BE: Backend> CKKSImagImpl<BE> for BE
@@ -68,15 +70,16 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSCtBounds,
+        <Src as GLWEToBackendRef<BE>>::State: FitsIn<<Dst as GLWEToBackendRef<BE>>::State>,
     {
         module.ckks_mul_i_into_default(dst, src, scratch)
     }
 
     fn ckks_mul_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
     {
         module.ckks_mul_i_assign_default(dst, scratch)
     }
@@ -92,15 +95,15 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSCtBounds,
     {
         module.ckks_div_i_into_default(dst, src, scratch)
     }
 
     fn ckks_div_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
     {
         module.ckks_div_i_assign_default(dst, scratch)
     }

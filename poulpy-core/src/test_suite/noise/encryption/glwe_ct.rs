@@ -81,7 +81,7 @@ where
         module.vec_znx_fill_uniform_source_backend(
             base2k,
             pt_want.k().as_usize(),
-            &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+            &mut vec_znx_backend_mut::<BE, _>(&mut pt_want.data),
             0,
             &mut source_xa,
         );
@@ -167,7 +167,7 @@ where
         module.vec_znx_fill_uniform_source_backend(
             base2k,
             pt_want.k().as_usize(),
-            &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+            &mut vec_znx_backend_mut::<BE, _>(&mut pt_want.data),
             0,
             &mut source_xa,
         );
@@ -316,7 +316,7 @@ where
         module.vec_znx_fill_uniform_source_backend(
             base2k,
             pt_want.k().as_usize(),
-            &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+            &mut vec_znx_backend_mut::<BE, _>(&mut pt_want.data),
             0,
             &mut source_xa,
         );

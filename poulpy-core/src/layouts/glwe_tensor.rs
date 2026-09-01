@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, Normalized, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
     source::Source,
 };
 
@@ -127,8 +127,9 @@ impl<W: ZnxWord> GLWETensor<Vec<u8>, W> {
 
 impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWETensor<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized>,
 {
+    type State = Normalized;
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
@@ -140,8 +141,9 @@ where
 
 impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for &GLWETensor<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized>,
 {
+    type State = Normalized;
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
@@ -153,7 +155,7 @@ where
 
 impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWETensor<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized> + VecZnxToBackendMut<BE, State = Normalized>,
 {
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
@@ -165,11 +167,12 @@ where
 }
 
 impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'b>, BE::ZnxWord> {
+    type State = Normalized;
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
-            data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.data),
+            data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE, _>(&self.data),
         }
     }
 }
@@ -179,7 +182,7 @@ impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'
         GLWE {
             base2k: self.base2k,
             k: self.k,
-            data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.data),
+            data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, _>(&mut self.data),
         }
     }
 }

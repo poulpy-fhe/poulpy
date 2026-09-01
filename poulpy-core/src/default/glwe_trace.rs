@@ -19,7 +19,7 @@
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::ModuleLogN,
-    layouts::{Backend, CyclotomicOrder, GaloisElement, ScratchArena, galois_element},
+    layouts::{Backend, CyclotomicOrder, GaloisElement, Normalized, ScratchArena, galois_element},
 };
 
 use crate::{
@@ -53,7 +53,7 @@ where
         + GLWETraceDefault<BE>
         + ?Sized,
     H: GetAutomorphismKey<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
 {
     let log_n: usize = module.log_n();
 
@@ -137,13 +137,13 @@ pub trait GLWETraceDefault<BE: Backend> {
 
     fn glwe_trace_default<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 
     fn glwe_trace_assign_default<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 }
 
@@ -256,8 +256,8 @@ pub mod glwe_trace_defaults_impl {
             + GLWECopy<BE>
             + CyclotomicOrder
             + GLWENormalize<BE>,
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
         let Some(first) = trace_rotations(module, skip).next() else {
@@ -326,7 +326,7 @@ pub mod glwe_trace_defaults_impl {
             + GLWECopy<BE>
             + CyclotomicOrder
             + GLWENormalize<BE>,
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
         trace_assign_internal::<M, H, _, BE>(module, res, skip, keys, scratch);

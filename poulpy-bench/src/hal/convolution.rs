@@ -37,7 +37,7 @@ where
 
     bencher.iter(|| {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        let a_backend = vec_znx_backend_ref::<BE>(&a);
+        let a_backend = vec_znx_backend_ref::<BE, _>(&a);
         module.cnv_prepare_left(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
         black_box(());
     });
@@ -64,7 +64,7 @@ where
 
     bencher.iter(|| {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        let a_backend = vec_znx_backend_ref::<BE>(&a);
+        let a_backend = vec_znx_backend_ref::<BE, _>(&a);
         module.cnv_prepare_right(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
         black_box(());
     });
@@ -226,8 +226,8 @@ where
 
     bencher.iter(|| {
         let mut c_big_backend = c_big.to_backend_mut();
-        let a_backend = vec_znx_backend_ref::<BE>(&a);
-        let b_backend = vec_znx_backend_ref::<BE>(&b);
+        let a_backend = vec_znx_backend_ref::<BE, _>(&a);
+        let b_backend = vec_znx_backend_ref::<BE, _>(&b);
         module.cnv_by_const_apply(
             0,
             &mut c_big_backend,

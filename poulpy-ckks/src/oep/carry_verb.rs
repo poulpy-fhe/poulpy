@@ -48,9 +48,9 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    B: GLWEToBackendRef<BE> + CKKSCtBounds;
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    B: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds;
                 fn [<ckks_ $verb _into_unnormalized_impl>]<Dst, A, B>(
                     module: &Module<BE>,
                     dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
@@ -60,9 +60,9 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    B: GLWEToBackendRef<BE> + CKKSCtBounds;
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    B: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds;
                 fn [<ckks_ $verb _assign_impl>]<Dst, A>(
                     module: &Module<BE>,
                     dst: &mut Dst,
@@ -70,8 +70,8 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSInfos;
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos;
                 fn [<ckks_ $verb _assign_unnormalized_impl>]<Dst, A>(
                     module: &Module<BE>,
                     dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
@@ -80,8 +80,8 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSInfos;
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos;
                 /// Crate-internal accumulator seam: like the `_assign_unnormalized`
                 /// variant, but on an [`UnnormalizedCKKSCiphertextRefMut`] reborrow of a
                 /// caller-owned normalized ciphertext. Deliberately has **no api
@@ -97,15 +97,15 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSInfos;
+                    CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized>,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos;
                 fn [<ckks_ $verb _one_assign_impl>]<Dst>(
                     module: &Module<BE>,
                     dst: &mut Dst,
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos;
                 fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<BE>) -> usize;
                 fn [<ckks_ $verb _pt_vec_into_impl>]<Dst, A, P>(
                     module: &Module<BE>,
@@ -115,9 +115,9 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_vec_into_unnormalized_impl>]<Dst, A, P>(
                     module: &Module<BE>,
                     dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
@@ -127,9 +127,9 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_vec_assign_impl>]<Dst, P>(
                     module: &Module<BE>,
                     dst: &mut Dst,
@@ -137,8 +137,8 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_vec_assign_unnormalized_impl>]<Dst, P>(
                     module: &Module<BE>,
                     dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
@@ -147,8 +147,8 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<BE>) -> usize;
                 fn [<ckks_ $verb _pt_const_into_impl>]<Dst, A, P>(
                     module: &Module<BE>,
@@ -160,9 +160,9 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_const_into_unnormalized_impl>]<Dst, A, P>(
                     module: &Module<BE>,
                     dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
@@ -174,9 +174,9 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_const_assign_impl>]<Dst, P>(
                     module: &Module<BE>,
                     dst: &mut Dst,
@@ -186,8 +186,8 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_const_assign_unnormalized_impl>]<Dst, P>(
                     module: &Module<BE>,
                     dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
@@ -198,8 +198,8 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
             }
 
             unsafe impl<BE: Backend> $Impl<BE> for BE
@@ -228,9 +228,9 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    B: GLWEToBackendRef<BE> + CKKSCtBounds,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    B: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
                 {
                     $Default::[<ckks_ $verb _into_default>](module, dst, a, b, scratch)
                 }
@@ -244,11 +244,11 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    B: GLWEToBackendRef<BE> + CKKSCtBounds,
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    B: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
                 {
-                    $Default::[<ckks_ $verb _into_unnormalized_default>](module, &mut dst.write_view(), a, b, scratch)
+                    $Default::[<ckks_ $verb _into_unnormalized_default>](module, dst, a, b, scratch)
                 }
 
                 fn [<ckks_ $verb _assign_impl>]<Dst, A>(
@@ -258,8 +258,8 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
                 {
                     $Default::[<ckks_ $verb _assign_default>](module, dst, a, scratch)
                 }
@@ -272,10 +272,10 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSInfos,
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
                 {
-                    $Default::[<ckks_ $verb _assign_unnormalized_default>](module, &mut dst.write_view(), a, scratch)
+                    $Default::[<ckks_ $verb _assign_unnormalized_default>](module, dst, a, scratch)
                 }
 
                 fn [<ckks_ $verb _assign_unnormalized_ref_impl>]<Dst, A>(
@@ -286,10 +286,15 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSInfos,
+                    CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized>,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
                 {
-                    $Default::[<ckks_ $verb _assign_unnormalized_default>](module, dst.inner, a, scratch)
+                    $Default::[<ckks_ $verb _assign_unnormalized_default>](
+                        module,
+                        &mut $crate::layouts::ciphertext::CKKSUnnormalizedWriteView::new(dst.inner),
+                        a,
+                        scratch,
+                    )
                 }
 
                 fn [<ckks_ $verb _one_assign_impl>]<Dst>(
@@ -298,7 +303,7 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
                 {
                     $Default::[<ckks_ $verb _one_assign_default>](module, dst, scratch)
                 }
@@ -315,9 +320,9 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
                     $Default::[<ckks_ $verb _pt_vec_into_default>](module, dst, a, pt, scratch)
                 }
@@ -331,11 +336,11 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
-                    $Default::[<ckks_ $verb _pt_vec_into_unnormalized_default>](module, &mut dst.write_view(), a, pt, scratch)
+                    $Default::[<ckks_ $verb _pt_vec_into_unnormalized_default>](module, dst, a, pt, scratch)
                 }
 
                 fn [<ckks_ $verb _pt_vec_assign_impl>]<Dst, P>(
@@ -345,8 +350,8 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
                     $Default::[<ckks_ $verb _pt_vec_assign_default>](module, dst, pt, scratch)
                 }
@@ -359,10 +364,10 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
-                    $Default::[<ckks_ $verb _pt_vec_assign_unnormalized_default>](module, &mut dst.write_view(), pt, scratch)
+                    $Default::[<ckks_ $verb _pt_vec_assign_unnormalized_default>](module, dst, pt, scratch)
                 }
 
                 fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<BE>) -> usize {
@@ -379,9 +384,9 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
                     $Default::[<ckks_ $verb _pt_const_into_default>](module, dst, a, dst_coeff, pt, pt_coeff, scratch)
                 }
@@ -397,13 +402,13 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
                     $Default::[<ckks_ $verb _pt_const_into_unnormalized_default>](
                         module,
-                        &mut dst.write_view(),
+                        dst,
                         a,
                         dst_coeff,
                         pt,
@@ -421,8 +426,8 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + SetCKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
                     $Default::[<ckks_ $verb _pt_const_assign_default>](module, dst, dst_coeff, pt, pt_coeff, scratch)
                 }
@@ -437,12 +442,12 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
+                    GLWE<Dst, BE::ZnxWord, ::poulpy_hal::layouts::Unnormalized>: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized>,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
                     $Default::[<ckks_ $verb _pt_const_assign_unnormalized_default>](
                         module,
-                        &mut dst.write_view(),
+                        dst,
                         dst_coeff,
                         pt,
                         pt_coeff,

@@ -1,3 +1,4 @@
+use poulpy_hal::layouts::Normalized;
 use std::mem::size_of;
 
 use crate::NTT4x30Avx;
@@ -127,8 +128,8 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    Src: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
 {
     let k_large = dst.k().as_usize();
     let k_small = src.k().as_usize();
@@ -250,8 +251,14 @@ macro_rules! impl_encapsulated_mod_up {
                 scratch: &mut ScratchArena<'_, $be>,
             ) -> CKKSResult<()>
             where
-                Dst: GLWEToBackendMut<$be> + GLWEToBackendRef<$be> + CKKSCtBounds + SetCKKSInfos,
-                Src: GLWEToBackendMut<$be> + GLWEToBackendRef<$be> + CKKSCtBounds + SetCKKSInfos,
+                Dst: GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized>
+                    + GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized>
+                    + CKKSCtBounds
+                    + SetCKKSInfos,
+                Src: GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized>
+                    + GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized>
+                    + CKKSCtBounds
+                    + SetCKKSInfos,
             {
                 encapsulated_mod_up(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch)
             }

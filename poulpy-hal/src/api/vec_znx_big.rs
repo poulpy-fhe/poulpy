@@ -1,7 +1,7 @@
 use crate::{
     layouts::{
-        Backend, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-        VecZnxBigBackendRef, VecZnxBigOwned,
+        Backend, NoiseInfos, NormalizationState, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
+        VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned,
     },
     source::Source,
 };
@@ -13,7 +13,7 @@ pub trait VecZnxBigFromSmallBackend<B: Backend> {
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
     );
 }
@@ -106,7 +106,7 @@ pub trait VecZnxBigAddSmallIntoBackend<B: Backend> {
         res_col: usize,
         a: &VecZnxBigBackendRef<'_, B>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B>,
+        b: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         b_col: usize,
     );
 }
@@ -117,7 +117,7 @@ pub trait VecZnxBigAddSmallAssign<B: Backend> {
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
     );
 }
@@ -163,7 +163,7 @@ pub trait VecZnxBigSubSmallABackend<B: Backend> {
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
         b: &VecZnxBigBackendRef<'_, B>,
         b_col: usize,
@@ -176,7 +176,7 @@ pub trait VecZnxBigSubSmallAssign<B: Backend> {
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
     );
 }
@@ -189,7 +189,7 @@ pub trait VecZnxBigSubSmallBBackend<B: Backend> {
         res_col: usize,
         a: &VecZnxBigBackendRef<'_, B>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B>,
+        b: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         b_col: usize,
     );
 }
@@ -200,7 +200,7 @@ pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
     );
 }
@@ -227,7 +227,7 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
         &self,
         res: &mut VecZnxBigBackendMut<'r, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'a, B, impl NormalizationState>,
         weights: &ScalarZnxBackendRef<'b, B>,
         weights_col: usize,
         cols: usize,
@@ -243,7 +243,7 @@ pub trait VecZnxScalarProduct<B: Backend> {
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
+        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
         a_col: usize,
         b: &ScalarZnxBackendRef<'_, B>,
         b_col: usize,
@@ -277,7 +277,7 @@ pub trait VecZnxBigNormalizeTmpBytes {
 pub trait VecZnxBigNormalize<B: Backend> {
     fn vec_znx_big_normalize(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,

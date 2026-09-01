@@ -1,6 +1,7 @@
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
 use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingImpl};
@@ -54,5 +55,5 @@ pub unsafe trait CKKSPaCoCoeffEncodingImpl<BE: Backend>: Backend {
     where
         F: PaCoScalar,
         BE: CKKSEncodingImpl<BE, F>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 }

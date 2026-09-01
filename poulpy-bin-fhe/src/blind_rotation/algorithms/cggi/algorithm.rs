@@ -1,6 +1,8 @@
 use itertools::izip;
 use poulpy_hal::execution::TaskExecutor;
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
+use poulpy_hal::layouts::Unnormalized;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{
@@ -19,7 +21,7 @@ use poulpy_hal::{
 
 use poulpy_core::{
     Distribution, GLWEAdd, GLWECopy, GLWEExternalProduct, GLWEMulXpMinusOne, GLWENormalize, ScratchArenaTakeCore,
-    layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
+    layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
 };
 
 use crate::blind_rotation::{
@@ -123,7 +125,7 @@ where
         brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         L: LWEToBackendRef<BE> + LWEInfos,
     {
         // TODO(device): make the full execute path 100% backend-native. The
@@ -159,7 +161,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord =
     brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
     M: VecZnxDftBytesOf
         + ModuleN
@@ -239,7 +241,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord =
     for (ai, ski) in izip!(a.chunks_exact(block_size), brk.data.chunks_exact(block_size)) {
         for i in 0..extension_factor {
             for j in 0..cols {
-                let acc_ref = vec_znx_backend_ref_from_mut::<BE>(&acc[i]);
+                let acc_ref = vec_znx_backend_ref_from_mut::<BE, _>(&acc[i]);
                 module.vec_znx_dft_apply(1, 0, &mut acc_dft[i], j, &acc_ref, j);
                 module.vec_znx_dft_zero(&mut acc_add_dft[i], j)
             }
@@ -338,7 +340,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord =
                     let acc_add_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_add_dft[j]);
                     module.vec_znx_idft_apply(&mut acc_add_big, 0, &acc_add_dft_ref, i, &mut scratch7.borrow());
                     {
-                        let acc_ref = vec_znx_backend_ref_from_mut::<BE>(&acc[j]);
+                        let acc_ref = vec_znx_backend_ref_from_mut::<BE, _>(&acc[j]);
                         module.vec_znx_big_add_small_assign(&mut acc_add_big, 0, &acc_ref, i);
                     }
                     let acc_add_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&acc_add_big);
@@ -369,7 +371,7 @@ fn execute_block_binary<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + '
     brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
     M: VecZnxDftBytesOf
         + ModuleN
@@ -591,7 +593,7 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    R: GLWEToBackendMut<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
     M: VecZnxRotateBackend<BE>
         + GLWEExternalProduct<BE>
@@ -635,6 +637,9 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     let mut lwe_2n: Vec<i64> = vec![0i64; (lwe.n() + 1).into()]; // TODO: from scratch space
     let mut out_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
     module.glwe_copy(&mut out_tmp, res);
+    // The accumulator sums one external product per LWE coefficient and is normalized once
+    // at the end (see the bound argument below), hence the unnormalized label.
+    let mut out_tmp = out_tmp.into_unnormalized();
 
     mod_switch_2n::<BE, _>(2 * lut.domain_size(), &mut lwe_2n, lwe, lut.rotation_direction());
 
@@ -647,20 +652,30 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     let lut_ref: poulpy_hal::layouts::VecZnxBackendRef<'_, BE> =
         <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(lut.data[0].data());
     {
-        let mut out_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
+        let mut out_backend =
+            <GLWE<BE::OwnedBuf, BE::ZnxWord, Unnormalized> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
         module.vec_znx_rotate_backend(b, out_backend.data_mut(), 0, &lut_ref, 0);
     }
 
     // ACC + [sum DFT(X^ai -1) * (DFT(ACC) x BRKi)]
     let scratch = scratch.borrow();
-    let (mut acc_tmp, mut scratch_1) = scratch.take_glwe_scratch(&out_tmp);
+    let (acc_tmp, mut scratch_1) = scratch.take_glwe_scratch(&out_tmp);
+    let mut acc_tmp = acc_tmp.into_unnormalized();
 
     // TODO: see if faster by skipping normalization in external product and keeping acc in big coeffs
     // TODO: first iteration can be optimized to be a gglwe product
     for (ai, ski) in izip!(a.iter(), brk.data.iter()) {
         // acc_tmp = sk[i] * acc
+        //
+        // `acc` is deliberately fed to the external product without normalization: it is a
+        // sum of at most `n` values whose digits lie in [-2^{base2k-1}, 2^{base2k-1}], so its
+        // digits stay far below the DFT precision limit (~2^{63-base2k} additions fit) and a
+        // per-iteration normalization is not worth its cost. This relabel is the one place in
+        // the blind rotation where that bound argument replaces the type-level guarantee.
         {
-            module.glwe_external_product(&mut acc_tmp, &out_tmp, &ski.to_backend_ref(), &mut scratch_1.borrow());
+            let acc_in = <GLWE<BE::OwnedBuf, BE::ZnxWord, Unnormalized> as GLWEToBackendRef<BE>>::to_backend_ref(&out_tmp)
+                .assume_normalized();
+            module.glwe_external_product(&mut acc_tmp, &&acc_in, &ski.to_backend_ref(), &mut scratch_1.borrow());
         }
 
         // acc_tmp = (sk[i] * acc) * (X^{ai} - 1)
@@ -672,8 +687,6 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
 
     // We can normalize only at the end because we add normalized values in [-2^{base2k-1}, 2^{base2k-1}]
     // on top of each others, thus ~ 2^{63-base2k} additions are supported before overflow.
-    {
-        module.glwe_normalize_assign(&mut out_tmp, &mut scratch_1.borrow());
-    }
+    let out_tmp = out_tmp.normalize(module, &mut scratch_1.borrow());
     module.glwe_copy(res, &out_tmp);
 }

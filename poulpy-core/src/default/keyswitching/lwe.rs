@@ -102,12 +102,12 @@ pub fn lwe_keyswitch_default<BE, M, R, A>(
         rank: Rank(1),
     });
 
-    let glwe_in_ref = glwe_backend_ref_from_mut::<BE>(&glwe_in);
+    let glwe_in_ref = glwe_backend_ref_from_mut::<BE, _>(&glwe_in);
     let glwe_in_view = &glwe_in_ref;
     module.glwe_keyswitch_default(&mut glwe_out, &glwe_in_view, &ksk.to_backend_ref(), &mut scratch_2);
 
     let mut res_backend = res.to_backend_mut();
-    let glwe_out_ref = glwe_backend_ref_from_mut::<BE>(&glwe_out);
+    let glwe_out_ref = glwe_backend_ref_from_mut::<BE, _>(&glwe_out);
     let min_size: usize = res_backend.size().min(glwe_out_ref.size());
     let n: usize = res_backend.n().into();
 

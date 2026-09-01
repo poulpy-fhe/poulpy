@@ -1,14 +1,17 @@
 use crate::{
-    layouts::{Backend, HostDataMut, HostDataRef, ScalarZnxBackendRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{
+        Backend, HostDataMut, HostDataRef, NormalizationState, ScalarZnxBackendRef, Unnormalized, VecZnxBackendMut,
+        VecZnxBackendRef, ZnxView, ZnxViewMut,
+    },
     reference::znx::{ZnxSub, ZnxSubAssign, ZnxZero},
 };
 
 pub fn vec_znx_sub_scalar<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
     res_col: usize,
     a: &ScalarZnxBackendRef<'a, BE>,
     a_col: usize,
-    b: &VecZnxBackendRef<'a, BE>,
+    b: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
     b_col: usize,
     b_limb: usize,
 ) where
@@ -37,7 +40,7 @@ pub fn vec_znx_sub_scalar<'r, 'a, BE>(
 }
 
 pub fn vec_znx_sub_scalar_assign<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
     res_col: usize,
     res_limb: usize,
     a: &ScalarZnxBackendRef<'a, BE>,

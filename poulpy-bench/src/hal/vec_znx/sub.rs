@@ -27,9 +27,9 @@ where
     let mut c = upload_host_vec_znx::<B>(&c);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let b = vec_znx_backend_ref::<B>(&b);
-        let mut c = vec_znx_backend_mut::<B>(&mut c);
+        let a = vec_znx_backend_ref::<B, _>(&a);
+        let b = vec_znx_backend_ref::<B, _>(&b);
+        let mut c = vec_znx_backend_mut::<B, _>(&mut c).into_unnormalized();
         for i in 0..sweep.cols {
             module.vec_znx_sub_backend(&mut c, i, &a, i, &b, i);
         }
@@ -51,8 +51,8 @@ where
     let mut b = upload_host_vec_znx::<B>(&b);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let a = vec_znx_backend_ref::<B, _>(&a);
+        let mut b = vec_znx_backend_mut::<B, _>(&mut b).into_unnormalized();
         for i in 0..sweep.cols {
             module.vec_znx_sub_assign_backend(&mut b, i, &a, i);
         }
@@ -76,8 +76,8 @@ pub fn runner_vec_znx_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measuremen
     let mut b = upload_host_vec_znx::<B>(&b);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let a = vec_znx_backend_ref::<B, _>(&a);
+        let mut b = vec_znx_backend_mut::<B, _>(&mut b).into_unnormalized();
         for i in 0..sweep.cols {
             module.vec_znx_sub_negate_assign_backend(&mut b, i, &a, i);
         }

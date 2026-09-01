@@ -15,7 +15,9 @@ use crate::{
         VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
         VecZnxNormalizeAssignBackend,
     },
-    layouts::{DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero},
+    layouts::{
+        DataView, FillUniform, NormalizationState, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero,
+    },
     source::Source,
 };
 
@@ -53,8 +55,8 @@ where
         b.at_mut(0, j)[0] = ((r << (64 - 17)) as i64) >> (64 - 17);
     }
 
-    let a_backend = upload_vec_znx::<BE>(&a);
-    let b_backend = upload_vec_znx::<BE>(&b);
+    let a_backend = upload_vec_znx::<BE, _>(&a);
+    let b_backend = upload_vec_znx::<BE, _>(&b);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .cnv_by_const_apply_tmp_bytes(0, res_size, a_size, b_size)
@@ -67,18 +69,18 @@ where
                 cnv_offset,
                 &mut res_big.to_backend_mut(),
                 0,
-                &vec_znx_backend_ref::<BE>(&a_backend),
+                &vec_znx_backend_ref::<BE, _>(&a_backend),
                 a_col,
-                &vec_znx_backend_ref::<BE>(&b_backend),
+                &vec_znx_backend_ref::<BE, _>(&b_backend),
                 0,
                 0,
                 &mut scratch.arena(),
             );
 
             let res_host_template = VecZnx::alloc(module.n(), 1, res_size);
-            let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
+            let mut res_have_backend = upload_vec_znx::<BE, _>(&res_host_template);
             module.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
+                &mut vec_znx_backend_mut::<BE, _>(&mut res_have_backend),
                 base2k,
                 0,
                 0,
@@ -87,7 +89,7 @@ where
                 0,
                 &mut scratch.arena(),
             );
-            let res_have = download_vec_znx::<BE>(&res_have_backend);
+            let res_have = download_vec_znx::<BE, _>(&res_have_backend);
 
             bivariate_convolution_naive(
                 module,
@@ -131,8 +133,8 @@ where
     a.fill_uniform(17, &mut source);
     b.fill_uniform(base2k, &mut source);
 
-    let a_backend = upload_vec_znx::<BE>(&a);
-    let b_backend = upload_vec_znx::<BE>(&b);
+    let a_backend = upload_vec_znx::<BE, _>(&a);
+    let b_backend = upload_vec_znx::<BE, _>(&b);
     let mut acc_have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
     let mut acc_want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
     let mut term: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
@@ -150,9 +152,9 @@ where
                 base_offset,
                 &mut acc_have.to_backend_mut(),
                 0,
-                &vec_znx_backend_ref::<BE>(&a_backend),
+                &vec_znx_backend_ref::<BE, _>(&a_backend),
                 0,
-                &vec_znx_backend_ref::<BE>(&b_backend),
+                &vec_znx_backend_ref::<BE, _>(&b_backend),
                 0,
                 0,
                 &mut scratch.arena(),
@@ -161,9 +163,9 @@ where
                 add_offset,
                 &mut acc_have.to_backend_mut(),
                 0,
-                &vec_znx_backend_ref::<BE>(&a_backend),
+                &vec_znx_backend_ref::<BE, _>(&a_backend),
                 1,
-                &vec_znx_backend_ref::<BE>(&b_backend),
+                &vec_znx_backend_ref::<BE, _>(&b_backend),
                 0,
                 1,
                 &mut scratch.arena(),
@@ -174,9 +176,9 @@ where
                 base_offset,
                 &mut acc_want.to_backend_mut(),
                 0,
-                &vec_znx_backend_ref::<BE>(&a_backend),
+                &vec_znx_backend_ref::<BE, _>(&a_backend),
                 0,
-                &vec_znx_backend_ref::<BE>(&b_backend),
+                &vec_znx_backend_ref::<BE, _>(&b_backend),
                 0,
                 0,
                 &mut scratch.arena(),
@@ -185,9 +187,9 @@ where
                 add_offset,
                 &mut term.to_backend_mut(),
                 0,
-                &vec_znx_backend_ref::<BE>(&a_backend),
+                &vec_znx_backend_ref::<BE, _>(&a_backend),
                 1,
-                &vec_znx_backend_ref::<BE>(&b_backend),
+                &vec_znx_backend_ref::<BE, _>(&b_backend),
                 0,
                 1,
                 &mut scratch.arena(),
@@ -196,9 +198,9 @@ where
 
             let normalized = |big: &VecZnxBigOwned<BE>, scratch: &mut ScratchOwned<BE>| {
                 let res_host_template = VecZnx::alloc(module.n(), 1, res_size);
-                let mut res_backend = upload_vec_znx::<BE>(&res_host_template);
+                let mut res_backend = upload_vec_znx::<BE, _>(&res_host_template);
                 module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut res_backend),
+                    &mut vec_znx_backend_mut::<BE, _>(&mut res_backend),
                     base2k,
                     0,
                     0,
@@ -207,7 +209,7 @@ where
                     0,
                     &mut scratch.arena(),
                 );
-                download_vec_znx::<BE>(&res_backend)
+                download_vec_znx::<BE, _>(&res_backend)
             };
             let res_have = normalized(&acc_have, &mut scratch);
             let res_want = normalized(&acc_want, &mut scratch);
@@ -254,8 +256,8 @@ where
     a.fill_uniform(17, &mut source);
     b.fill_uniform(17, &mut source);
 
-    let a_backend = upload_vec_znx::<BE>(&a);
-    let b_backend = upload_vec_znx::<BE>(&b);
+    let a_backend = upload_vec_znx::<BE, _>(&a);
+    let b_backend = upload_vec_znx::<BE, _>(&b);
 
     let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(a_cols, a_size);
     let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(b_cols, b_size);
@@ -272,7 +274,7 @@ where
         let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
-            &vec_znx_backend_ref::<BE>(&a_backend),
+            &vec_znx_backend_ref::<BE, _>(&a_backend),
             !0i64,
             &mut scratch.arena(),
         );
@@ -281,7 +283,7 @@ where
         let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
-            &vec_znx_backend_ref::<BE>(&b_backend),
+            &vec_znx_backend_ref::<BE, _>(&b_backend),
             !0i64,
             &mut scratch.arena(),
         );
@@ -304,9 +306,9 @@ where
                 module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_dft_col);
 
                 let res_host_template = VecZnx::alloc(module.n(), 1, res_size);
-                let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
+                let mut res_have_backend = upload_vec_znx::<BE, _>(&res_host_template);
                 module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
+                    &mut vec_znx_backend_mut::<BE, _>(&mut res_have_backend),
                     base2k,
                     0,
                     0,
@@ -315,7 +317,7 @@ where
                     0,
                     &mut scratch.arena(),
                 );
-                let res_have = download_vec_znx::<BE>(&res_have_backend);
+                let res_have = download_vec_znx::<BE, _>(&res_have_backend);
 
                 bivariate_convolution_naive(
                     module,
@@ -355,8 +357,8 @@ where
     a.fill_uniform(17, &mut source);
     b.fill_uniform(17, &mut source);
 
-    let a_backend = upload_vec_znx::<BE>(&a);
-    let b_backend = upload_vec_znx::<BE>(&b);
+    let a_backend = upload_vec_znx::<BE, _>(&a);
+    let b_backend = upload_vec_znx::<BE, _>(&b);
 
     let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size);
     let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size);
@@ -379,7 +381,7 @@ where
         let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
-            &vec_znx_backend_ref::<BE>(&a_backend),
+            &vec_znx_backend_ref::<BE, _>(&a_backend),
             !0i64,
             &mut scratch.arena(),
         );
@@ -388,7 +390,7 @@ where
         let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
-            &vec_znx_backend_ref::<BE>(&b_backend),
+            &vec_znx_backend_ref::<BE, _>(&b_backend),
             !0i64,
             &mut scratch.arena(),
         );
@@ -486,8 +488,8 @@ where
     a.fill_uniform(17, &mut source);
     b.fill_uniform(17, &mut source);
 
-    let a_backend = upload_vec_znx::<BE>(&a);
-    let b_backend = upload_vec_znx::<BE>(&b);
+    let a_backend = upload_vec_znx::<BE, _>(&a);
+    let b_backend = upload_vec_znx::<BE, _>(&b);
 
     let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size);
     let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size);
@@ -510,7 +512,7 @@ where
         let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
-            &vec_znx_backend_ref::<BE>(&a_backend),
+            &vec_znx_backend_ref::<BE, _>(&a_backend),
             !0i64,
             &mut scratch.arena(),
         );
@@ -519,7 +521,7 @@ where
         let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
-            &vec_znx_backend_ref::<BE>(&b_backend),
+            &vec_znx_backend_ref::<BE, _>(&b_backend),
             !0i64,
             &mut scratch.arena(),
         );
@@ -579,10 +581,10 @@ where
         module.vec_znx_idft_apply_tmpa(&mut big_ref.to_backend_mut(), 0, &mut res_ref.to_backend_mut(), res_col);
 
         let host_template = VecZnx::alloc(module.n(), 1, res_size);
-        let mut have_backend = upload_vec_znx::<BE>(&host_template);
-        let mut want_backend = upload_vec_znx::<BE>(&host_template);
+        let mut have_backend = upload_vec_znx::<BE, _>(&host_template);
+        let mut want_backend = upload_vec_znx::<BE, _>(&host_template);
         module.vec_znx_big_normalize(
-            &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+            &mut vec_znx_backend_mut::<BE, _>(&mut have_backend),
             base2k,
             0,
             0,
@@ -592,7 +594,7 @@ where
             &mut scratch.arena(),
         );
         module.vec_znx_big_normalize(
-            &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+            &mut vec_znx_backend_mut::<BE, _>(&mut want_backend),
             base2k,
             0,
             0,
@@ -601,8 +603,8 @@ where
             0,
             &mut scratch.arena(),
         );
-        let have = download_vec_znx::<BE>(&have_backend);
-        let want = download_vec_znx::<BE>(&want_backend);
+        let have = download_vec_znx::<BE, _>(&have_backend);
+        let want = download_vec_znx::<BE, _>(&want_backend);
         assert_eq!(have, want, "fused accumulate != per-term sequence (cnv_offset={cnv_offset})");
     }
 }
@@ -632,8 +634,8 @@ where
 
     let mut a = VecZnx::alloc(module.n(), cols, a_size);
     let mut b = VecZnx::alloc(module.n(), cols, b_size);
-    let mut tmp_a = VecZnx::alloc(module.n(), 1, a_size);
-    let mut tmp_b = VecZnx::alloc(module.n(), 1, b_size);
+    let mut tmp_a = VecZnx::alloc(module.n(), 1, a_size).into_unnormalized();
+    let mut tmp_b = VecZnx::alloc(module.n(), 1, b_size).into_unnormalized();
 
     let mut res_want = VecZnx::alloc(module.n(), 1, res_size);
     // Two-column DFT destination written at column 1: covers the
@@ -645,8 +647,8 @@ where
     a.fill_uniform(17, &mut source);
     b.fill_uniform(17, &mut source);
 
-    let a_backend = upload_vec_znx::<BE>(&a);
-    let b_backend = upload_vec_znx::<BE>(&b);
+    let a_backend = upload_vec_znx::<BE, _>(&a);
+    let b_backend = upload_vec_znx::<BE, _>(&b);
 
     let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size);
     let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size);
@@ -663,7 +665,7 @@ where
         let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
-            &vec_znx_backend_ref::<BE>(&a_backend),
+            &vec_znx_backend_ref::<BE, _>(&a_backend),
             !0i64,
             &mut scratch.arena(),
         );
@@ -672,7 +674,7 @@ where
         let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
-            &vec_znx_backend_ref::<BE>(&b_backend),
+            &vec_znx_backend_ref::<BE, _>(&b_backend),
             !0i64,
             &mut scratch.arena(),
         );
@@ -695,9 +697,9 @@ where
                 module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_dft_col);
 
                 let res_host_template = VecZnx::alloc(module.n(), 1, res_size);
-                let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
+                let mut res_have_backend = upload_vec_znx::<BE, _>(&res_host_template);
                 module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
+                    &mut vec_znx_backend_mut::<BE, _>(&mut res_have_backend),
                     base2k,
                     0,
                     0,
@@ -706,44 +708,44 @@ where
                     0,
                     &mut scratch.arena(),
                 );
-                let res_have = download_vec_znx::<BE>(&res_have_backend);
+                let res_have = download_vec_znx::<BE, _>(&res_have_backend);
 
-                let mut tmp_a_backend = upload_vec_znx::<BE>(&tmp_a);
-                let mut tmp_b_backend = upload_vec_znx::<BE>(&tmp_b);
+                let mut tmp_a_backend = upload_vec_znx::<BE, _>(&tmp_a);
+                let mut tmp_b_backend = upload_vec_znx::<BE, _>(&tmp_b);
                 if col_i != col_j {
                     module.vec_znx_add_into_backend(
-                        &mut vec_znx_backend_mut::<BE>(&mut tmp_a_backend),
+                        &mut vec_znx_backend_mut::<BE, _>(&mut tmp_a_backend),
                         0,
-                        &vec_znx_backend_ref::<BE>(&a_backend),
+                        &vec_znx_backend_ref::<BE, _>(&a_backend),
                         col_i,
-                        &vec_znx_backend_ref::<BE>(&a_backend),
+                        &vec_znx_backend_ref::<BE, _>(&a_backend),
                         col_j,
                     );
                     module.vec_znx_add_into_backend(
-                        &mut vec_znx_backend_mut::<BE>(&mut tmp_b_backend),
+                        &mut vec_znx_backend_mut::<BE, _>(&mut tmp_b_backend),
                         0,
-                        &vec_znx_backend_ref::<BE>(&b_backend),
+                        &vec_znx_backend_ref::<BE, _>(&b_backend),
                         col_i,
-                        &vec_znx_backend_ref::<BE>(&b_backend),
+                        &vec_znx_backend_ref::<BE, _>(&b_backend),
                         col_j,
                     );
                 } else {
                     module.vec_znx_copy_backend(
-                        &mut vec_znx_backend_mut::<BE>(&mut tmp_a_backend),
+                        &mut vec_znx_backend_mut::<BE, _>(&mut tmp_a_backend),
                         0,
-                        &vec_znx_backend_ref::<BE>(&a_backend),
+                        &vec_znx_backend_ref::<BE, _>(&a_backend),
                         col_i,
                     );
                     module.vec_znx_copy_backend(
-                        &mut vec_znx_backend_mut::<BE>(&mut tmp_b_backend),
+                        &mut vec_znx_backend_mut::<BE, _>(&mut tmp_b_backend),
                         0,
-                        &vec_znx_backend_ref::<BE>(&b_backend),
+                        &vec_znx_backend_ref::<BE, _>(&b_backend),
                         col_j,
                     );
                 }
 
-                tmp_a = download_vec_znx::<BE>(&tmp_a_backend);
-                tmp_b = download_vec_znx::<BE>(&tmp_b_backend);
+                tmp_a = download_vec_znx::<BE, _>(&tmp_a_backend);
+                tmp_b = download_vec_znx::<BE, _>(&tmp_b_backend);
 
                 bivariate_convolution_naive(
                     module,
@@ -771,9 +773,9 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     k: i64,
     res: &mut VecZnxOwned<BE::ZnxWord>,
     res_col: usize,
-    a: &VecZnxOwned<BE::ZnxWord>,
+    a: &VecZnxOwned<BE::ZnxWord, impl NormalizationState>,
     a_col: usize,
-    b: &VecZnxOwned<BE::ZnxWord>,
+    b: &VecZnxOwned<BE::ZnxWord, impl NormalizationState>,
     b_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -806,9 +808,9 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
         }
     }
 
-    let mut res_backend = upload_vec_znx::<BE>(res);
-    module.vec_znx_normalize_assign_backend(base2k, &mut vec_znx_backend_mut::<BE>(&mut res_backend), res_col, scratch);
-    *res = download_vec_znx::<BE>(&res_backend);
+    let mut res_backend = upload_vec_znx::<BE, _>(res);
+    module.vec_znx_normalize_assign_backend(base2k, &mut vec_znx_backend_mut::<BE, _>(&mut res_backend), res_col, scratch);
+    *res = download_vec_znx::<BE, _>(&res_backend);
 }
 
 fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
@@ -862,11 +864,11 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
         }
     }
 
-    let mut res_backend = upload_vec_znx::<BE>(res);
+    let mut res_backend = upload_vec_znx::<BE, _>(res);
     for i in 0..cols {
-        module.vec_znx_normalize_assign_backend(base2k, &mut vec_znx_backend_mut::<BE>(&mut res_backend), i, scratch);
+        module.vec_znx_normalize_assign_backend(base2k, &mut vec_znx_backend_mut::<BE, _>(&mut res_backend), i, scratch);
     }
-    *res = download_vec_znx::<BE>(&res_backend);
+    *res = download_vec_znx::<BE, _>(&res_backend);
 }
 
 fn negacyclic_convolution_naive_add(res: &mut [i64], a: &[i64], b: &[i64]) {

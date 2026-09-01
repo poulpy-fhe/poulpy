@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Normalized, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -10,7 +10,7 @@ pub trait LWESampleExtract<BE: Backend> {
     fn lwe_sample_extract<R, A>(&self, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 }
 
 pub trait GLWEFromLWE<BE: Backend> {
@@ -47,7 +47,7 @@ pub trait LWEFromGLWE<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 }
 
 pub trait GGSWFromGGLWE<BE: Backend> {
@@ -76,7 +76,7 @@ pub trait GLWEExpandLWE<BE: Backend> {
     fn glwe_expand_lwe<R, A>(&self, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 }
 
 pub trait GLWEExpandLWEMatrix<BE: Backend> {
@@ -88,7 +88,7 @@ pub trait GLWEExpandLWEMatrix<BE: Backend> {
     fn glwe_expand_lwe_matrix<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 }
 
 pub trait GGSWExpandRows<BE: Backend> {

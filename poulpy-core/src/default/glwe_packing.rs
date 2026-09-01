@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::ModuleLogN,
-    layouts::{Backend, GaloisElement, ScratchArena},
+    layouts::{Backend, GaloisElement, Normalized, ScratchArena},
 };
 
 use crate::{
@@ -30,8 +30,8 @@ fn pack_internal<M, A, B, H, BE: Backend>(
         + GLWENormalize<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + ?Sized,
-    A: GLWEToBackendMut<BE> + GLWEInfos,
-    B: GLWEToBackendMut<BE> + GLWEInfos,
+    A: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    B: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
     // Goal is to evaluate: a = a + b*X^t + phi(a - b*X^t))
@@ -42,18 +42,34 @@ fn pack_internal<M, A, B, H, BE: Backend>(
 
         if let Some(b) = b.as_deref_mut() {
             let a_layout = a.glwe_layout();
-            let mut tmp_b = module.glwe_alloc_from_infos(&a_layout);
             module.glwe_rotate_assign(-t, a, scratch);
+
+            // tmp_b = (a - b) >> 1, normalized by the shift.
+            let mut tmp_b = module.glwe_alloc_from_infos(&a_layout).into_unnormalized();
             module.glwe_sub(&mut tmp_b, a, b);
             module.glwe_rsh(1, &mut tmp_b, scratch);
-            module.glwe_add_assign(a, b);
-            module.glwe_rsh(1, a, scratch);
-            module.glwe_normalize_assign(&mut tmp_b, scratch);
+
+            // a = (a + b) >> 1: the shift re-normalizes the digits, so the caller's
+            // Normalized label on `a` holds again once this unnormalized view is dropped.
+            {
+                let mut a_acc = a.to_backend_mut().into_unnormalized();
+                let mut a_acc = &mut a_acc;
+                module.glwe_add_assign(&mut a_acc, b);
+                module.glwe_rsh(1, &mut a_acc, scratch);
+            }
+
+            let mut tmp_b = tmp_b.normalize(module, scratch);
             let key = keys
                 .get_automorphism_key(p, tmp_b.k())
                 .unwrap_or_else(|e| panic!("pack rotation {p}: {e}"));
             module.glwe_automorphism_assign(&mut tmp_b, &key, scratch);
-            module.glwe_sub_assign(a, &tmp_b);
+
+            // a -= phi(tmp_b), then propagate the carries before rotating back.
+            {
+                let mut a_acc = a.to_backend_mut().into_unnormalized();
+                let mut a_acc = &mut a_acc;
+                module.glwe_sub_assign(&mut a_acc, &tmp_b);
+            }
             module.glwe_normalize_assign(a, scratch);
             module.glwe_rotate_assign(t, a, scratch);
         } else {
@@ -94,8 +110,8 @@ pub trait GLWEPackingDefault<BE: Backend> {
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 }
 
@@ -158,8 +174,8 @@ pub mod glwe_packing_defaults_impl {
             + GLWENormalize<BE>
             + GLWECopy<BE>
             + GLWETrace<BE>,
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
         assert!(*a.keys().max().unwrap() < module.n());

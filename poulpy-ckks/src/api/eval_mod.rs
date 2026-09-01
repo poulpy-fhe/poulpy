@@ -1,6 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
@@ -41,8 +42,12 @@ pub trait CKKSEvalModOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        R: GLWEToBackendMut<BE, State = Normalized>
+            + GLWEToBackendRef<BE, State = Normalized>
+            + CKKSCtBounds
+            + SetCKKSInfos
+            + SetBSGSMeta,
+        C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>;
 }

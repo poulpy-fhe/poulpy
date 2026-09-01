@@ -6,6 +6,7 @@ use poulpy_core::{
     layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
     msb_mask_bottom_limb,
 };
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
@@ -54,8 +55,8 @@ pub(crate) fn ship_masking_accumulate<BE>(
 where
     BE: Backend,
     Module<BE>: Convolution<BE> + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxIdftApplyTmpA<BE> + VecZnxBigNormalize<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
 {
     const OP: &str = "ship_masking_accumulate";
     ckks_ensure!(

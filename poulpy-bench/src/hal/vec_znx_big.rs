@@ -85,7 +85,7 @@ pub fn runner_vec_znx_big_add_small_into<B: Backend<ZnxWord = i64>, M: Measureme
 
     bencher.iter(|| {
         let a = a.to_backend_ref();
-        let b = vec_znx_backend_ref::<B>(&b);
+        let b = vec_znx_backend_ref::<B, _>(&b);
         let mut c = c.to_backend_mut();
         for i in 0..sweep.cols {
             module.vec_znx_big_add_small_into_backend(&mut c, i, &a, i, &b, i);
@@ -110,7 +110,7 @@ pub fn runner_vec_znx_big_add_small_assign<B: Backend<ZnxWord = i64>, M: Measure
     let mut c: VecZnxBigOwned<B> = random_backend_vec_znx_big::<B>(module.n(), sweep.cols, sweep.size, &mut source);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
+        let a = vec_znx_backend_ref::<B, _>(&a);
         let mut c = c.to_backend_mut();
         for i in 0..sweep.cols {
             module.vec_znx_big_add_small_assign(&mut c, i, &a, i);
@@ -234,7 +234,7 @@ pub fn runner_vec_znx_big_normalize<B: Backend<ZnxWord = i64>, M: Measurement>(
 
     bencher.iter(|| {
         let a = a.to_backend_ref();
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let mut res = vec_znx_backend_mut::<B, _>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_big_normalize(&mut res, base2k, 0, i, &a, base2k, i, &mut scratch.borrow());
         }
@@ -271,12 +271,12 @@ pub fn runner_vec_znx_big_normalize_add_assign<B: Backend<ZnxWord = i64>, M: Mea
         for i in 0..sweep.cols {
             let a = a.to_backend_ref();
             {
-                let mut tmp_ref = vec_znx_backend_mut::<B>(&mut tmp);
+                let mut tmp_ref = vec_znx_backend_mut::<B, _>(&mut tmp);
                 module.vec_znx_big_normalize(&mut tmp_ref, base2k, 0, 0, &a, base2k, i, &mut scratch.borrow());
             }
 
-            let tmp_ref = vec_znx_backend_ref::<B>(&tmp);
-            let mut res_ref = vec_znx_backend_mut::<B>(&mut res);
+            let tmp_ref = vec_znx_backend_ref::<B, _>(&tmp);
+            let mut res_ref = vec_znx_backend_mut::<B, _>(&mut res).into_unnormalized();
             module.vec_znx_add_assign_backend(&mut res_ref, i, &tmp_ref, 0);
         }
         black_box(());
@@ -312,12 +312,12 @@ pub fn runner_vec_znx_big_normalize_sub_assign<B: Backend<ZnxWord = i64>, M: Mea
         for i in 0..sweep.cols {
             let a = a.to_backend_ref();
             {
-                let mut tmp_ref = vec_znx_backend_mut::<B>(&mut tmp);
+                let mut tmp_ref = vec_znx_backend_mut::<B, _>(&mut tmp);
                 module.vec_znx_big_normalize(&mut tmp_ref, base2k, 0, 0, &a, base2k, i, &mut scratch.borrow());
             }
 
-            let tmp_ref = vec_znx_backend_ref::<B>(&tmp);
-            let mut res_ref = vec_znx_backend_mut::<B>(&mut res);
+            let tmp_ref = vec_znx_backend_ref::<B, _>(&tmp);
+            let mut res_ref = vec_znx_backend_mut::<B, _>(&mut res).into_unnormalized();
             module.vec_znx_sub_assign_backend(&mut res_ref, i, &tmp_ref, 0);
         }
         black_box(());
@@ -413,7 +413,7 @@ pub fn runner_vec_znx_big_sub_small_a<B: Backend<ZnxWord = i64>, M: Measurement>
     let mut c: VecZnxBigOwned<B> = random_backend_vec_znx_big::<B>(module.n(), sweep.cols, sweep.size, &mut source);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
+        let a = vec_znx_backend_ref::<B, _>(&a);
         let b = b.to_backend_ref();
         let mut c = c.to_backend_mut();
         for i in 0..sweep.cols {
@@ -441,7 +441,7 @@ pub fn runner_vec_znx_big_sub_small_b<B: Backend<ZnxWord = i64>, M: Measurement>
 
     bencher.iter(|| {
         let a = a.to_backend_ref();
-        let b = vec_znx_backend_ref::<B>(&b);
+        let b = vec_znx_backend_ref::<B, _>(&b);
         let mut c = c.to_backend_mut();
         for i in 0..sweep.cols {
             module.vec_znx_big_sub_small_b_backend(&mut c, i, &a, i, &b, i);

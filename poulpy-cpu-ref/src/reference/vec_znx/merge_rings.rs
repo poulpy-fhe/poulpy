@@ -1,7 +1,7 @@
 use std::mem::size_of;
 
 use crate::{
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef},
+    layouts::{Backend, FitsIn, HostDataMut, HostDataRef, NormalizationState, VecZnxBackendMut, VecZnxBackendRef},
     reference::{
         vec_znx::{vec_znx_rotate_assign, vec_znx_switch_ring},
         znx::{ZnxCopy, ZnxRotate, ZnxSwitchRing, ZnxZero},
@@ -12,10 +12,10 @@ pub fn vec_znx_merge_rings_tmp_bytes(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vec_znx_merge_rings<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
+pub fn vec_znx_merge_rings<'r, 'a, BE, S: NormalizationState>(
+    res: &mut VecZnxBackendMut<'r, BE, S>,
     res_col: usize,
-    a: &[VecZnxBackendRef<'a, BE>],
+    a: &[VecZnxBackendRef<'a, BE, impl FitsIn<S>>],
     a_col: usize,
     tmp: &mut [i64],
 ) where
@@ -39,7 +39,7 @@ pub fn vec_znx_merge_rings<'r, 'a, BE>(
     }
 
     a.iter().for_each(|ai| {
-        vec_znx_switch_ring::<BE>(res, res_col, ai, a_col);
+        vec_znx_switch_ring::<BE, _>(res, res_col, ai, a_col);
         vec_znx_rotate_assign::<BE>(-1, res, res_col, tmp);
     });
 

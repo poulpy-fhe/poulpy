@@ -1,5 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -53,5 +54,5 @@ pub unsafe trait CKKSShipCoeffEncodingImpl<BE: Backend>: Backend {
     where
         F: ShipScalar,
         BE: CKKSEncodingImpl<BE, F>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 }

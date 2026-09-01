@@ -20,6 +20,7 @@ use poulpy_core::{
     GLWECopy,
     layouts::{Base2K, GLWEToBackendRef},
 };
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::{
     api::ModuleN,
     layouts::{Backend, HostDataRef, Module},
@@ -40,7 +41,7 @@ where
     BE::OwnedBuf: HostDataRef,
     Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: ShipScalar,
-    Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
 {
     ensure!(
         module.n() == plan.n(),
@@ -91,7 +92,8 @@ macro_rules! impl_ckks_ship_coeff_encoding {
             where
                 F: ::poulpy_ckks::api::ShipScalar,
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<$be, F>,
-                Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
+                Src: ::poulpy_core::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized>
+                    + ::poulpy_ckks::CKKSCtBounds,
             {
                 $crate::ckks_ship::ship_coeff_encodings_staged::<$be, F, Src>(module, ct, plan, base2k, complex)
                     .map_err(::poulpy_ckks::CKKSError::from)

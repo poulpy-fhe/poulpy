@@ -6,6 +6,7 @@ use poulpy_core::layouts::{
     TorusPrecision,
 };
 use poulpy_hal::api::{CnvPVecBytesOf, Convolution, VecZnxBigNormalizeTmpBytes, VecZnxRshTmpBytes};
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::SlotsKind;
@@ -149,9 +150,13 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        R: GLWEToBackendMut<BE, State = Normalized>
+            + GLWEToBackendRef<BE, State = Normalized>
+            + CKKSCtBounds
+            + SetCKKSInfos
+            + SetBSGSMeta,
+        C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
     {
         BE::ckks_eval_mod_impl::<R, C, P, F, H>(self, res, ct, params, tsk, scratch)

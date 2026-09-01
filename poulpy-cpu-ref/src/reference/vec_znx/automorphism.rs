@@ -1,7 +1,9 @@
 use std::mem::size_of;
 
 use crate::{
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{
+        Backend, FitsIn, HostDataMut, HostDataRef, NormalizationState, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
+    },
     reference::znx::{ZnxAutomorphism, ZnxCopy, ZnxZero},
 };
 
@@ -9,11 +11,11 @@ pub fn vec_znx_automorphism_assign_tmp_bytes(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vec_znx_automorphism<'r, 'a, BE>(
+pub fn vec_znx_automorphism<'r, 'a, BE, S: NormalizationState>(
     p: i64,
-    res: &mut VecZnxBackendMut<'r, BE>,
+    res: &mut VecZnxBackendMut<'r, BE, S>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, impl FitsIn<S>>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxAutomorphism + ZnxZero,
@@ -36,8 +38,12 @@ pub fn vec_znx_automorphism<'r, 'a, BE>(
     }
 }
 
-pub fn vec_znx_automorphism_assign<'r, BE>(p: i64, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, tmp: &mut [i64])
-where
+pub fn vec_znx_automorphism_assign<'r, BE>(
+    p: i64,
+    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res_col: usize,
+    tmp: &mut [i64],
+) where
     BE: Backend<ZnxWord = i64> + ZnxAutomorphism + ZnxCopy,
     BE::BufMut<'r>: HostDataMut,
 {

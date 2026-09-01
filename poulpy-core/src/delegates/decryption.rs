@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, Module, Normalized, ScratchArena};
 
 use crate::{
     api::{GLWEDecrypt, GLWETensorDecrypt, LWEDecrypt, LWEMatrixDecrypt},
@@ -32,8 +32,8 @@ impl_decryption_delegate!(
     },
     fn glwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        R: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_decrypt(self, res, pt, sk, scratch)
@@ -69,7 +69,7 @@ impl_decryption_delegate!(
     fn lwe_matrix_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-        P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
+        P: GLWEToBackendMut<BE, State = Normalized> + SetBase2k + GLWEInfos,
         S: LWESecretToBackendRef<BE> + LWEInfos,
     {
         BE::lwe_matrix_decrypt(self, res, pt, sk, scratch)
@@ -92,8 +92,8 @@ impl_decryption_delegate!(
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
         GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
     {

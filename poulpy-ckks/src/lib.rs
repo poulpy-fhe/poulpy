@@ -35,10 +35,12 @@
 //! digits in that wrapper may hold un-propagated carries (wider than `base2k`
 //! bits), so passing it to any DFT-domain primitive (keyswitching,
 //! convolution, automorphisms) would produce incorrect decryptions. The
-//! wrapper does not implement [`GLWEToBackendRef`] or [`GLWEToBackendMut`],
-//! making such misuse a compile error. Call
-//! [`layouts::UnnormalizedCKKSCiphertext::normalize`] before the next
-//! keyswitching or convolution step.
+//! normalization state is the [`poulpy_hal::layouts::NormalizationState`]
+//! parameter of the underlying `VecZnx`/`GLWE`: DFT-domain primitives in
+//! `poulpy-core` require `State = Normalized`, so such misuse is a compile
+//! error. Call [`layouts::UnnormalizedCKKSCiphertext::normalize`] before the
+//! next keyswitching or convolution step; `CKKSCiphertext::into_unnormalized`
+//! is the free relabel in the other direction.
 //!
 //! ## Modules
 //!
@@ -56,6 +58,7 @@ use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::Backend;
+use poulpy_hal::layouts::Normalized;
 
 pub mod api;
 pub mod approximation;
@@ -118,14 +121,17 @@ pub(crate) use error::{
 pub use scalar::Quad;
 
 /// Backend-compatible shared CKKS plaintext storage.
-pub trait CKKSPlaintextToBackendRef<BE: Backend>: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos {}
+pub trait CKKSPlaintextToBackendRef<BE: Backend>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos {}
 
-impl<BE: Backend, T> CKKSPlaintextToBackendRef<BE> for T where T: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos {}
+impl<BE: Backend, T> CKKSPlaintextToBackendRef<BE> for T where T: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos {}
 
 /// Backend-compatible mutable CKKS plaintext storage.
 ///
 /// Implemented by owned plaintexts and scratch-backed plaintext views alike.
-pub trait CKKSPlaintextToBackendMut<BE: Backend>: CKKSPlaintextToBackendRef<BE> + GLWEToBackendMut<BE> {}
+pub trait CKKSPlaintextToBackendMut<BE: Backend>:
+    CKKSPlaintextToBackendRef<BE> + GLWEToBackendMut<BE, State = Normalized>
+{
+}
 
 impl<BE: Backend, T> CKKSPlaintextToBackendMut<BE> for T where T: CKKSPlaintextToBackendRef<BE> + GLWEToBackendMut<BE> {}
 
@@ -407,7 +413,7 @@ where
     BE: Backend,
     M: poulpy_core::GLWEShift<BE> + ?Sized,
     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-    Src: GLWEToBackendRef<BE> + CKKSInfos,
+    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos,
 {
     let offset = ckks_offset_unary(dst, src);
     let log_budget = checked_log_budget_sub(op, src.log_budget(), offset + extra_charge)?;

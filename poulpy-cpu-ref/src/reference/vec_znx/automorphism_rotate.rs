@@ -1,5 +1,7 @@
 use crate::{
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{
+        Backend, FitsIn, HostDataMut, HostDataRef, NormalizationState, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
+    },
     reference::znx::{ZnxAutomorphismRotate, ZnxZero},
 };
 
@@ -9,12 +11,12 @@ use crate::{
 /// Equivalent to applying [`vec_znx_automorphism`](super::vec_znx_automorphism)
 /// with `p` followed by [`vec_znx_rotate`](super::vec_znx_rotate) with `k`, but
 /// in a single pass and without an intermediate buffer.
-pub fn vec_znx_automorphism_rotate<'r, 'a, BE>(
+pub fn vec_znx_automorphism_rotate<'r, 'a, BE, S: NormalizationState>(
     p: i64,
     k: i64,
-    res: &mut VecZnxBackendMut<'r, BE>,
+    res: &mut VecZnxBackendMut<'r, BE, S>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, impl FitsIn<S>>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxAutomorphismRotate + ZnxZero,

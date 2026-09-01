@@ -1,3 +1,4 @@
+use poulpy_hal::layouts::Normalized;
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -802,8 +803,8 @@ fn post_process<R, A, M, H, BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend<ZnxWord = i64> + 'static,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
     M: ModuleLogN + GLWETrace<BE> + GLWEPacking<BE> + GLWERotate<BE> + GLWECopy<BE>,
 {

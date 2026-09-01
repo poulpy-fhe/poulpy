@@ -5,6 +5,7 @@ use poulpy_core::{
         GLWEToBackendRef,
     },
 };
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::{
     api::{VecZnxAddScalarAssignBackend, VecZnxNormalizeAssignBackend},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, VecZnxToBackendMut},
@@ -155,7 +156,7 @@ where
                 self.glwe_zero(&mut tmp_glwe);
                 {
                     let mut tmp_glwe_inner = tmp_glwe.data_mut();
-                    let mut tmp_glwe_data = VecZnxToBackendMut::<BE>::to_backend_mut(&mut tmp_glwe_inner);
+                    let mut tmp_glwe_data = VecZnxToBackendMut::<BE>::to_backend_mut(&mut tmp_glwe_inner).into_unnormalized();
                     self.vec_znx_add_scalar_assign_backend(&mut tmp_glwe_data, col, (dsize - 1) + row * dsize, &test_vector, 0);
                     self.vec_znx_normalize_assign_backend(base2k, &mut tmp_glwe_data, col, &mut scratch_1.borrow());
                 }
@@ -218,7 +219,7 @@ where
         bit_lsh: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64> + 'static,
     {
@@ -265,8 +266,8 @@ where
         bit_lsh: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized>,
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64> + 'static,
     {

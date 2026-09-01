@@ -5,7 +5,7 @@ use poulpy_core::{
     layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Normalized, ScratchArena},
     source::Source,
 };
 
@@ -50,8 +50,8 @@ pub trait CKKSEncryptOps<BE: Backend> {
     ) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE>,
-        Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+        Dct: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dpt: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
 }
 
 /// Secret-key decryption of a CKKS ciphertext.
@@ -92,6 +92,6 @@ pub trait CKKSDecryptOps<BE: Backend> {
     fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
-        Dct: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dpt: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
+        Dct: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 }

@@ -24,7 +24,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::ScratchOwnedAlloc,
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, Normalized, ScratchOwned},
 };
 
 fn runner_ckks_bootstrapping<BE>(group: &mut BenchmarkGroup<'_, WallTime>, preset: BootstrappingPreset)
@@ -35,8 +35,9 @@ where
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>:
+        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let id = format!(
@@ -85,8 +86,9 @@ where
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>:
+        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();

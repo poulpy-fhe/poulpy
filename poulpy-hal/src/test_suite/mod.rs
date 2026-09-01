@@ -7,8 +7,8 @@
 //! [`poulpy-cpu-ref`](https://docs.rs/poulpy-cpu-ref).
 
 use crate::layouts::{
-    Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef,
-    ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
+    Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, NormalizationState, ScalarZnx, ScalarZnxBackendMut,
+    ScalarZnxBackendRef, ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
 };
 
 pub mod convolution;
@@ -57,11 +57,11 @@ pub use crate::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 ///
 /// Lets a test hand a kernel fewer limbs than were allocated, so that writes
 /// past `size` show up in the full-buffer comparison.
-pub fn vec_znx_backend_mut_sized<'a, BE: Backend>(
-    vec: &'a mut VecZnx<BE::OwnedBuf, BE::ZnxWord>,
+pub fn vec_znx_backend_mut_sized<'a, BE: Backend, S: NormalizationState>(
+    vec: &'a mut VecZnx<BE::OwnedBuf, BE::ZnxWord, S>,
     size: usize,
-) -> VecZnxBackendMut<'a, BE> {
-    crate::layouts::vec_znx_backend_mut_with_size::<BE>(vec_znx_backend_mut::<BE>(vec), size)
+) -> VecZnxBackendMut<'a, BE, S> {
+    crate::layouts::vec_znx_backend_mut_with_size::<BE, _>(vec_znx_backend_mut::<BE, _>(vec), size)
 }
 
 pub fn scalar_znx_backend_ref<'a, BE: Backend>(scalar: &'a ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnxBackendRef<'a, BE> {
@@ -99,12 +99,16 @@ pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::Zn
     ScalarZnx::from_data(HostBytesBackend::from_host_bytes(&host_bytes), shape.n(), shape.cols())
 }
 
-pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef, BE::ZnxWord>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
+pub fn upload_vec_znx<BE: Backend, S: NormalizationState>(
+    host: &VecZnx<impl HostDataRef, BE::ZnxWord, S>,
+) -> VecZnx<BE::OwnedBuf, BE::ZnxWord, S> {
     let shape = host.shape();
     VecZnx::from_data(BE::from_host_bytes(host.data.as_ref()), shape.n(), shape.cols(), shape.size())
 }
 
-pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnx<Vec<u8>, BE::ZnxWord> {
+pub fn download_vec_znx<BE: Backend, S: NormalizationState>(
+    backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord, S>,
+) -> VecZnx<Vec<u8>, BE::ZnxWord, S> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(&backend.data);
     VecZnx::from_data(

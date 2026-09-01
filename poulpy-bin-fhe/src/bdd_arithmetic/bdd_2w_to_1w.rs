@@ -1,3 +1,4 @@
+use poulpy_hal::layouts::Normalized;
 use std::marker::PhantomData;
 
 use poulpy_core::{
@@ -163,7 +164,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
-                    Self: GLWEToBackendMut<BE>;
+                    Self: GLWEToBackendMut<BE, State = Normalized>;
 
                 /// Multithreaded version – same vis, method_name + "_multi_thread"
                 fn [<$method_name _multi_thread>]<M, H>(
@@ -178,7 +179,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
-                    Self: GLWEToBackendMut<BE>;
+                    Self: GLWEToBackendMut<BE, State = Normalized>;
 
                 fn [<$method_name _tmp_bytes>]<M, R, G, H>(
                     &self,

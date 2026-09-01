@@ -1,5 +1,10 @@
 use std::ops::{Deref, DerefMut};
 
+use crate::{
+    api::VecZnxNormalizeAssignBackend,
+    layouts::{NormalizationState, Normalized, ScratchArena, Unnormalized},
+};
+
 use crate::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLReborrowBackendMut, CnvPVecLReborrowBackendRef,
     CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CnvPVecRReborrowBackendMut,
@@ -101,7 +106,6 @@ vec_view_wrapper!(CnvPVecRViewMut, CnvPVecRBackendMut<'a, B>);
 mat_view_wrapper!(MatZnxViewMut, MatZnxBackendMut<'a, B>);
 vec_view_wrapper!(ScalarZnxViewMut, ScalarZnxBackendMut<'a, B>);
 vec_view_wrapper!(SvpPPolViewMut, SvpPPolBackendMut<'a, B>);
-vec_view_wrapper!(VecZnxViewMut, VecZnxBackendMut<'a, B>);
 vec_view_wrapper!(VecZnxBigViewMut, VecZnxBigBackendMut<'a, B>);
 vec_view_wrapper!(VecZnxDftViewMut, VecZnxDftBackendMut<'a, B>);
 mat_view_wrapper!(VmpPMatViewMut, VmpPMatBackendMut<'a, B>);
@@ -168,15 +172,102 @@ impl<'a, B: Backend + 'a> SvpPPolToBackendMut<B> for SvpPPolViewMut<'a, B> {
     }
 }
 
-impl<'a, B: Backend + 'a> VecZnxToBackendRef<B> for VecZnxViewMut<'a, B> {
-    fn to_backend_ref(&self) -> VecZnxBackendRef<'_, B> {
-        <VecZnx<B::BufMut<'a>, B::ZnxWord> as VecZnxReborrowBackendRef<B>>::reborrow_backend_ref(&self.inner)
+/// Scratch-backed mutable [`VecZnx`] view carrying its [`NormalizationState`].
+///
+/// Hand-expanded rather than produced by `vec_view_wrapper!` because it takes
+/// the extra state parameter.
+pub struct VecZnxViewMut<'a, B: Backend + 'a, S: NormalizationState = Normalized> {
+    inner: VecZnxBackendMut<'a, B, S>,
+}
+
+impl<'a, B: Backend + 'a, S: NormalizationState> VecZnxViewMut<'a, B, S> {
+    pub fn from_inner(inner: VecZnxBackendMut<'a, B, S>) -> Self {
+        Self { inner }
+    }
+
+    pub fn into_inner(self) -> VecZnxBackendMut<'a, B, S> {
+        self.inner
+    }
+
+    /// Relabels the view as [`Unnormalized`]; see [`VecZnx::into_unnormalized`].
+    pub fn into_unnormalized(self) -> VecZnxViewMut<'a, B, Unnormalized> {
+        VecZnxViewMut {
+            inner: self.inner.into_unnormalized(),
+        }
+    }
+
+    /// Relabels the view as [`Normalized`] without normalizing; see [`VecZnx::assume_normalized`].
+    pub fn assume_normalized(self) -> VecZnxViewMut<'a, B, Normalized> {
+        VecZnxViewMut {
+            inner: self.inner.assume_normalized(),
+        }
     }
 }
 
-impl<'a, B: Backend + 'a> VecZnxToBackendMut<B> for VecZnxViewMut<'a, B> {
-    fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, B> {
-        <VecZnx<B::BufMut<'a>, B::ZnxWord> as VecZnxReborrowBackendMut<B>>::reborrow_backend_mut(&mut self.inner)
+impl<'a, B: Backend + 'a> VecZnxViewMut<'a, B, Unnormalized> {
+    /// Propagates carries through every column and returns the view relabelled as [`Normalized`].
+    pub fn normalize<M>(self, module: &M, base2k: usize, scratch: &mut ScratchArena<'_, B>) -> VecZnxViewMut<'a, B, Normalized>
+    where
+        M: VecZnxNormalizeAssignBackend<B> + ?Sized,
+    {
+        let mut me = self;
+        {
+            let mut view = me.to_backend_mut();
+            for col in 0..view.cols() {
+                module.vec_znx_normalize_assign_backend(base2k, &mut view, col, scratch);
+            }
+        }
+        VecZnxViewMut {
+            inner: me.inner.assume_normalized(),
+        }
+    }
+}
+
+impl<'a, B: Backend + 'a, S: NormalizationState> Deref for VecZnxViewMut<'a, B, S> {
+    type Target = VecZnxBackendMut<'a, B, S>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'a, B: Backend + 'a, S: NormalizationState> DerefMut for VecZnxViewMut<'a, B, S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl<'a, B: Backend + 'a, S: NormalizationState> ZnxInfos for VecZnxViewMut<'a, B, S> {
+    fn n(&self) -> usize {
+        self.inner.n()
+    }
+
+    fn size(&self) -> usize {
+        self.inner.size()
+    }
+
+    fn poly_count(&self) -> usize {
+        self.inner.poly_count()
+    }
+}
+
+impl<'a, B: Backend + 'a, S: NormalizationState> VecZnxInfos for VecZnxViewMut<'a, B, S> {
+    fn cols(&self) -> usize {
+        self.inner.cols()
+    }
+}
+
+impl<'a, B: Backend + 'a, S: NormalizationState> VecZnxToBackendRef<B> for VecZnxViewMut<'a, B, S> {
+    type State = S;
+    fn to_backend_ref(&self) -> VecZnxBackendRef<'_, B, S> {
+        <VecZnx<B::BufMut<'a>, B::ZnxWord, S> as VecZnxReborrowBackendRef<B>>::reborrow_backend_ref(&self.inner)
+    }
+}
+
+impl<'a, B: Backend + 'a, S: NormalizationState> VecZnxToBackendMut<B> for VecZnxViewMut<'a, B, S> {
+    type State = S;
+    fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, B, S> {
+        <VecZnx<B::BufMut<'a>, B::ZnxWord, S> as VecZnxReborrowBackendMut<B>>::reborrow_backend_mut(&mut self.inner)
     }
 }
 

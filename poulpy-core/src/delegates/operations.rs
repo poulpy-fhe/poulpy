@@ -1,7 +1,7 @@
 use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, FitsIn, Module, Normalized, ScratchArena, Unnormalized};
 
 use crate::{
     api::{
@@ -43,7 +43,7 @@ impl_operations_delegate!(
     GLWEAddDefault<BE>,
     fn glwe_add_into<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>,
     {
@@ -51,7 +51,7 @@ impl_operations_delegate!(
     },
     fn glwe_add_assign<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_add_assign(self, res, a)
@@ -66,6 +66,7 @@ impl_operations_delegate!(
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
+        <A as GLWEToBackendRef<BE>>::State: FitsIn<<R as GLWEToBackendRef<BE>>::State>,
     {
         BE::glwe_negate(self, res, a)
     },
@@ -83,7 +84,7 @@ impl_operations_delegate!(
     GLWESubDefault<BE>,
     fn glwe_sub<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>,
     {
@@ -91,14 +92,14 @@ impl_operations_delegate!(
     },
     fn glwe_sub_assign<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_sub_assign(self, res, a)
     },
     fn glwe_sub_negate_assign<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_sub_negate_assign(self, res, a)
@@ -125,6 +126,7 @@ impl_operations_delegate!(
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
+        <A as GLWEToBackendRef<BE>>::State: FitsIn<<R as GLWEToBackendRef<BE>>::State>,
     {
         BE::glwe_copy(self, res, a)
     }
@@ -152,8 +154,8 @@ impl_operations_delegate!(
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         BE::glwe_mul_const(self, cnv_offset, res, a, b, b_coeff, scratch)
     },
@@ -165,8 +167,8 @@ impl_operations_delegate!(
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         BE::glwe_mul_const_assign(self, cnv_offset, res, b, b_coeff, scratch)
     }
@@ -187,15 +189,15 @@ impl_operations_delegate!(
     fn glwe_mul_plain<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + GLWEInfos,
     {
         BE::glwe_mul_plain(self, cnv_offset, res, a, b, scratch)
     },
     fn glwe_mul_plain_assign<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + GLWEInfos,
     {
         BE::glwe_mul_plain_assign(self, cnv_offset, res, a, scratch)
     }
@@ -223,22 +225,22 @@ impl_operations_delegate!(
     fn glwe_tensor_apply<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         BE::glwe_tensor_apply(self, cnv_offset, res, a, b, scratch)
     },
     fn glwe_tensor_square_apply<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         BE::glwe_tensor_square_apply(self, cnv_offset, res, a, scratch)
     },
     fn glwe_tensor_relinearize<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         H: GetTensorKey<BE>,
     {
         BE::glwe_tensor_relinearize(self, res, a, tsk, scratch)
@@ -264,6 +266,7 @@ impl_operations_delegate!(
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
+        <A as GLWEToBackendRef<BE>>::State: FitsIn<<R as GLWEToBackendRef<BE>>::State>,
     {
         BE::glwe_rotate(self, k, res, a)
     },
@@ -303,14 +306,14 @@ impl_operations_delegate!(
     GLWEMulXpMinusOneDefault<BE>,
     fn glwe_mul_xp_minus_one<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_mul_xp_minus_one(self, k, res, a)
     },
     fn glwe_mul_xp_minus_one_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
     {
         BE::glwe_mul_xp_minus_one_assign(self, k, res, scratch)
     }
@@ -344,14 +347,14 @@ impl_operations_delegate!(
     },
     fn glwe_lsh_add<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_lsh_add(self, res, a, k, scratch)
     },
     fn glwe_lsh_sub<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         BE::glwe_lsh_sub(self, res, a, k, scratch)
@@ -397,15 +400,15 @@ impl_operations_delegate!(
     },
     fn glwe_trace<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_trace(self, res, skip, a, keys, scratch)
     },
     fn glwe_trace_assign<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_trace_assign(self, res, skip, keys, scratch)
@@ -434,8 +437,8 @@ impl_operations_delegate!(
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_pack(self, res, a, log_gap_out, keys, scratch)

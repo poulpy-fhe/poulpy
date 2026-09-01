@@ -52,7 +52,7 @@ where
 
     bencher.iter(|| {
         let svp = svp.to_backend_ref();
-        let a = vec_znx_backend_ref::<B>(&a);
+        let a = vec_znx_backend_ref::<B, _>(&a);
         let mut res = res.to_backend_mut();
         for j in 0..sweep.cols {
             module.svp_apply_dft(&mut res, j, &svp, j, &a, j);

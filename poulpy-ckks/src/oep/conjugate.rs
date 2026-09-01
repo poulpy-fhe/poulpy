@@ -6,7 +6,7 @@ use poulpy_core::{
     layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWEAutomorphismKeyPreparedBackendRef},
 };
 use poulpy_hal::{
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, Module, Normalized, ScratchArena},
     oep::HalVecZnxImpl,
 };
 
@@ -28,8 +28,8 @@ pub unsafe trait CKKSConjugateImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSCtBounds;
 
     fn ckks_conjugate_assign_impl<Dst>(
         module: &Module<BE>,
@@ -38,7 +38,7 @@ pub unsafe trait CKKSConjugateImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
 }
 
 unsafe impl<BE: Backend> CKKSConjugateImpl<BE> for BE
@@ -58,8 +58,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSCtBounds,
     {
         module.ckks_conjugate_into_default(dst, src, key, scratch)
     }
@@ -71,7 +71,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
     {
         module.ckks_conjugate_assign_default(dst, key, scratch)
     }

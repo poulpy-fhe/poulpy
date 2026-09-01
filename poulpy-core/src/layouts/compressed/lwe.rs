@@ -182,7 +182,7 @@ impl<'b, BE: Backend + 'b> LWECompressedToBackendRef<BE> for &LWECompressed<BE::
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
-            data: vec_znx_backend_ref_from_ref::<BE>(&self.data),
+            data: vec_znx_backend_ref_from_ref::<BE, _>(&self.data),
         }
     }
 }
@@ -193,7 +193,7 @@ impl<'b, BE: Backend + 'b> LWECompressedToBackendRef<BE> for &mut LWECompressed<
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
-            data: vec_znx_backend_ref_from_mut::<BE>(&self.data),
+            data: vec_znx_backend_ref_from_mut::<BE, _>(&self.data),
         }
     }
 }
@@ -219,7 +219,7 @@ impl<'b, BE: Backend + 'b> LWECompressedToBackendMut<BE> for &mut LWECompressed<
             k: self.k,
             base2k: self.base2k,
             seed: self.seed,
-            data: vec_znx_backend_mut_from_mut::<BE>(&mut self.data),
+            data: vec_znx_backend_mut_from_mut::<BE, _>(&mut self.data),
         }
     }
 }

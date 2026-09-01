@@ -7,6 +7,7 @@
 //! [`PaCoKeys`] access trait. Custom key managers may implement [`PaCoKeys`]
 //! directly to prepare or stream keys on demand.
 
+use poulpy_hal::layouts::Normalized;
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, ensure};
@@ -99,7 +100,7 @@ impl PaCoKeyParameters {
 pub trait PaCoKeys<BE: Backend> {
     /// CKKS ciphertext type used for the four encrypted structured-secret
     /// packings `bsk_t = Enc(sigma_t)`.
-    type BootstrappingKey: GLWEToBackendRef<BE> + CKKSCtBounds;
+    type BootstrappingKey: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 
     /// Prepared automorphism-key type used by PaCo rotations and folds.
     type AutomorphismKey: GetAutomorphismKey<BE>;
@@ -508,7 +509,7 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
 
 impl<D: Data, BE: Backend> PaCoKeys<BE> for PaCoKeysPrepared<D, BE>
 where
-    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
     GLWEAutomorphismKeyPrepared<D, BE>: GLWEAutomorphismKeyPreparedToBackendRef<BE>,
     GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE>,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
@@ -718,6 +719,7 @@ mod tests {
     }
 
     impl GLWEToBackendRef<HostBytesBackend> for MisreportedCiphertext {
+        type State = Normalized;
         fn to_backend_ref(&self) -> GLWE<<HostBytesBackend as Backend>::BufRef<'_>, i64> {
             <CKKSCiphertext<Vec<u8>, i64> as GLWEToBackendRef<HostBytesBackend>>::to_backend_ref(&self.0)
         }

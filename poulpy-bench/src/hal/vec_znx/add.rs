@@ -25,9 +25,9 @@ where
     let mut c = module.vec_znx_alloc(sweep.cols, sweep.size);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let b = vec_znx_backend_ref::<B>(&b);
-        let mut c = vec_znx_backend_mut::<B>(&mut c);
+        let a = vec_znx_backend_ref::<B, _>(&a);
+        let b = vec_znx_backend_ref::<B, _>(&b);
+        let mut c = vec_znx_backend_mut::<B, _>(&mut c).into_unnormalized();
         for i in 0..sweep.cols {
             module.vec_znx_add_into_backend(&mut c, i, &a, i, &b, i);
         }
@@ -48,8 +48,8 @@ where
     let mut b = module.vec_znx_alloc(sweep.cols, sweep.size);
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut b = vec_znx_backend_mut::<B>(&mut b);
+        let a = vec_znx_backend_ref::<B, _>(&a);
+        let mut b = vec_znx_backend_mut::<B, _>(&mut b).into_unnormalized();
         for i in 0..sweep.cols {
             module.vec_znx_add_assign_backend(&mut b, i, &a, i);
         }

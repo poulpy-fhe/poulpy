@@ -1,11 +1,11 @@
 use dashu_float::{Context, FBig, round::mode::HalfEven};
 use itertools::izip;
 
-use crate::layouts::{HostDataMut, HostDataRef, VecZnx, ZnxView, ZnxViewMut};
+use crate::layouts::{HostDataMut, HostDataRef, NormalizationState, VecZnx, ZnxView, ZnxViewMut};
 
 // i64-only: the encode/decode routines below use i64/i128 limb arithmetic and
 // `u64::BITS` carry extraction. A narrower `ZnxWord` needs its own implementation.
-impl<D: HostDataMut> VecZnx<D, i64> {
+impl<D: HostDataMut, S: NormalizationState> VecZnx<D, i64, S> {
     /// Encodes an `i64` slice into the limb-decomposed (base-2^k) representation.
     ///
     /// The input `data` (length `N`) is placed at the appropriate limb position
@@ -55,7 +55,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let mut a = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+        let mut a: VecZnx<&mut [u8], i64, S> = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size: usize = a.size();
 
         // Zeroes coefficients of the col-th column
@@ -122,7 +122,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let mut a = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+        let mut a: VecZnx<&mut [u8], i64, S> = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size: usize = a.size();
 
         {
@@ -183,7 +183,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let mut a = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+        let mut a: VecZnx<&mut [u8], i64, S> = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size = a.size();
 
         for j in 0..a_size {
@@ -210,7 +210,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
 }
 
 // i64-only: see the note on the encode impl above.
-impl<D: HostDataRef> VecZnx<D, i64> {
+impl<D: HostDataRef, S: NormalizationState> VecZnx<D, i64, S> {
     /// Decodes column `col` from the limb-decomposed representation back into
     /// an `i64` slice, reconstructing values up to `k` bits of precision.
     pub fn decode_vec_i64(&self, base2k: usize, col: usize, k: usize, data: &mut [i64]) {

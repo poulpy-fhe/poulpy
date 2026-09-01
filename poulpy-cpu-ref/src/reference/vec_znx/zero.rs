@@ -1,9 +1,9 @@
 use crate::{
-    layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxViewMut},
+    layouts::{Backend, HostDataMut, NormalizationState, VecZnxBackendMut, ZnxViewMut},
     reference::znx::ZnxZero,
 };
 
-pub fn vec_znx_zero<'r, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
+pub fn vec_znx_zero<'r, BE>(res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>, res_col: usize)
 where
     BE: Backend<ZnxWord = i64> + ZnxZero,
     BE::BufMut<'r>: HostDataMut,

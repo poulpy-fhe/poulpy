@@ -142,7 +142,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     module.vec_znx_fill_uniform_source_backend(
         in_base2k,
         pt.k().as_usize(),
-        &mut vec_znx_backend_mut::<BE>(&mut pt.data),
+        &mut vec_znx_backend_mut::<BE, _>(&mut pt.data),
         0,
         &mut source_xa,
     );
@@ -262,7 +262,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                 );
                 module.vec_znx_idft_apply_tmpa(&mut have_big.to_backend_mut(), 0, &mut have_dft.to_backend_mut(), 0);
                 module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut have),
+                    &mut vec_znx_backend_mut::<BE, _>(&mut have),
                     ct.base2k().as_usize(),
                     0,
                     0,
@@ -284,7 +284,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                 );
                 module.vec_znx_idft_apply_tmpa(&mut want_big.to_backend_mut(), 0, &mut want_dft.to_backend_mut(), 0);
                 module.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BE>(&mut want),
+                    &mut vec_znx_backend_mut::<BE, _>(&mut want),
                     ct.base2k().as_usize(),
                     0,
                     0,

@@ -8,6 +8,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
@@ -63,7 +64,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE> + GLWEInfos;
+        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     /// Fills a pre-allocated baby-step cache with the rotated, prepared versions
     /// of `a`.
@@ -77,7 +78,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 
     /// Computes `res = M(a)` from the prepared left cache `lhs` (the input baby

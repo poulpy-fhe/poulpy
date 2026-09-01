@@ -11,6 +11,7 @@
 //! impl.
 
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution},
     layouts::{Backend, ScratchArena},
@@ -122,7 +123,7 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
 ) where
     BE: Backend,
     M: CnvPVecAlloc<BE> + Convolution<BE>,
-    P: GLWEToBackendRef<BE> + GLWEInfos,
+    P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
 {
     if !lt.baby_steps.is_empty() {
         assert_eq!(

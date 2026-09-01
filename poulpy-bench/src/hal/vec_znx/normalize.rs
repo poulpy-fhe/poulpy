@@ -33,8 +33,8 @@ where
     let res_offset: i64 = 0;
 
     bencher.iter(|| {
-        let a = vec_znx_backend_ref::<B>(&a);
-        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        let a = vec_znx_backend_ref::<B, _>(&a);
+        let mut res = vec_znx_backend_mut::<B, _>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_normalize(&mut res, base2k, res_offset, i, &a, base2k, i, &mut scratch.borrow());
         }
@@ -61,7 +61,7 @@ pub fn runner_vec_znx_normalize_assign<B: Backend<ZnxWord = i64>, M: Measurement
     let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_normalize_tmp_bytes());
 
     bencher.iter(|| {
-        let mut a = vec_znx_backend_mut::<B>(&mut a);
+        let mut a = vec_znx_backend_mut::<B, _>(&mut a);
         for i in 0..sweep.cols {
             module.vec_znx_normalize_assign_backend(base2k, &mut a, i, &mut scratch.borrow());
         }

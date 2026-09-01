@@ -8,9 +8,9 @@ use poulpy_hal::{
         VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, Module, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef, scalar_znx_as_vec_znx_backend_mut_from_mut,
-        vec_znx_backend_ref_from_mut,
+        Backend, Module, Normalized, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef,
+        scalar_znx_as_vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut,
     },
     source::Source,
 };
@@ -92,8 +92,8 @@ pub trait GLWEEncryptSkDefault<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized>,
+        P: GLWEToBackendRef<BE, State = Normalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 
@@ -106,7 +106,7 @@ pub trait GLWEEncryptSkDefault<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }
@@ -148,8 +148,8 @@ where
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized>,
+        P: GLWEToBackendRef<BE, State = Normalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
@@ -194,7 +194,7 @@ where
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
@@ -237,8 +237,8 @@ pub trait GLWEEncryptPkDefault<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 
@@ -251,7 +251,7 @@ pub trait GLWEEncryptPkDefault<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
@@ -292,8 +292,8 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
@@ -323,7 +323,7 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
@@ -349,7 +349,7 @@ pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized>,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
@@ -361,6 +361,7 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigNormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + VecZnxAddAssignBackend<BE>
         + VecZnxCopyBackend<BE>
         + VecZnxZeroBackend<BE>
@@ -384,7 +385,7 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Normalized>,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
@@ -463,20 +464,24 @@ where
                 // ci_big = u * pk[i] + e
                 self.vec_znx_big_add_normal(base2k, &mut ci_big, 0, noise_infos, source_xe);
 
-                let (mut ci, scratch_4) = scratch_3.take_vec_znx_scratch(self.n(), 1, size_pk);
-                let scratch_next = {
+                let (ci, scratch_4) = scratch_3.take_vec_znx_scratch(self.n(), 1, size_pk);
+                let mut ci = ci.into_unnormalized();
+                let mut scratch_next = {
                     let ci_big_ref = ci_big.to_backend_ref();
                     scratch_4
                         .apply_mut(|scratch| self.vec_znx_big_normalize(&mut ci, base2k, 0, 0, &ci_big_ref, base2k, 0, scratch))
                 };
-                scratch_1 = scratch_next;
 
-                if let Some((pt, col)) = &pt
-                    && *col == i
-                {
-                    let mut ci_mut = ci.to_backend_mut();
-                    self.vec_znx_add_assign_backend(&mut ci_mut, 0, &pt.data, 0);
-                }
+                let ci = match &pt {
+                    Some((pt, col)) if *col == i => {
+                        // Adding the message can overflow a limb: normalize before copying out.
+                        self.vec_znx_add_assign_backend(&mut ci.to_backend_mut(), 0, &pt.data, 0);
+                        ci.normalize(self, base2k, &mut scratch_next)
+                    }
+                    // `ci` holds the output of `vec_znx_big_normalize`: already within the digit bound.
+                    _ => ci.assume_normalized(),
+                };
+                scratch_1 = scratch_next;
 
                 let ci_ref = ci.to_backend_ref();
                 self.vec_znx_copy_backend(&mut res.data, i, &ci_ref, 0);
@@ -552,30 +557,33 @@ where
         let size: usize = res.size();
 
         let scratch_local = scratch.borrow();
-        let (mut c0, scratch_1) = scratch_local.take_vec_znx_scratch(self.n(), 1, size);
+        // `c0` accumulates `-sum_i a_i * s_i`, the noise and the message: carries build up
+        // until the single normalization at the end, hence the unnormalized label.
+        let (c0, scratch_1) = scratch_local.take_vec_znx_scratch(self.n(), 1, size);
+        let mut c0 = c0.into_unnormalized();
         let (mut ci, scratch_2) = scratch_1.take_vec_znx_scratch(self.n(), 1, size);
         let mut scratch_2 = scratch_2;
         self.vec_znx_zero_backend(&mut c0, 0);
 
         for i in 1..res.cols() {
-            if let Some((pt, col)) = pt.as_ref() {
-                if i == *col {
-                    self.vec_znx_copy_backend(&mut ci, 0, &pt.data, 0);
-                    let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
-                    self.vec_znx_sub_negate_assign_backend(&mut ci, 0, &ct_ref, i);
-                    self.vec_znx_normalize_assign_backend(base2k, &mut ci.to_backend_mut(), 0, &mut scratch_2.borrow());
-                } else {
-                    let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
-                    self.vec_znx_copy_backend(&mut ci, 0, &ct_ref, i);
-                }
-            } else {
-                let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
-                self.vec_znx_copy_backend(&mut ci, 0, &ct_ref, i);
-            }
-
             {
-                let (mut ci_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(self, 1, size);
-                self.vec_znx_dft_apply(1, 0, &mut ci_dft.to_backend_mut(), 0, &ci.to_backend_ref(), 0);
+                let (mut ci_dft, mut scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(self, 1, size);
+                match pt.as_ref() {
+                    Some((pt, col)) if i == *col => {
+                        // (m - a_i) is a carry-producing step: normalize it before the DFT.
+                        let (diff, mut scratch_4) = scratch_3.borrow().take_vec_znx_scratch(self.n(), 1, size);
+                        let mut diff = diff.into_unnormalized();
+                        self.vec_znx_copy_backend(&mut diff, 0, &pt.data, 0);
+                        let ct_ref = vec_znx_backend_ref_from_mut::<BE, _>(res);
+                        self.vec_znx_sub_negate_assign_backend(&mut diff, 0, &ct_ref, i);
+                        let diff = diff.normalize(self, base2k, &mut scratch_4);
+                        self.vec_znx_dft_apply(1, 0, &mut ci_dft.to_backend_mut(), 0, &diff.to_backend_ref(), 0);
+                    }
+                    _ => {
+                        let ct_ref = vec_znx_backend_ref_from_mut::<BE, _>(res);
+                        self.vec_znx_dft_apply(1, 0, &mut ci_dft.to_backend_mut(), 0, &ct_ref, i);
+                    }
+                }
                 self.svp_apply_dft_to_dft_assign(&mut ci_dft.to_backend_mut(), 0, &sk.data, i - 1);
                 let (mut ci_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, size);
                 self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut ci_dft.to_backend_mut(), 0);
@@ -602,8 +610,10 @@ where
             && *col == 0
         {
             self.vec_znx_add_assign_backend(&mut c0.to_backend_mut(), 0, &pt.data, 0);
-            self.vec_znx_normalize_assign_backend(base2k, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
         }
+
+        // Propagate the accumulated carries: every limb of the body must fit within base2k bits.
+        let c0 = c0.normalize(self, base2k, &mut scratch_2);
         self.vec_znx_copy_backend(res, 0, &c0.to_backend_ref(), 0);
     }
 }

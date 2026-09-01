@@ -19,7 +19,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN},
-    layouts::{Backend, CyclotomicOrder, Data, Module, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
+    layouts::{Backend, CyclotomicOrder, Data, Module, Normalized, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
 };
 
 use crate::{
@@ -40,7 +40,7 @@ use poulpy_core::GLWEBytesOf;
 /// single `LinearTransformation<P>` container without overlapping impls.
 impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord>
 where
-    CKKSPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
+    CKKSPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized>,
 {
     fn accumulate_giant_prod<M>(
         module: &M,
@@ -123,7 +123,7 @@ where
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
+        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
         // Stash the plaintext scale exponent while filling the diagonals so eval
         // no longer needs `lt` for `cnv_offset` math. Contract: the diagonals
@@ -145,7 +145,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
         let cyclotomic_order = self.cyclotomic_order();
@@ -179,8 +179,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
@@ -227,7 +227,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
@@ -253,8 +253,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
@@ -273,7 +273,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {

@@ -3,8 +3,8 @@ use std::fmt;
 
 use poulpy_hal::{
     layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
-        WriterTo,
+        Backend, Data, FillUniform, HostDataMut, HostDataRef, Normalized, ReaderFrom, VecZnx, VecZnxToBackendMut,
+        VecZnxToBackendRef, WriterTo,
     },
     source::Source,
 };
@@ -345,7 +345,7 @@ pub trait LWEToBackendRef<BE: Backend> {
 
 impl<BE: Backend, D: Data> LWEToBackendRef<BE> for LWE<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized>,
 {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
@@ -363,7 +363,7 @@ pub trait LWEToBackendMut<BE: Backend>: LWEToBackendRef<BE> {
 
 impl<BE: Backend, D: Data> LWEToBackendMut<BE> for LWE<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized> + VecZnxToBackendMut<BE, State = Normalized>,
 {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
@@ -380,8 +380,8 @@ impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>, BE::
         LWE {
             base2k: self.base2k,
             k: self.k,
-            body: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.body),
-            mask: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.mask),
+            body: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE, _>(&self.body),
+            mask: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE, _>(&self.mask),
         }
     }
 }
@@ -391,8 +391,8 @@ impl<'b, BE: Backend + 'b> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'b>, BE::
         LWE {
             base2k: self.base2k,
             k: self.k,
-            body: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.body),
-            mask: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.mask),
+            body: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, _>(&mut self.body),
+            mask: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, _>(&mut self.mask),
         }
     }
 }

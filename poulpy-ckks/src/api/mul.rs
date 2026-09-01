@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendRef, GetTensorKey};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Normalized, ScratchArena};
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 
@@ -131,16 +131,16 @@ pub trait CKKSMulOps<BE: Backend> {
     /// the capacity offset.
     fn ckks_mul_into<Dst, A, B, H>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
     /// Computes `dst *= a` in-place using tensor-product keyswitching via `tsk`.
     fn ckks_mul_assign<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
     /// Prepares `a` as a reusable right operand for [`Self::ckks_mul_prepared_assign`].
@@ -152,7 +152,7 @@ pub trait CKKSMulOps<BE: Backend> {
     /// produce it is bounded by [`Self::ckks_mul_tmp_bytes`].
     fn ckks_prepare_right<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
-        A: GLWEToBackendRef<BE> + CKKSCtBounds;
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 
     /// Computes `dst *= prepared` in-place against a caller-prepared right operand,
     /// relinearizing via `tsk`.
@@ -168,7 +168,7 @@ pub trait CKKSMulOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>;
 
     /// Computes `dst = a * a` (squaring) using tensor-product keyswitching.
@@ -176,14 +176,14 @@ pub trait CKKSMulOps<BE: Backend> {
     /// Equivalent to `ckks_mul_into(dst, a, a, tsk)` with the same metadata rule.
     fn ckks_square_into<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
     /// Computes `dst = dst * dst` (squaring in-place) using tensor-product keyswitching.
     fn ckks_square_assign<Dst, H>(&self, dst: &mut Dst, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
         H: GetTensorKey<BE>;
 
     /// Computes `dst = a * pt` where `pt` is a full plaintext polynomial.
@@ -192,15 +192,15 @@ pub trait CKKSMulOps<BE: Backend> {
     /// the capacity offset.
     fn ckks_mul_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst *= pt` in-place.
     fn ckks_mul_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst = a * pt[pt_coeff]`, multiplying by a single
     /// quantized constant from coefficient `pt_coeff` of `pt`.
@@ -216,9 +216,9 @@ pub trait CKKSMulOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst *= pt[pt_coeff]` in-place.
     fn ckks_mul_pt_const_assign<Dst, P>(
@@ -229,6 +229,6 @@ pub trait CKKSMulOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
 }

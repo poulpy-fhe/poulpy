@@ -16,6 +16,7 @@ use crate::{
     api::CKKSEncodingScalar,
     layouts::{CKKSCiphertextOwned, PaCoContext, PaCoKeys, PaCoWorker},
 };
+use poulpy_hal::layouts::Normalized;
 
 use poulpy_core::layouts::GLWEToBackendRef;
 use poulpy_hal::{
@@ -91,7 +92,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     ) -> Result<usize>
     where
         K: PaCoKeys<BE>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 
     /// Scratch bytes required by encapsulated sequential or parallel PaCo.
     ///
@@ -108,7 +109,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     ) -> Result<usize>
     where
         K: PaCoKeys<BE>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 
     /// Standard-arena bytes required to build the four input-dependent β
     /// plaintexts, including backend-native scalar/FFT workspace.
@@ -128,7 +129,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
     where
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 
     /// Refreshes every live coefficient of `input` sequentially, when `input`
     /// is already under the structured PaCo secret.
@@ -147,7 +148,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     ) -> Result<()>
     where
         K: PaCoKeys<BE>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 
     /// Refreshes every live coefficient of `input` sequentially, after
     /// switching a dense-key input to the structured PaCo secret.
@@ -165,7 +166,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     ) -> Result<()>
     where
         K: PaCoKeys<BE>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
 
     /// Parallel direct-mode PaCo with bounded, reusable workers.
     ///
@@ -190,7 +191,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     where
         K: PaCoKeys<BE> + Sync,
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync;
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + Sync;
 
     /// Parallel encapsulated PaCo. The dense-to-PaCo switch is evaluated once
     /// before the bounded direct-mode branch pool.
@@ -210,5 +211,5 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     where
         K: PaCoKeys<BE> + Sync,
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync;
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + Sync;
 }

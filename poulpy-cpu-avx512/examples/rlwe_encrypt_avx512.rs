@@ -134,10 +134,19 @@ fn main() {
     // ct[0] <- ct[0] + e
     module.vec_znx_add_normal_source_backend(
         base2k,
-        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
+        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct).into_unnormalized(),
         0, // Selects the first column of ct (ct[0])
         noise_infos,
         &mut source,
+    );
+
+    // Propagate the carries introduced by the noise: ct[0] must satisfy the base2k digit bound
+    // before it is fed to the DFT during decryption.
+    module.vec_znx_normalize_assign_backend(
+        base2k,
+        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
+        0,
+        &mut scratch.borrow(),
     );
 
     // Final ciphertext: ct = (-a * s + m + e, a)

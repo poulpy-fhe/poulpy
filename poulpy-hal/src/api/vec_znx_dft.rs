@@ -1,6 +1,6 @@
 use crate::layouts::{
-    Backend, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
-    VecZnxDftOwned,
+    Backend, NormalizationState, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+    VecZnxDftBackendRef, VecZnxDftOwned,
 };
 
 /// Allocates a [`VecZnxDft`](crate::layouts::VecZnxDft).
@@ -75,13 +75,13 @@ pub trait VecZnxIdftNormalizeConsume<B: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume(
         &self,
-        res: &mut VecZnxBackendMut<'_, B>,
+        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
         res_base2k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, B>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, B>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, B, impl NormalizationState>, usize)>,
         scratch: &mut ScratchArena<'_, B>,
     );
 }

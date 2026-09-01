@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, Data, Module, ScratchArena},
+    layouts::{Backend, Data, Module, Normalized, ScratchArena},
     oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
 };
 
@@ -22,8 +22,8 @@ pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
 
     fn glwe_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        R: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 
     fn lwe_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
@@ -43,7 +43,7 @@ pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
     fn lwe_matrix_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-        P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
+        P: GLWEToBackendMut<BE, State = Normalized> + SetBase2k + GLWEInfos,
         S: LWESecretToBackendRef<BE> + LWEInfos;
 
     fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
@@ -54,8 +54,8 @@ pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
         GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos;
 
@@ -75,8 +75,8 @@ pub trait DecryptionDefault<BE: Backend> {
 
     fn glwe_decrypt_default<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        R: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 
     fn lwe_decrypt_tmp_bytes_default<A>(&self, infos: &A) -> usize
@@ -96,7 +96,7 @@ pub trait DecryptionDefault<BE: Backend> {
     fn lwe_matrix_decrypt_default<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-        P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
+        P: GLWEToBackendMut<BE, State = Normalized> + SetBase2k + GLWEInfos,
         S: LWESecretToBackendRef<BE> + LWEInfos;
 
     fn glwe_tensor_decrypt_default<R: Data, P: Data, S0: Data, S1: Data>(
@@ -107,8 +107,8 @@ pub trait DecryptionDefault<BE: Backend> {
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
         GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos;
 
@@ -137,8 +137,8 @@ macro_rules! impl_decryption_defaults_full {
                 sk: &S,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                R: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                P: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos + $crate::layouts::SetBase2k,
+                R: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
+                P: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos + $crate::layouts::SetBase2k,
                 S: $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
                 $crate::default::decryption::glwe::glwe_decrypt_default::<Self, $be, _, _, _>(self, res, pt, sk, scratch)
@@ -180,7 +180,7 @@ macro_rules! impl_decryption_defaults_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::LWEMatrixToBackendRef<$be> + $crate::layouts::LWEMatrixInfos,
-                P: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::SetBase2k + $crate::layouts::GLWEInfos,
+                P: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::SetBase2k + $crate::layouts::GLWEInfos,
                 S: $crate::layouts::LWESecretToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
                 $crate::default::decryption::lwe_matrix::lwe_matrix_decrypt_default::<$be, _, _, _>(self, res, pt, sk, scratch)
@@ -200,9 +200,11 @@ macro_rules! impl_decryption_defaults_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 $crate::layouts::GLWETensor<R, <$be as poulpy_hal::layouts::Backend>::ZnxWord>:
-                    $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                    $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
                 $crate::layouts::GLWEPlaintext<P, <$be as poulpy_hal::layouts::Backend>::ZnxWord>:
-                    $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos + $crate::layouts::SetBase2k,
+                    $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized>
+                        + $crate::layouts::GLWEInfos
+                        + $crate::layouts::SetBase2k,
                 $crate::layouts::GLWESecretPrepared<S0, $be>:
                     $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 $crate::layouts::GLWESecretTensorPrepared<S1, $be>:
@@ -237,8 +239,8 @@ where
 
     fn glwe_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        R: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
         <Module<BE> as DecryptionDefault<BE>>::glwe_decrypt_default(module, res, pt, sk, scratch)
@@ -270,7 +272,7 @@ where
     fn lwe_matrix_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-        P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
+        P: GLWEToBackendMut<BE, State = Normalized> + SetBase2k + GLWEInfos,
         S: LWESecretToBackendRef<BE> + LWEInfos,
     {
         <Module<BE> as DecryptionDefault<BE>>::lwe_matrix_decrypt_default(module, res, pt, sk, scratch)
@@ -284,8 +286,8 @@ where
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
         GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
     {

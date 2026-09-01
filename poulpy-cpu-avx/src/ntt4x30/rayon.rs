@@ -32,10 +32,10 @@ use poulpy_hal::{
     api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     execution::{SerialTaskExecutor, TaskExecutor},
     layouts::{
-        Backend, DataView, DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScalarZnx, ScalarZnxBackendRef, ScratchArena,
-        SvpPPol, SvpPPolBackendMut, SvpPPolBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig,
-        VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
-        VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
+        Backend, DataView, DataViewMut, FitsIn, MatZnxBackendRef, Module, NoiseInfos, NormalizationState, Normalized, ScalarZnx,
+        ScalarZnxBackendRef, ScratchArena, SvpPPol, SvpPPolBackendMut, SvpPPolBackendRef, VecZnx, VecZnxBackendMut,
+        VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
@@ -58,11 +58,15 @@ fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, NTT4x30AvxRayon>) -> VecZ
     VecZnxDft::from_data(&mut **a.data_mut(), n, cols, size)
 }
 
-fn base_znx_ref<'a>(a: &'a VecZnxBackendRef<'_, NTT4x30AvxRayon>) -> VecZnxBackendRef<'a, NTT4x30Avx> {
+fn base_znx_ref<'a, S: NormalizationState>(
+    a: &'a VecZnxBackendRef<'_, NTT4x30AvxRayon, S>,
+) -> VecZnxBackendRef<'a, NTT4x30Avx, S> {
     VecZnx::from_data(&**a.data(), a.n(), a.cols(), a.size())
 }
 
-fn base_znx_mut<'a>(a: &'a mut VecZnxBackendMut<'_, NTT4x30AvxRayon>) -> VecZnxBackendMut<'a, NTT4x30Avx> {
+fn base_znx_mut<'a, S: NormalizationState>(
+    a: &'a mut VecZnxBackendMut<'_, NTT4x30AvxRayon, S>,
+) -> VecZnxBackendMut<'a, NTT4x30Avx, S> {
     let (n, cols, size) = (a.n(), a.cols(), a.size());
     VecZnx::from_data(&mut **a.data_mut(), n, cols, size)
 }
@@ -395,11 +399,11 @@ unsafe impl HalVecZnxImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
 
     fn vec_znx_normalize_backend(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, impl NormalizationState>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
         a_base2k: usize,
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
@@ -413,14 +417,18 @@ unsafe impl HalVecZnxImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     fn vec_znx_normalize_assign_backend(
         module: &Module<Self>,
         base2k: usize,
-        a: &mut VecZnxBackendMut<'_, Self>,
+        a: &mut VecZnxBackendMut<'_, Self, impl NormalizationState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
         poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT4x30Avx, Self>(base2k, a, a_col, carry);
     }
-    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+    fn vec_znx_transpose_backend<S: NormalizationState>(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self, S>,
+        a: &VecZnxBackendRef<'_, Self, impl FitsIn<S>>,
+    ) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
 }
@@ -928,7 +936,7 @@ unsafe impl HalVecZnxBigImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
 
     fn vec_znx_big_normalize(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
+        res: &mut VecZnxBackendMut<'_, Self, impl NormalizationState>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
@@ -1051,13 +1059,13 @@ unsafe impl HalVecZnxDftImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume(
         module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+        res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
         res_base2k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, Self, impl NormalizationState>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut base_res = base_znx_mut(res);
@@ -1085,7 +1093,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
                 &mut base_a,
                 a_col,
                 a_base2k,
-                None,
+                None::<(&VecZnxBackendRef<'_, NTT4x30Avx, Normalized>, usize)>,
                 &mut base_scratch,
             );
         }

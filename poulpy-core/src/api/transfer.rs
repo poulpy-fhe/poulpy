@@ -23,7 +23,8 @@
 //! its own layouts without editing this one.
 
 use poulpy_hal::layouts::{
-    CopyFromHost, CopyToHost, Data, DataView, DataViewMut, MatZnx, ScalarZnx, VecZnx, ZnxWord, transfer_buf_into,
+    CopyFromHost, CopyToHost, Data, DataView, DataViewMut, MatZnx, NormalizationState, ScalarZnx, VecZnx, ZnxWord,
+    transfer_buf_into,
 };
 
 use crate::layouts::{
@@ -39,11 +40,12 @@ pub trait TransferInto<Dst> {
     fn transfer_into(&self, dst: &mut Dst);
 }
 
-fn move_vec_znx<D1, D2, W>(src: &VecZnx<D1, W>, dst: &mut VecZnx<D2, W>)
+fn move_vec_znx<D1, D2, W, S>(src: &VecZnx<D1, W, S>, dst: &mut VecZnx<D2, W, S>)
 where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
+    S: NormalizationState,
 {
     assert_eq!(src.n(), dst.n(), "transfer_into: ring degree");
     assert_eq!(src.cols(), dst.cols(), "transfer_into: cols");
@@ -76,13 +78,14 @@ where
     transfer_buf_into(src.data(), dst.data_mut());
 }
 
-impl<D1, D2, W> TransferInto<GLWE<D2, W>> for GLWE<D1, W>
+impl<D1, D2, W, S> TransferInto<GLWE<D2, W, S>> for GLWE<D1, W, S>
 where
+    S: NormalizationState,
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
 {
-    fn transfer_into(&self, dst: &mut GLWE<D2, W>) {
+    fn transfer_into(&self, dst: &mut GLWE<D2, W, S>) {
         assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWE base2k");
         assert_eq!(self.k, dst.k, "transfer_into: GLWE k");
         move_vec_znx(&self.data, &mut dst.data);

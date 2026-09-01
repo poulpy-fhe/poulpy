@@ -1,7 +1,10 @@
 use std::mem::size_of;
 
 use crate::{
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{
+        Backend, HostDataMut, HostDataRef, NormalizationState, Unnormalized, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
+        ZnxViewMut,
+    },
     reference::{
         vec_znx::{vec_znx_rotate, vec_znx_sub_assign},
         znx::{ZnxNegate, ZnxRotate, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero},
@@ -14,21 +17,25 @@ pub fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(n: usize) -> usize {
 
 pub fn vec_znx_mul_xp_minus_one<'r, 'a, BE>(
     p: i64,
-    res: &mut VecZnxBackendMut<'r, BE>,
+    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
+    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxZero + ZnxSubAssign,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    vec_znx_rotate::<BE>(p, res, res_col, a, a_col);
+    vec_znx_rotate::<BE, _>(p, res, res_col, a, a_col);
     vec_znx_sub_assign::<BE>(res, res_col, a, a_col);
 }
 
-pub fn vec_znx_mul_xp_minus_one_assign<'r, BE>(p: i64, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, tmp: &mut [i64])
-where
+pub fn vec_znx_mul_xp_minus_one_assign<'r, BE>(
+    p: i64,
+    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res_col: usize,
+    tmp: &mut [i64],
+) where
     BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxNegate + ZnxSubNegateAssign,
     BE::BufMut<'r>: HostDataMut,
 {

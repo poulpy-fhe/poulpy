@@ -1,5 +1,6 @@
 use crate::layouts::GetTensorKey;
 use anyhow::Result;
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -26,7 +27,7 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
     where
         Ops: BSGSOps<BE, R, P, A, R>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>;
 
@@ -45,7 +46,7 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
         R: GLWEToBackendMut<BE>,
         B: BabyStep<BE, Value = V>,
         V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE>,
+        P: GLWEToBackendRef<BE, State = Normalized>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;
@@ -66,7 +67,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
     where
         Ops: BSGSOps<BE, R, P, A, R>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>;
 
@@ -84,7 +85,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         R: GLWEToBackendMut<BE>,
         B: BabyStep<BE, Value = V>,
         V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE>,
+        P: GLWEToBackendRef<BE, State = Normalized>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;
@@ -106,7 +107,7 @@ where
     where
         Ops: BSGSOps<BE, R, P, A, R>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
     {
@@ -127,7 +128,7 @@ where
         R: GLWEToBackendMut<BE>,
         B: BabyStep<BE, Value = V>,
         V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE>,
+        P: GLWEToBackendRef<BE, State = Normalized>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,

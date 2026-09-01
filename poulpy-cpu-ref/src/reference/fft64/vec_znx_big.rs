@@ -8,8 +8,8 @@ use poulpy_hal::api::VecZnxBigAlloc;
 use crate::{
     api::VecZnxBigAddNormal,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, Unnormalized, VecZnx, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
         vec_znx::{
@@ -27,7 +27,7 @@ use crate::{
     source::Source,
 };
 
-fn big_as_vec_znx_mut<'a, BE>(v: VecZnxBigBackendMut<'a, BE>) -> VecZnx<BE::BufMut<'a>, BE::ZnxWord>
+fn big_as_vec_znx_mut<'a, BE>(v: VecZnxBigBackendMut<'a, BE>) -> VecZnx<BE::BufMut<'a>, BE::ZnxWord, Unnormalized>
 where
     BE: Backend<ZnxWord = i64>,
 {
@@ -35,7 +35,7 @@ where
     VecZnx::from_data(v.data, shape.n(), shape.cols(), shape.size())
 }
 
-fn big_as_vec_znx_ref<'a, BE>(v: VecZnxBigBackendRef<'a, BE>) -> VecZnx<BE::BufRef<'a>, BE::ZnxWord>
+fn big_as_vec_znx_ref<'a, BE>(v: VecZnxBigBackendRef<'a, BE>) -> VecZnx<BE::BufRef<'a>, BE::ZnxWord, Unnormalized>
 where
     BE: Backend<ZnxWord = i64>,
 {
@@ -113,7 +113,7 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    vec_znx_automorphism::<BE>(p, &mut res_vznx, res_col, &a_vznx, a_col);
+    vec_znx_automorphism::<BE, _>(p, &mut res_vznx, res_col, &a_vznx, a_col);
 }
 
 pub fn vec_znx_big_automorphism_assign<R, BE>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i64])
@@ -136,7 +136,7 @@ where
 {
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    vec_znx_negate::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
+    vec_znx_negate::<BE, _>(&mut res_vznx, res_col, &a_vznx, a_col);
 }
 
 pub fn vec_znx_big_negate_assign<R, BE>(res: &mut R, res_col: usize)

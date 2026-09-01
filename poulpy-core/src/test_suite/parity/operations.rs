@@ -3,6 +3,7 @@
 //! These take no prepared key, so each test is fill, upload, run on both,
 //! compare.
 
+use poulpy_hal::layouts::Unnormalized;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, ScratchOwned},
@@ -59,14 +60,14 @@ fn compare<BR, BT, FR, FT>(
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
     FR: Fn(
         &Module<BR>,
-        &mut crate::layouts::BackendGLWE<BR>,
+        &mut crate::layouts::GLWE<BR::OwnedBuf, i64, Unnormalized>,
         &crate::layouts::BackendGLWE<BR>,
         &crate::layouts::BackendGLWE<BR>,
         &mut ScratchOwned<BR>,
     ),
     FT: Fn(
         &Module<BT>,
-        &mut crate::layouts::BackendGLWE<BT>,
+        &mut crate::layouts::GLWE<BT::OwnedBuf, i64, Unnormalized>,
         &crate::layouts::BackendGLWE<BT>,
         &crate::layouts::BackendGLWE<BT>,
         &mut ScratchOwned<BT>,
@@ -85,13 +86,14 @@ fn compare<BR, BT, FR, FT>(
 
             let a_ref = ref_glwe(module_ref, &a_infos, &mut source);
             let b_ref = ref_glwe(module_ref, &a_infos, &mut source);
-            let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source);
+            // Every op under test may write carries; results are compared as raw digits.
+            let mut res_ref = ref_glwe(module_ref, &res_infos, &mut source).into_unnormalized();
 
             let mut a_test = module_test.glwe_alloc_from_infos(&a_infos);
             a_ref.transfer_into(&mut a_test);
             let mut b_test = module_test.glwe_alloc_from_infos(&a_infos);
             b_ref.transfer_into(&mut b_test);
-            let mut res_test = module_test.glwe_alloc_from_infos(&res_infos);
+            let mut res_test = module_test.glwe_alloc_from_infos(&res_infos).into_unnormalized();
             res_ref.transfer_into(&mut res_test);
 
             let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(tmp_bytes.max(1));
@@ -100,7 +102,7 @@ fn compare<BR, BT, FR, FT>(
             op_ref(module_ref, &mut res_ref, &a_ref, &b_ref, &mut scratch_ref);
             op_test(module_test, &mut res_test, &a_test, &b_test, &mut scratch_test);
 
-            let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
+            let mut have = module_ref.glwe_alloc_from_infos(&res_infos).into_unnormalized();
             res_test.transfer_into(&mut have);
             assert_eq!(
                 res_ref, have,

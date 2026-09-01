@@ -23,7 +23,8 @@
 //!
 //! **Layout types** ([`layouts`]):
 //! - [`layouts::ScalarZnx`] -- single polynomial of integer coefficients (word type `W`, default `i64`).
-//! - [`layouts::VecZnx`] -- vector of `cols` polynomials, each with `size` limbs.
+//! - [`layouts::VecZnx`] -- vector of `cols` polynomials, each with `size` limbs, carrying a type-level
+//!   [`layouts::NormalizationState`] so un-normalized digits cannot reach the DFT pipeline.
 //! - [`layouts::MatZnx`] -- matrix of polynomials (`rows x cols_in`, each entry a [`layouts::VecZnx`] of `cols_out` polynomials).
 //! - [`layouts::VecZnxBig`] -- vector of polynomials with large-coefficient accumulator words (keyed by the backend's declared [`layouts::BigWord`]).
 //! - [`layouts::VecZnxDft`] -- vector of polynomials in DFT/NTT domain (keyed by the backend's declared [`layouts::DftWord`]).

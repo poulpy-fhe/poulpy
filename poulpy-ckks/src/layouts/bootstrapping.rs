@@ -29,6 +29,7 @@ use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{Base2K, GLWEToBackendRef},
 };
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -355,7 +356,7 @@ where
     ) -> Result<Self>
     where
         Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + DiagonalProd<BE>,
     {
         let c2s_lt: DFTMatrix<BE, Encode, Split> =
             module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;

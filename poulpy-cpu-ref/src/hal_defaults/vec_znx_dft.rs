@@ -58,8 +58,8 @@ use crate::reference::{
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig,
-        VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        Backend, HostDataMut, HostDataRef, Module, NormalizationState, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
+        VecZnxBig, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
     },
 };
 
@@ -160,13 +160,13 @@ where
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume_default(
         module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
         res_base2k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, BE>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, BE>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, BE, impl NormalizationState>, usize)>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: FFTModuleHandle<f64>,
@@ -204,7 +204,7 @@ where
             }
         }
         let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, BE> = VecZnxBig::from_data(&*big_bytes, n, 1, a_size);
-        let mut res_ref: &mut VecZnxBackendMut<'_, BE> = res;
+        let mut res_ref: &mut VecZnxBackendMut<'_, BE, _> = res;
         fft64_default_vec_znx_big_normalize::<_, _, BE>(&mut res_ref, res_base2k, 0, res_col, &&big_ref, a_base2k, 0, carry);
     }
 
@@ -446,13 +446,13 @@ where
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume_default(
         module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
         res_base2k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, BE>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, BE>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, BE, impl NormalizationState>, usize)>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
@@ -479,7 +479,7 @@ where
             }
         }
         let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, BE> = VecZnxBig::from_data(&*big_bytes, n, 1, a_size);
-        let mut res_ref: &mut VecZnxBackendMut<'_, BE> = res;
+        let mut res_ref: &mut VecZnxBackendMut<'_, BE, _> = res;
         ntt4x30_default_vec_znx_big_normalize::<_, _, BE>(&mut res_ref, res_base2k, 0, res_col, &&big_ref, a_base2k, 0, carry);
     }
 

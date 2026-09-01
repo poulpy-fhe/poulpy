@@ -1,11 +1,11 @@
 use poulpy_hal::layouts::{
-    Backend, ScalarZnx, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VmpPMatReborrowBackendMut,
-    VmpPMatReborrowBackendRef, mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut,
-    vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
+    Backend, NormalizationState, Normalized, ScalarZnx, ScratchArena, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef,
+    Unnormalized, VmpPMatReborrowBackendMut, VmpPMatReborrowBackendRef, mat_znx_backend_mut_from_mut,
+    mat_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
 };
 
 use crate::{
-    GetDistribution, GetDistributionMut,
+    GLWENormalize, GetDistribution, GetDistributionMut,
     dist::Distribution,
     layouts::{
         Base2K, GGLWE, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut,
@@ -86,7 +86,6 @@ macro_rules! view_wrapper {
 view_wrapper!(LWEViewMut, LWE<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(LWEPlaintextViewMut, LWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GLWEViewRef, GLWE<BE::BufRef<'a>, BE::ZnxWord>);
-view_wrapper!(GLWEViewMut, GLWE<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GLWEPlaintextViewMut, GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GLWETensorViewMut, GLWETensor<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GLWESecretViewMut, GLWESecret<BE::BufMut<'a>, BE::ZnxWord>);
@@ -107,6 +106,121 @@ impl<'a, BE: Backend + 'a> GGLWEViewMut<'a, BE> {
     }
 }
 
+/// Scratch-backed mutable [`GLWE`] view carrying its [`NormalizationState`].
+///
+/// Hand-expanded rather than produced by [`view_wrapper!`] because it takes the
+/// extra state parameter; `take_glwe_scratch` yields the [`Normalized`] form and
+/// [`GLWEViewMut::into_unnormalized`] relabels it for carry accumulation.
+pub struct GLWEViewMut<'a, BE: Backend + 'a, S: NormalizationState = Normalized> {
+    inner: GLWE<BE::BufMut<'a>, BE::ZnxWord, S>,
+}
+
+impl<'a, BE: Backend + 'a, S: NormalizationState> GLWEViewMut<'a, BE, S> {
+    pub fn from_inner(inner: GLWE<BE::BufMut<'a>, BE::ZnxWord, S>) -> Self {
+        Self { inner }
+    }
+
+    pub fn into_inner(self) -> GLWE<BE::BufMut<'a>, BE::ZnxWord, S> {
+        self.inner
+    }
+
+    /// Relabels the view as [`Unnormalized`]; see [`GLWE::into_unnormalized`].
+    pub fn into_unnormalized(self) -> GLWEViewMut<'a, BE, Unnormalized> {
+        GLWEViewMut {
+            inner: self.inner.into_unnormalized(),
+        }
+    }
+}
+
+impl<'a, BE: Backend + 'a> GLWEViewMut<'a, BE, Unnormalized> {
+    /// Propagates carries and returns the view relabelled as [`Normalized`]; see [`GLWE::normalize`].
+    pub fn normalize<M>(self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> GLWEViewMut<'a, BE, Normalized>
+    where
+        M: GLWENormalize<BE> + ?Sized,
+    {
+        let mut me = self;
+        module.glwe_normalize_assign(&mut me, scratch);
+        GLWEViewMut {
+            inner: me.inner.assume_normalized(),
+        }
+    }
+}
+
+impl<'a, BE: Backend + 'a, S: NormalizationState> ::core::ops::Deref for GLWEViewMut<'a, BE, S> {
+    type Target = GLWE<BE::BufMut<'a>, BE::ZnxWord, S>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'a, BE: Backend + 'a, S: NormalizationState> ::core::ops::DerefMut for GLWEViewMut<'a, BE, S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+impl<'a, BE: Backend + 'a, S: NormalizationState> crate::layouts::LWEInfos for GLWEViewMut<'a, BE, S> {
+    fn base2k(&self) -> Base2K {
+        crate::layouts::LWEInfos::base2k(&self.inner)
+    }
+
+    fn n(&self) -> crate::layouts::Degree {
+        crate::layouts::LWEInfos::n(&self.inner)
+    }
+
+    fn max_size(&self) -> usize {
+        crate::layouts::LWEInfos::max_size(&self.inner)
+    }
+
+    fn size(&self) -> usize {
+        crate::layouts::LWEInfos::size(&self.inner)
+    }
+
+    fn k(&self) -> TorusPrecision {
+        crate::layouts::LWEInfos::k(&self.inner)
+    }
+}
+
+impl<'a, BE: Backend + 'a, S: NormalizationState> crate::layouts::GLWEInfos for GLWEViewMut<'a, BE, S> {
+    fn rank(&self) -> Rank {
+        crate::layouts::GLWEInfos::rank(&self.inner)
+    }
+}
+
+impl<'a, BE: Backend + 'a, S: NormalizationState> SetBase2k for GLWEViewMut<'a, BE, S> {
+    fn set_base2k(&mut self, base2k: Base2K) {
+        self.inner.set_base2k(base2k);
+    }
+}
+
+impl<'a, BE: Backend + 'a, S: NormalizationState> SetK for GLWEViewMut<'a, BE, S> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        self.inner.set_k(k);
+    }
+}
+
+impl<'a, BE: Backend + 'a, S: NormalizationState> GLWEToBackendRef<BE> for GLWEViewMut<'a, BE, S> {
+    type State = S;
+    fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, S> {
+        GLWE {
+            base2k: self.inner.base2k,
+            k: self.inner.k,
+            data: vec_znx_backend_ref_from_mut::<BE, S>(&self.inner.data),
+        }
+    }
+}
+
+impl<'a, BE: Backend + 'a, S: NormalizationState> GLWEToBackendMut<BE> for GLWEViewMut<'a, BE, S> {
+    fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE, S> {
+        GLWE {
+            base2k: self.inner.base2k,
+            k: self.inner.k,
+            data: vec_znx_backend_mut_from_mut::<BE, S>(&mut self.inner.data),
+        }
+    }
+}
+
 macro_rules! impl_set_lwe_infos {
     ($name:ident) => {
         impl<'a, BE: Backend + 'a> SetBase2k for $name<'a, BE> {
@@ -118,7 +232,6 @@ macro_rules! impl_set_lwe_infos {
 }
 
 impl_set_lwe_infos!(LWEViewMut);
-impl_set_lwe_infos!(GLWEViewMut);
 impl_set_lwe_infos!(GLWEPlaintextViewMut);
 
 impl<'a, BE: Backend + 'a> crate::layouts::IntPolyInfos for GLWEPlaintextViewMut<'a, BE> {
@@ -130,12 +243,6 @@ impl<'a, BE: Backend + 'a> crate::layouts::IntPolyInfos for GLWEPlaintextViewMut
 impl<'a, BE: Backend + 'a> crate::layouts::IntPolyInfos for LWEPlaintextViewMut<'a, BE> {
     fn encoded_k(&self) -> crate::layouts::TorusPrecision {
         self.inner.encoded_k()
-    }
-}
-
-impl<'a, BE: Backend + 'a> SetK for GLWEViewMut<'a, BE> {
-    fn set_k(&mut self, k: TorusPrecision) {
-        self.inner.set_k(k);
     }
 }
 
@@ -158,7 +265,6 @@ macro_rules! impl_glwe_infos {
     };
 }
 
-impl_glwe_infos!(GLWEViewMut);
 impl_glwe_infos!(GLWEViewRef);
 impl_glwe_infos!(GLWEPlaintextViewMut);
 impl_glwe_infos!(GLWETensorViewMut);
@@ -278,8 +384,8 @@ impl<'a, BE: Backend + 'a> LWEToBackendRef<BE> for LWEViewMut<'a, BE> {
         LWE {
             base2k: self.inner.base2k,
             k: self.inner.k,
-            body: vec_znx_backend_ref_from_mut::<BE>(&self.inner.body),
-            mask: vec_znx_backend_ref_from_mut::<BE>(&self.inner.mask),
+            body: vec_znx_backend_ref_from_mut::<BE, _>(&self.inner.body),
+            mask: vec_znx_backend_ref_from_mut::<BE, _>(&self.inner.mask),
         }
     }
 }
@@ -288,8 +394,8 @@ impl<'a, BE: Backend + 'a> LWEToBackendMut<BE> for LWEViewMut<'a, BE> {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         let base2k = self.inner.base2k;
         let k = self.inner.k;
-        let body = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.body);
-        let mask = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.mask);
+        let body = vec_znx_backend_mut_from_mut::<BE, _>(&mut self.inner.body);
+        let mask = vec_znx_backend_mut_from_mut::<BE, _>(&mut self.inner.mask);
         LWE { base2k, k, body, mask }
     }
 }
@@ -299,7 +405,7 @@ impl<'a, BE: Backend + 'a> LWEPlaintextToBackendRef<BE> for LWEPlaintextViewMut<
         LWEPlaintext {
             base2k: self.inner.base2k,
             k: self.inner.k,
-            data: vec_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+            data: vec_znx_backend_ref_from_mut::<BE, _>(&self.inner.data),
         }
     }
 }
@@ -309,7 +415,7 @@ impl<'a, BE: Backend + 'a> LWEPlaintextToBackendMut<BE> for LWEPlaintextViewMut<
         LWEPlaintext {
             base2k: self.inner.base2k,
             k: self.inner.k,
-            data: vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
+            data: vec_znx_backend_mut_from_mut::<BE, _>(&mut self.inner.data),
         }
     }
 }
@@ -317,11 +423,12 @@ impl<'a, BE: Backend + 'a> LWEPlaintextToBackendMut<BE> for LWEPlaintextViewMut<
 macro_rules! impl_glwe_to_backend {
     ($name:ident) => {
         impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for $name<'a, BE> {
+            type State = Normalized;
             fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
                 GLWE {
                     base2k: self.inner.base2k,
                     k: self.inner.k,
-                    data: vec_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+                    data: vec_znx_backend_ref_from_mut::<BE, _>(&self.inner.data),
                 }
             }
         }
@@ -331,23 +438,23 @@ macro_rules! impl_glwe_to_backend {
                 GLWE {
                     base2k: self.inner.base2k,
                     k: self.inner.k,
-                    data: vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
+                    data: vec_znx_backend_mut_from_mut::<BE, _>(&mut self.inner.data),
                 }
             }
         }
     };
 }
 
-impl_glwe_to_backend!(GLWEViewMut);
 impl_glwe_to_backend!(GLWEPlaintextViewMut);
 impl_glwe_to_backend!(GLWETensorViewMut);
 
 impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for GLWEViewRef<'a, BE> {
+    type State = Normalized;
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.inner.base2k,
             k: self.inner.k,
-            data: vec_znx_backend_ref_from_ref::<BE>(&self.inner.data),
+            data: vec_znx_backend_ref_from_ref::<BE, _>(&self.inner.data),
         }
     }
 }

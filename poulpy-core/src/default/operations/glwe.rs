@@ -9,8 +9,9 @@ use poulpy_hal::{
         VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, FitsIn, Module, Normalized, ScratchArena,
+        Unnormalized, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        VecZnxToBackendMut, VecZnxToBackendRef,
     },
 };
 
@@ -37,8 +38,8 @@ pub trait GLWEMulConstDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn glwe_mul_const_assign_default<R, B>(
         &self,
@@ -48,8 +49,8 @@ pub trait GLWEMulConstDefault<BE: Backend> {
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 }
 
 impl<BE: Backend> GLWEMulConstDefault<BE> for Module<BE>
@@ -87,8 +88,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert_eq!(res.rank(), a.rank());
@@ -121,7 +122,7 @@ where
                     0,
                     &a_backend.data,
                     i,
-                    &poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(&b_backend.data),
+                    &poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE, _>(&b_backend.data),
                     0,
                     b_coeff,
                     &mut scratch_iter,
@@ -151,8 +152,8 @@ where
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert!(
@@ -180,7 +181,7 @@ where
                     0,
                     &res_backend.data,
                     i,
-                    &poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(&b_backend.data),
+                    &poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE, _>(&b_backend.data),
                     0,
                     b_coeff,
                     &mut scratch_iter,
@@ -253,8 +254,8 @@ where
     fn glwe_mul_plain_default<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert_eq!(res.rank(), a.rank());
@@ -332,8 +333,8 @@ where
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_plain_assign_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert!(
@@ -420,13 +421,13 @@ pub trait GLWEMulPlainDefault<BE: Backend> {
     fn glwe_mul_plain_default<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + GLWEInfos;
 
     fn glwe_mul_plain_assign_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + GLWEInfos;
 }
 
 #[doc(hidden)]
@@ -451,13 +452,13 @@ pub trait GLWETensoringDefault<BE: Backend> {
     fn glwe_tensor_relinearize_default<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         H: GetTensorKey<BE>;
 
     fn glwe_tensor_square_apply_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 
     fn glwe_tensor_apply_default<R, A, B>(
         &self,
@@ -468,8 +469,8 @@ pub trait GLWETensoringDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
 }
 
 impl<BE: Backend> GLWETensoringDefault<BE> for Module<BE>
@@ -485,6 +486,7 @@ where
         + VecZnxAddAssignBackend<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxNormalize<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + VecZnxDftApply<BE>
         + VecZnxCopyBackend<BE>
         + VecZnxNegateBackend<BE>
@@ -622,7 +624,7 @@ where
     fn glwe_tensor_relinearize_default<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
         H: GetTensorKey<BE>,
     {
         let tsk = &tsk.get_tensor_key(a.k()).unwrap_or_else(|e| panic!("{e}"));
@@ -720,7 +722,7 @@ where
     fn glwe_tensor_square_apply_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert!(
@@ -773,8 +775,8 @@ where
     fn glwe_tensor_apply_default<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert!(
@@ -847,6 +849,7 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
         + VecZnxBigBytesOf
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
+        + VecZnxNormalize<BE>
         + VecZnxCopyBackend<BE>
         + VecZnxSubAssignBackend<BE>
         + Convolution<BE>,
@@ -892,7 +895,13 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
         );
 
         module.vec_znx_copy_backend(&mut diag_terms.to_backend_mut(), i, &tmp.to_backend_ref(), 0);
-        module.vec_znx_copy_backend(&mut res.to_backend_mut().data, col_i + i, &diag_terms.to_backend_ref(), i);
+        // Normalized digits are valid under any destination label.
+        module.vec_znx_copy_backend(
+            &mut res.to_backend_mut().data.into_unnormalized(),
+            col_i + i,
+            &diag_terms.to_backend_ref(),
+            i,
+        );
     }
 
     for i in 0..cols {
@@ -918,7 +927,8 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
                 let mut res_dft_backend = res_dft.to_backend_mut();
                 module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
-            let (mut tmp, mut norm_scratch) = norm_scratch.take_vec_znx_scratch(module.n(), 1, res.size());
+            let (tmp, mut norm_scratch) = norm_scratch.take_vec_znx_scratch(module.n(), 1, res.size());
+            let mut tmp = tmp.into_unnormalized();
             module.vec_znx_big_normalize(
                 &mut tmp,
                 res_base2k,
@@ -935,7 +945,17 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
                 module.vec_znx_sub_assign_backend(&mut tmp_mut, 0, &diag_terms_ref, i);
                 module.vec_znx_sub_assign_backend(&mut tmp_mut, 0, &diag_terms_ref, j);
             }
-            module.vec_znx_copy_backend(&mut res.to_backend_mut().data, col_i + j, &tmp.to_backend_ref(), 0);
+            // tmp = pair - diag_i - diag_j carries up to two extra bits: normalize it into res.
+            module.vec_znx_normalize(
+                &mut res.to_backend_mut().data,
+                res_base2k,
+                0,
+                col_i + j,
+                &tmp.to_backend_ref(),
+                res_base2k,
+                0,
+                &mut norm_scratch.borrow(),
+            );
         }
     }
 }
@@ -984,7 +1004,8 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
         + VecZnxAddAssignBackend<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopyBackend<BE>
-        + VecZnxNegateBackend<BE>,
+        + VecZnxNegateBackend<BE>
+        + VecZnxNormalizeAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     AP: CnvPVecLToBackendRef<BE>,
     BP: CnvPVecRToBackendRef<BE>,
@@ -1048,10 +1069,12 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
             &mut scratch_iter,
         );
 
+        // The off-diagonal columns accumulate sums of normalized terms through this
+        // unnormalized view; they are normalized in place once the loops complete.
         {
-            let mut res_backend = res.to_backend_mut();
+            let mut res_acc = res.to_backend_mut().data.into_unnormalized();
             let tmp_ref = tmp.to_backend_ref();
-            module.vec_znx_copy_backend(&mut res_backend.data, col_i + i, &tmp_ref, 0);
+            module.vec_znx_copy_backend(&mut res_acc, col_i + i, &tmp_ref, 0);
         }
 
         // Pre-subtracts
@@ -1060,13 +1083,13 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
             if j != i {
                 if j < i {
                     let col_j = j * cols - (j * (j + 1) / 2);
-                    let mut res_backend = res.to_backend_mut();
+                    let mut res_acc = res.to_backend_mut().data.into_unnormalized();
                     let tmp_ref = tmp.to_backend_ref();
-                    module.vec_znx_sub_assign_backend(&mut res_backend.data, col_j + i, &tmp_ref, 0);
+                    module.vec_znx_sub_assign_backend(&mut res_acc, col_j + i, &tmp_ref, 0);
                 } else {
-                    let mut res_backend = res.to_backend_mut();
+                    let mut res_acc = res.to_backend_mut().data.into_unnormalized();
                     let tmp_ref = tmp.to_backend_ref();
-                    module.vec_znx_negate_backend(&mut res_backend.data, col_i + j, &tmp_ref, 0);
+                    module.vec_znx_negate_backend(&mut res_acc, col_i + j, &tmp_ref, 0);
                 }
             }
         }
@@ -1112,9 +1135,22 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
                     &mut scratch_iter,
                 );
 
-                let mut res_backend = res.to_backend_mut();
+                let mut res_acc = res.to_backend_mut().data.into_unnormalized();
                 let tmp_ref = tmp.to_backend_ref();
-                module.vec_znx_add_assign_backend(&mut res_backend.data, col_i + j, &tmp_ref, 0);
+                module.vec_znx_add_assign_backend(&mut res_acc, col_i + j, &tmp_ref, 0);
+            }
+        }
+    }
+
+    // res[i != j] = pair_ij - diag_i - diag_j carries up to two extra bits per limb:
+    // propagate them so the tensor satisfies the digit bound its consumers assume.
+    {
+        let mut res_backend = res.to_backend_mut();
+        for i in 0..cols {
+            let col_i: usize = i * cols - (i * (i + 1) / 2);
+            for j in i + 1..cols {
+                let mut scratch_iter = scratch.borrow();
+                module.vec_znx_normalize_assign_backend(res_base2k, &mut res_backend.data, col_i + j, &mut scratch_iter);
             }
         }
     }
@@ -1172,7 +1208,8 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: Sized
+    M: VecZnxNormalizeAssignBackend<BE>
+        + Sized
         + ModuleN
         + CnvPVecBytesOf
         + VecZnxDftBytesOf
@@ -1186,7 +1223,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
         + VecZnxCopyBackend<BE>
         + VecZnxNegateBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     BP: CnvPVecRToBackendRef<BE>,
 {
     let ab_base2k: usize = a.base2k().as_usize();
@@ -1236,7 +1273,7 @@ pub fn glwe_prepare_right<BE, M, B, BP>(module: &M, b_prep: &mut BP, b: &B, b_k:
 where
     BE: Backend,
     M: Convolution<BE>,
-    B: GLWEToBackendRef<BE> + GLWEInfos,
+    B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     BP: CnvPVecRToBackendMut<BE>,
 {
     let b_base2k: usize = b.base2k().as_usize();
@@ -1306,13 +1343,13 @@ pub fn normalize_input_limb_bound_with_offset(
 pub trait GLWEAddDefault<BE: Backend> {
     fn glwe_add_into_default<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>;
 
     fn glwe_add_assign_default<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>;
 }
 
@@ -1322,7 +1359,7 @@ where
 {
     fn glwe_add_into_default<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>,
     {
@@ -1370,7 +1407,7 @@ where
 
     fn glwe_add_assign_default<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         let mut res = res.to_backend_mut();
@@ -1390,18 +1427,18 @@ where
 pub trait GLWESubDefault<BE: Backend> {
     fn glwe_sub_default<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>;
 
     fn glwe_sub_assign_default<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>;
 
     fn glwe_sub_negate_assign_default<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>;
 }
 
@@ -1417,7 +1454,7 @@ where
 {
     fn glwe_sub_default<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>,
     {
@@ -1464,7 +1501,7 @@ where
 
     fn glwe_sub_assign_default<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         let mut res = res.to_backend_mut();
@@ -1481,7 +1518,7 @@ where
 
     fn glwe_sub_negate_assign_default<R, A>(&self, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         let mut res = res.to_backend_mut();
@@ -1502,7 +1539,8 @@ pub trait GLWENegateDefault<BE: Backend> {
     fn glwe_negate_default<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        A: GLWEToBackendRef<BE>,
+        <A as GLWEToBackendRef<BE>>::State: FitsIn<<R as GLWEToBackendRef<BE>>::State>;
 
     fn glwe_negate_assign_default<R>(&self, res: &mut R)
     where
@@ -1517,6 +1555,7 @@ where
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
+        <A as GLWEToBackendRef<BE>>::State: FitsIn<<R as GLWEToBackendRef<BE>>::State>,
     {
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
@@ -1577,7 +1616,8 @@ pub trait GLWERotateDefault<BE: Backend> {
     fn glwe_rotate_default<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        A: GLWEToBackendRef<BE>,
+        <A as GLWEToBackendRef<BE>>::State: FitsIn<<R as GLWEToBackendRef<BE>>::State>;
 
     fn glwe_rotate_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -1596,6 +1636,7 @@ where
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
+        <A as GLWEToBackendRef<BE>>::State: FitsIn<<R as GLWEToBackendRef<BE>>::State>,
     {
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
@@ -1639,12 +1680,12 @@ where
 pub trait GLWEMulXpMinusOneDefault<BE: Backend> {
     fn glwe_mul_xp_minus_one_default<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>;
 
     fn glwe_mul_xp_minus_one_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<BE, State = Unnormalized>;
 }
 
 impl<BE: Backend> GLWEMulXpMinusOneDefault<BE> for Module<BE>
@@ -1653,7 +1694,7 @@ where
 {
     fn glwe_mul_xp_minus_one_default<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         let res = &mut res.to_backend_mut();
@@ -1670,7 +1711,7 @@ where
 
     fn glwe_mul_xp_minus_one_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
     {
         let res = &mut res.to_backend_mut();
 
@@ -1688,7 +1729,8 @@ pub trait GLWECopyDefault<BE: Backend> {
     fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        A: GLWEToBackendRef<BE>,
+        <A as GLWEToBackendRef<BE>>::State: FitsIn<<R as GLWEToBackendRef<BE>>::State>;
 }
 
 impl<BE: Backend> GLWECopyDefault<BE> for Module<BE>
@@ -1699,6 +1741,7 @@ where
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
+        <A as GLWEToBackendRef<BE>>::State: FitsIn<<R as GLWEToBackendRef<BE>>::State>,
     {
         let mut res = res.to_backend_mut();
         let a = a.to_backend_ref();
@@ -1738,12 +1781,12 @@ pub trait GLWEShiftDefault<BE: Backend> {
 
     fn glwe_lsh_add_default<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>;
 
     fn glwe_lsh_sub_default<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>;
 }
 
@@ -1829,7 +1872,7 @@ where
 
     fn glwe_lsh_add_default<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         let res = &mut res.to_backend_mut();
@@ -1855,7 +1898,7 @@ where
 
     fn glwe_lsh_sub_default<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE>,
+        R: GLWEToBackendMut<BE, State = Unnormalized>,
         A: GLWEToBackendRef<BE>,
     {
         let res = &mut res.to_backend_mut();

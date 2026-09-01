@@ -98,8 +98,8 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
     for a_size in [1, 2, 3, 4] {
         let mut a = module_host.vec_znx_alloc(cols, a_size);
         a.fill_uniform(base2k, &mut source);
-        let a_ref_backend = upload_vec_znx::<BR>(&a);
-        let a_test_backend = upload_vec_znx::<BT>(&a);
+        let a_ref_backend = upload_vec_znx::<BR, _>(&a);
+        let a_test_backend = upload_vec_znx::<BT, _>(&a);
 
         for res_size in [1, 2, 3, 4] {
             let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols, res_size);
@@ -111,7 +111,7 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     j,
                     &svp_ref.to_backend_ref(),
                     j,
-                    &vec_znx_backend_ref::<BR>(&a_ref_backend),
+                    &vec_znx_backend_ref::<BR, _>(&a_ref_backend),
                     j,
                 );
                 module_test.svp_apply_dft(
@@ -119,7 +119,7 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     j,
                     &svp_test.to_backend_ref(),
                     j,
-                    &vec_znx_backend_ref::<BT>(&a_test_backend),
+                    &vec_znx_backend_ref::<BT, _>(&a_test_backend),
                     j,
                 );
             }
@@ -128,12 +128,12 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
             let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
             let res_host_template = module_host.vec_znx_alloc(cols, res_size);
-            let mut res_ref_backend = upload_vec_znx::<BR>(&res_host_template);
-            let mut res_test_backend = upload_vec_znx::<BT>(&res_host_template);
+            let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_host_template);
+            let mut res_test_backend = upload_vec_znx::<BT, _>(&res_host_template);
 
             for j in 0..cols {
                 module_ref.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
+                    &mut vec_znx_backend_mut::<BR, _>(&mut res_ref_backend),
                     base2k,
                     0,
                     j,
@@ -143,7 +143,7 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     &mut scratch_ref.arena(),
                 );
                 module_test.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
+                    &mut vec_znx_backend_mut::<BT, _>(&mut res_test_backend),
                     base2k,
                     0,
                     j,
@@ -154,8 +154,8 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                 );
             }
 
-            let res_ref = download_vec_znx::<BR>(&res_ref_backend);
-            let res_test = download_vec_znx::<BT>(&res_test_backend);
+            let res_ref = download_vec_znx::<BR, _>(&res_ref_backend);
+            let res_test = download_vec_znx::<BT, _>(&res_test_backend);
             assert_eq!(res_ref, res_test);
         }
     }
@@ -240,8 +240,8 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     for a_size in [3] {
         let mut a = module_host.vec_znx_alloc(cols, a_size);
         a.fill_uniform(base2k, &mut source);
-        let a_ref_backend = upload_vec_znx::<BR>(&a);
-        let a_test_backend = upload_vec_znx::<BT>(&a);
+        let a_ref_backend = upload_vec_znx::<BR, _>(&a);
+        let a_test_backend = upload_vec_znx::<BT, _>(&a);
 
         let mut a_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols, a_size);
         let mut a_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols, a_size);
@@ -252,7 +252,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                 0,
                 &mut a_dft_ref.to_backend_mut(),
                 j,
-                &vec_znx_backend_ref::<BR>(&a_ref_backend),
+                &vec_znx_backend_ref::<BR, _>(&a_ref_backend),
                 j,
             );
             module_test.vec_znx_dft_apply(
@@ -260,7 +260,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                 0,
                 &mut a_dft_test.to_backend_mut(),
                 j,
-                &vec_znx_backend_ref::<BT>(&a_test_backend),
+                &vec_znx_backend_ref::<BT, _>(&a_test_backend),
                 j,
             );
         }
@@ -292,12 +292,12 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
             let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
             let res_host_template = module_host.vec_znx_alloc(cols, res_size);
-            let mut res_ref_backend = upload_vec_znx::<BR>(&res_host_template);
-            let mut res_test_backend = upload_vec_znx::<BT>(&res_host_template);
+            let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_host_template);
+            let mut res_test_backend = upload_vec_znx::<BT, _>(&res_host_template);
 
             for j in 0..cols {
                 module_ref.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
+                    &mut vec_znx_backend_mut::<BR, _>(&mut res_ref_backend),
                     base2k,
                     0,
                     j,
@@ -307,7 +307,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     &mut scratch_ref.arena(),
                 );
                 module_test.vec_znx_big_normalize(
-                    &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
+                    &mut vec_znx_backend_mut::<BT, _>(&mut res_test_backend),
                     base2k,
                     0,
                     j,
@@ -318,8 +318,8 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                 );
             }
 
-            let res_ref = download_vec_znx::<BR>(&res_ref_backend);
-            let res_test = download_vec_znx::<BT>(&res_test_backend);
+            let res_ref = download_vec_znx::<BR, _>(&res_ref_backend);
+            let res_test = download_vec_znx::<BT, _>(&res_test_backend);
             assert_eq!(res_ref, res_test);
         }
     }
@@ -388,8 +388,8 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
     for res_size in [1, 2, 3, 4] {
         let mut res = module_host.vec_znx_alloc(cols, res_size);
         res.fill_uniform(base2k, &mut source);
-        let res_ref_backend_input = upload_vec_znx::<BR>(&res);
-        let res_test_backend_input = upload_vec_znx::<BT>(&res);
+        let res_ref_backend_input = upload_vec_znx::<BR, _>(&res);
+        let res_test_backend_input = upload_vec_znx::<BT, _>(&res);
 
         let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols, res_size);
         let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols, res_size);
@@ -400,7 +400,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
                 0,
                 &mut res_dft_ref.to_backend_mut(),
                 j,
-                &vec_znx_backend_ref::<BR>(&res_ref_backend_input),
+                &vec_znx_backend_ref::<BR, _>(&res_ref_backend_input),
                 j,
             );
             module_test.vec_znx_dft_apply(
@@ -408,7 +408,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
                 0,
                 &mut res_dft_test.to_backend_mut(),
                 j,
-                &vec_znx_backend_ref::<BT>(&res_test_backend_input),
+                &vec_znx_backend_ref::<BT, _>(&res_test_backend_input),
                 j,
             );
         }
@@ -422,12 +422,12 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
         let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
         let res_host_template = module_host.vec_znx_alloc(cols, res_size);
-        let mut res_ref_backend = upload_vec_znx::<BR>(&res_host_template);
-        let mut res_test_backend = upload_vec_znx::<BT>(&res_host_template);
+        let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_host_template);
+        let mut res_test_backend = upload_vec_znx::<BT, _>(&res_host_template);
 
         for j in 0..cols {
             module_ref.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
+                &mut vec_znx_backend_mut::<BR, _>(&mut res_ref_backend),
                 base2k,
                 0,
                 j,
@@ -437,7 +437,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
                 &mut scratch_ref.arena(),
             );
             module_test.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
+                &mut vec_znx_backend_mut::<BT, _>(&mut res_test_backend),
                 base2k,
                 0,
                 j,
@@ -448,8 +448,8 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
             );
         }
 
-        let res_ref = download_vec_znx::<BR>(&res_ref_backend);
-        let res_test = download_vec_znx::<BT>(&res_test_backend);
+        let res_ref = download_vec_znx::<BR, _>(&res_ref_backend);
+        let res_test = download_vec_znx::<BT, _>(&res_test_backend);
         assert_eq!(res_ref, res_test);
     }
 }

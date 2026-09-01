@@ -3,7 +3,8 @@ use poulpy_core::{
     GLWECopy, GLWEShift,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::{Backend, FitsIn, ScratchArena};
 
 use crate::{CKKSInfos, SetCKKSInfos, ckks_offset_unary};
 
@@ -18,8 +19,9 @@ pub trait CKKSCopyDefault<BE: Backend> {
     fn ckks_copy_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWECopy<BE> + GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos,
+        <Src as GLWEToBackendRef<BE>>::State: FitsIn<<Dst as GLWEToBackendRef<BE>>::State>,
     {
         let offset = ckks_offset_unary(dst, src);
         if offset == 0 {

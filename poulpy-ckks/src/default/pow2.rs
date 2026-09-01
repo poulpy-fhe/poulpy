@@ -1,6 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::{GLWECopy, GLWEShift, layouts::GLWEInfos};
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::GLWEToBackendRef;
@@ -31,8 +32,8 @@ pub trait CKKSPow2Default<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos,
     {
         crate::ckks_shift_stamp_unary(self, "mul_pow2", dst, src, bits, 0, scratch)?;
         Ok(())
@@ -41,7 +42,7 @@ pub trait CKKSPow2Default<BE: Backend> {
     fn ckks_mul_pow2_assign_default<Dst>(&self, dst: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
     {
         self.glwe_lsh_assign(dst, bits, scratch);
         Ok(())
@@ -56,8 +57,8 @@ pub trait CKKSPow2Default<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWEShift<BE> + GLWECopy<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos,
     {
         crate::ckks_shift_stamp_unary(self, "div_pow2", dst, src, 0, bits, scratch)?;
         dst.set_log_delta(dst.log_delta() + bits);
@@ -66,7 +67,7 @@ pub trait CKKSPow2Default<BE: Backend> {
 
     fn ckks_div_pow2_assign_default<Dst>(&self, dst: &mut Dst, bits: usize) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
     {
         // Lossless relabel, mirroring `_into` with `offset = 0`: the `bits`
         // charged to the budget move under `log_delta`, leaving `k` unchanged

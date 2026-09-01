@@ -9,6 +9,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
+use poulpy_hal::layouts::Normalized;
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
@@ -21,7 +22,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
+    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, GLWENormalize, LinearTransformation,
     default::{
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
@@ -159,7 +160,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
         + VecZnxIdftNormalizeConsumeTmpBytes
         + GaloisElement
         + Sync,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
     glwe_prepare_linear_transformation_baby_steps(module, cache, a, keys, scratch);
@@ -198,6 +199,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + poulpy_hal::api::ModuleN
         + GGLWEProductDefault<BE>
         + GLWEKeyswitchInternal<BE>
+        + GLWENormalize<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigAlloc<BE>

@@ -141,7 +141,8 @@ where
             let mut pt_want_data =
                 <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(
                     &mut pt_want.data,
-                );
+                )
+                .into_unnormalized();
             let pt_have_data =
                 <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&pt_have.data);
             module.vec_znx_sub_assign_backend(&mut pt_want_data, 0, &pt_have_data, 0);
@@ -149,7 +150,7 @@ where
         let mut pt_noise = upload_glwe_plaintext(module, &pt_want);
         module.vec_znx_normalize_assign_backend(
             pt_noise.base2k().as_usize(),
-            &mut vec_znx_backend_mut::<BE>(&mut pt_noise.data),
+            &mut vec_znx_backend_mut::<BE, _>(&mut pt_noise.data),
             0,
             &mut scratch.borrow(),
         );

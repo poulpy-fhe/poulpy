@@ -1,6 +1,6 @@
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWESub,
+    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk,
     layouts::{
         Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, LWEInfos, ModuleCoreAlloc, Rank,
         TorusPrecision,
@@ -9,7 +9,7 @@ use poulpy_core::{
 };
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend, VecZnxSubAssignBackend},
     layouts::{Backend, Module, ScratchOwned, VecZnxToBackendMut},
     source::Source,
 };
@@ -72,7 +72,13 @@ fn main() {
 
     module.glwe_decrypt(&ct, &mut pt_have, &sk_prepared, &mut scratch.borrow());
 
-    module.glwe_sub_assign(&mut pt_want, &pt_have);
+    // Raw residual: the statistics below read the un-propagated digits directly.
+    module.vec_znx_sub_assign_backend(
+        &mut poulpy_hal::layouts::vec_znx_backend_mut::<BackendImpl, _>(pt_want.data_mut()).into_unnormalized(),
+        0,
+        &poulpy_hal::layouts::vec_znx_backend_ref::<BackendImpl, _>(pt_have.data()),
+        0,
+    );
 
     let noise_have: f64 = pt_want.data().stats(base2k.into(), 0).std() * (k_xe.as_u32() as f64).exp2();
     let noise_want: f64 = DEFAULT_SIGMA_XE;

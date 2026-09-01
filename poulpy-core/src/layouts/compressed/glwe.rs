@@ -293,7 +293,7 @@ where
     /// Decompresses `other` into `res` by copying the stored data and regenerating the mask.
     fn decompress_glwe<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWEToBackendMut<Self::Backend> + SetBase2k,
+        R: GLWEToBackendMut<Self::Backend, State = poulpy_hal::layouts::Normalized> + SetBase2k,
         O: GLWECompressedToBackendRef<Self::Backend> + GLWEInfos,
     {
         let other = other.to_backend_ref();
@@ -349,7 +349,7 @@ impl<'a, BE: Backend + 'a> GLWECompressedToBackendRef<BE> for GLWECompressedView
             k: self.k,
             base2k: self.inner.base2k,
             rank: self.inner.rank,
-            data: poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(&self.inner.data),
+            data: poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE, _>(&self.inner.data),
         }
     }
 }
@@ -361,7 +361,7 @@ impl<'a, BE: Backend + 'a> GLWECompressedToBackendRef<BE> for GLWECompressedView
             k: self.k,
             base2k: self.inner.base2k,
             rank: self.inner.rank,
-            data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+            data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE, _>(&self.inner.data),
         }
     }
 }

@@ -477,7 +477,7 @@ fn run_probe<BE>(
         ),
         2 => module.vec_znx_idft_apply(&mut big.to_backend_mut(), 0, &a.to_backend_ref(), 0, &mut scratch.borrow()),
         _ => module.vec_znx_add_into_backend(
-            &mut VecZnxToBackendMut::<BE>::to_backend_mut(sum),
+            &mut VecZnxToBackendMut::<BE>::to_backend_mut(sum).into_unnormalized(),
             0,
             &VecZnxToBackendRef::<BE>::to_backend_ref(small),
             0,

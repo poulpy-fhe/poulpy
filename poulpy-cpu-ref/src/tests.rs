@@ -256,28 +256,28 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
             }
             let mut a: VecZnx<Vec<u8>, i64> = module_host.vec_znx_alloc(1, size);
             a.fill_uniform(base2k, &mut source);
-            let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
-            let mut want_be = upload_vec_znx::<NTT4x30Ref>(&module_host.vec_znx_alloc(1, size));
+            let a_be = upload_vec_znx::<NTT4x30Ref, _>(&a);
+            let mut want_be = upload_vec_znx::<NTT4x30Ref, _>(&module_host.vec_znx_alloc(1, size));
             module.vec_znx_rsh_backend(
                 base2k,
                 k,
-                &mut vec_znx_backend_mut::<NTT4x30Ref>(&mut want_be),
+                &mut vec_znx_backend_mut::<NTT4x30Ref, _>(&mut want_be),
                 0,
-                &vec_znx_backend_ref::<NTT4x30Ref>(&a_be),
+                &vec_znx_backend_ref::<NTT4x30Ref, _>(&a_be),
                 0,
                 &mut scratch.borrow(),
             );
-            let mut got_be = upload_vec_znx::<NTT4x30Ref>(&a);
+            let mut got_be = upload_vec_znx::<NTT4x30Ref, _>(&a);
             module.vec_znx_rsh_assign_backend(
                 base2k,
                 k,
-                &mut vec_znx_backend_mut::<NTT4x30Ref>(&mut got_be),
+                &mut vec_znx_backend_mut::<NTT4x30Ref, _>(&mut got_be),
                 0,
                 &mut scratch.borrow(),
             );
             assert_eq!(
-                download_vec_znx::<NTT4x30Ref>(&got_be),
-                download_vec_znx::<NTT4x30Ref>(&want_be),
+                download_vec_znx::<NTT4x30Ref, _>(&got_be),
+                download_vec_znx::<NTT4x30Ref, _>(&want_be),
                 "vec_znx_rsh_assign mismatch for size={size} k={k}"
             );
         }

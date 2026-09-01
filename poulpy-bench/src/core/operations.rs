@@ -41,6 +41,7 @@ pub fn runner_glwe_add_into<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, 
     let mut a: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     let mut b: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    let mut res = res.into_unnormalized();
     host_glwe(&host, &infos, &mut source).transfer_into(&mut a);
     host_glwe(&host, &infos, &mut source).transfer_into(&mut b);
 
@@ -64,6 +65,7 @@ pub fn runner_glwe_add_assign<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>
     let mut res: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     let mut b: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    let mut res = res.into_unnormalized();
     host_glwe(&host, &infos, &mut source).transfer_into(&mut b);
 
     bencher.iter(|| {
@@ -87,6 +89,7 @@ pub fn runner_glwe_sub<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Me
     let mut a: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     let mut b: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    let mut res = res.into_unnormalized();
     host_glwe(&host, &infos, &mut source).transfer_into(&mut a);
     host_glwe(&host, &infos, &mut source).transfer_into(&mut b);
 
@@ -110,6 +113,7 @@ pub fn runner_glwe_sub_assign<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>
     let mut res: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     let mut b: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    let mut res = res.into_unnormalized();
     host_glwe(&host, &infos, &mut source).transfer_into(&mut b);
 
     bencher.iter(|| {
@@ -133,6 +137,7 @@ pub fn runner_glwe_normalize<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
     let mut res: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     let mut a: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    let mut res = res.into_unnormalized();
     host_glwe(&host, &infos, &mut source).transfer_into(&mut a);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_normalize_tmp_bytes());
 
@@ -156,6 +161,7 @@ pub fn runner_glwe_normalize_assign<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFro
 
     let mut res: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
     host_glwe(&host, &infos, &mut source).transfer_into(&mut res);
+    let mut res = res.into_unnormalized();
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_normalize_tmp_bytes());
 
     bencher.iter(|| {
