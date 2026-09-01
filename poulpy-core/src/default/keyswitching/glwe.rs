@@ -329,9 +329,9 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
 /// Practical limb window used for an immediately normalized GGLWE/VMP product.
 ///
 /// Any lower limb can affect rounding through a sufficiently long carry chain.
-/// On exact transform backends the retained window covers the live precision
-/// plus the worst-case norm growth of the signed polynomial products and VMP
-/// accumulation; approximate backends retain the complete work region.
+/// The retained window covers the live precision plus the worst-case norm
+/// growth of the signed polynomial products and VMP accumulation, on every
+/// backend; see [`gadget_product_output_size`].
 pub fn gglwe_product_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
@@ -346,8 +346,7 @@ where
 /// before a single normalization.
 ///
 /// Relative to one product, summing `term_count` values can amplify the tail
-/// by that factor. Exact backends account for this in the product-norm window;
-/// approximate backends keep the complete work region.
+/// by that factor, which the product-norm window accounts for.
 pub fn gglwe_product_accumulation_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K, term_count: usize) -> usize
 where
     BE: Backend,
@@ -355,10 +354,10 @@ where
     A: LWEInfos,
     K: GGLWEInfos,
 {
-    gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(res_infos, a_infos, key_infos, term_count, 0)
+    gglwe_product_accumulation_output_size_with_tail(res_infos, a_infos, key_infos, term_count, 0)
 }
 
-pub(crate) fn gglwe_product_accumulation_output_size_with_tail<BE, R, A, K>(
+pub(crate) fn gglwe_product_accumulation_output_size_with_tail<R, A, K>(
     res_infos: &R,
     a_infos: &A,
     key_infos: &K,
@@ -366,7 +365,6 @@ pub(crate) fn gglwe_product_accumulation_output_size_with_tail<BE, R, A, K>(
     extra_live_limbs: usize,
 ) -> usize
 where
-    BE: Backend,
     R: LWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
@@ -385,7 +383,6 @@ where
         output_k: res_infos.k(),
         dsize: key_infos.dsize(),
         k_aux: key_infos.k_aux(),
-        dft_is_exact: BE::DFT_IS_EXACT,
         product_terms,
         extra_live_limbs,
     })

@@ -54,7 +54,6 @@ where
         output_k: res_infos.k(),
         dsize: ggsw_infos.dsize(),
         k_aux: ggsw_infos.k_aux(),
-        dft_is_exact: BE::DFT_IS_EXACT,
         product_terms,
         extra_live_limbs: 0,
     })
