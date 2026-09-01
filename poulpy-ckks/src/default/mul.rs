@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
@@ -6,7 +7,6 @@ use poulpy_core::{
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         ModuleCoreAlloc, TorusPrecision,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -35,14 +35,16 @@ pub trait CKKSMulDefault<BE: Backend> {
         // width `max(a.k, b.k)` (`ckks_mul_into`) or `max(dst.k, a.k)`
         // (`ckks_mul_assign`), matching the `cnv_offset` rule in
         // `mul_ct_params_raw` (which is already expressed on effective `k`).
-        // Sizing must cover the widest of the three — a destination narrower
-        // than its operands is a supported call.
+        // `res.k` is its pre-call metadata and does not size this intermediate.
         let tensor_layout = GLWELayout {
             n: res.n(),
             base2k: res.base2k(),
-            k: TorusPrecision(res.k().max(a.k()).max(b.k()).as_u32()),
+            k: a.k().max(b.k()),
             rank: res.rank(),
         };
+        if tensor_layout.k().as_u32() == 0 {
+            return 0;
+        }
 
         let lvl_0 = self.glwe_tensor_bytes_of_from_infos(&tensor_layout);
         let lvl_1 = self
@@ -65,7 +67,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GetTensorKey<BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
 
@@ -92,7 +94,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GetTensorKey<BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
 
@@ -153,29 +155,9 @@ pub trait CKKSMulDefault<BE: Backend> {
     where
         Self: GLWETensoring<BE> + GiantStepTensorBounds<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GetTensorKey<BE>,
     {
-        // Prepared operands are long-lived cached objects: reject one built
-        // under a different ring degree, radix, or rank before touching `dst`.
-        if prepared.layout.n != dst.n() || prepared.layout.base2k != dst.base2k() || prepared.layout.rank != dst.rank() {
-            return Err(crate::CKKSCompositionError::PreparedOperandLayoutMismatch {
-                op: "mul_prepared",
-                dst_n: dst.n().as_usize(),
-                dst_base2k: dst.base2k().as_usize(),
-                dst_rank: dst.rank().as_usize(),
-                prep_n: prepared.layout.n.as_usize(),
-                prep_base2k: prepared.layout.base2k.as_usize(),
-                prep_rank: prepared.layout.rank.as_usize(),
-            }
-            .into());
-        }
-        let (res_log_budget, res_log_delta, cnv_offset) = mul_ct_params_raw(
-            dst.k().as_usize(),
-            dst.log_delta(),
-            dst.k().into(),
-            prepared.log_delta,
-            prepared.k,
-        )?;
+        let (res_log_budget, res_log_delta, cnv_offset, tensor_k) = get_mul_prepared_params(&*dst, prepared)?;
 
         // Size the intermediate from the right operand's `k` rather than
         // its full `max_k`: the tensor product only consumes the top `k`
@@ -184,7 +166,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             self,
             dst,
             tsk,
-            dst.k().max(TorusPrecision(prepared.k as u32)),
+            tensor_k,
             MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -212,9 +194,12 @@ pub trait CKKSMulDefault<BE: Backend> {
         let tensor_layout = GLWELayout {
             n: res.n(),
             base2k: res.base2k(),
-            k: TorusPrecision(res.k().max(a.k()).as_u32()),
+            k: a.k(),
             rank: res.rank(),
         };
+        if tensor_layout.k().as_u32() == 0 {
+            return 0;
+        }
 
         let lvl_0 = self.glwe_tensor_bytes_of_from_infos(&tensor_layout);
         let lvl_1 = self
@@ -229,7 +214,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GetTensorKey<BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
 
@@ -254,7 +239,7 @@ pub trait CKKSMulDefault<BE: Backend> {
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GetTensorKey<BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
 
@@ -454,7 +439,7 @@ where
     BE: Backend,
     M: GLWETensoring<BE> + ?Sized,
     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-    T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    T: GetTensorKey<BE>,
 {
     let do_stamp = |dst: &mut Dst| {
         dst.set_log_budget(stamp.log_budget);
@@ -487,7 +472,47 @@ where
     Ok(())
 }
 
-fn get_mul_ct_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
+/// Prepared operands are long-lived cached objects: reject one built under a
+/// different ring degree, radix or rank before touching `dst`.
+pub(crate) fn check_prepared_layout<BE: Backend, D: GLWEInfos>(dst: &D, prepared: &CKKSPreparedRight<BE>) -> Result<()> {
+    if prepared.layout.n != dst.n() || prepared.layout.base2k != dst.base2k() || prepared.layout.rank != dst.rank() {
+        return Err(crate::CKKSCompositionError::PreparedOperandLayoutMismatch {
+            op: "mul_prepared",
+            dst_n: dst.n().as_usize(),
+            dst_base2k: dst.base2k().as_usize(),
+            dst_rank: dst.rank().as_usize(),
+            prep_n: prepared.layout.n.as_usize(),
+            prep_base2k: prepared.layout.base2k.as_usize(),
+            prep_rank: prepared.layout.rank.as_usize(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+/// Full scalar-equivalent validation and parameters for a prepared multiply.
+///
+/// Batch delegates call this for every lane before resolving any bound or
+/// writing any destination, so a late insufficient-budget error cannot leave
+/// an earlier lane modified.
+pub(crate) fn get_mul_prepared_params<BE: Backend, D: GLWEInfos + CKKSInfos>(
+    dst: &D,
+    prepared: &CKKSPreparedRight<BE>,
+) -> Result<(usize, usize, usize, TorusPrecision)> {
+    check_prepared_layout(dst, prepared)?;
+    let prepared_k = u32::try_from(prepared.k)
+        .map_err(|_| crate::CKKSError::Internal(anyhow::anyhow!("prepared precision {} exceeds u32", prepared.k)))?;
+    let tensor_k = dst.k().max(TorusPrecision(prepared_k));
+    let (log_budget, log_delta, cnv_offset) = mul_ct_params_raw(
+        dst.k().as_usize(),
+        dst.log_delta(),
+        dst.k().into(),
+        prepared.log_delta,
+        prepared.k,
+    )?;
+    Ok((log_budget, log_delta, cnv_offset, tensor_k))
+}
+pub(crate) fn get_mul_ct_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
 where
     R: CKKSInfos,
     A: CKKSInfos,

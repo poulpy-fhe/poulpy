@@ -7,11 +7,12 @@ use crate::layouts::CKKSCiphertextOwned;
 use crate::{CKKSResult as Result, ckks_ensure};
 
 use anyhow::Context;
+use poulpy_core::layouts::prepared::{GLWEAutomorphismKeyPreparedBackendRef, GLWETensorKeyPreparedBackendRef};
 use poulpy_core::{
-    GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
+    GLWEAutomorphism, GLWEBytesOf, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
     layouts::{
-        Degree, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees,
-        GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
+        Degree, GGLWEPreparedToBackendRef, GLWEInfos, GLWELayout, GLWESwitchingKeyDegrees, GLWEToBackendRef, GetAutomorphismKey,
+        GetTensorKey, LWEInfos, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
@@ -74,8 +75,37 @@ impl CKKSInfos for BranchScratchLayout {
     }
 }
 
+fn automorphism_layout_for<'a, BE: Backend, H>(
+    keys: &'a H,
+    element: i64,
+    k: TorusPrecision,
+) -> Result<GLWEAutomorphismKeyPreparedBackendRef<'a, BE>>
+where
+    H: GetAutomorphismKey<BE>,
+{
+    keys.get_automorphism_key(element, k)
+        .with_context(|| format!("PaCo rotation-key layout is missing Galois element {element} at precision {k}"))
+        .map_err(Into::into)
+}
+
+/// The relinearization key layout the helper resolves at `k`.
+fn relinearization_layout_for<BE: Backend, H>(keys: &H, k: TorusPrecision) -> Result<GLWETensorKeyPreparedBackendRef<'_, BE>>
+where
+    H: GetTensorKey<BE>,
+{
+    keys.get_tensor_key(k)
+        .with_context(|| format!("PaCo relinearization-key layout is missing precision {k}"))
+        .map_err(Into::into)
+}
+
 /// Computes a conservative scratch bound for one direct branch after the
 /// common runtime layouts have been validated.
+///
+/// Every stage is sized at the branch's working precision, the widest the
+/// accumulator ever is, and every key-dependent term is taken over the
+/// context's rotation keys resolved at that precision. The keys' effective
+/// decompositions are resolved below this API, so each query only needs the
+/// key itself.
 pub(super) fn direct_tmp_bytes_validated<BE, F, K>(
     module: &Module<BE>,
     output: &CKKSCiphertextOwned<BE>,
@@ -106,11 +136,12 @@ where
     // The branch evaluates at working level `output.k() + circuit_depth` (see
     // `branch_working_k`), so size the op scratch from that, not the seed width.
     let working_k = super::bootstrap::branch_working_k(plan, output.k().as_usize())?;
+    let working_precision = TorusPrecision(u32::try_from(working_k).context("PaCo branch working width does not fit u32")?);
     let branch_layout = BranchScratchLayout {
         glwe_layout: GLWELayout {
             n: canonical.n(),
             base2k: canonical.base2k(),
-            k: TorusPrecision(working_k as u32),
+            k: working_precision,
             rank: canonical.rank(),
         },
         max_size: working_k.div_ceil(canonical.base2k().as_usize()),
@@ -136,10 +167,10 @@ where
         },
     };
 
-    // Streamed linear transformations prepare a diagonal on demand.  Size
-    // that preparation from the widest compiled factor rather than using the
-    // output ciphertext as an implicit plaintext proxy: custom factor budgets
-    // may legitimately be wider than the final ciphertext.
+    // Streamed linear transformations prepare a diagonal on demand. Size that
+    // preparation from the widest compiled factor rather than using the output
+    // ciphertext as an implicit plaintext proxy: custom factor budgets may
+    // legitimately be wider than the final ciphertext.
     let factor_k = plan
         .c2s()
         .log_delta()
@@ -166,30 +197,30 @@ where
         },
     };
 
+    let relinearization = relinearization_layout_for(keys.tensor_key(), working_precision)?;
     let bsk = canonical;
     let mut required = module
         .ckks_mul_pt_vec_tmp_bytes(&branch_layout, bsk, &beta_layout)
-        .max(module.ckks_mul_tmp_bytes(&branch_layout, &branch_layout, &branch_layout, keys.tensor_key()))
+        .max(module.ckks_mul_tmp_bytes(&branch_layout, &branch_layout, &branch_layout, &relinearization))
         .max(module.ckks_add_tmp_bytes())
         .max(module.ckks_sub_tmp_bytes())
         .max(module.ckks_copy_tmp_bytes())
         .max(module.glwe_rotate_tmp_bytes());
 
+    // The assign path evaluates into a branch-shaped scratch copy and stamps
+    // the narrower result metadata afterwards, so the copy is sized here too.
+    let lt_copy = module.glwe_bytes_of_from_infos(&branch_layout);
     for &element in context.galois_elements() {
-        let key = keys
-            .rotation_keys()
-            .get_automorphism_key(element)
-            .with_context(|| format!("PaCo rotation-key map is missing Galois element {element}"))?;
+        let key = automorphism_layout_for::<BE, _>(keys.rotation_keys(), element, working_precision)?;
+        let lt = module
+            .glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(&branch_layout, &branch_layout, &factor_layout, &key)
+            .checked_add(lt_copy)
+            .context("PaCo linear-transformation scratch size overflows usize")?;
         required = required
-            .max(module.glwe_automorphism_tmp_bytes(&branch_layout, &branch_layout, key))
-            .max(module.ckks_rotate_tmp_bytes(&branch_layout, key))
-            .max(module.ckks_conjugate_tmp_bytes(&branch_layout, key))
-            .max(module.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(
-                &branch_layout,
-                &branch_layout,
-                &factor_layout,
-                key,
-            ));
+            .max(module.glwe_automorphism_tmp_bytes(&branch_layout, &branch_layout, &key))
+            .max(module.ckks_rotate_tmp_bytes(&branch_layout, &key))
+            .max(module.ckks_conjugate_tmp_bytes(&branch_layout, &key))
+            .max(lt);
     }
     required = required.max(BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(module, plan)?);
     Ok(required)

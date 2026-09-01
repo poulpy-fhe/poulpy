@@ -16,10 +16,7 @@ use poulpy_hal::{
 
 use crate::{
     default::keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
-    layouts::{
-        Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
-        prepared::GLWETensorKeyPreparedToBackendRef,
-    },
+    layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos},
 };
 
 #[doc(hidden)]
@@ -451,11 +448,11 @@ pub trait GLWETensoringDefault<BE: Backend> {
         A: GLWEInfos,
         B: GGLWEInfos;
 
-    fn glwe_tensor_relinearize_default<R, A, B>(&self, res: &mut R, a: &A, tsk: &B, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_tensor_relinearize_default<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+        H: GetTensorKey<BE>;
 
     fn glwe_tensor_square_apply_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -593,7 +590,10 @@ where
         let cols: usize = tsk.rank_out().as_usize() + 1;
         let pairs: usize = tsk.rank_in().as_usize();
 
-        let a_dft_size: usize = (a.size() * a_base2k).div_ceil(key_base2k);
+        // The operand's precision, not its limb count rounded back up: across
+        // radices the two disagree, and the product would be handed one limb
+        // too many.
+        let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, tsk);
 
         let lvl_0: usize = self.bytes_of_vec_znx_dft(pairs, a_dft_size);
@@ -619,12 +619,13 @@ where
         lvl_0 + lvl_1
     }
 
-    fn glwe_tensor_relinearize_default<R, A, B>(&self, res: &mut R, a: &A, tsk: &B, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_tensor_relinearize_default<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
+        let tsk = &tsk.get_tensor_key(a.k()).unwrap_or_else(|e| panic!("{e}"));
         let scratch = scratch.borrow();
         assert!(
             scratch.available() >= self.glwe_tensor_relinearize_tmp_bytes_default(res, a, tsk),
@@ -646,7 +647,7 @@ where
         let cols: usize = tsk.rank_out().as_usize() + 1;
         let pairs: usize = tsk.rank_in().as_usize();
 
-        let a_dft_size: usize = (a.size() * a_base2k).div_ceil(key_base2k);
+        let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
 
         let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(self, pairs, a_dft_size);
 
@@ -674,8 +675,6 @@ where
         }
 
         let (mut res_dft, mut scratch_2) = scratch.borrow().take_vec_znx_dft_scratch(self, cols, output_size);
-        let tsk = tsk.to_backend_ref();
-
         let a_dft_ref = a_dft.to_backend_ref();
         self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2);
         let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self, cols, output_size);

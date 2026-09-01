@@ -82,6 +82,10 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWESwitchingKeyPrepared<D, B> {
     fn dnum(&self) -> Dnum {
         self.key.dnum()
     }
+
+    fn stride(&self) -> usize {
+        self.key.stride()
+    }
 }
 
 pub trait GLWESwitchingKeyPreparedFactory<B: Backend>

@@ -2,10 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring,
-    layouts::{
-        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
-    },
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, ModuleCoreAlloc, TorusPrecision},
 };
 use poulpy_hal::{
     api::{ModuleN, VecZnxCopyBackend},
@@ -14,7 +11,26 @@ use poulpy_hal::{
 
 use crate::api::CKKSMulOps;
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight, oep::CKKSMulImpl};
+use crate::{CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight, oep::CKKSMulImpl};
+
+/// The precision each ciphertext-ciphertext operation resolves its key at.
+///
+/// One definition per operation, used by the scratch query and by the execution
+/// alike, so the two cannot drift apart. The assign forms read their
+/// destination as an operand, which is why it enters here and not only there.
+fn mul_k<A: CKKSCtBounds, B: CKKSCtBounds>(a: &A, b: &B) -> TorusPrecision {
+    a.k().max(b.k())
+}
+
+fn square_k<A: CKKSCtBounds>(a: &A) -> TorusPrecision {
+    a.k()
+}
+
+fn prepared_mul_k_checked<D: CKKSCtBounds>(dst: &D, prepared_k: usize) -> Result<TorusPrecision> {
+    let prepared_k = u32::try_from(prepared_k)
+        .map_err(|_| crate::CKKSError::Internal(anyhow::anyhow!("prepared precision {prepared_k} exceeds u32")))?;
+    Ok(dst.k().max(TorusPrecision(prepared_k)))
+}
 
 impl<BE: Backend + CKKSMulImpl<BE>> CKKSMulOps<BE> for Module<BE>
 where
@@ -35,6 +51,9 @@ where
         B: CKKSCtBounds,
         T: GGLWEInfos,
     {
+        // Sizing takes the key, not a decomposition: which effective `dsize` the
+        // helper dispatches at is resolved during execution, and the budget
+        // below covers every one this key admits.
         BE::ckks_mul_tmp_bytes_impl(self, res, a, b, tsk)
     }
 
@@ -65,22 +84,34 @@ where
         BE::ckks_mul_pt_const_tmp_bytes_impl(self, res, a, b.k())
     }
 
-    fn ckks_mul_into<Dst, A, B, T>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_into<Dst, A, B, H>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
+        let k = mul_k(a, b);
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_into",
+                k: k.into(),
+            })?;
         BE::ckks_mul_into_impl(self, dst, a, b, tsk, scratch)
     }
 
-    fn ckks_mul_assign<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_assign<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
+        let k = mul_k(dst, a);
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_assign",
+                k: k.into(),
+            })?;
         BE::ckks_mul_assign_impl(self, dst, a, tsk, scratch)
     }
 
@@ -91,34 +122,52 @@ where
         BE::ckks_prepare_right_impl(self, a, scratch)
     }
 
-    fn ckks_mul_prepared_assign<Dst, T>(
+    fn ckks_mul_prepared_assign<Dst, H>(
         &self,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<BE>,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
+        let k = prepared_mul_k_checked(dst, prepared.k)?;
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_mul_prepared_assign",
+                k: k.into(),
+            })?;
         BE::ckks_mul_prepared_assign_impl(self, dst, prepared, tsk, scratch)
     }
 
-    fn ckks_square_into<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_into<Dst, A, H>(&self, dst: &mut Dst, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
+        let k = square_k(a);
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_square_into",
+                k: k.into(),
+            })?;
         BE::ckks_square_into_impl(self, dst, a, tsk, scratch)
     }
 
-    fn ckks_square_assign<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_assign<Dst, H>(&self, dst: &mut Dst, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GetTensorKey<BE>,
     {
+        let k = square_k(dst);
+        tsk.get_tensor_key(k)
+            .map_err(|_| CKKSCompositionError::MissingRelinearizationKey {
+                op: "ckks_square_assign",
+                k: k.into(),
+            })?;
         BE::ckks_square_assign_impl(self, dst, tsk, scratch)
     }
 

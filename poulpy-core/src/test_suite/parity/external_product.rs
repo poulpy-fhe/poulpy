@@ -7,6 +7,7 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
+use crate::layouts::prepared::GGSWPreparedToBackendRef;
 use crate::{
     GLWEExternalProduct,
     api::TransferInto,
@@ -89,8 +90,13 @@ pub fn test_glwe_external_product_parity<BR, BT>(
             let mut ggsw_test = module_test.ggsw_prepared_alloc_from_infos(&ggsw_infos);
             module_test.ggsw_prepare(&mut ggsw_test, &ggsw_test_coeffs, &mut scratch_test.borrow());
 
-            module_ref.glwe_external_product(&mut res_ref, &a_ref, &ggsw_ref, &mut scratch_ref.borrow());
-            module_test.glwe_external_product(&mut res_test, &a_test, &ggsw_test, &mut scratch_test.borrow());
+            module_ref.glwe_external_product(&mut res_ref, &a_ref, &ggsw_ref.to_backend_ref(), &mut scratch_ref.borrow());
+            module_test.glwe_external_product(
+                &mut res_test,
+                &a_test,
+                &ggsw_test.to_backend_ref(),
+                &mut scratch_test.borrow(),
+            );
 
             let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
             res_test.transfer_into(&mut have);

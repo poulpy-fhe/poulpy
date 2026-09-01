@@ -6,7 +6,9 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
     default::operations::GLWEZeroDefault,
-    layouts::{GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GLWEViewMut, prepared::GGSWPreparedToBackendRef},
+    layouts::{
+        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GLWEInfos, GLWEViewMut, prepared::GGSWPreparedBackendRef,
+    },
     oep::{GGLWEExternalProductDefault, GLWEExternalProductDefault},
 };
 
@@ -21,13 +23,17 @@ where
     module.glwe_external_product_tmp_bytes_default(res_infos, a_infos, b_infos)
 }
 
-pub fn gglwe_external_product_default<BE, M, R, A, B>(module: &M, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn gglwe_external_product_default<BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    b: &GGSWPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GGLWEExternalProductDefault<BE> + GLWEExternalProductDefault<BE> + GLWEZeroDefault<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     A: GGLWEToBackendRef<BE> + GGLWEInfos,
-    B: GGSWPreparedToBackendRef<BE> + GGSWInfos,
 {
     assert_eq!(
         res.rank_in(),
@@ -84,12 +90,15 @@ where
     }
 }
 
-pub fn gglwe_external_product_assign_default<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn gglwe_external_product_assign_default<BE, M, R>(
+    module: &M,
+    res: &mut R,
+    a: &GGSWPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GGLWEExternalProductDefault<BE> + GLWEExternalProductDefault<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
-    A: GGSWPreparedToBackendRef<BE> + GGSWInfos,
 {
     assert_eq!(
         res.rank_out(),

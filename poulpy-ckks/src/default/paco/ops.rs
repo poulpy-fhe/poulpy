@@ -31,14 +31,11 @@
 //! [`CKKSConjugateOps`](crate::api::CKKSConjugateOps) performs
 //! `conj(rotate(·, k))` in a single keyswitch.
 
-use crate::CKKSAtkBounds;
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::{
     GLWEAutomorphism,
-    layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
-    },
+    layouts::{GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey},
 };
 use poulpy_hal::{
     api::ModuleN,
@@ -91,7 +88,7 @@ pub trait PaCoSlotOps<BE: Backend> {
     /// `j ∈ [0, a/b)` (indices mod `N/2`). One fused `ct += σ(ct)` keyswitch
     /// per level; consumes no budget. `keys` must contain the automorphism
     /// keys for `fold_rotations``(a, b)`.
-    fn ckks_slot_trace_assign<Dst, H, K>(
+    fn ckks_slot_trace_assign<Dst, H>(
         &self,
         ct: &mut Dst,
         a: usize,
@@ -101,26 +98,24 @@ pub trait PaCoSlotOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// `Pr_{a→b}` in place: slot `i` becomes `Π_j ct[i + j·b]` for
     /// `j ∈ [0, a/b)` (indices mod `N/2`). Rotate-and-multiply with
     /// relinearization via `tsk`; consumes `log(a/b) · log_delta` budget bits.
-    fn ckks_slot_product_assign<Dst, H, K, T>(
+    fn ckks_slot_product_assign<Dst, H, TH>(
         &self,
         ct: &mut Dst,
         a: usize,
         b: usize,
         keys: &H,
-        tsk: &T,
+        tsk: &TH,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GetAutomorphismKey<BE>,
+        TH: GetTensorKey<BE>;
 }
 
 impl<BE: Backend> PaCoSlotOps<BE> for Module<BE>
@@ -128,7 +123,7 @@ where
     Module<BE>: CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSModuleAlloc<BE> + GLWEAutomorphism<BE> + CyclotomicOrder + ModuleN,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
-    fn ckks_slot_trace_assign<Dst, H, K>(
+    fn ckks_slot_trace_assign<Dst, H>(
         &self,
         ct: &mut Dst,
         a: usize,
@@ -138,36 +133,35 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
         let order = self.cyclotomic_order();
         for rot in checked_fold_rotations(self, a, b)? {
-            let key =
-                keys.get_automorphism_key(galois_element(rot, order))
-                    .ok_or(CKKSCompositionError::MissingAutomorphismKey {
-                        op: "paco_slot_trace",
-                        rotation: rot,
-                    })?;
-            self.glwe_automorphism_add_assign(ct, key, scratch);
+            let key = keys.get_automorphism_key(galois_element(rot, order), ct.k()).map_err(|_| {
+                CKKSCompositionError::MissingAutomorphismKey {
+                    op: "paco_slot_trace",
+                    rotation: rot,
+                    k: ct.k().into(),
+                }
+            })?;
+            self.glwe_automorphism_add_assign(ct, &key, scratch);
         }
         Ok(())
     }
 
-    fn ckks_slot_product_assign<Dst, H, K, T>(
+    fn ckks_slot_product_assign<Dst, H, TH>(
         &self,
         ct: &mut Dst,
         a: usize,
         b: usize,
         keys: &H,
-        tsk: &T,
+        tsk: &TH,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: CKKSAtkBounds<BE>,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>,
+        H: GetAutomorphismKey<BE>,
+        TH: GetTensorKey<BE>,
     {
         let rotations = checked_fold_rotations(self, a, b)?;
         let mut tmp = self.ckks_ciphertext_alloc_from_infos(ct);

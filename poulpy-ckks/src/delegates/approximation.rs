@@ -1,6 +1,7 @@
 //! Composite evaluation of prepared polynomial approximations.
 
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta,
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
@@ -60,18 +61,19 @@ where
         }
     }
 
-    fn ckks_eval_approximation<R, I, P>(
+    fn ckks_eval_approximation<R, I, P, H>(
         &self,
         res: &mut R,
         input: &I,
         approximation: &PolynomialApproximation<P>,
-        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        H: GetTensorKey<BE>,
     {
         let required = approximation.consumed_bits(input.log_delta());
         ckks_ensure!(

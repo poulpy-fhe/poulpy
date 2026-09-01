@@ -18,6 +18,7 @@ use criterion::{Bencher, measurement::Measurement};
 
 use crate::core::fill::{host_ggsw, host_glwe, staging};
 use crate::core::params::{CoreParams, key_dnum_k_aux};
+use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
 fn layouts(cp: &CoreParams) -> (GLWELayout, GGSWLayout) {
     let glwe_infos = GLWELayout {
@@ -74,7 +75,12 @@ pub fn runner_glwe_external_product<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFro
     module.ggsw_prepare(&mut ggsw_prepared, &ct_ggsw, &mut scratch.borrow());
 
     bencher.iter(|| {
-        module.glwe_external_product(&mut ct_glwe_out, &ct_glwe_in, &ggsw_prepared, &mut scratch.borrow());
+        module.glwe_external_product(
+            &mut ct_glwe_out,
+            &ct_glwe_in,
+            &ggsw_prepared.to_backend_ref(),
+            &mut scratch.borrow(),
+        );
         black_box(());
     });
 }
@@ -112,7 +118,7 @@ pub fn runner_glwe_external_product_assign<BE: Backend<ZnxWord = i64, OwnedBuf: 
     module.ggsw_prepare(&mut ggsw_prepared, &ct_ggsw, &mut scratch.borrow());
 
     bencher.iter(|| {
-        module.glwe_external_product_assign(&mut ct_glwe, &ggsw_prepared, &mut scratch.borrow());
+        module.glwe_external_product_assign(&mut ct_glwe, &ggsw_prepared.to_backend_ref(), &mut scratch.borrow());
         black_box(());
     });
 }

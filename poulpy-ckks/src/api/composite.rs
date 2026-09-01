@@ -1,9 +1,7 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{
-    GGLWEInfos, GLWE, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
-};
+use poulpy_core::layouts::{GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::{
@@ -88,19 +86,19 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// log_budget_out = min(dst.log_budget, prod_budget)
     ///                  − max(0, min(dst.k(), prod_k) − dst.k())
     /// ```
-    fn ckks_mul_add_ct_into<Dst, A, B, T>(
+    fn ckks_mul_add_ct_into<Dst, A, B, H>(
         &self,
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GetTensorKey<BE>;
 
     /// Computes `dst += a * pt` where `pt` is a full plaintext polynomial.
     ///
@@ -333,19 +331,19 @@ pub trait CKKSMulSubOps<BE: Backend> {
     ///
     /// Metadata follows the same rule as
     /// [`CKKSMulAddOps::ckks_mul_add_ct_into`] with `+=` replaced by `-=`.
-    fn ckks_mul_sub_ct_into<Dst, A, B, T>(
+    fn ckks_mul_sub_ct_into<Dst, A, B, H>(
         &self,
         dst: &mut Dst,
         a: &A,
         b: &B,
-        tsk: &T,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GetTensorKey<BE>;
 
     /// Computes `dst -= a * pt` where `pt` is a full plaintext polynomial.
     ///
@@ -415,19 +413,19 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// log_delta_out  = a[i].log_delta
     /// log_budget_out = a[i].log_budget − a[i].log_delta − offset
     /// ```
-    fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, T: Data>(
+    fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, H>(
         &self,
         dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
         a: &[&CKKSCiphertext<D, BE::ZnxWord>],
         b: &[&CKKSCiphertext<E, BE::ZnxWord>],
-        tsk: &GLWETensorKeyPrepared<T, BE>,
+        tsk: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
         CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        GLWETensorKeyPrepared<T, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE>;
+        H: GetTensorKey<BE>;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–plaintext-polynomial pairs.
     ///

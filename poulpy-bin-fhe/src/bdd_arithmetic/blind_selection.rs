@@ -8,6 +8,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::bdd_arithmetic::{Cmux, GetGGSWBit, UnsignedInteger};
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
 impl<T: UnsignedInteger, BE: Backend<ZnxWord = i64> + 'static> GLWEBlindSelection<T, BE> for Module<BE> where
     Self: GLWECopy<BE> + Cmux<BE> + GLWEZero<BE>
@@ -70,19 +71,19 @@ where
 
                 match (lo, hi) {
                     (Some(lo), Some(hi)) => {
-                        self.cmux_assign(lo, hi, bit, &mut scratch.borrow());
+                        self.cmux_assign(lo, hi, &bit.to_backend_ref(), &mut scratch.borrow());
                         a.insert(j, lo);
                     }
 
                     (Some(lo), None) => {
                         self.glwe_zero(&mut zero);
-                        self.cmux_assign(lo, &zero, bit, &mut scratch.borrow());
+                        self.cmux_assign(lo, &zero, &bit.to_backend_ref(), &mut scratch.borrow());
                         a.insert(j, lo);
                     }
 
                     (None, Some(hi)) => {
                         self.glwe_zero(&mut zero);
-                        self.cmux_assign(&mut zero, hi, bit, &mut scratch.borrow());
+                        self.cmux_assign(&mut zero, hi, &bit.to_backend_ref(), &mut scratch.borrow());
                         self.glwe_copy(hi, &zero);
                         a.insert(j, hi);
                     }

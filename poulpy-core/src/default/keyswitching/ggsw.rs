@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::{
     layouts::{
         GGLWEInfos, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, LWEInfos,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
+        prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
     },
     oep::{ConversionDefault, GGSWKeyswitchDefault, GLWEKeyswitchDefault},
 };
@@ -44,20 +44,18 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ggsw_keyswitch_default<BE, M, R, A, K, T>(
+pub fn ggsw_keyswitch_default<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
-    key: &K,
-    tsk: &T,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GGSWKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     A: GGSWToBackendRef<BE> + GGSWInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let mut res_backend = res.to_backend_mut();
     let a_backend = a.to_backend_ref();
@@ -75,24 +73,22 @@ pub fn ggsw_keyswitch_default<BE, M, R, A, K, T>(
     for row in 0..a_backend.dnum().into() {
         let mut res_at = res_backend.at_view_mut(row, 0);
         let a_at = a_backend.at_view(row, 0);
-        module.glwe_keyswitch_default(&mut res_at, &a_at, key, &mut scratch.borrow());
+        module.glwe_keyswitch_default(&mut res_at, &a_at, &key.to_backend_ref(), &mut scratch.borrow());
     }
 
     module.ggsw_expand_row_default(&mut res_backend, tsk, scratch)
 }
 
-pub fn ggsw_keyswitch_assign_default<BE, M, R, K, T>(
+pub fn ggsw_keyswitch_assign_default<BE, M, R>(
     module: &M,
     res: &mut R,
-    key: &K,
-    tsk: &T,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
+    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: GGSWKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let mut res_backend = res.to_backend_mut();
 
@@ -105,7 +101,7 @@ pub fn ggsw_keyswitch_assign_default<BE, M, R, K, T>(
 
     for row in 0..res_backend.dnum().into() {
         let mut res_at = res_backend.at_view_mut(row, 0);
-        module.glwe_keyswitch_assign_default(&mut res_at, key, &mut scratch.borrow());
+        module.glwe_keyswitch_assign_default(&mut res_at, &key.to_backend_ref(), &mut scratch.borrow());
     }
 
     module.ggsw_expand_row_default(&mut res_backend, tsk, scratch)

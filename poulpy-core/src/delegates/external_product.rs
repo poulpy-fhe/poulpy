@@ -4,7 +4,7 @@ use crate::{
     api::{GGLWEExternalProduct, GGSWExternalProduct, GLWEExternalProduct},
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
-        GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGSWPreparedToBackendRef,
+        GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGSWPreparedBackendRef,
     },
     oep::{GGLWEExternalProductImpl, GGSWExternalProductImpl, GLWEExternalProductImpl},
 };
@@ -32,30 +32,28 @@ impl_external_product_delegate!(
         BE::glwe_external_product_tmp_bytes(self, res_infos, a_infos, b_infos)
     }
 
-    fn glwe_external_product_assign<R, D>(
+    fn glwe_external_product_assign<R>(
         &self,
         res: &mut R,
-        rhs: &D,
+        rhs: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        D: GGSWPreparedToBackendRef<BE> + GGSWInfos,
     {
         BE::glwe_external_product_assign(self, res, rhs, scratch)
     }
 
-    fn glwe_external_product<R, A, D>(
+    fn glwe_external_product<R, A>(
         &self,
         res: &mut R,
         lhs: &A,
-        rhs: &D,
+        rhs: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        D: GGSWPreparedToBackendRef<BE> + GGSWInfos,
     {
         BE::glwe_external_product(self, res, lhs, rhs, scratch)
     }
@@ -73,30 +71,28 @@ impl_external_product_delegate!(
         BE::gglwe_external_product_tmp_bytes(self, res_infos, a_infos, b_infos)
     }
 
-    fn gglwe_external_product<R, A, B>(
+    fn gglwe_external_product<R, A>(
         &self,
         res: &mut R,
         a: &A,
-        b: &B,
+        b: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
-        B: GGSWPreparedToBackendRef<BE> + GGSWInfos,
     {
         BE::gglwe_external_product(self, res, a, b, scratch)
     }
 
-    fn gglwe_external_product_assign<R, A>(
+    fn gglwe_external_product_assign<R>(
         &self,
         res: &mut R,
-        a: &A,
+        a: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGSWPreparedToBackendRef<BE> + GGSWInfos,
     {
         BE::gglwe_external_product_assign(self, res, a, scratch)
     }
@@ -114,30 +110,28 @@ impl_external_product_delegate!(
         BE::ggsw_external_product_tmp_bytes(self, res_infos, a_infos, b_infos)
     }
 
-    fn ggsw_external_product<R, A, B>(
+    fn ggsw_external_product<R, A>(
         &self,
         res: &mut R,
         a: &A,
-        b: &B,
+        b: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
-        B: GGSWPreparedToBackendRef<BE> + GGSWInfos,
     {
         BE::ggsw_external_product(self, res, a, b, scratch)
     }
 
-    fn ggsw_external_product_assign<R, A>(
+    fn ggsw_external_product_assign<R>(
         &self,
         res: &mut R,
-        a: &A,
+        a: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        A: GGSWPreparedToBackendRef<BE> + GGSWInfos,
     {
         BE::ggsw_external_product_assign(self, res, a, scratch)
     }

@@ -28,7 +28,7 @@ use crate::{
         GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut,
         GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut,
         LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
+        prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
     },
     oep::{ConversionDefault, GLWEKeyswitchDefault},
 };
@@ -250,8 +250,13 @@ where
     lvl_0 + lvl_1
 }
 
-pub fn glwe_from_lwe_default<BE, M, R, A, K>(module: &M, res: &mut R, lwe: &A, ksk: &K, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_from_lwe_default<BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    lwe: &A,
+    ksk: &GGLWEPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + ConversionDefault<BE>
@@ -263,7 +268,6 @@ where
         + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let res_infos = GLWELayout {
         n: res.n(),
@@ -343,7 +347,7 @@ where
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
-    module.glwe_keyswitch_default(&mut res_view, &glwe_view, ksk, &mut scratch_1)
+    module.glwe_keyswitch_default(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
 }
 
 pub fn lwe_from_glwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
@@ -371,12 +375,12 @@ where
     lvl_0 + lvl_1 + lvl_2
 }
 
-pub fn lwe_from_glwe_default<BE, M, R, A, K>(
+pub fn lwe_from_glwe_default<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
     a_idx: usize,
-    key: &K,
+    key: &GGLWEPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -389,7 +393,6 @@ pub fn lwe_from_glwe_default<BE, M, R, A, K>(
         + VecZnxZeroBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let a_backend = a.to_backend_ref();
 
@@ -414,7 +417,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A, K>(
     let (mut tmp_glwe_rank_1, mut scratch_1) = scratch.take_glwe_scratch(&glwe_layout);
 
     let a_backend_view = &a_backend;
-    module.glwe_keyswitch_default(&mut tmp_glwe_rank_1, &a_backend_view, key, &mut scratch_1);
+    module.glwe_keyswitch_default(&mut tmp_glwe_rank_1, &a_backend_view, &key.to_backend_ref(), &mut scratch_1);
     if a_idx != 0 {
         module.glwe_rotate_assign(-(a_idx as i64), &mut tmp_glwe_rank_1, &mut scratch_1);
     }
@@ -442,13 +445,17 @@ where
     module.ggsw_expand_rows_tmp_bytes_default(res_infos, tsk_infos)
 }
 
-pub fn ggsw_from_gglwe_default<BE, M, R, A, T>(module: &M, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn ggsw_from_gglwe_default<BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: ConversionDefault<BE> + ModuleN + GLWECopyDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     A: GGLWEToBackendRef<BE> + GGLWEInfos,
-    T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let mut res_backend = res.to_backend_mut();
     let a_backend = a.to_backend_ref();
@@ -513,8 +520,12 @@ where
     lvl_0 + lvl_1.max(lvl_2)
 }
 
-pub fn ggsw_expand_row_default<BE, M, R, T>(module: &M, res: &mut R, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn ggsw_expand_row_default<BE, M, R>(
+    module: &M,
+    res: &mut R,
+    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + ConversionDefault<BE>
@@ -528,7 +539,6 @@ where
         + VecZnxIdftApply<BE>
         + VecZnxNormalize<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
-    T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let mut res_backend = res.to_backend_mut();
 
@@ -599,13 +609,13 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
+fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
     module: &M,
     row: usize,
     res: &mut R,
     a_0: &VecZnxBackendRef<'a, BE>,
     a_dft: &VecZnxDftBackendRef<'b, BE>,
-    tsk: &T,
+    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
     output_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -618,9 +628,7 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>,
     R: GGSWAtViewMut<BE> + GGSWInfos,
-    T: GGLWEToGGSWKeyPreparedToBackendRef<BE>,
 {
-    let tsk: GGLWEToGGSWKeyPreparedBackendRef<'_, BE> = tsk.to_backend_ref();
     let cols: usize = res.rank().as_usize() + 1;
 
     for col in 1..cols {

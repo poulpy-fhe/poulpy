@@ -24,8 +24,8 @@ use poulpy_core::{
     layouts::{GLWESecretPreparedFactory, ModuleCoreAlloc},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module},
+    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{HostBytesBackend, Module, ScratchOwned},
     source::Source,
 };
 
@@ -258,6 +258,14 @@ fn seq_bootstrap_case<BE, F, E>(
     // compare only the final ciphertext with the independent cleartext model.
     let bsk_budget = k_boot - log_delta;
     let mut out = module.ckks_ciphertext_alloc(params.base2k.into(), k_out);
+    // Sized by the operation, not the generic all-ops budget: PaCo's branch
+    // working precision is wider than any single op the budget covers.
+    let mut scratch = ScratchOwned::<BE>::alloc(
+        module
+            .ckks_paco_bootstrap_direct_tmp_bytes(&out, &ct_in, &ctx, &keys)
+            .unwrap()
+            .max(scratch.borrow().available()),
+    );
     module
         .ckks_paco_bootstrap_direct_into::<_, _>(&mut out, &ct_in, &ctx, &keys, &mut scratch.borrow())
         .unwrap();

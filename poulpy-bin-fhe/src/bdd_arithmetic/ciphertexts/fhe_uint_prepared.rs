@@ -4,10 +4,7 @@ use poulpy_core::layouts::{
     Base2K, Dnum, Dsize, GGSWInfos, GGSWPreparedFactory, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     prepared::{GGSWPrepared, GGSWPreparedBackendMut},
 };
-use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GGSW, GGSWLayout, GGSWPreparedToBackendMut, GGSWToBackendMut,
-    GLWEAutomorphismKeyHelper, GetGaloisElement,
-};
+use poulpy_core::layouts::{GGSW, GGSWLayout, GGSWPreparedToBackendMut, GGSWToBackendMut, GetAutomorphismKey};
 use poulpy_core::{EncryptionInfos, GLWECopy, GLWEDecrypt, GLWEKeyswitch, GLWEPacking, LWEFromGLWE, ScratchArenaTakeCore};
 
 use poulpy_core::{GGSWEncryptSk, layouts::GLWESecretPreparedToBackendRef};
@@ -21,6 +18,7 @@ use crate::bdd_arithmetic::{Cmux, FromBits, UnsignedInteger};
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos};
 use crate::circuit_bootstrapping::{CircuitBootstrappingExecute, CircuitBootstrappingKeyInfos};
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 
 /// A DFT-prepared FHE ciphertext encoding each bit of a [`UnsignedInteger`]
 /// as a separate GGSW ciphertext.
@@ -278,7 +276,7 @@ impl<T: UnsignedInteger + FromBits, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i6
 where
     BE::OwnedBuf: HostDataRef,
 {
-    pub fn decrypt<M, S, H, K>(&self, module: &M, sk: &S, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> T
+    pub fn decrypt<M, S, H>(&self, module: &M, sk: &S, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> T
     where
         M: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ModuleLogN
@@ -287,8 +285,7 @@ where
             + GLWEPacking<BE>
             + GLWECopy<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
         BE: 'static,
         BE::OwnedBuf: HostDataRef + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
@@ -490,7 +487,15 @@ where
             &|bit, res_bit, scratch| {
                 let (mut tmp_ggsw, scratch_bit) = scratch.borrow().take_ggsw_scratch(ggsw_infos);
                 let (mut tmp_lwe, mut scratch_bit) = scratch_bit.take_lwe_scratch(&lwe_infos);
-                bits.get_bit_lwe(self, bit, &mut tmp_lwe, ks_glwe, ks_lwe, &mut scratch_bit);
+                let ks_glwe_ref = ks_glwe.map(|k| k.to_backend_ref());
+                bits.get_bit_lwe(
+                    self,
+                    bit,
+                    &mut tmp_lwe,
+                    ks_glwe_ref.as_ref(),
+                    &ks_lwe.to_backend_ref(),
+                    &mut scratch_bit,
+                );
                 cbt.execute_to_constant(self, &mut tmp_ggsw.to_backend_mut(), &tmp_lwe, 1, 1, &mut scratch_bit);
                 self.ggsw_prepare(res_bit, &tmp_ggsw, &mut scratch_bit);
             },

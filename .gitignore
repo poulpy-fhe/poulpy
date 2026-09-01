@@ -1,4 +1,5 @@
 /target
+/target-*
 /poulpy-bench/target/
 /.vscode
 .codex

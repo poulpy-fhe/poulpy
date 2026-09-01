@@ -25,6 +25,7 @@ use poulpy_bin_fhe::{
         CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared,
     },
 };
+use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
 fn main() {
     // GLWE ring degree
@@ -285,7 +286,7 @@ fn main() {
 
     // Apply GLWE x GGSW
     {
-        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, &mut scratch.borrow());
+        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared.to_backend_ref(), &mut scratch.borrow());
     }
 
     // Decrypt

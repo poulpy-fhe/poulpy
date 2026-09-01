@@ -246,6 +246,7 @@ pub fn test_rotate_assign_missing_key_error<BE, F, E>(
         CKKSCompositionError::MissingAutomorphismKey {
             op: "rotate_assign",
             rotation: 1,
+            k: params.k as u32,
         },
     );
 }

@@ -5,7 +5,7 @@ use poulpy_core::{
     default::external_product::glwe::glwe_external_product_output_size,
     layouts::{
         GGSWInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
-        prepared::GGSWPreparedToBackendRef,
+        prepared::{GGSWPreparedBackendRef, GGSWPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -381,7 +381,7 @@ fn eval_level<M, G, R, BE, L>(
                         &mut next_level[j],
                         &prev_level[*hi_idx],
                         &prev_level[*lo_idx],
-                        inputs.get_bit(*in_idx),
+                        &inputs.get_bit(*in_idx).to_backend_ref(),
                         &mut scratch_1.borrow(),
                     );
                 }
@@ -401,7 +401,7 @@ fn eval_level<M, G, R, BE, L>(
                 res,
                 &prev_level[*hi_idx],
                 &prev_level[*lo_idx],
-                inputs.get_bit(*in_idx),
+                &inputs.get_bit(*in_idx).to_backend_ref(),
                 &mut scratch_1.borrow(),
             );
         }
@@ -567,11 +567,16 @@ where
         tot + self.bytes_of_vec_znx_big(1, output_size)
     }
 
-    fn cswap<A, B, S>(&self, res_a: &mut A, res_b: &mut B, s: &S, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn cswap<'k, A, B>(
+        &self,
+        res_a: &mut A,
+        res_b: &mut B,
+        s: &GGSWPreparedBackendRef<'k, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos,
+        BE: 'k,
     {
         assert_eq!(res_a.base2k(), res_b.base2k());
         assert_eq!(res_a.n(), self.n() as u32);
@@ -811,12 +816,12 @@ where
     }
 
     // res = (t - f) * s + f
-    fn cmux<R, T, F, S>(&self, res: &mut R, t: &T, f: &F, s: &S, scratch: &mut ScratchArena<'_, BE>)
+    fn cmux<'k, R, T, F>(&self, res: &mut R, t: &T, f: &F, s: &GGSWPreparedBackendRef<'k, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         T: GLWEToBackendRef<BE>,
         F: GLWEToBackendRef<BE>,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos + 'static,
+        BE: 'k,
     {
         let f_backend = f.to_backend_ref();
 
@@ -863,11 +868,16 @@ where
     }
 
     // res = (a - res) * s + res
-    fn cmux_assign_neg<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn cmux_assign_neg<'k, R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        s: &GGSWPreparedBackendRef<'k, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos + 'static,
+        BE: 'k,
     {
         let a_backend = a.to_backend_ref();
 
@@ -920,11 +930,11 @@ where
     }
 
     // res = (res - a) * s + a
-    fn cmux_assign<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut ScratchArena<'_, BE>)
+    fn cmux_assign<'k, R, A>(&self, res: &mut R, a: &A, s: &GGSWPreparedBackendRef<'k, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos + 'static,
+        BE: 'k,
     {
         let a_backend = a.to_backend_ref();
         let scratch = scratch.borrow();

@@ -26,6 +26,7 @@ use crate::blind_rotation::{
     BlindRotationExecute, BlindRotationKeyInfos, BlindRotationKeyPrepared, CGGI, LookupTable, mod_switch_2n,
 };
 use poulpy_core::GLWEBytesOf;
+use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
 impl<BE: Backend<Location = Host, ZnxWord = i64> + 'static> BlindRotationExecute<CGGI, BE> for Module<BE>
 where
@@ -659,7 +660,7 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     for (ai, ski) in izip!(a.iter(), brk.data.iter()) {
         // acc_tmp = sk[i] * acc
         {
-            module.glwe_external_product(&mut acc_tmp, &out_tmp, ski, &mut scratch_1.borrow());
+            module.glwe_external_product(&mut acc_tmp, &out_tmp, &ski.to_backend_ref(), &mut scratch_1.borrow());
         }
 
         // acc_tmp = (sk[i] * acc) * (X^{ai} - 1)

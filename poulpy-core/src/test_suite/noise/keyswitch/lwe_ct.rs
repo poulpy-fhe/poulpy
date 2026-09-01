@@ -6,6 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::LWESecretSampling;
+use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use crate::{
     EncryptionLayout, LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt,
     layouts::{
@@ -109,7 +110,12 @@ where
     let mut ksk_prepared: LWESwitchingKeyPrepared<BE::OwnedBuf, BE> = module.lwe_switching_key_prepared_alloc_from_infos(&ksk);
     module.lwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-    module.lwe_keyswitch(&mut lwe_ct_out, &lwe_ct_in, &ksk_prepared, &mut scratch.borrow());
+    module.lwe_keyswitch(
+        &mut lwe_ct_out,
+        &lwe_ct_in,
+        &ksk_prepared.to_backend_ref(),
+        &mut scratch.borrow(),
+    );
 
     let mut lwe_pt_out: LWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.lwe_plaintext_alloc_from_infos(&lwe_out_infos);
     module.lwe_decrypt(&lwe_ct_out, &mut lwe_pt_out, &sk_lwe_out, &mut scratch.borrow());

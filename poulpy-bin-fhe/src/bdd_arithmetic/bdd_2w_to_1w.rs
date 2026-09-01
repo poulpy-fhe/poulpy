@@ -2,10 +2,7 @@ use std::marker::PhantomData;
 
 use poulpy_core::{
     GLWECopy, GLWEPacking, ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEPreparedToBackendRef, GGSWInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut,
-        GetGaloisElement, prepared::GGSWPrepared,
-    },
+    layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, prepared::GGSWPrepared},
 };
 use poulpy_hal::{
     api::ModuleLogN,
@@ -33,7 +30,7 @@ pub trait ExecuteBDDCircuit2WTo1W<BE: Backend>
 where
     Self: Sized + GLWEBytesOf<BE> + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>,
 {
-    fn execute_bdd_circuit_2w_to_1w<C, K, H, T>(
+    fn execute_bdd_circuit_2w_to_1w<C, H, T>(
         &self,
         out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
         circuit: &C,
@@ -44,8 +41,7 @@ where
     ) where
         T: UnsignedInteger,
         C: GetBitCircuitInfo,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
         BE: Backend<ZnxWord = i64>,
     {
         self.execute_bdd_circuit_2w_to_1w_multi_thread(1, out, circuit, a, b, key, scratch);
@@ -53,30 +49,23 @@ where
 
     /// Minimum scratch size in bytes for [`execute_bdd_circuit_2w_to_1w`][Self::execute_bdd_circuit_2w_to_1w]
     /// (one BDD worker).
-    fn execute_bdd_circuit_2w_to_1w_tmp_bytes<C, T, R, G, K, H>(
-        &self,
-        circuit: &C,
-        res_infos: &R,
-        ggsw_infos: &G,
-        key: &H,
-    ) -> usize
+    fn execute_bdd_circuit_2w_to_1w_tmp_bytes<C, T, R, G, H>(&self, circuit: &C, res_infos: &R, ggsw_infos: &G, key: &H) -> usize
     where
         C: GetBitCircuitInfo,
         T: UnsignedInteger,
         R: GLWEInfos,
         G: GGSWInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        let atk_infos = key.automorphism_key_infos();
         let glwe_slot_bytes = T::BITS as usize * self.glwe_bytes_of_from_infos(res_infos);
         let bdd_bytes = self.execute_bdd_circuit_tmp_bytes(res_infos, circuit.max_state_size(), ggsw_infos);
-        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, &atk_infos);
+        let atk = key.get_automorphism_key(-1, res_infos.k()).unwrap_or_else(|e| panic!("{e}"));
+        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, &atk);
         glwe_slot_bytes + bdd_bytes.max(pack_bytes)
     }
 
     /// Minimum scratch size in bytes for [`execute_bdd_circuit_2w_to_1w_multi_thread`][Self::execute_bdd_circuit_2w_to_1w_multi_thread].
-    fn execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes<C, T, R, G, K, H>(
+    fn execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes<C, T, R, G, H>(
         &self,
         threads: usize,
         circuit: &C,
@@ -89,23 +78,22 @@ where
         T: UnsignedInteger,
         R: GLWEInfos,
         G: GGSWInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
     {
-        let atk_infos = key.automorphism_key_infos();
         let glwe_slot_bytes = T::BITS as usize * self.glwe_bytes_of_from_infos(res_infos);
         let bdd_per_thread = poulpy_hal::execution::worker_scratch_bytes::<BE>(self.execute_bdd_circuit_tmp_bytes(
             res_infos,
             circuit.max_state_size(),
             ggsw_infos,
         ));
-        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, &atk_infos);
+        let atk = key.get_automorphism_key(-1, res_infos.k()).unwrap_or_else(|e| panic!("{e}"));
+        let pack_bytes = self.glwe_pack_tmp_bytes(res_infos, &atk);
         glwe_slot_bytes + (threads * bdd_per_thread).max(pack_bytes)
     }
 
     #[allow(clippy::too_many_arguments)]
     /// Operations Z x Z -> Z
-    fn execute_bdd_circuit_2w_to_1w_multi_thread<C, K, H, T>(
+    fn execute_bdd_circuit_2w_to_1w_multi_thread<C, H, T>(
         &self,
         threads: usize,
         out: &mut FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
@@ -117,8 +105,7 @@ where
     ) where
         T: UnsignedInteger,
         C: GetBitCircuitInfo,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
+        H: GetAutomorphismKey<BE>,
         BE: Backend<ZnxWord = i64>,
     {
         // Collects inputs into a single array
@@ -165,7 +152,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
             $vis trait $trait_name<T: UnsignedInteger, BE: Backend> {
 
                 /// Single-threaded version
-                fn $method_name<M, K, H>(
+                fn $method_name<M, H>(
                     &mut self,
                     module: &M,
                     a: &FheUintPrepared<BE::OwnedBuf, T, BE>,
@@ -174,13 +161,12 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
-                    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                     Self: GLWEToBackendMut<BE>;
 
                 /// Multithreaded version – same vis, method_name + "_multi_thread"
-                fn [<$method_name _multi_thread>]<M, K, H>(
+                fn [<$method_name _multi_thread>]<M, H>(
                     &mut self,
                     threads: usize,
                     module: &M,
@@ -190,12 +176,11 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
-                    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                     Self: GLWEToBackendMut<BE>;
 
-                fn [<$method_name _tmp_bytes>]<M, R, G, K, H>(
+                fn [<$method_name _tmp_bytes>]<M, R, G, H>(
                     &self,
                     module: &M,
                     res_infos: &R,
@@ -206,11 +191,10 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     R: GLWEInfos,
                     G: GGSWInfos,
-                    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>;
 
-                fn [<$method_name _multi_thread_tmp_bytes>]<M, R, G, K, H>(
+                fn [<$method_name _multi_thread_tmp_bytes>]<M, R, G, H>(
                     &self,
                     module: &M,
                     threads: usize,
@@ -222,8 +206,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     R: GLWEInfos,
                     G: GGSWInfos,
-                    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>;
             }
         }
@@ -236,7 +219,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
         paste::paste! {
             impl<BE: Backend<ZnxWord = i64>> $trait_name<$ty, BE> for FheUint<BE::OwnedBuf, $ty, BE::ZnxWord> {
 
-                fn $method_name<M, K, H>(
+                fn $method_name<M, H>(
                     &mut self,
                     module: &M,
                     a: &FheUintPrepared<BE::OwnedBuf, $ty, BE>,
@@ -245,14 +228,13 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
-                    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_2w_to_1w(self, &$output_circuits, a, b, key, scratch)
                 }
 
-                fn [<$method_name _multi_thread>]<M, K, H>(
+                fn [<$method_name _multi_thread>]<M, H>(
                     &mut self,
                     threads: usize,
                     module: &M,
@@ -262,14 +244,13 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
-                    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_2w_to_1w_multi_thread(threads, self, &$output_circuits, a, b, key, scratch)
                 }
 
-                fn [<$method_name _tmp_bytes>]<M, R, G, K, H>(
+                fn [<$method_name _tmp_bytes>]<M, R, G, H>(
                     &self,
                     module: &M,
                     res_infos: &R,
@@ -280,11 +261,10 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     R: GLWEInfos,
                     G: GGSWInfos,
-                    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, $ty, _, _, _, _>(
+                    module.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, $ty, _, _, _>(
                         &$output_circuits,
                         res_infos,
                         ggsw_infos,
@@ -292,7 +272,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     )
                 }
 
-                fn [<$method_name _multi_thread_tmp_bytes>]<M, R, G, K, H>(
+                fn [<$method_name _multi_thread_tmp_bytes>]<M, R, G, H>(
                     &self,
                     module: &M,
                     threads: usize,
@@ -304,11 +284,10 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     R: GLWEInfos,
                     G: GGSWInfos,
-                    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-                    H: GLWEAutomorphismKeyHelper<K, BE>,
+                    H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
                 {
-                    module.execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes::<_, $ty, _, _, _, _>(
+                    module.execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes::<_, $ty, _, _, _>(
                         threads,
                         &$output_circuits,
                         res_infos,

@@ -11,9 +11,8 @@
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
-    LinearTransformation,
-    prepared::{GGLWEPreparedToBackendRef, LinearTransformationBabySteps, PreparedDiagonal},
+    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LinearTransformation,
+    prepared::{LinearTransformationBabySteps, PreparedDiagonal},
 };
 
 /// GLWE-level setup and evaluation of a resident (prepared) linear
@@ -71,7 +70,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
     ///
     /// `cache` must have been sized via [`LinearTransformationBabySteps::alloc`].
     /// Performs zero `CnvPVecL` allocations.
-    fn glwe_prepare_linear_transformation_baby_steps<A, H, K>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H>(
         &self,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
@@ -79,8 +78,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 
     /// Computes `res = M(a)` from the prepared left cache `lhs` (the input baby
     /// rotations) and the matrix `rhs`, generic over the diagonal representation
@@ -96,7 +94,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// Both paths share this single evaluator and give the same result. `lhs` may
     /// carry exactly `rhs.baby_steps` or a superset (e.g. the union of baby
     /// rotations needed by several transforms).
-    fn glwe_eval_linear_transformation_into<R, P, H, K>(
+    fn glwe_eval_linear_transformation_into<R, P, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -107,6 +105,5 @@ pub trait GLWELinearTransformations<BE: Backend> {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: crate::default::linear_transformation::DiagonalProd<BE>,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GetAutomorphismKey<BE>;
 }
