@@ -3,6 +3,24 @@
 //! Presets bundle the circuit plan with its ciphertext widths, secret weights,
 //! and physical evaluation-key layouts. This keeps modulus accounting and key
 //! bounds attached to the recipe that requires them.
+//!
+//! ## Naming
+//!
+//! A preset is named by what it offers, one token per axis, in the order an
+//! application chooses them: `n{log_n}_d{log_delta}_k{output_k}_p{log2_precision}_{circuit}`.
+//!
+//! - `n`: ring-degree exponent, which with the secret weights fixes the modulus bounds;
+//! - `d`: input scale exponent the caller must arrive at;
+//! - `k`: output width in bits (`output_k`). Not all of it is usable: the application must hand the ciphertext back at
+//!   [`input_k`](BootstrappingPreset::input_k), so `k - input_k` is the budget. A C2S-first preset is drained down to the
+//!   ModUp modulus, but an S2C-first preset runs its SlotsToCoeffs before ModUp on the application's width, so its
+//!   `input_k` (hence the unusable tail of `k`) is larger by that consumption; compare `k` between circuits through
+//!   `k - input_k`, never directly;
+//! - `p`: guaranteed output precision in bits (see [`BootstrappingPreset::log2_precision`]);
+//! - `circuit`: `c2s` (C2S-first) or `s2c` (S2C-first), extended with a suffix for further techniques.
+//!
+//! `n16_d35_k600_p19_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
+//! scale `2^35`, producing 600-bit ciphertexts with at least 19 bits of precision.
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
@@ -43,7 +61,7 @@ struct PresetSpec {
     base2k: usize,
     rank: usize,
     log_delta: usize,
-    restored_bits: usize,
+    output_k: usize,
     log2_precision: usize,
     dense_secret_hamming_weight: usize,
     sparse_secret_hamming_weight: usize,
@@ -65,8 +83,12 @@ struct PresetSpec {
 /// A complete CKKS bootstrapping parameter set.
 ///
 /// The input and output widths are composable: consuming
-/// [`restored_bits`](Self::restored_bits) bits from the output leaves exactly
-/// [`input_k`](Self::input_k) bits, enough to invoke the same preset again. The bootstrap allocation is wider than the logical output because it
+/// `output_k - input_k` bits from the output leaves exactly
+/// [`input_k`](Self::input_k) bits, enough to invoke the same preset again.
+/// The output cannot be drained further: for an S2C-first preset the input
+/// width includes the SlotsToCoeffs evaluated before ModUp, so a larger tail of
+/// the output is reserved than for a C2S-first preset.
+/// The bootstrap allocation is wider than the logical output because it
 /// also carries the post-ModUp circuit.
 #[derive(Clone, Debug)]
 pub struct BootstrappingPreset {
@@ -113,13 +135,6 @@ impl BootstrappingPreset {
     /// Modulus immediately around ModUp, after any pre-ModUp stage.
     pub fn log_modulus(&self) -> usize {
         self.spec.log_delta + self.spec.log_msg_ratio
-    }
-
-    /// Bits of width handed back by the bootstrap (`output_k - input_k`).
-    ///
-    /// At the input scale this is `restored_bits / log_delta` rescales.
-    pub fn restored_bits(&self) -> usize {
-        self.spec.restored_bits
     }
 
     /// Advertised output precision in bits: the minimum slot-wise precision
@@ -180,12 +195,15 @@ impl BootstrappingPreset {
         })
     }
 
-    /// Width required by an input ciphertext.
+    /// Width required by an input ciphertext, i.e. the width the application
+    /// must stop consuming at. For an S2C-first preset this includes the
+    /// SlotsToCoeffs bits consumed below ModUp.
     pub fn input_k(&self) -> usize {
         self.input_k
     }
 
-    /// Logical width after bootstrapping.
+    /// Logical width after bootstrapping. Only `output_k - input_k` of it is
+    /// the application's to consume; see [`Self::input_k`].
     pub fn output_k(&self) -> usize {
         self.output_k
     }
@@ -240,77 +258,76 @@ impl BootstrappingPreset {
     }
 }
 
-/// Full-slot presets for `N = 2^16`.
-pub mod log_n16 {
-    use super::*;
+/// C2S-first full-slot preset at `N = 2^16` for inputs at scale `2^35`,
+/// producing 600-bit ciphertexts with at least 19 bits of precision.
+///
+/// Uses an optimized Han–Ki EvalMod. The input and raised widths are 40 and
+/// 1404 bits, so 560 bits (16 rescales at the input scale) are handed back.
+pub fn n16_d35_k600_p19_c2s() -> Result<BootstrappingPreset> {
+    build(PresetSpec {
+        name: "n16_d35_k600_p19_c2s",
+        log_n: 16,
+        base2k: 52,
+        rank: 1,
+        log_delta: 35,
+        output_k: 600,
+        log2_precision: 19,
+        dense_secret_hamming_weight: 1024,
+        sparse_secret_hamming_weight: 32,
+        max_dense_modulus: 1714,
+        max_sparse_modulus: 349,
+        key_dsize: 4,
+        dense_to_sparse_dsize: 3,
+        pipeline: BootstrappingPipeline::C2SFirst,
+        log_msg_ratio: 5,
+        c2s_schedule: &C2S_SCHEDULE,
+        c2s_log_delta: 50,
+        c2s_log_budget: 2,
+        s2c_schedule: &S2C_SCHEDULE,
+        s2c_log_delta: 35,
+        s2c_log_budget: 2,
+        eval_mod: optimized_han_ki(),
+    })
+}
 
-    /// C2S-first preset restoring 16 net levels at `log_delta = 35`.
-    ///
-    /// Uses an optimized Han–Ki EvalMod. The input, output, and raised widths
-    /// are respectively 40, 600, and 1404 bits.
-    pub fn c2s_16_levels() -> Result<BootstrappingPreset> {
-        build(PresetSpec {
-            name: "c2s_16_levels",
-            log_n: 16,
-            base2k: 52,
-            rank: 1,
-            log_delta: 35,
-            restored_bits: 560,
-            log2_precision: 0,
-            dense_secret_hamming_weight: 1024,
-            sparse_secret_hamming_weight: 32,
-            max_dense_modulus: 1714,
-            max_sparse_modulus: 349,
-            key_dsize: 4,
-            dense_to_sparse_dsize: 3,
-            pipeline: BootstrappingPipeline::C2SFirst,
-            log_msg_ratio: 5,
-            c2s_schedule: &C2S_SCHEDULE,
-            c2s_log_delta: 50,
-            c2s_log_budget: 2,
-            s2c_schedule: &S2C_SCHEDULE,
-            s2c_log_delta: 35,
-            s2c_log_budget: 2,
-            eval_mod: optimized_han_ki(),
-        })
-    }
-
-    /// S2C-first preset restoring 16 net levels at `log_delta = 35`.
-    ///
-    /// Uses an optimized Han–Ki EvalMod. The initial S2C is evaluated below
-    /// ModUp; the input, output, and raised widths are respectively 158, 718,
-    /// and 1358 bits.
-    pub fn s2c_16_levels() -> Result<BootstrappingPreset> {
-        build(PresetSpec {
-            name: "s2c_16_levels",
-            log_n: 16,
-            base2k: 52,
-            rank: 1,
-            log_delta: 35,
-            restored_bits: 560,
-            log2_precision: 0,
-            dense_secret_hamming_weight: 1024,
-            sparse_secret_hamming_weight: 32,
-            max_dense_modulus: 1714,
-            max_sparse_modulus: 349,
-            key_dsize: 4,
-            dense_to_sparse_dsize: 3,
-            pipeline: BootstrappingPipeline::S2CFirst,
-            log_msg_ratio: 11,
-            c2s_schedule: &C2S_SCHEDULE,
-            c2s_log_delta: 44,
-            c2s_log_budget: 3,
-            s2c_schedule: &S2C_SCHEDULE,
-            s2c_log_delta: 28,
-            s2c_log_budget: 2,
-            eval_mod: optimized_han_ki(),
-        })
-    }
+/// S2C-first full-slot preset at `N = 2^16` for inputs at scale `2^35`,
+/// producing 718-bit ciphertexts with at least 19 bits of precision.
+///
+/// Uses an optimized Han–Ki EvalMod. The initial S2C is evaluated below ModUp,
+/// so the input width is 158 bits (the 46-bit ModUp modulus plus 112 bits of
+/// SlotsToCoeffs) and the raised width 1358 bits. The application must hand the
+/// ciphertext back at 158 bits, not drain it: 560 bits (16 rescales at the input
+/// scale) are usable, the same budget as the C2S-first preset despite the larger `k`.
+pub fn n16_d35_k718_p19_s2c() -> Result<BootstrappingPreset> {
+    build(PresetSpec {
+        name: "n16_d35_k718_p19_s2c",
+        log_n: 16,
+        base2k: 52,
+        rank: 1,
+        log_delta: 35,
+        output_k: 718,
+        log2_precision: 19,
+        dense_secret_hamming_weight: 1024,
+        sparse_secret_hamming_weight: 32,
+        max_dense_modulus: 1714,
+        max_sparse_modulus: 349,
+        key_dsize: 4,
+        dense_to_sparse_dsize: 3,
+        pipeline: BootstrappingPipeline::S2CFirst,
+        log_msg_ratio: 11,
+        c2s_schedule: &C2S_SCHEDULE,
+        c2s_log_delta: 44,
+        c2s_log_budget: 3,
+        s2c_schedule: &S2C_SCHEDULE,
+        s2c_log_delta: 28,
+        s2c_log_budget: 2,
+        eval_mod: optimized_han_ki(),
+    })
 }
 
 /// Every preset, in a stable order.
 pub fn all() -> Result<Vec<BootstrappingPreset>> {
-    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[log_n16::c2s_16_levels, log_n16::s2c_16_levels];
+    const PRESETS: &[fn() -> Result<BootstrappingPreset>] = &[n16_d35_k600_p19_c2s, n16_d35_k718_p19_s2c];
     PRESETS.iter().map(|build| build()).collect()
 }
 
@@ -395,9 +412,11 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         .checked_add(spec.log_msg_ratio)
         .context("bootstrapping preset input modulus overflow")?;
     let input_k = plan.input_k(log_modulus);
-    let output_k = input_k
-        .checked_add(spec.restored_bits)
-        .context("bootstrapping preset output width overflow")?;
+    let output_k = spec.output_k;
+    ensure!(
+        output_k >= input_k,
+        "bootstrapping preset output width {output_k} is below its input width {input_k}"
+    );
     let bootstrap_k = plan.bootstrap_k(output_k);
     let keys_layout = keys_layout(&spec, n, bootstrap_k, log_modulus);
 
@@ -513,8 +532,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn log_n16_c2s_16_levels_is_composable_and_within_bounds() {
-        let preset = log_n16::c2s_16_levels().unwrap();
+    fn n16_d35_k600_p19_c2s_is_composable_and_within_bounds() {
+        let preset = n16_d35_k600_p19_c2s().unwrap();
 
         assert_eq!(preset.plan().pipeline(), BootstrappingPipeline::C2SFirst);
         assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
@@ -522,14 +541,16 @@ mod tests {
         assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 200);
         assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 140);
         assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (40, 600, 1404));
-        assert_eq!(preset.output_k() - preset.restored_bits(), preset.input_k());
+        assert_eq!(preset.log2_precision(), 19);
+        // 16 rescales at the input scale before the next bootstrap.
+        assert_eq!(preset.output_k() - preset.input_k(), 16 * preset.log_delta());
 
         assert_layouts_within_bounds(&preset);
     }
 
     #[test]
-    fn log_n16_s2c_16_levels_is_composable_and_within_bounds() {
-        let preset = log_n16::s2c_16_levels().unwrap();
+    fn n16_d35_k718_p19_s2c_is_composable_and_within_bounds() {
+        let preset = n16_d35_k718_p19_s2c().unwrap();
 
         assert_eq!(preset.plan().pipeline(), BootstrappingPipeline::S2CFirst);
         assert_eq!(preset.plan().eval_mod().eval_mod_type, EvalModType::CosHKEven);
@@ -537,7 +558,8 @@ mod tests {
         assert_eq!(preset.plan().coeffs_to_slots().consumed_bits(), 176);
         assert_eq!(preset.plan().slots_to_coeffs().consumed_bits(), 112);
         assert_eq!((preset.input_k(), preset.output_k(), preset.bootstrap_k()), (158, 718, 1358));
-        assert_eq!(preset.output_k() - preset.restored_bits(), preset.input_k());
+        assert_eq!(preset.log2_precision(), 19);
+        assert_eq!(preset.output_k() - preset.input_k(), 16 * preset.log_delta());
 
         assert_layouts_within_bounds(&preset);
     }
@@ -564,12 +586,12 @@ mod tests {
     #[test]
     fn all_lists_every_preset_once() {
         let names: Vec<&str> = all().unwrap().iter().map(|p| p.name()).collect();
-        assert_eq!(names, ["c2s_16_levels", "s2c_16_levels"]);
+        assert_eq!(names, ["n16_d35_k600_p19_c2s", "n16_d35_k718_p19_s2c"]);
     }
 
     #[test]
     fn rederived_key_shape_keeps_widths_and_revalidates() {
-        let preset = log_n16::c2s_16_levels().unwrap();
+        let preset = n16_d35_k600_p19_c2s().unwrap();
         let widths = (preset.input_k(), preset.output_k(), preset.bootstrap_k());
 
         // The FFT64 shape used by the benchmarks: radix 19, digits of 7 limbs.

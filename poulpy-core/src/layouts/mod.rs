@@ -1404,6 +1404,7 @@ mod gadget_sizing_tests {
                 rank_in: Rank(1),
                 rank_out: Rank(1),
                 dsize,
+                stride: 1,
             };
             let gadget = layout.gadget_k();
             assert_eq!(gadget.0, dnum * digit);
