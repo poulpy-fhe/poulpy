@@ -2,7 +2,7 @@ use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero},
-    layouts::{Backend, Data, HostDataRef, Module, ScratchArena, VmpPMat},
+    layouts::{Backend, Data, Module, ScratchArena, VmpPMat},
 };
 
 use crate::layouts::{
@@ -158,7 +158,7 @@ impl<B: Backend> GGSWPreparedFactory<B> for Module<B> where
 
 // module-only API: allocation/size helpers are provided by `GGSWPreparedFactory` on `Module`.
 
-impl<D: HostDataRef, B: Backend> GGSWPrepared<D, B> {
+impl<D: Data, B: Backend> GGSWPrepared<D, B> {
     pub fn data(&self) -> &VmpPMat<D, B::DftWord, B> {
         &self.data
     }

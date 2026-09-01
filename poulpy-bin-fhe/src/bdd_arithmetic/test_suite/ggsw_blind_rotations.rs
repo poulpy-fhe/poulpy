@@ -125,7 +125,7 @@ where
 
             module.scalar_to_ggsw_blind_rotation(
                 &mut res,
-                &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&scalar),
+                &scalar,
                 &k_enc_prep,
                 false,
                 bit_start,

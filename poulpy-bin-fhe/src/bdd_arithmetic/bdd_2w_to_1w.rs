@@ -1,12 +1,12 @@
 use std::marker::PhantomData;
 
 use poulpy_core::{
-    GLWECopy, GLWEPacking,
-    layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, ModuleCoreAlloc, prepared::GGSWPrepared},
+    GLWECopy, GLWEPacking, ScratchArenaTakeCore,
+    layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, GetAutomorphismKey, prepared::GGSWPrepared},
 };
 use poulpy_hal::{
     api::ModuleLogN,
-    layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena},
+    layouts::{Backend, Module, ScratchArena},
 };
 
 use crate::bdd_arithmetic::{
@@ -14,7 +14,7 @@ use crate::bdd_arithmetic::{
 };
 use poulpy_core::GLWEBytesOf;
 
-impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> ExecuteBDDCircuit2WTo1W<BE> for Module<BE> where
+impl<BE: Backend<ZnxWord = i64>> ExecuteBDDCircuit2WTo1W<BE> for Module<BE> where
     Self: Sized + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>
 {
 }
@@ -26,15 +26,9 @@ impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> ExecuteBDD
 /// concatenated into a virtual bit-array, with `a` occupying bits
 /// `[0, T::BITS)` and `b` occupying `[T::BITS, 2*T::BITS)`.  After BDD
 /// evaluation the output bits are repacked into a single [`FheUint`].
-pub trait ExecuteBDDCircuit2WTo1W<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>>
+pub trait ExecuteBDDCircuit2WTo1W<BE: Backend>
 where
-    Self: Sized
-        + GLWEBytesOf<BE>
-        + ModuleLogN
-        + ExecuteBDDCircuit<BE>
-        + GLWEPacking<BE>
-        + GLWECopy<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+    Self: Sized + GLWEBytesOf<BE> + ModuleLogN + ExecuteBDDCircuit<BE> + GLWEPacking<BE> + GLWECopy<BE>,
 {
     fn execute_bdd_circuit_2w_to_1w<C, H, T>(
         &self,
@@ -48,8 +42,7 @@ where
         T: UnsignedInteger,
         C: GetBitCircuitInfo,
         H: GetAutomorphismKey<BE>,
-        BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
+        BE: Backend<ZnxWord = i64>,
     {
         self.execute_bdd_circuit_2w_to_1w_multi_thread(1, out, circuit, a, b, key, scratch);
     }
@@ -113,8 +106,7 @@ where
         T: UnsignedInteger,
         C: GetBitCircuitInfo,
         H: GetAutomorphismKey<BE>,
-        BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
+        BE: Backend<ZnxWord = i64>,
     {
         // Collects inputs into a single array
         let inputs: Vec<&dyn GetGGSWBit<BE>> = [a as &dyn GetGGSWBit<BE>, b as &dyn GetGGSWBit<BE>].to_vec();
@@ -123,11 +115,7 @@ where
             _phantom: PhantomData,
         };
 
-        // TODO(device): this wrapper still repacks through host-owned
-        // temporary GLWEs before the final backend-generic packing step.
-        let mut out_bits: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> =
-            (0..T::BITS as usize).map(|_| self.glwe_alloc_from_infos(out)).collect();
-        let mut scratch_1 = scratch.borrow();
+        let (mut out_bits, mut scratch_1) = scratch.borrow().take_glwe_slice_scratch(T::BITS as usize, out);
 
         // Evaluates out[i] = circuit[i](a, b)
         self.execute_bdd_circuit_multi_thread(threads, &mut out_bits, &helper, circuit, &mut scratch_1);
@@ -137,14 +125,12 @@ where
     }
 }
 
-struct FheUintHelper<'a, T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> {
+struct FheUintHelper<'a, T: UnsignedInteger, BE: Backend<ZnxWord = i64>> {
     data: Vec<&'a dyn GetGGSWBit<BE>>,
     _phantom: PhantomData<T>,
 }
 
-impl<'a, T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> GetGGSWBit<BE>
-    for FheUintHelper<'a, T, BE>
-{
+impl<'a, T: UnsignedInteger, BE: Backend<ZnxWord = i64>> GetGGSWBit<BE> for FheUintHelper<'a, T, BE> {
     fn get_bit(&self, bit: usize) -> &GGSWPrepared<BE::OwnedBuf, BE> {
         let lo: usize = bit % T::BITS as usize;
         let hi: usize = bit / T::BITS as usize;
@@ -152,9 +138,7 @@ impl<'a, T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, Zn
     }
 }
 
-impl<'a, T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> BitSize
-    for FheUintHelper<'a, T, BE>
-{
+impl<'a, T: UnsignedInteger, BE: Backend<ZnxWord = i64>> BitSize for FheUintHelper<'a, T, BE> {
     fn bit_size(&self) -> usize {
         T::BITS as usize * self.data.len()
     }
@@ -178,9 +162,8 @@ macro_rules! define_bdd_2w_to_1w_trait {
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-                    Self: GLWEToBackendMut<BE>,
-                    for<'a> BE::BufMut<'a>: HostDataMut;
+                    BE: Backend<ZnxWord = i64>,
+                    Self: GLWEToBackendMut<BE>;
 
                 /// Multithreaded version – same vis, method_name + "_multi_thread"
                 fn [<$method_name _multi_thread>]<M, H>(
@@ -194,9 +177,8 @@ macro_rules! define_bdd_2w_to_1w_trait {
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-                    Self: GLWEToBackendMut<BE>,
-                    for<'a> BE::BufMut<'a>: HostDataMut;
+                    BE: Backend<ZnxWord = i64>,
+                    Self: GLWEToBackendMut<BE>;
 
                 fn [<$method_name _tmp_bytes>]<M, R, G, H>(
                     &self,
@@ -210,7 +192,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     R: GLWEInfos,
                     G: GGSWInfos,
                     H: GetAutomorphismKey<BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>;
+                    BE: Backend<ZnxWord = i64>;
 
                 fn [<$method_name _multi_thread_tmp_bytes>]<M, R, G, H>(
                     &self,
@@ -225,7 +207,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     R: GLWEInfos,
                     G: GGSWInfos,
                     H: GetAutomorphismKey<BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>;
+                    BE: Backend<ZnxWord = i64>;
             }
         }
     };
@@ -235,7 +217,7 @@ macro_rules! define_bdd_2w_to_1w_trait {
 macro_rules! impl_bdd_2w_to_1w_trait {
     ($trait_name:ident, $method_name:ident, $ty:ty, $circuit_ty:ty, $output_circuits:path) => {
         paste::paste! {
-            impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> $trait_name<$ty, BE> for FheUint<BE::OwnedBuf, $ty, BE::ZnxWord> {
+            impl<BE: Backend<ZnxWord = i64>> $trait_name<$ty, BE> for FheUint<BE::OwnedBuf, $ty, BE::ZnxWord> {
 
                 fn $method_name<M, H>(
                     &mut self,
@@ -247,8 +229,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-                    for<'a> BE::BufMut<'a>: HostDataMut,
+                    BE: Backend<ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_2w_to_1w(self, &$output_circuits, a, b, key, scratch)
                 }
@@ -264,8 +245,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                 ) where
                     M: GLWEBytesOf<BE> + ExecuteBDDCircuit2WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-                    for<'a> BE::BufMut<'a>: HostDataMut,
+                    BE: Backend<ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_2w_to_1w_multi_thread(threads, self, &$output_circuits, a, b, key, scratch)
                 }
@@ -282,7 +262,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     R: GLWEInfos,
                     G: GGSWInfos,
                     H: GetAutomorphismKey<BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
+                    BE: Backend<ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_2w_to_1w_tmp_bytes::<_, $ty, _, _, _>(
                         &$output_circuits,
@@ -305,7 +285,7 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     R: GLWEInfos,
                     G: GGSWInfos,
                     H: GetAutomorphismKey<BE>,
-                    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
+                    BE: Backend<ZnxWord = i64>,
                 {
                     module.execute_bdd_circuit_2w_to_1w_multi_thread_tmp_bytes::<_, $ty, _, _, _>(
                         threads,

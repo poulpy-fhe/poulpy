@@ -27,8 +27,8 @@ use poulpy_hal::layouts::{
 };
 
 use crate::layouts::{
-    GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWETensor, GLWETensorKey, LWE,
-    LWEPlaintext, LWESecret,
+    GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWETensor,
+    GLWETensorKey, GLWEToLWEKey, LWE, LWEPlaintext, LWESecret,
 };
 
 /// Moves `Self` into an already-allocated destination.
@@ -228,5 +228,30 @@ where
 {
     fn transfer_into(&self, dst: &mut GLWETensorKey<D2, W>) {
         self.0.transfer_into(&mut dst.0);
+    }
+}
+
+impl<D1, D2, W> TransferInto<GLWEToLWEKey<D2, W>> for GLWEToLWEKey<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWEToLWEKey<D2, W>) {
+        self.0.transfer_into(&mut dst.0);
+    }
+}
+
+impl<D1, D2, W> TransferInto<GGLWEToGGSWKey<D2, W>> for GGLWEToGGSWKey<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GGLWEToGGSWKey<D2, W>) {
+        assert_eq!(self.keys.len(), dst.keys.len(), "transfer_into: GGLWEToGGSWKey key count");
+        for (src, dst) in self.keys.iter().zip(&mut dst.keys) {
+            src.transfer_into(dst);
+        }
     }
 }

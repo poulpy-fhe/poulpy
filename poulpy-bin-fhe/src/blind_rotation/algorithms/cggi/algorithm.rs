@@ -10,7 +10,7 @@ use poulpy_hal::{
         VmpApplyDftToDftTmpBytes,
     },
     layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut,
+        Backend, Host, HostDataMut, HostDataRef, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, VecZnxToBackendRef, ZnxView, ZnxViewMut, ZnxZero, vec_znx_backend_ref_from_mut,
         vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
     },
@@ -19,7 +19,7 @@ use poulpy_hal::{
 
 use poulpy_core::{
     Distribution, GLWEAdd, GLWECopy, GLWEExternalProduct, GLWEMulXpMinusOne, GLWENormalize, ScratchArenaTakeCore,
-    layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, LWE, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
+    layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
 };
 
 use crate::blind_rotation::{
@@ -28,7 +28,7 @@ use crate::blind_rotation::{
 use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
-impl<BE: Backend<ZnxWord = i64> + 'static> BlindRotationExecute<CGGI, BE> for Module<BE>
+impl<BE: Backend<Location = Host, ZnxWord = i64> + 'static> BlindRotationExecute<CGGI, BE> for Module<BE>
 where
     BE::OwnedBuf: HostDataMut + HostDataRef,
     Self: VecZnxDftBytesOf
@@ -72,7 +72,7 @@ where
     ) -> usize
     where
         G: GLWEInfos,
-        B: GGSWInfos,
+        B: BlindRotationKeyInfos,
     {
         let brk_size: usize = brk_infos.size();
 
@@ -115,17 +115,16 @@ where
         }
     }
 
-    fn blind_rotation_execute<R, DL>(
+    fn blind_rotation_execute<R, L>(
         &self,
         res: &mut R,
-        lwe: &LWE<DL, i64>,
+        lwe: &L,
         lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
         brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        DL: Data,
-        LWE<DL, i64>: LWEToBackendRef<BE>,
+        L: LWEToBackendRef<BE> + LWEInfos,
     {
         // TODO(device): make the full execute path 100% backend-native. The
         // current implementation still relies on host-visible scratch/result
@@ -152,17 +151,16 @@ where
     }
 }
 
-fn execute_block_binary_extended<R, DataIn, M, BE: Backend<ZnxWord = i64> + 'static>(
+fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + 'static>(
     module: &M,
     res: &mut R,
-    lwe: &LWE<DataIn, i64>,
+    lwe: &L,
     lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
     brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    DataIn: Data,
-    LWE<DataIn, i64>: LWEToBackendRef<BE>,
+    L: LWEToBackendRef<BE> + LWEInfos,
     M: VecZnxDftBytesOf
         + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -363,17 +361,16 @@ fn execute_block_binary_extended<R, DataIn, M, BE: Backend<ZnxWord = i64> + 'sta
     }
 }
 
-fn execute_block_binary<R, DataIn, M, BE: Backend<ZnxWord = i64> + 'static>(
+fn execute_block_binary<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + 'static>(
     module: &M,
     res: &mut R,
-    lwe: &LWE<DataIn, i64>,
+    lwe: &L,
     lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
     brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    DataIn: Data,
-    LWE<DataIn, i64>: LWEToBackendRef<BE>,
+    L: LWEToBackendRef<BE> + LWEInfos,
     M: VecZnxDftBytesOf
         + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -586,17 +583,16 @@ fn execute_block_binary<R, DataIn, M, BE: Backend<ZnxWord = i64> + 'static>(
     module.glwe_copy(res, &out_tmp);
 }
 
-fn execute_standard<R, DataIn, M, BE: Backend<ZnxWord = i64>>(
+fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     module: &M,
     res: &mut R,
-    lwe: &LWE<DataIn, i64>,
+    lwe: &L,
     lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
     brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    DataIn: Data,
-    LWE<DataIn, i64>: LWEToBackendRef<BE>,
+    L: LWEToBackendRef<BE> + LWEInfos,
     M: VecZnxRotateBackend<BE>
         + GLWEExternalProduct<BE>
         + GLWEMulXpMinusOne<BE>

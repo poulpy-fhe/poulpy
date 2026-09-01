@@ -1,5 +1,7 @@
+use std::mem::size_of;
+
 use poulpy_hal::{
-    layouts::{Backend, HostDataMut, Module, ScalarZnx, ScratchArena, ZnxView, ZnxViewMut},
+    layouts::{Backend, Module, ScalarZnx, ScratchArena},
     source::Source,
 };
 
@@ -10,14 +12,9 @@ use poulpy_core::{
 
 use crate::blind_rotation::{BlindRotationKey, BlindRotationKeyEncryptSk, CGGI};
 
-impl<BE: Backend + 'static> BlindRotationKeyEncryptSk<CGGI, BE> for Module<BE>
+impl<BE: Backend<ZnxWord = i64> + 'static> BlindRotationKeyEncryptSk<CGGI, BE> for Module<BE>
 where
     Self: GGSWEncryptSk<BE>,
-    // TODO(device): this implementation is still host-backed because the
-    // plaintext staging buffer is built via host-visible scalar views.
-    BE::OwnedBuf: HostDataMut,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
     fn blind_rotation_key_encrypt_sk_tmp_bytes<A: GGSWInfos>(&self, infos: &A) -> usize {
         self.ggsw_encrypt_sk_tmp_bytes(infos)
@@ -51,13 +48,17 @@ where
         {
             let sk_lwe = sk_lwe.to_backend_ref();
 
-            res.dist = sk_lwe.dist();
+            res.dist = *sk_lwe.dist();
 
             let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = self.scalar_znx_alloc(1);
             let sk_ref = sk_lwe.data();
+            let mut sk_host = vec![0u8; BE::bytes_of_scalar_znx(sk_ref.n(), sk_ref.cols())];
+            BE::copy_view_to_host(&BE::region_ref(&sk_ref.data, 0, sk_host.len()), &mut sk_host);
+            let mut pt_host = vec![0u8; BE::bytes_of_scalar_znx(pt.n(), pt.cols())];
 
             for (i, ggsw) in res.keys.iter_mut().enumerate() {
-                pt.at_mut(0, 0)[0] = sk_ref.at(0, 0)[i];
+                pt_host[..size_of::<i64>()].copy_from_slice(&sk_host[i * size_of::<i64>()..(i + 1) * size_of::<i64>()]);
+                BE::copy_from_host(&mut pt.data, &pt_host);
                 let mut scratch_iter = scratch.borrow();
                 self.ggsw_encrypt_sk(ggsw, &pt, sk_glwe, enc_infos, source_xe, source_xa, &mut scratch_iter);
             }
