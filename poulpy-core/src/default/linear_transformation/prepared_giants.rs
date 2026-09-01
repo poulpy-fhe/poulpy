@@ -216,7 +216,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         .iter()
         .flatten()
         .map(|key| {
-            crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(
+            crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail(
                 res,
                 res,
                 key,

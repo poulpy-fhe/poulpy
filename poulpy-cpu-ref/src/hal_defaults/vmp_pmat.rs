@@ -330,14 +330,15 @@ where
         b_rows: usize,
         b_cols_in: usize,
         b_cols_out: usize,
-        b_size: usize,
+        _b_size: usize,
     ) -> usize
     where
         BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
         Module<BE>: VecZnxDftBytesOf,
     {
-        module.bytes_of_vec_znx_dft(b_cols_out, res_size.min(b_size))
-            + ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
+        // The staging accumulator below is allocated at the full `res_size`,
+        // so the bound must not shrink it to the matrix size.
+        module.bytes_of_vec_znx_dft(b_cols_out, res_size) + ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
     }
 
     fn vmp_apply_dft_to_dft_accumulate_default(
