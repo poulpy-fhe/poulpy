@@ -1278,10 +1278,10 @@ impl Degree {
 }
 
 /// Total torus precision of a key: `dnum * dsize * base2k + k_aux`, i.e. the
-/// gadget precision (`dnum` digits of `dsize` limbs at radix `base2k`) plus the
-/// auxiliary guard region `k_aux`. This is what `LWEInfos::k()` reports for the
-/// GGLWE/GGSW key families, so encryption places the error at the physical
-/// bottom limb.
+/// gadget precision (see [`GGLWELayout::gadget_k`]) plus the auxiliary guard
+/// region `k_aux`.
+/// This is what `LWEInfos::k()` reports for the GGLWE/GGSW key families, so
+/// encryption places the error at the physical bottom limb.
 pub fn key_k(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision) -> TorusPrecision {
     debug_assert!(
         k_aux.0 >= dsize.0 * base2k.0,
@@ -1316,8 +1316,7 @@ pub fn key_size(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision)
 /// work   = digits * dsize + ceil(k_aux / base2k)
 /// ```
 pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize, k_aux: TorusPrecision) -> usize {
-    let digit_bits: u32 = dsize.0 * base2k.0;
-    let digits: u32 = input_k.0.div_ceil(digit_bits);
+    let digits: u32 = GGLWELayout::dnum_for_input(base2k, input_k, dsize).0;
     (digits * dsize.0 + k_aux.0.div_ceil(base2k.0)) as usize
 }
 
@@ -1329,7 +1328,6 @@ pub(crate) struct GadgetProductOutputSizeParams {
     pub(crate) output_k: TorusPrecision,
     pub(crate) dsize: Dsize,
     pub(crate) k_aux: TorusPrecision,
-    pub(crate) dft_is_exact: bool,
     pub(crate) product_terms: usize,
     pub(crate) extra_live_limbs: usize,
 }
@@ -1352,12 +1350,13 @@ pub(crate) fn gadget_product_limbs(key_base2k: Base2K, product_terms: usize) -> 
 /// normalization.
 ///
 /// All lower limbs can, in principle, affect the rounded result through a
-/// sufficiently long carry chain. For exact transform backends, this keeps a
-/// conservative practical window: the live input/output precision, converted
-/// to the key radix, plus the worst-case limb growth of the signed polynomial
-/// products accumulated into one coefficient. Approximate transform backends
-/// retain the complete work region because their rounding error does not obey
-/// that exact carry model.
+/// sufficiently long carry chain. This keeps a conservative practical window:
+/// the live input/output precision, converted to the key radix, plus the
+/// worst-case limb growth of the signed polynomial products accumulated into
+/// one coefficient. The window is backend-independent: a dropped limb sits
+/// below the output precision by construction, and an approximate transform's
+/// rounding error scales with each limb's own magnitude, so it neither
+/// reaches the retained limbs nor grows by dropping the lower ones.
 pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) -> usize {
     let GadgetProductOutputSizeParams {
         key_size,
@@ -1366,14 +1365,10 @@ pub(crate) fn gadget_product_output_size(params: GadgetProductOutputSizeParams) 
         output_k,
         dsize,
         k_aux,
-        dft_is_exact,
         product_terms,
         extra_live_limbs,
     } = params;
     let work_size = key_size.min(key_work_size(key_base2k, input_k, dsize, k_aux));
-    if !dft_is_exact {
-        return work_size;
-    }
 
     let base2k = key_base2k.as_usize();
     let live_limbs = input_k
@@ -1390,6 +1385,39 @@ mod gadget_sizing_tests {
     use super::*;
 
     #[test]
+    fn dnum_for_input_is_the_inverse_of_gadget_k() {
+        let (base2k, dsize) = (Base2K(52), Dsize(4));
+        let digit = dsize.0 * base2k.0;
+        let dnum_for = |input_k: u32| GGLWELayout::dnum_for_input(base2k, TorusPrecision(input_k), dsize);
+        // A partial digit counts as a full one, an exact multiple does not add one.
+        assert_eq!(dnum_for(1404), Dnum(7));
+        assert_eq!(dnum_for(7 * digit), Dnum(7));
+        assert_eq!(dnum_for(7 * digit + 1), Dnum(8));
+        assert_eq!(dnum_for(1), Dnum(1));
+        for dnum in 1..10 {
+            let k_aux = TorusPrecision(digit + 16);
+            let layout = GGLWELayout {
+                n: Degree(16),
+                base2k,
+                dnum: Dnum(dnum),
+                k_aux,
+                rank_in: Rank(1),
+                rank_out: Rank(1),
+                dsize,
+                stride: 1,
+            };
+            let gadget = layout.gadget_k();
+            assert_eq!(gadget.0, dnum * digit);
+            assert_eq!(dnum_for(gadget.0), Dnum(dnum));
+            assert_eq!(key_k(base2k, Dnum(dnum), dsize, k_aux).0, gadget.0 + k_aux.0);
+            assert_eq!(
+                key_work_size(base2k, gadget, dsize, k_aux),
+                (dnum * dsize.0 + k_aux.0.div_ceil(base2k.0)) as usize
+            );
+        }
+    }
+
+    #[test]
     fn work_size_rounds_input_to_a_whole_digit_before_aux_limbs() {
         // Two 2-limb digits plus two auxiliary limbs.
         assert_eq!(key_work_size(Base2K(30), TorusPrecision(61), Dsize(2), TorusPrecision(31)), 6);
@@ -1397,19 +1425,19 @@ mod gadget_sizing_tests {
 
     #[test]
     fn output_size_converts_precision_to_the_key_radix_and_caps_at_work_size() {
-        let params = |dft_is_exact| GadgetProductOutputSizeParams {
-            key_size: 12,
-            key_base2k: Base2K(30),
-            input_k: TorusPrecision(61),
-            output_k: TorusPrecision(91),
-            dsize: Dsize(2),
-            k_aux: TorusPrecision(31),
-            dft_is_exact,
-            product_terms: 1,
-            extra_live_limbs: 0,
-        };
-        assert_eq!(gadget_product_output_size(params(true)), 6);
-        assert_eq!(gadget_product_output_size(params(false)), 6);
+        assert_eq!(
+            gadget_product_output_size(GadgetProductOutputSizeParams {
+                key_size: 12,
+                key_base2k: Base2K(30),
+                input_k: TorusPrecision(61),
+                output_k: TorusPrecision(91),
+                dsize: Dsize(2),
+                k_aux: TorusPrecision(31),
+                product_terms: 1,
+                extra_live_limbs: 0,
+            }),
+            6
+        );
     }
 
     #[test]
@@ -1422,7 +1450,6 @@ mod gadget_sizing_tests {
                 output_k: TorusPrecision(90),
                 dsize: Dsize(1),
                 k_aux: TorusPrecision(180),
-                dft_is_exact: true,
                 product_terms: 1,
                 extra_live_limbs: 0,
             }),
@@ -1436,7 +1463,6 @@ mod gadget_sizing_tests {
                 output_k: TorusPrecision(90),
                 dsize: Dsize(1),
                 k_aux: TorusPrecision(180),
-                dft_is_exact: true,
                 product_terms: 1 << 16,
                 extra_live_limbs: 0,
             }),

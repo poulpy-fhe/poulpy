@@ -5,9 +5,12 @@
 ### `poulpy-hal`
 
 - **Breaking:** uniform `VecZnx` sampling now takes the target precision `k`; the sampler masks the unused low bits of the last live limb and clears limbs above `k`.
+- The cross-backend `test_vmp_apply_dft_to_dft_accumulate` now sweeps `res` sizes that differ from the prepared matrix size and non-zero `limb_offset`, so the output limb window is compared across transform families.
 
 ### `poulpy-core`
 
+- Apply the gadget-product limb window on every backend. The window was gated on `DFT_IS_EXACT` because FFT64 lost precision with it; the loss was the FFT64 VMP bug below, not a property of approximate transforms, so FFT64 backends now materialize the same reduced key region as the NTT backends.
+- Add a cross-family parity suite (NTT4x30 reference against FFT64) to `poulpy-cpu-ref`, at a radix where FFT64 products round exactly.
 - Fix precision loss at non-`base2k`-aligned ciphertext widths. Masks and Gaussian noise are sampled at `k`-bit precision, avoiding redundant post-encryption rounding for both secret- and public-key ciphertexts.
 
 Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic family, backed by a shared HAL execution and scratch-allocation model. Fused primitives reduce intermediate traffic in core and CKKS paths, bin-FHE gains backend-driven parallel evaluation, and CKKS gains an even-Chebyshev EvalMod variant.
@@ -21,6 +24,8 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 
 ### CPU backends
 
+- Fix the FFT64 `vmp_apply_dft_to_dft` limb window when `res` is narrower than the prepared matrix: output limb `c` reads matrix limb `c + limb_offset`, but the window was clamped at `res.size()` instead of `res.size() + limb_offset`, dropping the top `limb_offset` limbs of every narrowed accumulating gadget digit. Shared by every FFT64 backend (reference, AVX2, AVX-512, NEON and their Rayon variants).
+- Fix the NTT4x30 reference `vmp_apply_dft_to_dft_accumulate_tmp_bytes` under-reporting scratch when `res` is wider than the prepared matrix.
 - Add `poulpy-cpu-rayon`, which provides the shared Rayon executor, nested-parallelism guard, scheduling thresholds, FFT64 kernels, coefficient normalization, and tuning utilities used by the accelerated CPU crates.
 - Add the opt-in `FFT64AvxRayon`, `NTT4x30AvxRayon`, `FFT64Avx512Rayon`, `NTT4x30Avx512Rayon`, `NTT3x42IfmaRayon`, `FFT64NeonRayon` and `NTT4x30NeonRayon` backends. `enable-rayon` exposes them while retaining the serial backend types.
 - Pack the four NTT4x30 transform-domain residues into `u32` words on AVX2 and AVX-512, halving DFT and prepared-key storage from 32 to 16 bytes per coefficient; update the serial and Rayon transform, convolution, SVP and VMP kernels for the packed layout.

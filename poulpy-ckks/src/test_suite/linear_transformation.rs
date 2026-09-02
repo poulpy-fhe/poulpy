@@ -121,8 +121,7 @@ where
     let (a_re, a_im) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     // Exercise multi-limb automorphism products and multiple non-identity
-    // giant rotations. Exact backends then cover the shortened shared
-    // accumulator, while approximate backends retain the full key width.
+    // giant rotations, so the shortened shared accumulator is covered.
     let key_params = CKKSTestParams {
         dsize: params.dsize.max(4),
         ..params

@@ -47,6 +47,7 @@
 //! | [`approximation`] | Reusable minimax fitting, precision/depth selection, composite sign generation, and prepared interval-mapped polynomial evaluation |
 //! | [`encoding`] | CKKS encoders/decoders, including slot-wise real/imaginary packing |
 //! | [`layouts`] | CKKS ciphertext/plaintext wrappers and metadata-aware allocation helpers |
+//! | [`presets`] | Ready-to-use parameter sets |
 //! | [`api`] | The public op traits: leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, rescale, and scratch sizing |
 //! | [`api::CKKSBootstrappingOps`] | The CKKS bootstrapping pipeline: its one native primitive ModUp (modulus raise), plus CoeffsToSlots / SlotsToCoeffs and EvalMod re-exported as supertraits ([`api::CKKSDFTOps`] / [`api::CKKSEvalModOps`]); parameterized by [`layouts::BootstrappingPlan`] |
 //! | [`api::CKKSPaCoOps`] | PaCo bootstrapping without ModUp or EvalMod; parameterized by [`layouts::PaCoPlan`] and a compiled [`layouts::PaCoContext`] |
@@ -97,6 +98,7 @@ pub mod prelude {
 pub mod oep;
 pub mod polynomial;
 pub mod power_basis;
+pub mod presets;
 pub mod scalar;
 #[cfg(feature = "test-utils")]
 pub mod test_suite;

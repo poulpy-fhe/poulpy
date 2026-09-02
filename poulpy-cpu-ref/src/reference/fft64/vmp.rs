@@ -386,7 +386,13 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
         .take_while(|row| row.iter().all(|&x| x == 0.0))
         .count();
     let row_max: usize = row_end - row_start;
-    let col_max: usize = ncols.min(res_size);
+    // Output column `c` reads `pmat` column `c + limb_offset`, so the window
+    // of consumed `pmat` columns is `limb_offset..res_size + limb_offset`,
+    // clamped to what `pmat` has. Clamping at `res_size` instead would drop
+    // the top `limb_offset` output columns whenever `res` is narrower than
+    // `pmat`, which is exactly the narrowed accumulating pass of a gadget
+    // product (`gglwe_product_digit_output_size`).
+    let col_max: usize = ncols.min(res_size + limb_offset);
 
     if limb_offset >= col_max || row_max == 0 {
         if OVERWRITE {
@@ -438,5 +444,8 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
         }
     }
 
-    REIM::reim_zero(&mut res[col_max * n..]);
+    // Output columns past the consumed `pmat` window receive nothing.
+    if OVERWRITE {
+        REIM::reim_zero(&mut res[(col_max - limb_offset) * n..]);
+    }
 }

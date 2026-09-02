@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 ///
 /// The number of limbs (`k = limbs * base2k`) and the gadget split (`dsize`,
 /// `dnum`) are scaled down with `n`, so the benchmark shape stays representative
-/// across sizes (smaller rings support smaller moduli / fewer limbs). `dnum` is
-/// derived as `⌈k / (dsize * base2k)⌉`, matching `tsk_layout`.
+/// across sizes (smaller rings support smaller moduli / fewer limbs). The key
+/// shapes (`dnum`, `k_aux`) are split off `k + dsize * base2k` by
+/// [`crate::core::params::key_dnum_k_aux`].
 #[derive(Clone, Copy)]
 pub struct CkksBenchParams {
     pub n: usize,
