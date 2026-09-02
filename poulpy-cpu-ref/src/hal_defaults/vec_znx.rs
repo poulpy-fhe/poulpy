@@ -5,16 +5,16 @@ use std::mem::size_of;
 use crate::reference::vec_znx::{
     vec_znx_add_const_assign, vec_znx_add_const_into, vec_znx_add_into, vec_znx_add_normal_ref, vec_znx_add_scalar_assign,
     vec_znx_add_scalar_into, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_automorphism_assign_tmp_bytes,
-    vec_znx_automorphism_rotate, vec_znx_copy, vec_znx_extract_coeff, vec_znx_fill_normal_ref, vec_znx_fill_uniform_ref,
-    vec_znx_lsh, vec_znx_lsh_add_coeff_to_coeff, vec_znx_lsh_assign, vec_znx_lsh_coeff, vec_znx_lsh_sub,
-    vec_znx_lsh_sub_coeff_to_coeff, vec_znx_lsh_tmp_bytes, vec_znx_merge_rings, vec_znx_merge_rings_tmp_bytes,
-    vec_znx_mul_xp_minus_one, vec_znx_mul_xp_minus_one_assign, vec_znx_mul_xp_minus_one_assign_tmp_bytes, vec_znx_negate,
-    vec_znx_negate_assign, vec_znx_normalize, vec_znx_normalize_assign, vec_znx_normalize_coeff, vec_znx_normalize_coeff_assign,
-    vec_znx_normalize_tmp_bytes, vec_znx_rotate, vec_znx_rotate_assign, vec_znx_rotate_assign_tmp_bytes, vec_znx_rsh,
-    vec_znx_rsh_add_coeff_into, vec_znx_rsh_assign, vec_znx_rsh_coeff, vec_znx_rsh_sub, vec_znx_rsh_sub_coeff_into,
-    vec_znx_rsh_tmp_bytes, vec_znx_split_ring, vec_znx_split_ring_tmp_bytes, vec_znx_sub, vec_znx_sub_assign,
-    vec_znx_sub_negate_assign, vec_znx_sub_scalar, vec_znx_sub_scalar_assign, vec_znx_switch_ring, vec_znx_transpose,
-    vec_znx_zero,
+    vec_znx_automorphism_rotate, vec_znx_canonicalize, vec_znx_canonicalize_tmp_bytes, vec_znx_copy, vec_znx_extract_coeff,
+    vec_znx_fill_normal_ref, vec_znx_fill_uniform_ref, vec_znx_lsh, vec_znx_lsh_add_coeff_to_coeff, vec_znx_lsh_assign,
+    vec_znx_lsh_coeff, vec_znx_lsh_sub, vec_znx_lsh_sub_coeff_to_coeff, vec_znx_lsh_tmp_bytes, vec_znx_merge_rings,
+    vec_znx_merge_rings_tmp_bytes, vec_znx_mul_xp_minus_one, vec_znx_mul_xp_minus_one_assign,
+    vec_znx_mul_xp_minus_one_assign_tmp_bytes, vec_znx_negate, vec_znx_negate_assign, vec_znx_normalize,
+    vec_znx_normalize_assign, vec_znx_normalize_coeff, vec_znx_normalize_coeff_assign, vec_znx_normalize_tmp_bytes,
+    vec_znx_rotate, vec_znx_rotate_assign, vec_znx_rotate_assign_tmp_bytes, vec_znx_rsh, vec_znx_rsh_add_coeff_into,
+    vec_znx_rsh_assign, vec_znx_rsh_coeff, vec_znx_rsh_sub, vec_znx_rsh_sub_coeff_into, vec_znx_rsh_tmp_bytes,
+    vec_znx_split_ring, vec_znx_split_ring_tmp_bytes, vec_znx_sub, vec_znx_sub_assign, vec_znx_sub_negate_assign,
+    vec_znx_sub_scalar, vec_znx_sub_scalar_assign, vec_znx_switch_ring, vec_znx_transpose, vec_znx_zero,
 };
 use crate::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign,
@@ -185,6 +185,34 @@ where
 
     fn vec_znx_normalize_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
         vec_znx_normalize_tmp_bytes(module.n())
+    }
+
+    fn vec_znx_canonicalize_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
+        vec_znx_canonicalize_tmp_bytes(module.n())
+    }
+
+    fn vec_znx_canonicalize_default(
+        module: &Module<BE>,
+        base2k: usize,
+        k: usize,
+        a: &mut VecZnxBackendMut<'_, BE>,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: ZnxZero
+            + ZnxCopy
+            + ZnxNormalizeFirstStepCarryOnly
+            + ZnxNormalizeMiddleStepCarryOnly
+            + ZnxNormalizeMiddleStep
+            + ZnxNormalizeFirstStepAssign
+            + ZnxNormalizeMiddleStepAssign
+            + ZnxNormalizeFinalStepAssign,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+    {
+        let byte_count = vec_znx_canonicalize_tmp_bytes(module.n());
+        let (tmp, _) = take_host_typed::<BE, i64>(scratch.borrow(), byte_count / size_of::<i64>());
+        vec_znx_canonicalize::<BE>(base2k, k, a, a_col, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]

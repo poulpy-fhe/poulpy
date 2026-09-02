@@ -10,23 +10,18 @@
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxZeroBackend,
+        VecZnxCanonicalize, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy,
+        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, ScratchArena, VecZnxBackendMut, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef, VecZnxToBackendRef, vec_znx_backend_mut_with_size,
-        vec_znx_reborrow_backend_mut,
+        Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, VecZnxDftToBackendRef, VecZnxToBackendRef,
     },
 };
 
 use crate::{
-    GLWEShift,
     default::keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
-    layouts::{
-        GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEViewMut, LWEInfos, glwe_backend_mut_with_size,
-        prepared::GGLWEPreparedBackendRef,
-    },
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, LWEInfos, prepared::GGLWEPreparedBackendRef},
 };
 
 pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(module: &M, a_infos: &R, key_infos: &K) -> usize
@@ -202,88 +197,47 @@ pub(super) fn glwe_idft_dft_into_big<BE, M>(
 pub(super) fn glwe_normalize_big_into<BE, M, R>(
     module: &M,
     res: &mut R,
-    res_k: usize,
     a: &VecZnxBigBackendRef<'_, BE>,
     a_base2k: usize,
     cnv_offset_lo: i64,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: VecZnxBigNormalize<BE> + VecZnxZeroBackend<BE> + GLWEShift<BE>,
+    M: VecZnxBigNormalize<BE> + VecZnxCanonicalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k().as_usize();
-    let padding = (res_base2k - res_k % res_base2k) % res_base2k;
-    let active_size = res_k.div_ceil(res_base2k);
-    {
-        let mut res_ref = res.to_backend_mut();
-        let res_size = res_ref.data.size();
-        {
-            let mut active =
-                vec_znx_backend_mut_with_size::<BE>(vec_znx_reborrow_backend_mut::<BE>(&mut res_ref.data), active_size);
-            for col in 0..cols {
-                if padding != 0 && res_base2k == a_base2k {
-                    module.vec_znx_big_normalize_partial(
-                        &mut active,
-                        res_base2k,
-                        cnv_offset_lo,
-                        padding,
-                        col,
-                        a,
-                        a_base2k,
-                        col,
-                        &mut scratch.borrow(),
-                    );
-                } else {
-                    module.vec_znx_big_normalize(
-                        &mut active,
-                        res_base2k,
-                        cnv_offset_lo,
-                        col,
-                        a,
-                        a_base2k,
-                        col,
-                        &mut scratch.borrow(),
-                    );
-                }
-            }
-        }
-        if active_size < res_size {
-            // Scratch-backed outputs are copied at allocation width.
-            let n = res_ref.data.n();
-            let data_cols = res_ref.data.cols();
-            let tail_size = res_size - active_size;
-            let offset = BE::bytes_of_vec_znx(n, data_cols, active_size);
-            let len = BE::bytes_of_vec_znx(n, data_cols, tail_size);
-            let mut tail = VecZnxBackendMut::<BE>::from_data(
-                BE::region_mut_ref(&mut res_ref.data.data, offset, len),
-                n,
-                data_cols,
-                tail_size,
-            );
-            for col in 0..cols {
-                module.vec_znx_zero_backend(&mut tail, col);
-            }
-        }
+    let res_k = res.k().as_usize();
+    let mut res_ref = res.to_backend_mut();
+    for col in 0..cols {
+        module.vec_znx_big_normalize(
+            &mut res_ref.data,
+            res_base2k,
+            cnv_offset_lo,
+            col,
+            a,
+            a_base2k,
+            col,
+            &mut scratch.borrow(),
+        );
     }
-    if padding != 0 && res_base2k != a_base2k {
-        glwe_canonicalize_partial(module, res, res_k, scratch);
+    for col in 0..cols {
+        module.vec_znx_canonicalize(res_base2k, res_k, &mut res_ref.data, col, &mut scratch.borrow());
     }
 }
 
-pub(super) fn glwe_canonicalize_partial<BE, M, R>(module: &M, res: &mut R, res_k: usize, scratch: &mut ScratchArena<'_, BE>)
+pub(super) fn glwe_canonicalize<BE, M, R>(module: &M, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: GLWEShift<BE>,
+    M: VecZnxCanonicalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
+    let cols = res.rank().as_usize() + 1;
     let base2k = res.base2k().as_usize();
-    let padding = (base2k - res_k % base2k) % base2k;
-    if padding != 0 {
-        let active_size = res_k.div_ceil(base2k);
-        let mut active = GLWEViewMut::<BE>::from_inner(glwe_backend_mut_with_size::<BE>(res.to_backend_mut(), active_size));
-        module.glwe_rsh(padding, &mut active, scratch);
-        module.glwe_lsh_assign(&mut active, padding, scratch);
+    let k = res.k().as_usize();
+    let mut res_ref = res.to_backend_mut();
+    for col in 0..cols {
+        module.vec_znx_canonicalize(base2k, k, &mut res_ref.data, col, &mut scratch.borrow());
     }
 }

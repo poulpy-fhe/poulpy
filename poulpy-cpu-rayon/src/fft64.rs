@@ -1026,35 +1026,6 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         $crate::normalize::vec_znx_normalize_par::<$base, $rayon>(res, res_base2k, res_offset, res_col, &a_vec, a_base2k, a_col, carry);
     }
 
-    fn vec_znx_big_normalize_partial(
-        module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
-        res_base2k: usize,
-        res_offset: i64,
-        res_padding: usize,
-        res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
-        a_base2k: usize,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        let (n, cols, size) = (res.n(), res.cols(), res.size());
-        let mut res_base = VecZnx::from_data(&mut **res.data_mut(), n, cols, size);
-        let mut scratch = scratch.borrow().into_backend::<$base>();
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_normalize_partial(
-            base_module(module),
-            &mut res_base,
-            res_base2k,
-            res_offset,
-            res_padding,
-            res_col,
-            &base_big_ref(a),
-            a_base2k,
-            a_col,
-            &mut scratch,
-        )
-    }
-
     fn vec_znx_big_automorphism(
         module: &Module<Self>,
         k: i64,

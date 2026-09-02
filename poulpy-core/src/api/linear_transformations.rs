@@ -97,7 +97,6 @@ pub trait GLWELinearTransformations<BE: Backend> {
     fn glwe_eval_linear_transformation_into<R, P, H>(
         &self,
         cnv_offset: usize,
-        res_k: usize,
         res: &mut R,
         lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<P>,

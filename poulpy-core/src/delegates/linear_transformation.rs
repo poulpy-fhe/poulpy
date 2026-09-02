@@ -77,7 +77,6 @@ where
     fn glwe_eval_linear_transformation_into<R, P, H>(
         &self,
         cnv_offset: usize,
-        res_k: usize,
         res: &mut R,
         lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<P>,
@@ -88,6 +87,6 @@ where
         P: crate::default::linear_transformation::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE>,
     {
-        BE::glwe_eval_linear_transformation_into(self, cnv_offset, res_k, res, lhs, rhs, keys, scratch)
+        BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch)
     }
 }

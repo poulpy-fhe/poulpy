@@ -63,7 +63,6 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
     fn glwe_eval_linear_transformation_into<R, P, H>(
         module: &Module<BE>,
         cnv_offset: usize,
-        res_k: usize,
         res: &mut R,
         lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<P>,
@@ -132,7 +131,6 @@ pub trait LinearTransformationDefault<BE: Backend> {
     fn glwe_eval_linear_transformation_into_default<R, P, H>(
         &self,
         cnv_offset: usize,
-        res_k: usize,
         res: &mut R,
         lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<P>,
@@ -217,7 +215,6 @@ where
     fn glwe_eval_linear_transformation_into<R, P, H>(
         module: &Module<BE>,
         cnv_offset: usize,
-        res_k: usize,
         res: &mut R,
         lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<P>,
@@ -228,7 +225,7 @@ where
         P: crate::default::linear_transformation::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE>,
     {
-        module.glwe_eval_linear_transformation_into_default(cnv_offset, res_k, res, lhs, rhs, keys, scratch)
+        module.glwe_eval_linear_transformation_into_default(cnv_offset, res, lhs, rhs, keys, scratch)
     }
 }
 
@@ -332,7 +329,6 @@ macro_rules! impl_linear_transformation_defaults_full {
             fn glwe_eval_linear_transformation_into_default<R, P, H>(
                 &self,
                 cnv_offset: usize,
-                res_k: usize,
                 res: &mut R,
                 lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be>,
                 rhs: &$crate::layouts::LinearTransformation<P>,
@@ -344,7 +340,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
                 $crate::default::linear_transformation::glwe_eval_linear_transformation_into_default::<$be, _, _, _, _>(
-                    self, cnv_offset, res_k, res, lhs, rhs, keys, scratch,
+                    self, cnv_offset, res, lhs, rhs, keys, scratch,
                 )
             }
         }

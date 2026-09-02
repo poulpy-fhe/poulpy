@@ -16,7 +16,7 @@ use crate::{
 };
 
 macro_rules! impl_vec_znx_big_delegate {
-    ($trait:ty, $($body:item),+ $(,)?) => {
+    ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
             B: Backend<ZnxWord = i64> + HalVecZnxBigImpl<B>,
@@ -336,31 +336,6 @@ impl_vec_znx_big_delegate!(
         scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_big_normalize(self, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch)
-    },
-    fn vec_znx_big_normalize_partial(
-        &self,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_base2k: usize,
-        res_offset: i64,
-        res_padding: usize,
-        res_col: usize,
-        a: &VecZnxBigBackendRef<'_, B>,
-        a_base2k: usize,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    ) {
-        B::vec_znx_big_normalize_partial(
-            self,
-            res,
-            res_base2k,
-            res_offset,
-            res_padding,
-            res_col,
-            a,
-            a_base2k,
-            a_col,
-            scratch,
-        )
     }
 );
 

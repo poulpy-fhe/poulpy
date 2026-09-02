@@ -18,7 +18,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, Convolution, ModuleN},
+    api::{CnvPVecBytesOf, Convolution, ModuleN, VecZnxCanonicalize},
     layouts::{Backend, CyclotomicOrder, Data, Module, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
 };
 
@@ -73,7 +73,12 @@ impl<D: Data, BE: Backend> LtDiagonalScale for PreparedDiagonal<D, BE> {
 
 impl<BE: Backend> CKKSLinearTransformationOps<BE> for Module<BE>
 where
-    Module<BE>: GLWELinearTransformations<BE> + GLWECopy<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE> + CyclotomicOrder,
+    Module<BE>: GLWELinearTransformations<BE>
+        + GLWECopy<BE>
+        + CKKSCopyOps<BE>
+        + CKKSModuleAlloc<BE>
+        + CyclotomicOrder
+        + VecZnxCanonicalize<BE>,
 {
     // ---------- tmp_bytes ----------
 
@@ -209,9 +214,18 @@ where
             0,
             pt_max_k,
         )?;
-        self.glwe_eval_linear_transformation_into(cnv_offset, res_log_budget + res_log_delta, dst, babies, lt, keys, scratch);
+        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        let cols = dst.rank().as_usize() + 1;
+        let base2k = dst.base2k().as_usize();
+        let k = dst.k().as_usize();
+        {
+            let mut dst_ref = dst.to_backend_mut();
+            for col in 0..cols {
+                self.vec_znx_canonicalize(base2k, k, dst_ref.data_mut(), col, &mut scratch.borrow());
+            }
+        }
         // Diagonals are complex in general, so a transformed value leaves the
         // reals unless the caller can prove otherwise.
         dst.set_slots(SlotsKind::Complex);

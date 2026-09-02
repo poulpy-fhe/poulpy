@@ -5,8 +5,7 @@ use crate::{
     reference::znx::{
         ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
         ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
-        ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxZero, get_carry_i64,
-        get_digit_i64,
+        ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxZero,
     },
 };
 
@@ -400,47 +399,6 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
     vec_znx_normalize_range::<BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn vec_znx_normalize_partial<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
-    base2k: usize,
-    res_offset: i64,
-    res_padding: usize,
-    res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
-    a_col: usize,
-    carry: &mut [i64],
-) where
-    BE: Backend<ZnxWord = i64>
-        + ZnxZero
-        + ZnxNormalizeFirstStepCarryOnly
-        + ZnxNormalizeMiddleStepCarryOnly
-        + ZnxNormalizeMiddleStep
-        + ZnxNormalizeFinalStepAssign
-        + ZnxNormalizeMiddleStepAssign,
-    BE::BufMut<'r>: HostDataMut,
-    BE::BufRef<'a>: HostDataRef,
-{
-    assert!(res_padding < base2k);
-    let (n, cols, size) = (res.n(), res.cols(), res.size());
-    let ptr = res.data.as_mut().as_mut_ptr().cast::<i64>();
-    let mut res = unsafe { VecZnxRangeMut::new(ptr, n, cols, res_col, 0, n) };
-    vec_znx_normalize_inter_base2k::<BE>(base2k, &mut res, size, res_offset, res_padding, a, a_col, 0, n, carry);
-}
-
-#[inline(always)]
-fn canonicalize_bottom_limb(base2k: usize, padding: usize, digit: &mut [i64], carry: &mut [i64]) {
-    if padding == 0 {
-        return;
-    }
-    for (digit, carry) in digit.iter_mut().zip(carry.iter_mut()) {
-        let rounded = digit.wrapping_sub(get_digit_i64(padding, *digit));
-        let normalized = get_digit_i64(base2k, rounded);
-        *carry = carry.wrapping_add(get_carry_i64(base2k, rounded, normalized));
-        *digit = normalized;
-    }
-}
-
 /// [`vec_znx_normalize`] restricted to `[coeff_start, coeff_start + coeff_len)`;
 /// `carry` needs `3 * coeff_len` elements private to the range.
 #[allow(clippy::too_many_arguments)]
@@ -553,7 +511,6 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
             &mut res,
             size,
             res_offset,
-            0,
             a,
             a_col,
             coeff_start,
@@ -581,7 +538,6 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
     res: &mut VecZnxRangeMut<'r>,
     res_size: usize,
     res_offset: i64,
-    res_padding: usize,
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
     coeff_start: usize,
@@ -645,30 +601,22 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
 
     // Regular normalization over the overlapping limbs of res and a.
     for j in 0..mid_range {
-        let res_limb = res_start - j - 1;
         BE::znx_normalize_middle_step::<true>(
             base2k,
             lsh_pos,
-            res.at_mut(res_limb),
+            res.at_mut(res_start - j - 1),
             &a.at(a_col, a_start - j - 1)[lo..hi],
             carry,
         );
-        if res_limb == res_size - 1 {
-            canonicalize_bottom_limb(base2k, res_padding, res.at_mut(res_limb), carry);
-        }
     }
 
     // Propagates the carry over the non-overlapping limbs between res and a
     for j in 0..res_end {
-        let res_limb = res_end - j - 1;
-        BE::znx_zero(res.at_mut(res_limb));
+        BE::znx_zero(res.at_mut(res_end - j - 1));
         if j == res_end - 1 {
-            BE::znx_normalize_final_step_assign(base2k, lsh_pos, res.at_mut(res_limb), carry);
+            BE::znx_normalize_final_step_assign(base2k, lsh_pos, res.at_mut(res_end - j - 1), carry);
         } else {
-            BE::znx_normalize_middle_step_assign(base2k, lsh_pos, res.at_mut(res_limb), carry);
-        }
-        if res_limb == res_size - 1 {
-            canonicalize_bottom_limb(base2k, res_padding, res.at_mut(res_limb), carry);
+            BE::znx_normalize_middle_step_assign(base2k, lsh_pos, res.at_mut(res_end - j - 1), carry);
         }
     }
 }

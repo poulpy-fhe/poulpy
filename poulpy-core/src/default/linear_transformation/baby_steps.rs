@@ -19,15 +19,16 @@ use std::collections::BTreeMap;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxCanonicalize,
+        VecZnxCanonicalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalizeConsume,
+        VecZnxIdftNormalizeConsumeTmpBytes,
     },
     execution::{for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
     layouts::{Backend, GaloisElement, ScratchArena, VecZnxDftBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{
-    GLWEAutomorphism, GLWECopy, GLWEShift, ScratchArenaTakeCore,
+    GLWEAutomorphism, GLWECopy, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     default::{
         keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
@@ -92,7 +93,7 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftNormalizeConsumeTmpBytes
-        + GLWEShift<BE>,
+        + VecZnxCanonicalizeTmpBytes,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
@@ -112,12 +113,12 @@ where
 
     let fallback = baby + module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos).max(prepare);
     let prepare_babies = hoisted.max(fallback).max(prepare);
-    let padding =
-        (a_infos.base2k().as_usize() - a_infos.k().as_usize() % a_infos.base2k().as_usize()) % a_infos.base2k().as_usize();
-    if padding == 0 {
-        prepare_babies
+    let needs_canonicalization =
+        !a_infos.k().as_usize().is_multiple_of(a_infos.base2k().as_usize()) || a_infos.size() < a_infos.max_size();
+    if needs_canonicalization {
+        baby + prepare_babies.max(module.vec_znx_canonicalize_tmp_bytes())
     } else {
-        baby + prepare_babies.max(module.glwe_shift_tmp_bytes())
+        prepare_babies
     }
 }
 
@@ -196,8 +197,9 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         + GGLWEProductDefault<BE>
         + ModuleN
         + GLWECopy<BE>
-        + GLWEShift<BE>
         + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxCanonicalize<BE>
+        + VecZnxCanonicalizeTmpBytes
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
@@ -207,19 +209,23 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
-    let base2k = a.base2k().as_usize();
-    let padding = (base2k - a.k().as_usize() % base2k) % base2k;
-    if padding == 0 {
+    let needs_canonicalization = !a.k().as_usize().is_multiple_of(a.base2k().as_usize()) || a.size() < a.max_size();
+    if needs_canonicalization {
+        let (mut canonical, mut canonical_scratch) = scratch.borrow().take_glwe_scratch(a);
+        module.glwe_copy(&mut canonical, a);
+        {
+            let cols = canonical.rank().as_usize() + 1;
+            let base2k = canonical.base2k().as_usize();
+            let k = canonical.k().as_usize();
+            let mut canonical_ref = canonical.to_backend_mut();
+            for col in 0..cols {
+                module.vec_znx_canonicalize(base2k, k, &mut canonical_ref.data, col, &mut canonical_scratch.borrow());
+            }
+        }
+        glwe_prepare_linear_transformation_baby_steps_inner(module, cache, &canonical, keys, &mut canonical_scratch);
+    } else {
         glwe_prepare_linear_transformation_baby_steps_inner(module, cache, a, keys, scratch);
-        return;
     }
-
-    // The DFT and body-add paths below otherwise consume inactive bits from the partial bottom limb.
-    let (mut a_clean, mut clean_scratch) = scratch.borrow().take_glwe_scratch(a);
-    module.glwe_copy(&mut a_clean, a);
-    module.glwe_rsh(padding, &mut a_clean, &mut clean_scratch.borrow());
-    module.glwe_lsh_assign(&mut a_clean, padding, &mut clean_scratch.borrow());
-    glwe_prepare_linear_transformation_baby_steps_inner(module, cache, &a_clean, keys, &mut clean_scratch);
 }
 
 #[allow(clippy::too_many_arguments)]

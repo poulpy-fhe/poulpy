@@ -13,15 +13,16 @@ use poulpy_hal::{
     api::{
         CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
-        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
-        VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxZeroBackend,
+        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCanonicalize, VecZnxCanonicalizeTmpBytes, VecZnxCopyBackend,
+        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
+        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
+        VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{Backend, GaloisElement, ScratchArena},
 };
 
 use crate::{
-    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, GLWEShift, LinearTransformation,
+    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
     default::{
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
@@ -58,7 +59,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes
-        + GLWEShift<BE>,
+        + VecZnxCanonicalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,
@@ -85,10 +86,10 @@ where
     let rot_dft = module.bytes_of_vec_znx_dft(cols, key.size());
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
     let lazy_dft = glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key);
-    let shift = module.glwe_shift_tmp_bytes();
-    let fallback_path = prod_dft + prod_col_big + inner_dft.max(shift);
+    let canonicalize = module.vec_znx_canonicalize_tmp_bytes();
+    let fallback_path = prod_dft + prod_col_big + inner_dft.max(canonicalize);
     let lazy_dft_rot = rot_dft + lazy_dft;
-    let lazy_dft_path = prod_dft + lazy_acc_dft + lazy_acc_big + (inner_dft + lazy_dft_rot).max(shift);
+    let lazy_dft_path = prod_dft + lazy_acc_dft + lazy_acc_big + (inner_dft + lazy_dft_rot).max(canonicalize);
 
     module
         .glwe_automorphism_tmp_bytes(res, a, key)
@@ -120,7 +121,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes
-        + GLWEShift<BE>,
+        + VecZnxCanonicalizeTmpBytes,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
@@ -154,8 +155,9 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
+        + VecZnxCanonicalizeTmpBytes
         + GLWECopy<BE>
-        + GLWEShift<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
@@ -186,7 +188,6 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
 pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
     module: &M,
     cnv_offset: usize,
-    res_k: usize,
     res: &mut R,
     lhs: &LinearTransformationBabySteps<BE>,
     rhs: &LinearTransformation<P>,
@@ -212,6 +213,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + VecZnxBigBytesOf
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxCopyBackend<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
@@ -222,9 +224,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxZeroBackend<BE>
         + GLWEMulPlain<BE>
-        + GLWEShift<BE>
         + GaloisElement,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
@@ -235,7 +235,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         "linear transformation has no non-empty giant steps"
     );
 
-    glwe_eval_giant_steps(module, cnv_offset, res_k, res, lhs, rhs, keys, scratch);
+    glwe_eval_giant_steps(module, cnv_offset, res, lhs, rhs, keys, scratch);
 }
 
 /// Reference impl: scratch bytes for the streamed (unprepared-RHS) evaluation.
@@ -267,7 +267,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes
-        + GLWEShift<BE>,
+        + VecZnxCanonicalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,

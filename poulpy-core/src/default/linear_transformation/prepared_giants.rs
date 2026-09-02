@@ -11,8 +11,8 @@ use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
-        VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxZeroBackend,
+        VecZnxBigNormalize, VecZnxCanonicalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, GaloisElement, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -21,13 +21,13 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, GLWEShift, LinearTransformation, LinearTransformationGiantStep,
+    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation, LinearTransformationGiantStep,
     default::{
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
             inner_product::{glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_unprepared_baby_steps_dft},
             lazy::{
-                glwe_canonicalize_partial, glwe_dft_add_dft_assign, glwe_dft_copy_dft, glwe_idft_dft_into_big,
+                glwe_canonicalize, glwe_dft_add_dft_assign, glwe_dft_copy_dft, glwe_idft_dft_into_big,
                 glwe_lazy_giant_automorphism_from_dft, glwe_normalize_big_into,
             },
         },
@@ -132,7 +132,6 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
     module: &M,
     cnv_offset: usize,
-    res_k: usize,
     res: &mut R,
     lhs: &LinearTransformationBabySteps<BE>,
     rhs: &LinearTransformation<P>,
@@ -158,6 +157,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         + VecZnxBigBytesOf
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxCopyBackend<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
@@ -168,9 +168,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxZeroBackend<BE>
-        + GLWEMulPlain<BE>
-        + GLWEShift<BE>,
+        + GLWEMulPlain<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
     H: GetAutomorphismKey<BE>,
@@ -304,7 +302,6 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         glwe_normalize_big_into(
             module,
             res,
-            res_k,
             &lazy_acc_ref,
             prod_base2k.as_usize(),
             cnv_offset_lo,
@@ -360,5 +357,5 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
             res_initialized = true;
         }
     }
-    glwe_canonicalize_partial(module, res, res_k, &mut scratch_phase);
+    glwe_canonicalize(module, res, &mut scratch_phase);
 }

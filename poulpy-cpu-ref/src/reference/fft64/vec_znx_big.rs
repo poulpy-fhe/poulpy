@@ -14,8 +14,8 @@ use crate::{
     reference::{
         vec_znx::{
             vec_znx_add_assign, vec_znx_add_into, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_negate,
-            vec_znx_negate_assign, vec_znx_normalize, vec_znx_normalize_partial, vec_znx_normalize_tmp_bytes, vec_znx_sub,
-            vec_znx_sub_assign, vec_znx_sub_negate_assign,
+            vec_znx_negate_assign, vec_znx_normalize, vec_znx_normalize_tmp_bytes, vec_znx_sub, vec_znx_sub_assign,
+            vec_znx_sub_negate_assign,
         },
         znx::{
             ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNegate,
@@ -186,45 +186,6 @@ pub fn vec_znx_big_normalize<R, A, BE>(
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let mut res_ref = res.to_backend_mut();
     vec_znx_normalize::<BE>(&mut res_ref, res_base2k, res_offset, res_col, &a_vznx, a_base2k, a_col, carry);
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn vec_znx_big_normalize_partial<R, A, BE>(
-    res: &mut R,
-    res_base2k: usize,
-    res_offset: i64,
-    res_padding: usize,
-    res_col: usize,
-    a: &A,
-    a_base2k: usize,
-    a_col: usize,
-    carry: &mut [i64],
-) where
-    R: VecZnxToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    BE: Backend<BigWord = i64, ZnxWord = i64>
-        + ZnxZero
-        + ZnxNormalizeFirstStepCarryOnly
-        + ZnxNormalizeMiddleStepCarryOnly
-        + ZnxNormalizeMiddleStep
-        + ZnxNormalizeFinalStepAssign
-        + ZnxNormalizeMiddleStepAssign,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-{
-    assert_eq!(res_base2k, a_base2k);
-    let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    let mut res_ref = res.to_backend_mut();
-    vec_znx_normalize_partial::<BE>(
-        &mut res_ref,
-        res_base2k,
-        res_offset,
-        res_padding,
-        res_col,
-        &a_vznx,
-        a_col,
-        carry,
-    );
 }
 
 pub fn vec_znx_big_add_normal_ref<R, B>(base2k: usize, res: &mut R, res_col: usize, noise_infos: NoiseInfos, source: &mut Source)

@@ -129,29 +129,6 @@ pub(super) fn nfc_middle_step_assign_scalar(base2k: usize, lsh: usize, res: &mut
 }
 
 #[inline(always)]
-pub(super) fn nfc_canonicalize_bottom_scalar(base2k: usize, padding: usize, res: &mut [i64], carry: &mut [i128]) {
-    if padding == 0 {
-        return;
-    }
-    for (digit, carry) in res.iter_mut().zip(carry.iter_mut()) {
-        let low = (*digit << (i64::BITS as usize - padding)) >> (i64::BITS as usize - padding);
-        let rounded = digit.wrapping_sub(low);
-        let normalized = if base2k == i64::BITS as usize {
-            rounded
-        } else {
-            (rounded << (i64::BITS as usize - base2k)) >> (i64::BITS as usize - base2k)
-        };
-        let adjustment = if base2k == i64::BITS as usize {
-            0
-        } else {
-            rounded.wrapping_sub(normalized) >> base2k
-        };
-        *carry = carry.wrapping_add(adjustment as i128);
-        *digit = normalized;
-    }
-}
-
-#[inline(always)]
 pub(super) fn nfc_final_step_assign_scalar(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
@@ -371,36 +348,6 @@ unsafe fn nfc_final_chunk_512(s: &NfcShifts512, lo_a: __m512i, lo_c: __m512i) ->
     }
 }
 
-#[inline(always)]
-unsafe fn nfc_canonicalize_chunk_512(
-    base2k: u32,
-    padding: u32,
-    digit: __m512i,
-    lo_c: __m512i,
-    hi_c: __m512i,
-) -> (__m512i, __m512i, __m512i) {
-    unsafe {
-        let padding_shift = _mm_cvtsi64_si128((64 - padding) as i64);
-        let low = _mm512_sra_epi64(_mm512_sll_epi64(digit, padding_shift), padding_shift);
-        let rounded = _mm512_sub_epi64(digit, low);
-        let (normalized, adjustment) = if base2k == 64 {
-            (rounded, _mm512_setzero_si512())
-        } else {
-            let base_shift = _mm_cvtsi64_si128((64 - base2k) as i64);
-            let base_rshift = _mm_cvtsi64_si128(base2k as i64);
-            let normalized = _mm512_sra_epi64(_mm512_sll_epi64(rounded, base_shift), base_shift);
-            let adjustment = _mm512_sra_epi64(_mm512_sub_epi64(rounded, normalized), base_rshift);
-            (normalized, adjustment)
-        };
-        let new_lo_c = _mm512_add_epi64(lo_c, adjustment);
-        let carry_mask = _mm512_cmp_epu64_mask(new_lo_c, lo_c, _MM_CMPINT_LT);
-        let carry_bit = _mm512_maskz_set1_epi64(carry_mask, 1);
-        let adjustment_hi = _mm512_sra_epi64(adjustment, _mm_cvtsi64_si128(63));
-        let new_hi_c = _mm512_add_epi64(_mm512_add_epi64(hi_c, adjustment_hi), carry_bit);
-        (normalized, new_lo_c, new_hi_c)
-    }
-}
-
 /// AVX-512 kernel for `nfc_middle_step` -- `i128` input + carry -> `i64` output.
 ///
 /// Processes `n` elements with a scalar tail for `n % 8 != 0`.  Handles both
@@ -455,95 +402,6 @@ pub(super) unsafe fn nfc_middle_step_avx512(base2k: u32, lsh: u32, n: usize, res
                 &a[tail..],
                 &mut carry[tail..],
             );
-        }
-    }
-}
-
-#[target_feature(enable = "avx512f")]
-pub(super) unsafe fn nfc_middle_step_partial_avx512(
-    base2k: u32,
-    lsh: u32,
-    padding: u32,
-    n: usize,
-    res: &mut [i64],
-    a: &[i128],
-    carry: &mut [i128],
-) {
-    unsafe {
-        let s = NfcShifts512::new(base2k, lsh);
-        let a_ptr = a.as_ptr() as *const __m512i;
-        let c_ptr = carry.as_mut_ptr() as *mut __m512i;
-        let r_ptr = res.as_mut_ptr();
-        let idx_deinterleave_lo = _mm512_loadu_si512(DEINTERLEAVE_LO.as_ptr() as *const __m512i);
-        let idx_deinterleave_hi = _mm512_loadu_si512(DEINTERLEAVE_HI.as_ptr() as *const __m512i);
-        let idx_interleave_lo = _mm512_loadu_si512(INTERLEAVE_LO.as_ptr() as *const __m512i);
-        let idx_interleave_hi = _mm512_loadu_si512(INTERLEAVE_HI.as_ptr() as *const __m512i);
-
-        let chunks = n / 8;
-        for i in 0..chunks {
-            let a_lo8 = _mm512_loadu_si512(a_ptr.add(2 * i));
-            let a_hi8 = _mm512_loadu_si512(a_ptr.add(2 * i + 1));
-            let lo_a = _mm512_permutex2var_epi64(a_lo8, idx_deinterleave_lo, a_hi8);
-            let hi_a = _mm512_permutex2var_epi64(a_lo8, idx_deinterleave_hi, a_hi8);
-            let c_lo8 = _mm512_loadu_si512(c_ptr.add(2 * i) as *const __m512i);
-            let c_hi8 = _mm512_loadu_si512(c_ptr.add(2 * i + 1) as *const __m512i);
-            let lo_c = _mm512_permutex2var_epi64(c_lo8, idx_deinterleave_lo, c_hi8);
-            let hi_c = _mm512_permutex2var_epi64(c_lo8, idx_deinterleave_hi, c_hi8);
-
-            let (digit, lo_c, hi_c) = nfc_middle_chunk_512(&s, lo_a, hi_a, lo_c, hi_c);
-            let (digit, lo_c, hi_c) = nfc_canonicalize_chunk_512(base2k, padding, digit, lo_c, hi_c);
-            _mm512_storeu_si512(r_ptr.add(8 * i) as *mut __m512i, digit);
-            let out_c_lo8 = _mm512_permutex2var_epi64(lo_c, idx_interleave_lo, hi_c);
-            let out_c_hi8 = _mm512_permutex2var_epi64(lo_c, idx_interleave_hi, hi_c);
-            _mm512_storeu_si512(c_ptr.add(2 * i), out_c_lo8);
-            _mm512_storeu_si512(c_ptr.add(2 * i + 1), out_c_hi8);
-        }
-
-        let tail = chunks * 8;
-        if tail < n {
-            nfc_middle_step_scalar(
-                base2k as usize,
-                lsh as usize,
-                &mut res[tail..],
-                &a[tail..],
-                &mut carry[tail..],
-            );
-            nfc_canonicalize_bottom_scalar(base2k as usize, padding as usize, &mut res[tail..], &mut carry[tail..]);
-        }
-    }
-}
-
-#[target_feature(enable = "avx512f")]
-pub(super) unsafe fn nfc_canonicalize_bottom_avx512(base2k: u32, padding: u32, n: usize, res: &mut [i64], carry: &mut [i128]) {
-    if padding == 0 {
-        return;
-    }
-    unsafe {
-        let r_ptr = res.as_mut_ptr() as *mut __m512i;
-        let c_ptr = carry.as_mut_ptr() as *mut __m512i;
-        let idx_deinterleave_lo = _mm512_loadu_si512(DEINTERLEAVE_LO.as_ptr() as *const __m512i);
-        let idx_deinterleave_hi = _mm512_loadu_si512(DEINTERLEAVE_HI.as_ptr() as *const __m512i);
-        let idx_interleave_lo = _mm512_loadu_si512(INTERLEAVE_LO.as_ptr() as *const __m512i);
-        let idx_interleave_hi = _mm512_loadu_si512(INTERLEAVE_HI.as_ptr() as *const __m512i);
-        let chunks = n / 8;
-        for i in 0..chunks {
-            let digit = _mm512_loadu_si512(r_ptr.add(i));
-            let c_lo8 = _mm512_loadu_si512(c_ptr.add(2 * i) as *const __m512i);
-            let c_hi8 = _mm512_loadu_si512(c_ptr.add(2 * i + 1) as *const __m512i);
-            let lo_c = _mm512_permutex2var_epi64(c_lo8, idx_deinterleave_lo, c_hi8);
-            let hi_c = _mm512_permutex2var_epi64(c_lo8, idx_deinterleave_hi, c_hi8);
-            let (normalized, new_lo_c, new_hi_c) = nfc_canonicalize_chunk_512(base2k, padding, digit, lo_c, hi_c);
-
-            _mm512_storeu_si512(r_ptr.add(i), normalized);
-            let out_c_lo8 = _mm512_permutex2var_epi64(new_lo_c, idx_interleave_lo, new_hi_c);
-            let out_c_hi8 = _mm512_permutex2var_epi64(new_lo_c, idx_interleave_hi, new_hi_c);
-            _mm512_storeu_si512(c_ptr.add(2 * i), out_c_lo8);
-            _mm512_storeu_si512(c_ptr.add(2 * i + 1), out_c_hi8);
-        }
-
-        let tail = chunks * 8;
-        if tail < n {
-            nfc_canonicalize_bottom_scalar(base2k as usize, padding as usize, &mut res[tail..], &mut carry[tail..]);
         }
     }
 }
@@ -1403,10 +1261,9 @@ pub(super) unsafe fn vi128_neg_from_small_avx512(n: usize, res: &mut [i128], a: 
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
     use super::{
-        nfc_canonicalize_bottom_avx512, nfc_canonicalize_bottom_scalar, nfc_final_step_assign_avx512,
-        nfc_final_step_assign_scalar, nfc_middle_step_assign_avx512, nfc_middle_step_assign_scalar, nfc_middle_step_avx512,
-        nfc_middle_step_scalar, vi128_add_avx512, vi128_from_small_avx512, vi128_neg_from_small_avx512, vi128_negate_avx512,
-        vi128_sub_avx512,
+        nfc_final_step_assign_avx512, nfc_final_step_assign_scalar, nfc_middle_step_assign_avx512, nfc_middle_step_assign_scalar,
+        nfc_middle_step_avx512, nfc_middle_step_scalar, vi128_add_avx512, vi128_from_small_avx512, vi128_neg_from_small_avx512,
+        vi128_negate_avx512, vi128_sub_avx512,
     };
 
     fn i128_data(n: usize, seed: i128) -> Vec<i128> {
@@ -1492,25 +1349,6 @@ mod tests {
 
         assert_eq!(res_avx, res_ref, "nfc_middle_step res mismatch");
         assert_eq!(carry_avx, carry_ref, "nfc_middle_step carry mismatch");
-    }
-
-    #[test]
-    fn nfc_canonicalize_zero_padding_is_noop() {
-        let n = 64usize;
-        let init = i64_data(n, 12345);
-        let carry_init = i128_data(n, 6789);
-
-        let mut res_scalar = init.clone();
-        let mut carry_scalar = carry_init.clone();
-        nfc_canonicalize_bottom_scalar(52, 0, &mut res_scalar, &mut carry_scalar);
-        assert_eq!(res_scalar, init);
-        assert_eq!(carry_scalar, carry_init);
-
-        let mut res_avx = init.clone();
-        let mut carry_avx = carry_init.clone();
-        unsafe { nfc_canonicalize_bottom_avx512(52, 0, n, &mut res_avx, &mut carry_avx) };
-        assert_eq!(res_avx, init);
-        assert_eq!(carry_avx, carry_init);
     }
 
     #[test]
