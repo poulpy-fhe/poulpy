@@ -25,6 +25,7 @@ env:
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-avx/enable-avx
     poulpy-cpu-avx/enable-ckks
+    poulpy-cpu-avx/enable-rayon
     poulpy-bin-fhe/enable-bin-fhe
   AVX512_FEATURES: >-
     poulpy-core/enable-core
@@ -36,6 +37,7 @@ env:
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx512/enable-ckks
     poulpy-cpu-avx512/enable-ifma
+    poulpy-cpu-avx512/enable-rayon
     poulpy-bin-fhe/enable-bin-fhe
   NEON_FEATURES: >-
     poulpy-core/enable-core
@@ -44,6 +46,7 @@ env:
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-arm/enable-ckks
     poulpy-cpu-arm/enable-neon
+    poulpy-cpu-arm/enable-rayon
     poulpy-bin-fhe/enable-bin-fhe
 
 jobs:

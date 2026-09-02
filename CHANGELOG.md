@@ -16,6 +16,10 @@
 
 - The CKKS-local `Normalized`/`Unnormalized` markers are now re-exports of the HAL ones and `CKKSCiphertext<D, W, S>` wraps `GLWE<D, W, S>`; `UnnormalizedCKKSCiphertext` implements the backend-access traits with `State = Unnormalized`, the compile-time guard against DFT-domain misuse now coming from `poulpy-core`'s bounds.
 
+### `poulpy-cpu-arm`
+
+- Fix the NEON Rayon wrapper missing the `vmp_extract_selected_rows` forwarding (E0046 with `enable-rayon`; broken since the op was added in #231). CI now compiles the Rayon wrappers: `enable-rayon` was added to the AVX, AVX-512 and NEON feature lanes, and `ci-local.md` documents an x86-host cross typecheck (`cargo check -p poulpy-cpu-arm --lib --features enable-rayon,enable-ckks --target aarch64-unknown-linux-gnu`).
+
 ### `poulpy-bin-fhe`
 
 - The standard CGGI blind rotation now normalizes its accumulator once per iteration instead of once at the end: the deferred variant relied on relabelling the accumulator as `Normalized` without a normalization pass, which no API permits any more. The single deferred normalization was numerically fine (digits tolerate ~`2^(63-base2k)` additions), so this trades a small amount of work for the type-level guarantee; a backend can reclaim the deferred variant as a fused override via `poulpy_hal::oep::SetNormalizationState`.
