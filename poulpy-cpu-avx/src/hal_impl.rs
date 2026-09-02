@@ -35,7 +35,9 @@ where
 }
 
 unsafe impl HalVecZnxImpl<FFT64Avx> for FFT64Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx!();
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+    poulpy_hal::hal_impl_vec_znx_canonicalize!();
 
     // TODO: add an AVX-accelerated tiled transpose kernel; falls back to the
     // reference impl for now.
@@ -81,7 +83,9 @@ unsafe impl HalVecZnxDftImpl<FFT64Avx> for FFT64Avx {
 }
 
 unsafe impl HalVecZnxImpl<NTT4x30Avx> for NTT4x30Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx!();
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+    poulpy_hal::hal_impl_vec_znx_canonicalize!();
 
     // TODO: add an AVX-accelerated tiled transpose kernel; falls back to the
     // reference impl for now.

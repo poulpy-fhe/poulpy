@@ -13,17 +13,17 @@ use crate::{
         ScalarZnxFillTernaryProbSourceBackend, ScratchOwnedAlloc, VecZnxAddAssignBackend, VecZnxAddConstAssignBackend,
         VecZnxAddConstIntoBackend, VecZnxAddIntoBackend, VecZnxAddNormalSourceBackend, VecZnxAddScalarAssignBackend,
         VecZnxAddScalarIntoBackend, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend,
-        VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend, VecZnxFillNormalBackend,
-        VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend, VecZnxLshAddCoeffIntoBackend,
-        VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAssignBackend, VecZnxLshBackend, VecZnxLshCoeffBackend,
-        VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend, VecZnxMergeRingsTmpBytes,
-        VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxMulXpMinusOneBackend,
-        VecZnxNegateAssignBackend, VecZnxNegateBackend, VecZnxNormalize, VecZnxNormalizeAssignBackend,
-        VecZnxNormalizeCoeffAssignBackend, VecZnxNormalizeCoeffBackend, VecZnxNormalizeTmpBytes, VecZnxRotateAssignBackend,
-        VecZnxRotateAssignTmpBytes, VecZnxRotateBackend, VecZnxRshAddCoeffIntoBackend, VecZnxRshAssignBackend, VecZnxRshBackend,
-        VecZnxRshCoeffBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes, VecZnxSplitRingBackend, VecZnxSplitRingTmpBytes,
-        VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxSubScalarAssignBackend,
-        VecZnxSubScalarBackend, VecZnxSwitchRingBackend, VecZnxZeroBackend,
+        VecZnxCanonicalize, VecZnxCanonicalizeTmpBytes, VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend,
+        VecZnxFillNormalBackend, VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend,
+        VecZnxLshAddCoeffIntoBackend, VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAssignBackend, VecZnxLshBackend,
+        VecZnxLshCoeffBackend, VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend,
+        VecZnxMergeRingsTmpBytes, VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneAssignTmpBytes,
+        VecZnxMulXpMinusOneBackend, VecZnxNegateAssignBackend, VecZnxNegateBackend, VecZnxNormalize,
+        VecZnxNormalizeAssignBackend, VecZnxNormalizeCoeffAssignBackend, VecZnxNormalizeCoeffBackend, VecZnxNormalizeTmpBytes,
+        VecZnxRotateAssignBackend, VecZnxRotateAssignTmpBytes, VecZnxRotateBackend, VecZnxRshAddCoeffIntoBackend,
+        VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshCoeffBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes,
+        VecZnxSplitRingBackend, VecZnxSplitRingTmpBytes, VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend,
+        VecZnxSubScalarAssignBackend, VecZnxSubScalarBackend, VecZnxSwitchRingBackend, VecZnxZeroBackend,
     },
     layouts::{
         DigestU64, FillUniform, HostBytesBackend, Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendMut, ScratchOwned, VecZnx,
@@ -1427,6 +1427,77 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
             }
         }
     }
+}
+
+pub fn test_vec_znx_canonicalize<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: VecZnxCanonicalize<BR> + VecZnxCanonicalizeTmpBytes,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
+    Module<BT>: VecZnxCanonicalize<BT> + VecZnxCanonicalizeTmpBytes,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+{
+    let base2k = params.base2k;
+    assert!((3..63).contains(&base2k));
+    assert_eq!(module_ref.n(), module_test.n());
+
+    let (cols, size) = (2, 4);
+    let k = 2 * base2k - 2;
+    let active_size = k.div_ceil(base2k);
+    let mut source = Source::new([17u8; 32]);
+    let mut value = module_host.vec_znx_alloc(cols, size);
+    value.fill_uniform(base2k, &mut source);
+    value.at_mut(0, 0)[0] = 3;
+    value.at_mut(0, 1)[0] = (1i64 << (base2k - 1)) - 1;
+    for limb in active_size..size {
+        value.at_mut(0, limb).fill(7);
+    }
+    let untouched: Vec<Vec<i64>> = (0..size).map(|limb| value.at(1, limb).to_vec()).collect();
+
+    let mut value_ref = upload_vec_znx::<BR>(&value);
+    let mut value_test = upload_vec_znx::<BT>(&value);
+    let mut scratch_ref = ScratchOwned::<BR>::alloc(module_ref.vec_znx_canonicalize_tmp_bytes());
+    let mut scratch_test = ScratchOwned::<BT>::alloc(module_test.vec_znx_canonicalize_tmp_bytes());
+
+    module_ref.vec_znx_canonicalize(
+        base2k,
+        k,
+        &mut vec_znx_backend_mut::<BR>(&mut value_ref),
+        0,
+        &mut scratch_ref.arena(),
+    );
+    module_test.vec_znx_canonicalize(
+        base2k,
+        k,
+        &mut vec_znx_backend_mut::<BT>(&mut value_test),
+        0,
+        &mut scratch_test.arena(),
+    );
+
+    let canonical_ref = download_vec_znx::<BR>(&value_ref);
+    let canonical_test = download_vec_znx::<BT>(&value_test);
+    assert_eq!(canonical_ref, canonical_test);
+    assert_eq!(canonical_test.at(0, 0)[0], 4);
+    assert_eq!(canonical_test.at(0, 1)[0], -(1i64 << (base2k - 1)));
+    assert!(canonical_test.at(0, active_size - 1).iter().all(|digit| digit & 3 == 0));
+    for limb in active_size..size {
+        assert!(canonical_test.at(0, limb).iter().all(|&digit| digit == 0));
+    }
+    for (limb, expected) in untouched.iter().enumerate() {
+        assert_eq!(canonical_test.at(1, limb), expected);
+    }
+
+    module_test.vec_znx_canonicalize(
+        base2k,
+        k,
+        &mut vec_znx_backend_mut::<BT>(&mut value_test),
+        0,
+        &mut scratch_test.arena(),
+    );
+    assert_eq!(canonical_test, download_vec_znx::<BT>(&value_test));
 }
 
 pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(

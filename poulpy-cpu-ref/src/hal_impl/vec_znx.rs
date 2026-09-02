@@ -78,22 +78,6 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_tmp_bytes_backend_default(module)
         }
 
-        fn vec_znx_canonicalize_tmp_bytes_backend(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_canonicalize_tmp_bytes_backend_default(module)
-        }
-
-        fn vec_znx_canonicalize(
-            module: &Module<Self>,
-            base2k: usize,
-            k: usize,
-            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-            a_col: usize,
-            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
-        ) {
-            let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_canonicalize_default(module, base2k, k, a, a_col, &mut scratch);
-        }
-
         fn vec_znx_normalize_coeff_assign_backend(
             module: &Module<Self>,
             base2k: usize,
@@ -917,5 +901,6 @@ macro_rules! hal_impl_vec_znx {
     () => {
         $crate::hal_impl_vec_znx_without_normalize!();
         $crate::hal_impl_vec_znx_normalize!();
+        poulpy_hal::hal_impl_vec_znx_canonicalize!();
     };
 }

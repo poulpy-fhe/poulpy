@@ -58,6 +58,7 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
             test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
             test_vec_znx_normalize_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_assign,
+            test_vec_znx_canonicalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_canonicalize,
             test_vec_znx_merge_rings => poulpy_hal::test_suite::vec_znx::test_vec_znx_merge_rings,
             test_vec_znx_split_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_split_ring,
             test_vec_znx_switch_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring,
@@ -104,6 +105,7 @@ mod ntt3x42_ifma_tests {
         backend_test = crate::NTT3x42IfmaRayon,
         params = TestParams { size: 1<<14, base2k: 50 },
         tests = {
+            test_vec_znx_canonicalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_canonicalize,
             test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
             test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
         }

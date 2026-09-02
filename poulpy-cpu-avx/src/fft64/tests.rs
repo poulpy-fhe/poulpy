@@ -48,6 +48,7 @@ cross_backend_test_suite! {
         test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
         test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
         test_vec_znx_normalize_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_assign,
+        test_vec_znx_canonicalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_canonicalize,
         test_vec_znx_switch_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring,
         test_vec_znx_split_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_split_ring,
         test_vec_znx_copy => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy,
@@ -171,6 +172,7 @@ cross_backend_test_suite! {
     backend_test = crate::FFT64AvxRayon,
     params = TestParams { size: 1<<14, base2k: 12 },
     tests = {
+        test_vec_znx_canonicalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_canonicalize,
         test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
         test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,
     }

@@ -257,6 +257,7 @@ unsafe impl HalModuleImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
 
 unsafe impl HalVecZnxImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_hal::hal_impl_vec_znx_canonicalize!();
 
     fn vec_znx_normalize_backend(
         module: &Module<Self>,
