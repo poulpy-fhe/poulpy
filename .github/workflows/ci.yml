@@ -81,6 +81,9 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
 
+      - name: Normalization deny-list ratchet
+        run: bash scripts/normalization_denylist.sh
+
       - name: Check all non-AVX features
         run: cargo check --workspace --all-targets --features "$PORTABLE_FEATURES"
 

@@ -18,6 +18,8 @@ mod convolution;
 mod module;
 mod reim;
 mod scratch;
+#[cfg(test)]
+mod shape_tests;
 mod svp_ppol;
 mod vec_znx;
 mod vec_znx_big;

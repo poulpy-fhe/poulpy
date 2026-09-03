@@ -26,6 +26,8 @@ mod linear_transformations;
 mod noise;
 mod operations;
 mod polynomial_evaluation;
+#[cfg(test)]
+mod shape_tests;
 mod transfer;
 
 pub use automorphism::*;
