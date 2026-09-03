@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPrepare},
-    layouts::{Backend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchArena, SvpPPolOwned},
+    layouts::{Backend, HostBytesBackend, Module, ScalarZnx, ScratchArena, SvpPPolOwned},
 };
 
 use std::marker::PhantomData;
@@ -18,7 +18,6 @@ use crate::blind_rotation::{
 impl<BE: Backend<ZnxWord = i64>> BlindRotationKeyPreparedFactory<CGGI, BE> for Module<BE>
 where
     Self: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPrepare<BE>,
-    BE::OwnedBuf: HostDataMut + HostDataRef,
 {
     fn blind_rotation_key_prepared_alloc<A>(&self, infos: &A) -> BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>
     where
@@ -62,7 +61,11 @@ where
 
         if let Distribution::BinaryBlock(_) = other.dist {
             let mut x_pow_a: Vec<SvpPPolOwned<BE>> = Vec::with_capacity(n << 1);
-            let mut buf: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = self.scalar_znx_alloc(1);
+            let mut buf: ScalarZnx<Vec<u8>, i64> = ScalarZnx::from_data(
+                HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<Vec<u8>, i64>::bytes_of(n, 1)),
+                n,
+                1,
+            );
             (0..n << 1).for_each(|i| {
                 let mut res: SvpPPolOwned<BE> = self.svp_ppol_alloc(1);
                 set_xai_plus_y(self, i, 0, &mut res, &mut buf);

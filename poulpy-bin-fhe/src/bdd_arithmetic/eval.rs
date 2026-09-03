@@ -16,7 +16,7 @@ use poulpy_hal::{
         VmpApplyDftToDftTmpBytes,
     },
     layouts::{
-        Backend, Host, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, VecZnxBigViewMut, vec_znx_backend_ref_from_mut,
+        Backend, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, VecZnxBigViewMut, vec_znx_backend_ref_from_mut,
         vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
     },
 };
@@ -244,7 +244,7 @@ where
     }
 }
 
-impl<BE: Backend<Location = Host, ZnxWord = i64>> BddEvaluator<BE, Host> for Module<BE>
+impl<BE: Backend<ZnxWord = i64>> BddEvaluator<BE, BE::Location> for Module<BE>
 where
     Self: GLWEBytesOf<BE>
         + Cmux<BE>
@@ -269,7 +269,7 @@ where
         G: GGSWInfos,
         C: GetBitCircuitInfo,
     {
-        <Self as BddEvaluator<BE, Host>>::tmp_bytes(self, res_infos, circuit.max_state_size(), ggsw_infos)
+        <Self as BddEvaluator<BE, BE::Location>>::tmp_bytes(self, res_infos, circuit.max_state_size(), ggsw_infos)
     }
 
     fn execute<C, G, O>(&self, threads: usize, out: &mut [O], inputs: &G, circuit: &C, scratch: &mut ScratchArena<'_, BE>)
@@ -282,7 +282,7 @@ where
     }
 }
 
-impl<BE: Backend<Location = Host, ZnxWord = i64>> BddTrivialOne<BE, Host> for Module<BE>
+impl<BE: Backend<ZnxWord = i64>> BddTrivialOne<BE, BE::Location> for Module<BE>
 where
     Self: GLWEZero<BE> + VecZnxAddScalarAssignBackend<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
 {

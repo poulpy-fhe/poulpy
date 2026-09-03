@@ -52,6 +52,7 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 
 ### `poulpy-bin-fhe`
 
+- Allow device-resident backends to prepare CGGI keys and execute BDD circuits and every blind-rotation variant. Key preparation uses explicit host staging for `X^a` polynomials, modulus switching downloads the small LWE input through the backend transfer API, and accumulator zeroing and copying remain backend-native.
 - Make FHE integer preparation and BDD evaluation honor their requested worker count through the backend executor and disjoint scratch arenas; serial backends continue to execute them on one worker.
 - Parallelize the independent VMP contributions in block-binary CGGI blind rotation before deterministic accumulation, with serial-versus-Rayon parity coverage for the accelerated backend families.
 - **Breaking:** multithreaded BDD execution requires its output buffer to implement `Send`.
