@@ -97,6 +97,8 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
 
     fn vec_znx_normalize_tmp_bytes_backend(module: &Module<BE>) -> usize;
 
+    fn vec_znx_canonicalize(module: &Module<BE>, base2k: usize, k: usize, a: &mut VecZnxBackendMut<'_, BE>);
+
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize_backend(
         module: &Module<BE>,

@@ -13,7 +13,7 @@ use crate::{
         ScalarZnxFillTernaryProbSourceBackend, ScratchOwnedAlloc, VecZnxAddAssignBackend, VecZnxAddConstAssignBackend,
         VecZnxAddConstIntoBackend, VecZnxAddIntoBackend, VecZnxAddNormalSourceBackend, VecZnxAddScalarAssignBackend,
         VecZnxAddScalarIntoBackend, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend,
-        VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend, VecZnxFillNormalBackend,
+        VecZnxCanonicalize, VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend, VecZnxFillNormalBackend,
         VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend, VecZnxLshAddCoeffIntoBackend,
         VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAssignBackend, VecZnxLshBackend, VecZnxLshCoeffBackend,
         VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend, VecZnxMergeRingsTmpBytes,
@@ -27,7 +27,7 @@ use crate::{
     },
     layouts::{
         DigestU64, FillUniform, HostBytesBackend, Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendMut, ScratchOwned, VecZnx,
-        ZnxView, ZnxViewMut, ZnxZero,
+        VecZnxToBackendMut, ZnxView, ZnxViewMut, ZnxZero, vec_znx_reborrow_backend_mut,
     },
     source::Source,
 };
@@ -251,7 +251,7 @@ pub fn test_vec_znx_add_const_into<BR: crate::test_suite::TestBackend, BT: crate
             let mut expected = module_host.vec_znx_alloc(cols, res_size);
             let mut actual = module_host.vec_znx_alloc(cols, res_size);
             expected.fill_uniform(base2k, &mut source);
-            actual.data.copy_from_slice(&expected.data);
+            actual.data_mut().copy_from_slice(expected.data());
             let mut expected_backend = upload_vec_znx::<BR>(&expected);
             let mut actual_backend = upload_vec_znx::<BT>(&actual);
 
@@ -322,7 +322,7 @@ pub fn test_vec_znx_add_const_assign<BR: crate::test_suite::TestBackend, BT: cra
         let mut expected = module_host.vec_znx_alloc(cols, res_size);
         let mut actual = module_host.vec_znx_alloc(cols, res_size);
         expected.fill_uniform(base2k, &mut source);
-        actual.data.copy_from_slice(&expected.data);
+        actual.data_mut().copy_from_slice(expected.data());
         let mut expected_backend = upload_vec_znx::<BR>(&expected);
         let mut actual_backend = upload_vec_znx::<BT>(&actual);
 
@@ -389,7 +389,7 @@ pub fn test_vec_znx_add_into_backend_matches_reference<BR: crate::test_suite::Te
                 let mut backend = module_host.vec_znx_alloc(cols, res_size);
 
                 wrapper.fill_uniform(base2k, &mut source);
-                backend.data.copy_from_slice(&wrapper.data);
+                backend.data_mut().copy_from_slice(wrapper.data());
                 let mut wrapper_backend = upload_vec_znx::<BR>(&wrapper);
                 let mut backend_owned = upload_vec_znx::<BT>(&backend);
 
@@ -502,7 +502,7 @@ pub fn test_vec_znx_add_assign_backend_matches_wrapper<BR: crate::test_suite::Te
             let mut backend = module_host.vec_znx_alloc(cols, res_size);
 
             wrapper.fill_uniform(base2k, &mut source);
-            backend.data.copy_from_slice(&wrapper.data);
+            backend.data_mut().copy_from_slice(wrapper.data());
             let mut wrapper_backend = upload_vec_znx::<BT>(&wrapper);
             let mut backend_backend = upload_vec_znx::<BT>(&backend);
 
@@ -769,7 +769,7 @@ pub fn test_vec_znx_copy_backend_matches_wrapper<BR: crate::test_suite::TestBack
             let mut wrapper = module_host.vec_znx_alloc(cols, res_size);
             let mut backend = module_host.vec_znx_alloc(cols, res_size);
             wrapper.fill_uniform(base2k, &mut source);
-            backend.data.copy_from_slice(&wrapper.data);
+            backend.data_mut().copy_from_slice(wrapper.data());
             let mut wrapper_backend = upload_vec_znx::<BT>(&wrapper);
             let mut backend_backend = upload_vec_znx::<BT>(&backend);
 
@@ -820,7 +820,7 @@ pub fn test_vec_znx_copy_range_backend<BR: crate::test_suite::TestBackend, BT: c
             let mut expected = module_host.vec_znx_alloc(cols, res_size);
             let mut actual = module_host.vec_znx_alloc(cols, res_size);
             expected.fill_uniform(base2k, &mut source);
-            actual.data.copy_from_slice(&expected.data);
+            actual.data_mut().copy_from_slice(expected.data());
             let mut actual_backend = upload_vec_znx::<BT>(&actual);
 
             for (res_offset, a_offset, len) in [(0usize, 0usize, 1usize), (1, 0, 2), (0, 1, 3), (2, 4, 5)] {
@@ -1260,7 +1260,7 @@ pub fn test_vec_znx_negate_backend_matches_wrapper<BR: crate::test_suite::TestBa
             let mut wrapper = module_host.vec_znx_alloc(cols, res_size);
             let mut backend = module_host.vec_znx_alloc(cols, res_size);
             wrapper.fill_uniform(base2k, &mut source);
-            backend.data.copy_from_slice(&wrapper.data);
+            backend.data_mut().copy_from_slice(wrapper.data());
             let mut wrapper_backend = upload_vec_znx::<BT>(&wrapper);
             let mut backend_backend = upload_vec_znx::<BT>(&backend);
 
@@ -1342,7 +1342,7 @@ pub fn test_vec_znx_negate_assign_backend_matches_wrapper<
             let mut wrapper = module_host.vec_znx_alloc(cols, res_size);
             let mut backend = module_host.vec_znx_alloc(cols, res_size);
             wrapper.fill_uniform(base2k, &mut source);
-            backend.data.copy_from_slice(&wrapper.data);
+            backend.data_mut().copy_from_slice(wrapper.data());
             let mut wrapper_backend = upload_vec_znx::<BT>(&wrapper);
             let mut backend_backend = upload_vec_znx::<BT>(&backend);
 
@@ -1427,6 +1427,91 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
             }
         }
     }
+}
+
+pub fn test_vec_znx_canonicalize<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: VecZnxCanonicalize<BR>,
+    Module<BT>: VecZnxCanonicalize<BT> + VecZnxCopyBackend<BT>,
+{
+    let base2k = params.base2k;
+    assert!((3..63).contains(&base2k));
+    assert_eq!(module_ref.n(), module_test.n());
+
+    let (cols, size) = (2, 4);
+    let k = 2 * base2k - 2;
+    let active_size = k.div_ceil(base2k);
+    let mut source = Source::new([17u8; 32]);
+    let mut value = module_host.vec_znx_alloc(cols, size);
+    assert!(value.is_canonical());
+    let _ = value.data_mut();
+    assert!(!value.is_canonical());
+    value.zero();
+    {
+        let _value_view = <_ as VecZnxToBackendMut<HostBytesBackend>>::to_backend_mut(&mut value);
+    }
+    assert!(!value.is_canonical());
+    value.fill_uniform(base2k, &mut source);
+    value.at_mut(0, 0)[0] = 3;
+    value.at_mut(0, 1)[0] = (1i64 << (base2k - 1)) - 1;
+    for limb in active_size..size {
+        value.at_mut(0, limb).fill(7);
+    }
+    assert!(!value.is_canonical());
+    let mut value_ref = upload_vec_znx::<BR>(&value);
+    let mut value_test = upload_vec_znx::<BT>(&value);
+    let raw_test = upload_vec_znx::<BT>(&value);
+    let mut value_ref_view = vec_znx_backend_mut::<BR>(&mut value_ref);
+    let mut value_test_view = vec_znx_backend_mut::<BT>(&mut value_test);
+    module_ref.vec_znx_canonicalize(base2k, k, &mut value_ref_view);
+    {
+        let mut nested = vec_znx_reborrow_backend_mut::<BT>(&mut value_test_view);
+        module_test.vec_znx_canonicalize(base2k, k, &mut nested);
+        assert!(nested.is_canonical());
+    }
+    assert!(value_ref_view.is_canonical());
+    assert!(value_test_view.is_canonical());
+    module_test.vec_znx_copy_backend(&mut value_test_view, 0, &vec_znx_backend_ref::<BT>(&raw_test), 0);
+    assert!(!value_test_view.is_canonical());
+    module_test.vec_znx_canonicalize(base2k, k, &mut value_test_view);
+    drop((value_ref_view, value_test_view));
+    assert!(value_ref.is_canonical());
+    assert!(value_test.is_canonical());
+
+    let canonical_ref = download_vec_znx::<BR>(&value_ref);
+    let canonical_test = download_vec_znx::<BT>(&value_test);
+    assert_eq!(canonical_ref, canonical_test);
+    assert_eq!(canonical_test.at(0, 0)[0], 4);
+    assert_eq!(canonical_test.at(0, 1)[0], -(1i64 << (base2k - 1)));
+    for col in 0..cols {
+        assert!(canonical_test.at(col, active_size - 1).iter().all(|digit| digit & 3 == 0));
+        for limb in active_size..size {
+            assert!(canonical_test.at(col, limb).iter().all(|&digit| digit == 0));
+        }
+    }
+
+    module_test.vec_znx_canonicalize(base2k, k, &mut vec_znx_backend_mut::<BT>(&mut value_test));
+    assert_eq!(canonical_test, download_vec_znx::<BT>(&value_test));
+    assert!(value_test.is_canonical());
+
+    {
+        let mut narrowed = vec_znx_backend_mut_sized::<BT>(&mut value_test, active_size);
+        module_test.vec_znx_canonicalize(base2k, k, &mut narrowed);
+        assert!(narrowed.is_canonical());
+    }
+    assert!(!value_test.is_canonical());
+
+    {
+        let mut view = vec_znx_backend_mut::<BT>(&mut value_test);
+        module_test.vec_znx_canonicalize(base2k, k, &mut view);
+        assert!(view.is_canonical());
+        let _data = view.into_data();
+    }
+    assert!(!value_test.is_canonical());
 }
 
 pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
@@ -3412,7 +3497,7 @@ pub fn test_vec_znx_switch_ring_backend_matches_wrapper<BR: crate::test_suite::T
                 let mut wrapper = VecZnx::alloc(res_n, cols, res_size);
                 let mut backend = VecZnx::alloc(res_n, cols, res_size);
                 wrapper.fill_uniform(base2k, &mut source);
-                backend.data.copy_from_slice(&wrapper.data);
+                backend.data_mut().copy_from_slice(wrapper.data());
                 let mut wrapper_backend = upload_vec_znx::<BT>(&wrapper);
                 let mut backend_backend = upload_vec_znx::<BT>(&backend);
 

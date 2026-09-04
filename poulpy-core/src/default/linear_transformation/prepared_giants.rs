@@ -11,8 +11,8 @@ use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
-        VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxBigNormalize, VecZnxCanonicalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, GaloisElement, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -27,8 +27,8 @@ use crate::{
         linear_transformation::{
             inner_product::{glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_unprepared_baby_steps_dft},
             lazy::{
-                glwe_dft_add_dft_assign, glwe_dft_copy_dft, glwe_idft_dft_into_big, glwe_lazy_giant_automorphism_from_dft,
-                glwe_normalize_big_into,
+                glwe_canonicalize, glwe_dft_add_dft_assign, glwe_dft_copy_dft, glwe_idft_dft_into_big,
+                glwe_lazy_giant_automorphism_from_dft, glwe_normalize_big_into,
             },
         },
         operations::cnv_offset_to_limb_offset,
@@ -157,6 +157,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         + VecZnxBigBytesOf
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxCopyBackend<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
@@ -174,6 +175,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
 {
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k();
+    let res_k = res.k().as_usize();
 
     // PROD writes its result in the diagonals' base2k.
     let first_diagonal = rhs
@@ -343,6 +345,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
                     &mut scratch_phase.borrow(),
                 );
             }
+            module.vec_znx_canonicalize(res_base2k.as_usize(), res_k, &mut acc_backend.data);
         }
 
         if let Some(key) = giant_key.as_ref() {
@@ -356,4 +359,5 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
             res_initialized = true;
         }
     }
+    glwe_canonicalize(module, res);
 }

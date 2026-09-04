@@ -392,6 +392,7 @@ impl BigWordHadamardProduct for NTT4x30AvxRayon {
 
 unsafe impl HalVecZnxImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
 
     fn vec_znx_normalize_backend(
         module: &Module<Self>,

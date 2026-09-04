@@ -101,18 +101,27 @@ pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::Zn
 
 pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef, BE::ZnxWord>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
     let shape = host.shape();
-    VecZnx::from_data(BE::from_host_bytes(host.data.as_ref()), shape.n(), shape.cols(), shape.size())
+    let mut value = VecZnx::from_data(
+        BE::from_host_bytes(host.data().as_ref()),
+        shape.n(),
+        shape.cols(),
+        shape.size(),
+    );
+    value.set_canonical(host.is_canonical());
+    value
 }
 
 pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnx<Vec<u8>, BE::ZnxWord> {
     let shape = backend.shape();
-    let host_bytes = BE::to_host_bytes(&backend.data);
-    VecZnx::from_data(
+    let host_bytes = BE::to_host_bytes(backend.data());
+    let mut value = VecZnx::from_data(
         HostBytesBackend::from_host_bytes(&host_bytes),
         shape.n(),
         shape.cols(),
         shape.size(),
-    )
+    );
+    value.set_canonical(backend.is_canonical());
+    value
 }
 
 pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef, BE::ZnxWord>) -> MatZnx<BE::OwnedBuf, BE::ZnxWord> {

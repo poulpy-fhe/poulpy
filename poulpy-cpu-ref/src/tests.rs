@@ -1,5 +1,6 @@
 use poulpy_hal::{
-    layouts::Module,
+    api::VecZnxCanonicalize,
+    layouts::{Module, VecZnxToBackendMut, ZnxView, ZnxViewMut, vec_znx_backend_mut_with_size},
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
         test_convolution_by_const_add, test_convolution_pairwise,
@@ -7,6 +8,61 @@ use poulpy_hal::{
 };
 
 use crate::{FFT64Ref, NTT4x30Ref};
+
+#[test]
+fn test_vec_znx_canonicalize_matches_shift_roundtrip() {
+    use crate::reference::vec_znx::{vec_znx_lsh_assign, vec_znx_rsh_assign};
+
+    let module = Module::<FFT64Ref>::new(8);
+    let (cols, size) = (3, 4);
+    for base2k in [3, 17, 30, 50, 63] {
+        let capacity = size * base2k;
+        let mut precisions = vec![0, 1, base2k - 1, base2k, base2k + 1, 2 * base2k - 2, capacity - 1, capacity];
+        precisions.sort_unstable();
+        precisions.dedup();
+
+        for k in precisions {
+            let mut actual = module.vec_znx_alloc(cols, size);
+            let mut state = (base2k as u64) << 32 | k as u64;
+            for value in actual.raw_mut() {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                *value = (state as i64) >> 40;
+            }
+            let mut expected = actual.clone();
+
+            let mut actual_view = <_ as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut actual);
+            module.vec_znx_canonicalize(base2k, k, &mut actual_view);
+
+            let active_size = k.div_ceil(base2k);
+            let mut expected_view = <_ as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut expected);
+            for col in 0..cols {
+                for limb in active_size..size {
+                    expected_view.at_mut(col, limb).fill(0);
+                }
+            }
+            let padding = (base2k - k % base2k) % base2k;
+            if active_size != 0 && padding != 0 {
+                let mut active = vec_znx_backend_mut_with_size::<FFT64Ref>(expected_view, active_size);
+                let mut tmp = vec![0i64; 2 * module.n()];
+                for col in 0..cols {
+                    vec_znx_rsh_assign::<FFT64Ref>(base2k, padding, &mut active, col, &mut tmp);
+                    vec_znx_lsh_assign::<FFT64Ref>(base2k, padding, &mut active, col, &mut tmp[..module.n()]);
+                }
+            }
+
+            assert_eq!(actual.data(), expected.data(), "base2k={base2k}, k={k}");
+        }
+    }
+
+    let mut value = module.vec_znx_alloc(1, 2);
+    value.at_mut(0, 1)[0] = i64::MAX;
+    let mut value_view = <_ as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut value);
+    module.vec_znx_canonicalize(64, 65, &mut value_view);
+    assert_eq!(value_view.at(0, 1)[0], i64::MIN);
+    assert_eq!(value_view.at(0, 0)[0], 1);
+}
 
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
@@ -124,6 +180,7 @@ cross_backend_test_suite! {
         test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
         test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
         test_vec_znx_normalize_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_assign,
+        test_vec_znx_canonicalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_canonicalize,
         test_vec_znx_switch_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring,
         test_vec_znx_switch_ring_backend_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring_backend_matches_wrapper,
         test_vec_znx_split_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_split_ring,

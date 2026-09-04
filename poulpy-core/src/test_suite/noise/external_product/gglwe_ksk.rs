@@ -162,6 +162,7 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                 let var_a1_err: f64 = 0f64;
 
                 let max_noise: f64 = ggsw_infos.log2_std_noise_external_product(
+                    &gglwe_out_infos,
                     &gglwe_in_infos,
                     var_xs,
                     var_msg,
@@ -320,6 +321,7 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                 let var_a1_err: f64 = 0f64;
 
                 let max_noise: f64 = ggsw_infos.log2_std_noise_external_product(
+                    &gglwe_out_infos,
                     &gglwe_out_infos,
                     var_xs,
                     var_msg,

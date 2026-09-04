@@ -81,6 +81,8 @@ impl<D: Data, W: ZnxWord> LWEMatrixInfos for LWEMatrix<D, W> {
 
 impl<D: Data, W: ZnxWord> SetBase2k for LWEMatrix<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
+        let _ = self.body.data_mut();
+        let _ = self.mask.data_mut();
         self.base2k = base2k;
     }
 }
@@ -111,8 +113,8 @@ impl<D: Data, W: ZnxWord> LWEMatrix<D, W> {
         let body_shape = self.body.shape();
         let mask_shape = self.mask.shape();
         LWEMatrix {
-            body: VecZnx::from_data(self.body.data, body_shape.n(), body_shape.cols(), body_shape.size()),
-            mask: VecZnx::from_data(self.mask.data, mask_shape.n(), mask_shape.cols(), mask_shape.size()),
+            body: VecZnx::from_data(self.body.into_data(), body_shape.n(), body_shape.cols(), body_shape.size()),
+            mask: VecZnx::from_data(self.mask.into_data(), mask_shape.n(), mask_shape.cols(), mask_shape.size()),
             base2k: self.base2k,
             k: self.k,
         }

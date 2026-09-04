@@ -146,6 +146,7 @@ where
 
             let max_noise = |_col_j: usize| -> f64 {
                 ggsw_apply_infos.log2_std_noise_external_product(
+                    &ggsw_out_infos,
                     &ggsw_in_infos,
                     0.5,
                     var_msg,
@@ -293,6 +294,7 @@ where
 
             let max_noise = |_col_j: usize| -> f64 {
                 ggsw_apply_infos.log2_std_noise_external_product(
+                    &ggsw_out_infos,
                     &ggsw_out_infos,
                     0.5,
                     var_msg,

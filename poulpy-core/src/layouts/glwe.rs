@@ -100,24 +100,28 @@ pub type GLWEBackendMut<'a, BE> = GLWE<<BE as Backend>::BufMut<'a>, <BE as Backe
 
 impl<D: Data, W: ZnxWord> SetBase2k for GLWE<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
+        let _ = self.data.data_mut();
         self.base2k = base2k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetBase2k for &mut GLWE<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
+        let _ = self.data.data_mut();
         self.base2k = base2k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetK for GLWE<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
+        let _ = self.data.data_mut();
         self.k = k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetK for &mut GLWE<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
+        let _ = self.data.data_mut();
         self.k = k
     }
 }
@@ -200,7 +204,7 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         let shape = self.data.shape();
-        let data = self.data.data;
+        let data = self.data.into_data();
         GLWE {
             data: VecZnx::from_data(data, shape.n(), shape.cols(), shape.size()),
             base2k: self.base2k,
@@ -286,7 +290,7 @@ impl<W: ZnxWord> GLWE<Vec<u8>, W> {
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
     /// Deserialises a [`GLWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        self.set_base2k(Base2K(reader.read_u32::<LittleEndian>()?));
         self.data.read_from(reader)?;
         Ok(())
     }

@@ -7,9 +7,9 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::layouts::VecZnxDftBackendMut;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCanonicalize,
+        VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
@@ -257,6 +257,7 @@ pub fn glwe_external_product_default<BE, M, R, A>(
         + ModuleN
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -278,6 +279,7 @@ pub fn glwe_external_product_default<BE, M, R, A>(
     let a_base2k: usize = a.base2k().into();
     let ggsw_base2k: usize = ggsw.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, scratch_1) = scratch
         .borrow()
@@ -318,6 +320,7 @@ pub fn glwe_external_product_default<BE, M, R, A>(
             &mut scratch.borrow(),
         );
     }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res_ref.data);
 }
 
 pub fn glwe_external_product_assign_default<BE, M, R>(
@@ -334,6 +337,7 @@ pub fn glwe_external_product_assign_default<BE, M, R>(
         + ModuleN
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -349,6 +353,7 @@ pub fn glwe_external_product_assign_default<BE, M, R>(
 
     let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, res, ggsw);
     let res_base2k: usize = res.base2k().as_usize();
+    let res_k = res.k().as_usize();
     let ggsw_base2k: usize = ggsw.base2k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, scratch_1) = scratch
@@ -390,4 +395,5 @@ pub fn glwe_external_product_assign_default<BE, M, R>(
             &mut scratch.borrow(),
         );
     }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res_ref.data);
 }

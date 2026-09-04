@@ -23,6 +23,7 @@ pub type GLWETensorBackendMut<'a, BE> = GLWETensor<<BE as Backend>::BufMut<'a>, 
 
 impl<D: Data, W: ZnxWord> SetBase2k for GLWETensor<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
+        let _ = self.data.data_mut();
         self.base2k = base2k
     }
 }

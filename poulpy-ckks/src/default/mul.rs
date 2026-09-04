@@ -10,7 +10,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, VecZnxCopyBackend},
+    api::{CnvPVecAlloc, Convolution, VecZnxCanonicalize, VecZnxCopyBackend},
     layouts::{Backend, ScratchArena},
 };
 
@@ -153,7 +153,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWETensoring<BE> + GiantStepTensorBounds<BE>,
+        Self: GLWETensoring<BE> + GiantStepTensorBounds<BE> + VecZnxCanonicalize<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
@@ -264,6 +264,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
     fn ckks_mul_pt_vec_tmp_bytes_default<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
     where
+        Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
         A: GLWEInfos,
         Self: GLWEMulPlain<BE>,
@@ -273,7 +274,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             base2k: res.base2k(),
             k: b_k,
         };
-        self.glwe_mul_plain_tmp_bytes(res, a, &b_infos)
+        self.glwe_bytes_of_from_infos(a) + self.glwe_mul_plain_tmp_bytes(res, a, &b_infos)
     }
 
     fn ckks_mul_pt_const_tmp_bytes_default<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
@@ -333,12 +334,17 @@ pub trait CKKSMulDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, pt)?;
-        self.glwe_mul_plain_assign(cnv_offset, dst, pt, scratch);
-        dst.set_log_budget(res_log_budget);
-        dst.set_log_delta(res_log_delta);
-        // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
-        dst.set_log_sparsity(dst.log_sparsity().min(pt.log_sparsity()));
-        dst.set_slots(dst.slots().join(pt.slots()));
+        let log_sparsity = dst.log_sparsity().min(pt.log_sparsity());
+        let slots = dst.slots().join(pt.slots());
+        scratch.scope(|scratch_local| {
+            let (mut input, mut op_scratch) = scratch_local.take_glwe_scratch(&*dst);
+            self.glwe_copy(&mut input, &*dst);
+            dst.set_log_budget(res_log_budget);
+            dst.set_log_delta(res_log_delta);
+            dst.set_log_sparsity(log_sparsity);
+            dst.set_slots(slots);
+            self.glwe_mul_plain(cnv_offset, dst, &input, pt, &mut op_scratch);
+        });
         Ok(())
     }
 
@@ -380,16 +386,20 @@ pub trait CKKSMulDefault<BE: Backend> {
     ) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
-        Self: GLWEMulConst<BE>,
+        Self: GLWECopy<BE>
+            + GLWEMulConst<BE>
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+            + VecZnxCopyBackend<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, cnst)?;
-
-        self.glwe_mul_const_assign(cnv_offset, dst, cnst, cnst_coeff, scratch);
-
-        dst.set_log_budget(res_log_budget);
-        dst.set_log_delta(res_log_delta);
-        // A real scalar multiplier leaves the slot kind unchanged.
+        scratch.scope(|scratch_local| {
+            let (mut input, mut op_scratch) = scratch_local.take_glwe_scratch(&*dst);
+            self.glwe_copy(&mut input, &*dst);
+            dst.set_log_budget(res_log_budget);
+            dst.set_log_delta(res_log_delta);
+            self.glwe_mul_const(cnv_offset, dst, &input, cnst, cnst_coeff, &mut op_scratch);
+        });
         Ok(())
     }
 }
@@ -410,8 +420,8 @@ struct MulStamp {
 /// `_into` variants stamp **before**: `dst.size()` is meta-derived and a
 /// freshly-allocated `dst` carries zero meta (hence `size() == 0`), which
 /// would leave the relinearized output empty. `_assign` variants stamp
-/// **after**: `dst` is also an operand read by `apply`, so its metadata must
-/// stay untouched until the tensoring has consumed it.
+/// after `apply` has consumed `dst`, but before relinearization writes and
+/// canonicalizes the result.
 enum StampOrder {
     BeforeApply,
     AfterApply,
@@ -420,7 +430,7 @@ enum StampOrder {
 /// Shared body of the five tensor-multiplication variants (`mul_into`,
 /// `mul_assign`, `mul_prepared_assign`, `square_into`, `square_assign`):
 /// stamp (per `order`), carve the tensor intermediate at `tensor_k`, run the
-/// variant's `apply` into it, relinearize into `dst`, stamp the metadata.
+/// variant's `apply` into it, stamp (per `order`), then relinearize into `dst`.
 ///
 /// `apply` receives the carved tensor, a shared reborrow of `dst` (used by the
 /// `_assign` variants, ignored by `_into`), and the nested scratch arena.
@@ -464,11 +474,10 @@ where
     let scratch_local = scratch.borrow();
     let (mut tmp, mut scratch_local) = scratch_local.take_glwe_tensor_scratch(&tensor_layout);
     apply(&mut tmp, &*dst, &mut scratch_local);
-    module.glwe_tensor_relinearize(dst, &tmp, tsk, &mut scratch_local);
-
     if matches!(order, StampOrder::AfterApply) {
         do_stamp(dst);
     }
+    module.glwe_tensor_relinearize(dst, &tmp, tsk, &mut scratch_local);
     Ok(())
 }
 

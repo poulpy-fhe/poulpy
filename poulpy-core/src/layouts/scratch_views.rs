@@ -141,6 +141,7 @@ impl<'a, BE: Backend + 'a> SetK for GLWEViewMut<'a, BE> {
 
 impl<'a, BE: Backend + 'a> SetBase2k for LWEPlaintextViewMut<'a, BE> {
     fn set_base2k(&mut self, base2k: Base2K) {
+        let _ = self.inner.data.data_mut();
         self.inner.base2k = base2k;
     }
 }

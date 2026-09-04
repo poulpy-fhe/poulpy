@@ -147,6 +147,7 @@ where
                     );
 
                     let max_noise: f64 = gglwe_s1s2_infos.log2_std_noise_keyswitch(
+                        &gglwe_s0s2_infos,
                         &gglwe_s0s1_infos,
                         0.5,
                         0.5,
@@ -322,6 +323,7 @@ pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::noise::T
                 let gglwe_s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = gglwe_s0s1;
 
                 let max_noise: f64 = gglwe_s1s2_infos.log2_std_noise_keyswitch(
+                    &gglwe_s0s1_infos,
                     &gglwe_s0s1_infos,
                     var_xs,
                     var_xs,

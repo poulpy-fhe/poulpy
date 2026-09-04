@@ -13,7 +13,7 @@ use poulpy_hal::{
     api::{
         CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
-        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
+        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCanonicalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
         VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
         VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
@@ -130,8 +130,7 @@ where
 /// every baby rotation `k` it already holds, reusing one DFT of the input mask
 /// across all keys (docs/linear_transformation.md). The LHS is independent of the matrix
 /// diagonals, so the same prepared cache is reused across every giant step and
-/// across transforms that share the input. `a_k` is the CKKS-supplied
-/// base2k alignment for the input. Forwards to the internal
+/// across transforms that share the input. Forwards to the internal
 /// `glwe_prepare_linear_transformation_baby_steps`.
 pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
     module: &M,
@@ -151,6 +150,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
@@ -206,6 +206,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + VecZnxBigBytesOf
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxCopyBackend<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>

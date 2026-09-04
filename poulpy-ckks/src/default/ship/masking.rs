@@ -9,7 +9,7 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        VecZnxCanonicalize, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
     },
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
@@ -53,7 +53,12 @@ pub(crate) fn ship_masking_accumulate<BE>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: Convolution<BE> + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxIdftApplyTmpA<BE> + VecZnxBigNormalize<BE>,
+    Module<BE>: Convolution<BE>
+        + CnvPVecBytesOf
+        + VecZnxDftBytesOf
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
 {
@@ -124,6 +129,8 @@ where
             module.vec_znx_idft_apply_tmpa(&mut res_big_mut, col, &mut sum_dft_mut, col);
         }
     }
+    acc.set_log_budget(res_log_budget);
+    acc.set_log_delta(res_log_delta);
     let res_big_ref = res_big.to_backend_ref();
     {
         let mut acc_mut = acc.to_backend_mut();
@@ -140,7 +147,6 @@ where
             );
         }
     }
-    acc.set_log_budget(res_log_budget);
-    acc.set_log_delta(res_log_delta);
+    module.vec_znx_canonicalize(base2k, res_log_budget + res_log_delta, acc.to_backend_mut().data_mut());
     Ok(())
 }

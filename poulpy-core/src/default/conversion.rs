@@ -8,7 +8,7 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyRangeBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
+        VecZnxBigNormalizeTmpBytes, VecZnxCanonicalize, VecZnxCopyRangeBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
         VecZnxExtractCoeffBackend, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
         VecZnxRotateBackend, VecZnxZeroBackend,
     },
@@ -534,6 +534,7 @@ pub fn ggsw_expand_row_default<BE, M, R>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
@@ -625,11 +626,14 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
         + VecZnxBigBytesOf
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>,
     R: GGSWAtViewMut<BE> + GGSWInfos,
 {
     let cols: usize = res.rank().as_usize() + 1;
+    let res_base2k = res.base2k().as_usize();
+    let res_k = res.k().as_usize();
 
     for col in 1..cols {
         let scratch_row = scratch.borrow();
@@ -648,10 +652,8 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
         module.vec_znx_big_add_small_assign(&mut res_big, col, a_0, 0);
         let res_big_ref = res_big.to_backend_ref();
 
-        let res_base2k: usize = res.base2k().as_usize();
-
+        let mut res_col: GLWEViewMut<'_, _> = res.at_view_mut(row, col);
         for j in 0..cols {
-            let mut res_col: GLWEViewMut<'_, _> = res.at_view_mut(row, col);
             let scratch_norm = &mut scratch_2.borrow();
             module.vec_znx_big_normalize(
                 &mut res_col.data,
@@ -664,5 +666,6 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
                 scratch_norm,
             );
         }
+        module.vec_znx_canonicalize(res_base2k, res_k, &mut res_col.data);
     }
 }

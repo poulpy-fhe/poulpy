@@ -103,16 +103,17 @@ pub(crate) trait GGLWENoiseModel: GGLWEInfos {
             * var_scale(self)
     }
 
-    /// `Var = Var(e_in) * 2^{-2k_in} + Var_key + rank_in * n * var_xs_in * Var(r)`.
+    /// `Var = Var(e_in) * 2^{-2k_in} + Var_key + rank_in * n * var_xs_in * Var(r) + Var(round)`.
     ///
     /// A key-switch rewrites `sum_j a_j * s_in,j` and leaves the body untouched,
     /// so the operand's phase error carries over unchanged. Past the key error
     /// of [`Self::var_key_error`], every mask the gadget truncates loses
     /// `r_j * s_in,j` from the phase, a ring product against the **source**
-    /// secret.
+    /// secret. Canonicalization adds at most half an output ulp per component.
     #[allow(clippy::too_many_arguments)]
-    fn var_noise_keyswitch<A: GLWEInfos>(
+    fn var_noise_keyswitch<R: GLWEInfos, A: GLWEInfos>(
         &self,
+        res: &R,
         input: &A,
         var_xs_in: f64,
         var_xs_out: f64,
@@ -123,12 +124,20 @@ pub(crate) trait GGLWENoiseModel: GGLWEInfos {
         var_in_err * var_scale(input)
             + self.var_key_error(input, var_xs_out, var_key_err_body, var_key_err_mask)
             + (self.rank_in().as_usize() as f64) * (self.n().as_usize() as f64) * var_xs_in * self.var_residue(input)
+            + var_canonicalization(
+                res.k().as_usize(),
+                res.base2k().as_usize(),
+                res.n().as_usize(),
+                res.rank().as_usize(),
+                var_xs_out,
+            )
     }
 
     /// `log2 sqrt(Var)` of [`Self::var_noise_keyswitch`].
     #[allow(clippy::too_many_arguments)]
-    fn log2_std_noise_keyswitch<A: GLWEInfos>(
+    fn log2_std_noise_keyswitch<R: GLWEInfos, A: GLWEInfos>(
         &self,
+        res: &R,
         input: &A,
         var_xs_in: f64,
         var_xs_out: f64,
@@ -136,7 +145,15 @@ pub(crate) trait GGLWENoiseModel: GGLWEInfos {
         var_key_err_body: f64,
         var_key_err_mask: f64,
     ) -> f64 {
-        log2_std(self.var_noise_keyswitch(input, var_xs_in, var_xs_out, var_in_err, var_key_err_body, var_key_err_mask))
+        log2_std(self.var_noise_keyswitch(
+            res,
+            input,
+            var_xs_in,
+            var_xs_out,
+            var_in_err,
+            var_key_err_body,
+            var_key_err_mask,
+        ))
     }
 
     /// `log2 sqrt(Var)` of the `col`-th column of a GGSW key-switched (or
@@ -170,7 +187,15 @@ pub(crate) trait GGLWENoiseModel: GGLWEInfos {
         var_key_err_body: f64,
         var_key_err_mask: f64,
     ) -> f64 {
-        let noise: f64 = self.var_noise_keyswitch(input, var_xs_in, var_xs_out, var_in_err, var_key_err_body, var_key_err_mask);
+        let noise: f64 = self.var_noise_keyswitch(
+            res,
+            input,
+            var_xs_in,
+            var_xs_out,
+            var_in_err,
+            var_key_err_body,
+            var_key_err_mask,
+        );
 
         if col == 0 {
             return log2_std(noise);
@@ -185,7 +210,14 @@ pub(crate) trait GGLWENoiseModel: GGLWEInfos {
         log2_std(
             n * var_xs_out * noise
                 + tsk.var_key_error(res, var_xs_out, var_key_err_body, var_key_err_mask)
-                + n * var_s_x_s_col * tsk.var_residue(res),
+                + n * var_s_x_s_col * tsk.var_residue(res)
+                + var_canonicalization(
+                    res.k().as_usize(),
+                    res.base2k().as_usize(),
+                    res.n().as_usize(),
+                    res.rank().as_usize(),
+                    var_xs_out,
+                ),
         )
     }
 }
@@ -217,6 +249,7 @@ pub(crate) trait GGSWNoiseModel: GGSWInfos {
     /// fold = 1 + rank * n * var_xs
     /// Var  = Var_key + n * var_msg * fold * Var(r)
     ///                + n * var_msg * (Var(e_body) + rank * n * var_xs * Var(e_mask)) * 2^{-2k_in}
+    ///                + Var(round)
     /// ```
     ///
     /// The product is `(ct - r) * m` for `r` the residues the gadget drops, so
@@ -226,8 +259,9 @@ pub(crate) trait GGSWNoiseModel: GGSWInfos {
     /// costs nothing. The operand's own error travels the same route, hence the
     /// identical weighting.
     #[allow(clippy::too_many_arguments)]
-    fn log2_std_noise_external_product<A: GLWEInfos>(
+    fn log2_std_noise_external_product<R: GLWEInfos, A: GLWEInfos>(
         &self,
+        res: &R,
         input: &A,
         var_xs: f64,
         var_msg: f64,
@@ -244,6 +278,13 @@ pub(crate) trait GGSWNoiseModel: GGSWInfos {
         let mut noise: f64 = key.var_key_error(input, var_xs, var_key_err_body, var_key_err_mask);
         noise += n * var_msg * fold * key.var_residue(input);
         noise += n * var_msg * (var_in_err_body + rank * n * var_xs * var_in_err_mask) * var_scale(input);
+        noise += var_canonicalization(
+            res.k().as_usize(),
+            res.base2k().as_usize(),
+            res.n().as_usize(),
+            res.rank().as_usize(),
+            var_xs,
+        );
         log2_std(noise)
     }
 }
@@ -253,6 +294,18 @@ impl<T: GGSWInfos + ?Sized> GGSWNoiseModel for T {}
 /// `2^{-2k}`, the torus scale the operand's error sits at.
 fn var_scale<A: LWEInfos + ?Sized>(operand: &A) -> f64 {
     (-2.0 * operand.k().as_usize() as f64).exp2()
+}
+
+fn var_canonicalization(k: usize, base2k: usize, n: usize, rank: usize, var_xs: f64) -> f64 {
+    var_canonicalization_with_fold(k, base2k, 1.0 + rank as f64 * n as f64 * var_xs)
+}
+
+fn var_canonicalization_with_fold(k: usize, base2k: usize, fold: f64) -> f64 {
+    if k.is_multiple_of(base2k) {
+        0.0
+    } else {
+        fold * (-2.0 * k as f64).exp2() / 4.0
+    }
 }
 
 /// `log2 sqrt(Var)`, clamped to the largest representable noise
@@ -276,23 +329,64 @@ pub(crate) fn var_tensor_key(n: f64, rank: f64, var_xs: f64) -> f64 {
     1.0 + rank * n * var_xs + 0.5 * rank * (rank + 3.0) * n * var_si_x_sj
 }
 
-/// `Var = (Var(e_a) + Var(e_b)) * var_tensor_key * 2^{2*cnv_offset}`, the
-/// decryption error of a GLWE tensor product **before** relinearization, at the
-/// output scale.
+/// `Var = (Var(e_a) + Var(e_b)) * var_tensor_key * 2^{2*cnv_offset}
+///       + Var(round_tensor)`, the decryption error of a GLWE tensor product at
+/// the output scale.
 ///
 /// Each tensor component carries both operands' errors, and decryption folds
 /// the components against `s (x) s`, which amplifies by [`var_tensor_key`]. The
 /// product is rescaled by `cnv_offset` dropped low bits, lifting everything
 /// below it by `2^{cnv_offset}`.
 ///
-/// Calibrated against the reference backend over rank, ring degree, torus
-/// precision, secret variance, operand noise and convolution offset; it is an
-/// upper estimate, running ~0.3 bits above the measured standard deviation.
-/// Relinearization noise is additive and much smaller than this multiplicative
-/// term, so the same bound covers the relinearized result.
-pub(crate) fn var_noise_glwe_tensor(n: f64, rank: f64, var_xs: f64, var_e_a: f64, var_e_b: f64, cnv_offset: usize) -> f64 {
+/// The tensor-output canonical round is folded against `s (x) s` and vanishes
+/// when the output precision is limb-aligned.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn var_noise_glwe_tensor(
+    n: f64,
+    rank: f64,
+    var_xs: f64,
+    var_e_a: f64,
+    var_e_b: f64,
+    cnv_offset: usize,
+    k_out: usize,
+    base2k_out: usize,
+) -> f64 {
     let scale: f64 = ((2 * cnv_offset) as f64).exp2();
-    (var_e_a + var_e_b) * var_tensor_key(n, rank, var_xs) * scale
+    let tensor_fold = var_tensor_key(n, rank, var_xs);
+    (var_e_a + var_e_b) * tensor_fold * scale + var_canonicalization_with_fold(k_out, base2k_out, tensor_fold)
+}
+
+/// Tensor-product noise plus the canonical round after relinearization.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn log2_std_noise_glwe_tensor_relinearized(
+    n: f64,
+    rank: f64,
+    var_xs: f64,
+    sigma_a: f64,
+    k_a: usize,
+    sigma_b: f64,
+    k_b: usize,
+    cnv_offset: usize,
+    tensor_k: usize,
+    tensor_base2k: usize,
+    res_k: usize,
+    res_base2k: usize,
+) -> f64 {
+    let var_e = |sigma: f64, k: usize| {
+        let s = sigma * (-(k as f64)).exp2();
+        s * s
+    };
+    let var = var_noise_glwe_tensor(
+        n,
+        rank,
+        var_xs,
+        var_e(sigma_a, k_a),
+        var_e(sigma_b, k_b),
+        cnv_offset,
+        tensor_k,
+        tensor_base2k,
+    ) + var_canonicalization_with_fold(res_k, res_base2k, 1.0 + rank * n * var_xs);
+    log2_std(var)
 }
 
 /// `log2 sqrt(Var)` of [`var_noise_glwe_tensor`].
@@ -310,13 +404,40 @@ pub(crate) fn log2_std_noise_glwe_tensor(
     sigma_b: f64,
     k_b: usize,
     cnv_offset: usize,
+    k_out: usize,
+    base2k_out: usize,
 ) -> f64 {
     let var_e = |sigma: f64, k: usize| {
         let s: f64 = sigma * (-(k as f64)).exp2();
         s * s
     };
-    var_noise_glwe_tensor(n, rank, var_xs, var_e(sigma_a, k_a), var_e(sigma_b, k_b), cnv_offset)
-        .sqrt()
-        .log2()
-        .min(-1.0)
+    var_noise_glwe_tensor(
+        n,
+        rank,
+        var_xs,
+        var_e(sigma_a, k_a),
+        var_e(sigma_b, k_b),
+        cnv_offset,
+        k_out,
+        base2k_out,
+    )
+    .sqrt()
+    .log2()
+    .min(-1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{var_canonicalization_with_fold, var_noise_glwe_tensor, var_tensor_key};
+
+    #[test]
+    fn canonical_rounding_terms_match_the_half_ulp_bound() {
+        let (n, rank, var_xs) = (256.0, 2.0, 0.5);
+        let tensor_fold = var_tensor_key(n, rank, var_xs);
+        assert_eq!(var_canonicalization_with_fold(120, 30, tensor_fold), 0.0);
+        assert_eq!(
+            var_noise_glwe_tensor(n, rank, var_xs, 0.0, 0.0, 0, 121, 30),
+            tensor_fold * (-242.0f64).exp2() / 4.0
+        );
+    }
 }

@@ -280,9 +280,9 @@ pub fn gglwe_product_digits_strided_default<BE: Backend>(
 
 use poulpy_hal::{
     api::{
-        VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalize,
-        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
+        VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCanonicalize,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxNormalize, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
     },
     layouts::{VecZnxBigToBackendRef, VecZnxToBackendRef},
 };
@@ -465,6 +465,7 @@ pub fn glwe_keyswitch_default<BE, M, R, A>(
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
         + VecZnxDftBytesOf
+        + VecZnxCanonicalize<BE>
         + VecZnxIdftNormalizeConsume<BE>
         + VecZnxNormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -501,6 +502,7 @@ pub fn glwe_keyswitch_default<BE, M, R, A>(
     let a_base2k: usize = a.base2k().into();
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
 
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
@@ -564,6 +566,7 @@ pub fn glwe_keyswitch_default<BE, M, R, A>(
             );
         }
     }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res_ref.data);
 }
 
 pub fn glwe_keyswitch_assign_default<BE, M, R>(
@@ -581,6 +584,7 @@ pub fn glwe_keyswitch_assign_default<BE, M, R>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>
         + VecZnxNormalize<BE>
@@ -615,6 +619,7 @@ pub fn glwe_keyswitch_assign_default<BE, M, R>(
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, res, key);
 
     let res_base2k: usize = res.base2k().as_usize();
+    let res_k = res.k().as_usize();
     let key_base2k: usize = key.base2k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
@@ -679,4 +684,5 @@ pub fn glwe_keyswitch_assign_default<BE, M, R>(
             &mut scratch.borrow(),
         );
     }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res_ref.data);
 }

@@ -34,7 +34,9 @@ where
 }
 
 unsafe impl HalVecZnxImpl<FFT64Avx512> for FFT64Avx512 {
-    poulpy_cpu_ref::hal_impl_vec_znx!();
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
 
     // TODO: add an AVX-512-accelerated tiled transpose kernel; falls back to
     // the reference impl for now.
@@ -79,7 +81,9 @@ unsafe impl HalVecZnxDftImpl<FFT64Avx512> for FFT64Avx512 {
 }
 
 unsafe impl HalVecZnxImpl<NTT4x30Avx512> for NTT4x30Avx512 {
-    poulpy_cpu_ref::hal_impl_vec_znx!();
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
 
     // TODO: add an AVX-512-accelerated tiled transpose kernel; falls back to
     // the reference impl for now.
@@ -759,7 +763,9 @@ mod ifma_impl {
     use std::mem::size_of;
 
     unsafe impl HalVecZnxImpl<NTT3x42Ifma> for NTT3x42Ifma {
-        poulpy_cpu_ref::hal_impl_vec_znx!();
+        poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+        poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
+        poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
 
         // TODO: add an AVX-512/IFMA-accelerated tiled transpose kernel; falls
         // back to the reference impl for now.

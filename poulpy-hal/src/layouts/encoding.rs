@@ -33,11 +33,12 @@ impl<D: HostDataMut> VecZnx<D, i64> {
     /// - `gap == 0` or `data.len() * gap != N`
     pub fn encode_vec_i64_strided(&mut self, base2k: usize, col: usize, k: usize, gap: usize, data: &[i64]) {
         let size: usize = k.div_ceil(base2k);
+        let was_canonical = self.is_canonical();
 
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+            let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
             assert!(
                 size <= a.size(),
                 "invalid argument k.div_ceil(base2k)={} > a.size()={}",
@@ -55,7 +56,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let mut a = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+        let mut a = VecZnx::from_data(self.data_mut().as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size: usize = a.size();
 
         // Zeroes coefficients of the col-th column
@@ -86,6 +87,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
                 znx_normalize_middle_step_assign(base2k, k_rem, a.at_mut(col, j), &mut carry);
             }
         }
+        self.set_canonical(was_canonical);
     }
 
     /// Encodes an `i128` slice into the limb-decomposed (base-2^k) representation.
@@ -100,11 +102,12 @@ impl<D: HostDataMut> VecZnx<D, i64> {
     /// [`encode_vec_i64_strided`](VecZnx::encode_vec_i64_strided).
     pub fn encode_vec_i128_strided(&mut self, base2k: usize, col: usize, k: usize, gap: usize, data: &[i128]) {
         let size: usize = k.div_ceil(base2k);
+        let was_canonical = self.is_canonical();
 
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+            let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
             assert!(
                 size <= a.size(),
                 "invalid argument k.div_ceil(base2k)={} > a.size()={}",
@@ -122,7 +125,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let mut a = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+        let mut a = VecZnx::from_data(self.data_mut().as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size: usize = a.size();
 
         {
@@ -161,17 +164,19 @@ impl<D: HostDataMut> VecZnx<D, i64> {
                 znx_normalize_middle_step_assign(base2k, k_rem, a.at_mut(col, j), &mut carry);
             }
         }
+        self.set_canonical(was_canonical);
     }
 
     /// Encodes a single coefficient at index `idx` into the limb-decomposed
     /// representation, zeroing all other coefficients of column `col`.
     pub fn encode_coeff_i64(&mut self, base2k: usize, col: usize, k: usize, idx: usize, data: i64) {
         let size: usize = k.div_ceil(base2k);
+        let was_canonical = self.is_canonical();
 
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+            let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
             assert!(idx < a.n());
             assert!(
                 size <= a.size(),
@@ -183,7 +188,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let mut a = VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
+        let mut a = VecZnx::from_data(self.data_mut().as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size = a.size();
 
         for j in 0..a_size {
@@ -206,6 +211,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
                 znx_normalize_middle_step_assign(base2k, k_rem, slice, &mut carry);
             }
         }
+        self.set_canonical(was_canonical);
     }
 }
 
@@ -226,7 +232,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_data(self.data.as_ref(), shape.n(), shape.cols(), shape.size());
+            let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
             assert!(gap >= 1, "gap must be >= 1");
             assert!(
                 data.len() * gap == a.n(),
@@ -238,7 +244,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let a = VecZnx::<_, i64>::from_data(self.data.as_ref(), shape.n(), shape.cols(), shape.size());
+        let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
         let limb0 = a.at(col, 0);
         for (j, d) in data.iter_mut().enumerate() {
             *d = limb0[j * gap];
@@ -276,7 +282,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_data(self.data.as_ref(), shape.n(), shape.cols(), shape.size());
+            let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
             assert!(gap >= 1, "gap must be >= 1");
             assert!(
                 data.len() * gap == a.n(),
@@ -288,7 +294,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let a = VecZnx::<_, i64>::from_data(self.data.as_ref(), shape.n(), shape.cols(), shape.size());
+        let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
         let limb0 = a.at(col, 0);
         for (j, d) in data.iter_mut().enumerate() {
             *d = limb0[j * gap] as i128;
@@ -322,13 +328,13 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_data(self.data.as_ref(), shape.n(), shape.cols(), shape.size());
+            let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
             assert!(idx < a.n());
             assert!(col < a.cols())
         }
 
         let shape = self.shape();
-        let a = VecZnx::<_, i64>::from_data(self.data.as_ref(), shape.n(), shape.cols(), shape.size());
+        let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
         let size: usize = k.div_ceil(base2k);
         let mut res: i64 = 0;
         let rem: usize = base2k - (k % base2k);
@@ -351,7 +357,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::<_, i64>::from_data(self.data.as_ref(), shape.n(), shape.cols(), shape.size());
+            let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
             assert!(
                 data.len() >= a.n(),
                 "invalid data: data.len()={} < a.n()={}",
@@ -362,7 +368,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
         }
 
         let shape = self.shape();
-        let a = VecZnx::<_, i64>::from_data(self.data.as_ref(), shape.n(), shape.cols(), shape.size());
+        let a = VecZnx::<_, i64>::from_data(self.data().as_ref(), shape.n(), shape.cols(), shape.size());
         let size: usize = a.size();
         // Extra 256 guard bits absorb cancellation in downstream reduce(x * 2^offset)
         // operations (offset up to 128 bits) without affecting the public f64 API.

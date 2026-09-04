@@ -7,8 +7,9 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApplyTmpA,
+        ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCanonicalize,
+        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftZero,
+        VecZnxIdftApplyTmpA,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
@@ -82,6 +83,7 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
+        + VecZnxCanonicalize<BE>
         + GGLWEProductDefault<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
@@ -158,19 +160,23 @@ where
             module.vec_znx_idft_apply_tmpa(&mut res_big_mut, col, &mut sum_dft_mut, col);
         }
     }
-    let res_big_ref = res_big.to_backend_ref();
-    let mut ct_mut = ct.to_backend_mut();
-    for col in 0..2 {
-        module.vec_znx_big_normalize(
-            ct_mut.data_mut(),
-            base2k,
-            0,
-            col,
-            &res_big_ref,
-            base2k,
-            col,
-            &mut scratch_3.borrow(),
-        );
+    {
+        let res_big_ref = res_big.to_backend_ref();
+        let mut ct_mut = ct.to_backend_mut();
+        for col in 0..2 {
+            module.vec_znx_big_normalize(
+                ct_mut.data_mut(),
+                base2k,
+                0,
+                col,
+                &res_big_ref,
+                base2k,
+                col,
+                &mut scratch_3.borrow(),
+            );
+        }
     }
+    let k = ct.k().as_usize();
+    module.vec_znx_canonicalize(base2k, k, ct.to_backend_mut().data_mut());
     Ok(())
 }

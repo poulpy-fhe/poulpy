@@ -83,6 +83,7 @@ impl_vec_znx_dft_delegate!(
         scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_idft_normalize_consume(self, res, res_base2k, res_col, a, a_col, a_base2k, addend, scratch);
+        res.set_canonical(false);
     }
 );
 

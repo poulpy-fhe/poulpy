@@ -1481,7 +1481,7 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
     }
     let mut res = res.to_backend_mut();
     let (n, cols, size) = (res.n(), res.cols(), res.size());
-    let ptr = res.data.as_mut().as_mut_ptr().cast::<i64>();
+    let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
     unsafe {
         ntt4x30_vec_znx_big_normalize_range_raw::<A, BE>(
             ptr,

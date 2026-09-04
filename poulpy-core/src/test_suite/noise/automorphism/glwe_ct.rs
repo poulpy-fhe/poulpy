@@ -134,6 +134,7 @@ where
             module.glwe_automorphism(&mut ct_out, &ct_in, &autokey_prepared.to_backend_ref(), &mut scratch.borrow());
 
             let max_noise: f64 = autokey_infos.log2_std_noise_keyswitch(
+                &ct_out_infos,
                 &ct_in_infos,
                 0.5,
                 0.5,
@@ -265,6 +266,7 @@ where
             module.glwe_automorphism_assign(&mut ct, &autokey_prepared.to_backend_ref(), &mut scratch.borrow());
 
             let max_noise: f64 = autokey_infos.log2_std_noise_keyswitch(
+                &ct_out_infos,
                 &ct_out_infos,
                 0.5,
                 0.5,
