@@ -14,7 +14,7 @@ use poulpy_hal::{
         VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend,
         VecZnxRshTmpBytes,
     },
-    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, Normalized, ScratchArena},
+    layouts::{Backend, CoeffNormalized, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena},
     oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
     source::Source,
 };
@@ -43,8 +43,8 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         E: EncryptionInfos,
-        Pt: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds,
-        Dct: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Pt: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds,
+        Dct: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 
     fn ckks_decrypt_tmp_bytes_impl<A>(module: &Module<BE>, ct_infos: &A) -> usize
@@ -59,8 +59,8 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Pt: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
-        Dct: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSCtBounds,
+        Pt: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
+        Dct: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSCtBounds,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 
@@ -104,8 +104,8 @@ where
     ) -> Result<()>
     where
         E: EncryptionInfos,
-        Pt: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
-        Dct: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Pt: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
+        Dct: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
         module.ckks_encrypt_sk_default(ct, pt, sk, enc_infos, source_xe, source_xa, scratch)
@@ -126,8 +126,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Pt: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
-        Dct: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSCtBounds,
+        Pt: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
+        Dct: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSCtBounds,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
         module.ckks_decrypt_default(pt, ct, sk, scratch)

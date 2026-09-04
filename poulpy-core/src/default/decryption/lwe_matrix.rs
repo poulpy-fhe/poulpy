@@ -3,7 +3,7 @@ use poulpy_hal::{
         ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigColWeightedSum, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopyRangeBackend, VecZnxZeroBackend,
     },
-    layouts::{Backend, Module, Normalized, ScratchArena, VecZnxBigToBackendRef, VecZnxToBackendRef},
+    layouts::{Backend, CoeffNormalized, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxToBackendRef},
 };
 
 use crate::layouts::{
@@ -36,7 +36,7 @@ pub fn lwe_matrix_decrypt_default<BE, R, P, S>(
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes,
     R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-    P: GLWEToBackendMut<BE, State = Normalized> + SetBase2k + GLWEInfos,
+    P: GLWEToBackendMut<BE, State = CoeffNormalized> + SetBase2k + GLWEInfos,
     S: LWESecretToBackendRef<BE> + LWEInfos,
     BE: Backend,
 {

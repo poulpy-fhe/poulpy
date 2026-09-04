@@ -54,7 +54,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_zero_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             res_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_zero_backend_default(module, res, res_col)
@@ -64,7 +64,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             b: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
             b_col: usize,
@@ -81,7 +81,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         fn vec_znx_normalize_coeff_assign_backend(
             module: &Module<Self>,
             base2k: usize,
-            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             a_coeff: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -99,11 +99,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_normalize_coeff_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             res_base2k: usize,
             res_offset: i64,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_base2k: usize,
             a_col: usize,
             a_coeff: usize,
@@ -126,11 +126,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_add_into_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             b_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_add_into_backend_default(module, res, res_col, a, a_col, b, b_col)
@@ -138,9 +138,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_add_assign_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_add_assign_backend_default(module, res, res_col, a, a_col)
@@ -149,11 +149,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         #[allow(clippy::too_many_arguments)]
         fn vec_znx_add_const_into_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
-            cnst: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            cnst: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             cnst_col: usize,
             cnst_coeff: usize,
             res_limb: usize,
@@ -166,9 +166,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_add_const_assign_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            cnst: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            cnst: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             cnst_col: usize,
             cnst_coeff: usize,
             res_limb: usize,
@@ -179,11 +179,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             )
         }
 
-        fn vec_znx_extract_coeff_backend<S: poulpy_hal::layouts::NormalizationState>(
+        fn vec_znx_extract_coeff_backend<S: poulpy_hal::layouts::ArithmeticState>(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, S>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::FitsIn<S>>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::CoeffFitsIn<S>>,
             a_col: usize,
             a_coeff: usize,
         ) {
@@ -192,11 +192,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_add_scalar_into_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
             a: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
             a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             b_col: usize,
             b_limb: usize,
         ) {
@@ -207,7 +207,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_add_scalar_assign_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
             res_limb: usize,
             a: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
@@ -218,11 +218,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_sub_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             b_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_sub_backend_default(module, res, res_col, a, a_col, b, b_col)
@@ -230,9 +230,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_sub_assign_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_sub_assign_backend_default(module, res, res_col, a, a_col)
@@ -240,9 +240,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_sub_negate_assign_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_sub_negate_assign_backend_default(module, res, res_col, a, a_col)
@@ -250,11 +250,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_sub_scalar_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
             a: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
             a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             b_col: usize,
             b_limb: usize,
         ) {
@@ -263,7 +263,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_sub_scalar_assign_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
             res_limb: usize,
             a: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
@@ -272,11 +272,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             <Self as HalVecZnxDefault<Self>>::vec_znx_sub_scalar_assign_backend_default(module, res, res_col, res_limb, a, a_col)
         }
 
-        fn vec_znx_negate_backend<S: poulpy_hal::layouts::NormalizationState>(
+        fn vec_znx_negate_backend<S: poulpy_hal::layouts::ArithmeticState>(
             module: &Module<Self>,
             res: &mut VecZnxBackendMut<'_, Self, S>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::FitsIn<S>>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::CoeffFitsIn<S>>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_negate_backend_default(module, res, res_col, a, a_col)
@@ -284,7 +284,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 
         fn vec_znx_negate_assign_backend(
             module: &Module<Self>,
-            a: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_negate_assign_backend_default(module, a, a_col)
@@ -298,9 +298,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            res: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -321,9 +321,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            res: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             a_coeff: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -346,9 +346,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -369,9 +369,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             a_coeff: usize,
             res_coeff: usize,
@@ -396,9 +396,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             a_coeff: usize,
             res_coeff: usize,
@@ -427,9 +427,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            res: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -450,9 +450,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            res: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             a_coeff: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -475,9 +475,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -498,9 +498,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             a_coeff: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -523,9 +523,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'r, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'r, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &VecZnxBackendRef<'a, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'a, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             a_coeff: usize,
             res_coeff: usize,
@@ -550,9 +550,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'r, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'r, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &VecZnxBackendRef<'a, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'a, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             a_coeff: usize,
             res_coeff: usize,
@@ -577,9 +577,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -600,9 +600,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -623,7 +623,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -635,7 +635,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -643,12 +643,12 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_assign_backend_default(module, base2k, k, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_rotate_backend<S: poulpy_hal::layouts::NormalizationState>(
+        fn vec_znx_rotate_backend<S: poulpy_hal::layouts::ArithmeticState>(
             module: &Module<Self>,
             k: i64,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, S>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::FitsIn<S>>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::CoeffFitsIn<S>>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_rotate_backend_default(module, k, res, res_col, a, a_col)
@@ -661,7 +661,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         fn vec_znx_rotate_assign_backend(
             module: &Module<Self>,
             k: i64,
-            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -669,12 +669,12 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             <Self as HalVecZnxDefault<Self>>::vec_znx_rotate_assign_backend_default(module, k, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_automorphism_backend<S: poulpy_hal::layouts::NormalizationState>(
+        fn vec_znx_automorphism_backend<S: poulpy_hal::layouts::ArithmeticState>(
             module: &Module<Self>,
             k: i64,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, S>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::FitsIn<S>>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::CoeffFitsIn<S>>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_backend_default(module, k, res, res_col, a, a_col)
@@ -687,7 +687,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         fn vec_znx_automorphism_assign_backend(
             module: &Module<Self>,
             k: i64,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             res_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -696,13 +696,13 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn vec_znx_automorphism_rotate_backend<S: poulpy_hal::layouts::NormalizationState>(
+        fn vec_znx_automorphism_rotate_backend<S: poulpy_hal::layouts::ArithmeticState>(
             module: &Module<Self>,
             p: i64,
             k: i64,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, S>,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::FitsIn<S>>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::CoeffFitsIn<S>>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_rotate_backend_default(module, p, k, res, res_col, a, a_col)
@@ -711,9 +711,9 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         fn vec_znx_mul_xp_minus_one_backend(
             module: &Module<Self>,
             k: i64,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_mul_xp_minus_one_backend_default(module, k, res, res_col, a, a_col)
@@ -726,7 +726,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         fn vec_znx_mul_xp_minus_one_assign_backend(
             module: &Module<Self>,
             k: i64,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -744,11 +744,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             <Self as HalVecZnxDefault<Self>>::vec_znx_split_ring_tmp_bytes_backend_default(module)
         }
 
-        fn vec_znx_split_ring_backend<S: poulpy_hal::layouts::NormalizationState>(
+        fn vec_znx_split_ring_backend<S: poulpy_hal::layouts::ArithmeticState>(
             module: &Module<Self>,
             res: &mut [VecZnxBackendMut<'_, Self, S>],
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::FitsIn<S>>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::CoeffFitsIn<S>>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -760,11 +760,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             <Self as HalVecZnxDefault<Self>>::vec_znx_merge_rings_tmp_bytes_backend_default(module)
         }
 
-        fn vec_znx_merge_rings_backend<S: poulpy_hal::layouts::NormalizationState>(
+        fn vec_znx_merge_rings_backend<S: poulpy_hal::layouts::ArithmeticState>(
             module: &Module<Self>,
             res: &mut VecZnxBackendMut<'_, Self, S>,
             res_col: usize,
-            a: &[VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::FitsIn<S>>],
+            a: &[VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::CoeffFitsIn<S>>],
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
@@ -772,33 +772,33 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             <Self as HalVecZnxDefault<Self>>::vec_znx_merge_rings_backend_default(module, res, res_col, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_switch_ring_backend<S: poulpy_hal::layouts::NormalizationState>(
+        fn vec_znx_switch_ring_backend<S: poulpy_hal::layouts::ArithmeticState>(
             module: &Module<Self>,
             res: &mut VecZnxBackendMut<'_, Self, S>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::FitsIn<S>>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::CoeffFitsIn<S>>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_switch_ring_backend_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_copy_backend<S: poulpy_hal::layouts::NormalizationState>(
+        fn vec_znx_copy_backend<S: poulpy_hal::layouts::ArithmeticState>(
             module: &Module<Self>,
             res: &mut VecZnxBackendMut<'_, Self, S>,
             res_col: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::FitsIn<S>>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::CoeffFitsIn<S>>,
             a_col: usize,
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_copy_backend_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_copy_range_backend<S: poulpy_hal::layouts::NormalizationState>(
+        fn vec_znx_copy_range_backend<S: poulpy_hal::layouts::ArithmeticState>(
             module: &Module<Self>,
             res: &mut VecZnxBackendMut<'_, Self, S>,
             res_col: usize,
             res_limb: usize,
             res_offset: usize,
-            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::FitsIn<S>>,
+            a: &VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::CoeffFitsIn<S>>,
             a_col: usize,
             a_limb: usize,
             a_offset: usize,
@@ -813,7 +813,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            res: &mut VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             res_col: usize,
             seed: [u8; 32],
         ) {
@@ -823,7 +823,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         fn vec_znx_fill_normal_backend(
             module: &Module<Self>,
             res_base2k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
             noise_infos: NoiseInfos,
             seed: [u8; 32],
@@ -841,7 +841,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         fn vec_znx_add_normal_backend(
             module: &Module<Self>,
             res_base2k: usize,
-            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::Unnormalized>,
+            res: &mut VecZnxBackendMut<'_, Self, poulpy_hal::layouts::CoeffUnnormalized>,
             res_col: usize,
             noise_infos: NoiseInfos,
             seed: [u8; 32],
@@ -864,11 +864,11 @@ macro_rules! hal_impl_vec_znx_normalize {
     () => {
         fn vec_znx_normalize_backend(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             res_base2k: usize,
             res_offset: i64,
             res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_base2k: usize,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
@@ -890,7 +890,7 @@ macro_rules! hal_impl_vec_znx_normalize {
         fn vec_znx_normalize_assign_backend(
             module: &Module<Self>,
             base2k: usize,
-            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {

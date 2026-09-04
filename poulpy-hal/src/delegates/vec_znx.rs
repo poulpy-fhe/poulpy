@@ -22,8 +22,8 @@ use crate::{
         VecZnxTransposeBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, FitsIn, Module, NoiseInfos, NormalizationState, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena,
-        Unnormalized, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        ArithmeticState, Backend, CoeffFitsIn, CoeffUnnormalized, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef,
+        ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, scalar_znx_as_vec_znx_backend_mut_from_mut,
         scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     oep::HalVecZnxImpl,
@@ -47,7 +47,7 @@ macro_rules! impl_vec_znx_delegate {
 
 impl_vec_znx_delegate!(
     VecZnxZeroBackend<B>,
-    fn vec_znx_zero_backend(&self, res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>, res_col: usize) {
+    fn vec_znx_zero_backend(&self, res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>, res_col: usize) {
         B::vec_znx_zero_backend(self, res, res_col);
     }
 );
@@ -64,11 +64,11 @@ impl_vec_znx_delegate!(
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_base2k: usize,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
@@ -82,7 +82,7 @@ impl_vec_znx_delegate!(
     fn vec_znx_normalize_assign_backend(
         &self,
         base2k: usize,
-        a: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        a: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -95,7 +95,7 @@ impl_vec_znx_delegate!(
     fn vec_znx_normalize_coeff_assign_backend(
         &self,
         base2k: usize,
-        a: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        a: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         scratch: &mut ScratchArena<'_, B>,
@@ -109,11 +109,11 @@ impl_vec_znx_delegate!(
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize_coeff_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_base2k: usize,
         a_col: usize,
         a_coeff: usize,
@@ -129,11 +129,11 @@ impl_vec_znx_delegate!(
     VecZnxAddIntoBackend<B>,
     fn vec_znx_add_into_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        b: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         b_col: usize,
     ) {
         B::vec_znx_add_into_backend(self, res, res_col, a, a_col, b, b_col)
@@ -144,9 +144,9 @@ impl_vec_znx_delegate!(
     VecZnxAddAssignBackend<B>,
     fn vec_znx_add_assign_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
     ) {
         B::vec_znx_add_assign_backend(self, res, res_col, a, a_col)
@@ -155,13 +155,13 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxCopyRangeBackend<B>,
-    fn vec_znx_copy_range_backend<S: NormalizationState>(
+    fn vec_znx_copy_range_backend<S: ArithmeticState>(
         &self,
         res: &mut VecZnxBackendMut<'_, B, S>,
         res_col: usize,
         res_limb: usize,
         res_offset: usize,
-        a: &VecZnxBackendRef<'_, B, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>,
         a_col: usize,
         a_limb: usize,
         a_offset: usize,
@@ -173,11 +173,11 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxExtractCoeffBackend<B>,
-    fn vec_znx_extract_coeff_backend<S: NormalizationState>(
+    fn vec_znx_extract_coeff_backend<S: ArithmeticState>(
         &self,
         res: &mut VecZnxBackendMut<'_, B, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>,
         a_col: usize,
         a_coeff: usize,
     ) {
@@ -189,11 +189,11 @@ impl_vec_znx_delegate!(
     VecZnxAddConstIntoBackend<B>,
     fn vec_znx_add_const_into_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
-        cnst: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        cnst: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         cnst_col: usize,
         cnst_coeff: usize,
         res_limb: usize,
@@ -207,9 +207,9 @@ impl_vec_znx_delegate!(
     VecZnxAddConstAssignBackend<B>,
     fn vec_znx_add_const_assign_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        cnst: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        cnst: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         cnst_col: usize,
         cnst_coeff: usize,
         res_limb: usize,
@@ -225,7 +225,7 @@ impl_vec_znx_delegate!(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         b: &ScalarZnxBackendRef<'_, B>,
         b_col: usize,
@@ -238,11 +238,11 @@ impl_vec_znx_delegate!(
     VecZnxAddScalarIntoBackend<B>,
     fn vec_znx_add_scalar_into_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
         a: &ScalarZnxBackendRef<'_, B>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        b: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         b_col: usize,
         b_limb: usize,
     ) {
@@ -254,7 +254,7 @@ impl_vec_znx_delegate!(
     VecZnxAddScalarAssignBackend<B>,
     fn vec_znx_add_scalar_assign_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
         res_limb: usize,
         a: &ScalarZnxBackendRef<'_, B>,
@@ -268,11 +268,11 @@ impl_vec_znx_delegate!(
     VecZnxSubBackend<B>,
     fn vec_znx_sub_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        b: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         b_col: usize,
     ) {
         B::vec_znx_sub_backend(self, res, res_col, a, a_col, b, b_col)
@@ -283,9 +283,9 @@ impl_vec_znx_delegate!(
     VecZnxSubAssignBackend<B>,
     fn vec_znx_sub_assign_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
     ) {
         B::vec_znx_sub_assign_backend(self, res, res_col, a, a_col)
@@ -296,9 +296,9 @@ impl_vec_znx_delegate!(
     VecZnxSubNegateAssignBackend<B>,
     fn vec_znx_sub_negate_assign_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
     ) {
         B::vec_znx_sub_negate_assign_backend(self, res, res_col, a, a_col)
@@ -309,11 +309,11 @@ impl_vec_znx_delegate!(
     VecZnxSubScalarBackend<B>,
     fn vec_znx_sub_scalar_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
         a: &ScalarZnxBackendRef<'_, B>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        b: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         b_col: usize,
         b_limb: usize,
     ) {
@@ -325,7 +325,7 @@ impl_vec_znx_delegate!(
     VecZnxSubScalarAssignBackend<B>,
     fn vec_znx_sub_scalar_assign_backend(
         &self,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
         res_limb: usize,
         a: &ScalarZnxBackendRef<'_, B>,
@@ -337,11 +337,11 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxNegateBackend<B>,
-    fn vec_znx_negate_backend<S: NormalizationState>(
+    fn vec_znx_negate_backend<S: ArithmeticState>(
         &self,
         res: &mut VecZnxBackendMut<'_, B, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) {
         B::vec_znx_negate_backend(self, res, res_col, a, a_col)
@@ -350,7 +350,7 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxNegateAssignBackend<B>,
-    fn vec_znx_negate_assign_backend(&self, a: &mut VecZnxBackendMut<'_, B, impl NormalizationState>, a_col: usize) {
+    fn vec_znx_negate_assign_backend(&self, a: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>, a_col: usize) {
         B::vec_znx_negate_assign_backend(self, a, a_col)
     }
 );
@@ -375,9 +375,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -391,9 +391,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         scratch: &mut ScratchArena<'_, B>,
@@ -408,9 +408,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -424,9 +424,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         scratch: &mut ScratchArena<'_, B>,
@@ -441,9 +441,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
@@ -459,9 +459,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
@@ -477,9 +477,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -493,9 +493,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         scratch: &mut ScratchArena<'_, B>,
@@ -510,9 +510,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -526,9 +526,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
@@ -544,9 +544,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
@@ -562,9 +562,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -578,9 +578,9 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -594,7 +594,7 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        a: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        a: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -608,7 +608,7 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        a: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        a: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -618,12 +618,12 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxRotateBackend<B>,
-    fn vec_znx_rotate_backend<S: NormalizationState>(
+    fn vec_znx_rotate_backend<S: ArithmeticState>(
         &self,
         k: i64,
         res: &mut VecZnxBackendMut<'_, B, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) {
         B::vec_znx_rotate_backend(self, k, res, res_col, a, a_col)
@@ -642,7 +642,7 @@ impl_vec_znx_delegate!(
     fn vec_znx_rotate_assign_backend(
         &self,
         k: i64,
-        a: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        a: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -652,12 +652,12 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxAutomorphismBackend<B>,
-    fn vec_znx_automorphism_backend<S: NormalizationState>(
+    fn vec_znx_automorphism_backend<S: ArithmeticState>(
         &self,
         k: i64,
         res: &mut VecZnxBackendMut<'_, B, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) {
         B::vec_znx_automorphism_backend(self, k, res, res_col, a, a_col)
@@ -676,7 +676,7 @@ impl_vec_znx_delegate!(
     fn vec_znx_automorphism_assign_backend(
         &self,
         k: i64,
-        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -686,13 +686,13 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxAutomorphismRotateBackend<B>,
-    fn vec_znx_automorphism_rotate_backend<S: NormalizationState>(
+    fn vec_znx_automorphism_rotate_backend<S: ArithmeticState>(
         &self,
         p: i64,
         k: i64,
         res: &mut VecZnxBackendMut<'_, B, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) {
         B::vec_znx_automorphism_rotate_backend(self, p, k, res, res_col, a, a_col)
@@ -741,9 +741,9 @@ impl_vec_znx_delegate!(
     fn vec_znx_mul_xp_minus_one_backend(
         &self,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
         a_col: usize,
     ) {
         B::vec_znx_mul_xp_minus_one_backend(self, p, res, res_col, a, a_col);
@@ -762,7 +762,7 @@ impl_vec_znx_delegate!(
     fn vec_znx_mul_xp_minus_one_assign_backend(
         &self,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -779,11 +779,11 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxSplitRingBackend<B>,
-    fn vec_znx_split_ring_backend<S: NormalizationState>(
+    fn vec_znx_split_ring_backend<S: ArithmeticState>(
         &self,
         res: &mut [VecZnxBackendMut<'_, B, S>],
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -800,11 +800,11 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxMergeRingsBackend<B>,
-    fn vec_znx_merge_rings_backend<S: NormalizationState>(
+    fn vec_znx_merge_rings_backend<S: ArithmeticState>(
         &self,
         res: &mut VecZnxBackendMut<'_, B, S>,
         res_col: usize,
-        a: &[VecZnxBackendRef<'_, B, impl FitsIn<S>>],
+        a: &[VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>],
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
@@ -814,11 +814,11 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxSwitchRingBackend<B>,
-    fn vec_znx_switch_ring_backend<S: NormalizationState>(
+    fn vec_znx_switch_ring_backend<S: ArithmeticState>(
         &self,
         res: &mut VecZnxBackendMut<'_, B, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) {
         B::vec_znx_switch_ring_backend(self, res, res_col, a, a_col);
@@ -827,11 +827,11 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxCopyBackend<B>,
-    fn vec_znx_copy_backend<S: NormalizationState>(
+    fn vec_znx_copy_backend<S: ArithmeticState>(
         &self,
         res: &mut VecZnxBackendMut<'_, B, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, B, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) {
         B::vec_znx_copy_backend(self, res, res_col, a, a_col);
@@ -840,10 +840,10 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxTransposeBackend<B>,
-    fn vec_znx_transpose_backend<S: NormalizationState>(
+    fn vec_znx_transpose_backend<S: ArithmeticState>(
         &self,
         res: &mut VecZnxBackendMut<'_, B, S>,
-        a: &VecZnxBackendRef<'_, B, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, B, impl CoeffFitsIn<S>>,
     ) {
         B::vec_znx_transpose_backend(self, res, a);
     }
@@ -979,7 +979,7 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         res_col: usize,
         source: &mut Source,
     ) {
@@ -993,7 +993,7 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
         res_col: usize,
         seed: [u8; 32],
     ) {
@@ -1006,7 +1006,7 @@ impl_vec_znx_delegate!(
     fn vec_znx_fill_normal_source_backend(
         &self,
         base2k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
         noise_infos: NoiseInfos,
         source_xe: &mut Source,
@@ -1020,7 +1020,7 @@ impl_vec_znx_delegate!(
     fn vec_znx_fill_normal_backend(
         &self,
         base2k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
         noise_infos: NoiseInfos,
         seed: [u8; 32],
@@ -1034,7 +1034,7 @@ impl_vec_znx_delegate!(
     fn vec_znx_add_normal_source_backend(
         &self,
         base2k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
         noise_infos: NoiseInfos,
         source_xe: &mut Source,
@@ -1048,7 +1048,7 @@ impl_vec_znx_delegate!(
     fn vec_znx_add_normal_backend(
         &self,
         base2k: usize,
-        res: &mut VecZnxBackendMut<'_, B, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, B, CoeffUnnormalized>,
         res_col: usize,
         noise_infos: NoiseInfos,
         seed: [u8; 32],

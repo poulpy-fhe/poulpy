@@ -58,8 +58,8 @@ use crate::reference::{
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, NormalizationState, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxBig, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        ArithmeticState, Backend, HostDataMut, HostDataRef, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig,
+        VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
     },
 };
 
@@ -160,13 +160,13 @@ where
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume_default(
         module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_base2k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, BE>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, BE, impl NormalizationState>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, BE, impl ArithmeticState>, usize)>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: FFTModuleHandle<f64>,
@@ -446,13 +446,13 @@ where
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume_default(
         module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_base2k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, BE>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, BE, impl NormalizationState>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, BE, impl ArithmeticState>, usize)>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,

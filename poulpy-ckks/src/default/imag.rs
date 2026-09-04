@@ -3,10 +3,10 @@ use poulpy_core::{
     GLWECopy, GLWENegate, GLWERotate, GLWEShift,
     layouts::{GLWEInfos, GLWEToBackendMut},
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, FitsIn, ScratchArena},
+    layouts::{Backend, CoeffFitsIn, ScratchArena},
 };
 
 use crate::GLWEToBackendRef;
@@ -30,9 +30,9 @@ pub trait CKKSImagDefault<BE: Backend> {
     fn ckks_mul_i_into_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWERotate<BE> + GLWEShift<BE> + ModuleN,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos,
-        <Src as GLWEToBackendRef<BE>>::State: FitsIn<<Dst as GLWEToBackendRef<BE>>::State>,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos,
+        <Src as GLWEToBackendRef<BE>>::State: CoeffFitsIn<<Dst as GLWEToBackendRef<BE>>::State>,
     {
         let offset = ckks_offset_unary(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
@@ -54,7 +54,7 @@ pub trait CKKSImagDefault<BE: Backend> {
     fn ckks_mul_i_assign_default<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWERotate<BE> + ModuleN,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos,
     {
         self.glwe_rotate_assign((self.n() / 2) as i64, dst, scratch);
         dst.set_slots(SlotsKind::Complex);
@@ -64,8 +64,8 @@ pub trait CKKSImagDefault<BE: Backend> {
     fn ckks_div_i_into_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos,
     {
         self.ckks_mul_i_into_default(dst, src, scratch)?;
         self.glwe_negate_assign(dst);
@@ -75,7 +75,7 @@ pub trait CKKSImagDefault<BE: Backend> {
     fn ckks_div_i_assign_default<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWENegate<BE> + GLWERotate<BE> + ModuleN,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos,
     {
         self.ckks_mul_i_assign_default(dst, scratch)?;
         self.glwe_negate_assign(dst);

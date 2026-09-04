@@ -8,7 +8,7 @@ use poulpy_hal::{
         VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, Module, Normalized, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut,
+        Backend, CoeffNormalized, Module, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut,
         VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef,
         scalar_znx_as_vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut,
     },
@@ -92,8 +92,8 @@ pub trait GLWEEncryptSkDefault<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized>,
-        P: GLWEToBackendRef<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 
@@ -106,7 +106,7 @@ pub trait GLWEEncryptSkDefault<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }
@@ -148,8 +148,8 @@ where
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized>,
-        P: GLWEToBackendRef<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
@@ -194,7 +194,7 @@ where
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
@@ -237,8 +237,8 @@ pub trait GLWEEncryptPkDefault<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 
@@ -251,7 +251,7 @@ pub trait GLWEEncryptPkDefault<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
@@ -292,8 +292,8 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
@@ -323,7 +323,7 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
@@ -349,7 +349,7 @@ pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
@@ -385,7 +385,7 @@ where
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {

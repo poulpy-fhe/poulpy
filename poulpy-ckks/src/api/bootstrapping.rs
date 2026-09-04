@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -90,8 +90,8 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds;
 
     /// Whole raise step of the bootstrap, as one call: lift `Δ·m` to the plan's
     /// message ratio, switch to the sparse secret when `keys` carry the
@@ -110,8 +110,11 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         K: BootstrappingKeys<BE>;
 
     /// One-shot CKKS bootstrap, driven by the compiled context.

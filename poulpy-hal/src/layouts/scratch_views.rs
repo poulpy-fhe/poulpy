@@ -2,7 +2,7 @@ use std::ops::{Deref, DerefMut};
 
 use crate::{
     api::VecZnxNormalizeAssignBackend,
-    layouts::{NormalizationState, Normalized, ScratchArena, Unnormalized},
+    layouts::{ArithmeticState, CoeffNormalized, CoeffUnnormalized, CoefficientState, ScratchArena},
 };
 
 use crate::layouts::{
@@ -172,15 +172,15 @@ impl<'a, B: Backend + 'a> SvpPPolToBackendMut<B> for SvpPPolViewMut<'a, B> {
     }
 }
 
-/// Scratch-backed mutable [`VecZnx`] view carrying its [`NormalizationState`].
+/// Scratch-backed mutable [`VecZnx`] view carrying its [`CoefficientState`].
 ///
 /// Hand-expanded rather than produced by `vec_view_wrapper!` because it takes
 /// the extra state parameter.
-pub struct VecZnxViewMut<'a, B: Backend + 'a, S: NormalizationState = Normalized> {
+pub struct VecZnxViewMut<'a, B: Backend + 'a, S: CoefficientState = CoeffNormalized> {
     inner: VecZnxBackendMut<'a, B, S>,
 }
 
-impl<'a, B: Backend + 'a, S: NormalizationState> VecZnxViewMut<'a, B, S> {
+impl<'a, B: Backend + 'a, S: CoefficientState> VecZnxViewMut<'a, B, S> {
     pub fn from_inner(inner: VecZnxBackendMut<'a, B, S>) -> Self {
         Self { inner }
     }
@@ -189,19 +189,24 @@ impl<'a, B: Backend + 'a, S: NormalizationState> VecZnxViewMut<'a, B, S> {
         self.inner
     }
 
-    /// Relabels the view as [`Unnormalized`]; see [`VecZnx::into_unnormalized`].
-    pub fn into_unnormalized(self) -> VecZnxViewMut<'a, B, Unnormalized> {
+    /// Relabels the view as [`CoeffUnnormalized`]; see [`VecZnx::into_unnormalized`].
+    pub fn into_unnormalized(self) -> VecZnxViewMut<'a, B, CoeffUnnormalized> {
         VecZnxViewMut {
             inner: self.inner.into_unnormalized(),
         }
     }
 }
 
-impl<'a, B: Backend + 'a> VecZnxViewMut<'a, B, Unnormalized> {
-    /// Propagates carries through every column and returns the view relabelled as [`Normalized`].
+impl<'a, B: Backend + 'a> VecZnxViewMut<'a, B, CoeffUnnormalized> {
+    /// Propagates carries through every column and returns the view relabelled as [`CoeffNormalized`].
     ///
-    /// Together with [`VecZnx::normalize`], the only path from [`Unnormalized`] to [`Normalized`].
-    pub fn normalize<M>(self, module: &M, base2k: usize, scratch: &mut ScratchArena<'_, B>) -> VecZnxViewMut<'a, B, Normalized>
+    /// Together with [`VecZnx::normalize`], the only path from [`CoeffUnnormalized`] to [`CoeffNormalized`].
+    pub fn normalize<M>(
+        self,
+        module: &M,
+        base2k: usize,
+        scratch: &mut ScratchArena<'_, B>,
+    ) -> VecZnxViewMut<'a, B, CoeffNormalized>
     where
         M: VecZnxNormalizeAssignBackend<B> + ?Sized,
     {
@@ -218,7 +223,7 @@ impl<'a, B: Backend + 'a> VecZnxViewMut<'a, B, Unnormalized> {
     }
 }
 
-impl<'a, B: Backend + 'a, S: NormalizationState> Deref for VecZnxViewMut<'a, B, S> {
+impl<'a, B: Backend + 'a, S: CoefficientState> Deref for VecZnxViewMut<'a, B, S> {
     type Target = VecZnxBackendMut<'a, B, S>;
 
     fn deref(&self) -> &Self::Target {
@@ -226,13 +231,13 @@ impl<'a, B: Backend + 'a, S: NormalizationState> Deref for VecZnxViewMut<'a, B, 
     }
 }
 
-impl<'a, B: Backend + 'a, S: NormalizationState> DerefMut for VecZnxViewMut<'a, B, S> {
+impl<'a, B: Backend + 'a, S: CoefficientState> DerefMut for VecZnxViewMut<'a, B, S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<'a, B: Backend + 'a, S: NormalizationState> ZnxInfos for VecZnxViewMut<'a, B, S> {
+impl<'a, B: Backend + 'a, S: CoefficientState> ZnxInfos for VecZnxViewMut<'a, B, S> {
     fn n(&self) -> usize {
         self.inner.n()
     }
@@ -246,20 +251,20 @@ impl<'a, B: Backend + 'a, S: NormalizationState> ZnxInfos for VecZnxViewMut<'a, 
     }
 }
 
-impl<'a, B: Backend + 'a, S: NormalizationState> VecZnxInfos for VecZnxViewMut<'a, B, S> {
+impl<'a, B: Backend + 'a, S: CoefficientState> VecZnxInfos for VecZnxViewMut<'a, B, S> {
     fn cols(&self) -> usize {
         self.inner.cols()
     }
 }
 
-impl<'a, B: Backend + 'a, S: NormalizationState> VecZnxToBackendRef<B> for VecZnxViewMut<'a, B, S> {
+impl<'a, B: Backend + 'a, S: ArithmeticState> VecZnxToBackendRef<B> for VecZnxViewMut<'a, B, S> {
     type State = S;
     fn to_backend_ref(&self) -> VecZnxBackendRef<'_, B, S> {
         <VecZnx<B::BufMut<'a>, B::ZnxWord, S> as VecZnxReborrowBackendRef<B>>::reborrow_backend_ref(&self.inner)
     }
 }
 
-impl<'a, B: Backend + 'a, S: NormalizationState> VecZnxToBackendMut<B> for VecZnxViewMut<'a, B, S> {
+impl<'a, B: Backend + 'a, S: ArithmeticState> VecZnxToBackendMut<B> for VecZnxViewMut<'a, B, S> {
     type State = S;
     fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, B, S> {
         <VecZnx<B::BufMut<'a>, B::ZnxWord, S> as VecZnxReborrowBackendMut<B>>::reborrow_backend_mut(&mut self.inner)

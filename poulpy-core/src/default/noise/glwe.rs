@@ -4,7 +4,7 @@ use poulpy_hal::{
         ModuleN, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmallBackend, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
     },
-    layouts::{Backend, HostBackend, HostDataMut, Module, Normalized, ScratchArena, Stats},
+    layouts::{Backend, CoeffNormalized, HostBackend, HostDataMut, Module, ScratchArena, Stats},
 };
 
 use crate::{
@@ -58,7 +58,7 @@ where
     }
     {
         // The difference accumulates carries; `glwe_normalize_assign` right below restores the
-        // digit bound before the plaintext view's Normalized label is relied upon again.
+        // digit bound before the plaintext view's CoeffNormalized label is relied upon again.
         let mut pt_have_backend = pt_have.to_backend_mut();
         let mut diff = poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, _>(&mut pt_have_backend.data).into_unnormalized();
         module.vec_znx_sub_assign_backend(&mut diff, 0, &pt_want_backend.data, 0);
@@ -97,8 +97,8 @@ where
 
     fn glwe_noise<R, P, S>(&self, res: &R, pt_want: &P, sk_prepared: &S, scratch: &mut ScratchArena<'_, BE>) -> Stats
     where
-        R: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized>,
+        R: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         BE: HostBackend<ZnxWord = i64>,
         for<'a> BE::BufMut<'a>: HostDataMut,

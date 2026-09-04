@@ -4,7 +4,7 @@
 //! Re-exported publicly through `crate::oep::glwe_external_product_defaults`.
 
 use crate::api::GLWEBytesOf;
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::VecZnxDftBackendMut;
 use poulpy_hal::{
     api::{
@@ -170,7 +170,7 @@ where
         ggsw: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE, State = Normalized>,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized>,
     {
         let a = a.to_backend_ref();
         glwe_external_product_dft_fill(self, res_dft, a, ggsw, scratch);
@@ -261,7 +261,7 @@ pub fn glwe_external_product_default<BE, M, R, A>(
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     assert_eq!(ggsw.rank(), a.rank());
     assert_eq!(ggsw.rank(), res.rank());
@@ -337,7 +337,7 @@ pub fn glwe_external_product_assign_default<BE, M, R>(
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
 {
     assert_eq!(ggsw.rank(), res.rank());
     assert_eq!(ggsw.n(), res.n());

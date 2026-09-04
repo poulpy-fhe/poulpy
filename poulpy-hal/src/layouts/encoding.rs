@@ -1,11 +1,11 @@
 use dashu_float::{Context, FBig, round::mode::HalfEven};
 use itertools::izip;
 
-use crate::layouts::{HostDataMut, HostDataRef, NormalizationState, VecZnx, ZnxView, ZnxViewMut};
+use crate::layouts::{CoefficientState, HostDataMut, HostDataRef, VecZnx, ZnxView, ZnxViewMut};
 
 // i64-only: the encode/decode routines below use i64/i128 limb arithmetic and
 // `u64::BITS` carry extraction. A narrower `ZnxWord` needs its own implementation.
-impl<D: HostDataMut, S: NormalizationState> VecZnx<D, i64, S> {
+impl<D: HostDataMut, S: CoefficientState> VecZnx<D, i64, S> {
     /// Encodes an `i64` slice into the limb-decomposed (base-2^k) representation.
     ///
     /// The input `data` (length `N`) is placed at the appropriate limb position
@@ -213,7 +213,7 @@ impl<D: HostDataMut, S: NormalizationState> VecZnx<D, i64, S> {
 }
 
 // i64-only: see the note on the encode impl above.
-impl<D: HostDataRef, S: NormalizationState> VecZnx<D, i64, S> {
+impl<D: HostDataRef, S: CoefficientState> VecZnx<D, i64, S> {
     /// Decodes column `col` from the limb-decomposed representation back into
     /// an `i64` slice, reconstructing values up to `k` bits of precision.
     pub fn decode_vec_i64(&self, base2k: usize, col: usize, k: usize, data: &mut [i64]) {

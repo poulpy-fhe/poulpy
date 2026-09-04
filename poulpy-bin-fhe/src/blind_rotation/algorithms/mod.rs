@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 mod cggi;
 
 pub use cggi::*;
@@ -73,7 +73,7 @@ pub trait BlindRotationExecute<BRA: BlindRotationAlgo, BE: Backend> {
         brk: &BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
         L: LWEToBackendRef<BE> + LWEInfos;
 }
 
@@ -90,7 +90,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: BlindRotationExecute<BRA, BE>,
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
         L: LWEToBackendRef<BE> + LWEInfos,
     {
         module.blind_rotation_execute(res, lwe, lut, self, scratch);

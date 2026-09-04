@@ -6,7 +6,7 @@ use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta,
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -28,8 +28,8 @@ where
         + CKKSModuleAlloc<BE>
         + CKKSPolynomialEvaluationOps<BE>
         + CKKSPow2Ops<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized>
-        + GLWEToBackendRef<BE, State = Normalized>
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
         + CKKSCtBounds
         + SetCKKSInfos
         + SetBSGSMeta,
@@ -75,9 +75,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        I: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        I: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
         let required = approximation.consumed_bits(input.log_delta());

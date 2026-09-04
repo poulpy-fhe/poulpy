@@ -3,7 +3,7 @@
 //! These take no prepared key, so each test is fill, upload, run on both,
 //! compare.
 
-use poulpy_hal::layouts::Unnormalized;
+use poulpy_hal::layouts::CoeffUnnormalized;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostDataMut, Module, ScratchOwned},
@@ -60,14 +60,14 @@ fn compare<BR, BT, FR, FT>(
     ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
     FR: Fn(
         &Module<BR>,
-        &mut crate::layouts::GLWE<BR::OwnedBuf, i64, Unnormalized>,
+        &mut crate::layouts::GLWE<BR::OwnedBuf, i64, CoeffUnnormalized>,
         &crate::layouts::BackendGLWE<BR>,
         &crate::layouts::BackendGLWE<BR>,
         &mut ScratchOwned<BR>,
     ),
     FT: Fn(
         &Module<BT>,
-        &mut crate::layouts::GLWE<BT::OwnedBuf, i64, Unnormalized>,
+        &mut crate::layouts::GLWE<BT::OwnedBuf, i64, CoeffUnnormalized>,
         &crate::layouts::BackendGLWE<BT>,
         &crate::layouts::BackendGLWE<BT>,
         &mut ScratchOwned<BT>,

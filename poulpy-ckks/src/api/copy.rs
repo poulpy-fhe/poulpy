@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::Normalized;
-use poulpy_hal::layouts::{Backend, FitsIn, ScratchArena};
+use poulpy_hal::layouts::CoeffNormalized;
+use poulpy_hal::layouts::{Backend, CoeffFitsIn, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -30,7 +30,7 @@ pub trait CKKSCopyOps<BE: Backend> {
     /// Copies `src` into `dst`.
     fn ckks_copy<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        <Src as GLWEToBackendRef<BE>>::State: FitsIn<<Dst as GLWEToBackendRef<BE>>::State>;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        <Src as GLWEToBackendRef<BE>>::State: CoeffFitsIn<<Dst as GLWEToBackendRef<BE>>::State>;
 }

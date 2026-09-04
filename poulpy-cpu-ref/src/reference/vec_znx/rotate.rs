@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use crate::{
     layouts::{
-        Backend, FitsIn, HostDataMut, HostDataRef, NormalizationState, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
+        ArithmeticState, Backend, CoeffFitsIn, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
     },
     reference::znx::{ZnxCopy, ZnxRotate, ZnxZero},
 };
@@ -11,11 +11,11 @@ pub fn vec_znx_rotate_assign_tmp_bytes(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vec_znx_rotate<'r, 'a, BE, S: NormalizationState>(
+pub fn vec_znx_rotate<'r, 'a, BE, S: ArithmeticState>(
     p: i64,
     res: &mut VecZnxBackendMut<'r, BE, S>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl FitsIn<S>>,
+    a: &VecZnxBackendRef<'a, BE, impl CoeffFitsIn<S>>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxZero,
@@ -43,7 +43,7 @@ pub fn vec_znx_rotate<'r, 'a, BE, S: NormalizationState>(
 
 pub fn vec_znx_rotate_assign<'r, BE>(
     p: i64,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
     tmp: &mut [i64],
 ) where

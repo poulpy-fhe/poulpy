@@ -4,7 +4,7 @@ use dashu_float::ops::DivRemEuclid;
 
 use crate::{
     layouts::{
-        Backend, HostDataMut, HostDataRef, NormalizationState, Unnormalized, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
+        ArithmeticState, Backend, CoeffUnnormalized, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
         ZnxViewMut,
     },
     reference::znx::{
@@ -21,9 +21,9 @@ pub fn vec_znx_lsh_tmp_bytes(n: usize) -> usize {
 pub fn vec_znx_lsh_coeff<'r, 'a, BE, const OVERWRITE: bool>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     a_coeff: usize,
     carry: &mut [i64],
@@ -96,9 +96,9 @@ pub fn vec_znx_lsh_coeff<'r, 'a, BE, const OVERWRITE: bool>(
 pub fn vec_znx_lsh_add_coeff_to_coeff<'r, 'a, BE>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     a_coeff: usize,
     res_coeff: usize,
@@ -161,9 +161,9 @@ pub fn vec_znx_lsh_add_coeff_to_coeff<'r, 'a, BE>(
 pub fn vec_znx_lsh_sub_coeff_to_coeff<'r, 'a, BE>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     a_coeff: usize,
     res_coeff: usize,
@@ -224,7 +224,7 @@ pub fn vec_znx_lsh_sub_coeff_to_coeff<'r, 'a, BE>(
 pub fn vec_znx_lsh_assign<'r, BE>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
     carry: &mut [i64],
 ) where
@@ -280,9 +280,9 @@ pub fn vec_znx_lsh_assign<'r, BE>(
 pub fn vec_znx_lsh<'r, 'a, BE, const OVERWRITE: bool>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     carry: &mut [i64],
 ) where
@@ -347,9 +347,9 @@ pub fn vec_znx_lsh<'r, 'a, BE, const OVERWRITE: bool>(
 pub fn vec_znx_lsh_sub<'r, 'a, BE>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     carry: &mut [i64],
 ) where
@@ -401,9 +401,9 @@ pub fn vec_znx_rsh_tmp_bytes(n: usize) -> usize {
 pub fn vec_znx_rsh_coeff<'r, 'a, BE, const OVERWRITE: bool>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     a_coeff: usize,
     carry: &mut [i64],
@@ -491,9 +491,9 @@ pub fn vec_znx_rsh_coeff<'r, 'a, BE, const OVERWRITE: bool>(
 pub fn vec_znx_rsh_add_coeff_into<'r, 'a, BE>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     a_coeff: usize,
     res_coeff: usize,
@@ -568,9 +568,9 @@ pub fn vec_znx_rsh_add_coeff_into<'r, 'a, BE>(
 pub fn vec_znx_rsh_sub_coeff_into<'r, 'a, BE>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     a_coeff: usize,
     res_coeff: usize,
@@ -645,7 +645,7 @@ pub fn vec_znx_rsh_sub_coeff_into<'r, 'a, BE>(
 pub fn vec_znx_rsh_assign<'r, BE>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
     tmp: &mut [i64],
 ) where
@@ -711,9 +711,9 @@ pub fn vec_znx_rsh_assign<'r, BE>(
 pub fn vec_znx_rsh<'r, 'a, BE, const OVERWRITE: bool>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     carry: &mut [i64],
 ) where
@@ -808,9 +808,9 @@ pub fn vec_znx_rsh<'r, 'a, BE, const OVERWRITE: bool>(
 pub fn vec_znx_rsh_sub<'r, 'a, BE>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     carry: &mut [i64],
 ) where

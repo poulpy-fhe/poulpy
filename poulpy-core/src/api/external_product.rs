@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Normalized, ScratchArena, VecZnxDft};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, ScratchArena, VecZnxDft};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
@@ -18,7 +18,7 @@ pub trait GLWEExternalProduct<BE: Backend> {
         a: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_external_product<R, A>(
         &self,
@@ -28,7 +28,7 @@ pub trait GLWEExternalProduct<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 }
 
 pub trait GLWEExternalProductInternal<BE: Backend> {
@@ -45,7 +45,7 @@ pub trait GLWEExternalProductInternal<BE: Backend> {
         ggsw: &GGSWPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE, State = Normalized>;
+        A: GLWEToBackendRef<BE, State = CoeffNormalized>;
 }
 
 pub trait GGLWEExternalProduct<BE: Backend> {

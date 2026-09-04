@@ -1,9 +1,9 @@
 use crate::CKKSResult as Result;
 use crate::default::neg::CKKSNegDefault;
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 
 use poulpy_core::{GLWENegate, GLWEShift, layouts::GLWEInfos};
-use poulpy_hal::layouts::{Backend, FitsIn, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffFitsIn, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 
@@ -22,13 +22,13 @@ pub unsafe trait CKKSNegImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSCtBounds,
-        <Src as GLWEToBackendRef<BE>>::State: FitsIn<<Dst as GLWEToBackendRef<BE>>::State>;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSCtBounds,
+        <Src as GLWEToBackendRef<BE>>::State: CoeffFitsIn<<Dst as GLWEToBackendRef<BE>>::State>;
 
     fn ckks_neg_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos;
 }
 
 unsafe impl<BE: Backend> CKKSNegImpl<BE> for BE
@@ -47,16 +47,16 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSCtBounds,
-        <Src as GLWEToBackendRef<BE>>::State: FitsIn<<Dst as GLWEToBackendRef<BE>>::State>,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSCtBounds,
+        <Src as GLWEToBackendRef<BE>>::State: CoeffFitsIn<<Dst as GLWEToBackendRef<BE>>::State>,
     {
         module.ckks_neg_into_default(dst, src, scratch)
     }
 
     fn ckks_neg_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
     {
         module.ckks_neg_assign_default(dst)
     }

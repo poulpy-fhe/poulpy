@@ -1,14 +1,14 @@
 use crate::{
     layouts::{
-        Backend, FitsIn, HostDataMut, HostDataRef, NormalizationState, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
+        ArithmeticState, Backend, CoeffFitsIn, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
     },
     reference::znx::{ZnxCopy, ZnxZero},
 };
 
-pub fn vec_znx_copy<'r, 'a, BE, S: NormalizationState>(
+pub fn vec_znx_copy<'r, 'a, BE, S: ArithmeticState>(
     res: &mut VecZnxBackendMut<'r, BE, S>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl FitsIn<S>>,
+    a: &VecZnxBackendRef<'a, BE, impl CoeffFitsIn<S>>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxCopy + ZnxZero,
@@ -34,10 +34,10 @@ pub fn vec_znx_copy<'r, 'a, BE, S: NormalizationState>(
     }
 }
 
-pub fn vec_znx_extract_coeff<'r, 'a, BE, S: NormalizationState>(
+pub fn vec_znx_extract_coeff<'r, 'a, BE, S: ArithmeticState>(
     res: &mut VecZnxBackendMut<'r, BE, S>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl FitsIn<S>>,
+    a: &VecZnxBackendRef<'a, BE, impl CoeffFitsIn<S>>,
     a_col: usize,
     a_coeff: usize,
 ) where
@@ -73,9 +73,9 @@ pub fn vec_znx_extract_coeff<'r, 'a, BE, S: NormalizationState>(
 ///
 /// Requires `res.n() == a.cols()` and `res.cols() == a.n()`. Limbs beyond
 /// `min(res.size(), a.size())` are zero-filled on `res`.
-pub fn vec_znx_transpose<'r, 'a, BE, S: NormalizationState>(
+pub fn vec_znx_transpose<'r, 'a, BE, S: ArithmeticState>(
     res: &mut VecZnxBackendMut<'r, BE, S>,
-    a: &VecZnxBackendRef<'a, BE, impl FitsIn<S>>,
+    a: &VecZnxBackendRef<'a, BE, impl CoeffFitsIn<S>>,
 ) where
     BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
@@ -128,12 +128,12 @@ pub fn vec_znx_transpose<'r, 'a, BE, S: NormalizationState>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn vec_znx_copy_range<'r, 'a, BE, S: NormalizationState>(
+pub fn vec_znx_copy_range<'r, 'a, BE, S: ArithmeticState>(
     res: &mut VecZnxBackendMut<'r, BE, S>,
     res_col: usize,
     res_limb: usize,
     res_offset: usize,
-    a: &VecZnxBackendRef<'a, BE, impl FitsIn<S>>,
+    a: &VecZnxBackendRef<'a, BE, impl CoeffFitsIn<S>>,
     a_col: usize,
     a_limb: usize,
     a_offset: usize,

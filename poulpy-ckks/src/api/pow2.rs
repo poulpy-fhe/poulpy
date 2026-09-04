@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
@@ -73,13 +73,13 @@ pub trait CKKSPow2Ops<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds;
 
     /// Computes `dst *= 2^bits` in-place.  Metadata is unchanged.
     fn ckks_mul_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos;
 
     fn ckks_div_pow2_tmp_bytes(&self) -> usize;
 
@@ -95,8 +95,8 @@ pub trait CKKSPow2Ops<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds;
 
     /// Computes `dst /= 2^bits` in-place.
     ///
@@ -108,5 +108,5 @@ pub trait CKKSPow2Ops<BE: Backend> {
     /// Errors with `InsufficientHomomorphicCapacity` if `bits > dst.log_budget`.
     fn ckks_div_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos;
 }

@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPPolCopyBackend, VecZnxBigAddAssign, VecZnxBigBytesOf,
@@ -60,8 +60,8 @@ pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S
         + SvpPPolBytesOf
         + SvpPPolCopyBackend<BE>
         + GLWESecretPreparedFactory<BE>,
-    GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
-    GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + crate::layouts::SetBase2k,
+    GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
+    GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + crate::layouts::SetBase2k,
     GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
 {

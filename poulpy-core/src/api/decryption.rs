@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, Data, ScratchArena};
 
 use crate::layouts::{
     GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
@@ -13,8 +13,8 @@ pub trait GLWEDecrypt<BE: Backend> {
 
     fn glwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
-        P: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
+        R: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
+        P: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + SetBase2k,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 
@@ -38,7 +38,7 @@ pub trait LWEMatrixDecrypt<BE: Backend> {
     fn lwe_matrix_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-        P: GLWEToBackendMut<BE, State = Normalized> + SetBase2k + GLWEInfos,
+        P: GLWEToBackendMut<BE, State = CoeffNormalized> + SetBase2k + GLWEInfos,
         S: LWESecretToBackendRef<BE> + LWEInfos;
 }
 
@@ -55,8 +55,8 @@ pub trait GLWETensorDecrypt<BE: Backend> {
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
-        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + SetBase2k,
+        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
+        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + SetBase2k,
         GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos;
 }

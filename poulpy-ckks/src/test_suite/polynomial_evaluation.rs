@@ -2,7 +2,7 @@ use poulpy_core::{
     layouts::GLWETensorKeyPrepared,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef},
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module},
@@ -193,8 +193,10 @@ pub fn test_power_basis_populate_degree7<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -261,8 +263,10 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -398,9 +402,11 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -498,9 +504,11 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -559,9 +567,11 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -653,9 +663,11 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -750,9 +762,11 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -847,9 +861,11 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -933,9 +949,11 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1019,9 +1037,11 @@ pub fn test_eval_poly_const_coeffs_parity_folds<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1148,9 +1168,11 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1263,9 +1285,11 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1408,9 +1432,11 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1521,9 +1547,11 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1634,9 +1662,11 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1749,9 +1779,11 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,

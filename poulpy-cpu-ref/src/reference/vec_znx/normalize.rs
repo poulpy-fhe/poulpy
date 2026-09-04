@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, mem::size_of};
 
 use crate::{
-    layouts::{Backend, HostDataMut, HostDataRef, NormalizationState, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{ArithmeticState, Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
     reference::znx::{
         ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
         ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
@@ -56,11 +56,11 @@ impl<'a> VecZnxRangeMut<'a> {
 
 #[allow(clippy::too_many_arguments)]
 pub fn vec_znx_normalize_coeff<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_base2k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_base2k: usize,
     a_col: usize,
     a_coeff: usize,
@@ -93,7 +93,7 @@ pub fn vec_znx_normalize_coeff<'r, 'a, BE>(
 
 pub fn vec_znx_normalize_coeff_assign<'r, BE>(
     base2k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
     res_coeff: usize,
     carry: &mut [i64],
@@ -124,10 +124,10 @@ pub fn vec_znx_normalize_coeff_assign<'r, BE>(
 
 fn vec_znx_normalize_coeff_inter_base2k<'r, 'a, BE>(
     base2k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     a_coeff: usize,
     carry: &mut [i64],
@@ -207,11 +207,11 @@ fn vec_znx_normalize_coeff_inter_base2k<'r, 'a, BE>(
 
 #[allow(clippy::too_many_arguments)]
 fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_base2k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_base2k: usize,
     a_col: usize,
     a_coeff: usize,
@@ -369,11 +369,11 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
 
 #[allow(clippy::too_many_arguments)]
 pub fn vec_znx_normalize<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_base2k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_base2k: usize,
     a_col: usize,
     carry: &mut [i64],
@@ -403,11 +403,11 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
 /// `carry` needs `3 * coeff_len` elements private to the range.
 #[allow(clippy::too_many_arguments)]
 fn vec_znx_normalize_range<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_base2k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_base2k: usize,
     a_col: usize,
     coeff_start: usize,
@@ -474,7 +474,7 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
     res_base2k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_base2k: usize,
     a_col: usize,
     coeff_start: usize,
@@ -538,7 +538,7 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
     res: &mut VecZnxRangeMut<'r>,
     res_size: usize,
     res_offset: i64,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
     coeff_start: usize,
     coeff_len: usize,
@@ -627,7 +627,7 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
     res_size: usize,
     res_base2k: usize,
     res_offset: i64,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_base2k: usize,
     a_col: usize,
     coeff_start: usize,
@@ -872,7 +872,7 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
 
 pub fn vec_znx_normalize_assign<'r, BE>(
     base2k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
     carry: &mut [i64],
 ) where
@@ -886,7 +886,7 @@ pub fn vec_znx_normalize_assign<'r, BE>(
 /// [`vec_znx_normalize_assign`] restricted to `[coeff_start, coeff_start + coeff_len)`.
 fn vec_znx_normalize_assign_range<'r, BE>(
     base2k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
     coeff_start: usize,
     coeff_len: usize,

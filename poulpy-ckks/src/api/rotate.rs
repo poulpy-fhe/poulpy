@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey};
-use poulpy_hal::layouts::{Backend, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -48,12 +48,12 @@ pub trait CKKSRotateOps<BE: Backend> {
     ) -> Result<()>
     where
         H: GetAutomorphismKey<BE>,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds;
 
     /// Computes `dst = rotate(dst, k)` in-place.  Metadata is unchanged.
     fn ckks_rotate_assign<Dst, H>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         H: GetAutomorphismKey<BE>,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos;
 }

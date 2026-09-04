@@ -72,7 +72,7 @@ pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
         B: 'a,
         M: SvpPPolBytesOf + ModuleN;
 
-    /// Takes a [`VecZnx`] from the scratch arena, labelled [`Normalized`](crate::layouts::Normalized).
+    /// Takes a [`VecZnx`] from the scratch arena, labelled [`CoeffNormalized`](crate::layouts::CoeffNormalized).
     ///
     /// The label describes what the caller is about to write, not the (arbitrary)
     /// bytes already there: call [`VecZnxViewMut::into_unnormalized`] on the result

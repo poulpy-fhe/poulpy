@@ -8,7 +8,7 @@ use poulpy_core::{
         prepared::{GGSWPreparedBackendRef, GGSWPreparedToBackendRef},
     },
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxAddScalarAssignBackend, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend,
@@ -139,7 +139,7 @@ pub trait ExecuteBDDCircuit<BE: Backend> {
     where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send,
+        O: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + Send,
     {
         self.execute_bdd_circuit_multi_thread(1, out, inputs, circuit, scratch);
     }
@@ -164,7 +164,7 @@ pub trait ExecuteBDDCircuit<BE: Backend> {
     ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send;
+        O: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + Send;
 }
 
 pub trait BitSize {
@@ -187,7 +187,7 @@ pub(super) trait BddEvaluator<BE: Backend, L> {
     where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send;
+        O: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + Send;
 }
 
 pub(super) trait BddTrivialOne<BE: Backend, L> {
@@ -197,7 +197,7 @@ pub(super) trait BddTrivialOne<BE: Backend, L> {
 
     fn set_bdd_trivial_one<R>(&self, res: &mut R, prepared: &Self::Prepared)
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos;
 }
 
 pub(super) fn bdd_parallel_tmp_bytes<BE: Backend>(threads: usize, output_size: usize, worker_bytes: usize) -> usize {
@@ -239,7 +239,7 @@ where
     ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send,
+        O: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + Send,
     {
         <Self as BddEvaluator<BE, BE::Location>>::execute(self, threads, out, inputs, circuit, scratch);
     }
@@ -277,7 +277,7 @@ where
     where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send,
+        O: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + Send,
     {
         execute_bdd_circuit_default(self, threads, out, inputs, circuit, scratch);
     }
@@ -295,7 +295,7 @@ where
 
     fn set_bdd_trivial_one<R>(&self, res: &mut R, prepared: &Self::Prepared)
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     {
         glwe_set_trivial_one_with_scalar(self, res, prepared);
     }
@@ -313,7 +313,7 @@ pub(super) fn execute_bdd_circuit_default<BE, M, C, G, O, L>(
     M: GLWEBytesOf<BE> + Cmux<BE> + GLWECopy<BE> + GLWEZero<BE> + BddTrivialOne<BE, L> + Sync,
     G: GetGGSWBit<BE> + BitSize,
     C: GetBitCircuitInfo,
-    O: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + Send,
+    O: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + Send,
 {
     assert!(inputs.bit_size() >= circuit.input_size());
     assert!(out.len() >= circuit.output_size());
@@ -361,7 +361,7 @@ fn eval_level<M, G, R, BE, L>(
     M: Cmux<BE> + GLWECopy<BE> + GLWEZero<BE> + BddTrivialOne<BE, L>,
     BE: Backend<ZnxWord = i64> + 'static,
     G: GetGGSWBit<BE> + BitSize,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
 {
     assert!(nodes.len().is_multiple_of(state_size));
 
@@ -427,7 +427,7 @@ where
 fn glwe_set_trivial_one_with_scalar<BE, R, M>(module: &M, res: &mut R, one: &ScalarZnx<BE::OwnedBuf, i64>)
 where
     BE: Backend<ZnxWord = i64>,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     M: GLWEZero<BE> + VecZnxAddScalarAssignBackend<BE>,
 {
     module.glwe_zero(res);
@@ -435,7 +435,7 @@ where
     assert!(limbs <= res.size());
     let scalar = <ScalarZnx<BE::OwnedBuf, i64> as ScalarZnxToBackendRef<BE>>::to_backend_ref(one);
     // Writing a small scalar onto zeroed limbs stays within the base2k digit bound, so the
-    // Normalized owner label remains valid after this unnormalized-typed write.
+    // CoeffNormalized owner label remains valid after this unnormalized-typed write.
     let mut res = res.to_backend_mut().into_unnormalized();
     for limb in 0..limbs {
         module.vec_znx_add_scalar_assign_backend(res.data_mut(), 0, limb, &scalar, 0);
@@ -579,8 +579,8 @@ where
         s: &GGSWPreparedBackendRef<'k, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
-        B: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
+        B: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         BE: 'k,
     {
         assert_eq!(res_a.base2k(), res_b.base2k());
@@ -830,9 +830,9 @@ where
     // res = (t - f) * s + f
     fn cmux<'k, R, T, F>(&self, res: &mut R, t: &T, f: &F, s: &GGSWPreparedBackendRef<'k, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        T: GLWEToBackendRef<BE, State = Normalized>,
-        F: GLWEToBackendRef<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        T: GLWEToBackendRef<BE, State = CoeffNormalized>,
+        F: GLWEToBackendRef<BE, State = CoeffNormalized>,
         BE: 'k,
     {
         let f_backend = f.to_backend_ref();
@@ -889,8 +889,8 @@ where
         s: &GGSWPreparedBackendRef<'k, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized>,
         BE: 'k,
     {
         let a_backend = a.to_backend_ref();
@@ -949,8 +949,8 @@ where
     // res = (res - a) * s + a
     fn cmux_assign<'k, R, A>(&self, res: &mut R, a: &A, s: &GGSWPreparedBackendRef<'k, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized>,
         BE: 'k,
     {
         let a_backend = a.to_backend_ref();

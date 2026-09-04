@@ -1,7 +1,7 @@
 use std::mem::size_of;
 
 use crate::{
-    layouts::{Backend, FitsIn, HostDataMut, HostDataRef, NormalizationState, VecZnxBackendMut, VecZnxBackendRef},
+    layouts::{ArithmeticState, Backend, CoeffFitsIn, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef},
     reference::{
         vec_znx::{vec_znx_rotate_assign, vec_znx_switch_ring},
         znx::{ZnxCopy, ZnxRotate, ZnxSwitchRing, ZnxZero},
@@ -12,10 +12,10 @@ pub fn vec_znx_merge_rings_tmp_bytes(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
-pub fn vec_znx_merge_rings<'r, 'a, BE, S: NormalizationState>(
+pub fn vec_znx_merge_rings<'r, 'a, BE, S: ArithmeticState>(
     res: &mut VecZnxBackendMut<'r, BE, S>,
     res_col: usize,
-    a: &[VecZnxBackendRef<'a, BE, impl FitsIn<S>>],
+    a: &[VecZnxBackendRef<'a, BE, impl CoeffFitsIn<S>>],
     a_col: usize,
     tmp: &mut [i64],
 ) where

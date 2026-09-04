@@ -11,9 +11,7 @@ use poulpy_cpu_ref::reference::{
         ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxZero,
     },
 };
-use poulpy_hal::layouts::{
-    Backend, NormalizationState, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef,
-};
+use poulpy_hal::layouts::{ArithmeticState, Backend, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendRef};
 use rayon::prelude::*;
 
 use crate::{RayonTaskExecutor, RayonTuning, SendPtr};
@@ -46,11 +44,11 @@ where
 /// Parallel [`vec_znx_normalize`], `B` being the serial kernel backend.
 #[allow(clippy::too_many_arguments)]
 pub fn vec_znx_normalize_par<B, T>(
-    res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
     res_base2k: usize,
     res_offset: i64,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, B, impl NormalizationState>,
+    a: &VecZnxBackendRef<'_, B, impl ArithmeticState>,
     a_base2k: usize,
     a_col: usize,
     carry: &mut [i64],
@@ -108,7 +106,7 @@ pub fn vec_znx_normalize_par<B, T>(
 /// Parallel [`vec_znx_normalize_assign`], `B` being the serial kernel backend.
 pub fn vec_znx_normalize_assign_par<B, T>(
     base2k: usize,
-    res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
     res_col: usize,
     carry: &mut [i64],
 ) where
@@ -134,7 +132,7 @@ pub fn vec_znx_normalize_assign_par<B, T>(
 /// backend.
 #[allow(clippy::too_many_arguments)]
 pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
-    res: &mut VecZnxBackendMut<'_, B, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'_, B, impl ArithmeticState>,
     res_base2k: usize,
     res_offset: i64,
     res_col: usize,

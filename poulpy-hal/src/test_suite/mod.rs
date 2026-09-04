@@ -7,7 +7,7 @@
 //! [`poulpy-cpu-ref`](https://docs.rs/poulpy-cpu-ref).
 
 use crate::layouts::{
-    Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, NormalizationState, ScalarZnx, ScalarZnxBackendMut,
+    ArithmeticState, Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut,
     ScalarZnxBackendRef, ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
 };
 
@@ -57,7 +57,7 @@ pub use crate::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 ///
 /// Lets a test hand a kernel fewer limbs than were allocated, so that writes
 /// past `size` show up in the full-buffer comparison.
-pub fn vec_znx_backend_mut_sized<'a, BE: Backend, S: NormalizationState>(
+pub fn vec_znx_backend_mut_sized<'a, BE: Backend, S: ArithmeticState>(
     vec: &'a mut VecZnx<BE::OwnedBuf, BE::ZnxWord, S>,
     size: usize,
 ) -> VecZnxBackendMut<'a, BE, S> {
@@ -99,14 +99,14 @@ pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::Zn
     ScalarZnx::from_data(HostBytesBackend::from_host_bytes(&host_bytes), shape.n(), shape.cols())
 }
 
-pub fn upload_vec_znx<BE: Backend, S: NormalizationState>(
+pub fn upload_vec_znx<BE: Backend, S: ArithmeticState>(
     host: &VecZnx<impl HostDataRef, BE::ZnxWord, S>,
 ) -> VecZnx<BE::OwnedBuf, BE::ZnxWord, S> {
     let shape = host.shape();
     VecZnx::from_data_with_state(BE::from_host_bytes(host.data.as_ref()), shape.n(), shape.cols(), shape.size())
 }
 
-pub fn download_vec_znx<BE: Backend, S: NormalizationState>(
+pub fn download_vec_znx<BE: Backend, S: ArithmeticState>(
     backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord, S>,
 ) -> VecZnx<Vec<u8>, BE::ZnxWord, S> {
     let shape = backend.shape();

@@ -5,7 +5,7 @@ use poulpy_core::{
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
@@ -65,9 +65,11 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     run_case::<BE, F, E>(Case::General, params, module, host_module);
@@ -91,9 +93,11 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     run_case::<BE, F, E>(Case::Multi, params, module, host_module);
@@ -117,9 +121,11 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     run_case::<BE, F, E>(Case::Binary, params, module, host_module);
@@ -140,9 +146,11 @@ where
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let table_values: &[&[usize]] = match case {

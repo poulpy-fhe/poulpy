@@ -67,21 +67,21 @@ pub use sub::impl_ckks_sub_defaults;
 
 pub use poulpy_hal::oep::SetNormalizationState;
 
-use poulpy_hal::layouts::{Data, NormalizationState, Normalized, Unnormalized, ZnxWord};
+use poulpy_hal::layouts::{CoeffNormalized, CoeffUnnormalized, CoefficientState, Data, ZnxWord};
 
 use crate::layouts::CKKSCiphertext;
 
 /// See [`SetNormalizationState`]: `set_normalized` is the backend-implementor
 /// relabel with no normalization pass, reserved for fused kernels inside
 /// backend crates. Scheme code must go through [`CKKSCiphertext::normalize`].
-impl<D: Data, W: ZnxWord, S: NormalizationState> SetNormalizationState for CKKSCiphertext<D, W, S> {
-    type WithState<T: NormalizationState> = CKKSCiphertext<D, W, T>;
+impl<D: Data, W: ZnxWord, S: CoefficientState> SetNormalizationState for CKKSCiphertext<D, W, S> {
+    type WithState<T: CoefficientState> = CKKSCiphertext<D, W, T>;
 
-    fn set_unnormalized(self) -> CKKSCiphertext<D, W, Unnormalized> {
+    fn set_unnormalized(self) -> CKKSCiphertext<D, W, CoeffUnnormalized> {
         self.into_unnormalized()
     }
 
-    unsafe fn set_normalized(self) -> CKKSCiphertext<D, W, Normalized> {
+    unsafe fn set_normalized(self) -> CKKSCiphertext<D, W, CoeffNormalized> {
         let meta = self.meta;
         // SAFETY: forwarded caller contract.
         CKKSCiphertext::from_inner(unsafe { self.inner.set_normalized() }, meta)

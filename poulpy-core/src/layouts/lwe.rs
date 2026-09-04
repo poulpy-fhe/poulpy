@@ -3,7 +3,7 @@ use std::fmt;
 
 use poulpy_hal::{
     layouts::{
-        Backend, Data, FillUniform, HostDataMut, HostDataRef, Normalized, ReaderFrom, VecZnx, VecZnxToBackendMut,
+        Backend, CoeffNormalized, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxToBackendMut,
         VecZnxToBackendRef, WriterTo,
     },
     source::Source,
@@ -345,7 +345,7 @@ pub trait LWEToBackendRef<BE: Backend> {
 
 impl<BE: Backend, D: Data> LWEToBackendRef<BE> for LWE<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = CoeffNormalized>,
 {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
@@ -363,7 +363,7 @@ pub trait LWEToBackendMut<BE: Backend>: LWEToBackendRef<BE> {
 
 impl<BE: Backend, D: Data> LWEToBackendMut<BE> for LWE<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized> + VecZnxToBackendMut<BE, State = Normalized>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = CoeffNormalized> + VecZnxToBackendMut<BE, State = CoeffNormalized>,
 {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {

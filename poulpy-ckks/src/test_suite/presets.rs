@@ -14,7 +14,7 @@ use poulpy_core::{
         GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
@@ -70,9 +70,11 @@ where
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     /// Compiles the context, generates the keys, encrypts the reference vector
@@ -235,9 +237,11 @@ where
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();

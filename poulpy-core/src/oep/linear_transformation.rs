@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
@@ -49,7 +49,7 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_prepare_linear_transformation_baby_steps<A, H>(
         module: &Module<BE>,
@@ -58,7 +58,7 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 
     fn glwe_eval_linear_transformation_into<R, P, H>(
@@ -117,7 +117,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_prepare_linear_transformation_baby_steps_default<A, H>(
         &self,
@@ -126,7 +126,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 
     fn glwe_eval_linear_transformation_into_default<R, P, H>(
@@ -195,7 +195,7 @@ where
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         module.glwe_prepare_linear_transformation_rhs_default(prepared, lt, scratch)
     }
@@ -207,7 +207,7 @@ where
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
         module.glwe_prepare_linear_transformation_baby_steps_default(cache, a, keys, scratch)
@@ -305,7 +305,8 @@ macro_rules! impl_linear_transformation_defaults_full {
                 lt: &$crate::layouts::LinearTransformation<P>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                P: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
+                P: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
             {
                 $crate::default::linear_transformation::glwe_prepare_linear_transformation_rhs_default::<$be, _, _>(
                     self, prepared, lt, scratch,
@@ -319,7 +320,8 @@ macro_rules! impl_linear_transformation_defaults_full {
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
                 $crate::default::linear_transformation::glwe_prepare_linear_transformation_baby_steps_default::<$be, _, _, _>(

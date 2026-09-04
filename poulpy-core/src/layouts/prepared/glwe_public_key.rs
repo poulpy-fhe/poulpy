@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
     layouts::{Backend, Data, HostDataMut, HostDataRef, Module},
@@ -96,7 +96,7 @@ where
     fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O)
     where
         R: GLWEPreparedToBackendMut<B> + GetDistributionMut,
-        O: GLWEToBackendRef<B, State = Normalized> + GetDistribution + GLWEInfos,
+        O: GLWEToBackendRef<B, State = CoeffNormalized> + GetDistribution + GLWEInfos,
     {
         self.glwe_prepare(res, other);
         *res.dist_mut() = *other.dist();

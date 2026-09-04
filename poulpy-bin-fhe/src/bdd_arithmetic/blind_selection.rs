@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use std::collections::HashMap;
 
 use poulpy_core::{
@@ -54,8 +54,8 @@ where
         bit_mask: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         K: GetGGSWBit<BE> + 'static,
     {
         assert!(bit_rsh + bit_mask <= T::BITS as usize);

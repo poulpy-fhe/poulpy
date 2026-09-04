@@ -6,7 +6,7 @@
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::layouts::Backend;
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 
 /// Checks degree/rank/radix compatibility shared by all rank-1 gadget keys.
 pub(crate) fn validate_gadget_key<K: GGLWEInfos + ?Sized>(
@@ -124,7 +124,7 @@ pub(crate) fn validate_storage_capacity<K: LWEInfos + ?Sized>(name: &str, key: &
 pub(crate) fn validate_backend_storage_capacity<BE, K>(name: &str, key: &K) -> Result<()>
 where
     BE: Backend,
-    K: GLWEInfos + GLWEToBackendRef<BE, State = Normalized>,
+    K: GLWEInfos + GLWEToBackendRef<BE, State = CoeffNormalized>,
 {
     validate_storage_capacity(name, key)?;
     let view = key.to_backend_ref();

@@ -2,7 +2,7 @@ use crate::api::CKKSEncodingOps;
 use poulpy_core::layouts::{
     GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned},
@@ -138,9 +138,11 @@ fn run_eval_mod_case<BE, F, E>(
 ) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -287,9 +289,11 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
 ) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -316,9 +320,11 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
 ) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -345,9 +351,11 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
 ) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -374,9 +382,11 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
 ) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -400,9 +410,11 @@ pub fn test_eval_mod_exp<BE, F, E>(params: super::CKKSTestParams, module: &Modul
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -429,9 +441,11 @@ pub fn test_eval_mod_cos_discrete_even<BE, F, E>(
 ) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSEvalModOps<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,

@@ -1,8 +1,8 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWE, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::Normalized;
-use poulpy_hal::layouts::Unnormalized;
+use poulpy_hal::layouts::CoeffNormalized;
+use poulpy_hal::layouts::CoeffUnnormalized;
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::api::CKKSAddOps;
@@ -17,24 +17,24 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
 
     fn ckks_add_into<Dst, A, B>(&self, dst: &mut Dst, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
     {
         BE::ckks_add_into_impl(self, dst, a, b, scratch)
     }
 
     fn ckks_add_assign<Dst, A>(&self, dst: &mut Dst, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
     {
         BE::ckks_add_assign_impl(self, dst, a, scratch)
     }
 
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_add_one_assign_impl(self, dst, scratch)
     }
@@ -45,17 +45,17 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
 
     fn ckks_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_add_pt_vec_into_impl(self, dst, a, pt, scratch)
     }
 
     fn ckks_add_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_add_pt_vec_assign_impl(self, dst, pt, scratch)
     }
@@ -74,9 +74,9 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_add_pt_const_into_impl(self, dst, a, dst_coeff, pt, pt_coeff, scratch)
     }
@@ -90,8 +90,8 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_add_pt_const_assign_impl(self, dst, dst_coeff, pt, pt_coeff, scratch)
     }
@@ -104,9 +104,9 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst, BE::ZnxWord, Unnormalized>: GLWEToBackendMut<BE, State = Unnormalized>,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        GLWE<Dst, BE::ZnxWord, CoeffUnnormalized>: GLWEToBackendMut<BE, State = CoeffUnnormalized>,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
     {
         BE::ckks_add_into_unnormalized_impl(self, dst, a, b, scratch)
     }
@@ -119,8 +119,8 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst, BE::ZnxWord, Unnormalized>: GLWEToBackendMut<BE, State = Unnormalized>,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos,
+        GLWE<Dst, BE::ZnxWord, CoeffUnnormalized>: GLWEToBackendMut<BE, State = CoeffUnnormalized>,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos,
     {
         BE::ckks_add_assign_unnormalized_impl(self, dst, a, scratch)
     }
@@ -134,9 +134,9 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst, BE::ZnxWord, Unnormalized>: GLWEToBackendMut<BE, State = Unnormalized>,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
+        GLWE<Dst, BE::ZnxWord, CoeffUnnormalized>: GLWEToBackendMut<BE, State = CoeffUnnormalized>,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_add_pt_vec_into_unnormalized_impl(self, dst, a, pt, scratch)
     }
@@ -149,8 +149,8 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst, BE::ZnxWord, Unnormalized>: GLWEToBackendMut<BE, State = Unnormalized>,
-        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
+        GLWE<Dst, BE::ZnxWord, CoeffUnnormalized>: GLWEToBackendMut<BE, State = CoeffUnnormalized>,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_add_pt_vec_assign_unnormalized_impl(self, dst, pt, scratch)
     }
@@ -166,9 +166,9 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst, BE::ZnxWord, Unnormalized>: GLWEToBackendMut<BE, State = Unnormalized>,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
+        GLWE<Dst, BE::ZnxWord, CoeffUnnormalized>: GLWEToBackendMut<BE, State = CoeffUnnormalized>,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_add_pt_const_into_unnormalized_impl(self, dst, a, dst_coeff, pt, pt_coeff, scratch)
     }
@@ -183,8 +183,8 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst, BE::ZnxWord, Unnormalized>: GLWEToBackendMut<BE, State = Unnormalized>,
-        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
+        GLWE<Dst, BE::ZnxWord, CoeffUnnormalized>: GLWEToBackendMut<BE, State = CoeffUnnormalized>,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_add_pt_const_assign_unnormalized_impl(self, dst, dst_coeff, pt, pt_coeff, scratch)
     }

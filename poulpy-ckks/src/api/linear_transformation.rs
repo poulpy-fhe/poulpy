@@ -38,7 +38,7 @@ use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos},
 };
-use poulpy_hal::layouts::{Backend, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -124,7 +124,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.
     ///
@@ -139,7 +139,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 
     // ----- eval (caller-supplied baby cache) -----
@@ -165,8 +165,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>;
 
@@ -181,7 +181,10 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>;
 
@@ -203,8 +206,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>;
 
@@ -218,7 +221,10 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>;
 }

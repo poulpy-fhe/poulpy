@@ -9,7 +9,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, VecZnxCopyBackend},
-    layouts::{Backend, Module, Normalized, ScratchArena},
+    layouts::{Backend, CoeffNormalized, Module, ScratchArena},
 };
 
 use crate::{CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, layouts::CKKSPreparedRight};
@@ -54,9 +54,9 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
-        B: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>;
     fn ckks_mul_assign_impl<Dst, A, T>(
         module: &Module<BE>,
@@ -66,12 +66,12 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSInfos
             + SetCKKSInfos
             + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>;
     fn ckks_prepare_right_impl<A>(
         module: &Module<BE>,
@@ -79,7 +79,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<CKKSPreparedRight<BE>>
     where
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos;
     fn ckks_mul_prepared_assign_impl<Dst, T>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -88,8 +88,8 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSInfos
             + SetCKKSInfos
             + GLWEInfos,
@@ -102,8 +102,8 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>;
     fn ckks_square_assign_impl<Dst, T>(
         module: &Module<BE>,
@@ -112,8 +112,8 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSInfos
             + SetCKKSInfos
             + GLWEInfos,
@@ -126,9 +126,9 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + IntPolyInfos + CKKSCtBounds;
     fn ckks_mul_pt_vec_assign_impl<Dst, P>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -136,8 +136,8 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + IntPolyInfos + CKKSCtBounds;
     fn ckks_mul_pt_const_into_impl<Dst, A, P>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -147,9 +147,9 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + IntPolyInfos + CKKSCtBounds;
     fn ckks_mul_pt_const_assign_impl<Dst, P>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -158,12 +158,12 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSInfos
             + SetCKKSInfos
             + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + CKKSCtBounds;
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + IntPolyInfos + CKKSCtBounds;
 }
 
 unsafe impl<BE: Backend> CKKSMulImpl<BE> for BE
@@ -227,9 +227,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
-        B: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
         module.ckks_mul_into_default(dst, a, b, tsk, scratch)
@@ -243,12 +243,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSInfos
             + SetCKKSInfos
             + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
         module.ckks_mul_assign_default(dst, a, tsk, scratch)
@@ -256,7 +256,7 @@ where
 
     fn ckks_prepare_right_impl<A>(module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
     {
         module.ckks_prepare_right_default(a, scratch)
     }
@@ -269,8 +269,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSInfos
             + SetCKKSInfos
             + GLWEInfos,
@@ -287,8 +287,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
         module.ckks_square_into_default(dst, a, tsk, scratch)
@@ -301,8 +301,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSInfos
             + SetCKKSInfos
             + GLWEInfos,
@@ -319,9 +319,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + IntPolyInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_vec_into_default(dst, a, pt, scratch)
     }
@@ -333,8 +333,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + IntPolyInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_vec_assign_default(dst, pt, scratch)
     }
@@ -348,9 +348,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + IntPolyInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_const_into_default(dst, a, pt, pt_coeff, scratch)
     }
@@ -363,12 +363,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSInfos
             + SetCKKSInfos
             + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + IntPolyInfos + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + IntPolyInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_const_assign_default(dst, pt, pt_coeff, scratch)
     }

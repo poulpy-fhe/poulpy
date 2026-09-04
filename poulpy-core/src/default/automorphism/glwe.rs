@@ -17,7 +17,7 @@ use poulpy_hal::{
         VecZnxBigAddSmallAssign, VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigSubSmallAssign,
         VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply,
     },
-    layouts::{Backend, Normalized, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
+    layouts::{Backend, CoeffNormalized, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{
@@ -69,8 +69,8 @@ pub fn glwe_automorphism_default<BE, M, R, A>(
 ) where
     BE: Backend,
     M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -97,7 +97,7 @@ pub fn glwe_automorphism_assign_default<BE, M, R>(
 ) where
     BE: Backend,
     M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -136,8 +136,8 @@ pub fn glwe_automorphism_add_default<BE, M, R, A>(
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -209,7 +209,7 @@ pub fn glwe_automorphism_add_assign_default<BE, M, R>(
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -281,8 +281,8 @@ pub fn glwe_automorphism_sub_default<BE, M, R, A>(
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -354,8 +354,8 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();
@@ -426,7 +426,7 @@ pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let p = key.p();
     let key = key.to_backend_ref();

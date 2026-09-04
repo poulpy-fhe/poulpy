@@ -11,7 +11,7 @@ use anyhow::Context;
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey, LWEInfos, TorusPrecision,
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::ops::PaCoSlotOps;
@@ -177,7 +177,7 @@ where
     F: PaCoScalar,
     Module<BE>: CyclotomicOrder,
     K: PaCoKeys<BE>,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
 {
     let plan = context.plan();
     ckks_ensure!(
@@ -339,9 +339,9 @@ where
         + CKKSModuleAlloc<BE>
         + CyclotomicOrder,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
 {
     let (output_scale, expected_final_k) = output_meta;
     let plan = context.plan();

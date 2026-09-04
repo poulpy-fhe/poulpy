@@ -102,7 +102,7 @@ pub use crate::{
     impl_lwe_keyswitch_defaults_full,
 };
 
-use poulpy_hal::layouts::{Backend, Data, NormalizationState, Normalized, Unnormalized, ZnxWord};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, CoeffUnnormalized, CoefficientState, Data, ZnxWord};
 pub use poulpy_hal::oep::SetNormalizationState;
 
 use crate::layouts::{GLWE, GLWEViewMut};
@@ -110,14 +110,14 @@ use crate::layouts::{GLWE, GLWEViewMut};
 /// See [`SetNormalizationState`]: `set_normalized` is the backend-implementor
 /// relabel with no normalization pass, reserved for fused kernels inside
 /// backend crates. Scheme code must go through [`GLWE::normalize`].
-impl<D: Data, W: ZnxWord, S: NormalizationState> SetNormalizationState for GLWE<D, W, S> {
-    type WithState<T: NormalizationState> = GLWE<D, W, T>;
+impl<D: Data, W: ZnxWord, S: CoefficientState> SetNormalizationState for GLWE<D, W, S> {
+    type WithState<T: CoefficientState> = GLWE<D, W, T>;
 
-    fn set_unnormalized(self) -> GLWE<D, W, Unnormalized> {
+    fn set_unnormalized(self) -> GLWE<D, W, CoeffUnnormalized> {
         self.into_unnormalized()
     }
 
-    unsafe fn set_normalized(self) -> GLWE<D, W, Normalized> {
+    unsafe fn set_normalized(self) -> GLWE<D, W, CoeffNormalized> {
         let GLWE { data, k, base2k } = self;
         GLWE {
             // SAFETY: forwarded caller contract.
@@ -128,14 +128,14 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> SetNormalizationState for GLWE<
     }
 }
 
-impl<'a, BE: Backend + 'a, S: NormalizationState> SetNormalizationState for GLWEViewMut<'a, BE, S> {
-    type WithState<T: NormalizationState> = GLWEViewMut<'a, BE, T>;
+impl<'a, BE: Backend + 'a, S: CoefficientState> SetNormalizationState for GLWEViewMut<'a, BE, S> {
+    type WithState<T: CoefficientState> = GLWEViewMut<'a, BE, T>;
 
-    fn set_unnormalized(self) -> GLWEViewMut<'a, BE, Unnormalized> {
+    fn set_unnormalized(self) -> GLWEViewMut<'a, BE, CoeffUnnormalized> {
         self.into_unnormalized()
     }
 
-    unsafe fn set_normalized(self) -> GLWEViewMut<'a, BE, Normalized> {
+    unsafe fn set_normalized(self) -> GLWEViewMut<'a, BE, CoeffNormalized> {
         // SAFETY: forwarded caller contract.
         GLWEViewMut::from_inner(unsafe { self.into_inner().set_normalized() })
     }

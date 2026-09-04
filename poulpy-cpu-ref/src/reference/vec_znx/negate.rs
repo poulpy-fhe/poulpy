@@ -1,14 +1,14 @@
 use crate::{
     layouts::{
-        Backend, FitsIn, HostDataMut, HostDataRef, NormalizationState, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
+        ArithmeticState, Backend, CoeffFitsIn, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
     },
     reference::znx::{ZnxNegate, ZnxNegateAssign, ZnxZero},
 };
 
-pub fn vec_znx_negate<'r, 'a, BE, S: NormalizationState>(
+pub fn vec_znx_negate<'r, 'a, BE, S: ArithmeticState>(
     res: &mut VecZnxBackendMut<'r, BE, S>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl FitsIn<S>>,
+    a: &VecZnxBackendRef<'a, BE, impl CoeffFitsIn<S>>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxNegate + ZnxZero,
@@ -31,7 +31,7 @@ pub fn vec_znx_negate<'r, 'a, BE, S: NormalizationState>(
     }
 }
 
-pub fn vec_znx_negate_assign<'r, BE>(res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>, res_col: usize)
+pub fn vec_znx_negate_assign<'r, BE>(res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>, res_col: usize)
 where
     BE: Backend<ZnxWord = i64> + ZnxNegateAssign,
     BE::BufMut<'r>: HostDataMut,

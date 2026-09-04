@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    layouts::{Backend, NoiseInfos, Normalized, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
+    layouts::{Backend, CoeffNormalized, NoiseInfos, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
 
@@ -81,8 +81,8 @@ pub trait GLWEEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized>,
-        P: GLWEToBackendRef<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 
@@ -95,7 +95,7 @@ pub trait GLWEEncryptSk<BE: Backend> {
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }
@@ -115,8 +115,8 @@ pub trait GLWEEncryptPk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 
@@ -129,7 +129,7 @@ pub trait GLWEEncryptPk<BE: Backend> {
         source_xe: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
@@ -143,7 +143,7 @@ pub trait GLWEPublicKeyGenerate<BE: Backend> {
         source_xe: &mut Source,
         source_xa: &mut Source,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GetDistributionMut + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
 }
@@ -360,7 +360,7 @@ pub trait GLWECompressedEncryptSk<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        P: GLWEToBackendRef<BE, State = Normalized>,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }

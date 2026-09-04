@@ -7,7 +7,7 @@
 //! only mask preparation uses scratch BIG/SMALL before key-switching. Incompatible
 //! bases fall back to the regular normalized GLWE automorphism path.
 
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
@@ -102,7 +102,7 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 ) where
     BE: Backend,
     M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    P: GLWEToBackendRef<BE, State = Normalized> + crate::layouts::IntPolyInfos + GLWEInfos,
+    P: GLWEToBackendRef<BE, State = CoeffNormalized> + crate::layouts::IntPolyInfos + GLWEInfos,
 {
     glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
 }

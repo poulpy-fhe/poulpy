@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::VecZnxCopyBackend,
     layouts::{Backend, Module, ScratchArena},
@@ -33,7 +33,7 @@ pub trait GLWECompressedEncryptSkDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        P: GLWEToBackendRef<BE, State = Normalized>,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 }
@@ -63,7 +63,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
-        P: GLWEToBackendRef<BE, State = Normalized>,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {

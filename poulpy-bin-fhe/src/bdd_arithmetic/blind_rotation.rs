@@ -5,7 +5,7 @@ use poulpy_core::{
         GLWEToBackendRef,
     },
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{VecZnxAddScalarAssignBackend, VecZnxNormalizeAssignBackend},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, VecZnxToBackendMut},
@@ -219,7 +219,7 @@ where
         bit_lsh: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64> + 'static,
     {
@@ -266,8 +266,8 @@ where
         bit_lsh: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized>,
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64> + 'static,
     {

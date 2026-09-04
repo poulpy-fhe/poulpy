@@ -1,14 +1,14 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos};
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{
         VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshSubBackend,
         VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend,
         VecZnxRshBackend, VecZnxRshSubBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes,
     },
-    layouts::Unnormalized,
+    layouts::CoeffUnnormalized,
     layouts::{Backend, ScratchArena},
 };
 
@@ -39,8 +39,8 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     fn ckks_add_pt_vec_into_default<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: VecZnxRshAddIntoBackend<BE> + VecZnxLshAddIntoBackend<BE>,
-        Dst: GLWEToBackendMut<BE, State = Unnormalized> + CKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffUnnormalized> + CKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSInfos,
     {
         const OP: &str = "ckks_add_pt_vec";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
@@ -71,8 +71,8 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     ) -> Result<()>
     where
         Self: VecZnxRshAddCoeffIntoBackend<BE> + VecZnxLshAddCoeffToCoeffBackend<BE>,
-        Dst: GLWEToBackendMut<BE, State = Unnormalized> + CKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffUnnormalized> + CKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSInfos,
     {
         const OP: &str = "ckks_add_pt_const";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
@@ -121,8 +121,8 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     ) -> Result<()>
     where
         Self: VecZnxRshSubCoeffIntoBackend<BE> + VecZnxLshSubCoeffToCoeffBackend<BE>,
-        Dst: GLWEToBackendMut<BE, State = Unnormalized> + CKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffUnnormalized> + CKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSInfos,
     {
         const OP: &str = "ckks_sub_pt_const";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
@@ -164,8 +164,8 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     fn ckks_sub_pt_vec_into_default<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: VecZnxRshSubBackend<BE> + VecZnxLshSubBackend<BE>,
-        Dst: GLWEToBackendMut<BE, State = Unnormalized> + CKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffUnnormalized> + CKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSInfos,
     {
         const OP: &str = "ckks_sub_pt_vec";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
@@ -191,8 +191,8 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
 
     fn ckks_extract_pt_default<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        D: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        S: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos,
+        D: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        S: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos,
         Self: VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
     {
         self.ckks_extract_pt_with_meta_default(dst, src, src.meta(), scratch)
@@ -206,8 +206,8 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        D: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        S: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + LWEInfos,
+        D: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        S: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + LWEInfos,
         Self: VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
     {
         ensure_base2k_match("ckks_extract_pt", src.base2k().as_usize(), dst.base2k().as_usize())?;

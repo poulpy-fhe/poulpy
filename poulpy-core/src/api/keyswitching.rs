@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -18,11 +18,11 @@ pub trait GLWEKeyswitch<BE: Backend> {
     fn glwe_keyswitch<R, A>(&self, res: &mut R, a: &A, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_keyswitch_assign<R>(&self, res: &mut R, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos;
 }
 
 pub trait GGLWEKeyswitch<BE: Backend> {

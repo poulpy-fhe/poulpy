@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, Module, ScratchArena};
 
 use crate::{
     api::{GGLWEKeyswitch, GGSWKeyswitch, GLWEKeyswitch, LWEKeyswitch},
@@ -36,14 +36,14 @@ impl_keyswitching_delegate!(
     fn glwe_keyswitch<R, A>(&self, res: &mut R, a: &A, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         BE::glwe_keyswitch(self, res, a, key, scratch)
     }
 
     fn glwe_keyswitch_assign<R>(&self, res: &mut R, key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     {
         BE::glwe_keyswitch_assign(self, res, key, scratch)
     }

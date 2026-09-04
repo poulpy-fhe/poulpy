@@ -39,7 +39,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, CyclotomicOrder, Module, Normalized, ScratchArena, galois_element},
+    layouts::{Backend, CoeffNormalized, CyclotomicOrder, Module, ScratchArena, galois_element},
 };
 
 use crate::{
@@ -97,7 +97,10 @@ pub trait PaCoSlotOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetAutomorphismKey<BE>;
 
     /// `Pr_{a→b}` in place: slot `i` becomes `Π_j ct[i + j·b]` for
@@ -113,7 +116,10 @@ pub trait PaCoSlotOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
         TH: GetTensorKey<BE>;
 }
@@ -121,7 +127,7 @@ pub trait PaCoSlotOps<BE: Backend> {
 impl<BE: Backend> PaCoSlotOps<BE> for Module<BE>
 where
     Module<BE>: CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSModuleAlloc<BE> + GLWEAutomorphism<BE> + CyclotomicOrder + ModuleN,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized>,
 {
     fn ckks_slot_trace_assign<Dst, H>(
         &self,
@@ -132,7 +138,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
     {
         let order = self.cyclotomic_order();
@@ -159,7 +168,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetAutomorphismKey<BE>,
         TH: GetTensorKey<BE>,
     {

@@ -1,17 +1,17 @@
 use crate::{
     layouts::{
-        Backend, HostDataMut, HostDataRef, NormalizationState, Unnormalized, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
+        ArithmeticState, Backend, CoeffUnnormalized, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
         ZnxViewMut,
     },
     reference::znx::{ZnxCopy, ZnxNegate, ZnxNegateAssign, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero},
 };
 
 pub fn vec_znx_sub<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
-    b: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    b: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     b_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
@@ -62,9 +62,9 @@ pub fn vec_znx_sub<'r, 'a, BE>(
 }
 
 pub fn vec_znx_sub_assign<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxSubAssign,
@@ -87,9 +87,9 @@ pub fn vec_znx_sub_assign<'r, 'a, BE>(
 }
 
 pub fn vec_znx_sub_negate_assign<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxSubNegateAssign + ZnxNegateAssign,

@@ -4,7 +4,7 @@
 //! Core key-switch operation.
 
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGLWEPreparedBackendRef};
-use poulpy_hal::layouts::{Backend, Module, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, CKKSResult, SetCKKSInfos};
 
@@ -44,8 +44,14 @@ pub unsafe trait CKKSEncapsulatedModUpImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> CKKSResult<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        Src: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos;
 }
 
 /// Opts a backend into the CKKS reference encapsulated-ModUp pipeline.
@@ -85,11 +91,11 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> $crate::CKKSResult<()>
             where
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized>
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
                     + ::poulpy_core::layouts::GLWEToBackendRef<$be>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
-                Src: ::poulpy_core::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized>
+                Src: ::poulpy_core::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
                     + ::poulpy_core::layouts::GLWEToBackendRef<$be>
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,

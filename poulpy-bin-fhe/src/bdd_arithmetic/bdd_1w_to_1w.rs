@@ -2,7 +2,7 @@ use poulpy_core::{
     GLWEBytesOf, GLWECopy, GLWEPacking, ScratchArenaTakeCore,
     layouts::{GLWEToBackendMut, GetAutomorphismKey},
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::ModuleLogN,
     layouts::{Backend, Module, ScratchArena},
@@ -85,7 +85,7 @@ macro_rules! define_bdd_1w_to_1w_trait {
                     M: ExecuteBDDCircuit1WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
-                    Self: GLWEToBackendMut<BE, State = Normalized>;
+                    Self: GLWEToBackendMut<BE, State = CoeffNormalized>;
 
                 /// Multithreaded version – same vis, method_name + "_multi_thread"
                 fn [<$method_name _multi_thread>]<M, H>(
@@ -99,7 +99,7 @@ macro_rules! define_bdd_1w_to_1w_trait {
                     M: ExecuteBDDCircuit1WTo1W<BE>,
                     H: GetAutomorphismKey<BE>,
                     BE: Backend<ZnxWord = i64>,
-                    Self: GLWEToBackendMut<BE, State = Normalized>;
+                    Self: GLWEToBackendMut<BE, State = CoeffNormalized>;
             }
         }
     };

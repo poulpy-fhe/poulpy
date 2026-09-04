@@ -9,7 +9,7 @@ use crate::{
 use poulpy_hal::{
     api::{VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, FitsIn, Module, NoiseInfos, NormalizationState, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut,
+        ArithmeticState, Backend, CoeffFitsIn, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, ZnxInfos,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
@@ -36,10 +36,10 @@ pub(crate) mod delegating_backend;
 unsafe impl HalVecZnxImpl<FFT64Ref> for FFT64Ref {
     hal_impl_vec_znx!();
 
-    fn vec_znx_transpose_backend<S: NormalizationState>(
+    fn vec_znx_transpose_backend<S: ArithmeticState>(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self, S>,
-        a: &VecZnxBackendRef<'_, Self, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, Self, impl CoeffFitsIn<S>>,
     ) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
@@ -72,10 +72,10 @@ unsafe impl HalVecZnxDftImpl<FFT64Ref> for FFT64Ref {
 unsafe impl HalVecZnxImpl<NTT4x30Ref> for NTT4x30Ref {
     hal_impl_vec_znx!();
 
-    fn vec_znx_transpose_backend<S: NormalizationState>(
+    fn vec_znx_transpose_backend<S: ArithmeticState>(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self, S>,
-        a: &VecZnxBackendRef<'_, Self, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, Self, impl CoeffFitsIn<S>>,
     ) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }

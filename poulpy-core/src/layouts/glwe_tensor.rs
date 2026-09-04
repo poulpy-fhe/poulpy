@@ -1,5 +1,7 @@
 use poulpy_hal::{
-    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, Normalized, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+    layouts::{
+        Backend, CoeffNormalized, Data, FillUniform, HostDataMut, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
+    },
     source::Source,
 };
 
@@ -127,9 +129,9 @@ impl<W: ZnxWord> GLWETensor<Vec<u8>, W> {
 
 impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWETensor<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = CoeffNormalized>,
 {
-    type State = Normalized;
+    type State = CoeffNormalized;
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
@@ -141,9 +143,9 @@ where
 
 impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for &GLWETensor<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = CoeffNormalized>,
 {
-    type State = Normalized;
+    type State = CoeffNormalized;
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
@@ -155,7 +157,7 @@ where
 
 impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWETensor<D, BE::ZnxWord>
 where
-    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = Normalized> + VecZnxToBackendMut<BE, State = Normalized>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE, State = CoeffNormalized> + VecZnxToBackendMut<BE, State = CoeffNormalized>,
 {
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
@@ -167,7 +169,7 @@ where
 }
 
 impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'b>, BE::ZnxWord> {
-    type State = Normalized;
+    type State = CoeffNormalized;
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,

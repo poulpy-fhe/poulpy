@@ -139,7 +139,7 @@ where
                     self.vec_znx_zero_backend(&mut tmp_pt.data, 0);
                     {
                         let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                        // A small scalar written onto a zeroed limb stays within the base2k digit bound, so the owner's Normalized label remains valid after this unnormalized-typed write.
+                        // A small scalar written onto a zeroed limb stays within the base2k digit bound, so the owner's CoeffNormalized label remains valid after this unnormalized-typed write.
                         self.vec_znx_add_scalar_assign_backend(
                             &mut poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, _>(&mut tmp_pt_backend.data)
                                 .into_unnormalized(),

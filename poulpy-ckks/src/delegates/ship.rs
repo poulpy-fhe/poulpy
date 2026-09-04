@@ -4,7 +4,7 @@ use poulpy_core::{
     default::keyswitching::glwe::GGLWEProductDefault,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
@@ -52,8 +52,8 @@ where
         + VecZnxBigBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxBigNormalizeTmpBytes,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
 {
     fn ckks_ship_bootstrap_tmp_bytes<Src>(
         &self,
@@ -62,7 +62,7 @@ where
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
     ) -> Result<usize>
     where
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
     {
         ship_bootstrap_tmp_bytes::<BE, F, _>(self, output, input, keys)
     }
@@ -80,7 +80,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
     where
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
     {
         let required = BE::ckks_ship_coeff_encodings_tmp_bytes_impl::<F>(self, plan, base2k, complex)?;
         ckks_ensure!(
@@ -99,7 +99,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
     {
         ship_bootstrap_into::<BE, F, _>(self, output, input, keys, scratch)
     }
@@ -112,7 +112,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
     {
         ship_bootstrap_complex_into::<BE, F, _>(self, output, input, keys, scratch)
     }

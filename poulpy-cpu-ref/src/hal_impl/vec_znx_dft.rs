@@ -88,14 +88,14 @@ macro_rules! __hal_impl_vec_znx_dft_common {
 
         fn vec_znx_idft_normalize_consume(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
             res_base2k: usize,
             res_col: usize,
             a: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
             a_col: usize,
             a_base2k: usize,
             addend: Option<(
-                &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::NormalizationState>,
+                &poulpy_hal::layouts::VecZnxBackendRef<'_, Self, impl poulpy_hal::layouts::ArithmeticState>,
                 usize,
             )>,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,

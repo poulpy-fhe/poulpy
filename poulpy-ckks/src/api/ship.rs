@@ -10,7 +10,7 @@
 
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
@@ -63,7 +63,7 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
     ) -> Result<usize>
     where
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds;
 
     /// Standard-arena bytes required to build the input-dependent SHIP
     /// plaintext material, including backend-native scalar/FFT workspace.
@@ -82,7 +82,7 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
     where
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds;
 
     /// Bootstraps the bottom ciphertext `input` (one limb, real cleartexts
     /// with gap `gamma` in its coefficients) into `output`, a slots-domain
@@ -95,7 +95,7 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds;
 
     /// Complex variant: `input` carries `Re(mu)` in its first `N/2`
     /// coefficients and `Im(mu)` in the last `N/2`; `output` encodes `mu`.
@@ -108,5 +108,5 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds;
 }

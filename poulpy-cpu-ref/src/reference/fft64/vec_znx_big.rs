@@ -8,7 +8,7 @@ use poulpy_hal::api::VecZnxBigAlloc;
 use crate::{
     api::VecZnxBigAddNormal,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, Unnormalized, VecZnx, VecZnxBigToBackendMut,
+        Backend, CoeffUnnormalized, HostDataMut, HostDataRef, Module, NoiseInfos, VecZnx, VecZnxBigToBackendMut,
         VecZnxBigToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
@@ -27,7 +27,7 @@ use crate::{
     source::Source,
 };
 
-fn big_as_vec_znx_mut<'a, BE>(v: VecZnxBigBackendMut<'a, BE>) -> VecZnx<BE::BufMut<'a>, BE::ZnxWord, Unnormalized>
+fn big_as_vec_znx_mut<'a, BE>(v: VecZnxBigBackendMut<'a, BE>) -> VecZnx<BE::BufMut<'a>, BE::ZnxWord, CoeffUnnormalized>
 where
     BE: Backend<ZnxWord = i64>,
 {
@@ -35,7 +35,7 @@ where
     VecZnx::from_data(v.data, shape.n(), shape.cols(), shape.size()).into_unnormalized()
 }
 
-fn big_as_vec_znx_ref<'a, BE>(v: VecZnxBigBackendRef<'a, BE>) -> VecZnx<BE::BufRef<'a>, BE::ZnxWord, Unnormalized>
+fn big_as_vec_znx_ref<'a, BE>(v: VecZnxBigBackendRef<'a, BE>) -> VecZnx<BE::BufRef<'a>, BE::ZnxWord, CoeffUnnormalized>
 where
     BE: Backend<ZnxWord = i64>,
 {

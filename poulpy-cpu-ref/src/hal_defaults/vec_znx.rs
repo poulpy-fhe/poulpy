@@ -27,8 +27,8 @@ use crate::reference::{fft64::convolution::I64Ops, ntt4x30::I128BigOps};
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
-        Backend, FitsIn, HostDataMut, Module, NoiseInfos, NormalizationState, ScalarZnxBackendMut, ScalarZnxBackendRef,
-        ScratchArena, Unnormalized, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, ZnxView, ZnxViewMut,
+        ArithmeticState, Backend, CoeffFitsIn, CoeffUnnormalized, HostDataMut, Module, NoiseInfos, ScalarZnxBackendMut,
+        ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, ZnxView, ZnxViewMut,
     },
     source::Source,
 };
@@ -151,7 +151,7 @@ where
 
     fn vec_znx_zero_backend_default(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
     ) where
         BE: ZnxZero,
@@ -164,7 +164,7 @@ where
         _module: &Module<BE>,
         res: &mut VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         b: &ScalarZnxBackendRef<'_, BE>,
         b_col: usize,
@@ -193,11 +193,11 @@ where
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize_backend_default(
         module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_base2k: usize,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -233,7 +233,7 @@ where
     fn vec_znx_normalize_assign_backend_default(
         module: &Module<BE>,
         base2k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -255,7 +255,7 @@ where
     fn vec_znx_normalize_coeff_assign_backend_default(
         _module: &Module<BE>,
         base2k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
         res_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -271,11 +271,11 @@ where
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize_coeff_backend_default(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_base2k: usize,
         a_col: usize,
         a_coeff: usize,
@@ -304,11 +304,11 @@ where
 
     fn vec_znx_add_into_backend_default<'a>(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
         a_col: usize,
-        b: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+        b: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
         b_col: usize,
     ) where
         BE: ZnxAdd + ZnxCopy + ZnxZero,
@@ -320,9 +320,9 @@ where
 
     fn vec_znx_add_assign_backend_default(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: ZnxAddAssign,
@@ -344,11 +344,11 @@ where
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_add_const_into_backend_default<'a>(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
         a_col: usize,
-        cnst: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+        cnst: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
         cnst_col: usize,
         cnst_coeff: usize,
         res_limb: usize,
@@ -363,9 +363,9 @@ where
 
     fn vec_znx_add_const_assign_backend_default(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        cnst: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        cnst: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         cnst_col: usize,
         cnst_coeff: usize,
         res_limb: usize,
@@ -377,11 +377,11 @@ where
         vec_znx_add_const_assign::<BE>(res, res_col, cnst, cnst_col, cnst_coeff, res_limb, res_coeff);
     }
 
-    fn vec_znx_extract_coeff_backend_default<S: NormalizationState>(
+    fn vec_znx_extract_coeff_backend_default<S: ArithmeticState>(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>,
         a_col: usize,
         a_coeff: usize,
     ) where
@@ -394,11 +394,11 @@ where
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_add_scalar_into_backend_default<'a>(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
         a: &ScalarZnxBackendRef<'a, BE>,
         a_col: usize,
-        b: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+        b: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
         b_col: usize,
         b_limb: usize,
     ) where
@@ -411,7 +411,7 @@ where
 
     fn vec_znx_add_scalar_assign_backend_default(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
         res_limb: usize,
         a: &ScalarZnxBackendRef<'_, BE>,
@@ -426,11 +426,11 @@ where
 
     fn vec_znx_sub_backend_default<'a>(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
         a_col: usize,
-        b: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+        b: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
         b_col: usize,
     ) where
         BE: ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
@@ -442,9 +442,9 @@ where
 
     fn vec_znx_sub_assign_backend_default(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: ZnxSubAssign,
@@ -456,9 +456,9 @@ where
 
     fn vec_znx_sub_negate_assign_backend_default(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: ZnxSubNegateAssign + ZnxNegateAssign,
@@ -471,11 +471,11 @@ where
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_sub_scalar_backend_default<'a>(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
         a: &ScalarZnxBackendRef<'a, BE>,
         a_col: usize,
-        b: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+        b: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
         b_col: usize,
         b_limb: usize,
     ) where
@@ -488,7 +488,7 @@ where
 
     fn vec_znx_sub_scalar_assign_backend_default(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
         res_limb: usize,
         a: &ScalarZnxBackendRef<'_, BE>,
@@ -501,11 +501,11 @@ where
         vec_znx_sub_scalar_assign::<BE>(res, res_col, res_limb, a, a_col);
     }
 
-    fn vec_znx_negate_backend_default<S: NormalizationState>(
+    fn vec_znx_negate_backend_default<S: ArithmeticState>(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) where
         BE: ZnxNegate + ZnxZero,
@@ -517,7 +517,7 @@ where
 
     fn vec_znx_negate_assign_backend_default(
         _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
     ) where
         BE: ZnxNegateAssign,
@@ -535,9 +535,9 @@ where
         module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -563,9 +563,9 @@ where
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -592,9 +592,9 @@ where
         module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -620,9 +620,9 @@ where
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
@@ -650,9 +650,9 @@ where
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
@@ -683,9 +683,9 @@ where
         module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -709,9 +709,9 @@ where
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -736,9 +736,9 @@ where
         module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -762,9 +762,9 @@ where
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -789,9 +789,9 @@ where
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
@@ -817,9 +817,9 @@ where
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
@@ -844,9 +844,9 @@ where
         module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -868,9 +868,9 @@ where
         module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -894,7 +894,7 @@ where
         module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -917,7 +917,7 @@ where
         module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -929,12 +929,12 @@ where
         vec_znx_lsh_assign::<BE>(base2k, k, res, res_col, carry);
     }
 
-    fn vec_znx_rotate_backend_default<S: NormalizationState>(
+    fn vec_znx_rotate_backend_default<S: ArithmeticState>(
         _module: &Module<BE>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, BE, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) where
         BE: ZnxRotate + ZnxZero,
@@ -951,7 +951,7 @@ where
     fn vec_znx_rotate_assign_backend_default(
         module: &Module<BE>,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -966,12 +966,12 @@ where
         vec_znx_rotate_assign::<BE>(p, res, res_col, tmp);
     }
 
-    fn vec_znx_automorphism_backend_default<S: NormalizationState>(
+    fn vec_znx_automorphism_backend_default<S: ArithmeticState>(
         _module: &Module<BE>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, BE, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) where
         BE: ZnxAutomorphism + ZnxZero,
@@ -988,7 +988,7 @@ where
     fn vec_znx_automorphism_assign_backend_default(
         module: &Module<BE>,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -1004,13 +1004,13 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_automorphism_rotate_backend_default<S: NormalizationState>(
+    fn vec_znx_automorphism_rotate_backend_default<S: ArithmeticState>(
         _module: &Module<BE>,
         p: i64,
         k: i64,
         res: &mut VecZnxBackendMut<'_, BE, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) where
         BE: ZnxAutomorphismRotate + ZnxZero,
@@ -1023,9 +1023,9 @@ where
     fn vec_znx_mul_xp_minus_one_backend_default(
         _module: &Module<BE>,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: ZnxRotate + ZnxZero + ZnxSubAssign,
@@ -1042,7 +1042,7 @@ where
     fn vec_znx_mul_xp_minus_one_assign_backend_default(
         module: &Module<BE>,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -1061,11 +1061,11 @@ where
         vec_znx_split_ring_tmp_bytes(module.n())
     }
 
-    fn vec_znx_split_ring_backend_default<S: NormalizationState>(
+    fn vec_znx_split_ring_backend_default<S: ArithmeticState>(
         module: &Module<BE>,
         res: &mut [VecZnxBackendMut<'_, BE, S>],
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -1082,11 +1082,11 @@ where
         vec_znx_merge_rings_tmp_bytes(module.n())
     }
 
-    fn vec_znx_merge_rings_backend_default<S: NormalizationState>(
+    fn vec_znx_merge_rings_backend_default<S: ArithmeticState>(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE, S>,
         res_col: usize,
-        a: &[VecZnxBackendRef<'_, BE, impl FitsIn<S>>],
+        a: &[VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>],
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -1099,11 +1099,11 @@ where
         vec_znx_merge_rings::<BE, _>(res, res_col, a, a_col, tmp);
     }
 
-    fn vec_znx_switch_ring_backend_default<S: NormalizationState>(
+    fn vec_znx_switch_ring_backend_default<S: ArithmeticState>(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) where
         BE: ZnxCopy + ZnxSwitchRing + ZnxZero,
@@ -1113,11 +1113,11 @@ where
         vec_znx_switch_ring::<BE, _>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_copy_backend_default<S: NormalizationState>(
+    fn vec_znx_copy_backend_default<S: ArithmeticState>(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE, S>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>,
         a_col: usize,
     ) where
         BE: ZnxCopy + ZnxZero,
@@ -1127,10 +1127,10 @@ where
         vec_znx_copy::<BE, _>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_transpose_backend_default<S: NormalizationState>(
+    fn vec_znx_transpose_backend_default<S: ArithmeticState>(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE, S>,
-        a: &VecZnxBackendRef<'_, BE, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>,
     ) where
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
@@ -1139,13 +1139,13 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_copy_range_backend_default<S: NormalizationState>(
+    fn vec_znx_copy_range_backend_default<S: ArithmeticState>(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE, S>,
         res_col: usize,
         res_limb: usize,
         res_offset: usize,
-        a: &VecZnxBackendRef<'_, BE, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, BE, impl CoeffFitsIn<S>>,
         a_col: usize,
         a_limb: usize,
         a_offset: usize,
@@ -1164,7 +1164,7 @@ where
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, BE, impl ArithmeticState>,
         res_col: usize,
         seed: [u8; 32],
     ) where
@@ -1177,7 +1177,7 @@ where
     fn vec_znx_fill_normal_backend_default(
         _module: &Module<BE>,
         res_base2k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
         noise_infos: NoiseInfos,
         seed: [u8; 32],
@@ -1191,7 +1191,7 @@ where
     fn vec_znx_add_normal_backend_default(
         _module: &Module<BE>,
         res_base2k: usize,
-        res: &mut VecZnxBackendMut<'_, BE, Unnormalized>,
+        res: &mut VecZnxBackendMut<'_, BE, CoeffUnnormalized>,
         res_col: usize,
         noise_infos: NoiseInfos,
         seed: [u8; 32],

@@ -1,6 +1,6 @@
 use crate::layouts::GetTensorKey;
 use anyhow::Result;
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
@@ -27,7 +27,7 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
     where
         Ops: BSGSOps<BE, V, P, A, V>,
         V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>;
 
@@ -46,7 +46,7 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         R: GLWEToBackendMut<BE>,
         B: BabyStep<BE, Value = V>,
         V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE, State = Normalized>,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;

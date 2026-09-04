@@ -121,7 +121,10 @@ where
 /// `A::State: ArithmeticState<N = Normalized>` (any canonicality), a carry-producing
 /// destination writes `R::State: ArithmeticState<N = Unnormalized>`, and a
 /// padding-sensitive consumer writes `A::State: ArithmeticState<C = Canonical>`.
-pub trait ArithmeticState: CoefficientState {
+/// Every arithmetic state fits the weakest one, `Coeff<Unnormalized, NonCanonical>`;
+/// carrying that as a supertrait lets it elaborate through opaque `State` associated
+/// types, mirroring the old blanket "everything fits an unnormalized destination" rule.
+pub trait ArithmeticState: CoefficientState + CoeffFitsIn<CoeffUnnormalized> {
     /// The normalization axis of this state.
     type N: Normalization;
     /// The canonicality axis of this state.

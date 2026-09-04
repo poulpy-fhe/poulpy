@@ -35,9 +35,9 @@
 //! digits in that wrapper may hold un-propagated carries (wider than `base2k`
 //! bits), so passing it to any DFT-domain primitive (keyswitching,
 //! convolution, automorphisms) would produce incorrect decryptions. The
-//! normalization state is the [`poulpy_hal::layouts::NormalizationState`]
+//! normalization state is the [`poulpy_hal::layouts::CoefficientState`]
 //! parameter of the underlying `VecZnx`/`GLWE`: DFT-domain primitives in
-//! `poulpy-core` require `State = Normalized`, so such misuse is a compile
+//! `poulpy-core` require `State = CoeffNormalized`, so such misuse is a compile
 //! error. Call [`layouts::UnnormalizedCKKSCiphertext::normalize`] before the
 //! next keyswitching or convolution step; `CKKSCiphertext::into_unnormalized`
 //! is the free relabel in the other direction.
@@ -58,7 +58,7 @@ use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
 };
 use poulpy_hal::layouts::Backend;
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 
 pub mod api;
 pub mod approximation;
@@ -121,15 +121,18 @@ pub(crate) use error::{
 pub use scalar::Quad;
 
 /// Backend-compatible shared CKKS plaintext storage.
-pub trait CKKSPlaintextToBackendRef<BE: Backend>: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos {}
+pub trait CKKSPlaintextToBackendRef<BE: Backend>: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos {}
 
-impl<BE: Backend, T> CKKSPlaintextToBackendRef<BE> for T where T: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos {}
+impl<BE: Backend, T> CKKSPlaintextToBackendRef<BE> for T where
+    T: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos
+{
+}
 
 /// Backend-compatible mutable CKKS plaintext storage.
 ///
 /// Implemented by owned plaintexts and scratch-backed plaintext views alike.
 pub trait CKKSPlaintextToBackendMut<BE: Backend>:
-    CKKSPlaintextToBackendRef<BE> + GLWEToBackendMut<BE, State = Normalized>
+    CKKSPlaintextToBackendRef<BE> + GLWEToBackendMut<BE, State = CoeffNormalized>
 {
 }
 
@@ -413,7 +416,7 @@ where
     BE: Backend,
     M: poulpy_core::GLWEShift<BE> + ?Sized,
     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos,
 {
     let offset = ckks_offset_unary(dst, src);
     let log_budget = checked_log_budget_sub(op, src.log_budget(), offset + extra_charge)?;

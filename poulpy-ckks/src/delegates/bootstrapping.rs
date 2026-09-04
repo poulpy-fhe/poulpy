@@ -6,7 +6,7 @@ use poulpy_core::{
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -42,8 +42,8 @@ where
         + CKKSMulOps<BE>
         + CKKSAffineOps<BE>
         + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized>
-        + GLWEToBackendRef<BE, State = Normalized>
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
         + CKKSCtBounds
         + SetCKKSInfos
         + SetBSGSMeta
@@ -91,8 +91,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
     {
         let scale_up = eval_mod.raised_scale_up(src.log_delta())?;
         BootstrappingDefault::new(self).ckks_mod_up_into_default(dst, src, scale_up, scratch)?;
@@ -113,8 +113,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         K: BootstrappingKeys<BE>,
     {
         BootstrappingDefault::new(self).ckks_bootstrap_mod_up_default(dst, src, eval_mod, keys, scratch)

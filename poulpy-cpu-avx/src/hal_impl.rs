@@ -9,7 +9,7 @@ use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     execution::SerialTaskExecutor,
     layouts::{
-        Backend, DataView, DataViewMut, FitsIn, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, NormalizationState,
+        ArithmeticState, Backend, CoeffFitsIn, DataView, DataViewMut, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos,
         ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef,
         VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut,
         VmpPMatBackendRef, ZnxInfos,
@@ -40,10 +40,10 @@ unsafe impl HalVecZnxImpl<FFT64Avx> for FFT64Avx {
 
     // TODO: add an AVX-accelerated tiled transpose kernel; falls back to the
     // reference impl for now.
-    fn vec_znx_transpose_backend<S: NormalizationState>(
+    fn vec_znx_transpose_backend<S: ArithmeticState>(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self, S>,
-        a: &VecZnxBackendRef<'_, Self, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, Self, impl CoeffFitsIn<S>>,
     ) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
@@ -90,10 +90,10 @@ unsafe impl HalVecZnxImpl<NTT4x30Avx> for NTT4x30Avx {
 
     // TODO: add an AVX-accelerated tiled transpose kernel; falls back to the
     // reference impl for now.
-    fn vec_znx_transpose_backend<S: NormalizationState>(
+    fn vec_znx_transpose_backend<S: ArithmeticState>(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self, S>,
-        a: &VecZnxBackendRef<'_, Self, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, Self, impl CoeffFitsIn<S>>,
     ) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
@@ -491,13 +491,13 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx> for NTT4x30Avx {
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, Self, impl ArithmeticState>,
         res_base2k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, Self, impl NormalizationState>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, Self, impl ArithmeticState>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let n = module.n();

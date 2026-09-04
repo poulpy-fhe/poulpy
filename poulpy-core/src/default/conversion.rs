@@ -13,8 +13,8 @@ use poulpy_hal::{
         VecZnxRotateBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, Normalized, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
-        VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos,
+        Backend, CoeffNormalized, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef,
+        VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos,
     },
 };
 
@@ -38,7 +38,7 @@ where
     BE: Backend,
     M: ModuleN + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
@@ -107,7 +107,7 @@ where
     BE: Backend,
     M: ModuleN + VecZnxExtractCoeffBackend<BE> + VecZnxRotateBackend<BE> + VecZnxCopyRangeBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let a = a.to_backend_ref();
     let n = module.n();
@@ -160,7 +160,7 @@ where
     BE: Backend,
     M: ModuleN + VecZnxRotateBackend<BE> + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
     R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let a = a.to_backend_ref();
     let mut res = res.to_backend_mut();
@@ -392,7 +392,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A>(
         + VecZnxCopyRangeBackend<BE>
         + VecZnxZeroBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     let a_backend = a.to_backend_ref();
 

@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshBackend, VecZnxRshTmpBytes},
     layouts::{Backend, Module, ScratchArena},
@@ -24,8 +24,8 @@ where
 
     fn ckks_extract_pt<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        D: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + CKKSInfos + SetCKKSInfos + IntPolyInfos,
-        S: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos,
+        D: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos + SetCKKSInfos + IntPolyInfos,
+        S: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos,
     {
         BE::ckks_extract_pt_impl(self, dst, src, scratch)
     }

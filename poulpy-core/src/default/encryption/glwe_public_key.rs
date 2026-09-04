@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, Normalized, ScratchOwned},
+    layouts::{Backend, CoeffNormalized, Module, ScratchOwned},
     source::Source,
 };
 
@@ -19,7 +19,7 @@ pub trait GLWEPublicKeyGenerateDefault<BE: Backend> {
         source_xe: &mut Source,
         source_xa: &mut Source,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GetDistributionMut + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
 }
@@ -37,7 +37,7 @@ where
         source_xe: &mut Source,
         source_xa: &mut Source,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GetDistributionMut + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GetDistributionMut + GLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution,
     {

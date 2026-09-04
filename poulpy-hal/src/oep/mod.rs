@@ -10,17 +10,17 @@ mod hal_impl;
 
 pub use hal_impl::*;
 
-use crate::layouts::{Backend, Data, NormalizationState, Normalized, Unnormalized, VecZnx, VecZnxViewMut, ZnxWord};
+use crate::layouts::{Backend, CoeffNormalized, CoeffUnnormalized, CoefficientState, Data, VecZnx, VecZnxViewMut, ZnxWord};
 
 /// Backend-implementor extension point: sets a container's
-/// [`NormalizationState`] directly.
+/// [`CoefficientState`] directly.
 ///
 /// The safe layer only ever relaxes a label (`into_unnormalized`, `into_state`)
-/// or earns [`Normalized`] back through a real pass (`normalize`); scheme code
+/// or earns [`CoeffNormalized`] back through a real pass (`normalize`); scheme code
 /// has no other transition. A fused backend kernel, however, may prove the
 /// digit bound by construction (e.g. an accumulator of `k` normalized limbs
 /// stays within the DFT precision budget) and legitimately skip the pass before
-/// feeding a `Normalized`-typed primitive. [`Self::set_normalized`] is that
+/// feeding a `CoeffNormalized`-typed primitive. [`Self::set_normalized`] is that
 /// override. The trait lives in `oep` because, like every extension point here,
 /// it is reserved for backend implementations: it must not appear outside a
 /// backend crate.
@@ -30,15 +30,15 @@ use crate::layouts::{Backend, Data, NormalizationState, Normalized, Unnormalized
 /// crates' `oep` modules).
 pub trait SetNormalizationState: Sized {
     /// `Self` with its state replaced by `T`.
-    type WithState<T: NormalizationState>;
+    type WithState<T: CoefficientState>;
 
-    /// Relabels `self` as [`Unnormalized`].
+    /// Relabels `self` as [`CoeffUnnormalized`].
     ///
     /// Safe: normalized digits are valid unnormalized digits, so this only
     /// relaxes the label (the trait-generic twin of `into_unnormalized`).
-    fn set_unnormalized(self) -> Self::WithState<Unnormalized>;
+    fn set_unnormalized(self) -> Self::WithState<CoeffUnnormalized>;
 
-    /// Relabels `self` as [`Normalized`] with no normalization pass.
+    /// Relabels `self` as [`CoeffNormalized`] with no normalization pass.
     ///
     /// # Safety
     ///
@@ -46,35 +46,35 @@ pub trait SetNormalizationState: Sized {
     /// consuming kernels rely on. This is a semantic contract, not a
     /// memory-safety one, but it is `unsafe` for the same reason the OEP traits
     /// are: violating it silently corrupts results (DFT precision overflow).
-    unsafe fn set_normalized(self) -> Self::WithState<Normalized>;
+    unsafe fn set_normalized(self) -> Self::WithState<CoeffNormalized>;
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> SetNormalizationState for VecZnx<D, W, S> {
-    type WithState<T: NormalizationState> = VecZnx<D, W, T>;
+impl<D: Data, W: ZnxWord, S: CoefficientState> SetNormalizationState for VecZnx<D, W, S> {
+    type WithState<T: CoefficientState> = VecZnx<D, W, T>;
 
-    fn set_unnormalized(self) -> VecZnx<D, W, Unnormalized> {
+    fn set_unnormalized(self) -> VecZnx<D, W, CoeffUnnormalized> {
         self.relabel_unchecked()
     }
 
-    unsafe fn set_normalized(self) -> VecZnx<D, W, Normalized> {
+    unsafe fn set_normalized(self) -> VecZnx<D, W, CoeffNormalized> {
         self.relabel_unchecked()
     }
 }
 
-impl<'a, B: Backend + 'a, S: NormalizationState> SetNormalizationState for VecZnxViewMut<'a, B, S> {
-    type WithState<T: NormalizationState> = VecZnxViewMut<'a, B, T>;
+impl<'a, B: Backend + 'a, S: CoefficientState> SetNormalizationState for VecZnxViewMut<'a, B, S> {
+    type WithState<T: CoefficientState> = VecZnxViewMut<'a, B, T>;
 
-    fn set_unnormalized(self) -> VecZnxViewMut<'a, B, Unnormalized> {
+    fn set_unnormalized(self) -> VecZnxViewMut<'a, B, CoeffUnnormalized> {
         VecZnxViewMut::from_inner(self.into_inner().relabel_unchecked())
     }
 
-    unsafe fn set_normalized(self) -> VecZnxViewMut<'a, B, Normalized> {
+    unsafe fn set_normalized(self) -> VecZnxViewMut<'a, B, CoeffNormalized> {
         VecZnxViewMut::from_inner(self.into_inner().relabel_unchecked())
     }
 }
 
 /// Backend-implementor extension point: re-wraps `data` with the shape and
-/// [`NormalizationState`] of `a`.
+/// [`CoefficientState`] of `a`.
 ///
 /// For kernel plumbing that re-expresses the *same digits* through different
 /// storage: a delegating backend (e.g. a Rayon wrapper) reborrowing a view as
@@ -83,7 +83,7 @@ impl<'a, B: Backend + 'a, S: NormalizationState> SetNormalizationState for VecZn
 /// of) the storage of `a` itself or a byte-for-byte copy of its digits. Like
 /// every extension point here it is reserved for backend implementations and
 /// must not appear in scheme code.
-pub fn vec_znx_from_data_like<D: Data, D2: Data, W: ZnxWord, S: NormalizationState>(
+pub fn vec_znx_from_data_like<D: Data, D2: Data, W: ZnxWord, S: CoefficientState>(
     a: &VecZnx<D, W, S>,
     data: D2,
 ) -> VecZnx<D2, W, S> {
@@ -92,8 +92,8 @@ pub fn vec_znx_from_data_like<D: Data, D2: Data, W: ZnxWord, S: NormalizationSta
 
 /// Mutable sibling of [`vec_znx_from_data_like`]: re-wraps storage extracted
 /// from `a`'s own data (a reborrow, an inner buffer) under the same shape and
-/// [`NormalizationState`]. Backend implementations only.
-pub fn vec_znx_map_data_mut<'a, D: Data, D2: Data, W: ZnxWord, S: NormalizationState>(
+/// [`CoefficientState`]. Backend implementations only.
+pub fn vec_znx_map_data_mut<'a, D: Data, D2: Data, W: ZnxWord, S: CoefficientState>(
     a: &'a mut VecZnx<D, W, S>,
     f: impl FnOnce(&'a mut D) -> D2,
 ) -> VecZnx<D2, W, S> {

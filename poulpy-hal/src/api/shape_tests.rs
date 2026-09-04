@@ -15,7 +15,7 @@ use crate::{
         VecZnxNormalizeTmpBytes,
     },
     layouts::{
-        Backend, NormalizationState, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendRef, VecZnxDftBackendMut,
+        ArithmeticState, Backend, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendRef, VecZnxDftBackendMut,
     },
 };
 
@@ -23,7 +23,7 @@ fn shape_vec_znx_normalize_tmp_bytes<M: VecZnxNormalizeTmpBytes>(m: &M) -> usize
     m.vec_znx_normalize_tmp_bytes()
 }
 
-fn shape_vec_znx_normalize<B: Backend, M: VecZnxNormalize<B>, S1: NormalizationState, S2: NormalizationState>(
+fn shape_vec_znx_normalize<B: Backend, M: VecZnxNormalize<B>, S1: ArithmeticState, S2: ArithmeticState>(
     m: &M,
     res: &mut VecZnxBackendMut<'_, B, S1>,
     a: &VecZnxBackendRef<'_, B, S2>,
@@ -32,7 +32,7 @@ fn shape_vec_znx_normalize<B: Backend, M: VecZnxNormalize<B>, S1: NormalizationS
     m.vec_znx_normalize(res, 17, -3, 0, a, 18, 1, scratch);
 }
 
-fn shape_vec_znx_normalize_assign<B: Backend, M: VecZnxNormalizeAssignBackend<B>, S: NormalizationState>(
+fn shape_vec_znx_normalize_assign<B: Backend, M: VecZnxNormalizeAssignBackend<B>, S: ArithmeticState>(
     m: &M,
     a: &mut VecZnxBackendMut<'_, B, S>,
     scratch: &mut ScratchArena<'_, B>,
@@ -40,12 +40,7 @@ fn shape_vec_znx_normalize_assign<B: Backend, M: VecZnxNormalizeAssignBackend<B>
     m.vec_znx_normalize_assign_backend(17, a, 0, scratch);
 }
 
-fn shape_vec_znx_normalize_coeff<
-    B: Backend,
-    M: VecZnxNormalizeCoeffBackend<B>,
-    S1: NormalizationState,
-    S2: NormalizationState,
->(
+fn shape_vec_znx_normalize_coeff<B: Backend, M: VecZnxNormalizeCoeffBackend<B>, S1: ArithmeticState, S2: ArithmeticState>(
     m: &M,
     res: &mut VecZnxBackendMut<'_, B, S1>,
     a: &VecZnxBackendRef<'_, B, S2>,
@@ -54,7 +49,7 @@ fn shape_vec_znx_normalize_coeff<
     m.vec_znx_normalize_coeff_backend(res, 17, -3, 0, a, 18, 1, 2, scratch);
 }
 
-fn shape_vec_znx_normalize_coeff_assign<B: Backend, M: VecZnxNormalizeCoeffAssignBackend<B>, S: NormalizationState>(
+fn shape_vec_znx_normalize_coeff_assign<B: Backend, M: VecZnxNormalizeCoeffAssignBackend<B>, S: ArithmeticState>(
     m: &M,
     a: &mut VecZnxBackendMut<'_, B, S>,
     scratch: &mut ScratchArena<'_, B>,
@@ -66,7 +61,7 @@ fn shape_vec_znx_big_normalize_tmp_bytes<M: VecZnxBigNormalizeTmpBytes>(m: &M) -
     m.vec_znx_big_normalize_tmp_bytes()
 }
 
-fn shape_vec_znx_big_normalize<B: Backend, M: VecZnxBigNormalize<B>, S: NormalizationState>(
+fn shape_vec_znx_big_normalize<B: Backend, M: VecZnxBigNormalize<B>, S: ArithmeticState>(
     m: &M,
     res: &mut VecZnxBackendMut<'_, B, S>,
     a: &VecZnxBigBackendRef<'_, B>,
@@ -82,8 +77,8 @@ fn shape_vec_znx_idft_normalize_consume_tmp_bytes<M: VecZnxIdftNormalizeConsumeT
 fn shape_vec_znx_idft_normalize_consume<
     B: Backend,
     M: VecZnxIdftNormalizeConsume<B>,
-    S1: NormalizationState,
-    S2: NormalizationState,
+    S1: ArithmeticState,
+    S2: ArithmeticState,
 >(
     m: &M,
     res: &mut VecZnxBackendMut<'_, B, S1>,

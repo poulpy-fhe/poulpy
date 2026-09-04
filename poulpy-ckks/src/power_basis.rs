@@ -2,7 +2,7 @@ use crate::layouts::CKKSCiphertextOwned;
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, split_degree};
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, ZnxWord};
 
 use crate::{
@@ -28,8 +28,10 @@ pub trait PowerBasisGen<BE: Backend> {
     fn gen_power<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetTensorKey<BE>;
 
     /// Recursively computes and stores `T_n(X)` (Chebyshev basis).
@@ -42,8 +44,10 @@ pub trait PowerBasisGen<BE: Backend> {
     ) -> Result<()>
     where
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetTensorKey<BE>;
 
     /// Pre-computes all powers required to evaluate a polynomial of the given
@@ -59,8 +63,10 @@ pub trait PowerBasisGen<BE: Backend> {
     ) -> Result<()>
     where
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetTensorKey<BE>;
 }
 
@@ -106,8 +112,10 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
     fn gen_power<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
         ensure!(
@@ -141,8 +149,10 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
     fn gen_power_chebyshev<H>(&mut self, n: usize, module: &Module<BE>, tsk: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
         ensure!(
@@ -206,8 +216,10 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertextOwned<BE>> {
     ) -> Result<()>
     where
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetTensorKey<BE>,
     {
         ensure!(degree >= 1, "populate: degree must be ≥ 1");

@@ -8,8 +8,9 @@ use crate::{
     alloc_aligned,
     api::VecZnxNormalizeAssignBackend,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx,
-        ScratchArena, ToOwnedDeep, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        ArithmeticState, Backend, CoeffFitsIn, CoeffNormalized, CoeffUnnormalized, CoefficientState, Data, DataView, DataViewMut,
+        DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx, ScratchArena, ToOwnedDeep, VecZnxInfos,
+        WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -168,13 +169,13 @@ impl<S: NormalizationState> FitsIn<Unnormalized> for S {}
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
-pub struct VecZnx<D: Data, W: ZnxWord, S: NormalizationState = Normalized> {
+pub struct VecZnx<D: Data, W: ZnxWord, S: CoefficientState = CoeffNormalized> {
     pub data: D,
     shape: VecZnxShape,
     _phantom: PhantomData<(W, S)>,
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     /// Relabels this vector as [`Unnormalized`].
     ///
     /// Free and always sound: normalized digits are valid unnormalized digits.
@@ -183,7 +184,7 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
     /// Relabelling a *borrowed view* (rather than the owner) leaves the owner's
     /// label untouched, so a caller doing that must normalize the view in place
     /// before the borrow ends.
-    pub fn into_unnormalized(self) -> VecZnx<D, W, Unnormalized> {
+    pub fn into_unnormalized(self) -> VecZnx<D, W, CoeffUnnormalized> {
         VecZnx {
             data: self.data,
             shape: self.shape,
@@ -192,9 +193,9 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
     }
 
     /// Relabels this vector into any state its current state [`FitsIn`].
-    pub fn into_state<T: NormalizationState>(self) -> VecZnx<D, W, T>
+    pub fn into_state<T: CoefficientState>(self) -> VecZnx<D, W, T>
     where
-        S: FitsIn<T>,
+        S: CoeffFitsIn<T>,
     {
         VecZnx {
             data: self.data,
@@ -204,7 +205,7 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
     }
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     /// Relabels to an arbitrary state with no normalization pass.
     ///
     /// Crate-private on purpose: this is the only state relabel in the
@@ -212,7 +213,7 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
     /// `VecZnxViewMut::normalize` (right after an in-place normalization pass)
     /// and the backend-implementor extension point
     /// [`crate::oep::SetNormalizationState`].
-    pub(crate) fn relabel_unchecked<T: NormalizationState>(self) -> VecZnx<D, W, T> {
+    pub(crate) fn relabel_unchecked<T: CoefficientState>(self) -> VecZnx<D, W, T> {
         VecZnx {
             data: self.data,
             shape: self.shape,
@@ -221,17 +222,17 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
     }
 }
 
-impl<D: Data, W: ZnxWord> VecZnx<D, W, Unnormalized> {
+impl<D: Data, W: ZnxWord> VecZnx<D, W, CoeffUnnormalized> {
     /// Propagates carries through every column and returns the vector relabelled as [`Normalized`].
     ///
     /// This is the only public path from [`Unnormalized`] to [`Normalized`].
     /// Only the top limb discards overflow. `scratch` must hold at least
     /// `vec_znx_normalize_tmp_bytes` bytes.
-    pub fn normalize<M, B>(self, module: &M, base2k: usize, scratch: &mut ScratchArena<'_, B>) -> VecZnx<D, W, Normalized>
+    pub fn normalize<M, B>(self, module: &M, base2k: usize, scratch: &mut ScratchArena<'_, B>) -> VecZnx<D, W, CoeffNormalized>
     where
         B: Backend<ZnxWord = W>,
         M: VecZnxNormalizeAssignBackend<B> + ?Sized,
-        Self: VecZnxToBackendMut<B>,
+        Self: VecZnxToBackendMut<B, State = CoeffUnnormalized>,
     {
         let mut me = self;
         {
@@ -244,14 +245,14 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W, Unnormalized> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+impl<D: HostDataRef, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     /// Returns a read-only [`ScalarZnx`] view of a single limb of a single column.
     pub fn as_scalar_znx_ref(&self, col: usize, limb: usize) -> ScalarZnx<&[u8], W> {
         ScalarZnx::from_data(bytemuck::cast_slice(self.at(col, limb)), self.n(), 1)
     }
 }
 
-impl<D: Data + Default, W: ZnxWord, S: NormalizationState> Default for VecZnx<D, W, S> {
+impl<D: Data + Default, W: ZnxWord, S: CoefficientState> Default for VecZnx<D, W, S> {
     fn default() -> Self {
         Self {
             data: D::default(),
@@ -261,7 +262,7 @@ impl<D: Data + Default, W: ZnxWord, S: NormalizationState> Default for VecZnx<D,
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> DigestU64 for VecZnx<D, W, S> {
+impl<D: HostDataRef, W: ZnxWord, S: CoefficientState> DigestU64 for VecZnx<D, W, S> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
@@ -272,7 +273,7 @@ impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> DigestU64 for VecZnx<D, 
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> ToOwnedDeep for VecZnx<D, W, S> {
+impl<D: HostDataRef, W: ZnxWord, S: CoefficientState> ToOwnedDeep for VecZnx<D, W, S> {
     type Owned = VecZnx<Vec<u8>, W, S>;
     fn to_owned_deep(&self) -> Self::Owned {
         VecZnx {
@@ -283,7 +284,7 @@ impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> ToOwnedDeep for VecZnx<D
     }
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     /// Rebuilds this backend-owned vector as a host-owned [`VecZnx<Vec<u8>>`].
     pub fn to_host_owned<BE>(&self) -> VecZnx<Vec<u8>, W, S>
     where
@@ -307,13 +308,13 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> fmt::Debug for VecZnx<D, W, S> {
+impl<D: HostDataRef, W: ZnxWord, S: CoefficientState> fmt::Debug for VecZnx<D, W, S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> ZnxInfos for VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> ZnxInfos for VecZnx<D, W, S> {
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -327,30 +328,30 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> ZnxInfos for VecZnx<D, W, S> {
     }
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnxInfos for VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnxInfos for VecZnx<D, W, S> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> DataView for VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> DataView for VecZnx<D, W, S> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> DataViewMut for VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> DataViewMut for VecZnx<D, W, S> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> ZnxView for VecZnx<D, W, S> {
+impl<D: HostDataRef, W: ZnxWord, S: CoefficientState> ZnxView for VecZnx<D, W, S> {
     type Scalar = W;
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     pub fn n(&self) -> usize {
         self.shape.n()
     }
@@ -368,14 +369,14 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
     }
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     /// Returns the scratch space (in bytes) required by right-shift operations.
     pub fn rsh_tmp_bytes(n: usize) -> usize {
         n * size_of::<W>()
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord, S: NormalizationState> ZnxZero for VecZnx<D, W, S> {
+impl<D: HostDataMut, W: ZnxWord, S: CoefficientState> ZnxZero for VecZnx<D, W, S> {
     fn zero(&mut self) {
         self.raw_mut().fill(W::zero())
     }
@@ -384,7 +385,7 @@ impl<D: HostDataMut, W: ZnxWord, S: NormalizationState> ZnxZero for VecZnx<D, W,
     }
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     /// Returns the number of bytes required: `n * cols * size * size_of::<W>()`.
     pub fn bytes_of(n: usize, cols: usize, size: usize) -> usize {
         crate::layouts::checked_product(&[n, cols, size, size_of::<W>()], "VecZnx byte size")
@@ -428,7 +429,7 @@ impl<W: ZnxWord> VecZnx<Vec<u8>, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
+impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     /// Rebuilds a vector around new storage while keeping the state of the value it was copied
     /// or borrowed from (transfers, host views). Crate-private so that no external path can pick
     /// an arbitrary state for raw data; see [`VecZnx::from_data`].
@@ -441,7 +442,7 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
     }
 }
 
-impl<D: Data, W: ZnxWord> VecZnx<D, W, Normalized> {
+impl<D: Data, W: ZnxWord> VecZnx<D, W, CoeffNormalized> {
     /// Constructs a `VecZnx` from raw parts without validation.
     ///
     /// Raw ingestion is a trust boundary (like deserialization): the result is
@@ -458,7 +459,7 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W, Normalized> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> fmt::Display for VecZnx<D, W, S> {
+impl<D: HostDataRef, W: ZnxWord, S: CoefficientState> fmt::Display for VecZnx<D, W, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "VecZnx(n={}, cols={}, size={})", self.n(), self.cols(), self.size())?;
 
@@ -489,7 +490,7 @@ impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> fmt::Display for VecZnx<
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord, S: NormalizationState> FillUniform for VecZnx<D, W, S> {
+impl<D: HostDataMut, W: ZnxWord, S: CoefficientState> FillUniform for VecZnx<D, W, S> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         assert!(log_bound != 0, "invalid log_bound, cannot be zero");
         assert!(
@@ -511,22 +512,22 @@ impl<D: HostDataMut, W: ZnxWord, S: NormalizationState> FillUniform for VecZnx<D
 }
 
 /// Owned `VecZnx` backed by a `Vec<u8>`.
-pub type VecZnxOwned<W, S = Normalized> = VecZnx<Vec<u8>, W, S>;
+pub type VecZnxOwned<W, S = CoeffNormalized> = VecZnx<Vec<u8>, W, S>;
 /// Mutably borrowed `VecZnx`.
-pub type VecZnxMut<'a, W, S = Normalized> = VecZnx<&'a mut [u8], W, S>;
+pub type VecZnxMut<'a, W, S = CoeffNormalized> = VecZnx<&'a mut [u8], W, S>;
 /// Immutably borrowed `VecZnx`.
-pub type VecZnxRef<'a, W, S = Normalized> = VecZnx<&'a [u8], W, S>;
+pub type VecZnxRef<'a, W, S = CoeffNormalized> = VecZnx<&'a [u8], W, S>;
 /// Shared backend-native borrow of a `VecZnx`.
-pub type VecZnxBackendRef<'a, B, S = Normalized> = VecZnx<<B as Backend>::BufRef<'a>, <B as Backend>::ZnxWord, S>;
+pub type VecZnxBackendRef<'a, B, S = CoeffNormalized> = VecZnx<<B as Backend>::BufRef<'a>, <B as Backend>::ZnxWord, S>;
 /// Mutable backend-native borrow of a `VecZnx`.
-pub type VecZnxBackendMut<'a, B, S = Normalized> = VecZnx<<B as Backend>::BufMut<'a>, <B as Backend>::ZnxWord, S>;
+pub type VecZnxBackendMut<'a, B, S = CoeffNormalized> = VecZnx<<B as Backend>::BufMut<'a>, <B as Backend>::ZnxWord, S>;
 
 /// Returns a shared backend-native scalar view into a backend-owned `VecZnx`.
 pub trait VecZnxAsScalarBackendRef<B: Backend> {
     fn as_scalar_znx_backend_ref(&self, col: usize, limb: usize) -> ScalarZnx<B::BufRef<'_>, B::ZnxWord>;
 }
 
-impl<B: Backend, S: NormalizationState> VecZnxAsScalarBackendRef<B> for VecZnx<B::OwnedBuf, B::ZnxWord, S> {
+impl<B: Backend, S: CoefficientState> VecZnxAsScalarBackendRef<B> for VecZnx<B::OwnedBuf, B::ZnxWord, S> {
     fn as_scalar_znx_backend_ref(&self, col: usize, limb: usize) -> ScalarZnx<B::BufRef<'_>, B::ZnxWord> {
         assert!(limb < self.size(), "size: {limb} >= {}", self.size());
         assert!(col < self.cols(), "cols: {col} >= {}", self.cols());
@@ -549,7 +550,7 @@ pub trait VecZnxAsScalarBackendMut<B: Backend> {
     fn as_scalar_znx_backend_mut(&mut self, col: usize, limb: usize) -> ScalarZnx<B::BufMut<'_>, B::ZnxWord>;
 }
 
-impl<B: Backend, S: NormalizationState> VecZnxAsScalarBackendMut<B> for VecZnx<B::OwnedBuf, B::ZnxWord, S> {
+impl<B: Backend, S: CoefficientState> VecZnxAsScalarBackendMut<B> for VecZnx<B::OwnedBuf, B::ZnxWord, S> {
     fn as_scalar_znx_backend_mut(&mut self, col: usize, limb: usize) -> ScalarZnx<B::BufMut<'_>, B::ZnxWord> {
         let n = self.n();
         assert!(limb < self.size(), "size: {limb} >= {}", self.size());
@@ -573,11 +574,11 @@ impl<B: Backend, S: NormalizationState> VecZnxAsScalarBackendMut<B> for VecZnx<B
 /// [`Self::State`]: bounds such as `T: VecZnxToBackendRef<B, State = Normalized>`
 /// are how an op restricts the state of what it reads.
 pub trait VecZnxToBackendRef<B: Backend = crate::layouts::HostBytesBackend> {
-    type State: NormalizationState;
+    type State: ArithmeticState;
     fn to_backend_ref(&self) -> VecZnxBackendRef<'_, B, Self::State>;
 }
 
-impl<B: Backend, S: NormalizationState> VecZnxToBackendRef<B> for VecZnx<B::OwnedBuf, B::ZnxWord, S> {
+impl<B: Backend, S: ArithmeticState> VecZnxToBackendRef<B> for VecZnx<B::OwnedBuf, B::ZnxWord, S> {
     type State = S;
     fn to_backend_ref(&self) -> VecZnxBackendRef<'_, B, S> {
         VecZnx {
@@ -588,14 +589,14 @@ impl<B: Backend, S: NormalizationState> VecZnxToBackendRef<B> for VecZnx<B::Owne
     }
 }
 
-impl<'b, B: Backend + 'b, S: NormalizationState> VecZnxToBackendRef<B> for &VecZnx<B::BufRef<'b>, B::ZnxWord, S> {
+impl<'b, B: Backend + 'b, S: ArithmeticState> VecZnxToBackendRef<B> for &VecZnx<B::BufRef<'b>, B::ZnxWord, S> {
     type State = S;
     fn to_backend_ref(&self) -> VecZnxBackendRef<'_, B, S> {
         vec_znx_backend_ref_from_ref::<B, S>(self)
     }
 }
 
-impl<S: NormalizationState> VecZnxToBackendRef<crate::layouts::HostBytesBackend> for VecZnx<&mut [u8], i64, S> {
+impl<S: ArithmeticState> VecZnxToBackendRef<crate::layouts::HostBytesBackend> for VecZnx<&mut [u8], i64, S> {
     type State = S;
     fn to_backend_ref(&self) -> VecZnxBackendRef<'_, crate::layouts::HostBytesBackend, S> {
         VecZnx {
@@ -606,7 +607,7 @@ impl<S: NormalizationState> VecZnxToBackendRef<crate::layouts::HostBytesBackend>
     }
 }
 
-impl<S: NormalizationState> VecZnxToBackendRef<crate::layouts::HostBytesBackend> for VecZnx<&[u8], i64, S> {
+impl<S: ArithmeticState> VecZnxToBackendRef<crate::layouts::HostBytesBackend> for VecZnx<&[u8], i64, S> {
     type State = S;
     fn to_backend_ref(&self) -> VecZnxBackendRef<'_, crate::layouts::HostBytesBackend, S> {
         VecZnx {
@@ -619,11 +620,11 @@ impl<S: NormalizationState> VecZnxToBackendRef<crate::layouts::HostBytesBackend>
 
 /// Reborrow an already backend-borrowed `VecZnx` as a shared backend-native view.
 pub trait VecZnxReborrowBackendRef<B: Backend = crate::layouts::HostBytesBackend> {
-    type State: NormalizationState;
+    type State: ArithmeticState;
     fn reborrow_backend_ref(&self) -> VecZnxBackendRef<'_, B, Self::State>;
 }
 
-pub fn vec_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b, S: NormalizationState>(
+pub fn vec_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b, S: CoefficientState>(
     vec: &'a VecZnx<B::BufRef<'b>, B::ZnxWord, S>,
 ) -> VecZnxBackendRef<'a, B, S> {
     VecZnx {
@@ -633,7 +634,7 @@ pub fn vec_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b, S: NormalizationSta
     }
 }
 
-pub fn vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b, S: NormalizationState>(
+pub fn vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b, S: CoefficientState>(
     vec: &'a VecZnx<B::BufMut<'b>, B::ZnxWord, S>,
 ) -> VecZnxBackendRef<'a, B, S> {
     VecZnx {
@@ -643,7 +644,7 @@ pub fn vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b, S: NormalizationSta
     }
 }
 
-impl<'b, B: Backend + 'b, S: NormalizationState> VecZnxReborrowBackendRef<B> for VecZnx<B::BufMut<'b>, B::ZnxWord, S> {
+impl<'b, B: Backend + 'b, S: ArithmeticState> VecZnxReborrowBackendRef<B> for VecZnx<B::BufMut<'b>, B::ZnxWord, S> {
     type State = S;
     fn reborrow_backend_ref(&self) -> VecZnxBackendRef<'_, B, S> {
         vec_znx_backend_ref_from_mut::<B, S>(self)
@@ -656,11 +657,11 @@ impl<'b, B: Backend + 'b, S: NormalizationState> VecZnxReborrowBackendRef<B> for
 /// [`Self::State`]; a carry-producing op therefore demands
 /// `R: VecZnxToBackendMut<B, State = Unnormalized>` for its destination.
 pub trait VecZnxToBackendMut<B: Backend = crate::layouts::HostBytesBackend> {
-    type State: NormalizationState;
+    type State: ArithmeticState;
     fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, B, Self::State>;
 }
 
-impl<B: Backend, S: NormalizationState> VecZnxToBackendMut<B> for VecZnx<B::OwnedBuf, B::ZnxWord, S> {
+impl<B: Backend, S: ArithmeticState> VecZnxToBackendMut<B> for VecZnx<B::OwnedBuf, B::ZnxWord, S> {
     type State = S;
     fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, B, S> {
         VecZnx {
@@ -671,14 +672,14 @@ impl<B: Backend, S: NormalizationState> VecZnxToBackendMut<B> for VecZnx<B::Owne
     }
 }
 
-impl<'b, B: Backend + 'b, S: NormalizationState> VecZnxToBackendMut<B> for &mut VecZnx<B::BufMut<'b>, B::ZnxWord, S> {
+impl<'b, B: Backend + 'b, S: ArithmeticState> VecZnxToBackendMut<B> for &mut VecZnx<B::BufMut<'b>, B::ZnxWord, S> {
     type State = S;
     fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, B, S> {
         vec_znx_backend_mut_from_mut::<B, S>(self)
     }
 }
 
-impl<S: NormalizationState> VecZnxToBackendMut<crate::layouts::HostBytesBackend> for VecZnx<&mut [u8], i64, S> {
+impl<S: ArithmeticState> VecZnxToBackendMut<crate::layouts::HostBytesBackend> for VecZnx<&mut [u8], i64, S> {
     type State = S;
     fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, crate::layouts::HostBytesBackend, S> {
         VecZnx {
@@ -691,11 +692,11 @@ impl<S: NormalizationState> VecZnxToBackendMut<crate::layouts::HostBytesBackend>
 
 /// Reborrow an already backend-borrowed `VecZnx` as a mutable backend-native view.
 pub trait VecZnxReborrowBackendMut<B: Backend = crate::layouts::HostBytesBackend> {
-    type State: NormalizationState;
+    type State: ArithmeticState;
     fn reborrow_backend_mut(&mut self) -> VecZnxBackendMut<'_, B, Self::State>;
 }
 
-pub fn vec_znx_host_backend_ref<D: HostDataRef, S: NormalizationState>(
+pub fn vec_znx_host_backend_ref<D: HostDataRef, S: CoefficientState>(
     vec: &VecZnx<D, i64, S>,
 ) -> VecZnxBackendRef<'_, crate::layouts::HostBytesBackend, S> {
     VecZnx {
@@ -705,7 +706,7 @@ pub fn vec_znx_host_backend_ref<D: HostDataRef, S: NormalizationState>(
     }
 }
 
-pub fn vec_znx_host_backend_mut<D: HostDataMut, S: NormalizationState>(
+pub fn vec_znx_host_backend_mut<D: HostDataMut, S: CoefficientState>(
     vec: &mut VecZnx<D, i64, S>,
 ) -> VecZnxBackendMut<'_, crate::layouts::HostBytesBackend, S> {
     VecZnx {
@@ -715,7 +716,7 @@ pub fn vec_znx_host_backend_mut<D: HostDataMut, S: NormalizationState>(
     }
 }
 
-pub fn vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b, S: NormalizationState>(
+pub fn vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b, S: CoefficientState>(
     vec: &'a mut VecZnx<B::BufMut<'b>, B::ZnxWord, S>,
 ) -> VecZnxBackendMut<'a, B, S> {
     VecZnx {
@@ -725,7 +726,7 @@ pub fn vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b, S: NormalizationSta
     }
 }
 
-impl<'b, B: Backend + 'b, S: NormalizationState> VecZnxReborrowBackendMut<B> for VecZnx<B::BufMut<'b>, B::ZnxWord, S> {
+impl<'b, B: Backend + 'b, S: ArithmeticState> VecZnxReborrowBackendMut<B> for VecZnx<B::BufMut<'b>, B::ZnxWord, S> {
     type State = S;
     fn reborrow_backend_mut(&mut self) -> VecZnxBackendMut<'_, B, S> {
         vec_znx_backend_mut_from_mut::<B, S>(self)
@@ -738,7 +739,7 @@ impl<'b, B: Backend + 'b, S: NormalizationState> VecZnxReborrowBackendMut<B> for
 /// cannot invert, so `vec.to_backend_ref()` cannot infer `B` the way the
 /// backend-keyed containers (`VecZnxDft`, `VecZnxBig`) can. This names the
 /// backend once, as a turbofish, instead of spelling the qualified path.
-pub fn vec_znx_backend_ref<'a, B: Backend, S: NormalizationState>(
+pub fn vec_znx_backend_ref<'a, B: Backend, S: ArithmeticState>(
     vec: &'a VecZnx<B::OwnedBuf, B::ZnxWord, S>,
 ) -> VecZnxBackendRef<'a, B, S> {
     <VecZnx<B::OwnedBuf, B::ZnxWord, S> as VecZnxToBackendRef<B>>::to_backend_ref(vec)
@@ -748,7 +749,7 @@ pub fn vec_znx_backend_ref<'a, B: Backend, S: NormalizationState>(
 ///
 /// Same inference problem as [`vec_znx_backend_mut`]: the impl is keyed on
 /// `B::BufMut`, so the backend is named once here instead of at each call.
-pub fn vec_znx_reborrow_backend_mut<'a, B: Backend, S: NormalizationState>(
+pub fn vec_znx_reborrow_backend_mut<'a, B: Backend, S: ArithmeticState>(
     vec: &'a mut VecZnxBackendMut<'_, B, S>,
 ) -> VecZnxBackendMut<'a, B, S> {
     <VecZnx<B::BufMut<'_>, B::ZnxWord, S> as VecZnxReborrowBackendMut<B>>::reborrow_backend_mut(vec)
@@ -758,7 +759,7 @@ pub fn vec_znx_reborrow_backend_mut<'a, B: Backend, S: NormalizationState>(
 ///
 /// See [`vec_znx_backend_ref`] for why this exists rather than a bare
 /// `to_backend_mut()`.
-pub fn vec_znx_backend_mut<'a, B: Backend, S: NormalizationState>(
+pub fn vec_znx_backend_mut<'a, B: Backend, S: ArithmeticState>(
     vec: &'a mut VecZnx<B::OwnedBuf, B::ZnxWord, S>,
 ) -> VecZnxBackendMut<'a, B, S> {
     <VecZnx<B::OwnedBuf, B::ZnxWord, S> as VecZnxToBackendMut<B>>::to_backend_mut(vec)
@@ -777,7 +778,7 @@ pub fn vec_znx_backend_mut<'a, B: Backend, S: NormalizationState>(
 /// # Panics
 ///
 /// Panics if `size > vec.size()`.
-pub fn vec_znx_backend_mut_with_size<'a, B: Backend, S: NormalizationState>(
+pub fn vec_znx_backend_mut_with_size<'a, B: Backend, S: CoefficientState>(
     vec: VecZnxBackendMut<'a, B, S>,
     size: usize,
 ) -> VecZnxBackendMut<'a, B, S> {
@@ -788,7 +789,7 @@ pub fn vec_znx_backend_mut_with_size<'a, B: Backend, S: NormalizationState>(
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord, S: NormalizationState> ReaderFrom for VecZnx<D, W, S> {
+impl<D: HostDataMut, W: ZnxWord, S: CoefficientState> ReaderFrom for VecZnx<D, W, S> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         // Read into temporaries first to avoid leaving self in an inconsistent state on error.
         let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
@@ -824,7 +825,7 @@ impl<D: HostDataMut, W: ZnxWord, S: NormalizationState> ReaderFrom for VecZnx<D,
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> WriterTo for VecZnx<D, W, S> {
+impl<D: HostDataRef, W: ZnxWord, S: CoefficientState> WriterTo for VecZnx<D, W, S> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u64::<LittleEndian>(self.n() as u64)?;
         writer.write_u64::<LittleEndian>(self.cols() as u64)?;

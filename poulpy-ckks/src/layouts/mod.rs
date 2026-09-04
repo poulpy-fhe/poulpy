@@ -141,8 +141,8 @@ pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
 };
 pub use ciphertext::{
-    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
-    Unnormalized, UnnormalizedCKKSCiphertext,
+    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSNormalizationState, CoeffNormalized, CoeffUnnormalized,
+    ScratchArenaTakeCKKS, UnnormalizedCKKSCiphertext,
 };
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{

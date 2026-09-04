@@ -16,7 +16,7 @@ use crate::{
         VecZnxNormalizeAssignBackend,
     },
     layouts::{
-        DataView, FillUniform, NormalizationState, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero,
+        ArithmeticState, DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero,
     },
     source::Source,
 };
@@ -773,9 +773,9 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     k: i64,
     res: &mut VecZnxOwned<BE::ZnxWord>,
     res_col: usize,
-    a: &VecZnxOwned<BE::ZnxWord, impl NormalizationState>,
+    a: &VecZnxOwned<BE::ZnxWord, impl ArithmeticState>,
     a_col: usize,
-    b: &VecZnxOwned<BE::ZnxWord, impl NormalizationState>,
+    b: &VecZnxOwned<BE::ZnxWord, impl ArithmeticState>,
     b_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where

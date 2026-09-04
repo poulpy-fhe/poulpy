@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use std::mem::size_of;
 
 #[cfg(feature = "enable-ifma")]
@@ -190,8 +190,14 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
-    Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    Src: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    Src: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
 {
     let k_large = dst.k().as_usize();
     let k_small = src.k().as_usize();
@@ -313,12 +319,12 @@ macro_rules! impl_encapsulated_mod_up {
                 scratch: &mut ScratchArena<'_, $be>,
             ) -> CKKSResult<()>
             where
-                Dst: GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized>
-                    + GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized>
+                Dst: GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
                     + CKKSCtBounds
                     + SetCKKSInfos,
-                Src: GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized>
-                    + GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized>
+                Src: GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
                     + CKKSCtBounds
                     + SetCKKSInfos,
             {

@@ -9,7 +9,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
@@ -160,7 +160,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
         + VecZnxIdftNormalizeConsumeTmpBytes
         + GaloisElement
         + Sync,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
     glwe_prepare_linear_transformation_baby_steps(module, cache, a, keys, scratch);

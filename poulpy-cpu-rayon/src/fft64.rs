@@ -135,7 +135,7 @@ use $crate::__private::poulpy_hal::{
         DataView, DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnx, VecZnxBackendMut,
         VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDft, VecZnxDftBackendMut,
         VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView,
-        ZnxViewMut, FitsIn, NormalizationState,
+        ZnxViewMut, CoeffFitsIn, ArithmeticState,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
@@ -491,17 +491,17 @@ impl BigWordHadamardProduct for $rayon {
 
 unsafe impl HalVecZnxImpl<$rayon> for $rayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
-    fn vec_znx_transpose_backend<S: NormalizationState>(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self, S>, a: &VecZnxBackendRef<'_, Self, impl FitsIn<S>>) {
+    fn vec_znx_transpose_backend<S: ArithmeticState>(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self, S>, a: &VecZnxBackendRef<'_, Self, impl CoeffFitsIn<S>>) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
 
     fn vec_znx_normalize_backend(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, Self, impl ArithmeticState>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, Self, impl ArithmeticState>,
         a_base2k: usize,
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
@@ -513,7 +513,7 @@ unsafe impl HalVecZnxImpl<$rayon> for $rayon {
     fn vec_znx_normalize_assign_backend(
         module: &Module<Self>,
         base2k: usize,
-        a: &mut VecZnxBackendMut<'_, Self, impl NormalizationState>,
+        a: &mut VecZnxBackendMut<'_, Self, impl ArithmeticState>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
@@ -706,7 +706,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
     fn vec_znx_big_from_small_backend(
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, Self, impl ArithmeticState>,
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_from_small_backend(&mut base_big_mut(res), res_col, a, a_col)
@@ -772,7 +772,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         res_col: usize,
         a: &VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
+        b: &VecZnxBackendRef<'_, Self, impl ArithmeticState>,
         b_col: usize,
     ) {
         <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_add_small_into_backend(
@@ -790,7 +790,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, Self, impl ArithmeticState>,
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_add_small_assign(
@@ -858,7 +858,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, Self, impl ArithmeticState>,
         a_col: usize,
         b: &VecZnxBigBackendRef<'_, Self>,
         b_col: usize,
@@ -878,7 +878,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, Self, impl ArithmeticState>,
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_sub_small_assign(
@@ -896,7 +896,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         res_col: usize,
         a: &VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
+        b: &VecZnxBackendRef<'_, Self, impl ArithmeticState>,
         b_col: usize,
     ) {
         <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_sub_small_b_backend(
@@ -914,7 +914,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, Self, impl ArithmeticState>,
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_sub_small_negate_assign(
@@ -948,7 +948,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, Self, impl ArithmeticState>,
         weights: &ScalarZnxBackendRef<'_, Self>,
         weights_col: usize,
         cols: usize,
@@ -970,7 +970,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, Self, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, Self, impl ArithmeticState>,
         a_col: usize,
         b: &ScalarZnxBackendRef<'_, Self>,
         b_col: usize,
@@ -1012,7 +1012,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
 
     fn vec_znx_big_normalize(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, Self, impl ArithmeticState>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
@@ -1077,13 +1077,13 @@ unsafe impl HalVecZnxDftImpl<$rayon> for $rayon {
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume(
         module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self, impl NormalizationState>,
+        res: &mut VecZnxBackendMut<'_, Self, impl ArithmeticState>,
         res_base2k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, Self, impl NormalizationState>, usize)>,
+        addend: Option<(&VecZnxBackendRef<'_, Self, impl ArithmeticState>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let n = a.n();

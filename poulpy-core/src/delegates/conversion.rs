@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, Module, ScratchArena};
 
 use crate::{
     api::{GGSWExpandRows, GGSWFromGGLWE, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFromGLWE, LWESampleExtract},
@@ -27,7 +27,7 @@ impl_conversion_delegate!(
     fn lwe_sample_extract<R, A>(&self, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         BE::lwe_sample_extract(self, res, a)
     }
@@ -82,7 +82,7 @@ impl_conversion_delegate!(
     )
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         BE::lwe_from_glwe(self, res, a, a_idx, key, scratch)
     }
@@ -102,7 +102,7 @@ impl_conversion_delegate!(
     fn glwe_expand_lwe<R, A>(&self, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         BE::glwe_expand_lwe(self, res, a, scratch)
     }
@@ -125,7 +125,7 @@ impl_conversion_delegate!(
     fn glwe_expand_lwe_matrix<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         BE::glwe_expand_lwe_matrix(self, res, a, scratch)
     }

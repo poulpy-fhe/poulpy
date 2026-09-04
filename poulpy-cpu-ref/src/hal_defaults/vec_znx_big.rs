@@ -47,7 +47,7 @@ use crate::reference::{
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, NormalizationState, ScalarZnxBackendRef, ScratchArena, VecZnx,
+        ArithmeticState, Backend, HostDataMut, HostDataRef, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnx,
         VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut, ZnxView, ZnxViewMut,
     },
     source::Source,
@@ -81,7 +81,7 @@ where
 }
 
 #[inline]
-fn vec_znx_backend_ref_as_host_ref<'a, 'b, BE, S: NormalizationState>(
+fn vec_znx_backend_ref_as_host_ref<'a, 'b, BE, S: ArithmeticState>(
     a: &'a VecZnx<BE::BufRef<'b>, BE::ZnxWord, S>,
 ) -> VecZnx<&'a [u8], i64, S>
 where
@@ -119,7 +119,7 @@ where
 fn vec_znx_scalar_product_default_impl<R, BE>(
     res: &mut R,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
     a_col: usize,
     b: &ScalarZnxBackendRef<'_, BE>,
     b_col: usize,
@@ -151,7 +151,7 @@ fn vec_znx_scalar_product_default_impl<R, BE>(
 fn vec_znx_big_col_weighted_sum_default_impl<R, BE>(
     res: &mut R,
     res_col: usize,
-    a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
     weights: &ScalarZnxBackendRef<'_, BE>,
     weights_col: usize,
     cols: usize,
@@ -200,7 +200,7 @@ where
     fn vec_znx_big_from_small_default<R>(
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: Backend<BigWord = i64, ZnxWord = i64>,
@@ -286,7 +286,7 @@ where
         res_col: usize,
         a: &A,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        b: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         b_col: usize,
     ) where
         BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
@@ -301,7 +301,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAddAssign,
@@ -350,7 +350,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         b: &C,
         b_col: usize,
@@ -367,7 +367,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSubAssign,
@@ -383,7 +383,7 @@ where
         res_col: usize,
         a: &A,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        b: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         b_col: usize,
     ) where
         BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
@@ -398,7 +398,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
@@ -429,7 +429,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         b: &ScalarZnxBackendRef<'_, BE>,
         b_col: usize,
@@ -446,7 +446,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         weights: &ScalarZnxBackendRef<'_, BE>,
         weights_col: usize,
         cols: usize,
@@ -573,7 +573,7 @@ where
     fn vec_znx_big_from_small_default<R>(
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
@@ -646,7 +646,7 @@ where
         res_col: usize,
         a: &A,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        b: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         b_col: usize,
     ) where
         BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
@@ -662,7 +662,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
@@ -712,7 +712,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         b: &C,
         b_col: usize,
@@ -730,7 +730,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
@@ -747,7 +747,7 @@ where
         res_col: usize,
         a: &A,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        b: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         b_col: usize,
     ) where
         BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
@@ -763,7 +763,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
     ) where
         BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
@@ -795,7 +795,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         a_col: usize,
         b: &ScalarZnxBackendRef<'_, BE>,
         b_col: usize,
@@ -812,7 +812,7 @@ where
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE, impl NormalizationState>,
+        a: &VecZnxBackendRef<'_, BE, impl ArithmeticState>,
         weights: &ScalarZnxBackendRef<'_, BE>,
         weights_col: usize,
         cols: usize,

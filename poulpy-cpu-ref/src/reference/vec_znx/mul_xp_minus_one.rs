@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use crate::{
     layouts::{
-        Backend, HostDataMut, HostDataRef, NormalizationState, Unnormalized, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
+        ArithmeticState, Backend, CoeffUnnormalized, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
         ZnxViewMut,
     },
     reference::{
@@ -17,9 +17,9 @@ pub fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(n: usize) -> usize {
 
 pub fn vec_znx_mul_xp_minus_one<'r, 'a, BE>(
     p: i64,
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxZero + ZnxSubAssign,
@@ -32,7 +32,7 @@ pub fn vec_znx_mul_xp_minus_one<'r, 'a, BE>(
 
 pub fn vec_znx_mul_xp_minus_one_assign<'r, BE>(
     p: i64,
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
     tmp: &mut [i64],
 ) where

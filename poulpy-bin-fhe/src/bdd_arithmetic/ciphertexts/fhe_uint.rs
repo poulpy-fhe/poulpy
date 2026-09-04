@@ -7,7 +7,7 @@ use poulpy_core::{
         GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     api::{ModuleLogN, ModuleN, VecZnxNormalizeAssignBackend},
@@ -85,7 +85,7 @@ where
 impl<'a, T: UnsignedInteger> FheUint<&'a mut [u8], T, i64> {
     pub fn from_glwe_to_mut<G>(glwe: &'a mut G) -> Self
     where
-        G: GLWEToBackendMut<poulpy_hal::layouts::HostBytesBackend, State = Normalized>,
+        G: GLWEToBackendMut<poulpy_hal::layouts::HostBytesBackend, State = CoeffNormalized>,
     {
         FheUint {
             bits: glwe.to_backend_mut(),
@@ -97,7 +97,7 @@ impl<'a, T: UnsignedInteger> FheUint<&'a mut [u8], T, i64> {
 impl<'a, T: UnsignedInteger> FheUint<&'a [u8], T, i64> {
     pub fn from_glwe_to_ref<G>(glwe: &'a G) -> Self
     where
-        G: GLWEToBackendRef<poulpy_hal::layouts::HostBytesBackend, State = Normalized>,
+        G: GLWEToBackendRef<poulpy_hal::layouts::HostBytesBackend, State = CoeffNormalized>,
     {
         FheUint {
             bits: glwe.to_backend_ref(),
@@ -143,7 +143,7 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
-        GLWE<D, i64>: GLWEToBackendMut<BE, State = Normalized>,
+        GLWE<D, i64>: GLWEToBackendMut<BE, State = CoeffNormalized>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEEncryptSk<BE>,
         E: EncryptionInfos,
@@ -194,7 +194,7 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
     pub fn noise<S, M, BE>(&self, module: &M, want: u32, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Stats
     where
         BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
-        Self: GLWEToBackendRef<BE, State = Normalized>,
+        Self: GLWEToBackendRef<BE, State = CoeffNormalized>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: GLWEBytesOf<BE>
             + ModuleLogN
@@ -230,7 +230,7 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
     pub fn decrypt<S, M, BE>(&self, module: &M, sk_glwe: &S, scratch: &mut ScratchArena<'_, BE>) -> T
     where
         BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
-        Self: GLWEToBackendRef<BE, State = Normalized>,
+        Self: GLWEToBackendRef<BE, State = CoeffNormalized>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GLWEDecrypt<BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
@@ -288,10 +288,10 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
     pub fn pack<G, M, H, BE>(&mut self, module: &M, mut bits: Vec<G>, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
-        G: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        G: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
         M: GLWEBytesOf<BE> + ModuleLogN + GLWEPacking<BE> + GLWECopy<BE>,
         H: GetAutomorphismKey<BE>,
-        GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
+        GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE, State = CoeffNormalized>,
     {
         // Repacks the GLWE ciphertexts bits
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
@@ -316,9 +316,9 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
-        Self: GLWEToBackendMut<BE, State = Normalized>,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
-        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        Self: GLWEToBackendMut<BE, State = CoeffNormalized>,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
         M: GLWEBytesOf<BE>
             + ModuleLogN
@@ -353,9 +353,9 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
-        Self: GLWEToBackendMut<BE, State = Normalized>,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
-        B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        Self: GLWEToBackendMut<BE, State = CoeffNormalized>,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
+        B: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
         M: GLWEBytesOf<BE>
             + ModuleLogN
@@ -393,7 +393,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         // Moves back self[0] to self[byte_tg]
         module.glwe_rotate_assign(rot, &mut tmp_fhe_uint_byte, &mut scratch_1);
 
-        // Add self[0] += a[0], then propagate the carries so `self` keeps its Normalized label.
+        // Add self[0] += a[0], then propagate the carries so `self` keeps its CoeffNormalized label.
         {
             let mut acc = GLWEToBackendMut::<BE>::to_backend_mut(self).into_unnormalized();
             module.glwe_add_assign(&mut &mut acc, &tmp_fhe_uint_byte);
@@ -404,9 +404,9 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
 
 impl<BE: Backend, D: Data, T: UnsignedInteger> GLWEToBackendRef<BE> for FheUint<D, T, BE::ZnxWord>
 where
-    GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized>,
+    GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = CoeffNormalized>,
 {
-    type State = Normalized;
+    type State = CoeffNormalized;
     fn to_backend_ref(&self) -> GLWE<<BE as Backend>::BufRef<'_>, <BE as Backend>::ZnxWord> {
         self.bits.to_backend_ref()
     }
@@ -414,7 +414,7 @@ where
 
 impl<BE: Backend, D: Data, T: UnsignedInteger> GLWEToBackendMut<BE> for FheUint<D, T, BE::ZnxWord>
 where
-    GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
+    GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE, State = CoeffNormalized>,
 {
     fn to_backend_mut(&mut self) -> GLWE<<BE as Backend>::BufMut<'_>, <BE as Backend>::ZnxWord> {
         self.bits.to_backend_mut()
@@ -462,7 +462,7 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
     ) where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         R: LWEToBackendMut<BE> + LWEInfos,
-        Self: GLWEToBackendRef<BE, State = Normalized>,
+        Self: GLWEToBackendRef<BE, State = CoeffNormalized>,
         M: GLWEBytesOf<BE>
             + ModuleLogN
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -488,8 +488,8 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
     pub fn get_bit_glwe<R, M, H, BE>(&self, module: &M, bit: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend,
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        Self: GLWEToBackendRef<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        Self: GLWEToBackendRef<BE, State = CoeffNormalized>,
         M: GLWEBytesOf<BE> + ModuleLogN + GLWERotate<BE> + GLWETrace<BE>,
         H: GetAutomorphismKey<BE>,
     {
@@ -502,8 +502,8 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
     pub fn get_byte<R, M, H, BE>(&self, module: &M, byte: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend,
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        Self: GLWEToBackendRef<BE, State = Normalized>,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        Self: GLWEToBackendRef<BE, State = CoeffNormalized>,
         M: GLWEBytesOf<BE> + ModuleLogN + GLWERotate<BE> + GLWETrace<BE>,
         H: GetAutomorphismKey<BE>,
     {
@@ -530,8 +530,8 @@ impl<T: UnsignedInteger> FheUint<Vec<u8>, T, i64> {
             + ModuleLogN
             + GLWEPacking<BE>
             + GLWECopy<BE>,
-        GLWE<Vec<u8>, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
-        Self: GLWEToBackendMut<BE, State = Normalized>,
+        GLWE<Vec<u8>, BE::ZnxWord>: GLWEToBackendMut<BE, State = CoeffNormalized>,
+        Self: GLWEToBackendMut<BE, State = CoeffNormalized>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
         H: GetAutomorphismKey<BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
@@ -559,7 +559,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
     pub fn zero_byte<M, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
-        Self: GLWEToBackendMut<BE, State = Normalized>,
+        Self: GLWEToBackendMut<BE, State = CoeffNormalized>,
         H: GetAutomorphismKey<BE>,
         M: GLWEBytesOf<BE>
             + ModuleLogN
@@ -583,7 +583,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         let mut tmp_trace: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(self);
         module.glwe_trace(&mut tmp_trace, trace_start, self, keys, scratch);
 
-        // Subtracts to self to zero it, then propagate the carries so `self` keeps its Normalized label.
+        // Subtracts to self to zero it, then propagate the carries so `self` keeps its CoeffNormalized label.
         {
             let mut acc = GLWEToBackendMut::<BE>::to_backend_mut(self).into_unnormalized();
             module.glwe_sub_assign(&mut &mut acc, &tmp_trace);
@@ -596,8 +596,8 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
 
     pub fn sext<M, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
-        Self: GLWEToBackendRef<BE, State = Normalized>,
-        Self: GLWEToBackendMut<BE, State = Normalized>,
+        Self: GLWEToBackendRef<BE, State = CoeffNormalized>,
+        Self: GLWEToBackendMut<BE, State = CoeffNormalized>,
         H: GetAutomorphismKey<BE>,
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         M: GLWEBytesOf<BE>

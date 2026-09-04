@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{ModuleLogN, VecZnxNormalizeAssignBackend},
-    layouts::{Backend, GaloisElement, Normalized, ScratchArena},
+    layouts::{Backend, CoeffNormalized, GaloisElement, ScratchArena},
 };
 
 use crate::{
@@ -31,8 +31,8 @@ fn pack_internal<M, A, B, H, BE: Backend>(
         + VecZnxNormalizeAssignBackend<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + ?Sized,
-    A: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-    B: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+    B: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     H: GetAutomorphismKey<BE>,
 {
     // Goal is to evaluate: a = a + b*X^t + phi(a - b*X^t))
@@ -51,7 +51,7 @@ fn pack_internal<M, A, B, H, BE: Backend>(
             module.glwe_rsh(1, &mut tmp_b, scratch);
 
             // a = (a + b) >> 1: the shift re-normalizes the digits, so the caller's
-            // Normalized label on `a` holds again once this unnormalized view is dropped.
+            // CoeffNormalized label on `a` holds again once this unnormalized view is dropped.
             {
                 let mut a_acc = a.to_backend_mut().into_unnormalized();
                 let mut a_acc = &mut a_acc;
@@ -111,8 +111,8 @@ pub trait GLWEPackingDefault<BE: Backend> {
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 }
 
@@ -179,8 +179,8 @@ pub mod glwe_packing_defaults_impl {
             + VecZnxNormalizeAssignBackend<BE>
             + GLWECopy<BE>
             + GLWETrace<BE>,
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
         assert!(*a.keys().max().unwrap() < module.n());

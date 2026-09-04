@@ -18,7 +18,7 @@ use poulpy_core::{
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -61,16 +61,18 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
             + CKKSModuleAlloc<BE>
             + Sized,
         BE: Backend,
-        R: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSCtBounds
             + SetCKKSInfos
             + SetBSGSMeta,
-        C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        C: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos;
 }
 
 impl<BE: Backend> CKKSEvalModOpsDefault<BE> for Module<BE>
@@ -83,8 +85,10 @@ where
         + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
         + GLWECopy<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
     fn ckks_eval_mod_default<R, C, P, F, H>(
@@ -96,13 +100,13 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSCtBounds
             + SetCKKSInfos
             + SetBSGSMeta,
-        C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+        C: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
         H: GetTensorKey<BE>,
     {
         eval_mod(self, res, ct, params, tsk, scratch)
@@ -142,16 +146,18 @@ where
         + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
         + GLWECopy<BE>,
-    R: GLWEToBackendMut<BE, State = Normalized>
-        + GLWEToBackendRef<BE, State = Normalized>
+    R: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
         + CKKSCtBounds
         + SetCKKSInfos
         + SetBSGSMeta,
-    C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
+    C: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+    P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
     H: GetTensorKey<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
 {
     // EvalMod runs at its own plan scale `f_mod_log_delta`: reinterpret the
     // working ciphertext to it on entry, then return the result to the input
@@ -268,7 +274,7 @@ fn eval_mod_input<BE, C>(module: &Module<BE>, ct: &C, layout: &GLWELayout, meta:
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE>,
-    C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    C: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
 {
     let mut input = module.ckks_ciphertext_alloc(layout.base2k, layout.k);
     module.glwe_copy(&mut input, ct);

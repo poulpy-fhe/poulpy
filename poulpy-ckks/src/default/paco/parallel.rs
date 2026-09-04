@@ -25,7 +25,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{Backend, CyclotomicOrder, Module, Normalized, ScratchArena, ScratchOwned},
+    layouts::{Backend, CoeffNormalized, CyclotomicOrder, Module, ScratchArena, ScratchOwned},
 };
 
 use super::{
@@ -85,9 +85,9 @@ where
         + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
 {
     if branch.shift == 0 {
         return paco_bootstrap_branch_validated_into::<BE, F, K, _>(
@@ -155,9 +155,9 @@ where
         + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, false, scratch)?;
@@ -199,9 +199,9 @@ where
         + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
 {
     ckks_ensure!(
         scratch.available() >= schedule.required_scratch,
@@ -260,8 +260,8 @@ where
     F: PaCoScalar,
     Module<BE>: CKKSModuleAlloc<BE> + GLWEKeyswitch<BE>,
     K: PaCoKeys<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized>,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
 {
     let switching_key = validate_encapsulation_key(input, context, keys)?;
 
@@ -298,9 +298,9 @@ where
         + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, true, scratch)?;
@@ -349,9 +349,10 @@ where
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     PaCoContext<BE, F>: Sync,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + Send + Sync,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + Sync,
+    CKKSCiphertextOwned<BE>:
+        GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized> + Send + Sync,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + Sync,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, false, scratch)?;
@@ -399,9 +400,10 @@ where
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     PaCoContext<BE, F>: Sync,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + Send + Sync,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + Sync,
+    CKKSCiphertextOwned<BE>:
+        GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized> + Send + Sync,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + Sync,
 {
     // The caller thread evaluates branch zero while the remaining execution
     // contexts each receive their own Module and scratch arena.
@@ -601,9 +603,10 @@ where
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     PaCoContext<BE, F>: Sync,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + Send + Sync,
-    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
-    Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>:
+        GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized> + Send + Sync,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
+    Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
 {
     let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, true, scratch)?;

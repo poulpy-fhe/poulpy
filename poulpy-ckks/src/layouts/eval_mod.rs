@@ -7,7 +7,7 @@
 //! multiple of `q` that ModUp introduces; their separation is the *message ratio*
 //! `q/Δ = 2^log_message_ratio`.
 //! In CKKS-meta terms `Δ = 2^log_delta` and `q = 2^(log_delta + log_budget)`, so
-//! the ratio is `2^log_budget`. Normalized by `q` the value is `I + m·Δ/q`, so
+//! the ratio is `2^log_budget`. CoeffNormalized by `q` the value is `I + m·Δ/q`, so
 //! removing `I` is exactly `x mod 1`. No low-degree polynomial computes `mod`, so
 //! the circuit approximates it with a **periodic function** `f` whose period
 //! matches `q`: periodicity collapses every `I·q`, so `f(I·q + Δ·m)` depends on

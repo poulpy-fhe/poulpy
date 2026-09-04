@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -57,7 +57,7 @@ where
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         BE::glwe_prepare_linear_transformation_rhs(self, prepared, lt, scratch)
     }
@@ -69,7 +69,7 @@ where
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
         BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, keys, scratch)

@@ -11,7 +11,7 @@ use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
@@ -42,7 +42,7 @@ pub trait CKKSDFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> DFTMatrixPrepared<BE, Dir, Fmt>
     where
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
     fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H>(
@@ -54,7 +54,10 @@ pub trait CKKSDFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, `Standard` format (in place).
@@ -67,7 +70,10 @@ pub trait CKKSDFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, `Standard` format (in place).
@@ -80,7 +86,10 @@ pub trait CKKSDFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
         H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, `SplitRealAndImag` — real/imag in two ciphertexts.
@@ -96,8 +105,11 @@ pub trait CKKSDFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, `SplitRealAndImag` — combine two ciphertexts then Decode.
@@ -112,8 +124,11 @@ pub trait CKKSDFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 
     /// `CoeffsToSlots`, sparse `RepackImagAsReal` — imag packed into the right half.
@@ -128,8 +143,11 @@ pub trait CKKSDFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 
     /// `SlotsToCoeffs`, sparse `RepackImagAsReal` — inverse of [`Self::ckks_coeffs_to_slots_repack`].
@@ -143,8 +161,11 @@ pub trait CKKSDFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 }
 

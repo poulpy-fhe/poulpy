@@ -21,8 +21,8 @@ use poulpy_core::{
     },
     msb_mask_bottom_limb,
 };
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::HostStaged;
-use poulpy_hal::layouts::Normalized;
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
@@ -232,7 +232,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
     ) -> Result<ShipKeysPrepared<D, BE>>
     where
         D: HostDataRef,
-        CKKSCiphertext<D, W>: GLWEToBackendRef<BE, State = Normalized>,
+        CKKSCiphertext<D, W>: GLWEToBackendRef<BE, State = CoeffNormalized>,
         GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
         GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -456,8 +456,8 @@ impl<D: Data> ShipKeySet<D, i64> {
             + CKKSEncodingOps<BE, F>
             + GaloisElement,
         Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
-        CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
-        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = Normalized>,
+        CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE, State = CoeffNormalized>,
     {
         let n = sk_dense_host.n();
         ensure!(

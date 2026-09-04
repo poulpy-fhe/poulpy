@@ -5,7 +5,7 @@ use poulpy_core::{
     default::keyswitching::glwe::{GGLWEProductDefault, gglwe_product_accumulation_output_size},
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GGLWEPreparedToBackendRef},
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
@@ -84,7 +84,7 @@ where
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
         + GGLWEProductDefault<BE>,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized>,
 {
     const OP: &str = "ship_mux_rotate";
     ckks_ensure!(!keys.is_empty(), "{OP}: empty key group");

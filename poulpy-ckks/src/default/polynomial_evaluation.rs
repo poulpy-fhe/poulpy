@@ -9,7 +9,7 @@ use poulpy_hal::{
         VecZnxRshTmpBytes,
     },
     layouts::{
-        Backend, Module, Normalized, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
+        Backend, CoeffNormalized, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
         VecZnxToBackendRef, ZnxWord,
     },
 };
@@ -51,7 +51,7 @@ impl<BE, D> BabyStepInfos<BE> for EvaluatedBabyStep<D, BE::ZnxWord>
 where
     BE: Backend,
     D: poulpy_hal::layouts::Data,
-    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized>,
+    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEToBackendRef<BE, State = CoeffNormalized>,
 {
     type Value = CKKSCiphertext<D, BE::ZnxWord>;
 
@@ -85,14 +85,14 @@ where
         + GiantStepTensorBounds<BE>
         + VecZnxRshCoeffBackend<BE>
         + VecZnxRshTmpBytes,
-    V: GLWEToBackendMut<BE, State = Normalized>
-        + GLWEToBackendRef<BE, State = Normalized>
+    V: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
         + CKKSCtBounds
         + SetCKKSInfos
         + SetBSGSMeta,
-    P: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + BSGSMeta,
-    R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    P: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + BSGSMeta,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
 {
     type Prepared = CKKSPreparedRight<BE>;
 
@@ -340,15 +340,15 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
             + VecZnxRshCoeffBackend<BE>
             + VecZnxRshTmpBytes
             + Sized,
-        R: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + GLWEInfos
             + SetBSGSMeta
             + SetCKKSInfos
             + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + BSGSMeta + CKKSCtBounds,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;
 
@@ -372,14 +372,14 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
             + VecZnxRshCoeffBackend<BE>
             + VecZnxRshTmpBytes
             + Sized,
-        R: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + GLWEInfos
             + SetBSGSMeta
             + SetCKKSInfos
             + CKKSCtBounds,
-        C: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + BSGSMeta + CKKSCtBounds,
+        C: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;
 }
@@ -405,15 +405,15 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             + VecZnxRshCoeffBackend<BE>
             + VecZnxRshTmpBytes
             + Sized,
-        R: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + GLWEInfos
             + SetBSGSMeta
             + SetCKKSInfos
             + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + BSGSMeta + CKKSCtBounds,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
@@ -491,14 +491,14 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             + VecZnxRshCoeffBackend<BE>
             + VecZnxRshTmpBytes
             + Sized,
-        R: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + GLWEInfos
             + SetBSGSMeta
             + SetCKKSInfos
             + CKKSCtBounds,
-        C: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + BSGSMeta + CKKSCtBounds,
+        C: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {

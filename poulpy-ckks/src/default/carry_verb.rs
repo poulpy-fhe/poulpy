@@ -130,9 +130,9 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: $GLWEVerb<BE> + GLWEShift<BE> + GLWENormalize<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + LWEInfos + SetCKKSInfos + CKKSInfos,
-                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
-                    B: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + LWEInfos + SetCKKSInfos + CKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos,
+                    B: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos,
                 {
                     self.[<ckks_ $verb _into_unnormalized_default>](&mut $crate::layouts::ciphertext::CKKSUnnormalizedWriteView::new(dst), a, b, scratch)?;
                     self.glwe_normalize_assign(dst, scratch);
@@ -148,9 +148,9 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: $GLWEVerb<BE> + GLWEShift<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized> + LWEInfos + SetCKKSInfos + CKKSInfos,
-                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
-                    B: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffUnnormalized> + LWEInfos + SetCKKSInfos + CKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos,
+                    B: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos,
                 {
                     let offset = ckks_offset_binary(dst, a, b);
                     // Validate before mutating: on error `dst` must remain untouched.
@@ -186,8 +186,8 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: $GLWEVerb<BE> + GLWEShift<BE> + GLWENormalize<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos,
                 {
                     self.[<ckks_ $verb _assign_unnormalized_default>](&mut $crate::layouts::ciphertext::CKKSUnnormalizedWriteView::new(dst), a, scratch)?;
                     self.glwe_normalize_assign(dst, scratch);
@@ -202,8 +202,8 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: $GLWEVerb<BE> + GLWEShift<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffUnnormalized> + CKKSInfos + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos,
                 {
                     let dst_log_budget = dst.log_budget();
 
@@ -234,7 +234,7 @@ macro_rules! ckks_carry_verb_default {
                         $(+ $PtConstBound<BE>)+
                         + CKKSPlaintextDefault<BE>
                         + CKKSModuleAlloc<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos + SetCKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos + SetCKKSInfos,
                 {
                     let one = $crate::default::carry_verb::ckks_one_pt::<BE, Self>(self, dst.base2k())?;
                     self.[<ckks_ $verb _pt_const_assign_default>](dst, 0, &one, 0, scratch)
@@ -249,9 +249,9 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: GLWEShift<BE> + GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextDefault<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
-                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     self.[<ckks_ $verb _pt_vec_into_unnormalized_default>](&mut $crate::layouts::ciphertext::CKKSUnnormalizedWriteView::new(dst), a, pt, scratch)?;
                     self.glwe_normalize_assign(dst, scratch);
@@ -267,9 +267,9 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextDefault<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
-                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffUnnormalized> + CKKSInfos + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, 0, 0, scratch)?;
                     self.[<ckks_ $verb _pt_vec_assign_unnormalized_default>](dst, pt, scratch)?;
@@ -284,8 +284,8 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextDefault<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos + SetCKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     self.[<ckks_ $verb _pt_vec_assign_unnormalized_default>](&mut $crate::layouts::ciphertext::CKKSUnnormalizedWriteView::new(dst), pt, scratch)?;
                     self.glwe_normalize_assign(dst, scratch);
@@ -300,8 +300,8 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: CKKSPlaintextDefault<BE> $(+ $PtVecBound<BE>)+,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized> + CKKSInfos + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffUnnormalized> + CKKSInfos + SetCKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     CKKSPlaintextDefault::[<ckks_ $verb _pt_vec_into_default>](self, dst, pt, scratch)?;
                     dst.set_slots(dst.slots().join(pt.slots()));
@@ -319,9 +319,9 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: GLWEShift<BE> + GLWENormalize<BE> $(+ $PtConstBound<BE>)+ + CKKSPlaintextDefault<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
-                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     self.[<ckks_ $verb _pt_const_into_unnormalized_default>](&mut $crate::layouts::ciphertext::CKKSUnnormalizedWriteView::new(dst), a, dst_coeff, cst, const_coeff, scratch)?;
                     self.glwe_normalize_assign(dst, scratch);
@@ -339,9 +339,9 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: GLWEShift<BE> $(+ $PtConstBound<BE>)+ + CKKSPlaintextDefault<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos,
-                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffUnnormalized> + CKKSInfos + SetCKKSInfos,
+                    A: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, 0, 0, scratch)?;
                     self.[<ckks_ $verb _pt_const_assign_unnormalized_default>](dst, dst_coeff, cst, const_coeff, scratch)
@@ -357,8 +357,8 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: GLWENormalize<BE> $(+ $PtConstBound<BE>)+ + CKKSPlaintextDefault<BE>,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Normalized> + CKKSInfos + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + CKKSInfos + SetCKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     self.[<ckks_ $verb _pt_const_assign_unnormalized_default>](&mut $crate::layouts::ciphertext::CKKSUnnormalizedWriteView::new(dst), dst_coeff, cst, const_coeff, scratch)?;
                     self.glwe_normalize_assign(dst, scratch);
@@ -375,8 +375,8 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: CKKSPlaintextDefault<BE> $(+ $PtConstBound<BE>)+,
-                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::Unnormalized> + CKKSInfos + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::Normalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE, State = ::poulpy_hal::layouts::CoeffUnnormalized> + CKKSInfos + SetCKKSInfos,
+                    P: GLWEToBackendRef<BE, State = ::poulpy_hal::layouts::CoeffNormalized> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     CKKSPlaintextDefault::[<ckks_ $verb _pt_const_into_default>](self, dst, dst_coeff, cst, const_coeff, scratch)?;
                     // cst is always tagged as real, it's where dst_coeff lands

@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GGLWEInfos;
 use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
@@ -43,8 +43,8 @@ pub trait CKKSConjugateOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>,
     {
         self.ckks_conjugate_rotate_into(dst, src, 0, keys, scratch)
@@ -53,7 +53,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
     /// Computes `dst = conj(dst)` in-place. Metadata is unchanged.
     fn ckks_conjugate_assign<Dst, H>(&self, dst: &mut Dst, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
         H: GetAutomorphismKey<BE>;
 
     /// Computes `dst = conj(rot_k(src))`: conjugation composed with a rotation
@@ -69,7 +69,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         H: GetAutomorphismKey<BE>;
 }

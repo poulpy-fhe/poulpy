@@ -18,7 +18,7 @@ use poulpy_core::{
     layouts::{Degree, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
     oep::GLWETensoringImpl,
 };
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
@@ -367,8 +367,8 @@ fn rank_one_tensor_apply<BE, R, A, B>(
         + VecZnxCopyBackend<BE>
         + VecZnxSubAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
-    B: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
+    B: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     assert_degrees(module, [res.n(), a.n(), b.n()]);
     assert!(scratch.available() >= rank_one_tensor_apply_tmp_bytes(module, res, a, b));
@@ -429,7 +429,7 @@ fn rank_one_tensor_square<BE, R, A>(
         + VecZnxCopyBackend<BE>
         + VecZnxSubAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     assert_degrees(module, [res.n(), a.n(), a.n()]);
     assert!(scratch.available() >= rank_one_tensor_square_tmp_bytes(module, res, a));
@@ -498,8 +498,8 @@ macro_rules! impl_rank_one_tensoring {
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
                 R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + GLWEInfos,
-                B: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + GLWEInfos,
+                A: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized> + GLWEInfos,
+                B: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized> + GLWEInfos,
             {
                 if rank_one_tensor_supported(module, res) {
                     rank_one_tensor_apply(module, cnv_offset, res, a, b, scratch)
@@ -516,7 +516,7 @@ macro_rules! impl_rank_one_tensoring {
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
                 R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + GLWEInfos,
+                A: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized> + GLWEInfos,
             {
                 if rank_one_tensor_supported(module, res) {
                     rank_one_tensor_square(module, cnv_offset, res, a, scratch)
@@ -533,7 +533,7 @@ macro_rules! impl_rank_one_tensoring {
                 scratch: &mut ScratchArena<'_, $be>,
             ) where
                 R: GLWEToBackendMut<$be> + GLWEInfos,
-                A: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + GLWEInfos,
+                A: GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized> + GLWEInfos,
                 T: poulpy_core::layouts::GetTensorKey<$be>,
             {
                 module.glwe_tensor_relinearize_default(res, a, tsk, scratch)

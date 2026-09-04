@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_hal::layouts::{Backend, Module, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, Module, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
@@ -27,8 +27,8 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_assign<R>(
         module: &Module<BE>,
@@ -36,7 +36,7 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_add<R, A>(
         module: &Module<BE>,
@@ -45,8 +45,8 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_add_assign<R>(
         module: &Module<BE>,
@@ -54,7 +54,7 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_sub<R, A>(
         module: &Module<BE>,
@@ -63,8 +63,8 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_sub_negate<R, A>(
         module: &Module<BE>,
@@ -73,8 +73,8 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_sub_assign<R>(
         module: &Module<BE>,
@@ -82,7 +82,7 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_sub_negate_assign<R>(
         module: &Module<BE>,
@@ -179,8 +179,8 @@ pub trait GLWEAutomorphismDefault<BE: Backend> {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_assign_default<R>(
         &self,
@@ -188,7 +188,7 @@ pub trait GLWEAutomorphismDefault<BE: Backend> {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_add_default<R, A>(
         &self,
@@ -197,8 +197,8 @@ pub trait GLWEAutomorphismDefault<BE: Backend> {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_add_assign_default<R>(
         &self,
@@ -206,7 +206,7 @@ pub trait GLWEAutomorphismDefault<BE: Backend> {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_sub_default<R, A>(
         &self,
@@ -215,8 +215,8 @@ pub trait GLWEAutomorphismDefault<BE: Backend> {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_sub_negate_default<R, A>(
         &self,
@@ -225,8 +225,8 @@ pub trait GLWEAutomorphismDefault<BE: Backend> {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_sub_assign_default<R>(
         &self,
@@ -234,7 +234,7 @@ pub trait GLWEAutomorphismDefault<BE: Backend> {
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos;
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos;
 
     fn glwe_automorphism_sub_negate_assign_default<R>(
         &self,
@@ -329,8 +329,8 @@ where
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         module.glwe_automorphism_default(res, a, key, scratch)
     }
@@ -341,7 +341,7 @@ where
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     {
         module.glwe_automorphism_assign_default(res, key, scratch)
     }
@@ -353,8 +353,8 @@ where
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         module.glwe_automorphism_add_default(res, a, key, scratch)
     }
@@ -365,7 +365,7 @@ where
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     {
         module.glwe_automorphism_add_assign_default(res, key, scratch)
     }
@@ -377,8 +377,8 @@ where
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         module.glwe_automorphism_sub_default(res, a, key, scratch)
     }
@@ -390,8 +390,8 @@ where
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         module.glwe_automorphism_sub_negate_default(res, a, key, scratch)
     }
@@ -402,7 +402,7 @@ where
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     {
         module.glwe_automorphism_sub_assign_default(res, key, scratch)
     }
@@ -526,8 +526,10 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_default::<$be, _, _, _>(self, res, a, key, scratch)
             }
@@ -538,7 +540,8 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_assign_default::<$be, _, _>(self, res, key, scratch)
             }
@@ -550,8 +553,10 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_add_default::<$be, _, _, _>(self, res, a, key, scratch)
             }
@@ -562,7 +567,8 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_add_assign_default::<$be, _, _>(self, res, key, scratch)
             }
@@ -574,8 +580,10 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_sub_default::<$be, _, _, _>(self, res, a, key, scratch)
             }
@@ -587,8 +595,10 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
-                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_sub_negate_default::<$be, _, _, _>(
                     self, res, a, key, scratch,
@@ -601,7 +611,8 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
-                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::Normalized> + $crate::layouts::GLWEInfos,
+                R: $crate::layouts::GLWEToBackendMut<$be, State = ::poulpy_hal::layouts::CoeffNormalized>
+                    + $crate::layouts::GLWEInfos,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_sub_assign_default::<$be, _, _>(self, res, key, scratch)
             }

@@ -9,7 +9,7 @@
 
 use crate::layouts::GetTensorKey;
 use anyhow::{Result, ensure};
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, VecZnxAddAssignBackend, VecZnxBigBytesOf, VecZnxBigNormalize,
@@ -69,7 +69,7 @@ pub trait BSGSOps<BE, V, P, A, R = V>
 where
     BE: Backend,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    P: GLWEToBackendRef<BE, State = Normalized>,
+    P: GLWEToBackendRef<BE, State = CoeffNormalized>,
     A: GLWEToBackendRef<BE>,
     R: GLWEToBackendMut<BE>,
 {
@@ -168,7 +168,7 @@ pub(crate) fn eval_baby_step<BE: Backend, Ops, V, P, G, A>(
 where
     Ops: BSGSOps<BE, V, P, A, V>,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    P: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     A: GLWEToBackendRef<BE>,
     G: PowerBasisHelper<BE, A>,
 {
@@ -226,7 +226,7 @@ where
     R: GLWEToBackendMut<BE>,
     B: BabyStep<BE, Value = V>,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    P: GLWEToBackendRef<BE, State = Normalized>,
+    P: GLWEToBackendRef<BE, State = CoeffNormalized>,
     A: GLWEToBackendRef<BE>,
     G: PowerBasisHelper<BE, A>,
     H: GetTensorKey<BE>,
@@ -319,7 +319,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
     where
         Ops: BSGSOps<BE, R, P, A, R>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
     {
@@ -340,7 +340,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         R: GLWEToBackendMut<BE>,
         B: BabyStep<BE, Value = V>,
         V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        P: GLWEToBackendRef<BE, State = Normalized>,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized>,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,

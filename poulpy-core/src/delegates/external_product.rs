@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Module, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, Module, ScratchArena};
 
 use crate::{
     api::{GGLWEExternalProduct, GGSWExternalProduct, GLWEExternalProduct},
@@ -39,7 +39,7 @@ impl_external_product_delegate!(
         scratch: &mut ScratchArena<'_, BE>,
     )
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     {
         BE::glwe_external_product_assign(self, res, rhs, scratch)
     }
@@ -53,7 +53,7 @@ impl_external_product_delegate!(
     )
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
     {
         BE::glwe_external_product(self, res, lhs, rhs, scratch)
     }

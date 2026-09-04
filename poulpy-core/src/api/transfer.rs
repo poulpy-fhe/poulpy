@@ -23,7 +23,7 @@
 //! its own layouts without editing this one.
 
 use poulpy_hal::layouts::{
-    CopyFromHost, CopyToHost, Data, DataView, DataViewMut, MatZnx, NormalizationState, ScalarZnx, VecZnx, ZnxWord,
+    CoefficientState, CopyFromHost, CopyToHost, Data, DataView, DataViewMut, MatZnx, ScalarZnx, VecZnx, ZnxWord,
     transfer_buf_into,
 };
 
@@ -45,7 +45,7 @@ where
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,
-    S: NormalizationState,
+    S: CoefficientState,
 {
     assert_eq!(src.n(), dst.n(), "transfer_into: ring degree");
     assert_eq!(src.cols(), dst.cols(), "transfer_into: cols");
@@ -80,7 +80,7 @@ where
 
 impl<D1, D2, W, S> TransferInto<GLWE<D2, W, S>> for GLWE<D1, W, S>
 where
-    S: NormalizationState,
+    S: CoefficientState,
     D1: Data + CopyToHost,
     D2: Data + CopyFromHost,
     W: ZnxWord,

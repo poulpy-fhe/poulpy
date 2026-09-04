@@ -1,8 +1,9 @@
 use poulpy_hal::api::VecZnxNormalizeAssignBackend;
 use poulpy_hal::layouts::{
-    Backend, NormalizationState, Normalized, ScalarZnx, ScratchArena, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef,
-    Unnormalized, VecZnxViewMut, VmpPMatReborrowBackendMut, VmpPMatReborrowBackendRef, mat_znx_backend_mut_from_mut,
-    mat_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
+    ArithmeticState, Backend, CoeffNormalized, CoeffUnnormalized, CoefficientState, ScalarZnx, ScratchArena,
+    SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VecZnxViewMut, VmpPMatReborrowBackendMut, VmpPMatReborrowBackendRef,
+    mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut,
+    vec_znx_backend_ref_from_ref,
 };
 
 use crate::{
@@ -107,16 +108,16 @@ impl<'a, BE: Backend + 'a> GGLWEViewMut<'a, BE> {
     }
 }
 
-/// Scratch-backed mutable [`GLWE`] view carrying its [`NormalizationState`].
+/// Scratch-backed mutable [`GLWE`] view carrying its [`CoefficientState`].
 ///
 /// Hand-expanded rather than produced by [`view_wrapper!`] because it takes the
-/// extra state parameter; `take_glwe_scratch` yields the [`Normalized`] form and
+/// extra state parameter; `take_glwe_scratch` yields the [`CoeffNormalized`] form and
 /// [`GLWEViewMut::into_unnormalized`] relabels it for carry accumulation.
-pub struct GLWEViewMut<'a, BE: Backend + 'a, S: NormalizationState = Normalized> {
+pub struct GLWEViewMut<'a, BE: Backend + 'a, S: CoefficientState = CoeffNormalized> {
     inner: GLWE<BE::BufMut<'a>, BE::ZnxWord, S>,
 }
 
-impl<'a, BE: Backend + 'a, S: NormalizationState> GLWEViewMut<'a, BE, S> {
+impl<'a, BE: Backend + 'a, S: CoefficientState> GLWEViewMut<'a, BE, S> {
     pub fn from_inner(inner: GLWE<BE::BufMut<'a>, BE::ZnxWord, S>) -> Self {
         Self { inner }
     }
@@ -125,24 +126,24 @@ impl<'a, BE: Backend + 'a, S: NormalizationState> GLWEViewMut<'a, BE, S> {
         self.inner
     }
 
-    /// Relabels the view as [`Unnormalized`]; see [`GLWE::into_unnormalized`].
-    pub fn into_unnormalized(self) -> GLWEViewMut<'a, BE, Unnormalized> {
+    /// Relabels the view as [`CoeffUnnormalized`]; see [`GLWE::into_unnormalized`].
+    pub fn into_unnormalized(self) -> GLWEViewMut<'a, BE, CoeffUnnormalized> {
         GLWEViewMut {
             inner: self.inner.into_unnormalized(),
         }
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWEViewMut<'a, BE, Unnormalized> {
-    /// Propagates carries and returns the view relabelled as [`Normalized`]; see [`GLWE::normalize`].
+impl<'a, BE: Backend + 'a> GLWEViewMut<'a, BE, CoeffUnnormalized> {
+    /// Propagates carries and returns the view relabelled as [`CoeffNormalized`]; see [`GLWE::normalize`].
     ///
     /// Delegates to [`VecZnxViewMut::normalize`], so the relabel itself stays in `poulpy-hal`.
-    pub fn normalize<M>(self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> GLWEViewMut<'a, BE, Normalized>
+    pub fn normalize<M>(self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> GLWEViewMut<'a, BE, CoeffNormalized>
     where
         M: VecZnxNormalizeAssignBackend<BE> + ?Sized,
     {
         let GLWE { data, k, base2k } = self.inner;
-        let data = VecZnxViewMut::<'a, BE, Unnormalized>::from_inner(data)
+        let data = VecZnxViewMut::<'a, BE, CoeffUnnormalized>::from_inner(data)
             .normalize(module, base2k.into(), scratch)
             .into_inner();
         GLWEViewMut {
@@ -151,7 +152,7 @@ impl<'a, BE: Backend + 'a> GLWEViewMut<'a, BE, Unnormalized> {
     }
 }
 
-impl<'a, BE: Backend + 'a, S: NormalizationState> ::core::ops::Deref for GLWEViewMut<'a, BE, S> {
+impl<'a, BE: Backend + 'a, S: CoefficientState> ::core::ops::Deref for GLWEViewMut<'a, BE, S> {
     type Target = GLWE<BE::BufMut<'a>, BE::ZnxWord, S>;
 
     fn deref(&self) -> &Self::Target {
@@ -159,13 +160,13 @@ impl<'a, BE: Backend + 'a, S: NormalizationState> ::core::ops::Deref for GLWEVie
     }
 }
 
-impl<'a, BE: Backend + 'a, S: NormalizationState> ::core::ops::DerefMut for GLWEViewMut<'a, BE, S> {
+impl<'a, BE: Backend + 'a, S: CoefficientState> ::core::ops::DerefMut for GLWEViewMut<'a, BE, S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<'a, BE: Backend + 'a, S: NormalizationState> crate::layouts::LWEInfos for GLWEViewMut<'a, BE, S> {
+impl<'a, BE: Backend + 'a, S: CoefficientState> crate::layouts::LWEInfos for GLWEViewMut<'a, BE, S> {
     fn base2k(&self) -> Base2K {
         crate::layouts::LWEInfos::base2k(&self.inner)
     }
@@ -187,25 +188,25 @@ impl<'a, BE: Backend + 'a, S: NormalizationState> crate::layouts::LWEInfos for G
     }
 }
 
-impl<'a, BE: Backend + 'a, S: NormalizationState> crate::layouts::GLWEInfos for GLWEViewMut<'a, BE, S> {
+impl<'a, BE: Backend + 'a, S: CoefficientState> crate::layouts::GLWEInfos for GLWEViewMut<'a, BE, S> {
     fn rank(&self) -> Rank {
         crate::layouts::GLWEInfos::rank(&self.inner)
     }
 }
 
-impl<'a, BE: Backend + 'a, S: NormalizationState> SetBase2k for GLWEViewMut<'a, BE, S> {
+impl<'a, BE: Backend + 'a, S: CoefficientState> SetBase2k for GLWEViewMut<'a, BE, S> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.inner.set_base2k(base2k);
     }
 }
 
-impl<'a, BE: Backend + 'a, S: NormalizationState> SetK for GLWEViewMut<'a, BE, S> {
+impl<'a, BE: Backend + 'a, S: CoefficientState> SetK for GLWEViewMut<'a, BE, S> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.inner.set_k(k);
     }
 }
 
-impl<'a, BE: Backend + 'a, S: NormalizationState> GLWEToBackendRef<BE> for GLWEViewMut<'a, BE, S> {
+impl<'a, BE: Backend + 'a, S: ArithmeticState> GLWEToBackendRef<BE> for GLWEViewMut<'a, BE, S> {
     type State = S;
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE, S> {
         GLWE {
@@ -216,7 +217,7 @@ impl<'a, BE: Backend + 'a, S: NormalizationState> GLWEToBackendRef<BE> for GLWEV
     }
 }
 
-impl<'a, BE: Backend + 'a, S: NormalizationState> GLWEToBackendMut<BE> for GLWEViewMut<'a, BE, S> {
+impl<'a, BE: Backend + 'a, S: ArithmeticState> GLWEToBackendMut<BE> for GLWEViewMut<'a, BE, S> {
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE, S> {
         GLWE {
             base2k: self.inner.base2k,
@@ -428,7 +429,7 @@ impl<'a, BE: Backend + 'a> LWEPlaintextToBackendMut<BE> for LWEPlaintextViewMut<
 macro_rules! impl_glwe_to_backend {
     ($name:ident) => {
         impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for $name<'a, BE> {
-            type State = Normalized;
+            type State = CoeffNormalized;
             fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
                 GLWE {
                     base2k: self.inner.base2k,
@@ -454,7 +455,7 @@ impl_glwe_to_backend!(GLWEPlaintextViewMut);
 impl_glwe_to_backend!(GLWETensorViewMut);
 
 impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for GLWEViewRef<'a, BE> {
-    type State = Normalized;
+    type State = CoeffNormalized;
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.inner.base2k,

@@ -1,17 +1,17 @@
 use crate::{
     layouts::{
-        Backend, HostDataMut, HostDataRef, NormalizationState, Unnormalized, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
+        ArithmeticState, Backend, CoeffUnnormalized, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
         ZnxViewMut,
     },
     reference::znx::{ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxZero},
 };
 
 pub fn vec_znx_add_into<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
-    b: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    b: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     b_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
@@ -62,9 +62,9 @@ pub fn vec_znx_add_into<'r, 'a, BE>(
 }
 
 pub fn vec_znx_add_assign<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl NormalizationState>,
+    a: &VecZnxBackendRef<'a, BE, impl ArithmeticState>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxAddAssign,

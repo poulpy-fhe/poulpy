@@ -7,7 +7,7 @@ use poulpy_hal::{
         VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend,
         VecZnxRshTmpBytes,
     },
-    layouts::{Backend, Normalized, ScratchArena},
+    layouts::{Backend, CoeffNormalized, ScratchArena},
     source::Source,
 };
 
@@ -43,8 +43,8 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
     where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        Dct: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos + IntPolyInfos,
+        Dct: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos,
+        Dpt: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos + IntPolyInfos,
         Self: GLWEEncryptSk<BE>
             + GLWENormalize<BE>
             + VecZnxLshAddIntoBackend<BE>
@@ -64,7 +64,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
             scratch,
         )?;
         // The raw limb-add above can leave digits one bit beyond the `base2k`
-        // normalized range; a fresh encryption is typed `Normalized`, so
+        // normalized range; a fresh encryption is typed `CoeffNormalized`, so
         // propagate the carries before returning (the crate's digit contract
         // for every DFT-domain op).
         self.glwe_normalize_assign(ct, scratch);
@@ -91,8 +91,8 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
     fn ckks_decrypt_default<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        Dpt: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        Dct: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos,
+        Dpt: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        Dct: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos,
         Self: GLWEDecrypt<BE> + CKKSPlaintextDefault<BE> + VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
     {
         let (mut full_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);

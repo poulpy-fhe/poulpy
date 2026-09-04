@@ -2,8 +2,8 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
-use poulpy_hal::layouts::Normalized;
-use poulpy_hal::layouts::Unnormalized;
+use poulpy_hal::layouts::CoeffNormalized;
+use poulpy_hal::layouts::CoeffUnnormalized;
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::{
@@ -38,8 +38,8 @@ pub trait CKKSAddManyOps<BE: Backend> {
     /// Errors if `inputs` is empty.
     fn ckks_add_many<Dst, Src>(&self, dst: &mut Dst, inputs: &[&Src], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds;
 }
 
 /// Fused multiply-accumulate: `dst += a * b`.
@@ -97,9 +97,9 @@ pub trait CKKSMulAddOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
     /// Computes `dst += a * pt` where `pt` is a full plaintext polynomial.
@@ -118,9 +118,9 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// ```
     fn ckks_mul_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst += a * pt[pt_coeff]`.
     ///
@@ -134,9 +134,9 @@ pub trait CKKSMulAddOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst += a * pt[pt_coeff]` without normalizing `dst`.
     ///
@@ -153,9 +153,9 @@ pub trait CKKSMulAddOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        GLWE<Dst, BE::ZnxWord, Unnormalized>: GLWEToBackendMut<BE, State = Unnormalized>,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
+        GLWE<Dst, BE::ZnxWord, CoeffUnnormalized>: GLWEToBackendMut<BE, State = CoeffUnnormalized>,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst += a * pt` without normalizing `dst`.
     ///
@@ -169,9 +169,9 @@ pub trait CKKSMulAddOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        GLWE<Dst, BE::ZnxWord, Unnormalized>: GLWEToBackendMut<BE, State = Unnormalized>,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
+        GLWE<Dst, BE::ZnxWord, CoeffUnnormalized>: GLWEToBackendMut<BE, State = CoeffUnnormalized>,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds;
 }
 
 /// Fused affine evaluation: `dst = a * scale + offset`.
@@ -219,9 +219,9 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst = dst * affine_const[scale_coeff] + affine_const[offset_coeff]` in-place.
     ///
@@ -241,8 +241,11 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds;
 
     fn ckks_affine_pt_vec_tmp_bytes<R, A, S>(&self, res: &R, a: &A, scale: &S) -> usize
     where
@@ -279,10 +282,10 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        S: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst = dst * scale + offset` in-place.
     ///
@@ -300,9 +303,12 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        S: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds;
 }
 
 /// Fused multiply-subtract: `dst -= a * b`.
@@ -342,9 +348,9 @@ pub trait CKKSMulSubOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        B: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         H: GetTensorKey<BE>;
 
     /// Computes `dst -= a * pt` where `pt` is a full plaintext polynomial.
@@ -353,9 +359,9 @@ pub trait CKKSMulSubOps<BE: Backend> {
     /// [`CKKSMulAddOps::ckks_mul_add_pt_vec_into`].
     fn ckks_mul_sub_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst -= a * pt[pt_coeff]`.
     ///
@@ -370,9 +376,9 @@ pub trait CKKSMulSubOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE, State = Normalized> + IntPolyInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE, State = CoeffNormalized> + IntPolyInfos + CKKSCtBounds;
 }
 
 /// Inner product (dot product) of ciphertext and plaintext slices.
@@ -424,9 +430,9 @@ pub trait CKKSDotProductOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + GLWEInfos,
-        CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = CoeffNormalized>,
+        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + GLWEInfos,
+        CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + GLWEInfos,
         H: GetTensorKey<BE>;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–plaintext-polynomial pairs.
@@ -448,9 +454,9 @@ pub trait CKKSDotProductOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + GLWEInfos,
-        E: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos;
+        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = CoeffNormalized>,
+        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + GLWEInfos,
+        E: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos;
 
     /// Computes `dst = Σ a[i] * b[i][pt_coeffs[i]]` over ciphertext–scalar-constant pairs.
     ///
@@ -465,7 +471,7 @@ pub trait CKKSDotProductOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = Normalized>,
-        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = Normalized> + LWEInfos + GLWEInfos,
-        E: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + IntPolyInfos;
+        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE, State = CoeffNormalized>,
+        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE, State = CoeffNormalized> + LWEInfos + GLWEInfos,
+        E: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + IntPolyInfos;
 }

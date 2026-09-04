@@ -3,7 +3,7 @@ use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
     layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWEAutomorphismKeyPreparedBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, ScratchArena};
 
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
 
@@ -26,8 +26,8 @@ pub trait CKKSConjugateDefault<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWEAutomorphism<BE> + GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos,
     {
         let offset = ckks_offset_unary(dst, src);
         // Validate before mutating: on error `dst` must remain untouched.
@@ -52,7 +52,7 @@ pub trait CKKSConjugateDefault<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWEAutomorphism<BE>,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     {
         self.glwe_automorphism_assign(dst, key, scratch);
         Ok(())

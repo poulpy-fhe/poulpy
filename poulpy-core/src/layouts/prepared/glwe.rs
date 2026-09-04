@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use poulpy_hal::{
@@ -82,7 +82,7 @@ where
     fn glwe_prepare<R, O>(&self, res: &mut R, other: &O)
     where
         R: GLWEPreparedToBackendMut<B>,
-        O: GLWEToBackendRef<B, State = Normalized> + GLWEInfos,
+        O: GLWEToBackendRef<B, State = CoeffNormalized> + GLWEInfos,
     {
         let mut res = res.to_backend_mut();
         let other = other.to_backend_ref();

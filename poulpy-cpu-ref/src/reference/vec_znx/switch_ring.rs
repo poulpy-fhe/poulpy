@@ -1,6 +1,6 @@
 use crate::{
     layouts::{
-        Backend, FitsIn, HostDataMut, HostDataRef, NormalizationState, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
+        ArithmeticState, Backend, CoeffFitsIn, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
         vec_znx::vec_znx_copy,
@@ -11,10 +11,10 @@ use crate::{
 /// Maps between negacyclic rings by changing the polynomial degree.
 /// Up:  Z\[X\]/(X^N+1) -> Z\[X\]/(X^{2^d N}+1) via X -> X^{2^d}
 /// Down: Z\[X\]/(X^N+1) -> Z\[X\]/(X^{N/2^d}+1) by folding indices.
-pub fn vec_znx_switch_ring<'r, 'a, BE, S: NormalizationState>(
+pub fn vec_znx_switch_ring<'r, 'a, BE, S: ArithmeticState>(
     res: &mut VecZnxBackendMut<'r, BE, S>,
     res_col: usize,
-    a: &VecZnxBackendRef<'a, BE, impl FitsIn<S>>,
+    a: &VecZnxBackendRef<'a, BE, impl CoeffFitsIn<S>>,
     a_col: usize,
 ) where
     BE: Backend<ZnxWord = i64> + ZnxCopy + ZnxSwitchRing + ZnxZero,

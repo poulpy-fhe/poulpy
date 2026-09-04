@@ -9,7 +9,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     execution::{TaskExecutor, worker_scratch_bytes},
-    layouts::{Backend, Module, Normalized, ScratchArena},
+    layouts::{Backend, CoeffNormalized, Module, ScratchArena},
 };
 use std::ops::Deref;
 
@@ -226,8 +226,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
     ) -> Result<()>
     where
         Module<BE>: GLWECopy<BE> + GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSInfos,
     {
         // `dst` is the (freshly-allocated) widened target: ModUp raises the modulus
         // to the destination's requested modulus, so the widening width is `dst.k()`.
@@ -281,10 +281,15 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
     where
         Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE> + CKKSCopyOps<BE>,
         K: BootstrappingKeys<BE>,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
     {
         // The pipeline carves rank-1 intermediates, so reject higher-rank inputs
         // rather than silently copying into a rank-1 scratch ciphertext.
@@ -322,8 +327,14 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
     where
         Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
         K: BootstrappingKeys<BE>,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        Src: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
     {
         // Both lifts come from the plan; `None` skips them (for pipelines whose
         // input does not meet the plan's message-ratio contract). The first
@@ -365,8 +376,14 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
     fn recombine_halves<R1, R2>(&self, res_re: &mut R1, res_im: &mut R2, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Module<BE>: CKKSImagOps<BE> + CKKSAddOps<BE>,
-        R1: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        R2: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        R1: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        R2: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
     {
         self.ckks_mul_i_assign(res_im, scratch)?;
         self.ckks_add_assign(res_re, &*res_im, scratch)?;
@@ -385,8 +402,11 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
     where
         Module<BE>: CKKSDFTOps<BE>,
         K: BootstrappingKeys<BE>,
-        C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        C: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
     {
         self.ckks_coeffs_to_slots_split(r0, i0, ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)
     }
@@ -402,8 +422,14 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
     where
         Module<BE>: CKKSDFTOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
         K: BootstrappingKeys<BE>,
-        R1: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        R2: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        R1: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        R2: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
     {
         self.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
         self.ckks_conjugate_into(conjugate, &*ct, keys.rotation_keys(), scratch)?;
@@ -428,15 +454,15 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         Module<BE>: CKKSEvalModOps<BE>,
         F: Sync,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
-        C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + Sync,
-        R1: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        C: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + Sync,
+        R1: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSCtBounds
             + SetCKKSInfos
             + SetBSGSMeta
             + Send,
-        R2: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        R2: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSCtBounds
             + SetCKKSInfos
             + SetBSGSMeta
@@ -487,8 +513,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             + CKKSCopyOps<BE>
             + CKKSPow2Ops<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSCtBounds
             + SetCKKSInfos
             + SetBSGSMeta
@@ -589,9 +615,12 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
     where
         Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE> + CKKSDFTOps<BE>,
         K: BootstrappingKeys<BE>,
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        R: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSCtBounds
             + SetCKKSInfos
             + SetBSGSMeta
@@ -656,8 +685,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             + CKKSDFTOps<BE>
             + CKKSEvalModOps<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSCtBounds
             + SetCKKSInfos
             + SetBSGSMeta
@@ -801,8 +830,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             + CKKSDFTOps<BE>
             + CKKSEvalModOps<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSCtBounds
             + SetCKKSInfos
             + SetBSGSMeta
@@ -863,8 +892,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             + CKKSPow2Ops<BE>
             + CKKSAffineOps<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized>
-            + GLWEToBackendRef<BE, State = Normalized>
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
             + CKKSCtBounds
             + SetCKKSInfos
             + SetBSGSMeta
@@ -1005,8 +1034,14 @@ pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src>(
 where
     BE: Backend + CKKSEncapsulatedModUpImpl<BE>,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
-    Dst: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
-    Src: GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
+    Src: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
 {
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     // The lift is fused into ModUp, so the message is already at its final scale
@@ -1112,14 +1147,14 @@ where
         + CKKSPow2Ops<BE>
         + CKKSAffineOps<BE>,
     K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-    C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-    R: GLWEToBackendMut<BE, State = Normalized>
-        + GLWEToBackendRef<BE, State = Normalized>
+    C: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
         + CKKSCtBounds
         + SetCKKSInfos
         + SetBSGSMeta,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized>
-        + GLWEToBackendRef<BE, State = Normalized>
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
         + CKKSCtBounds
         + SetCKKSInfos
         + SetBSGSMeta
@@ -1182,9 +1217,9 @@ where
         + CKKSPow2Ops<BE>
         + CKKSAffineOps<BE>,
     K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-    C: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = Normalized>
-        + GLWEToBackendRef<BE, State = Normalized>
+    C: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
         + CKKSCtBounds
         + SetCKKSInfos
         + SetBSGSMeta

@@ -1,5 +1,5 @@
 use crate::api::GLWEBytesOf;
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft,
@@ -65,7 +65,7 @@ where
         key: &GGLWEPreparedBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        A: GLWEToBackendRef<BE, State = Normalized>,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized>,
     {
         glwe_keyswitch_dft_fill(self, res, a, key, scratch);
     }
@@ -302,7 +302,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    A: GLWEToBackendRef<BE, State = Normalized>,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized>,
     M: GLWEKeyswitchInternal<BE> + GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
 {
     let a = a.to_backend_ref();
@@ -469,7 +469,7 @@ pub fn glwe_keyswitch_default<BE, M, R, A>(
         + VecZnxIdftNormalizeConsume<BE>
         + VecZnxNormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    A: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos,
+    A: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos,
 {
     assert_eq!(
         a.rank(),
@@ -586,7 +586,7 @@ pub fn glwe_keyswitch_assign_default<BE, M, R>(
         + VecZnxIdftApply<BE>
         + VecZnxNormalize<BE>
         + VecZnxNormalizeAssignBackend<BE>,
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
 {
     assert_eq!(
         res.rank(),

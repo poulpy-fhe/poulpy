@@ -7,7 +7,7 @@ use poulpy_core::{
     GiantStepTensorBounds,
 };
 
-use poulpy_hal::layouts::{Backend, Module, Normalized, ScratchArena};
+use poulpy_hal::layouts::{Backend, CoeffNormalized, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -34,10 +34,12 @@ fn polynomial_input<BE, S, H>(
 where
     BE: Backend,
     Module<BE>: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-    S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+    S: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
     H: GetTensorKey<BE>,
-    CKKSCiphertextOwned<BE>:
-        GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+        + GLWEToBackendRef<BE, State = CoeffNormalized>
+        + CKKSCtBounds
+        + SetCKKSInfos,
 {
     match transform {
         PolynomialInputTransform::Identity => {
@@ -77,10 +79,10 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;
 
@@ -93,9 +95,13 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE, State = CoeffNormalized>
+            + GLWEInfos
+            + poulpy_core::layouts::BSGSMeta
+            + CKKSCtBounds
+            + IntPolyInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;
 
@@ -108,13 +114,15 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         H: GetTensorKey<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos;
 
     fn ckks_eval_poly_complex_const_coeffs_impl<R, S, C, H>(
         module: &Module<BE>,
@@ -125,12 +133,18 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        C: GLWEToBackendRef<BE, State = CoeffNormalized>
+            + GLWEInfos
+            + poulpy_core::layouts::BSGSMeta
+            + CKKSCtBounds
+            + IntPolyInfos,
         H: GetTensorKey<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos;
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos;
 }
 
 unsafe impl<BE: Backend> CKKSPolynomialEvaluationImpl<BE> for BE
@@ -165,10 +179,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
@@ -184,9 +198,13 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
-        A: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE, State = CoeffNormalized>
+            + GLWEInfos
+            + poulpy_core::layouts::BSGSMeta
+            + CKKSCtBounds
+            + IntPolyInfos,
+        A: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>,
     {
@@ -202,13 +220,15 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         H: GetTensorKey<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
     {
         let transform = bsgs.input_transform();
         let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
@@ -233,12 +253,18 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        S: GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<BE, State = CoeffNormalized> + CKKSCtBounds,
+        C: GLWEToBackendRef<BE, State = CoeffNormalized>
+            + GLWEInfos
+            + poulpy_core::layouts::BSGSMeta
+            + CKKSCtBounds
+            + IntPolyInfos,
         H: GetTensorKey<BE>,
-        CKKSCiphertextOwned<BE>:
-            GLWEToBackendMut<BE, State = Normalized> + GLWEToBackendRef<BE, State = Normalized> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE, State = CoeffNormalized>
+            + GLWEToBackendRef<BE, State = CoeffNormalized>
+            + CKKSCtBounds
+            + SetCKKSInfos,
     {
         let transform = poly.re.input_transform();
         ckks_ensure!(

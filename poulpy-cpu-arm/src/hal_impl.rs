@@ -11,7 +11,7 @@ use poulpy_cpu_ref::hal_defaults::{
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, FitsIn, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, NormalizationState, ScratchArena, VecZnxBackendMut,
+        ArithmeticState, Backend, CoeffFitsIn, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScratchArena, VecZnxBackendMut,
         VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos,
         VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },
@@ -40,10 +40,10 @@ where
 unsafe impl HalVecZnxImpl<FFT64Neon> for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx!();
 
-    fn vec_znx_transpose_backend<S: NormalizationState>(
+    fn vec_znx_transpose_backend<S: ArithmeticState>(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self, S>,
-        a: &VecZnxBackendRef<'_, Self, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, Self, impl CoeffFitsIn<S>>,
     ) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
@@ -76,10 +76,10 @@ unsafe impl HalVecZnxDftImpl<FFT64Neon> for FFT64Neon {
 unsafe impl HalVecZnxImpl<NTT4x30Neon> for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vec_znx!();
 
-    fn vec_znx_transpose_backend<S: NormalizationState>(
+    fn vec_znx_transpose_backend<S: ArithmeticState>(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self, S>,
-        a: &VecZnxBackendRef<'_, Self, impl FitsIn<S>>,
+        a: &VecZnxBackendRef<'_, Self, impl CoeffFitsIn<S>>,
     ) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }

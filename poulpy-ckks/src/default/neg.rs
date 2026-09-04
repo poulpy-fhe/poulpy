@@ -3,8 +3,8 @@ use poulpy_core::{
     GLWENegate, GLWEShift,
     layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::Normalized;
-use poulpy_hal::layouts::{Backend, FitsIn, ScratchArena};
+use poulpy_hal::layouts::CoeffNormalized;
+use poulpy_hal::layouts::{Backend, CoeffFitsIn, ScratchArena};
 
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
 
@@ -19,9 +19,9 @@ pub trait CKKSNegDefault<BE: Backend> {
     fn ckks_neg_into_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWENegate<BE> + GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE, State = Normalized> + GLWEInfos + CKKSInfos,
-        <Src as GLWEToBackendRef<BE>>::State: FitsIn<<Dst as GLWEToBackendRef<BE>>::State>,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE, State = CoeffNormalized> + GLWEInfos + CKKSInfos,
+        <Src as GLWEToBackendRef<BE>>::State: CoeffFitsIn<<Dst as GLWEToBackendRef<BE>>::State>,
     {
         let offset = ckks_offset_unary(dst, src);
         if offset != 0 {
@@ -44,7 +44,7 @@ pub trait CKKSNegDefault<BE: Backend> {
     fn ckks_neg_assign_default<Dst>(&self, dst: &mut Dst) -> Result<()>
     where
         Self: GLWENegate<BE>,
-        Dst: GLWEToBackendMut<BE, State = Normalized> + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE, State = CoeffNormalized> + CKKSInfos + SetCKKSInfos,
     {
         self.glwe_negate_assign(dst);
         Ok(())

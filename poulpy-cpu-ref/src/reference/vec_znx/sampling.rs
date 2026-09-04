@@ -1,5 +1,5 @@
 use crate::{
-    layouts::{Backend, HostDataMut, NoiseInfos, NormalizationState, Unnormalized, VecZnxBackendMut, ZnxViewMut},
+    layouts::{ArithmeticState, Backend, CoeffUnnormalized, HostDataMut, NoiseInfos, VecZnxBackendMut, ZnxViewMut},
     reference::znx::{znx_add_normal_f64_ref, znx_fill_normal_f64_ref, znx_fill_uniform_ref},
     source::Source,
 };
@@ -7,7 +7,7 @@ use crate::{
 pub fn vec_znx_fill_uniform_ref<'r, BE>(
     base2k: usize,
     k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, impl NormalizationState>,
+    res: &mut VecZnxBackendMut<'r, BE, impl ArithmeticState>,
     res_col: usize,
     source: &mut Source,
 ) where
@@ -35,7 +35,7 @@ pub fn vec_znx_fill_uniform_ref<'r, BE>(
 
 pub fn vec_znx_fill_normal_ref<'r, BE>(
     base2k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
     noise_infos: NoiseInfos,
     source: &mut Source,
@@ -55,7 +55,7 @@ pub fn vec_znx_fill_normal_ref<'r, BE>(
 
 pub fn vec_znx_add_normal_ref<'r, BE>(
     base2k: usize,
-    res: &mut VecZnxBackendMut<'r, BE, Unnormalized>,
+    res: &mut VecZnxBackendMut<'r, BE, CoeffUnnormalized>,
     res_col: usize,
     noise_infos: NoiseInfos,
     source: &mut Source,

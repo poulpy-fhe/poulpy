@@ -1,6 +1,6 @@
 use itertools::izip;
 use poulpy_hal::execution::TaskExecutor;
-use poulpy_hal::layouts::Normalized;
+use poulpy_hal::layouts::CoeffNormalized;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
@@ -125,7 +125,7 @@ where
         brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+        R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
         L: LWEToBackendRef<BE> + LWEInfos,
     {
         // TODO(device): make the full execute path 100% backend-native. The
@@ -161,7 +161,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord =
     brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
     M: VecZnxDftBytesOf
         + ModuleN
@@ -371,7 +371,7 @@ fn execute_block_binary<R, L, M, BE: Backend<Location = Host, ZnxWord = i64> + '
     brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
     M: VecZnxDftBytesOf
         + ModuleN
@@ -593,7 +593,7 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    R: GLWEToBackendMut<BE, State = Normalized> + GLWEInfos,
+    R: GLWEToBackendMut<BE, State = CoeffNormalized> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
     M: VecZnxRotateBackend<BE>
         + GLWEExternalProduct<BE>
@@ -664,7 +664,7 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
     for (ai, ski) in izip!(a.iter(), brk.data.iter()) {
         // acc_tmp = sk[i] * acc
         //
-        // The external product reads a `Normalized` accumulator: `out_tmp` is normalized at the
+        // The external product reads a `CoeffNormalized` accumulator: `out_tmp` is normalized at the
         // end of every iteration (see below), there is no relabel that could bypass this.
         module.glwe_external_product(&mut acc_tmp, &out_tmp, &ski.to_backend_ref(), &mut scratch_1.borrow());
 
@@ -673,11 +673,11 @@ fn execute_standard<R, L, M, BE: Backend<Location = Host, ZnxWord = i64>>(
 
         // acc = acc + (sk[i] * acc) * (X^{ai} - 1)
         //
-        // The sum is carry-producing, so the accumulator is relabelled `Unnormalized` for the
+        // The sum is carry-producing, so the accumulator is relabelled `CoeffUnnormalized` for the
         // addition and normalized back before it feeds the next external product. A single
         // normalization at the end would be numerically fine (digits in
         // [-2^{base2k-1}, 2^{base2k-1}] tolerate ~2^{63-base2k} additions before overflow), but
-        // it would amount to asserting the `Normalized` label without a normalization pass,
+        // it would amount to asserting the `CoeffNormalized` label without a normalization pass,
         // which the type system deliberately does not allow.
         let mut acc = out_tmp.into_unnormalized();
         module.glwe_add_assign(&mut acc, &acc_tmp);
