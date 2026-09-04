@@ -5,9 +5,9 @@ use std::mem::size_of;
 use crate::reference::vec_znx::{
     vec_znx_add_const_assign, vec_znx_add_const_into, vec_znx_add_into, vec_znx_add_normal_ref, vec_znx_add_scalar_assign,
     vec_znx_add_scalar_into, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_automorphism_assign_tmp_bytes,
-    vec_znx_automorphism_rotate, vec_znx_copy, vec_znx_extract_coeff, vec_znx_fill_normal_ref, vec_znx_fill_uniform_ref,
-    vec_znx_lsh, vec_znx_lsh_add_coeff_to_coeff, vec_znx_lsh_assign, vec_znx_lsh_coeff, vec_znx_lsh_sub,
-    vec_znx_lsh_sub_coeff_to_coeff, vec_znx_lsh_tmp_bytes, vec_znx_merge_rings, vec_znx_merge_rings_tmp_bytes,
+    vec_znx_automorphism_rotate, vec_znx_canonicalize, vec_znx_copy, vec_znx_extract_coeff, vec_znx_fill_normal_ref,
+    vec_znx_fill_uniform_ref, vec_znx_lsh, vec_znx_lsh_add_coeff_to_coeff, vec_znx_lsh_assign, vec_znx_lsh_coeff,
+    vec_znx_lsh_sub, vec_znx_lsh_sub_coeff_to_coeff, vec_znx_lsh_tmp_bytes, vec_znx_merge_rings, vec_znx_merge_rings_tmp_bytes,
     vec_znx_mul_xp_minus_one, vec_znx_mul_xp_minus_one_assign, vec_znx_mul_xp_minus_one_assign_tmp_bytes, vec_znx_negate,
     vec_znx_negate_assign, vec_znx_normalize, vec_znx_normalize_assign, vec_znx_normalize_coeff, vec_znx_normalize_coeff_assign,
     vec_znx_normalize_tmp_bytes, vec_znx_rotate, vec_znx_rotate_assign, vec_znx_rotate_assign_tmp_bytes, vec_znx_rsh,
@@ -84,6 +84,13 @@ pub trait HalVecZnxDefault<BE: Backend<ZnxWord = i64>>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
+    fn vec_znx_canonicalize_backend_default(_module: &Module<BE>, base2k: usize, k: usize, a: &mut VecZnxBackendMut<'_, BE>)
+    where
+        for<'x> BE::BufMut<'x>: HostDataMut,
+    {
+        vec_znx_canonicalize::<BE>(base2k, k, a);
+    }
+
     fn scalar_znx_fill_ternary_hw_backend_default(
         _module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,

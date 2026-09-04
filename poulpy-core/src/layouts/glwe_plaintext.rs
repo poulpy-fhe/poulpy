@@ -83,24 +83,28 @@ pub type GLWEPlaintextBackendMut<'a, BE> = GLWEPlaintext<<BE as Backend>::BufMut
 
 impl<D: Data, W: ZnxWord> SetBase2k for GLWEPlaintext<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
+        let _ = self.data.data_mut();
         self.base2k = base2k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetBase2k for &mut GLWEPlaintext<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
+        let _ = self.data.data_mut();
         self.base2k = base2k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetK for GLWEPlaintext<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
+        let _ = self.data.data_mut();
         self.k = k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetK for &mut GLWEPlaintext<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
+        let _ = self.data.data_mut();
         self.k = k
     }
 }
@@ -152,8 +156,8 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        assert_eq!(bytes.len(), BE::len_bytes(&self.data.data));
-        BE::copy_from_host(&mut self.data.data, bytes);
+        assert_eq!(bytes.len(), BE::len_bytes(self.data.data()));
+        BE::copy_from_host(self.data.data_mut(), bytes);
     }
 
     /// Rebuilds this backend-owned plaintext as a host-owned [`GLWEPlaintext<Vec<u8>, W>`].
@@ -184,7 +188,7 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         let shape = self.data.shape();
-        let data = self.data.data;
+        let data = self.data.into_data();
         GLWEPlaintext {
             data: VecZnx::from_data(data, shape.n(), shape.cols(), shape.size()),
             base2k: self.base2k,

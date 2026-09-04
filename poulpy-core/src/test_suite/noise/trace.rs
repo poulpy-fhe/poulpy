@@ -159,6 +159,7 @@ where
 
         let mut noise_want: f64 = key_infos.var_noise_keyswitch(
             &glwe_out_infos,
+            &glwe_out_infos,
             0.5,
             0.5,
             DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,

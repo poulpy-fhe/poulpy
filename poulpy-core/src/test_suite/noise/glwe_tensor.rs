@@ -18,7 +18,7 @@ use crate::{
         GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::GLWESecretPrepared,
     },
-    log2_std_noise_glwe_tensor,
+    log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized,
 };
 
 /// Slack allowed above [`log2_std_noise_glwe_tensor`] for the measured
@@ -164,6 +164,24 @@ where
                 noise.sigma,
                 noise.k,
                 scale + res_offset,
+                k,
+                out_base2k,
+            )
+        };
+        let noise_want_relinearized = |res_offset: usize| -> f64 {
+            log2_std_noise_glwe_tensor_relinearized(
+                n as f64,
+                rank as f64,
+                0.5,
+                noise.sigma,
+                noise.k,
+                noise.sigma,
+                noise.k,
+                scale + res_offset,
+                k,
+                out_base2k,
+                k,
+                out_base2k,
             )
         };
 
@@ -243,14 +261,12 @@ where
                 &mut scratch.borrow(),
             );
 
-            // We can reuse the same noise bound because the relinearization noise (which is additive)
-            // is much smaller than the tensoring noise (which is multiplicative)
             let noise_have: f64 = pt_tmp.stats().std().log2();
             assert!(
-                noise_have - noise_want(res_offset) <= TENSOR_NOISE_MARGIN,
+                noise_have - noise_want_relinearized(res_offset) <= TENSOR_NOISE_MARGIN,
                 "{} > {}",
                 noise_have,
-                noise_want(res_offset)
+                noise_want_relinearized(res_offset)
             );
         }
     }

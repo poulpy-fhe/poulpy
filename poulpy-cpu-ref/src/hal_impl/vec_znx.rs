@@ -1,3 +1,18 @@
+/// HAL `VecZnx` canonicalization.
+#[macro_export]
+macro_rules! hal_impl_vec_znx_canonicalize {
+    () => {
+        fn vec_znx_canonicalize(
+            module: &Module<Self>,
+            base2k: usize,
+            k: usize,
+            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+        ) {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_canonicalize_backend_default(module, base2k, k, a);
+        }
+    };
+}
+
 /// HAL `VecZnx` methods other than full-width normalization.
 #[macro_export]
 macro_rules! hal_impl_vec_znx_without_normalize {
@@ -901,6 +916,6 @@ macro_rules! hal_impl_vec_znx {
     () => {
         $crate::hal_impl_vec_znx_without_normalize!();
         $crate::hal_impl_vec_znx_normalize!();
-        poulpy_hal::hal_impl_vec_znx_canonicalize!();
+        $crate::hal_impl_vec_znx_canonicalize!();
     };
 }

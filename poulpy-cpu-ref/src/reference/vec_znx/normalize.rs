@@ -438,7 +438,7 @@ fn vec_znx_normalize_range<'r, 'a, BE>(
         assert!(carry.len() >= 3 * coeff_len);
     }
     let (n, cols, size) = (res.n(), res.cols(), res.size());
-    let ptr = res.data.as_mut().as_mut_ptr().cast::<i64>();
+    let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
     unsafe {
         vec_znx_normalize_range_raw::<BE>(
             ptr,
@@ -898,7 +898,7 @@ fn vec_znx_normalize_assign_range<'r, BE>(
     }
 
     let (n, cols, size) = (res.n(), res.cols(), res.size());
-    let ptr = res.data.as_mut().as_mut_ptr().cast::<i64>();
+    let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
     unsafe { vec_znx_normalize_assign_range_raw::<BE>(ptr, n, cols, size, base2k, res_col, coeff_start, coeff_len, carry) }
 }
 

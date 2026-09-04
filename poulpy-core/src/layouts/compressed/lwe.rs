@@ -5,7 +5,7 @@ use poulpy_hal::{
     api::VecZnxCopyBackend,
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
-        WriterTo, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
+        WriterTo, vec_znx_alloc_zeroed, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
     },
     source::Source,
 };
@@ -89,7 +89,7 @@ impl<D: Data, W: ZnxWord> LWECompressed<D, W> {
     pub(crate) fn alloc<B: Backend<OwnedBuf = D, ZnxWord = W>>(base2k: Base2K, k: TorusPrecision) -> Self {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWECompressed {
-            data: VecZnx::from_data(B::alloc_zeroed_bytes(B::bytes_of_vec_znx(1, 1, size)), 1, 1, size),
+            data: vec_znx_alloc_zeroed::<B>(1, 1, size),
             k,
             base2k,
             seed: [0u8; 32],

@@ -1,10 +1,9 @@
 //! CKKS wrapper for the GLWE-level linear transformation.
 //!
-//! Computes the scale-derived convolution parameters (`a_k`,
-//! `cnv_offset`) and the result `log_delta` / `log_budget`, delegates the actual
-//! evaluation to the scheme-agnostic core engine
-//! [`GLWELinearTransformations`](trait@poulpy_core::GLWELinearTransformations), and stamps the
-//! CKKS metadata onto the result. See `docs/linear_transformation.md`.
+//! Computes the plaintext width, convolution offset, and final result metadata,
+//! then delegates the actual evaluation to the scheme-agnostic core engine
+//! [`GLWELinearTransformations`](trait@poulpy_core::GLWELinearTransformations). See
+//! `docs/linear_transformation.md`.
 
 use crate::SlotsKind;
 use crate::{CKKSResult as Result, ckks_ensure};
@@ -18,7 +17,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, Convolution, ModuleN, VecZnxCanonicalize},
+    api::{CnvPVecBytesOf, Convolution, ModuleN},
     layouts::{Backend, CyclotomicOrder, Data, Module, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
 };
 
@@ -73,12 +72,7 @@ impl<D: Data, BE: Backend> LtDiagonalScale for PreparedDiagonal<D, BE> {
 
 impl<BE: Backend> CKKSLinearTransformationOps<BE> for Module<BE>
 where
-    Module<BE>: GLWELinearTransformations<BE>
-        + GLWECopy<BE>
-        + CKKSCopyOps<BE>
-        + CKKSModuleAlloc<BE>
-        + CyclotomicOrder
-        + VecZnxCanonicalize<BE>,
+    Module<BE>: GLWELinearTransformations<BE> + GLWECopy<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE> + CyclotomicOrder,
 {
     // ---------- tmp_bytes ----------
 
@@ -189,10 +183,6 @@ where
         P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         H: GetAutomorphismKey<BE>,
     {
-        // Giant rotations act on the post-product accumulator, so the preflight
-        // must resolve them at the destination precision the evaluation will.
-        check_required_keys(lt, babies, keys, self.cyclotomic_order(), dst.k())?;
-
         let first = lt
             .first_diagonal_plaintext()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
@@ -214,18 +204,11 @@ where
             0,
             pt_max_k,
         )?;
-        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
+        let res_k: TorusPrecision = (res_log_budget + res_log_delta).into();
+        check_required_keys(lt, babies, keys, self.cyclotomic_order(), res_k)?;
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
-        let cols = dst.rank().as_usize() + 1;
-        let base2k = dst.base2k().as_usize();
-        let k = dst.k().as_usize();
-        {
-            let mut dst_ref = dst.to_backend_mut();
-            for col in 0..cols {
-                self.vec_znx_canonicalize(base2k, k, dst_ref.data_mut(), col, &mut scratch.borrow());
-            }
-        }
+        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
         // Diagonals are complex in general, so a transformed value leaves the
         // reals unless the caller can prove otherwise.
         dst.set_slots(SlotsKind::Complex);

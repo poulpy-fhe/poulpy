@@ -20,15 +20,14 @@ use std::collections::BTreeMap;
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxCanonicalize,
-        VecZnxCanonicalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalizeConsume,
-        VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     execution::{for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
     layouts::{Backend, GaloisElement, ScratchArena, VecZnxDftBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{
-    GLWEAutomorphism, GLWECopy, ScratchArenaTakeCore,
+    GLWEAutomorphism, ScratchArenaTakeCore,
     api::GLWEBytesOf,
     default::{
         keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
@@ -92,8 +91,7 @@ where
         + VecZnxAutomorphismAssignBackend<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
-        + VecZnxIdftNormalizeConsumeTmpBytes
-        + VecZnxCanonicalizeTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
@@ -112,14 +110,7 @@ where
     let hoisted = hoisted_a_dft + scratch_workers::<BE::TaskExecutor>(BABY_ROTATION_WORKERS) * hoisted_worker;
 
     let fallback = baby + module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos).max(prepare);
-    let prepare_babies = hoisted.max(fallback).max(prepare);
-    let needs_canonicalization =
-        !a_infos.k().as_usize().is_multiple_of(a_infos.base2k().as_usize()) || a_infos.size() < a_infos.max_size();
-    if needs_canonicalization {
-        baby + prepare_babies.max(module.vec_znx_canonicalize_tmp_bytes())
-    } else {
-        prepare_babies
-    }
+    hoisted.max(fallback).max(prepare)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -139,6 +130,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
         + GaloisElement
         + GGLWEProductDefault<BE>
         + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
         + VecZnxIdftNormalizeConsume<BE>,
@@ -152,6 +144,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
     module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
 
     let baby_base2k = baby.base2k().as_usize();
+    let baby_k = baby.k().as_usize();
     let a_base2k = a.base2k().as_usize();
     {
         let mut baby_ref = baby.to_backend_mut();
@@ -167,6 +160,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
                 &mut scratch_1.borrow(),
             );
         }
+        module.vec_znx_canonicalize(baby_base2k, baby_k, &mut baby_ref.data);
         for col in 0..cols {
             module.vec_znx_automorphism_assign_backend(key_p, &mut baby_ref.data, col, &mut scratch_1.borrow());
         }
@@ -196,55 +190,8 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
         + ModuleN
-        + GLWECopy<BE>
         + VecZnxAutomorphismAssignBackend<BE>
         + VecZnxCanonicalize<BE>
-        + VecZnxCanonicalizeTmpBytes
-        + VecZnxDftApply<BE>
-        + VecZnxDftBytesOf
-        + VecZnxDftZero<BE>
-        + VecZnxIdftNormalizeConsume<BE>
-        + VecZnxIdftNormalizeConsumeTmpBytes
-        + Sync,
-    A: GLWEToBackendRef<BE> + GLWEInfos,
-    H: GetAutomorphismKey<BE>,
-{
-    let needs_canonicalization = !a.k().as_usize().is_multiple_of(a.base2k().as_usize()) || a.size() < a.max_size();
-    if needs_canonicalization {
-        let (mut canonical, mut canonical_scratch) = scratch.borrow().take_glwe_scratch(a);
-        module.glwe_copy(&mut canonical, a);
-        {
-            let cols = canonical.rank().as_usize() + 1;
-            let base2k = canonical.base2k().as_usize();
-            let k = canonical.k().as_usize();
-            let mut canonical_ref = canonical.to_backend_mut();
-            for col in 0..cols {
-                module.vec_znx_canonicalize(base2k, k, &mut canonical_ref.data, col, &mut canonical_scratch.borrow());
-            }
-        }
-        glwe_prepare_linear_transformation_baby_steps_inner(module, cache, &canonical, keys, &mut canonical_scratch);
-    } else {
-        glwe_prepare_linear_transformation_baby_steps_inner(module, cache, a, keys, scratch);
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn glwe_prepare_linear_transformation_baby_steps_inner<BE, M, A, H>(
-    module: &M,
-    cache: &mut LinearTransformationBabySteps<BE>,
-    a: &A,
-    keys: &H,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: GLWEBytesOf<BE>
-        + CnvPVecAlloc<BE>
-        + Convolution<BE>
-        + GaloisElement
-        + GLWEAutomorphism<BE>
-        + GGLWEProductDefault<BE>
-        + ModuleN
-        + VecZnxAutomorphismAssignBackend<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>

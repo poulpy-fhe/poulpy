@@ -50,7 +50,7 @@ where
 
     let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total.into());
     pt.set_meta(meta);
-    pt.copy_from_host_bytes::<BE>(host_pt.data().data.as_slice());
+    pt.copy_from_host_bytes::<BE>(host_pt.data().data().as_slice());
     Ok(pt)
 }
 

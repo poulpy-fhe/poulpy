@@ -11,25 +11,13 @@ pub trait VecZnxNormalizeTmpBytes {
     fn vec_znx_normalize_tmp_bytes(&self) -> usize;
 }
 
-pub trait VecZnxCanonicalizeTmpBytes {
-    /// Returns the minimum number of scratch bytes necessary for canonicalization.
-    fn vec_znx_canonicalize_tmp_bytes(&self) -> usize;
-}
-
-/// Restores the canonical representation of a normalized `VecZnx` column.
+/// Restores the canonical representation of a normalized `VecZnx`.
 ///
 /// Limbs outside the first `k` bits are cleared. When `k` ends inside a limb,
 /// the inactive low bits of that limb are removed and any resulting carry is
 /// propagated toward the most-significant limb.
 pub trait VecZnxCanonicalize<B: Backend> {
-    fn vec_znx_canonicalize(
-        &self,
-        base2k: usize,
-        k: usize,
-        a: &mut VecZnxBackendMut<'_, B>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
+    fn vec_znx_canonicalize(&self, base2k: usize, k: usize, a: &mut VecZnxBackendMut<'_, B>);
 }
 
 pub trait VecZnxZeroBackend<B: Backend> {

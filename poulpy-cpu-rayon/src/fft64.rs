@@ -491,7 +491,7 @@ impl BigWordHadamardProduct for $rayon {
 
 unsafe impl HalVecZnxImpl<$rayon> for $rayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
-    poulpy_hal::hal_impl_vec_znx_canonicalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
     fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }

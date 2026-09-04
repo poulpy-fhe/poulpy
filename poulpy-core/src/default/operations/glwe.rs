@@ -1,12 +1,13 @@
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAddAssignBackend, VecZnxAddIntoBackend,
-        VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxLshAddIntoBackend, VecZnxLshAssignBackend, VecZnxLshBackend,
-        VecZnxLshSubBackend, VecZnxLshTmpBytes, VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneBackend,
-        VecZnxNegateAssignBackend, VecZnxNegateBackend, VecZnxNormalize, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
-        VecZnxRotateAssignBackend, VecZnxRotateAssignTmpBytes, VecZnxRotateBackend, VecZnxRshAssignBackend, VecZnxRshTmpBytes,
-        VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
+        VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCanonicalize,
+        VecZnxCopyBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxLshAddIntoBackend,
+        VecZnxLshAssignBackend, VecZnxLshBackend, VecZnxLshSubBackend, VecZnxLshTmpBytes, VecZnxMulXpMinusOneAssignBackend,
+        VecZnxMulXpMinusOneBackend, VecZnxNegateAssignBackend, VecZnxNegateBackend, VecZnxNormalize,
+        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxRotateAssignBackend, VecZnxRotateAssignTmpBytes,
+        VecZnxRotateBackend, VecZnxRshAssignBackend, VecZnxRshTmpBytes, VecZnxSubAssignBackend, VecZnxSubBackend,
+        VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
         Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBigToBackendMut,
@@ -18,6 +19,17 @@ use crate::{
     default::keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
     layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos},
 };
+
+fn canonicalize_glwe<BE, M, R>(module: &M, res: &mut R)
+where
+    BE: Backend,
+    M: VecZnxCanonicalize<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+{
+    let base2k = res.base2k().as_usize();
+    let k = res.k().as_usize();
+    module.vec_znx_canonicalize(base2k, k, &mut res.to_backend_mut().data);
+}
 
 #[doc(hidden)]
 pub trait GLWEMulConstDefault<BE: Backend> {
@@ -54,7 +66,7 @@ pub trait GLWEMulConstDefault<BE: Backend> {
 
 impl<BE: Backend> GLWEMulConstDefault<BE> for Module<BE>
 where
-    Self: Convolution<BE> + VecZnxBigBytesOf + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
+    Self: Convolution<BE> + VecZnxBigBytesOf + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes + VecZnxCanonicalize<BE>,
     Self: VecZnxCopyBackend<BE>,
 {
     fn glwe_mul_const_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
@@ -141,6 +153,7 @@ where
                 &mut scratch_iter,
             );
         }
+        canonicalize_glwe(self, res);
     }
 
     fn glwe_mul_const_assign_default<R, B>(
@@ -200,6 +213,7 @@ where
                 &mut scratch_iter,
             );
         }
+        canonicalize_glwe(self, res);
     }
 }
 
@@ -213,6 +227,7 @@ where
         + VecZnxBigNormalize<BE>
         + Convolution<BE>
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxCanonicalize<BE>
         + VecZnxCopyBackend<BE>,
 {
     fn glwe_mul_plain_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
@@ -327,6 +342,7 @@ where
                 &mut scratch_iter,
             );
         }
+        canonicalize_glwe(self, res);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -405,6 +421,7 @@ where
                 &mut scratch_iter,
             );
         }
+        canonicalize_glwe(self, res);
     }
 }
 
@@ -490,7 +507,8 @@ where
         + VecZnxNegateBackend<BE>
         + GGLWEProductDefault<BE>
         + VecZnxBigAddSmallAssign<BE>
-        + VecZnxNormalizeTmpBytes,
+        + VecZnxNormalizeTmpBytes
+        + VecZnxCanonicalize<BE>,
 {
     fn glwe_tensor_square_apply_tmp_bytes_default<R, A>(&self, res: &R, a: &A) -> usize
     where
@@ -715,6 +733,7 @@ where
                 &mut scratch_iter,
             );
         }
+        canonicalize_glwe(self, res);
     }
 
     fn glwe_tensor_square_apply_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
@@ -768,6 +787,7 @@ where
             res_base2k,
             &mut scratch,
         );
+        canonicalize_glwe(self, res);
     }
 
     fn glwe_tensor_apply_default<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
@@ -819,6 +839,7 @@ where
             ab_base2k,
             &mut scratch,
         );
+        canonicalize_glwe(self, res);
     }
 }
 
@@ -1184,7 +1205,8 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
         + VecZnxAddAssignBackend<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopyBackend<BE>
-        + VecZnxNegateBackend<BE>,
+        + VecZnxNegateBackend<BE>
+        + VecZnxCanonicalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     BP: CnvPVecRToBackendRef<BE>,
@@ -1226,6 +1248,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
         ab_base2k,
         &mut scratch,
     );
+    canonicalize_glwe(module, res);
 }
 
 /// Prepares GLWE `b` into the caller-owned scratch `CnvPVecR` `b_prep`.

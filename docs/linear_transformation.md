@@ -72,17 +72,17 @@ In the giant-step phase each giant step `j` first forms its product, the inner s
 The product is then rotated by `n1 * j` and folded into a running accumulator.
 The giant rotation `j = 0` is the identity and is folded in directly, with no key-switch.
 
-In the finalize phase the accumulator is normalized once into the output ciphertext.
+In the finalize phase the accumulator is normalized once into the output ciphertext and canonicalized at the declared output precision.
 
 The accumulator carries the body and the mask in an un-normalized extended-precision form across the whole giant-step loop.
 The body is never normalized between steps; only the mask is dropped to normalized limbs where a giant key-switch needs them, because gadget decomposition requires limb-aligned input.
-A single normalization at the end produces the result, so the whole transform consumes one rescale level.
+A single normalization at the end produces the result, followed by a scratch-free canonical round when the precision is not limb-aligned, so the whole transform consumes one rescale level.
 
 ![Baby-step giant-step dataflow: the top row hoists the input into the baby rotations and feeds the giant-step products; the lower insets detail the per-giant product (PROD) and the giant rotation (ROT).](img/linear_transformation.png)
 
 The diagram reads left to right.
-The top row is the baby-step pipeline: the input mask is transformed once (DFT), each baby rotation is a key-switch (VMP, IDFT, add body, normalize, automorphism) prepared as a left convolution operand, and the crossbar feeds those rotations into the per-giant products.
-Each product (PROD) is then rotated (ROT) and accumulated, with one normalization at the far right.
+The top row is the baby-step pipeline: the input mask is transformed once (DFT), each baby rotation is a key-switch (VMP, IDFT, add body, normalize, canonicalize, automorphism) prepared as a left convolution operand, and the crossbar feeds those rotations into the per-giant products.
+Each product (PROD) is then rotated (ROT) and accumulated, with one normalization and output canonicalization at the far right.
 The lower-left inset details a single product as a sum of convolutions, and the lower-right inset details a single giant rotation.
 
 ## Prepared and streamed diagonals
@@ -116,6 +116,7 @@ For a transform whose non-zero diagonals factor as `n1` baby steps by `n2` giant
 | Plaintext convolutions | one per non-zero diagonal |
 | Giant-step key-switches | n2 - 1 |
 | Output normalizations | 1 |
+| Output canonicalizations | 1 (no-op at limb-aligned precision) |
 | Rescale levels consumed | 1 |
 | Distinct automorphism keys | (n1 - 1) + (n2 - 1), minus empty steps |
 

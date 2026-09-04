@@ -97,16 +97,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
 
     fn vec_znx_normalize_tmp_bytes_backend(module: &Module<BE>) -> usize;
 
-    fn vec_znx_canonicalize_tmp_bytes_backend(module: &Module<BE>) -> usize;
-
-    fn vec_znx_canonicalize(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        a: &mut VecZnxBackendMut<'_, BE>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+    fn vec_znx_canonicalize(module: &Module<BE>, base2k: usize, k: usize, a: &mut VecZnxBackendMut<'_, BE>);
 
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize_backend(
@@ -605,68 +596,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         noise_infos: NoiseInfos,
         seed: [u8; 32],
     );
-}
-
-/// Implements `VecZnx` canonicalization by composing the backend's own
-/// coefficient-domain shift operations.
-///
-/// This helper is intended for host-visible backends. Device backends should
-/// provide a native implementation instead of expanding this macro.
-#[macro_export]
-macro_rules! hal_impl_vec_znx_canonicalize {
-    () => {
-        fn vec_znx_canonicalize_tmp_bytes_backend(module: &$crate::layouts::Module<Self>) -> usize {
-            <Self as $crate::oep::HalVecZnxImpl<Self>>::vec_znx_rsh_tmp_bytes_backend(module)
-                .max(<Self as $crate::oep::HalVecZnxImpl<Self>>::vec_znx_lsh_tmp_bytes_backend(module))
-        }
-
-        fn vec_znx_canonicalize(
-            module: &$crate::layouts::Module<Self>,
-            base2k: usize,
-            k: usize,
-            a: &mut $crate::layouts::VecZnxBackendMut<'_, Self>,
-            a_col: usize,
-            scratch: &mut $crate::layouts::ScratchArena<'_, Self>,
-        ) {
-            assert_ne!(base2k, 0);
-            assert!(
-                k <= a.size() * base2k,
-                "k ({k}) exceeds VecZnx capacity ({})",
-                a.size() * base2k
-            );
-
-            let active_size = k.div_ceil(base2k);
-            for limb in active_size..a.size() {
-                $crate::layouts::ZnxZero::zero_at(a, a_col, limb);
-            }
-
-            let padding = (base2k - k % base2k) % base2k;
-            if active_size == 0 || padding == 0 {
-                return;
-            }
-
-            let mut active = $crate::layouts::vec_znx_backend_mut_with_size::<Self>(
-                $crate::layouts::vec_znx_reborrow_backend_mut::<Self>(a),
-                active_size,
-            );
-            <Self as $crate::oep::HalVecZnxImpl<Self>>::vec_znx_rsh_assign_backend(
-                module,
-                base2k,
-                padding,
-                &mut active,
-                a_col,
-                scratch,
-            );
-            <Self as $crate::oep::HalVecZnxImpl<Self>>::vec_znx_lsh_assign_backend(
-                module,
-                base2k,
-                padding,
-                &mut active,
-                a_col,
-                scratch,
-            );
-        }
-    };
 }
 
 /// Big-coefficient `VecZnxBig` extension point.

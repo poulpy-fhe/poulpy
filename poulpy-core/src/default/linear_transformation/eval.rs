@@ -13,10 +13,9 @@ use poulpy_hal::{
     api::{
         CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
-        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCanonicalize, VecZnxCanonicalizeTmpBytes, VecZnxCopyBackend,
-        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
-        VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCanonicalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
+        VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{Backend, GaloisElement, ScratchArena},
 };
@@ -58,8 +57,7 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes
-        + VecZnxCanonicalizeTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,
@@ -86,10 +84,9 @@ where
     let rot_dft = module.bytes_of_vec_znx_dft(cols, key.size());
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
     let lazy_dft = glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key);
-    let canonicalize = module.vec_znx_canonicalize_tmp_bytes();
-    let fallback_path = prod_dft + prod_col_big + inner_dft.max(canonicalize);
+    let fallback_path = prod_dft + prod_col_big + inner_dft;
     let lazy_dft_rot = rot_dft + lazy_dft;
-    let lazy_dft_path = prod_dft + lazy_acc_dft + lazy_acc_big + (inner_dft + lazy_dft_rot).max(canonicalize);
+    let lazy_dft_path = prod_dft + lazy_acc_dft + inner_dft + lazy_dft_rot + lazy_acc_big;
 
     module
         .glwe_automorphism_tmp_bytes(res, a, key)
@@ -120,8 +117,7 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes
-        + VecZnxCanonicalizeTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
@@ -134,8 +130,7 @@ where
 /// every baby rotation `k` it already holds, reusing one DFT of the input mask
 /// across all keys (docs/linear_transformation.md). The LHS is independent of the matrix
 /// diagonals, so the same prepared cache is reused across every giant step and
-/// across transforms that share the input. `a_k` is the CKKS-supplied
-/// base2k alignment for the input. Forwards to the internal
+/// across transforms that share the input. Forwards to the internal
 /// `glwe_prepare_linear_transformation_baby_steps`.
 pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
     module: &M,
@@ -156,8 +151,6 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxCanonicalize<BE>
-        + VecZnxCanonicalizeTmpBytes
-        + GLWECopy<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
@@ -266,8 +259,7 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes
-        + VecZnxCanonicalizeTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,

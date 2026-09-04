@@ -190,8 +190,7 @@ pub(super) fn glwe_idft_dft_into_big<BE, M>(
     }
 }
 
-/// Final BIG → SMALL normalize with sub-limb offset; this is the single
-/// rounding allowed by docs/linear_transformation.md. `cnv_offset_lo` is the
+/// Final BIG → SMALL normalize with sub-limb offset. `cnv_offset_lo` is the
 /// fractional limb shift PROD never applied, so it lands here at the end.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn glwe_normalize_big_into<BE, M, R>(
@@ -222,22 +221,17 @@ pub(super) fn glwe_normalize_big_into<BE, M, R>(
             &mut scratch.borrow(),
         );
     }
-    for col in 0..cols {
-        module.vec_znx_canonicalize(res_base2k, res_k, &mut res_ref.data, col, &mut scratch.borrow());
-    }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res_ref.data);
 }
 
-pub(super) fn glwe_canonicalize<BE, M, R>(module: &M, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+pub(super) fn glwe_canonicalize<BE, M, R>(module: &M, res: &mut R)
 where
     BE: Backend,
     M: VecZnxCanonicalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
-    let cols = res.rank().as_usize() + 1;
     let base2k = res.base2k().as_usize();
     let k = res.k().as_usize();
     let mut res_ref = res.to_backend_mut();
-    for col in 0..cols {
-        module.vec_znx_canonicalize(base2k, k, &mut res_ref.data, col, &mut scratch.borrow());
-    }
+    module.vec_znx_canonicalize(base2k, k, &mut res_ref.data);
 }

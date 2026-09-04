@@ -15,7 +15,7 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
         VecZnxBigAddSmallAssign, VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigSubSmallAssign,
-        VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxBigSubSmallNegateAssign, VecZnxCanonicalize, VecZnxDftBytesOf, VecZnxIdftApply,
     },
     layouts::{Backend, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
@@ -134,6 +134,7 @@ pub fn glwe_automorphism_add_default<BE, M, R, A>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -150,6 +151,7 @@ pub fn glwe_automorphism_add_default<BE, M, R, A>(
 
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
@@ -189,6 +191,7 @@ pub fn glwe_automorphism_add_default<BE, M, R, A>(
             );
         }
     }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }
 
 pub fn glwe_automorphism_add_assign_default<BE, M, R>(
@@ -207,6 +210,7 @@ pub fn glwe_automorphism_add_assign_default<BE, M, R>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -222,6 +226,7 @@ pub fn glwe_automorphism_add_assign_default<BE, M, R>(
 
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
@@ -260,6 +265,7 @@ pub fn glwe_automorphism_add_assign_default<BE, M, R>(
             );
         }
     }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }
 
 pub fn glwe_automorphism_sub_default<BE, M, R, A>(
@@ -279,6 +285,7 @@ pub fn glwe_automorphism_sub_default<BE, M, R, A>(
         + VecZnxBigSubSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -295,6 +302,7 @@ pub fn glwe_automorphism_sub_default<BE, M, R, A>(
 
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
@@ -333,6 +341,7 @@ pub fn glwe_automorphism_sub_default<BE, M, R, A>(
             );
         }
     }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }
 
 pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
@@ -352,6 +361,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
         + VecZnxBigSubSmallNegateAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -368,6 +378,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
 
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
@@ -406,6 +417,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
             );
         }
     }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }
 
 pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
@@ -424,6 +436,7 @@ pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
         + VecZnxBigSubSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -439,6 +452,7 @@ pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
 
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
@@ -476,6 +490,7 @@ pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
             );
         }
     }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }
 
 pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R>(
@@ -494,6 +509,7 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R>(
         + VecZnxBigSubSmallNegateAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -509,6 +525,7 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R>(
 
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
@@ -546,4 +563,5 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R>(
             );
         }
     }
+    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }

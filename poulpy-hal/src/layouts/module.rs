@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ptr::NonNull};
 
-use crate::layouts::{Data, Location, MatZnx, ScalarZnx, VecZnx, checked_product};
+use crate::layouts::{Data, Location, MatZnx, ScalarZnx, VecZnx, checked_product, vec_znx_alloc_zeroed};
 use crate::{
     GALOISGENERATOR,
     api::{ModuleLogN, ModuleN},
@@ -304,10 +304,7 @@ impl<B: Backend> Module<B> {
     /// Allocates a zero-initialized backend-owned [`VecZnx`].
     #[inline]
     pub fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
-        let n = self.n();
-        let len = self.bytes_of_vec_znx_n(n, cols, size);
-        let bytes = B::alloc_zeroed_bytes(len);
-        VecZnx::from_data(bytes, n, cols, size)
+        vec_znx_alloc_zeroed::<B>(self.n(), cols, size)
     }
 
     /// Returns the byte size of a [`VecZnx`] with this module's ring degree.

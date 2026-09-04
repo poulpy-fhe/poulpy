@@ -175,6 +175,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
 {
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k();
+    let res_k = res.k().as_usize();
 
     // PROD writes its result in the diagonals' base2k.
     let first_diagonal = rhs
@@ -344,6 +345,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
                     &mut scratch_phase.borrow(),
                 );
             }
+            module.vec_znx_canonicalize(res_base2k.as_usize(), res_k, &mut acc_backend.data);
         }
 
         if let Some(key) = giant_key.as_ref() {
@@ -357,5 +359,5 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
             res_initialized = true;
         }
     }
-    glwe_canonicalize(module, res, &mut scratch_phase);
+    glwe_canonicalize(module, res);
 }

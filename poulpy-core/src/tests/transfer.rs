@@ -272,7 +272,7 @@ fn module_transfer_glwe_roundtrip() {
     let dst_module: Module<DstBackend> = Module::new(64);
     let mut src: GLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> =
         src_module.glwe_alloc(Base2K(12), TorusPrecision(33), Rank(2));
-    fill_bytes(&mut src.data.data);
+    fill_bytes(src.data.data_mut());
 
     let mut uploaded = dst_module.glwe_alloc_from_infos(&src);
     src.transfer_into(&mut uploaded);

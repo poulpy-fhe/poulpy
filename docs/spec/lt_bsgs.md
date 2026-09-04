@@ -94,7 +94,7 @@ prepared-convolution and DFT forms:
 
 | Name | Poulpy type | Role |
 |---|---|---|
-| `SMALL` | [`VecZnx`](../../poulpy-hal/src/layouts/vec_znx.rs) | normalized base-`2^K` limbs; required input to gadget decomposition and to `cnv_prepare_*` |
+| `SMALL` | [`VecZnx`](../../poulpy-hal/src/layouts/vec_znx.rs) | normalized base-`2^K` limbs, canonical at the declared precision; required input to gadget decomposition and to `cnv_prepare_*` |
 | `BIG` | [`VecZnxBig`](../../poulpy-hal/src/layouts/vec_znx_big.rs) | un-normalized extended-precision accumulator; supports exact add and automorphism without normalizing |
 | DFT | [`VecZnxDft`](../../poulpy-hal/src/layouts/vec_znx_dft.rs) | NTT/FFT domain; where VMP and convolution products live |
 | `CnvPVecL` / `CnvPVecR` | [`convolution.rs`](../../poulpy-hal/src/api/convolution.rs) | a polynomial prepared as the left / right operand of a bivariate convolution |
@@ -109,6 +109,7 @@ Primitives (all already implemented in the HAL):
 | add body (small) | `vec_znx_big_add_small_assign` | `BIG += SMALL` |
 | add body (big) | `vec_znx_big_add_assign` | `BIG += BIG` (giant-step carry, §6.3) |
 | normalize | `vec_znx_big_normalize` | `BIG → SMALL` |
+| canonicalize | `vec_znx_canonicalize` | clear or round bits below the declared precision |
 | automorphism (small) | `vec_znx_automorphism` | permutation `X → X^p` on `SMALL` |
 | automorphism (big) | `vec_znx_big_automorphism_assign` | permutation on `BIG` (deferred-norm path) |
 | prepare diagonal | `cnv_prepare_right` | plaintext → `CnvPVecR`, at setup |
@@ -121,7 +122,7 @@ Primitives (all already implemented in the HAL):
 > convolve into a scratch DFT column, then `vec_znx_dft_add_assign` into the accumulator
 > (or write the first term and add the rest).
 
-The composite `VMP → IDFT → add-body → normalize → automorphism` is exactly the GLWE
+The composite `VMP → IDFT → add-body → normalize → canonicalize → automorphism` is exactly the GLWE
 automorphism in
 [`poulpy-core/.../automorphism/glwe.rs`](../../poulpy-core/src/default/automorphism/glwe.rs);
 the baby-step rotation reuses `glwe_automorphism_default` verbatim, the giant-step
@@ -177,6 +178,7 @@ for k in 0 .. n1:
         res_big = [ vec_znx_idft_apply(res_dft[c]) for c in 0..=r ]   # BIG
         vec_znx_big_add_small_assign(res_big[0], ct_b)     # add shared body
         rot_small = [ vec_znx_big_normalize(res_big[c]) for c in 0..=r ]   # SMALL
+        vec_znx_canonicalize(rot_small, ct.k)
         rot_k = [ vec_znx_automorphism(g, rot_small[c]) for c in 0..=r ]   # permute slots
     # Prepare for the plaintext multiplications; reused across all giant steps.
     L[k][c] = cnv_prepare_left(rot_k[c])  for c in 0..=r        # CnvPVecL
@@ -225,7 +227,8 @@ requires `SMALL` limbs. For `j = 0` even that is skipped.
 
 ```
 res = [ vec_znx_big_normalize(acc_big[c]) for c in 0..=r ]     # the ONE normalization
-return res                                                     # SMALL, encrypts M·v
+vec_znx_canonicalize(res, output_k)                             # no-op if limb-aligned
+return res                                                     # canonical SMALL, encrypts M·v
 ```
 
 ---
@@ -250,8 +253,11 @@ deferring the limb reduction to Phase C changes nothing but rounding placement.
 Summing over `j` (with the `j = 0` identity term added directly) yields
 `Σ_j rot(m_j, n1·j) = M·v` by §3. ∎
 
-The only approximation is the final `vec_znx_big_normalize` (one rounding), plus the
-key-switch and plaintext-multiply noise inherent to CKKS.
+The lazy path performs one rescaling `vec_znx_big_normalize`, followed by a bounded
+canonical round when the requested output precision is not limb-aligned. Key switches
+and plaintext products contribute their usual CKKS noise. The incompatible-radix
+fallback additionally canonicalizes each normalized giant contribution and the final
+sum.
 
 ---
 
@@ -262,7 +268,7 @@ key-switch and plaintext-multiply noise inherent to CKKS.
 | 1 | **Fewer rotations** `O(√|I|)` vs `O(|I|)` | BSGS factorization (§3); choose `n1 ≈ √|I|` |
 | 2 | **Hoisting** | DFT/decompose the input mask once (`a_dft`), reuse for all `n1 − 1` baby VMPs (§6.2) |
 | 3 | **Free identities** | `k = 0` and `j = 0` are the identity: skip 2 key-switches, 2 automorphisms, and their keys (§5–6) |
-| 4 | **Lazy normalize across giant steps** | body `b` stays in `BIG`; a single `vec_znx_big_normalize` at the end instead of one per giant step (§6.3–6.4) |
+| 4 | **Lazy normalize across giant steps** | body `b` stays in `BIG`; a single `vec_znx_big_normalize` plus output canonicalization at the end instead of one normalization per giant step (§6.3–6.4) |
 | 5 | **Lazy normalize inside PROD** | accumulate the `n1` plaintext products in the DFT domain, one IDFT per giant step instead of one per product (§6.3) |
 | 6 | **Skip `j = 0` mask normalize** | the `j = 0` accumulator stays fully `BIG` (no `ROT`), saving `r` normalizations (§6.3) |
 | 7 | **Prune zero diagonals** | iterate only over `(j,k)` with `n1·j + k ∈ I`; empty baby/giant steps drop their keys and convolutions entirely (§5, §6.3) |
@@ -299,6 +305,7 @@ For a transform whose `|I|` non-zero diagonals factor as `n1 × n2`:
 | Plaintext convolutions (`cnv_apply_dft`) | `|I|` (one per non-zero diagonal) |
 | Giant-step key-switches (`ROT`) | `n2 − 1` |
 | `vec_znx_big_normalize` of the output | `1` (+ `r·(n2−1)` mask normalizations inside `ROT`) |
+| Output `vec_znx_canonicalize` | `1` (no-op at limb-aligned precision; fallback also canonicalizes each giant) |
 | Rescale levels consumed | `1` |
 | Distinct automorphism keys | `(n1 − 1) + (n2 − 1)`, minus pruned-empty steps |
 | Live prepared operands | one `CnvPVecL` per distinct used baby rotation + `|I|` `CnvPVecR` |
