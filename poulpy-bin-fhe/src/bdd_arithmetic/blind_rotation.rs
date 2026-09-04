@@ -14,6 +14,7 @@ use poulpy_hal::{
 use crate::bdd_arithmetic::{Cmux, GetGGSWBit, UnsignedInteger};
 use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
+use poulpy_hal::layouts::BorrowedCarryView;
 
 impl<T: UnsignedInteger, BE: Backend<ZnxWord = i64>> GGSWBlindRotation<T, BE> for Module<BE> where
     Self: GLWEBytesOf<BE>
@@ -156,9 +157,7 @@ where
                 self.glwe_zero(&mut tmp_glwe);
                 {
                     let mut tmp_glwe_inner = tmp_glwe.data_mut();
-                    let mut tmp_glwe_data = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(
-                        VecZnxToBackendMut::<BE>::to_backend_mut(&mut tmp_glwe_inner),
-                    );
+                    let mut tmp_glwe_data = VecZnxToBackendMut::<BE>::to_backend_mut(&mut tmp_glwe_inner).borrowed_carry_view();
                     self.vec_znx_add_scalar_assign_backend(&mut tmp_glwe_data, col, (dsize - 1) + row * dsize, &test_vector, 0);
                     self.vec_znx_normalize_assign_backend(base2k, &mut tmp_glwe_data, col, &mut scratch_1.borrow());
                 }

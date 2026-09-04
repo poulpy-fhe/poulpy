@@ -16,6 +16,7 @@ use crate::{
         prepared::{GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
+use poulpy_hal::layouts::BorrowedCarryView;
 
 // Coefficient-word fence: ends in `VecZnx::stats`, which is i64-only.
 pub(crate) fn glwe_noise_backend_inner<M, BE>(
@@ -60,9 +61,8 @@ where
         // The difference accumulates carries; `glwe_normalize_assign` right below restores the
         // digit bound before the plaintext view's CoeffNormalized label is relied upon again.
         let mut pt_have_backend = pt_have.to_backend_mut();
-        let mut diff = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(
-            poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, _>(&mut pt_have_backend.data),
-        );
+        let mut diff =
+            poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, _>(&mut pt_have_backend.data).borrowed_carry_view();
         module.vec_znx_sub_assign_backend(&mut diff, 0, &pt_want_backend.data, 0);
     }
     let pt_base2k = pt_have.base2k();

@@ -18,6 +18,7 @@ use crate::hal::helpers::{
     random_backend_vec_znx_big, random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref,
 };
 use crate::hal::params::HalSweepParms;
+use poulpy_hal::layouts::BorrowedCarryView;
 
 pub fn runner_vec_znx_big_add_into<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
@@ -276,7 +277,7 @@ pub fn runner_vec_znx_big_normalize_add_assign<B: Backend<ZnxWord = i64>, M: Mea
             }
 
             let tmp_ref = vec_znx_backend_ref::<B, _>(&tmp);
-            let mut res_ref = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<B, _>(vec_znx_backend_mut::<B, _>(&mut res));
+            let mut res_ref = vec_znx_backend_mut::<B, _>(&mut res).borrowed_carry_view();
             module.vec_znx_add_assign_backend(&mut res_ref, i, &tmp_ref, 0);
         }
         black_box(());
@@ -317,7 +318,7 @@ pub fn runner_vec_znx_big_normalize_sub_assign<B: Backend<ZnxWord = i64>, M: Mea
             }
 
             let tmp_ref = vec_znx_backend_ref::<B, _>(&tmp);
-            let mut res_ref = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<B, _>(vec_znx_backend_mut::<B, _>(&mut res));
+            let mut res_ref = vec_znx_backend_mut::<B, _>(&mut res).borrowed_carry_view();
             module.vec_znx_sub_assign_backend(&mut res_ref, i, &tmp_ref, 0);
         }
         black_box(());

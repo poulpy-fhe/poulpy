@@ -146,31 +146,27 @@ impl<D: Data + DataOwned, W: ZnxWord> GLWE<D, W, CoeffUnnormalized> {
     }
 }
 
-/// Weakened shared backend view of a GLWE; see
-/// [`poulpy_hal::layouts::vec_znx_weaken_backend_ref`]. Always sound.
-pub fn glwe_weaken_backend_ref<BE: Backend, S: ArithmeticState>(
-    v: GLWEBackendRef<'_, BE, S>,
-) -> GLWEBackendRef<'_, BE, CoeffUnnormalized> {
-    let GLWE { data, k, base2k } = v;
-    GLWE {
-        data: poulpy_hal::layouts::vec_znx_weaken_backend_ref::<BE, _>(data),
-        k,
-        base2k,
+impl<D: Data, W: ZnxWord, S: ArithmeticState> poulpy_hal::layouts::WeakenBackendRef for GLWE<D, W, S> {
+    type Weakened = GLWE<D, W, CoeffUnnormalized>;
+    fn weaken_backend_ref(self) -> GLWE<D, W, CoeffUnnormalized> {
+        let GLWE { data, k, base2k } = self;
+        GLWE {
+            data: data.weaken_backend_ref(),
+            k,
+            base2k,
+        }
     }
 }
 
-/// TRANSITIONAL containment bridge (spec §4.1; removed by the PR 5 scratch-transaction
-/// migration): the GLWE twin of [`poulpy_hal::layouts::vec_znx_borrowed_carry_view`],
-/// with the same caller contract (the write preserves the owner's digit bound, or the
-/// caller re-normalizes the storage in place before the borrow ends). Ratcheted.
-pub fn glwe_borrowed_carry_view<BE: Backend, S: ArithmeticState>(
-    v: GLWEBackendMut<'_, BE, S>,
-) -> GLWEBackendMut<'_, BE, CoeffUnnormalized> {
-    let GLWE { data, k, base2k } = v;
-    GLWE {
-        data: poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(data),
-        k,
-        base2k,
+impl<D: Data, W: ZnxWord, S: ArithmeticState> poulpy_hal::layouts::BorrowedCarryView for GLWE<D, W, S> {
+    type Weakened = GLWE<D, W, CoeffUnnormalized>;
+    fn borrowed_carry_view(self) -> GLWE<D, W, CoeffUnnormalized> {
+        let GLWE { data, k, base2k } = self;
+        GLWE {
+            data: data.borrowed_carry_view(),
+            k,
+            base2k,
+        }
     }
 }
 

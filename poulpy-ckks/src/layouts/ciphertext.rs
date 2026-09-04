@@ -24,6 +24,8 @@ use poulpy_hal::{
 use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, error::CKKSCompositionError};
 
 use super::{CKKSEncodingBuffer, CKKSEncodingBufferViewMut, CKKSPlaintextViewMut};
+use poulpy_hal::layouts::BorrowedCarryView;
+use poulpy_hal::layouts::WeakenBackendRef;
 
 pub use poulpy_hal::layouts::{CoeffNormalized, CoeffUnnormalized, CoefficientState};
 
@@ -573,13 +575,13 @@ impl<'a, T: SetCKKSInfos> SetCKKSInfos for CKKSUnnormalizedWriteView<'a, T> {
 impl<'a, BE: Backend, T: GLWEToBackendRef<BE>> GLWEToBackendRef<BE> for CKKSUnnormalizedWriteView<'a, T> {
     type State = CoeffUnnormalized;
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, CoeffUnnormalized> {
-        poulpy_core::layouts::glwe_weaken_backend_ref::<BE, _>(self.inner.to_backend_ref())
+        self.inner.to_backend_ref().weaken_backend_ref()
     }
 }
 
 impl<'a, BE: Backend, T: GLWEToBackendMut<BE>> GLWEToBackendMut<BE> for CKKSUnnormalizedWriteView<'a, T> {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, CoeffUnnormalized> {
-        poulpy_core::layouts::glwe_borrowed_carry_view::<BE, _>(self.inner.to_backend_mut())
+        self.inner.to_backend_mut().borrowed_carry_view()
     }
 }
 

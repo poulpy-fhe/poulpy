@@ -10,6 +10,7 @@ use poulpy_cpu_avx512::FFT64Avx512 as BackendImpl;
 #[cfg(not(all(feature = "enable-avx512f", target_arch = "x86_64", target_feature = "avx512f")))]
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 
+use poulpy_hal::layouts::BorrowedCarryView;
 use poulpy_hal::{
     api::{
         ScalarZnxFillTernaryProbSourceBackend, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftAssign, SvpPPolAlloc,
@@ -134,9 +135,7 @@ fn main() {
     // ct[0] <- ct[0] + e
     module.vec_znx_add_normal_source_backend(
         base2k,
-        &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BackendImpl, _>(<VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<
-            BackendImpl,
-        >>::to_backend_mut(&mut ct)),
+        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct).borrowed_carry_view(),
         0, // Selects the first column of ct (ct[0])
         noise_infos,
         &mut source,

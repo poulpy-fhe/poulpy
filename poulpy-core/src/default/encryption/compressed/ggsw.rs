@@ -14,6 +14,7 @@ use crate::{
         prepared::GLWESecretPreparedToBackendRef,
     },
 };
+use poulpy_hal::layouts::BorrowedCarryView;
 
 #[doc(hidden)]
 pub trait GGSWCompressedEncryptSkDefault<BE: Backend> {
@@ -110,9 +111,8 @@ where
                     let mut tmp_pt_backend = tmp_pt.to_backend_mut();
                     // A small scalar written onto a zeroed limb stays within the base2k digit bound, so the owner's CoeffNormalized label remains valid after this unnormalized-typed write.
                     self.vec_znx_add_scalar_assign_backend(
-                        &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(
-                            poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, _>(&mut tmp_pt_backend.data),
-                        ),
+                        &mut poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE, _>(&mut tmp_pt_backend.data)
+                            .borrowed_carry_view(),
                         0,
                         (dsize - 1) + row_i * dsize,
                         &pt_backend,

@@ -21,6 +21,7 @@ use crate::{
         download_glwe_plaintext, upload_glwe, upload_glwe_automorphism_key, upload_glwe_plaintext, upload_glwe_secret,
     },
 };
+use poulpy_hal::layouts::BorrowedCarryView;
 use poulpy_hal::test_suite::harness_words_mut;
 
 pub fn test_glwe_trace_assign<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
@@ -139,12 +140,11 @@ where
         let pt_have: GLWEPlaintext<Vec<u8>, BE::ZnxWord> = download_glwe_plaintext(module, &pt_have_backend);
 
         {
-            let mut pt_want_data = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(<poulpy_hal::layouts::VecZnx<
-                BE::OwnedBuf,
-                BE::ZnxWord,
-            > as VecZnxToBackendMut<BE>>::to_backend_mut(
-                &mut pt_want.data
-            ));
+            let mut pt_want_data =
+                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(
+                    &mut pt_want.data,
+                )
+                .borrowed_carry_view();
             let pt_have_data =
                 <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&pt_have.data);
             module.vec_znx_sub_assign_backend(&mut pt_want_data, 0, &pt_have_data, 0);

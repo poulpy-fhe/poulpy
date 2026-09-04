@@ -8,6 +8,7 @@ use poulpy_core::{
     },
 };
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
+use poulpy_hal::layouts::BorrowedCarryView;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend, VecZnxSubAssignBackend},
     layouts::{Backend, Module, ScratchOwned, VecZnxToBackendMut},
@@ -74,10 +75,7 @@ fn main() {
 
     // Raw residual: the statistics below read the un-propagated digits directly.
     module.vec_znx_sub_assign_backend(
-        &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BackendImpl, _>(poulpy_hal::layouts::vec_znx_backend_mut::<
-            BackendImpl,
-            _,
-        >(pt_want.data_mut())),
+        &mut poulpy_hal::layouts::vec_znx_backend_mut::<BackendImpl, _>(pt_want.data_mut()).borrowed_carry_view(),
         0,
         &poulpy_hal::layouts::vec_znx_backend_ref::<BackendImpl, _>(pt_have.data()),
         0,

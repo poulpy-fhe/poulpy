@@ -20,6 +20,7 @@ use crate::{
     },
     log2_std_noise_glwe_tensor,
 };
+use poulpy_hal::layouts::BorrowedCarryView;
 use poulpy_hal::test_suite::harness_words_mut;
 
 /// Slack allowed above [`log2_std_noise_glwe_tensor`] for the measured
@@ -218,7 +219,7 @@ where
             );
 
             module.vec_znx_sub_backend(
-                &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data)),
+                &mut vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data).borrowed_carry_view(),
                 0,
                 &vec_znx_backend_ref::<BE, _>(&pt_have.data),
                 0,
@@ -245,7 +246,7 @@ where
             module.glwe_decrypt(&res_relin, &mut pt_have, &sk_dft, &mut scratch.borrow());
 
             module.vec_znx_sub_backend(
-                &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data)),
+                &mut vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data).borrowed_carry_view(),
                 0,
                 &vec_znx_backend_ref::<BE, _>(&pt_have.data),
                 0,
@@ -399,7 +400,7 @@ where
             module.glwe_decrypt(&res_relin_square, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.glwe_decrypt(&res_relin_tensor, &mut pt_want, &sk_dft, &mut scratch.borrow());
             module.vec_znx_sub_backend(
-                &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data)),
+                &mut vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data).borrowed_carry_view(),
                 0,
                 &vec_znx_backend_ref::<BE, _>(&pt_have.data),
                 0,
@@ -531,7 +532,7 @@ where
             );
 
             module.vec_znx_sub_backend(
-                &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data)),
+                &mut vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data).borrowed_carry_view(),
                 0,
                 &vec_znx_backend_ref::<BE, _>(&pt_have.data),
                 0,
@@ -671,7 +672,7 @@ where
             );
 
             module.vec_znx_sub_backend(
-                &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data)),
+                &mut vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data).borrowed_carry_view(),
                 0,
                 &vec_znx_backend_ref::<BE, _>(&pt_have.data),
                 0,

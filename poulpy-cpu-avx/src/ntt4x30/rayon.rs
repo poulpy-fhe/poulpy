@@ -59,13 +59,13 @@ fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, NTT4x30AvxRayon>) -> VecZ
 }
 
 fn base_znx_ref<'a, S: ArithmeticState>(a: &'a VecZnxBackendRef<'_, NTT4x30AvxRayon, S>) -> VecZnxBackendRef<'a, NTT4x30Avx, S> {
-    poulpy_hal::oep::vec_znx_from_data_like(a, &**a.data())
+    a.from_data_like(&**a.data())
 }
 
 fn base_znx_mut<'a, S: ArithmeticState>(
     a: &'a mut VecZnxBackendMut<'_, NTT4x30AvxRayon, S>,
 ) -> VecZnxBackendMut<'a, NTT4x30Avx, S> {
-    poulpy_hal::oep::vec_znx_map_data_mut(a, |d| &mut **d)
+    a.map_data_mut(|d| &mut **d)
 }
 
 fn base_scalar_ref<'a>(a: &'a ScalarZnxBackendRef<'_, NTT4x30AvxRayon>) -> ScalarZnxBackendRef<'a, NTT4x30Avx> {
@@ -102,6 +102,7 @@ fn base_vmp_mut<'a>(a: &'a mut VmpPMatBackendMut<'_, NTT4x30AvxRayon>) -> VmpPMa
 }
 
 use poulpy_cpu_rayon::parallel_chunk_len;
+use poulpy_hal::oep::ReborrowData;
 
 macro_rules! parallel_binary {
     ($trait:ident, $method:ident) => {

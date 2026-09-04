@@ -4,6 +4,7 @@
 //! (`vec_znx`), and an FFT64 implementation (`fft64`). Used as a
 //! correctness oracle for backend testing via the
 //! [`poulpy_hal::test_suite`] module.
+use poulpy_hal::oep::KernelWordsMut;
 
 pub mod fft64;
 pub mod ntt4x30;
@@ -44,5 +45,5 @@ pub fn kernel_words_mut<
 >(
     v: &mut poulpy_hal::layouts::VecZnx<D, W, S>,
 ) -> poulpy_hal::layouts::VecZnx<&mut [u8], W, poulpy_hal::layouts::CoeffUnnormalized> {
-    unsafe { poulpy_hal::oep::vec_znx_kernel_words_mut(v) }
+    unsafe { v.kernel_words_mut() }
 }

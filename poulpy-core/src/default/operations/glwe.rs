@@ -19,6 +19,7 @@ use crate::{
     default::keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
     layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos},
 };
+use poulpy_hal::layouts::BorrowedCarryView;
 
 #[doc(hidden)]
 pub trait GLWEMulConstDefault<BE: Backend> {
@@ -897,7 +898,7 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
         module.vec_znx_copy_backend(&mut diag_terms.to_backend_mut(), i, &tmp.to_backend_ref(), 0);
         // CoeffNormalized digits are valid under any destination label.
         module.vec_znx_copy_backend(
-            &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(res.to_backend_mut().data),
+            &mut res.to_backend_mut().data.borrowed_carry_view(),
             col_i + i,
             &diag_terms.to_backend_ref(),
             i,
@@ -1072,7 +1073,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
         // The off-diagonal columns accumulate sums of normalized terms through this
         // unnormalized view; they are normalized in place once the loops complete.
         {
-            let mut res_acc = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(res.to_backend_mut().data);
+            let mut res_acc = res.to_backend_mut().data.borrowed_carry_view();
             let tmp_ref = tmp.to_backend_ref();
             module.vec_znx_copy_backend(&mut res_acc, col_i + i, &tmp_ref, 0);
         }
@@ -1083,11 +1084,11 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
             if j != i {
                 if j < i {
                     let col_j = j * cols - (j * (j + 1) / 2);
-                    let mut res_acc = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(res.to_backend_mut().data);
+                    let mut res_acc = res.to_backend_mut().data.borrowed_carry_view();
                     let tmp_ref = tmp.to_backend_ref();
                     module.vec_znx_sub_assign_backend(&mut res_acc, col_j + i, &tmp_ref, 0);
                 } else {
-                    let mut res_acc = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(res.to_backend_mut().data);
+                    let mut res_acc = res.to_backend_mut().data.borrowed_carry_view();
                     let tmp_ref = tmp.to_backend_ref();
                     module.vec_znx_negate_backend(&mut res_acc, col_i + j, &tmp_ref, 0);
                 }
@@ -1135,7 +1136,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
                     &mut scratch_iter,
                 );
 
-                let mut res_acc = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(res.to_backend_mut().data);
+                let mut res_acc = res.to_backend_mut().data.borrowed_carry_view();
                 let tmp_ref = tmp.to_backend_ref();
                 module.vec_znx_add_assign_backend(&mut res_acc, col_i + j, &tmp_ref, 0);
             }

@@ -822,13 +822,23 @@ pub fn vec_znx_backend_mut<'a, B: Backend, S: ArithmeticState>(
     <VecZnx<B::OwnedBuf, B::ZnxWord, S> as VecZnxToBackendMut<B>>::to_backend_mut(vec)
 }
 
-/// Weakened shared backend view: reads the digits of a stronger-labelled value under
-/// the weakest arithmetic label. Always sound (a shared view cannot mutate, so no
-/// owner label can go stale); used by consumers typed against unnormalized inputs.
-pub fn vec_znx_weaken_backend_ref<'a, B: Backend, S: ArithmeticState>(
-    v: VecZnxBackendRef<'a, B, S>,
-) -> VecZnxBackendRef<'a, B, CoeffUnnormalized> {
-    v.relabel_unchecked()
+/// Weakened *read-only* use of a stronger-labelled value: reads its digits under the
+/// weakest arithmetic label. Always sound when the result is only read (a shared view
+/// cannot mutate, so no owner label can go stale); used by consumers typed against
+/// unnormalized inputs. Implemented for the state-carrying containers; the relabel
+/// needs no backend parameter, so plain method syntax works everywhere.
+pub trait WeakenBackendRef: Sized {
+    /// `Self` relabelled to the weakest arithmetic state.
+    type Weakened;
+    /// Relabels the view; the caller asserts it will only read through the result.
+    fn weaken_backend_ref(self) -> Self::Weakened;
+}
+
+impl<D: Data, W: ZnxWord, S: ArithmeticState> WeakenBackendRef for VecZnx<D, W, S> {
+    type Weakened = VecZnx<D, W, CoeffUnnormalized>;
+    fn weaken_backend_ref(self) -> VecZnx<D, W, CoeffUnnormalized> {
+        self.relabel_unchecked()
+    }
 }
 
 /// TRANSITIONAL containment bridge (spec §4.1; removed by the PR 5 scratch-transaction
@@ -840,10 +850,18 @@ pub fn vec_znx_weaken_backend_ref<'a, B: Backend, S: ArithmeticState>(
 /// the same storage in place (`vec_znx_normalize_assign`) before the borrow ends and
 /// the owner is next read. Every call site is counted by the migration deny-list
 /// ratchet and inventoried as a §6.4-B site.
-pub fn vec_znx_borrowed_carry_view<'a, B: Backend, S: ArithmeticState>(
-    v: VecZnxBackendMut<'a, B, S>,
-) -> VecZnxBackendMut<'a, B, CoeffUnnormalized> {
-    v.relabel_unchecked()
+pub trait BorrowedCarryView: Sized {
+    /// `Self` relabelled to the weakest arithmetic state, for a contracted carry write.
+    type Weakened;
+    /// Relabels the view under the containment contract above.
+    fn borrowed_carry_view(self) -> Self::Weakened;
+}
+
+impl<D: Data, W: ZnxWord, S: ArithmeticState> BorrowedCarryView for VecZnx<D, W, S> {
+    type Weakened = VecZnx<D, W, CoeffUnnormalized>;
+    fn borrowed_carry_view(self) -> VecZnx<D, W, CoeffUnnormalized> {
+        self.relabel_unchecked()
+    }
 }
 
 /// Narrows a mutable backend view to a smaller working size.

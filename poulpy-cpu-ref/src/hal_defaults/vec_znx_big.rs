@@ -44,6 +44,7 @@ use crate::reference::{
         ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero, znx_copy_ref, znx_zero_ref,
     },
 };
+use poulpy_hal::oep::ReborrowData;
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
@@ -88,7 +89,7 @@ where
     BE: Backend<ZnxWord = i64> + 'b,
     for<'x> BE::BufRef<'x>: AsRef<[u8]>,
 {
-    poulpy_hal::oep::vec_znx_from_data_like(a, poulpy_hal::layouts::DataView::data(a).as_ref())
+    a.from_data_like(poulpy_hal::layouts::DataView::data(a).as_ref())
 }
 
 fn vec_znx_big_inner_sum_default_impl<R, A, BE>(res: &mut R, res_col: usize, res_coeff: usize, a: &A, a_col: usize)

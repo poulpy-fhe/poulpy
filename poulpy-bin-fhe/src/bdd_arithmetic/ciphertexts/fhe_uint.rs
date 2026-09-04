@@ -19,6 +19,7 @@ use std::{collections::HashMap, marker::PhantomData};
 use crate::bdd_arithmetic::{Cmux, FheUintPrepared, FromBits, GetGGSWBit, ToBits, UnsignedInteger};
 use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
+use poulpy_hal::layouts::BorrowedCarryView;
 
 /// A packed GLWE ciphertext encrypting the bits of a [`UnsignedInteger`].
 ///
@@ -395,7 +396,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
 
         // Add self[0] += a[0], then propagate the carries so `self` keeps its CoeffNormalized label.
         {
-            let mut acc = poulpy_core::layouts::glwe_borrowed_carry_view::<BE, _>(GLWEToBackendMut::<BE>::to_backend_mut(self));
+            let mut acc = GLWEToBackendMut::<BE>::to_backend_mut(self).borrowed_carry_view();
             module.glwe_add_assign(&mut &mut acc, &tmp_fhe_uint_byte);
         }
         module.glwe_normalize_assign(self, &mut scratch_1);
@@ -585,7 +586,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
 
         // Subtracts to self to zero it, then propagate the carries so `self` keeps its CoeffNormalized label.
         {
-            let mut acc = poulpy_core::layouts::glwe_borrowed_carry_view::<BE, _>(GLWEToBackendMut::<BE>::to_backend_mut(self));
+            let mut acc = GLWEToBackendMut::<BE>::to_backend_mut(self).borrowed_carry_view();
             module.glwe_sub_assign(&mut &mut acc, &tmp_trace);
         }
         module.glwe_normalize_assign(self, scratch);

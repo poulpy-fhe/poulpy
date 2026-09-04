@@ -10,6 +10,7 @@ use crate::layouts::{
     ArithmeticState, Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut,
     ScalarZnxBackendRef, ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
 };
+use crate::oep::KernelWordsMut;
 
 pub mod convolution;
 pub mod serialization;
@@ -61,7 +62,7 @@ pub use crate::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 pub fn harness_words_mut<D: crate::layouts::HostDataMut, W: crate::layouts::ZnxWord, S: crate::layouts::CoefficientState>(
     v: &mut crate::layouts::VecZnx<D, W, S>,
 ) -> crate::layouts::VecZnx<&mut [u8], W, crate::layouts::CoeffUnnormalized> {
-    unsafe { crate::oep::vec_znx_kernel_words_mut(v) }
+    unsafe { v.kernel_words_mut() }
 }
 
 /// Mutable backend view narrowed to `size` limbs, leaving the allocation intact.

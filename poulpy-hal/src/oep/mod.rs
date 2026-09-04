@@ -73,32 +73,44 @@ impl<'a, B: Backend + 'a, S: CoefficientState> SetNormalizationState for VecZnxV
     }
 }
 
-/// Backend-implementor extension point: re-wraps `data` with the shape and
-/// [`CoefficientState`] of `a`.
+/// Backend-implementor extension point: re-wraps a container's storage while keeping
+/// its shape and [`CoefficientState`].
 ///
-/// For kernel plumbing that re-expresses the *same digits* through different
-/// storage: a delegating backend (e.g. a Rayon wrapper) reborrowing a view as
-/// its base backend's view type, or a host-slice view of a backend buffer. The
-/// state travels with the value it is read from, so `data` must be (a reborrow
-/// of) the storage of `a` itself or a byte-for-byte copy of its digits. Like
-/// every extension point here it is reserved for backend implementations and
-/// must not appear in scheme code.
-pub fn vec_znx_from_data_like<D: Data, D2: Data, W: ZnxWord, S: CoefficientState>(
-    a: &VecZnx<D, W, S>,
-    data: D2,
-) -> VecZnx<D2, W, S> {
-    VecZnx::from_data_with_state(data, a.n(), a.cols(), a.size())
+/// For kernel plumbing that re-expresses the *same digits* through different storage:
+/// a delegating backend (e.g. a Rayon wrapper) reborrowing a view as its base
+/// backend's view type, or a host-slice view of a backend buffer. The state travels
+/// with the value it is read from, so the new storage must be (a reborrow of) the
+/// receiver's own storage or a byte-for-byte copy of its digits. Like every extension
+/// point here it is reserved for backend implementations and must not appear in
+/// scheme code.
+#[allow(clippy::wrong_self_convention)] // `from_data_like` is the established reborrow name in this workspace
+pub trait ReborrowData: Sized {
+    /// The storage type of the receiver.
+    type Data;
+    /// The receiver re-wrapped over storage `D2`.
+    type WithData<D2: Data>;
+
+    /// Wraps `data` with the receiver's shape and state ([`Self::from_data_like`]).
+    fn from_data_like<D2: Data>(&self, data: D2) -> Self::WithData<D2>;
+
+    /// Mutable sibling of [`Self::from_data_like`]: re-wraps storage extracted from
+    /// the receiver's own data (a reborrow, an inner buffer) under the same shape and
+    /// state.
+    fn map_data_mut<'a, D2: Data>(&'a mut self, f: impl FnOnce(&'a mut Self::Data) -> D2) -> Self::WithData<D2>;
 }
 
-/// Mutable sibling of [`vec_znx_from_data_like`]: re-wraps storage extracted
-/// from `a`'s own data (a reborrow, an inner buffer) under the same shape and
-/// [`CoefficientState`]. Backend implementations only.
-pub fn vec_znx_map_data_mut<'a, D: Data, D2: Data, W: ZnxWord, S: CoefficientState>(
-    a: &'a mut VecZnx<D, W, S>,
-    f: impl FnOnce(&'a mut D) -> D2,
-) -> VecZnx<D2, W, S> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnx::from_data_with_state(f(&mut a.data), n, cols, size)
+impl<D: Data, W: ZnxWord, S: CoefficientState> ReborrowData for VecZnx<D, W, S> {
+    type Data = D;
+    type WithData<D2: Data> = VecZnx<D2, W, S>;
+
+    fn from_data_like<D2: Data>(&self, data: D2) -> VecZnx<D2, W, S> {
+        VecZnx::from_data_with_state(data, self.n(), self.cols(), self.size())
+    }
+
+    fn map_data_mut<'a, D2: Data>(&'a mut self, f: impl FnOnce(&'a mut D) -> D2) -> VecZnx<D2, W, S> {
+        let (n, cols, size) = (self.n(), self.cols(), self.size());
+        VecZnx::from_data_with_state(f(&mut self.data), n, cols, size)
+    }
 }
 
 /// Sealed kernel capability (spec §9.1): a state-erased mutable host view over typed
@@ -106,17 +118,33 @@ pub fn vec_znx_map_data_mut<'a, D: Data, D2: Data, W: ZnxWord, S: CoefficientSta
 /// [`crate::layouts::DataViewMut`]) exists only for the weakest arithmetic state, so a
 /// kernel that writes a destination under a declared postcondition takes this erased
 /// view at its entry point and works through the ordinary view methods on it.
-///
-/// # Safety
-///
-/// `v` keeps its state label while its bytes change through the returned view. The
-/// caller (a backend kernel or its test harness) asserts that by the time the borrow
-/// ends, every word it wrote satisfies the invariant of `v`'s original state label:
-/// the operation's declared per-write/final postcondition covers the region it
-/// touched (spec invariants 7 and 12). Violating it silently corrupts results.
-pub unsafe fn vec_znx_kernel_words_mut<D: crate::layouts::HostDataMut, W: ZnxWord, S: CoefficientState>(
-    v: &mut VecZnx<D, W, S>,
-) -> VecZnx<&mut [u8], W, CoeffUnnormalized> {
-    let (n, cols, size) = (v.n(), v.cols(), v.size());
-    VecZnx::from_data_with_state(v.data.as_mut(), n, cols, size)
+pub trait KernelWordsMut {
+    /// The state-erased mutable host view over the receiver's storage.
+    type Erased<'a>
+    where
+        Self: 'a;
+
+    /// Returns the erased view.
+    ///
+    /// # Safety
+    ///
+    /// The receiver keeps its state label while its bytes change through the returned
+    /// view. The caller (a backend kernel or its test harness) asserts that by the
+    /// time the borrow ends, every word it wrote satisfies the invariant of the
+    /// receiver's original state label: the operation's declared per-write/final
+    /// postcondition covers the region it touched (spec invariants 7 and 12).
+    /// Violating it silently corrupts results.
+    unsafe fn kernel_words_mut(&mut self) -> Self::Erased<'_>;
+}
+
+impl<D: crate::layouts::HostDataMut, W: ZnxWord, S: CoefficientState> KernelWordsMut for VecZnx<D, W, S> {
+    type Erased<'a>
+        = VecZnx<&'a mut [u8], W, CoeffUnnormalized>
+    where
+        Self: 'a;
+
+    unsafe fn kernel_words_mut(&mut self) -> VecZnx<&mut [u8], W, CoeffUnnormalized> {
+        let (n, cols, size) = (self.n(), self.cols(), self.size());
+        VecZnx::from_data_with_state(self.data.as_mut(), n, cols, size)
+    }
 }
