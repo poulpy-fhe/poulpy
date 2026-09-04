@@ -118,6 +118,14 @@ mod sealed {
 pub trait NormalizationState:
     sealed::Sealed + Copy + Clone + Default + fmt::Debug + PartialEq + Eq + std::hash::Hash + Send + Sync + 'static
 {
+    /// Conservative image of this legacy state in the coefficient-state algebra of
+    /// [`crate::layouts::coeff_state`]: `Normalized` maps to
+    /// `Coeff<Normalized, NonCanonical>` and `Unnormalized` to
+    /// `Coeff<Unnormalized, NonCanonical>`, because today's roots prove nothing about
+    /// canonical padding. Migration PRs use this mapping to bridge `type State` bounds
+    /// onto [`crate::layouts::CoefficientState`] until roots carry the new parameter
+    /// directly.
+    type AsCoeff: crate::layouts::CoefficientState;
 }
 
 /// Marker: every limb digit fits within `base2k` bits. See [`NormalizationState`].
@@ -130,8 +138,21 @@ pub struct Unnormalized;
 
 impl sealed::Sealed for Normalized {}
 impl sealed::Sealed for Unnormalized {}
-impl NormalizationState for Normalized {}
-impl NormalizationState for Unnormalized {}
+impl NormalizationState for Normalized {
+    type AsCoeff = crate::layouts::CoeffNormalized;
+}
+impl NormalizationState for Unnormalized {
+    type AsCoeff = crate::layouts::CoeffUnnormalized;
+}
+
+/// Normalization axis marker of the coefficient-state algebra (spec §3.1): the sealed
+/// subset of [`NormalizationState`] usable as the `N` parameter of
+/// [`crate::layouts::Coeff`]. Implemented exactly by [`Normalized`] and
+/// [`Unnormalized`].
+pub trait Normalization: NormalizationState {}
+
+impl Normalization for Normalized {}
+impl Normalization for Unnormalized {}
 
 /// `Self` digits are valid `S` digits.
 ///

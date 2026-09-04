@@ -1110,6 +1110,15 @@ must remain source-shaped.
 
 ### PR 1 — Introduce the state algebra without changing kernels
 
+Status: delivered in `poulpy-hal/src/layouts/coeff_state.rs` (sealed algebra, relations,
+compatibility aliases, `CoeffContext`, `CarryCert`, reference `P_p` with property
+tests). The backend-ref/mut traits reach the new algebra through the
+`NormalizationState::AsCoeff` bridge rather than a new required associated type on every
+impl; the explicit state/context associated types land with the nominal roots in PR 2 to
+avoid double churn (sanctioned by §3.1's churn-minimization license). The existing
+normalization where-clauses needed no adaptation because roots still carry
+`NormalizationState`; kernels and behavior are untouched.
+
 Deliverables:
 
 - add sealed `CoefficientState`, `Normalization`, `Canonicality`, and product `FitsIn`

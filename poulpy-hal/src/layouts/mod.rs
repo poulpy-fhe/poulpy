@@ -10,6 +10,7 @@
 //! `HostDataRef`/`HostDataMut` capture host-byte-readable buffers for the
 //! portions of the API that still require direct byte access.
 
+mod coeff_state;
 mod convolution;
 mod crt;
 mod encoding;
@@ -30,6 +31,7 @@ mod vmp_pmat;
 mod word;
 mod znx_base;
 
+pub use coeff_state::*;
 pub use convolution::*;
 pub use crt::*;
 pub use layout_compat::*;
