@@ -144,7 +144,9 @@ fn main() {
     // ct[0] <- ct[0] + e
     module.vec_znx_add_normal_source_backend(
         base2k,
-        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct).into_unnormalized(),
+        &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BackendImpl, _>(<VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<
+            BackendImpl,
+        >>::to_backend_mut(&mut ct)),
         0, // Selects the first column of ct (ct[0])
         noise_infos,
         &mut source,

@@ -4,6 +4,7 @@ use super::{
 };
 use std::f64::consts::SQRT_2;
 
+use crate::test_suite::harness_words_mut;
 use crate::{
     api::{
         ModuleNew, ScalarZnxAutomorphismAssignBackend, ScalarZnxAutomorphismAssignTmpBytes, ScalarZnxAutomorphismBackend,
@@ -52,7 +53,7 @@ pub fn test_vec_znx_zero_backend_matches_wrapper<BR: crate::test_suite::TestBack
             let mut backend = upload_vec_znx::<BT, _>(&expected);
 
             for limb in 0..size {
-                expected.at_mut(col_i, limb).fill(0);
+                harness_words_mut(&mut expected).at_mut(col_i, limb).fill(0);
             }
             module_test.vec_znx_zero_backend(&mut vec_znx_backend_mut::<BT, _>(&mut backend), col_i);
 
@@ -69,8 +70,11 @@ pub fn test_vec_znx_encode_vec_i64() {
     for k in [1, base2k / 2, size * base2k - 5] {
         let mut a = module.vec_znx_alloc(2, size);
         let mut source = Source::new([0u8; 32]);
-        let raw: &mut [i64] = a.raw_mut();
-        raw.iter_mut().enumerate().for_each(|(i, x)| *x = i as i64);
+        {
+            let mut a_words = harness_words_mut(&mut a);
+            let raw: &mut [i64] = a_words.raw_mut();
+            raw.iter_mut().enumerate().for_each(|(i, x)| *x = i as i64);
+        }
         (0..a.cols()).for_each(|col_i| {
             let mut have: Vec<i64> = vec![i64::default(); n];
             have.iter_mut().for_each(|x| {
@@ -184,7 +188,7 @@ pub fn test_vec_znx_add_scalar_assign<BR: crate::test_suite::TestBackend, BT: cr
         let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
         rest_ref.fill_uniform(base2k, &mut source);
-        res_test.raw_mut().copy_from_slice(rest_ref.raw());
+        harness_words_mut(&mut res_test).raw_mut().copy_from_slice(rest_ref.raw());
         let mut rest_ref_backend = upload_vec_znx::<BR, _>(&rest_ref).into_unnormalized();
         let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test).into_unnormalized();
 
@@ -234,7 +238,7 @@ pub fn test_vec_znx_add_const_into<BR: crate::test_suite::TestBackend, BT: crate
     cnst.zero();
     for (limb, digit) in cnst_digits.iter().enumerate() {
         for coeff in res_coeffs {
-            cnst.at_mut(0, limb)[coeff] = *digit;
+            harness_words_mut(&mut cnst).at_mut(0, limb)[coeff] = *digit;
         }
     }
     let cnst_ref = upload_vec_znx::<BR, _>(&cnst);
@@ -312,7 +316,7 @@ pub fn test_vec_znx_add_const_assign<BR: crate::test_suite::TestBackend, BT: cra
     cnst.zero();
     for (limb, digit) in cnst_digits.iter().enumerate() {
         for coeff in res_coeffs {
-            cnst.at_mut(0, limb)[coeff] = *digit;
+            harness_words_mut(&mut cnst).at_mut(0, limb)[coeff] = *digit;
         }
     }
     let cnst_ref = upload_vec_znx::<BR, _>(&cnst);
@@ -450,7 +454,7 @@ pub fn test_vec_znx_add_assign<BR: crate::test_suite::TestBackend, BT: crate::te
             let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
             res_ref.fill_uniform(base2k, &mut source);
-            res_test.raw_mut().copy_from_slice(res_ref.raw());
+            harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
             let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref).into_unnormalized();
             let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test).into_unnormalized();
 
@@ -639,7 +643,7 @@ pub fn test_vec_znx_automorphism_assign<BR: crate::test_suite::TestBackend, BT: 
 
         // Fill a with random i64
         res_ref.fill_uniform(base2k, &mut source);
-        res_test.raw_mut().copy_from_slice(res_ref.raw());
+        harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
         let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref);
         let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test);
 
@@ -831,7 +835,7 @@ pub fn test_vec_znx_copy_range_backend<BR: crate::test_suite::TestBackend, BT: c
                     continue;
                 }
 
-                expected.at_mut(res_col, res_limb)[res_offset..res_offset + len]
+                harness_words_mut(&mut expected).at_mut(res_col, res_limb)[res_offset..res_offset + len]
                     .copy_from_slice(&a.at(a_col, a_limb)[a_offset..a_offset + len]);
 
                 module_test.vec_znx_copy_range_backend(
@@ -1134,7 +1138,7 @@ pub fn test_vec_znx_mul_xp_minus_one_assign<BR: crate::test_suite::TestBackend, 
 
         // Fill a with random i64
         res_ref.fill_uniform(base2k, &mut source);
-        res_test.raw_mut().copy_from_slice(res_ref.raw());
+        harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
         let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref).into_unnormalized();
         let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test).into_unnormalized();
 
@@ -1211,7 +1215,7 @@ pub fn test_vec_znx_negate<BR: crate::test_suite::TestBackend, BT: crate::test_s
             let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
             res_ref.fill_uniform(base2k, &mut source);
-            res_test.raw_mut().copy_from_slice(res_ref.raw());
+            harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
             let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref);
             let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test);
 
@@ -1308,7 +1312,7 @@ pub fn test_vec_znx_negate_assign<BR: crate::test_suite::TestBackend, BT: crate:
         let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
         res_ref.fill_uniform(base2k, &mut source);
-        res_test.raw_mut().copy_from_slice(res_ref.raw());
+        harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
         let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref);
         let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test);
 
@@ -1457,7 +1461,7 @@ pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: cra
         let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
         res_ref.fill_uniform(base2k, &mut source);
-        res_test.raw_mut().copy_from_slice(res_ref.raw());
+        harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
         let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref);
         let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test);
 
@@ -1580,7 +1584,7 @@ pub fn test_vec_znx_normalize_coeff_assign_backend<BR: crate::test_suite::TestBa
         let mut expected = module_host.vec_znx_alloc(cols, res_size);
         let mut actual = module_host.vec_znx_alloc(cols, res_size);
         expected.fill_uniform(base2k, &mut source);
-        actual.raw_mut().copy_from_slice(expected.raw());
+        harness_words_mut(&mut actual).raw_mut().copy_from_slice(expected.raw());
         let mut expected_backend = upload_vec_znx::<BR, _>(&expected);
         let mut actual_backend = upload_vec_znx::<BT, _>(&actual);
 
@@ -1705,7 +1709,7 @@ pub fn test_vec_znx_lsh_add_coeff_into_backend<BR: crate::test_suite::TestBacken
                 let mut expected = alloc_host_vec_znx::<BR>(1, cols, 4);
                 let mut actual = alloc_host_vec_znx::<BT>(1, cols, 4);
                 expected.fill_uniform(base2k, &mut source);
-                actual.raw_mut().copy_from_slice(expected.raw());
+                harness_words_mut(&mut actual).raw_mut().copy_from_slice(expected.raw());
                 let mut expected_backend = upload_vec_znx::<BR, _>(&expected).into_unnormalized();
                 let mut actual_backend = upload_vec_znx::<BT, _>(&actual).into_unnormalized();
                 for col_i in 0..cols {
@@ -1772,7 +1776,7 @@ pub fn test_vec_znx_lsh_add_coeff_to_coeff_backend<BR: crate::test_suite::TestBa
                 let mut expected = alloc_host_vec_znx::<BR>(n, cols, 4);
                 let mut actual = alloc_host_vec_znx::<BT>(n, cols, 4);
                 expected.fill_uniform(base2k, &mut source);
-                actual.raw_mut().copy_from_slice(expected.raw());
+                harness_words_mut(&mut actual).raw_mut().copy_from_slice(expected.raw());
                 let mut expected_backend = upload_vec_znx::<BR, _>(&expected).into_unnormalized();
                 let mut actual_backend = upload_vec_znx::<BT, _>(&actual).into_unnormalized();
                 for col_i in 0..cols {
@@ -1842,7 +1846,7 @@ pub fn test_vec_znx_lsh_sub_coeff_to_coeff_backend<BR: crate::test_suite::TestBa
                 let mut expected = alloc_host_vec_znx::<BR>(n, cols, 4);
                 let mut actual = alloc_host_vec_znx::<BT>(n, cols, 4);
                 expected.fill_uniform(base2k, &mut source);
-                actual.raw_mut().copy_from_slice(expected.raw());
+                harness_words_mut(&mut actual).raw_mut().copy_from_slice(expected.raw());
                 let mut expected_backend = upload_vec_znx::<BR, _>(&expected).into_unnormalized();
                 let mut actual_backend = upload_vec_znx::<BT, _>(&actual).into_unnormalized();
                 for col_i in 0..cols {
@@ -1977,7 +1981,7 @@ pub fn test_vec_znx_rsh_add_coeff_into_backend<BR: crate::test_suite::TestBacken
                 let mut expected = alloc_host_vec_znx::<BR>(n, cols, 4);
                 let mut actual = alloc_host_vec_znx::<BT>(n, cols, 4);
                 expected.fill_uniform(base2k, &mut source);
-                actual.raw_mut().copy_from_slice(expected.raw());
+                harness_words_mut(&mut actual).raw_mut().copy_from_slice(expected.raw());
                 let mut expected_backend = upload_vec_znx::<BR, _>(&expected).into_unnormalized();
                 let mut actual_backend = upload_vec_znx::<BT, _>(&actual).into_unnormalized();
                 for col_i in 0..cols {
@@ -2047,7 +2051,7 @@ pub fn test_vec_znx_rsh_sub_coeff_into_backend<BR: crate::test_suite::TestBacken
                 let mut expected = alloc_host_vec_znx::<BR>(n, cols, 4);
                 let mut actual = alloc_host_vec_znx::<BT>(n, cols, 4);
                 expected.fill_uniform(base2k, &mut source);
-                actual.raw_mut().copy_from_slice(expected.raw());
+                harness_words_mut(&mut actual).raw_mut().copy_from_slice(expected.raw());
                 let mut expected_backend = upload_vec_znx::<BR, _>(&expected).into_unnormalized();
                 let mut actual_backend = upload_vec_znx::<BT, _>(&actual).into_unnormalized();
                 for col_i in 0..cols {
@@ -2195,7 +2199,7 @@ pub fn test_vec_znx_rotate_assign<BR: crate::test_suite::TestBackend, BT: crate:
 
         // Fill a with random i64
         res_ref.fill_uniform(base2k, &mut source);
-        res_test.raw_mut().copy_from_slice(res_ref.raw());
+        harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
         let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref);
         let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test);
 
@@ -2280,7 +2284,7 @@ where
     let live_size = k.div_ceil(base2k);
     let low_mask = (1i64 << (base2k - k % base2k)) - 1;
     let mut host_init = VecZnx::alloc(module.n(), cols, size);
-    host_init.raw_mut().fill(0xff);
+    harness_words_mut(&mut host_init).raw_mut().fill(0xff);
     let mut a = upload_vec_znx::<B, _>(&host_init);
     module.vec_znx_fill_uniform_source_backend(base2k, k, &mut vec_znx_backend_mut::<B, _>(&mut a), 0, &mut source);
     let a = download_vec_znx::<B, _>(&a);
@@ -2718,7 +2722,7 @@ pub fn test_vec_znx_lsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
             let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
             res_ref.fill_uniform(base2k, &mut source);
-            res_test.raw_mut().copy_from_slice(res_ref.raw());
+            harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
             let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref);
             let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test);
 
@@ -2843,7 +2847,7 @@ pub fn test_vec_znx_rsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
             let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
             res_ref.fill_uniform(base2k, &mut source);
-            res_test.raw_mut().copy_from_slice(res_ref.raw());
+            harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
             let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref);
             let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test);
 
@@ -3038,7 +3042,7 @@ pub fn test_vec_znx_sub_scalar_assign<BR: crate::test_suite::TestBackend, BT: cr
         let mut res_1 = module_host.vec_znx_alloc(cols, res_size);
 
         res_0.fill_uniform(base2k, &mut source);
-        res_1.raw_mut().copy_from_slice(res_0.raw());
+        harness_words_mut(&mut res_1).raw_mut().copy_from_slice(res_0.raw());
         let mut res_0_backend = upload_vec_znx::<BR, _>(&res_0).into_unnormalized();
         let mut res_1_backend = upload_vec_znx::<BT, _>(&res_1).into_unnormalized();
 
@@ -3222,7 +3226,7 @@ pub fn test_vec_znx_sub_assign<BR: crate::test_suite::TestBackend, BT: crate::te
             let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
             res_ref.fill_uniform(base2k, &mut source);
-            res_test.raw_mut().copy_from_slice(res_ref.raw());
+            harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
             let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref).into_unnormalized();
             let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test).into_unnormalized();
 
@@ -3277,7 +3281,7 @@ pub fn test_vec_znx_sub_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
             let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
             res_ref.fill_uniform(base2k, &mut source);
-            res_test.raw_mut().copy_from_slice(res_ref.raw());
+            harness_words_mut(&mut res_test).raw_mut().copy_from_slice(res_ref.raw());
             let mut res_ref_backend = upload_vec_znx::<BR, _>(&res_ref).into_unnormalized();
             let mut res_test_backend = upload_vec_znx::<BT, _>(&res_test).into_unnormalized();
 

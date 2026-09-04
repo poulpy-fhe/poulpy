@@ -23,11 +23,11 @@ pub fn vec_znx_negate<'r, 'a, BE, S: ArithmeticState>(
     let min_size: usize = res.size().min(a.size());
 
     for j in 0..min_size {
-        BE::znx_negate(res.at_mut(res_col, j), a.at(a_col, j));
+        BE::znx_negate(crate::reference::kernel_words_mut(res).at_mut(res_col, j), a.at(a_col, j));
     }
 
     for j in min_size..res.size() {
-        BE::znx_zero(res.at_mut(res_col, j));
+        BE::znx_zero(crate::reference::kernel_words_mut(res).at_mut(res_col, j));
     }
 }
 
@@ -37,6 +37,6 @@ where
     BE::BufMut<'r>: HostDataMut,
 {
     for j in 0..res.size() {
-        BE::znx_negate_assign(res.at_mut(res_col, j));
+        BE::znx_negate_assign(crate::reference::kernel_words_mut(res).at_mut(res_col, j));
     }
 }

@@ -395,7 +395,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
 
         // Add self[0] += a[0], then propagate the carries so `self` keeps its CoeffNormalized label.
         {
-            let mut acc = GLWEToBackendMut::<BE>::to_backend_mut(self).into_unnormalized();
+            let mut acc = poulpy_core::layouts::glwe_borrowed_carry_view::<BE, _>(GLWEToBackendMut::<BE>::to_backend_mut(self));
             module.glwe_add_assign(&mut &mut acc, &tmp_fhe_uint_byte);
         }
         module.glwe_normalize_assign(self, &mut scratch_1);
@@ -585,7 +585,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
 
         // Subtracts to self to zero it, then propagate the carries so `self` keeps its CoeffNormalized label.
         {
-            let mut acc = GLWEToBackendMut::<BE>::to_backend_mut(self).into_unnormalized();
+            let mut acc = poulpy_core::layouts::glwe_borrowed_carry_view::<BE, _>(GLWEToBackendMut::<BE>::to_backend_mut(self));
             module.glwe_sub_assign(&mut &mut acc, &tmp_trace);
         }
         module.glwe_normalize_assign(self, scratch);
@@ -599,6 +599,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         Self: GLWEToBackendRef<BE, State = CoeffNormalized>,
         Self: GLWEToBackendMut<BE, State = CoeffNormalized>,
         H: GetAutomorphismKey<BE>,
+        D: poulpy_hal::layouts::DataOwned,
         BE: Backend<OwnedBuf = D, ZnxWord = i64>,
         M: GLWEBytesOf<BE>
             + ModuleLogN

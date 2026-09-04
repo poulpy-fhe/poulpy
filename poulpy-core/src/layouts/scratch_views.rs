@@ -126,10 +126,16 @@ impl<'a, BE: Backend + 'a, S: CoefficientState> GLWEViewMut<'a, BE, S> {
         self.inner
     }
 
-    /// Relabels the view as [`CoeffUnnormalized`]; see [`GLWE::into_unnormalized`].
+    /// Relabels the view as [`CoeffUnnormalized`].
+    ///
+    /// The view is the authoritative root of its arena region, so the relabel routes
+    /// through the hal scratch-view wrapper rather than the owned-storage-only
+    /// [`GLWE::into_unnormalized`].
     pub fn into_unnormalized(self) -> GLWEViewMut<'a, BE, CoeffUnnormalized> {
+        let GLWE { data, k, base2k } = self.inner;
+        let data = VecZnxViewMut::<'a, BE, _>::from_inner(data).into_unnormalized().into_inner();
         GLWEViewMut {
-            inner: self.inner.into_unnormalized(),
+            inner: GLWE { data, k, base2k },
         }
     }
 }

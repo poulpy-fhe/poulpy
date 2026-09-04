@@ -53,6 +53,17 @@ impl<BE: Backend<ZnxWord = i64>> TestBackend for BE {}
 
 pub use crate::layouts::{vec_znx_backend_mut, vec_znx_backend_ref};
 
+/// Test-harness mutable word access to a typed vector: a statement-scoped state-erased
+/// view over the same storage, via the sealed kernel capability. Harness-only: the
+/// caller is constructing reference data and asserts that the bytes it writes are
+/// consistent with the vector's state label (spec invariant 12 applies to the harness
+/// exactly as to a kernel).
+pub fn harness_words_mut<D: crate::layouts::HostDataMut, W: crate::layouts::ZnxWord, S: crate::layouts::CoefficientState>(
+    v: &mut crate::layouts::VecZnx<D, W, S>,
+) -> crate::layouts::VecZnx<&mut [u8], W, crate::layouts::CoeffUnnormalized> {
+    unsafe { crate::oep::vec_znx_kernel_words_mut(v) }
+}
+
 /// Mutable backend view narrowed to `size` limbs, leaving the allocation intact.
 ///
 /// Lets a test hand a kernel fewer limbs than were allocated, so that writes

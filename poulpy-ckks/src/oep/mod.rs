@@ -78,7 +78,8 @@ impl<D: Data, W: ZnxWord, S: CoefficientState> SetNormalizationState for CKKSCip
     type WithState<T: CoefficientState> = CKKSCiphertext<D, W, T>;
 
     fn set_unnormalized(self) -> CKKSCiphertext<D, W, CoeffUnnormalized> {
-        self.into_unnormalized()
+        let meta = self.meta;
+        CKKSCiphertext::from_inner(self.inner.set_unnormalized(), meta)
     }
 
     unsafe fn set_normalized(self) -> CKKSCiphertext<D, W, CoeffNormalized> {

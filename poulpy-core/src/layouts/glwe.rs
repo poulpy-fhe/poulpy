@@ -1,8 +1,8 @@
 use poulpy_hal::{
     layouts::{
-        ArithmeticState, Backend, CoeffFitsIn, CoeffNormalized, CoeffUnnormalized, CoefficientState, Data, FillUniform,
-        HostDataMut, HostDataRef, ReaderFrom, ScratchArena, ToOwnedDeep, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
-        WriterTo,
+        ArithmeticState, Backend, CoeffFitsIn, CoeffNormalized, CoeffUnnormalized, CoefficientState, Data, DataOwned,
+        FillUniform, HostDataMut, HostDataRef, ReaderFrom, ScratchArena, ToOwnedDeep, VecZnx, VecZnxToBackendMut,
+        VecZnxToBackendRef, WriterTo,
     },
     source::Source,
 };
@@ -102,7 +102,7 @@ pub type GLWEBackendMut<'a, BE, S = CoeffNormalized> = GLWE<<BE as Backend>::Buf
 /// A GLWE whose limb digits may hold un-propagated carries; see [`CoefficientState`].
 pub type UnnormalizedGLWE<D, W> = GLWE<D, W, CoeffUnnormalized>;
 
-impl<D: Data, W: ZnxWord, S: CoefficientState> GLWE<D, W, S> {
+impl<D: Data + DataOwned, W: ZnxWord, S: CoefficientState> GLWE<D, W, S> {
     /// Relabels this ciphertext as [`CoeffUnnormalized`] (free; see [`VecZnx::into_unnormalized`]).
     pub fn into_unnormalized(self) -> GLWE<D, W, CoeffUnnormalized> {
         GLWE {
@@ -125,7 +125,7 @@ impl<D: Data, W: ZnxWord, S: CoefficientState> GLWE<D, W, S> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWE<D, W, CoeffUnnormalized> {
+impl<D: Data + DataOwned, W: ZnxWord> GLWE<D, W, CoeffUnnormalized> {
     /// Propagates carries through every column and returns the ciphertext relabelled as [`CoeffNormalized`].
     ///
     /// Delegates to [`VecZnx::normalize`], the sole [`CoeffUnnormalized`] to
@@ -143,6 +143,34 @@ impl<D: Data, W: ZnxWord> GLWE<D, W, CoeffUnnormalized> {
             k: self.k,
             base2k: self.base2k,
         }
+    }
+}
+
+/// Weakened shared backend view of a GLWE; see
+/// [`poulpy_hal::layouts::vec_znx_weaken_backend_ref`]. Always sound.
+pub fn glwe_weaken_backend_ref<BE: Backend, S: ArithmeticState>(
+    v: GLWEBackendRef<'_, BE, S>,
+) -> GLWEBackendRef<'_, BE, CoeffUnnormalized> {
+    let GLWE { data, k, base2k } = v;
+    GLWE {
+        data: poulpy_hal::layouts::vec_znx_weaken_backend_ref::<BE, _>(data),
+        k,
+        base2k,
+    }
+}
+
+/// TRANSITIONAL containment bridge (spec §4.1; removed by the PR 5 scratch-transaction
+/// migration): the GLWE twin of [`poulpy_hal::layouts::vec_znx_borrowed_carry_view`],
+/// with the same caller contract (the write preserves the owner's digit bound, or the
+/// caller re-normalizes the storage in place before the borrow ends). Ratcheted.
+pub fn glwe_borrowed_carry_view<BE: Backend, S: ArithmeticState>(
+    v: GLWEBackendMut<'_, BE, S>,
+) -> GLWEBackendMut<'_, BE, CoeffUnnormalized> {
+    let GLWE { data, k, base2k } = v;
+    GLWE {
+        data: poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(data),
+        k,
+        base2k,
     }
 }
 

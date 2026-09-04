@@ -8,9 +8,9 @@ use crate::{
     alloc_aligned,
     api::VecZnxNormalizeAssignBackend,
     layouts::{
-        ArithmeticState, Backend, CoeffFitsIn, CoeffNormalized, CoeffUnnormalized, CoefficientState, Data, DataView, DataViewMut,
-        DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx, ScratchArena, ToOwnedDeep, VecZnxInfos,
-        WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        ArithmeticState, Backend, CoeffFitsIn, CoeffNormalized, CoeffUnnormalized, CoefficientState, Data, DataOwned, DataView,
+        DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx, ScratchArena, ToOwnedDeep,
+        VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -175,7 +175,7 @@ pub struct VecZnx<D: Data, W: ZnxWord, S: CoefficientState = CoeffNormalized> {
     _phantom: PhantomData<(W, S)>,
 }
 
-impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
+impl<D: Data + DataOwned, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     /// Relabels this vector as [`Unnormalized`].
     ///
     /// Free and always sound: normalized digits are valid unnormalized digits.
@@ -222,7 +222,7 @@ impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     }
 }
 
-impl<D: Data, W: ZnxWord> VecZnx<D, W, CoeffUnnormalized> {
+impl<D: Data + DataOwned, W: ZnxWord> VecZnx<D, W, CoeffUnnormalized> {
     /// Propagates carries through every column and returns the vector relabelled as [`Normalized`].
     ///
     /// This is the only public path from [`Unnormalized`] to [`Normalized`].
@@ -351,9 +351,28 @@ impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     pub fn into_data(self) -> D {
         self.data
     }
+
+    /// Mutable storage access for transfer and view plumbing (spec §7.4).
+    ///
+    /// The caller asserts the access does not change what the label claims: a
+    /// byte-for-byte transfer of a value with the same state and representation
+    /// (upload/download, host staging), or construction of an equally-typed view whose
+    /// subsequent mutation is governed by that view's own state gate. It must not be
+    /// used to edit digits: the typed-mutation route is [`DataViewMut`] (weakest state
+    /// only) and kernels use [`crate::oep::vec_znx_kernel_words_mut`]. Every call site
+    /// is counted by the migration deny-list ratchet.
+    pub fn transfer_data_mut(&mut self) -> &mut D {
+        &mut self.data
+    }
 }
 
-impl<D: Data, W: ZnxWord, S: CoefficientState> DataViewMut for VecZnx<D, W, S> {
+/// Safe mutable storage access exists only for the weakest arithmetic state
+/// (spec invariant 4): mutating bytes behind a `Coeff<Normalized, _>` or
+/// `Coeff<_, Canonical>` label would silently invalidate the proof the label
+/// carries. Kernels that write under a declared postcondition use the sealed
+/// capability [`crate::oep::vec_znx_kernel_words_mut`] instead; via the
+/// [`ZnxViewMut`] blanket impl this same gate governs `at_mut`/`raw_mut`.
+impl<D: Data, W: ZnxWord> DataViewMut for VecZnx<D, W, CoeffUnnormalized> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
@@ -388,12 +407,23 @@ impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
     }
 }
 
+/// Zeroing is available for every state: zero words satisfy the normalized bound and
+/// every canonical-padding rule, so the label's claim survives (spec invariant 6).
+/// Implemented on the private storage directly because the [`DataViewMut`] route is
+/// gated to the weakest state.
 impl<D: HostDataMut, W: ZnxWord, S: CoefficientState> ZnxZero for VecZnx<D, W, S> {
     fn zero(&mut self) {
-        self.raw_mut().fill(W::zero())
+        let span = self.n() * self.cols() * self.size();
+        let bytes: &mut [u8] = self.data.as_mut();
+        bytemuck::cast_slice_mut::<u8, W>(&mut bytes[..span * size_of::<W>()]).fill(W::zero())
     }
     fn zero_at(&mut self, i: usize, j: usize) {
-        self.at_mut(i, j).fill(W::zero());
+        assert!(i < self.cols() && j < self.size());
+        let n = self.n();
+        let offset = (j * self.cols() + i) * n;
+        let span = n * self.cols() * self.size();
+        let bytes: &mut [u8] = self.data.as_mut();
+        bytemuck::cast_slice_mut::<u8, W>(&mut bytes[..span * size_of::<W>()])[offset..offset + n].fill(W::zero());
     }
 }
 
@@ -471,6 +501,19 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W, CoeffNormalized> {
     }
 }
 
+impl<D: Data, W: ZnxWord> VecZnx<D, W, CoeffUnnormalized> {
+    /// Constructs a `VecZnx` from raw parts under the weakest arithmetic label.
+    ///
+    /// Unlike [`VecZnx::from_data`] (the trust boundary that claims
+    /// [`CoeffNormalized`]), this claims nothing beyond "readable digits", so it is
+    /// safe for any storage: the only way to a stronger label from here is a real
+    /// normalization pass. Used for reborrowing big-accumulator storage as an
+    /// unnormalized coefficient view inside kernels.
+    pub fn from_data_unnormalized(data: D, n: usize, cols: usize, size: usize) -> Self {
+        Self::from_data_with_state(data, n, cols, size)
+    }
+}
+
 impl<D: HostDataRef, W: ZnxWord, S: CoefficientState> fmt::Display for VecZnx<D, W, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "VecZnx(n={}, cols={}, size={})", self.n(), self.cols(), self.size())?;
@@ -516,7 +559,9 @@ impl<D: HostDataMut, W: ZnxWord, S: CoefficientState> FillUniform for VecZnx<D, 
         }
         let mask: u64 = (1u64 << log_bound) - 1;
         let shift: usize = 64 - log_bound;
-        for x in self.raw_mut().iter_mut() {
+        let span = self.n() * self.cols() * self.size();
+        let bytes: &mut [u8] = self.data.as_mut();
+        for x in bytemuck::cast_slice_mut::<u8, W>(&mut bytes[..span * size_of::<W>()]).iter_mut() {
             let r = source.next_u64() & mask;
             *x = W::from_i64(((r << shift) as i64) >> shift);
         }
@@ -775,6 +820,30 @@ pub fn vec_znx_backend_mut<'a, B: Backend, S: ArithmeticState>(
     vec: &'a mut VecZnx<B::OwnedBuf, B::ZnxWord, S>,
 ) -> VecZnxBackendMut<'a, B, S> {
     <VecZnx<B::OwnedBuf, B::ZnxWord, S> as VecZnxToBackendMut<B>>::to_backend_mut(vec)
+}
+
+/// Weakened shared backend view: reads the digits of a stronger-labelled value under
+/// the weakest arithmetic label. Always sound (a shared view cannot mutate, so no
+/// owner label can go stale); used by consumers typed against unnormalized inputs.
+pub fn vec_znx_weaken_backend_ref<'a, B: Backend, S: ArithmeticState>(
+    v: VecZnxBackendRef<'a, B, S>,
+) -> VecZnxBackendRef<'a, B, CoeffUnnormalized> {
+    v.relabel_unchecked()
+}
+
+/// TRANSITIONAL containment bridge (spec §4.1; removed by the PR 5 scratch-transaction
+/// migration): relabels a mutable *borrowed* view as unnormalized so a carry-producing
+/// op can write through it while the owner keeps its label.
+///
+/// The caller contract is the documented §2.1 pattern under containment: the write must
+/// either provably preserve the owner's digit bound, or the caller must re-normalize
+/// the same storage in place (`vec_znx_normalize_assign`) before the borrow ends and
+/// the owner is next read. Every call site is counted by the migration deny-list
+/// ratchet and inventoried as a §6.4-B site.
+pub fn vec_znx_borrowed_carry_view<'a, B: Backend, S: ArithmeticState>(
+    v: VecZnxBackendMut<'a, B, S>,
+) -> VecZnxBackendMut<'a, B, CoeffUnnormalized> {
+    v.relabel_unchecked()
 }
 
 /// Narrows a mutable backend view to a smaller working size.

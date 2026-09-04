@@ -50,7 +50,7 @@ where
     assert_eq!(src.n(), dst.n(), "transfer_into: ring degree");
     assert_eq!(src.cols(), dst.cols(), "transfer_into: cols");
     assert_eq!(src.size(), dst.size(), "transfer_into: size");
-    transfer_buf_into(src.data(), dst.data_mut());
+    transfer_buf_into(src.data(), dst.transfer_data_mut());
 }
 
 fn move_mat_znx<D1, D2, W>(src: &MatZnx<D1, W>, dst: &mut MatZnx<D2, W>)

@@ -26,11 +26,11 @@ pub fn vec_znx_copy<'r, 'a, BE, S: ArithmeticState>(
     let min_size = res_size.min(a_size);
 
     for j in 0..min_size {
-        BE::znx_copy(res.at_mut(res_col, j), a.at(a_col, j));
+        BE::znx_copy(crate::reference::kernel_words_mut(res).at_mut(res_col, j), a.at(a_col, j));
     }
 
     for j in min_size..res_size {
-        BE::znx_zero(res.at_mut(res_col, j));
+        BE::znx_zero(crate::reference::kernel_words_mut(res).at_mut(res_col, j));
     }
 }
 
@@ -59,13 +59,14 @@ pub fn vec_znx_extract_coeff<'r, 'a, BE, S: ArithmeticState>(
     let min_size = res.size().min(a.size());
 
     for limb in 0..min_size {
-        let dst = res.at_mut(res_col, limb);
+        let mut res_words = crate::reference::kernel_words_mut(res);
+        let dst = res_words.at_mut(res_col, limb);
         dst.fill(0);
         dst[0] = a.at(a_col, limb)[a_coeff];
     }
 
     for limb in min_size..res.size() {
-        res.at_mut(res_col, limb).fill(0);
+        crate::reference::kernel_words_mut(res).at_mut(res_col, limb).fill(0);
     }
 }
 
@@ -107,7 +108,8 @@ pub fn vec_znx_transpose<'r, 'a, BE, S: ArithmeticState>(
     // (n_a, cols_a) and destination has (n=cols_a, cols=n_a), so both share
     // the same per-limb stride `n_a * cols_a`.
     let src = a.raw();
-    let dst = res.raw_mut();
+    let mut res_words = crate::reference::kernel_words_mut(res);
+    let dst = res_words.raw_mut();
 
     for limb in 0..min_size {
         let base = limb * limb_stride;
@@ -147,7 +149,7 @@ pub fn vec_znx_copy_range<'r, 'a, BE, S: ArithmeticState>(
     assert!(a_offset + len <= a.n());
 
     BE::znx_copy(
-        &mut res.at_mut(res_col, res_limb)[res_offset..res_offset + len],
+        &mut crate::reference::kernel_words_mut(res).at_mut(res_col, res_limb)[res_offset..res_offset + len],
         &a.at(a_col, a_limb)[a_offset..a_offset + len],
     );
 }

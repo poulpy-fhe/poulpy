@@ -17,6 +17,7 @@ use crate::{
     },
     noise::GGSWNoiseModel,
 };
+use poulpy_hal::test_suite::harness_words_mut;
 
 #[allow(clippy::too_many_arguments)]
 pub fn test_glwe_external_product<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
@@ -94,7 +95,7 @@ where
                 &mut source_xa,
             );
 
-            pt_in.data.at_mut(0, 0)[1] = 1;
+            harness_words_mut(&mut pt_in.data).at_mut(0, 0)[1] = 1;
 
             let k: usize = 1;
 
@@ -245,7 +246,7 @@ where
                 &mut source_xa,
             );
 
-            pt_want.data.at_mut(0, 0)[1] = 1;
+            harness_words_mut(&mut pt_want.data).at_mut(0, 0)[1] = 1;
 
             let k: usize = 1;
 

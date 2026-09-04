@@ -519,7 +519,7 @@ fn ntt4x30_vec_znx_big_normalize_inter_assign<O, R, A, BE>(
         BE::nfc_middle_step_into::<O>(
             base2k,
             lsh_pos,
-            res.at_mut(res_col, res_start - j - 1),
+            crate::reference::kernel_words_mut(&mut res).at_mut(res_col, res_start - j - 1),
             a.at(a_col, a_start - j - 1),
             carry,
         );
@@ -527,9 +527,17 @@ fn ntt4x30_vec_znx_big_normalize_inter_assign<O, R, A, BE>(
 
     for j in 0..res_end {
         if j == res_end - 1 {
-            nfc_final_carry_assign::<O>(base2k, res.at_mut(res_col, res_end - j - 1), carry);
+            nfc_final_carry_assign::<O>(
+                base2k,
+                crate::reference::kernel_words_mut(&mut res).at_mut(res_col, res_end - j - 1),
+                carry,
+            );
         } else {
-            nfc_middle_carry_assign::<O>(base2k, res.at_mut(res_col, res_end - j - 1), carry);
+            nfc_middle_carry_assign::<O>(
+                base2k,
+                crate::reference::kernel_words_mut(&mut res).at_mut(res_col, res_end - j - 1),
+                carry,
+            );
         }
     }
 }
@@ -775,7 +783,8 @@ fn ntt4x30_vec_znx_big_normalize_cross_assign<O, R, A, BE>(
         }
 
         'inner: loop {
-            let res_slice: &mut [i64] = res.at_mut(res_col, res_limb);
+            let mut res_words = crate::reference::kernel_words_mut(&mut res);
+            let res_slice: &mut [i64] = res_words.at_mut(res_col, res_limb);
             let a_take: usize = a_base2k.min(a_take_left).min(res_acc_left);
 
             if a_take != 0 {
@@ -816,9 +825,17 @@ fn ntt4x30_vec_znx_big_normalize_cross_assign<O, R, A, BE>(
         let carry_to_use = if a_start == a_end { a_carry } else { res_carry };
         for j in 0..res_end {
             if j == res_end - 1 {
-                nfc_final_carry_assign::<O>(res_base2k, res.at_mut(res_col, res_end - j - 1), carry_to_use);
+                nfc_final_carry_assign::<O>(
+                    res_base2k,
+                    crate::reference::kernel_words_mut(&mut res).at_mut(res_col, res_end - j - 1),
+                    carry_to_use,
+                );
             } else {
-                nfc_middle_carry_assign::<O>(res_base2k, res.at_mut(res_col, res_end - j - 1), carry_to_use);
+                nfc_middle_carry_assign::<O>(
+                    res_base2k,
+                    crate::reference::kernel_words_mut(&mut res).at_mut(res_col, res_end - j - 1),
+                    carry_to_use,
+                );
             }
         }
     }
@@ -1481,7 +1498,8 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
     }
     let mut res = res.to_backend_mut();
     let (n, cols, size) = (res.n(), res.cols(), res.size());
-    let ptr = poulpy_hal::layouts::DataViewMut::data_mut(&mut res)
+    let mut res_words = crate::reference::kernel_words_mut(&mut res);
+    let ptr = poulpy_hal::layouts::DataViewMut::data_mut(&mut res_words)
         .as_mut()
         .as_mut_ptr()
         .cast::<i64>();

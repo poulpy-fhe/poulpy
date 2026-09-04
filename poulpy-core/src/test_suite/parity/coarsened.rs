@@ -36,6 +36,7 @@ use crate::{
     },
     test_suite::keys::fill_by_digit,
 };
+use poulpy_hal::test_suite::harness_words_mut;
 
 /// Answers from `keys`, every key read through `dsize`.
 struct AtDsize<'a, K>(&'a K, Dsize);
@@ -206,8 +207,8 @@ where
             &format!("automorphism dsize={dsize} dnum={dnum} s={s} rank={rank}"),
         );
 
-        have.data.raw_mut().copy_from_slice(ct_in.data.raw());
-        want.data.raw_mut().copy_from_slice(ct_in.data.raw());
+        harness_words_mut(&mut have.data).raw_mut().copy_from_slice(ct_in.data.raw());
+        harness_words_mut(&mut want.data).raw_mut().copy_from_slice(ct_in.data.raw());
         let have_keys = AtDsize(&key_prep, effective);
         let have_key = have_keys
             .get_automorphism_key(p, have.k())
@@ -224,8 +225,8 @@ where
             &format!("add_assign dsize={dsize} dnum={dnum} s={s} rank={rank}"),
         );
 
-        have.data.raw_mut().copy_from_slice(ct_in.data.raw());
-        want.data.raw_mut().copy_from_slice(ct_in.data.raw());
+        harness_words_mut(&mut have.data).raw_mut().copy_from_slice(ct_in.data.raw());
+        harness_words_mut(&mut want.data).raw_mut().copy_from_slice(ct_in.data.raw());
         let have_keys = AtDsize(&key_prep, effective);
         let have_key = have_keys
             .get_automorphism_key(p, have.k())
@@ -316,7 +317,7 @@ where
     let mut have = module.glwe_alloc_from_infos(&ct_infos);
     have.fill_uniform(base2k, &mut source);
     let mut want = module.glwe_alloc_from_infos(&ct_infos);
-    want.data.raw_mut().copy_from_slice(have.data.raw());
+    harness_words_mut(&mut want.data).raw_mut().copy_from_slice(have.data.raw());
 
     let mut scratch = ScratchOwned::<BE>::alloc(trace_bytes);
     module.glwe_trace_assign(&mut have, 0, &AtDsize(&keys, effective), &mut scratch.borrow());

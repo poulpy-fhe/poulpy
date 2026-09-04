@@ -3,7 +3,7 @@ use std::fmt;
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord};
 
 use crate::layouts::{Base2K, Degree, LWEInfos, SetBase2k, TorusPrecision};
-use poulpy_hal::layouts::{DataView, DataViewMut};
+use poulpy_hal::layouts::DataView;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct LWEPlaintextLayout {
@@ -196,7 +196,12 @@ impl<'b, BE: Backend + 'b> LWEPlaintextToBackendMut<BE> for &mut LWEPlaintext<BE
     fn to_backend_mut(&mut self) -> LWEPlaintextBackendMut<'_, BE> {
         let shape = self.data.shape();
         LWEPlaintext {
-            data: VecZnx::from_data(BE::view_mut_ref(self.data.data_mut()), shape.n(), shape.cols(), shape.size()),
+            data: VecZnx::from_data(
+                BE::view_mut_ref(self.data.transfer_data_mut()),
+                shape.n(),
+                shape.cols(),
+                shape.size(),
+            ),
             base2k: self.base2k,
             k: self.k,
         }

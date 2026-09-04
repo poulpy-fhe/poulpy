@@ -80,7 +80,12 @@ pub fn vec_znx_normalize_par<B, T>(
 
     let (cols, size) = (res.cols(), res.size());
     let (a_cols, a_size) = (a.cols(), a.size());
-    let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
+    let res_ptr = SendPtr::new(
+        unsafe { poulpy_hal::oep::vec_znx_kernel_words_mut(res) }
+            .data_mut()
+            .as_mut_ptr()
+            .cast::<i64>(),
+    );
     let a_data: &[u8] = a.data();
     for_each_range(n, tasks, 3, carry, |start, len, task_carry| {
         let a_view: VecZnxBackendRef<'_, B> = VecZnx::from_data(a_data, n, a_cols, a_size);
@@ -123,7 +128,12 @@ pub fn vec_znx_normalize_assign_par<B, T>(
     }
 
     let (cols, size) = (res.cols(), res.size());
-    let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
+    let res_ptr = SendPtr::new(
+        unsafe { poulpy_hal::oep::vec_znx_kernel_words_mut(res) }
+            .data_mut()
+            .as_mut_ptr()
+            .cast::<i64>(),
+    );
     for_each_range(n, tasks, 1, carry, |start, len, task_carry| unsafe {
         vec_znx_normalize_assign_range_raw::<B>(res_ptr.get(), n, cols, size, base2k, res_col, start, len, task_carry)
     });
@@ -166,7 +176,12 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
 
     let (cols, size) = (res.cols(), res.size());
     let (a_cols, a_size) = (a.cols(), a.size());
-    let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
+    let res_ptr = SendPtr::new(
+        unsafe { poulpy_hal::oep::vec_znx_kernel_words_mut(res) }
+            .data_mut()
+            .as_mut_ptr()
+            .cast::<i64>(),
+    );
     let a_data: &[u8] = a.data();
     for_each_range(n, tasks, 3, carry, |start, len, task_carry| {
         let a_view: VecZnxBigBackendRef<'_, B> = VecZnxBig::from_data(a_data, n, a_cols, a_size);

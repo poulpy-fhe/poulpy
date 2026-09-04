@@ -1141,14 +1141,20 @@ Status: partially delivered. Done: `as_scalar_znx_mut` deleted; `from_data_like`
 `map_data_mut` moved to backend-only OEP reborrow functions; the root state parameter
 switched to `CoefficientState` (`CoeffNormalized` default) across the workspace with
 `impl ArithmeticState` op parameters and `CoeffFitsIn` bounds, byte-identical behavior.
-Also done: `VecZnx`'s storage field is private; every external raw-storage access flows
-through `DataView::data`, `DataViewMut::data_mut`, or the consuming
-`VecZnx::into_data`. Remaining: nominal owned/ref/mut/scratch roles; gating
-`DataViewMut`/`ZnxViewMut` by state (no safe mutable bytes for
-`Coeff<Normalized, _>`/`Coeff<_, Canonical>`, per invariant 4) with the sealed kernel
-capability replacing them inside backend kernels; `Raw`-producing raw constructors
-(deferred toward PR 7's reader migration); strongest-state zeroed allocators (deferred
-to PR 4, which relaxes destination bounds); and the compile-fail exit-gate tests.
+Also done: `VecZnx`'s storage field is private (access via `DataView::data`,
+`DataViewMut::data_mut`, consuming `into_data`); `DataViewMut`/`ZnxViewMut` are gated to
+`Coeff<Unnormalized, NonCanonical>` (invariant 4) with the sealed unsafe kernel
+capability `oep::vec_znx_kernel_words_mut` for backend kernels and harnesses; root
+transitions require the `DataOwned` storage marker so mutable borrows cannot be
+relabelled (invariants 2–3 under the §4.1 containment patch), with the authoritative
+arena view wrappers keeping their transitions; and the compile-fail exit-gate doctests
+pass (no safe mutable bytes on normalized roots, no borrow relabel, no manufactured
+proof). The inventoried §6.4-B sites ride the ratcheted transitional
+`*_borrowed_carry_view` bridges until PR 5's scratch transactions remove them.
+Remaining: nominal owned/ref/mut/scratch roles; `Raw`-producing raw constructors
+(deferred toward PR 7's reader migration; `from_data_unnormalized` provides
+weakest-label ingestion meanwhile); strongest-state zeroed allocators (deferred to
+PR 4, which relaxes destination bounds).
 
 Deliverables:
 

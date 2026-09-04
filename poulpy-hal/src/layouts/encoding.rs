@@ -1,7 +1,7 @@
 use dashu_float::{Context, FBig, round::mode::HalfEven};
 use itertools::izip;
 
-use crate::layouts::{CoefficientState, HostDataMut, HostDataRef, VecZnx, ZnxView, ZnxViewMut};
+use crate::layouts::{CoeffUnnormalized, CoefficientState, HostDataMut, HostDataRef, VecZnx, ZnxView, ZnxViewMut};
 
 // i64-only: the encode/decode routines below use i64/i128 limb arithmetic and
 // `u64::BITS` carry extraction. A narrower `ZnxWord` needs its own implementation.
@@ -55,7 +55,7 @@ impl<D: HostDataMut, S: CoefficientState> VecZnx<D, i64, S> {
         }
 
         let shape = self.shape();
-        let mut a: VecZnx<&mut [u8], i64, S> =
+        let mut a: VecZnx<&mut [u8], i64, CoeffUnnormalized> =
             VecZnx::from_data_with_state(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size: usize = a.size();
 
@@ -123,7 +123,7 @@ impl<D: HostDataMut, S: CoefficientState> VecZnx<D, i64, S> {
         }
 
         let shape = self.shape();
-        let mut a: VecZnx<&mut [u8], i64, S> =
+        let mut a: VecZnx<&mut [u8], i64, CoeffUnnormalized> =
             VecZnx::from_data_with_state(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size: usize = a.size();
 
@@ -185,7 +185,7 @@ impl<D: HostDataMut, S: CoefficientState> VecZnx<D, i64, S> {
         }
 
         let shape = self.shape();
-        let mut a: VecZnx<&mut [u8], i64, S> =
+        let mut a: VecZnx<&mut [u8], i64, CoeffUnnormalized> =
             VecZnx::from_data_with_state(self.data.as_mut(), shape.n(), shape.cols(), shape.size());
         let a_size = a.size();
 

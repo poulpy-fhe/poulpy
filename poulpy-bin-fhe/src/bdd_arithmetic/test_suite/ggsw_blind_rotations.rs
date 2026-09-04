@@ -23,6 +23,7 @@ use crate::{
     },
     blind_rotation::BlindRotationAlgo,
 };
+use poulpy_hal::test_suite::harness_words_mut;
 
 pub fn test_scalar_to_ggsw_blind_rotation<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
@@ -140,7 +141,9 @@ where
             scalar_want.raw_mut().copy_from_slice(scalar.raw());
 
             let mut scalar_want_vec: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, 1);
-            scalar_want_vec.raw_mut().copy_from_slice(scalar_want.raw());
+            harness_words_mut(&mut scalar_want_vec)
+                .raw_mut()
+                .copy_from_slice(scalar_want.raw());
             {
                 let mut scalar_want_backend =
                     <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut scalar_want_vec);

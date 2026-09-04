@@ -163,7 +163,7 @@ fn scratch_arena_take_core_returns_disjoint_backend_regions() {
     let available_before = arena.available();
 
     let (mut glwe, arena) = arena.take_glwe_scratch(&glwe_infos);
-    let glwe_bytes = glwe.data_mut().data_mut();
+    let glwe_bytes = glwe.data_mut().transfer_data_mut();
     glwe_bytes[0] = 0x5a;
     let glwe_ptr = glwe_bytes.as_mut_ptr() as usize;
     let glwe_len = glwe_bytes.len();
@@ -201,8 +201,8 @@ fn scratch_arena_split_yields_independent_chunks() {
         .expect("missing second scratch chunk")
         .take_vec_znx_scratch(64, 2, 2);
 
-    let lhs_bytes = lhs.data_mut();
-    let rhs_bytes = rhs.data_mut();
+    let lhs_bytes = lhs.transfer_data_mut();
+    let rhs_bytes = rhs.transfer_data_mut();
     lhs_bytes[0] = 1;
     rhs_bytes[0] = 2;
 

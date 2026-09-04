@@ -23,6 +23,7 @@ use crate::{
 
 use crate::layouts::VecZnxDftOwned;
 use crate::layouts::{CnvPVecLOwned, CnvPVecROwned, VecZnxBigOwned};
+use crate::test_suite::harness_words_mut;
 
 pub fn test_convolution_by_const<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
 where
@@ -52,7 +53,7 @@ where
     let mask = (1 << base2k) - 1;
     for j in 0..1 {
         let r = source.next_u64() & mask;
-        b.at_mut(0, j)[0] = ((r << (64 - 17)) as i64) >> (64 - 17);
+        harness_words_mut(&mut b).at_mut(0, j)[0] = ((r << (64 - 17)) as i64) >> (64 - 17);
     }
 
     let a_backend = upload_vec_znx::<BE, _>(&a);
@@ -796,13 +797,21 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
                 res_limb += res_scale_abs;
 
                 if res_limb < res.size() {
-                    negacyclic_convolution_naive_add(res.at_mut(res_col, res_limb), a.at(a_col, a_limb), b.at(b_col, b_limb));
+                    negacyclic_convolution_naive_add(
+                        harness_words_mut(res).at_mut(res_col, res_limb),
+                        a.at(a_col, a_limb),
+                        b.at(b_col, b_limb),
+                    );
                 }
             } else if res_limb >= res_scale_abs {
                 res_limb -= res_scale_abs;
 
                 if res_limb < res.size() {
-                    negacyclic_convolution_naive_add(res.at_mut(res_col, res_limb), a.at(a_col, a_limb), b.at(b_col, b_limb));
+                    negacyclic_convolution_naive_add(
+                        harness_words_mut(res).at_mut(res_col, res_limb),
+                        a.at(a_col, a_limb),
+                        b.at(b_col, b_limb),
+                    );
                 }
             }
         }
@@ -843,7 +852,7 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
 
                         if res_limb < res.size() {
                             negacyclic_convolution_naive_add(
-                                res.at_mut(a_col + b_col, res_limb),
+                                harness_words_mut(res).at_mut(a_col + b_col, res_limb),
                                 a.at(a_col, a_limb),
                                 b.at(b_col, b_limb),
                             );
@@ -853,7 +862,7 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
 
                         if res_limb < res.size() {
                             negacyclic_convolution_naive_add(
-                                res.at_mut(a_col + b_col, res_limb),
+                                harness_words_mut(res).at_mut(a_col + b_col, res_limb),
                                 a.at(a_col, a_limb),
                                 b.at(b_col, b_limb),
                             );

@@ -74,7 +74,10 @@ fn main() {
 
     // Raw residual: the statistics below read the un-propagated digits directly.
     module.vec_znx_sub_assign_backend(
-        &mut poulpy_hal::layouts::vec_znx_backend_mut::<BackendImpl, _>(pt_want.data_mut()).into_unnormalized(),
+        &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BackendImpl, _>(poulpy_hal::layouts::vec_znx_backend_mut::<
+            BackendImpl,
+            _,
+        >(pt_want.data_mut())),
         0,
         &poulpy_hal::layouts::vec_znx_backend_ref::<BackendImpl, _>(pt_have.data()),
         0,

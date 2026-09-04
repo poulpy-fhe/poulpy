@@ -100,3 +100,23 @@ pub fn vec_znx_map_data_mut<'a, D: Data, D2: Data, W: ZnxWord, S: CoefficientSta
     let (n, cols, size) = (a.n(), a.cols(), a.size());
     VecZnx::from_data_with_state(f(&mut a.data), n, cols, size)
 }
+
+/// Sealed kernel capability (spec §9.1): a state-erased mutable host view over typed
+/// storage. Safe mutable word access ([`crate::layouts::ZnxViewMut`] /
+/// [`crate::layouts::DataViewMut`]) exists only for the weakest arithmetic state, so a
+/// kernel that writes a destination under a declared postcondition takes this erased
+/// view at its entry point and works through the ordinary view methods on it.
+///
+/// # Safety
+///
+/// `v` keeps its state label while its bytes change through the returned view. The
+/// caller (a backend kernel or its test harness) asserts that by the time the borrow
+/// ends, every word it wrote satisfies the invariant of `v`'s original state label:
+/// the operation's declared per-write/final postcondition covers the region it
+/// touched (spec invariants 7 and 12). Violating it silently corrupts results.
+pub unsafe fn vec_znx_kernel_words_mut<D: crate::layouts::HostDataMut, W: ZnxWord, S: CoefficientState>(
+    v: &mut VecZnx<D, W, S>,
+) -> VecZnx<&mut [u8], W, CoeffUnnormalized> {
+    let (n, cols, size) = (v.n(), v.cols(), v.size());
+    VecZnx::from_data_with_state(v.data.as_mut(), n, cols, size)
+}

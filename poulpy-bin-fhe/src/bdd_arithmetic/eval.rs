@@ -436,7 +436,7 @@ where
     let scalar = <ScalarZnx<BE::OwnedBuf, i64> as ScalarZnxToBackendRef<BE>>::to_backend_ref(one);
     // Writing a small scalar onto zeroed limbs stays within the base2k digit bound, so the
     // CoeffNormalized owner label remains valid after this unnormalized-typed write.
-    let mut res = res.to_backend_mut().into_unnormalized();
+    let mut res = poulpy_core::layouts::glwe_borrowed_carry_view::<BE, _>(res.to_backend_mut());
     for limb in 0..limbs {
         module.vec_znx_add_scalar_assign_backend(res.data_mut(), 0, limb, &scalar, 0);
     }

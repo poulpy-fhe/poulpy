@@ -114,7 +114,12 @@ impl<D: Data, W: ZnxWord, S: CoefficientState> SetNormalizationState for GLWE<D,
     type WithState<T: CoefficientState> = GLWE<D, W, T>;
 
     fn set_unnormalized(self) -> GLWE<D, W, CoeffUnnormalized> {
-        self.into_unnormalized()
+        let GLWE { data, k, base2k } = self;
+        GLWE {
+            data: data.set_unnormalized(),
+            k,
+            base2k,
+        }
     }
 
     unsafe fn set_normalized(self) -> GLWE<D, W, CoeffNormalized> {

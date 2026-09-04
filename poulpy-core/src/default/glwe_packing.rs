@@ -53,7 +53,7 @@ fn pack_internal<M, A, B, H, BE: Backend>(
             // a = (a + b) >> 1: the shift re-normalizes the digits, so the caller's
             // CoeffNormalized label on `a` holds again once this unnormalized view is dropped.
             {
-                let mut a_acc = a.to_backend_mut().into_unnormalized();
+                let mut a_acc = crate::layouts::glwe_borrowed_carry_view::<BE, _>(a.to_backend_mut());
                 let mut a_acc = &mut a_acc;
                 module.glwe_add_assign(&mut a_acc, b);
                 module.glwe_rsh(1, &mut a_acc, scratch);
@@ -67,7 +67,7 @@ fn pack_internal<M, A, B, H, BE: Backend>(
 
             // a -= phi(tmp_b), then propagate the carries before rotating back.
             {
-                let mut a_acc = a.to_backend_mut().into_unnormalized();
+                let mut a_acc = crate::layouts::glwe_borrowed_carry_view::<BE, _>(a.to_backend_mut());
                 let mut a_acc = &mut a_acc;
                 module.glwe_sub_assign(&mut a_acc, &tmp_b);
             }

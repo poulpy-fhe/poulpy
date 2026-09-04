@@ -43,17 +43,17 @@ pub fn vec_znx_split_ring<'r, 'a, BE, S: ArithmeticState>(
 
         if i == 0 {
             for j in 0..min_size {
-                BE::znx_switch_ring(bi.at_mut(res_col, j), a.at(a_col, j));
+                BE::znx_switch_ring(crate::reference::kernel_words_mut(bi).at_mut(res_col, j), a.at(a_col, j));
             }
         } else {
             for j in 0..min_size {
                 BE::znx_rotate(-(i as i64), tmp, a.at(a_col, j));
-                BE::znx_switch_ring(bi.at_mut(res_col, j), tmp);
+                BE::znx_switch_ring(crate::reference::kernel_words_mut(bi).at_mut(res_col, j), tmp);
             }
         }
 
         for j in min_size..bi.size() {
-            BE::znx_zero(bi.at_mut(res_col, j));
+            BE::znx_zero(crate::reference::kernel_words_mut(bi).at_mut(res_col, j));
         }
     })
 }

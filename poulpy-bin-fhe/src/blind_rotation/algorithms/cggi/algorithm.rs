@@ -6,14 +6,14 @@ use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssignBackend, VecZnxRotateBackend, VecZnxZeroBackend,
-        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign,
+        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssignBackend, VecZnxRotateBackend,
+        VecZnxZeroBackend, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, Host, HostDataMut, HostDataRef, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VecZnxToBackendRef, ZnxView, ZnxViewMut, ZnxZero, vec_znx_backend_ref_from_mut,
-        vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
+        VecZnxDftToBackendRef, VecZnxToBackendRef, ZnxZero, vec_znx_backend_ref_from_mut, vec_znx_big_backend_ref_from_mut,
+        vec_znx_dft_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
 };
@@ -177,6 +177,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord =
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
         + GLWECopy<BE>
+        + VecZnxCopyBackend<BE>
         + VecZnxBigBytesOf,
     // TODO(device): this extended block-binary path still performs host-side
     // coefficient orchestration over temporary accumulators.
@@ -352,14 +353,8 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<Location = Host, ZnxWord =
 
     let mut res_mut = res.to_backend_mut();
     for i in 0..cols {
-        let res_data = res_mut.data_mut();
-        let min_size = res_data.size().min(acc[0].size());
-        for j in 0..min_size {
-            res_data.at_mut(i, j).copy_from_slice(acc[0].at(i, j));
-        }
-        for j in min_size..res_data.size() {
-            res_data.at_mut(i, j).fill(0);
-        }
+        let acc_ref = vec_znx_backend_ref_from_mut::<BE, _>(&acc[0]);
+        module.vec_znx_copy_backend(res_mut.data_mut(), i, &acc_ref, i);
     }
 }
 

@@ -85,7 +85,10 @@ impl<D: Data, W: ZnxWord, S: CoefficientState> CKKSCiphertext<D, W, S> {
     }
 
     /// Relabels this ciphertext as [`CoeffUnnormalized`] (free); see [`GLWE::into_unnormalized`].
-    pub fn into_unnormalized(self) -> CKKSCiphertext<D, W, CoeffUnnormalized> {
+    pub fn into_unnormalized(self) -> CKKSCiphertext<D, W, CoeffUnnormalized>
+    where
+        D: poulpy_hal::layouts::DataOwned,
+    {
         CKKSCiphertext::from_inner(self.inner.into_unnormalized(), self.meta)
     }
 
@@ -415,7 +418,7 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
     {
         let (inner, scratch) = self.take_glwe_scratch(infos);
         (
-            UnnormalizedCKKSCiphertext::from_inner(inner.into_inner().into_unnormalized(), meta),
+            UnnormalizedCKKSCiphertext::from_inner(inner.into_unnormalized().into_inner(), meta),
             scratch,
         )
     }
@@ -485,7 +488,7 @@ where
 /// ```
 pub type UnnormalizedCKKSCiphertext<D, W> = CKKSCiphertext<D, W, CoeffUnnormalized>;
 
-impl<D: Data, W: ZnxWord> CKKSCiphertext<D, W, CoeffUnnormalized> {
+impl<D: Data + poulpy_hal::layouts::DataOwned, W: ZnxWord> CKKSCiphertext<D, W, CoeffUnnormalized> {
     /// Wraps `ct` in the unnormalized typestate (a free relabel).
     pub fn new(ct: CKKSCiphertext<D, W>) -> Self {
         ct.into_unnormalized()
@@ -499,6 +502,7 @@ impl<D: Data, W: ZnxWord> CKKSCiphertext<D, W, CoeffUnnormalized> {
     /// automorphisms).
     pub fn normalize<M, BE>(self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> CKKSCiphertext<D, W>
     where
+        D: poulpy_hal::layouts::DataOwned,
         BE: Backend<ZnxWord = W>,
         M: VecZnxNormalizeAssignBackend<BE> + ?Sized,
         VecZnx<D, W, CoeffUnnormalized>: VecZnxToBackendMut<BE, State = CoeffUnnormalized>,
@@ -569,13 +573,13 @@ impl<'a, T: SetCKKSInfos> SetCKKSInfos for CKKSUnnormalizedWriteView<'a, T> {
 impl<'a, BE: Backend, T: GLWEToBackendRef<BE>> GLWEToBackendRef<BE> for CKKSUnnormalizedWriteView<'a, T> {
     type State = CoeffUnnormalized;
     fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord, CoeffUnnormalized> {
-        self.inner.to_backend_ref().into_unnormalized()
+        poulpy_core::layouts::glwe_weaken_backend_ref::<BE, _>(self.inner.to_backend_ref())
     }
 }
 
 impl<'a, BE: Backend, T: GLWEToBackendMut<BE>> GLWEToBackendMut<BE> for CKKSUnnormalizedWriteView<'a, T> {
     fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord, CoeffUnnormalized> {
-        self.inner.to_backend_mut().into_unnormalized()
+        poulpy_core::layouts::glwe_borrowed_carry_view::<BE, _>(self.inner.to_backend_mut())
     }
 }
 

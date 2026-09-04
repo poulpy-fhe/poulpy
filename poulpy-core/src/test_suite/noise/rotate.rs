@@ -8,6 +8,7 @@ use crate::{
     GLWERotate,
     layouts::{GLWE, GLWEInfos, GLWELayout, ModuleCoreAlloc},
 };
+use poulpy_hal::test_suite::harness_words_mut;
 
 fn negacyclic_rotate(src: &[i64], k: i64) -> Vec<i64> {
     let n = src.len() as i64;
@@ -52,12 +53,13 @@ where
         let mut inplace: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
 
         for col in 0..cols {
-            let poly = src.data.at_mut(col, 0);
+            let mut src_words = harness_words_mut(&mut src.data);
+            let poly = src_words.at_mut(col, 0);
             for (j, coeff) in poly.iter_mut().enumerate() {
                 *coeff = ((col as i64 + 1) * 1000) + j as i64 - 17;
             }
         }
-        inplace.data.raw_mut().copy_from_slice(src.data.raw());
+        harness_words_mut(&mut inplace.data).raw_mut().copy_from_slice(src.data.raw());
 
         module.glwe_rotate(shift, &mut out, &src);
 

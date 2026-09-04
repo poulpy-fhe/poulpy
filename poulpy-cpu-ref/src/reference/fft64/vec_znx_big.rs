@@ -32,7 +32,7 @@ where
     BE: Backend<ZnxWord = i64>,
 {
     let shape = v.shape();
-    VecZnx::from_data(v.data, shape.n(), shape.cols(), shape.size()).into_unnormalized()
+    VecZnx::from_data_unnormalized(v.data, shape.n(), shape.cols(), shape.size())
 }
 
 fn big_as_vec_znx_ref<'a, BE>(v: VecZnxBigBackendRef<'a, BE>) -> VecZnx<BE::BufRef<'a>, BE::ZnxWord, CoeffUnnormalized>
@@ -40,7 +40,7 @@ where
     BE: Backend<ZnxWord = i64>,
 {
     let shape = v.shape();
-    VecZnx::from_data(v.data, shape.n(), shape.cols(), shape.size()).into_unnormalized()
+    VecZnx::from_data_unnormalized(v.data, shape.n(), shape.cols(), shape.size())
 }
 
 pub fn vec_znx_big_add_into<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)

@@ -53,7 +53,7 @@ pub fn vec_znx_lsh_coeff<'r, 'a, BE, const OVERWRITE: bool>(
     if steps >= res_size.max(a_size) {
         if OVERWRITE {
             for j in 0..res_size {
-                res.at_mut(res_col, j).fill(0);
+                crate::reference::kernel_words_mut(res).at_mut(res_col, j).fill(0);
             }
         }
         return;
@@ -79,15 +79,27 @@ pub fn vec_znx_lsh_coeff<'r, 'a, BE, const OVERWRITE: bool>(
     for j in (0..min_size).rev() {
         let src = [a.at(a_col, j + steps)[a_coeff]];
         if j == 0 {
-            BE::znx_normalize_final_step::<OVERWRITE>(base2k, k_rem, res.at_mut(res_col, j), &src, carry);
+            BE::znx_normalize_final_step::<OVERWRITE>(
+                base2k,
+                k_rem,
+                crate::reference::kernel_words_mut(res).at_mut(res_col, j),
+                &src,
+                carry,
+            );
         } else {
-            BE::znx_normalize_middle_step::<OVERWRITE>(base2k, k_rem, res.at_mut(res_col, j), &src, carry);
+            BE::znx_normalize_middle_step::<OVERWRITE>(
+                base2k,
+                k_rem,
+                crate::reference::kernel_words_mut(res).at_mut(res_col, j),
+                &src,
+                carry,
+            );
         }
     }
 
     if OVERWRITE {
         for j in min_size..res_size {
-            res.at_mut(res_col, j).fill(0);
+            crate::reference::kernel_words_mut(res).at_mut(res_col, j).fill(0);
         }
     }
 }
@@ -244,7 +256,7 @@ pub fn vec_znx_lsh_assign<'r, BE>(
 
     if steps >= size {
         for j in 0..size {
-            BE::znx_zero(res.at_mut(res_col, j));
+            BE::znx_zero(crate::reference::kernel_words_mut(res).at_mut(res_col, j));
         }
         return;
     }
@@ -254,7 +266,8 @@ pub fn vec_znx_lsh_assign<'r, BE>(
         let start: usize = n * res_col;
         let end: usize = start + n;
         let slice_size: usize = n * cols;
-        let res_raw: &mut [i64] = res.raw_mut();
+        let mut res_words = crate::reference::kernel_words_mut(res);
+        let res_raw: &mut [i64] = res_words.raw_mut();
 
         (0..size - steps).for_each(|j| {
             let (lhs, rhs) = res_raw.split_at_mut(slice_size * (j + steps));
@@ -262,17 +275,32 @@ pub fn vec_znx_lsh_assign<'r, BE>(
         });
 
         for j in size - steps..size {
-            BE::znx_zero(res.at_mut(res_col, j));
+            BE::znx_zero(crate::reference::kernel_words_mut(res).at_mut(res_col, j));
         }
     }
 
     for j in (0..size - steps).rev() {
         if j == size - steps - 1 {
-            BE::znx_normalize_first_step_assign(base2k, k_rem, res.at_mut(res_col, j), carry);
+            BE::znx_normalize_first_step_assign(
+                base2k,
+                k_rem,
+                crate::reference::kernel_words_mut(res).at_mut(res_col, j),
+                carry,
+            );
         } else if j == 0 {
-            BE::znx_normalize_final_step_assign(base2k, k_rem, res.at_mut(res_col, j), carry);
+            BE::znx_normalize_final_step_assign(
+                base2k,
+                k_rem,
+                crate::reference::kernel_words_mut(res).at_mut(res_col, j),
+                carry,
+            );
         } else {
-            BE::znx_normalize_middle_step_assign(base2k, k_rem, res.at_mut(res_col, j), carry);
+            BE::znx_normalize_middle_step_assign(
+                base2k,
+                k_rem,
+                crate::reference::kernel_words_mut(res).at_mut(res_col, j),
+                carry,
+            );
         }
     }
 }
@@ -304,7 +332,7 @@ pub fn vec_znx_lsh<'r, 'a, BE, const OVERWRITE: bool>(
     if steps >= res_size.max(a_size) {
         if OVERWRITE {
             for j in 0..res_size {
-                BE::znx_zero(res.at_mut(res_col, j));
+                BE::znx_zero(crate::reference::kernel_words_mut(res).at_mut(res_col, j));
             }
         }
 
@@ -330,16 +358,28 @@ pub fn vec_znx_lsh<'r, 'a, BE, const OVERWRITE: bool>(
     // by k/base2k and intra-limb by base2k - k%base2k
     for j in (0..min_size).rev() {
         if j == 0 {
-            BE::znx_normalize_final_step::<OVERWRITE>(base2k, k_rem, res.at_mut(res_col, j), a.at(a_col, j + steps), carry);
+            BE::znx_normalize_final_step::<OVERWRITE>(
+                base2k,
+                k_rem,
+                crate::reference::kernel_words_mut(res).at_mut(res_col, j),
+                a.at(a_col, j + steps),
+                carry,
+            );
         } else {
-            BE::znx_normalize_middle_step::<OVERWRITE>(base2k, k_rem, res.at_mut(res_col, j), a.at(a_col, j + steps), carry);
+            BE::znx_normalize_middle_step::<OVERWRITE>(
+                base2k,
+                k_rem,
+                crate::reference::kernel_words_mut(res).at_mut(res_col, j),
+                a.at(a_col, j + steps),
+                carry,
+            );
         }
     }
 
     if OVERWRITE {
         // Zeroes bottom
         for j in min_size..res_size {
-            BE::znx_zero(res.at_mut(res_col, j));
+            BE::znx_zero(crate::reference::kernel_words_mut(res).at_mut(res_col, j));
         }
     }
 }
@@ -459,30 +499,56 @@ pub fn vec_znx_rsh_coeff<'r, 'a, BE, const OVERWRITE: bool>(
 
     if OVERWRITE {
         for j in 0..res_size {
-            res.at_mut(res_col, j).fill(0);
+            crate::reference::kernel_words_mut(res).at_mut(res_col, j).fill(0);
         }
     }
 
     let mid_range: usize = res_start.saturating_sub(res_end);
     for j in 0..mid_range {
         let src = [a.at(a_col, a_start - j - 1)[a_coeff]];
-        BE::znx_normalize_middle_step::<OVERWRITE>(base2k, lsh, res.at_mut(res_col, res_start - j - 1), &src, carry);
+        BE::znx_normalize_middle_step::<OVERWRITE>(
+            base2k,
+            lsh,
+            crate::reference::kernel_words_mut(res).at_mut(res_col, res_start - j - 1),
+            &src,
+            carry,
+        );
     }
 
     if OVERWRITE {
         for j in 0..res_end {
             if j == res_end - 1 {
-                BE::znx_normalize_final_step_assign(base2k, lsh, res.at_mut(res_col, res_end - j - 1), carry);
+                BE::znx_normalize_final_step_assign(
+                    base2k,
+                    lsh,
+                    crate::reference::kernel_words_mut(res).at_mut(res_col, res_end - j - 1),
+                    carry,
+                );
             } else {
-                BE::znx_normalize_middle_step_assign(base2k, lsh, res.at_mut(res_col, res_end - j - 1), carry);
+                BE::znx_normalize_middle_step_assign(
+                    base2k,
+                    lsh,
+                    crate::reference::kernel_words_mut(res).at_mut(res_col, res_end - j - 1),
+                    carry,
+                );
             }
         }
     } else {
         for j in 0..res_end {
             if j == res_end - 1 {
-                BE::znx_normalize_final_step_assign(base2k, 0, res.at_mut(res_col, res_end - j - 1), carry);
+                BE::znx_normalize_final_step_assign(
+                    base2k,
+                    0,
+                    crate::reference::kernel_words_mut(res).at_mut(res_col, res_end - j - 1),
+                    carry,
+                );
             } else {
-                BE::znx_normalize_middle_step_assign(base2k, 0, res.at_mut(res_col, res_end - j - 1), carry);
+                BE::znx_normalize_middle_step_assign(
+                    base2k,
+                    0,
+                    crate::reference::kernel_words_mut(res).at_mut(res_col, res_end - j - 1),
+                    carry,
+                );
             }
         }
     }
@@ -692,18 +758,28 @@ pub fn vec_znx_rsh_assign<'r, BE>(
     for j in 0..size - steps {
         BE::znx_copy(tmp, res.at(res_col, size - steps - j - 1));
         BE::znx_normalize_middle_step_assign(base2k, lsh, tmp, carry);
-        BE::znx_copy(res.at_mut(res_col, size - j - 1), tmp);
+        BE::znx_copy(crate::reference::kernel_words_mut(res).at_mut(res_col, size - j - 1), tmp);
     }
 
     // Propagates carry on the rest of the limbs of res
     for j in 0..steps {
-        BE::znx_zero(res.at_mut(res_col, j));
+        BE::znx_zero(crate::reference::kernel_words_mut(res).at_mut(res_col, j));
     }
     for j in 0..steps {
         if j == steps - 1 {
-            BE::znx_normalize_final_step_assign(base2k, lsh, res.at_mut(res_col, steps - j - 1), carry);
+            BE::znx_normalize_final_step_assign(
+                base2k,
+                lsh,
+                crate::reference::kernel_words_mut(res).at_mut(res_col, steps - j - 1),
+                carry,
+            );
         } else {
-            BE::znx_normalize_middle_step_assign(base2k, lsh, res.at_mut(res_col, steps - j - 1), carry);
+            BE::znx_normalize_middle_step_assign(
+                base2k,
+                lsh,
+                crate::reference::kernel_words_mut(res).at_mut(res_col, steps - j - 1),
+                carry,
+            );
         }
     }
 }
@@ -767,7 +843,7 @@ pub fn vec_znx_rsh<'r, 'a, BE, const OVERWRITE: bool>(
     if OVERWRITE {
         // Zeroes lower limbs of res if a_size + steps < res_size
         for j in 0..res_size {
-            BE::znx_zero(res.at_mut(res_col, j));
+            BE::znx_zero(crate::reference::kernel_words_mut(res).at_mut(res_col, j));
         }
     }
 
@@ -778,7 +854,7 @@ pub fn vec_znx_rsh<'r, 'a, BE, const OVERWRITE: bool>(
         BE::znx_normalize_middle_step::<OVERWRITE>(
             base2k,
             lsh,
-            res.at_mut(res_col, res_start - j - 1),
+            crate::reference::kernel_words_mut(res).at_mut(res_col, res_start - j - 1),
             a.at(a_col, a_start - j - 1),
             carry,
         );
@@ -788,18 +864,38 @@ pub fn vec_znx_rsh<'r, 'a, BE, const OVERWRITE: bool>(
         // Propagates carry on the rest of the limbs of res
         for j in 0..res_end {
             if j == res_end - 1 {
-                BE::znx_normalize_final_step_assign(base2k, lsh, res.at_mut(res_col, res_end - j - 1), carry);
+                BE::znx_normalize_final_step_assign(
+                    base2k,
+                    lsh,
+                    crate::reference::kernel_words_mut(res).at_mut(res_col, res_end - j - 1),
+                    carry,
+                );
             } else {
-                BE::znx_normalize_middle_step_assign(base2k, lsh, res.at_mut(res_col, res_end - j - 1), carry);
+                BE::znx_normalize_middle_step_assign(
+                    base2k,
+                    lsh,
+                    crate::reference::kernel_words_mut(res).at_mut(res_col, res_end - j - 1),
+                    carry,
+                );
             }
         }
     } else {
         // Propagates carry on the rest of the limbs of res
         for j in 0..res_end {
             if j == res_end - 1 {
-                BE::znx_normalize_final_step_assign(base2k, 0, res.at_mut(res_col, res_end - j - 1), carry);
+                BE::znx_normalize_final_step_assign(
+                    base2k,
+                    0,
+                    crate::reference::kernel_words_mut(res).at_mut(res_col, res_end - j - 1),
+                    carry,
+                );
             } else {
-                BE::znx_normalize_middle_step_assign(base2k, 0, res.at_mut(res_col, res_end - j - 1), carry);
+                BE::znx_normalize_middle_step_assign(
+                    base2k,
+                    0,
+                    crate::reference::kernel_words_mut(res).at_mut(res_col, res_end - j - 1),
+                    carry,
+                );
             }
         }
     }

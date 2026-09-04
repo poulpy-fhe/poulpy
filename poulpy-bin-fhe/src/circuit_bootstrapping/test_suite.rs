@@ -29,6 +29,7 @@ use poulpy_core::layouts::{
     prepared::{GGSWPrepared, GLWESecretPrepared},
 };
 use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
+use poulpy_hal::test_suite::harness_words_mut;
 
 pub fn test_circuit_bootstrapping_to_exponent<
     BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
@@ -211,7 +212,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
     let mut ct_glwe: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&ggsw_infos);
     let mut pt_glwe: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
-    pt_glwe.data_mut().at_mut(0, 0)[0] = 1 << (res_base2k - 2);
+    harness_words_mut(pt_glwe.data_mut()).at_mut(0, 0)[0] = 1 << (res_base2k - 2);
 
     module.glwe_encrypt_sk(
         &mut ct_glwe,
@@ -410,7 +411,7 @@ pub fn test_circuit_bootstrapping_to_constant<
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
     let mut ct_glwe: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&ggsw_infos);
     let mut pt_glwe: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
-    pt_glwe.data_mut().at_mut(0, 0)[0] = 1 << (res_base2k - k_lwe_pt - 1);
+    harness_words_mut(pt_glwe.data_mut()).at_mut(0, 0)[0] = 1 << (res_base2k - k_lwe_pt - 1);
 
     module.glwe_encrypt_sk(
         &mut ct_glwe,

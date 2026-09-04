@@ -10,6 +10,6 @@ where
 {
     let res_size = res.size();
     for j in 0..res_size {
-        BE::znx_zero(res.at_mut(res_col, j));
+        BE::znx_zero(crate::reference::kernel_words_mut(res).at_mut(res_col, j));
     }
 }

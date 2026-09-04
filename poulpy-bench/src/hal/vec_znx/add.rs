@@ -27,7 +27,7 @@ where
     bencher.iter(|| {
         let a = vec_znx_backend_ref::<B, _>(&a);
         let b = vec_znx_backend_ref::<B, _>(&b);
-        let mut c = vec_znx_backend_mut::<B, _>(&mut c).into_unnormalized();
+        let mut c = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<B, _>(vec_znx_backend_mut::<B, _>(&mut c));
         for i in 0..sweep.cols {
             module.vec_znx_add_into_backend(&mut c, i, &a, i, &b, i);
         }
@@ -49,7 +49,7 @@ where
 
     bencher.iter(|| {
         let a = vec_znx_backend_ref::<B, _>(&a);
-        let mut b = vec_znx_backend_mut::<B, _>(&mut b).into_unnormalized();
+        let mut b = poulpy_hal::layouts::vec_znx_borrowed_carry_view::<B, _>(vec_znx_backend_mut::<B, _>(&mut b));
         for i in 0..sweep.cols {
             module.vec_znx_add_assign_backend(&mut b, i, &a, i);
         }

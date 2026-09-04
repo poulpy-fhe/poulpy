@@ -20,6 +20,7 @@ use crate::{
     },
     log2_std_noise_glwe_tensor,
 };
+use poulpy_hal::test_suite::harness_words_mut;
 
 /// Slack allowed above [`log2_std_noise_glwe_tensor`] for the measured
 /// tensoring noise, in bits.
@@ -217,7 +218,7 @@ where
             );
 
             module.vec_znx_sub_backend(
-                &mut vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data).into_unnormalized(),
+                &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data)),
                 0,
                 &vec_znx_backend_ref::<BE, _>(&pt_have.data),
                 0,
@@ -244,7 +245,7 @@ where
             module.glwe_decrypt(&res_relin, &mut pt_have, &sk_dft, &mut scratch.borrow());
 
             module.vec_znx_sub_backend(
-                &mut vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data).into_unnormalized(),
+                &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data)),
                 0,
                 &vec_znx_backend_ref::<BE, _>(&pt_have.data),
                 0,
@@ -398,7 +399,7 @@ where
             module.glwe_decrypt(&res_relin_square, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.glwe_decrypt(&res_relin_tensor, &mut pt_want, &sk_dft, &mut scratch.borrow());
             module.vec_znx_sub_backend(
-                &mut vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data).into_unnormalized(),
+                &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data)),
                 0,
                 &vec_znx_backend_ref::<BE, _>(&pt_have.data),
                 0,
@@ -530,7 +531,7 @@ where
             );
 
             module.vec_znx_sub_backend(
-                &mut vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data).into_unnormalized(),
+                &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data)),
                 0,
                 &vec_znx_backend_ref::<BE, _>(&pt_have.data),
                 0,
@@ -627,7 +628,7 @@ where
         let mask = (1 << in_base2k) - 1;
         for j in 0..1 {
             let r = source_xa.next_u64() & mask;
-            pt_b.data_mut().at_mut(0, j)[b_coeff] = ((r << (64 - 17)) as i64) >> (64 - 17);
+            harness_words_mut(pt_b.data_mut()).at_mut(0, j)[b_coeff] = ((r << (64 - 17)) as i64) >> (64 - 17);
         }
 
         let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, pt_a.size() + pt_b.size());
@@ -670,7 +671,7 @@ where
             );
 
             module.vec_znx_sub_backend(
-                &mut vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data).into_unnormalized(),
+                &mut poulpy_hal::layouts::vec_znx_borrowed_carry_view::<BE, _>(vec_znx_backend_mut::<BE, _>(&mut pt_tmp.data)),
                 0,
                 &vec_znx_backend_ref::<BE, _>(&pt_have.data),
                 0,

@@ -192,7 +192,7 @@ impl<'a, B: Backend + 'a, S: CoefficientState> VecZnxViewMut<'a, B, S> {
     /// Relabels the view as [`CoeffUnnormalized`]; see [`VecZnx::into_unnormalized`].
     pub fn into_unnormalized(self) -> VecZnxViewMut<'a, B, CoeffUnnormalized> {
         VecZnxViewMut {
-            inner: self.inner.into_unnormalized(),
+            inner: self.inner.relabel_unchecked(),
         }
     }
 }

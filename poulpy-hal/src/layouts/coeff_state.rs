@@ -22,6 +22,43 @@
 //! All markers are conservative claims: [`NonCanonical`] means "canonicality is not
 //! proven", not "padding is known dirty", and [`Unnormalized`] admits values whose bytes
 //! happen to be normalized.
+//!
+//! # Exit-gate guarantees (spec PR 2, §11.1)
+//!
+//! A normalized root exposes no safe mutable words:
+//!
+//! ```compile_fail,E0599
+//! use poulpy_hal::layouts::{VecZnx, ZnxViewMut};
+//! let mut v: VecZnx<Vec<u8>, i64> = VecZnx::from_data(vec![0u8; 64], 8, 1, 1);
+//! v.at_mut(0, 0)[0] = 1;
+//! ```
+//!
+//! nor safe mutable storage:
+//!
+//! ```compile_fail,E0599
+//! use poulpy_hal::layouts::{DataViewMut, VecZnx};
+//! let mut v: VecZnx<Vec<u8>, i64> = VecZnx::from_data(vec![0u8; 64], 8, 1, 1);
+//! let _ = v.data_mut();
+//! ```
+//!
+//! A mutable *borrowed view* cannot be relabelled (only owned roots and the
+//! authoritative arena view wrappers transition, so a relabelled borrow can never leave
+//! a stale owner label behind):
+//!
+//! ```compile_fail,E0599
+//! use poulpy_hal::layouts::VecZnx;
+//! let mut buf = vec![0u8; 64];
+//! let view: VecZnx<&mut [u8], i64> = VecZnx::from_data(buf.as_mut_slice(), 8, 1, 1);
+//! let _ = view.into_unnormalized();
+//! ```
+//!
+//! and no weakening relation manufactures a normalization proof:
+//!
+//! ```compile_fail,E0277
+//! use poulpy_hal::layouts::{CoeffNormalized, CoeffUnnormalized, VecZnx};
+//! let u: VecZnx<Vec<u8>, i64, CoeffUnnormalized> = VecZnx::from_data_unnormalized(vec![0u8; 64], 8, 1, 1);
+//! let _ = u.into_state::<CoeffNormalized>();
+//! ```
 
 use std::{fmt, marker::PhantomData};
 

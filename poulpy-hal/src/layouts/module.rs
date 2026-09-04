@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ptr::NonNull};
 
-use crate::layouts::{Data, Location, MatZnx, ScalarZnx, VecZnx, checked_product};
+use crate::layouts::{Data, DataOwned, Location, MatZnx, ScalarZnx, VecZnx, checked_product};
 use crate::{
     GALOISGENERATOR,
     api::{ModuleLogN, ModuleN},
@@ -38,7 +38,7 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     ///
     /// This buffer may be host-resident or device-resident. It is intentionally
     /// no longer required to expose direct host byte slices.
-    type OwnedBuf: Data + Send + Sync;
+    type OwnedBuf: Data + DataOwned + Send + Sync;
     /// Shared borrowed view into backend-owned storage.
     type BufRef<'a>: Data + Sync
     where

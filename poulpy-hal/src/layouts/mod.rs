@@ -77,6 +77,17 @@ pub trait HostDataRef = Data + AsRef<[u8]> + Sync;
 /// support in-place modification and can be moved between threads.
 pub trait HostDataMut = HostDataRef + AsMut<[u8]> + Send;
 
+/// Marker for storage that owns its bytes (an allocation, not a borrow).
+///
+/// Root state transitions (`into_unnormalized`, `into_state`, the consuming
+/// `normalize`) are restricted to owned storage: relabelling a *borrowed view* of a
+/// typed owner would change the view's label while the owner's stale label survives
+/// the borrow (spec §2.1). Scratch roots keep their transitions through the
+/// authoritative arena view wrappers (`VecZnxViewMut`, `GLWEViewMut`, ...). Backends
+/// with device-owned buffer types implement this for those types.
+pub trait DataOwned {}
+impl DataOwned for Vec<u8> {}
+
 #[inline]
 pub(crate) fn checked_product(factors: &[usize], context: &str) -> usize {
     factors
