@@ -251,14 +251,6 @@ impl<D: HostDataRef, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
-    /// Returns a mutable [`ScalarZnx`] view of a single limb of a single column.
-    pub fn as_scalar_znx_mut(&mut self, col: usize, limb: usize) -> ScalarZnx<&mut [u8], W> {
-        let n = self.n();
-        ScalarZnx::from_data(bytemuck::cast_slice_mut(self.at_mut(col, limb)), n, 1)
-    }
-}
-
 impl<D: Data + Default, W: ZnxWord, S: NormalizationState> Default for VecZnx<D, W, S> {
     fn default() -> Self {
         Self {
@@ -444,34 +436,6 @@ impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
         Self {
             data,
             shape: VecZnxShape::new(n, cols, size),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<D: Data, W: ZnxWord, S: NormalizationState> VecZnx<D, W, S> {
-    /// Wraps `data` with this vector's shape and [`NormalizationState`].
-    ///
-    /// For views and transfers that re-express the *same digits* through
-    /// different storage (host slice, other backend buffer). The state travels
-    /// with the value it is read from; this never turns an [`Unnormalized`]
-    /// value into a [`Normalized`] one.
-    pub fn from_data_like<D2: Data>(&self, data: D2) -> VecZnx<D2, W, S> {
-        VecZnx {
-            data,
-            shape: self.shape,
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Mutable sibling of [`Self::from_data_like`]: re-wraps storage extracted
-    /// from this vector's own data (a reborrow, an inner buffer) under the same
-    /// shape and [`NormalizationState`]. Never changes the label.
-    pub fn map_data_mut<'a, D2: Data>(&'a mut self, f: impl FnOnce(&'a mut D) -> D2) -> VecZnx<D2, W, S> {
-        let shape = self.shape;
-        VecZnx {
-            data: f(&mut self.data),
-            shape,
             _phantom: PhantomData,
         }
     }

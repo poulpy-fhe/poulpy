@@ -57,13 +57,13 @@ fn base_dft_ref<'a>(a: &'a VecZnxDftBackendRef<'_, NTT4x30Avx512Rayon>) -> VecZn
 fn base_znx_ref<'a, S: NormalizationState>(
     a: &'a VecZnxBackendRef<'_, NTT4x30Avx512Rayon, S>,
 ) -> VecZnxBackendRef<'a, NTT4x30Avx512, S> {
-    a.from_data_like(&**a.data())
+    poulpy_hal::oep::vec_znx_from_data_like(a, &**a.data())
 }
 
 fn base_znx_mut<'a, S: NormalizationState>(
     a: &'a mut VecZnxBackendMut<'_, NTT4x30Avx512Rayon, S>,
 ) -> VecZnxBackendMut<'a, NTT4x30Avx512, S> {
-    a.map_data_mut(|d| &mut **d)
+    poulpy_hal::oep::vec_znx_map_data_mut(a, |d| &mut **d)
 }
 
 fn base_scalar_ref<'a>(a: &'a ScalarZnxBackendRef<'_, NTT4x30Avx512Rayon>) -> ScalarZnxBackendRef<'a, NTT4x30Avx512> {

@@ -72,3 +72,31 @@ impl<'a, B: Backend + 'a, S: NormalizationState> SetNormalizationState for VecZn
         VecZnxViewMut::from_inner(self.into_inner().relabel_unchecked())
     }
 }
+
+/// Backend-implementor extension point: re-wraps `data` with the shape and
+/// [`NormalizationState`] of `a`.
+///
+/// For kernel plumbing that re-expresses the *same digits* through different
+/// storage: a delegating backend (e.g. a Rayon wrapper) reborrowing a view as
+/// its base backend's view type, or a host-slice view of a backend buffer. The
+/// state travels with the value it is read from, so `data` must be (a reborrow
+/// of) the storage of `a` itself or a byte-for-byte copy of its digits. Like
+/// every extension point here it is reserved for backend implementations and
+/// must not appear in scheme code.
+pub fn vec_znx_from_data_like<D: Data, D2: Data, W: ZnxWord, S: NormalizationState>(
+    a: &VecZnx<D, W, S>,
+    data: D2,
+) -> VecZnx<D2, W, S> {
+    VecZnx::from_data_with_state(data, a.n(), a.cols(), a.size())
+}
+
+/// Mutable sibling of [`vec_znx_from_data_like`]: re-wraps storage extracted
+/// from `a`'s own data (a reborrow, an inner buffer) under the same shape and
+/// [`NormalizationState`]. Backend implementations only.
+pub fn vec_znx_map_data_mut<'a, D: Data, D2: Data, W: ZnxWord, S: NormalizationState>(
+    a: &'a mut VecZnx<D, W, S>,
+    f: impl FnOnce(&'a mut D) -> D2,
+) -> VecZnx<D2, W, S> {
+    let (n, cols, size) = (a.n(), a.cols(), a.size());
+    VecZnx::from_data_with_state(f(&mut a.data), n, cols, size)
+}

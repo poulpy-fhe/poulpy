@@ -19,7 +19,7 @@ fail=0
 check() {
     local pattern="$1" baseline="$2" why="$3"
     local count
-    count=$(grep -rn --include='*.rs' -F "$pattern" poulpy-*/src poulpy-*/examples 2>/dev/null | wc -l)
+    count=$(grep -rn --include='*.rs' -F "$pattern" poulpy-*/src poulpy-*/examples 2>/dev/null | wc -l || true)
     if [ "$count" -gt "$baseline" ]; then
         echo "DENY-LIST: '$pattern' has $count occurrences (baseline $baseline): $why"
         grep -rn --include='*.rs' -F "$pattern" poulpy-*/src poulpy-*/examples 2>/dev/null | tail -5
@@ -35,12 +35,12 @@ check "into_unnormalized"    184 "free relabel to Unnormalized; migrate to Unwri
 check ".normalize("           23 "receiver normalization; migrate to module out-of-place normalize (spec PR 3/5/6)"
 check "set_normalized("        9 "unsafe OEP relabel; backend fused kernels only (spec §9.2)"
 check "set_unnormalized("      6 "OEP relabel; backend crates only (spec §9.2)"
-check "from_data_like"         5 "state-forwarding raw constructor; to be closed (spec PR 2)"
-check "map_data_mut"           3 "state-forwarding raw mapping; to be closed (spec PR 2)"
-check "as_scalar_znx_mut"      1 "safe raw mutation of typed storage; to be deleted (spec PR 2)"
+check "from_data_like"         5 "state-forwarding reborrow; oep-only since PR 2 (backend kernel plumbing)"
+check "map_data_mut"           3 "state-forwarding reborrow; oep-only since PR 2 (backend kernel plumbing)"
+check "as_scalar_znx_mut"      0 "safe raw mutation of typed storage; deleted in PR 2 — must not return"
 check "take_unnormalized_"     3 "state-forging scratch take; migrate to Unwritten takes (spec §8.1)"
 check "relabel_unchecked"      7 "crate-private relabel primitive; callers must stay the normalize family + OEP"
-check "from_data_with_state"   8 "crate-private stateful raw constructor; callers must stay in poulpy-hal"
+check "from_data_with_state"  10 "crate-private stateful raw constructor; callers must stay in poulpy-hal (incl. the oep reborrow fns)"
 
 if [ "$fail" -ne 0 ]; then
     echo "normalization deny-list ratchet FAILED"
