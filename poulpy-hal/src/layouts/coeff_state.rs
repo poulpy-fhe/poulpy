@@ -111,6 +111,28 @@ where
 {
 }
 
+/// The [`CoefficientState`]s that are readable as coefficients: exactly the
+/// [`Coeff<N, C>`](Coeff) forms, with their axes exposed as associated types
+/// (spec §3.1's "readable as coefficients" rows). [`Unwritten`] and [`Raw`] do not
+/// implement it, which is how operation bounds exclude them from arithmetic inputs.
+///
+/// The associated types let a bound pin one axis while leaving the other free with an
+/// equality constraint, which type inference resolves eagerly: a DFT entry point writes
+/// `A::State: ArithmeticState<N = Normalized>` (any canonicality), a carry-producing
+/// destination writes `R::State: ArithmeticState<N = Unnormalized>`, and a
+/// padding-sensitive consumer writes `A::State: ArithmeticState<C = Canonical>`.
+pub trait ArithmeticState: CoefficientState {
+    /// The normalization axis of this state.
+    type N: Normalization;
+    /// The canonicality axis of this state.
+    type C: Canonicality;
+}
+
+impl<N: Normalization, C: Canonicality> ArithmeticState for Coeff<N, C> {
+    type N = N;
+    type C = C;
+}
+
 /// Immutable representation context interpreting both state axes for one arithmetic
 /// root (spec §3.4). Attached to the nominal roots in PR 2; until then it is
 /// constructed transiently where the invariants must be checked.
@@ -260,6 +282,21 @@ mod tests {
         // The illegal directions (Unnormalized -> Normalized, NonCanonical -> Canonical,
         // and anything involving Unwritten/Raw) are locked by compile-fail tests in the
         // verification plan (spec §11.1) once roots carry CoefficientState.
+    }
+
+    #[test]
+    fn arithmetic_state_projects_both_axes() {
+        fn normalized_input<S: ArithmeticState<N = Normalized>>() {}
+        fn unnormalized_destination<S: ArithmeticState<N = Unnormalized>>() {}
+        fn canonical_consumer<S: ArithmeticState<C = Canonical>>() {}
+        normalized_input::<Coeff<Normalized, Canonical>>();
+        normalized_input::<Coeff<Normalized, NonCanonical>>();
+        unnormalized_destination::<Coeff<Unnormalized, Canonical>>();
+        unnormalized_destination::<Coeff<Unnormalized, NonCanonical>>();
+        canonical_consumer::<Coeff<Normalized, Canonical>>();
+        canonical_consumer::<Coeff<Unnormalized, Canonical>>();
+        // Unwritten and Raw implement CoefficientState but not ArithmeticState, so they
+        // are rejected by every such bound (compile-fail coverage lands with §11.1).
     }
 
     #[test]
