@@ -170,7 +170,7 @@ impl<S: NormalizationState> FitsIn<Unnormalized> for S {}
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
 pub struct VecZnx<D: Data, W: ZnxWord, S: CoefficientState = CoeffNormalized> {
-    pub data: D,
+    pub(crate) data: D,
     shape: VecZnxShape,
     _phantom: PhantomData<(W, S)>,
 }
@@ -338,6 +338,18 @@ impl<D: Data, W: ZnxWord, S: CoefficientState> DataView for VecZnx<D, W, S> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
+    }
+}
+
+impl<D: Data, W: ZnxWord, S: CoefficientState> VecZnx<D, W, S> {
+    /// Consumes the vector and returns its raw storage.
+    ///
+    /// The state label dies with the value: the extracted storage carries no claim, and
+    /// re-wrapping it goes back through [`VecZnx::from_data`], the raw-ingestion trust
+    /// boundary. Used by owning aggregates (LWE, plaintexts) that re-shape their
+    /// storage between layouts.
+    pub fn into_data(self) -> D {
+        self.data
     }
 }
 

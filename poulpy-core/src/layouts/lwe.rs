@@ -246,9 +246,9 @@ impl<D: Data, W: ZnxWord> LWE<D, W> {
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         let body_shape = self.body.shape();
-        let body_data = self.body.data;
+        let body_data = self.body.into_data();
         let mask_shape = self.mask.shape();
-        let mask_data = self.mask.data;
+        let mask_data = self.mask.into_data();
         LWE {
             body: VecZnx::from_data(body_data, body_shape.n(), body_shape.cols(), body_shape.size()),
             mask: VecZnx::from_data(mask_data, mask_shape.n(), mask_shape.cols(), mask_shape.size()),

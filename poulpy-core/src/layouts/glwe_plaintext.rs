@@ -9,6 +9,7 @@ use poulpy_hal::source::Source;
 use crate::layouts::{
     Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision,
 };
+use poulpy_hal::layouts::{DataView, DataViewMut};
 
 /// Width vocabulary for **integer-polynomial** (non-Torus) operands.
 ///
@@ -152,8 +153,8 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        assert_eq!(bytes.len(), BE::len_bytes(&self.data.data));
-        BE::copy_from_host(&mut self.data.data, bytes);
+        assert_eq!(bytes.len(), BE::len_bytes(self.data.data()));
+        BE::copy_from_host(self.data.data_mut(), bytes);
     }
 
     /// Rebuilds this backend-owned plaintext as a host-owned [`GLWEPlaintext<Vec<u8>, W>`].
@@ -184,7 +185,7 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         let shape = self.data.shape();
-        let data = self.data.data;
+        let data = self.data.into_data();
         GLWEPlaintext {
             data: VecZnx::from_data(data, shape.n(), shape.cols(), shape.size()),
             base2k: self.base2k,

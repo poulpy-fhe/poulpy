@@ -1141,10 +1141,14 @@ Status: partially delivered. Done: `as_scalar_znx_mut` deleted; `from_data_like`
 `map_data_mut` moved to backend-only OEP reborrow functions; the root state parameter
 switched to `CoefficientState` (`CoeffNormalized` default) across the workspace with
 `impl ArithmeticState` op parameters and `CoeffFitsIn` bounds, byte-identical behavior.
-Remaining: nominal owned/ref/mut/scratch roles, private storage with the unsafe kernel
-capability, `Raw`-producing raw constructors (deferred toward PR 7's reader migration),
-strongest-state zeroed allocators (deferred to PR 4, which relaxes destination bounds),
-and the compile-fail exit-gate tests.
+Also done: `VecZnx`'s storage field is private; every external raw-storage access flows
+through `DataView::data`, `DataViewMut::data_mut`, or the consuming
+`VecZnx::into_data`. Remaining: nominal owned/ref/mut/scratch roles; gating
+`DataViewMut`/`ZnxViewMut` by state (no safe mutable bytes for
+`Coeff<Normalized, _>`/`Coeff<_, Canonical>`, per invariant 4) with the sealed kernel
+capability replacing them inside backend kernels; `Raw`-producing raw constructors
+(deferred toward PR 7's reader migration); strongest-state zeroed allocators (deferred
+to PR 4, which relaxes destination bounds); and the compile-fail exit-gate tests.
 
 Deliverables:
 

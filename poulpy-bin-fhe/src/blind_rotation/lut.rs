@@ -1,6 +1,7 @@
 use poulpy_core::api::TransferInto;
 use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{DataView, DataViewMut};
 use poulpy_hal::reference::znx::{ZnxCopy, ZnxRef, ZnxRotate, ZnxSwitchRing};
 use poulpy_hal::{
     api::{
@@ -366,7 +367,7 @@ where
                         ZnxRef::znx_switch_ring(res_at.at_mut(0, limb), limb_data);
                     }
                 }
-                BE::copy_from_host(&mut res.data[i].data_mut().data, &host.data);
+                BE::copy_from_host(DataViewMut::data_mut(res.data[i].data_mut()), DataView::data(&host));
                 if i + 1 < res.extension_factor() {
                     for limb_data in &mut lut_full_limbs {
                         ZnxRef::znx_rotate(-1, &mut tmp, limb_data);
@@ -391,7 +392,7 @@ where
                     res_at.at_mut(0, limb).copy_from_slice(limb_data);
                 }
             }
-            BE::copy_from_host(&mut res.data[0].data_mut().data, &host.data);
+            BE::copy_from_host(DataViewMut::data_mut(res.data[0].data_mut()), DataView::data(&host));
         }
 
         for a in res.data.iter_mut() {
