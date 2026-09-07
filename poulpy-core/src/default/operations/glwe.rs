@@ -27,8 +27,10 @@ where
 {
     let base2k = res.base2k().as_usize();
     let k = res.k().as_usize();
-    let cols = res.rank().as_usize() + 1;
     let mut res = res.to_backend_mut();
+    // `GLWEToBackendMut` is also implemented by `GLWETensor`, whose backing
+    // `VecZnx` has one column per triangular tensor term rather than `rank + 1`.
+    let cols = res.data.cols();
     for col in 0..cols {
         module.vec_znx_normalize_assign_backend(base2k, k, &mut res.data, col, &mut scratch.borrow());
     }
