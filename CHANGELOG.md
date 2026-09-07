@@ -26,8 +26,8 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 ### CPU backends
 
 - Document normalization input headroom and fix single-round precision truncation, extreme offsets, and overflowing wide add/sub normalization.
-- Reduce normalization zeroing, specialize exact bit arithmetic by source width, and block serial i64 cross-base calls without changing scratch reservations.
-- Add bounded exact integer normalization tests, exhaustive centered small cases, and cross-base benchmark sweeps.
+- Reduce normalization zeroing, specialize exact bit arithmetic by source width, block serial i64 cross-base calls, and retain vector kernels for same-base truncation of at most one limb without changing scratch reservations.
+- Add bounded exact integer normalization tests, exhaustive centered small cases, and cross-base Criterion sweeps via `cargo bench --bench normalize` in `poulpy-cpu-avx`.
 - Restore selected-row VMP extraction forwarding for the NEON Rayon backend.
 - Fix cross-`base2k` normalization leaving output limbs outside `[-2^(base2k-1), 2^(base2k-1))` in `VecZnx` and FFT64/NTT4x30 `VecZnxBig`, including coefficient normalization and partial limbs ([#256](https://github.com/poulpy-fhe/poulpy/issues/256)).
 - Fix the FFT64 `vmp_apply_dft_to_dft` limb window when `res` is narrower than the prepared matrix: output limb `c` reads matrix limb `c + limb_offset`, but the window was clamped at `res.size()` instead of `res.size() + limb_offset`, dropping the top `limb_offset` limbs of every narrowed accumulating gadget digit. Shared by every FFT64 backend (reference, AVX2, AVX-512, NEON and their Rayon variants).

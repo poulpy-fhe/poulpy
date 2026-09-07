@@ -1312,9 +1312,7 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
     }
     let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
     let input = a.to_backend_ref();
-    let a_bits = (input.size() * a_base2k) as i64;
-    let res_bits = (size * res_base2k) as i64;
-    if input.size() == 0 || a_base2k > 63 || res_base2k > 63 || res_offset < a_bits - res_bits || res_offset >= a_bits {
+    if crate::reference::vec_znx::normalize_needs_exact(input.size(), a_base2k, size, res_base2k, res_offset) {
         for i in 0..coeff_len {
             crate::reference::vec_znx::normalize_exact::<false, _, _>(
                 |j| input.at(a_col, j)[coeff_start + i],

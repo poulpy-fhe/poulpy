@@ -463,7 +463,19 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                     let mut output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * N * res_size], N, 1, res_size);
                     let mut small_output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * N * res_size], N, 1, res_size);
                     let bracket = (a_size * a_base2k + res_size * res_base2k + 128) as i64;
-                    for offset in [-bracket, -(a_base2k as i64) - 1, -1, 0, 1, a_base2k as i64, bracket] {
+                    let gap = (a_size * a_base2k) as i64 - (res_size * res_base2k) as i64;
+                    for offset in [
+                        -bracket,
+                        -(a_base2k as i64) - 1,
+                        -1,
+                        0,
+                        1,
+                        a_base2k as i64,
+                        bracket,
+                        gap - a_base2k as i64 - 1,
+                        gap - a_base2k as i64,
+                        gap - 1,
+                    ] {
                         ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
                             &mut output,
                             res_base2k,
@@ -693,7 +705,7 @@ fn test_vec_znx_big_normalize_wide_radices() {
                         .copy_from_slice(&[-NORMALIZE_IDFT_BOUND, NORMALIZE_IDFT_BOUND]);
                 }
                 let mut output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 16 * size], 2, 1, size);
-                for offset in [-400, -64, -1, 0, 1, 64, 400] {
+                for offset in [-400, -64, -(a_base2k as i64), -1, 0, 1, 64, 400] {
                     ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
                         &mut output,
                         res_base2k,

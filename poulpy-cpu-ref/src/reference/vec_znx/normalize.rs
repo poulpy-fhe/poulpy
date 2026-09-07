@@ -29,6 +29,22 @@ pub fn vec_znx_normalize_tmp_bytes(n: usize) -> usize {
     3 * n * size_of::<i64>()
 }
 
+#[inline]
+pub(crate) fn normalize_needs_exact(a_size: usize, a_base2k: usize, res_size: usize, res_base2k: usize, offset: i64) -> bool {
+    if a_size == 0 || res_size == 0 || a_base2k > 63 || res_base2k > 63 {
+        return true;
+    }
+    let a_bits = (a_size * a_base2k) as i64;
+    let res_bits = (res_size * res_base2k) as i64;
+    // Dropping at most one same-base limb rounds only in the first carry step.
+    let min_offset = if a_base2k == res_base2k {
+        (a_bits - a_base2k as i64) - res_bits
+    } else {
+        a_bits - res_bits
+    };
+    offset < min_offset || offset >= a_bits
+}
+
 pub(crate) struct VecZnxRangeMut<'a> {
     ptr: *mut i64,
     n: usize,
@@ -87,9 +103,7 @@ pub fn vec_znx_normalize_coeff<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    let a_bits = (a.size() * a_base2k) as i64;
-    let res_bits = (res.size() * res_base2k) as i64;
-    if a.size() == 0 || a_base2k > 63 || res_base2k > 63 || res_offset < a_bits - res_bits || res_offset >= a_bits {
+    if normalize_needs_exact(a.size(), a_base2k, res.size(), res_base2k, res_offset) {
         normalize_exact::<true, _, _>(
             |j| a.at(a_col, j)[a_coeff] as i128,
             a.size(),
@@ -563,9 +577,7 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
         assert!(carry.len() >= 3 * coeff_len);
     }
     let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
-    let a_bits = (a.size() * a_base2k) as i64;
-    let res_bits = (size * res_base2k) as i64;
-    if a.size() == 0 || a_base2k > 63 || res_base2k > 63 || res_offset < a_bits - res_bits || res_offset >= a_bits {
+    if normalize_needs_exact(a.size(), a_base2k, size, res_base2k, res_offset) {
         for i in 0..coeff_len {
             normalize_exact::<true, _, _>(
                 |j| a.at(a_col, j)[coeff_start + i] as i128,
@@ -1370,6 +1382,7 @@ fn check_normalize_integer(a: &[i128], a_base2k: usize, res_base2k: usize, res_s
 #[test]
 fn test_normalize_exact_regressions() {
     check_normalize_integer(&[], 2, 3, 1, -1);
+    check_normalize_integer(&[1], 2, 2, 0, 0);
     check_normalize_integer(&[0, 1, 2], 2, 2, 1, 0);
     check_normalize_integer(&[9], 2, 2, 1, -4);
     check_normalize_integer(&[9], 2, 3, 1, -4);
@@ -1398,7 +1411,19 @@ fn test_normalize_integer_input_bound() {
                 for a in [a, vec![-(1i128 << 62); a_size], vec![1i128 << 62; a_size]] {
                     for res_size in [1, 3, 8] {
                         let bracket = (a_size * a_base2k + res_size * res_base2k) as i64;
-                        for offset in [-bracket, -(a_base2k as i64) - 1, -1, 0, 1, a_base2k as i64, bracket] {
+                        let gap = (a_size * a_base2k) as i64 - (res_size * res_base2k) as i64;
+                        for offset in [
+                            -bracket,
+                            -(a_base2k as i64) - 1,
+                            -1,
+                            0,
+                            1,
+                            a_base2k as i64,
+                            bracket,
+                            gap - a_base2k as i64 - 1,
+                            gap - a_base2k as i64,
+                            gap - 1,
+                        ] {
                             check_normalize_integer(&a, a_base2k, res_base2k, res_size, offset);
                         }
                     }
@@ -1711,6 +1736,7 @@ fn test_normalize_coeff_and_range_integer() {
                     i64::MIN,
                     -1001,
                     -(a_base2k as i64) - 1,
+                    -(a_base2k as i64),
                     -1,
                     0,
                     1,
