@@ -328,6 +328,7 @@ impl_vec_znx_big_delegate!(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &VecZnxBigBackendRef<'_, B>,
@@ -335,8 +336,7 @@ impl_vec_znx_big_delegate!(
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
-        B::vec_znx_big_normalize(self, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch);
-        res.set_canonical(false);
+        B::vec_znx_big_normalize(self, res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, scratch);
     }
 );
 

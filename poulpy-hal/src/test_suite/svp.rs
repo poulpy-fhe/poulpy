@@ -135,6 +135,7 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                 module_ref.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
                     base2k,
+                    res_size * base2k,
                     0,
                     j,
                     &res_big_ref.to_backend_ref(),
@@ -145,6 +146,7 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                 module_test.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
                     base2k,
+                    res_size * base2k,
                     0,
                     j,
                     &res_big_test.to_backend_ref(),
@@ -299,6 +301,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                 module_ref.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
                     base2k,
+                    res_size * base2k,
                     0,
                     j,
                     &res_big_ref.to_backend_ref(),
@@ -309,6 +312,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                 module_test.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
                     base2k,
+                    res_size * base2k,
                     0,
                     j,
                     &res_big_test.to_backend_ref(),
@@ -429,6 +433,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
             module_ref.vec_znx_big_normalize(
                 &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
                 base2k,
+                res_size * base2k,
                 0,
                 j,
                 &res_big_ref.to_backend_ref(),
@@ -439,6 +444,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
             module_test.vec_znx_big_normalize(
                 &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
                 base2k,
+                res_size * base2k,
                 0,
                 j,
                 &res_big_test.to_backend_ref(),

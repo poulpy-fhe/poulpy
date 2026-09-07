@@ -13,7 +13,7 @@ use crate::{
         ScalarZnxFillTernaryProbSourceBackend, ScratchOwnedAlloc, VecZnxAddAssignBackend, VecZnxAddConstAssignBackend,
         VecZnxAddConstIntoBackend, VecZnxAddIntoBackend, VecZnxAddNormalSourceBackend, VecZnxAddScalarAssignBackend,
         VecZnxAddScalarIntoBackend, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend,
-        VecZnxCanonicalize, VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend, VecZnxFillNormalBackend,
+        VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend, VecZnxFillNormalBackend,
         VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend, VecZnxLshAddCoeffIntoBackend,
         VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAssignBackend, VecZnxLshBackend, VecZnxLshCoeffBackend,
         VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend, VecZnxMergeRingsTmpBytes,
@@ -26,11 +26,25 @@ use crate::{
         VecZnxSubScalarBackend, VecZnxSwitchRingBackend, VecZnxZeroBackend,
     },
     layouts::{
-        DigestU64, FillUniform, HostBytesBackend, Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendMut, ScratchOwned, VecZnx,
-        VecZnxToBackendMut, ZnxView, ZnxViewMut, ZnxZero, vec_znx_reborrow_backend_mut,
+        DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendMut,
+        ScratchOwned, VecZnx, ZnxView, ZnxViewMut, ZnxZero,
     },
     source::Source,
 };
+
+fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
+    let active_size = k.div_ceil(base2k);
+    for col in 0..a.cols() {
+        for limb in active_size..a.size() {
+            assert!(a.at(col, limb).iter().all(|&digit| digit == 0));
+        }
+        let padding = (base2k - k % base2k) % base2k;
+        if active_size != 0 && padding != 0 {
+            let mask = (1u64 << padding) - 1;
+            assert!(a.at(col, active_size - 1).iter().all(|&digit| digit as u64 & mask == 0));
+        }
+    }
+}
 
 pub fn test_vec_znx_zero_backend_matches_wrapper<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
@@ -179,7 +193,7 @@ pub fn test_vec_znx_add_scalar_assign<BR: crate::test_suite::TestBackend, BT: cr
     let b_ref = upload_scalar_znx::<BR>(&b);
     let b_test = upload_scalar_znx::<BT>(&b);
 
-    for res_size in [1, 2, 3, 4] {
+    for res_size in [1usize, 2, 3, 4] {
         let mut rest_ref = module_host.vec_znx_alloc(cols, res_size);
         let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
@@ -1400,6 +1414,7 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
                     module_ref.vec_znx_normalize(
                         &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
                         base2k,
+                        res_size * base2k,
                         res_offset,
                         i,
                         &vec_znx_backend_ref::<BR>(&a_ref),
@@ -1410,6 +1425,7 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
                     module_test.vec_znx_normalize(
                         &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
                         base2k,
+                        res_size * base2k,
                         res_offset,
                         i,
                         &vec_znx_backend_ref::<BT>(&a_test),
@@ -1425,93 +1441,40 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
                     download_vec_znx::<BT>(&res_test_backend)
                 );
             }
+
+            let res_k = res_size.saturating_sub(1).max(1) * base2k - 1;
+            let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
+            let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
+            for i in 0..cols {
+                module_ref.vec_znx_normalize(
+                    &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
+                    base2k,
+                    res_k,
+                    0,
+                    i,
+                    &vec_znx_backend_ref::<BR>(&a_ref),
+                    base2k,
+                    i,
+                    &mut scratch_ref.arena(),
+                );
+                module_test.vec_znx_normalize(
+                    &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
+                    base2k,
+                    res_k,
+                    0,
+                    i,
+                    &vec_znx_backend_ref::<BT>(&a_test),
+                    base2k,
+                    i,
+                    &mut scratch_test.arena(),
+                );
+            }
+            let res_ref_host = download_vec_znx::<BR>(&res_ref_backend);
+            let res_test_host = download_vec_znx::<BT>(&res_test_backend);
+            assert_eq!(res_ref_host, res_test_host);
+            assert_canonical(&res_test_host, base2k, res_k);
         }
     }
-}
-
-pub fn test_vec_znx_canonicalize<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
-    params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
-    module_ref: &Module<BR>,
-    module_test: &Module<BT>,
-) where
-    Module<BR>: VecZnxCanonicalize<BR>,
-    Module<BT>: VecZnxCanonicalize<BT> + VecZnxCopyBackend<BT>,
-{
-    let base2k = params.base2k;
-    assert!((3..63).contains(&base2k));
-    assert_eq!(module_ref.n(), module_test.n());
-
-    let (cols, size) = (2, 4);
-    let k = 2 * base2k - 2;
-    let active_size = k.div_ceil(base2k);
-    let mut source = Source::new([17u8; 32]);
-    let mut value = module_host.vec_znx_alloc(cols, size);
-    assert!(value.is_canonical());
-    let _ = value.data_mut();
-    assert!(!value.is_canonical());
-    value.zero();
-    {
-        let _value_view = <_ as VecZnxToBackendMut<HostBytesBackend>>::to_backend_mut(&mut value);
-    }
-    assert!(!value.is_canonical());
-    value.fill_uniform(base2k, &mut source);
-    value.at_mut(0, 0)[0] = 3;
-    value.at_mut(0, 1)[0] = (1i64 << (base2k - 1)) - 1;
-    for limb in active_size..size {
-        value.at_mut(0, limb).fill(7);
-    }
-    assert!(!value.is_canonical());
-    let mut value_ref = upload_vec_znx::<BR>(&value);
-    let mut value_test = upload_vec_znx::<BT>(&value);
-    let raw_test = upload_vec_znx::<BT>(&value);
-    let mut value_ref_view = vec_znx_backend_mut::<BR>(&mut value_ref);
-    let mut value_test_view = vec_znx_backend_mut::<BT>(&mut value_test);
-    module_ref.vec_znx_canonicalize(base2k, k, &mut value_ref_view);
-    {
-        let mut nested = vec_znx_reborrow_backend_mut::<BT>(&mut value_test_view);
-        module_test.vec_znx_canonicalize(base2k, k, &mut nested);
-        assert!(nested.is_canonical());
-    }
-    assert!(value_ref_view.is_canonical());
-    assert!(value_test_view.is_canonical());
-    module_test.vec_znx_copy_backend(&mut value_test_view, 0, &vec_znx_backend_ref::<BT>(&raw_test), 0);
-    assert!(!value_test_view.is_canonical());
-    module_test.vec_znx_canonicalize(base2k, k, &mut value_test_view);
-    drop((value_ref_view, value_test_view));
-    assert!(value_ref.is_canonical());
-    assert!(value_test.is_canonical());
-
-    let canonical_ref = download_vec_znx::<BR>(&value_ref);
-    let canonical_test = download_vec_znx::<BT>(&value_test);
-    assert_eq!(canonical_ref, canonical_test);
-    assert_eq!(canonical_test.at(0, 0)[0], 4);
-    assert_eq!(canonical_test.at(0, 1)[0], -(1i64 << (base2k - 1)));
-    for col in 0..cols {
-        assert!(canonical_test.at(col, active_size - 1).iter().all(|digit| digit & 3 == 0));
-        for limb in active_size..size {
-            assert!(canonical_test.at(col, limb).iter().all(|&digit| digit == 0));
-        }
-    }
-
-    module_test.vec_znx_canonicalize(base2k, k, &mut vec_znx_backend_mut::<BT>(&mut value_test));
-    assert_eq!(canonical_test, download_vec_znx::<BT>(&value_test));
-    assert!(value_test.is_canonical());
-
-    {
-        let mut narrowed = vec_znx_backend_mut_sized::<BT>(&mut value_test, active_size);
-        module_test.vec_znx_canonicalize(base2k, k, &mut narrowed);
-        assert!(narrowed.is_canonical());
-    }
-    assert!(!value_test.is_canonical());
-
-    {
-        let mut view = vec_znx_backend_mut::<BT>(&mut value_test);
-        module_test.vec_znx_canonicalize(base2k, k, &mut view);
-        assert!(view.is_canonical());
-        let _data = view.into_data();
-    }
-    assert!(!value_test.is_canonical());
 }
 
 pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
@@ -1534,7 +1497,8 @@ pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: cra
     let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_normalize_tmp_bytes());
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_normalize_tmp_bytes());
 
-    for res_size in [1, 2, 3, 4] {
+    for res_size in [1usize, 2, 3, 4] {
+        let res_k = res_size.saturating_sub(1).max(1) * base2k - 1;
         let mut res_ref = module_host.vec_znx_alloc(cols, res_size);
         let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
@@ -1547,22 +1511,24 @@ pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: cra
         for i in 0..cols {
             module_ref.vec_znx_normalize_assign_backend(
                 base2k,
+                res_k,
                 &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
                 i,
                 &mut scratch_ref.arena(),
             );
             module_test.vec_znx_normalize_assign_backend(
                 base2k,
+                res_k,
                 &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
                 i,
                 &mut scratch_test.arena(),
             );
         }
 
-        assert_eq!(
-            download_vec_znx::<BR>(&res_ref_backend),
-            download_vec_znx::<BT>(&res_test_backend)
-        );
+        let res_ref_host = download_vec_znx::<BR>(&res_ref_backend);
+        let res_test_host = download_vec_znx::<BT>(&res_test_backend);
+        assert_eq!(res_ref_host, res_test_host);
+        assert_canonical(&res_test_host, base2k, res_k);
     }
 }
 

@@ -124,6 +124,7 @@ where
     module.vec_znx_normalize(
         &mut vec_znx_backend_mut::<BE>(&mut lwe_pt_want.data),
         out_base2k,
+        lwe_out_infos.k.as_usize(),
         0,
         0,
         &vec_znx_backend_ref::<BE>(&lwe_pt_in.data),

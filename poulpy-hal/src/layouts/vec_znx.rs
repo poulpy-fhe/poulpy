@@ -1,9 +1,7 @@
 use std::{
     fmt,
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::{DefaultHasher, Hasher},
     marker::PhantomData,
-    ptr::NonNull,
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use crate::{
@@ -72,61 +70,11 @@ impl VecZnxShape {
 }
 
 #[repr(C)]
+#[derive(PartialEq, Eq, Clone, Hash)]
 pub struct VecZnx<D: Data, W: ZnxWord> {
     data: D,
     shape: VecZnxShape,
-    is_canonical: AtomicBool,
-    canonical_owner: Option<CanonicalOwner>,
     pub _phantom: PhantomData<W>,
-}
-
-#[derive(Clone, Copy)]
-struct CanonicalOwner {
-    state: NonNull<AtomicBool>,
-    shape: VecZnxShape,
-}
-
-// Every `Some` is carried with a data borrow that cannot outlive or move the pointee.
-unsafe impl Send for CanonicalOwner {}
-unsafe impl Sync for CanonicalOwner {}
-
-impl CanonicalOwner {
-    fn store(self, shape: VecZnxShape, is_canonical: bool) {
-        if !is_canonical || shape == self.shape {
-            unsafe { self.state.as_ref().store(is_canonical, Ordering::Relaxed) };
-        }
-    }
-
-    fn load(self) -> bool {
-        unsafe { self.state.as_ref().load(Ordering::Relaxed) }
-    }
-}
-
-impl<D: Data + Clone, W: ZnxWord> Clone for VecZnx<D, W> {
-    fn clone(&self) -> Self {
-        Self {
-            data: self.data.clone(),
-            shape: self.shape,
-            is_canonical: AtomicBool::new(self.is_canonical()),
-            canonical_owner: self.canonical_owner,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<D: Data, W: ZnxWord> PartialEq for VecZnx<D, W> {
-    fn eq(&self, other: &Self) -> bool {
-        self.data == other.data && self.shape == other.shape
-    }
-}
-
-impl<D: Data, W: ZnxWord> Eq for VecZnx<D, W> {}
-
-impl<D: Data + Hash, W: ZnxWord> Hash for VecZnx<D, W> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.data.hash(state);
-        self.shape.hash(state);
-    }
 }
 
 impl<D: HostDataRef, W: ZnxWord> VecZnx<D, W> {
@@ -149,8 +97,6 @@ impl<D: Data + Default, W: ZnxWord> Default for VecZnx<D, W> {
         Self {
             data: D::default(),
             shape: VecZnxShape::default(),
-            is_canonical: AtomicBool::new(true),
-            canonical_owner: None,
             _phantom: PhantomData,
         }
     }
@@ -173,8 +119,6 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for VecZnx<D, W> {
         VecZnx {
             data: self.data.as_ref().to_vec(),
             shape: self.shape,
-            is_canonical: AtomicBool::new(self.is_canonical()),
-            canonical_owner: None,
             _phantom: PhantomData,
         }
     }
@@ -187,13 +131,12 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
         BE: Backend<OwnedBuf = D>,
     {
         let shape = self.shape();
-        VecZnx {
-            data: crate::layouts::HostBytesBackend::from_bytes(BE::to_host_bytes(&self.data)),
-            shape,
-            is_canonical: AtomicBool::new(self.is_canonical()),
-            canonical_owner: None,
-            _phantom: PhantomData,
-        }
+        VecZnx::from_data(
+            crate::layouts::HostBytesBackend::from_bytes(BE::to_host_bytes(&self.data)),
+            shape.n(),
+            shape.cols(),
+            shape.size(),
+        )
     }
 
     /// Formats this backend-owned vector through the existing host [`fmt::Display`] implementation.
@@ -240,7 +183,6 @@ impl<D: Data, W: ZnxWord> DataView for VecZnx<D, W> {
 
 impl<D: Data, W: ZnxWord> DataViewMut for VecZnx<D, W> {
     fn data_mut(&mut self) -> &mut Self::D {
-        self.set_canonical(false);
         &mut self.data
     }
 }
@@ -271,27 +213,11 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     }
 
     pub fn data_mut(&mut self) -> &mut D {
-        self.set_canonical(false);
         &mut self.data
     }
 
-    pub fn into_data(mut self) -> D {
-        self.set_canonical(false);
+    pub fn into_data(self) -> D {
         self.data
-    }
-
-    /// Returns whether this vector is known to have a canonical representation.
-    pub fn is_canonical(&self) -> bool {
-        self.canonical_owner
-            .filter(|owner| owner.shape == self.shape)
-            .map_or_else(|| self.is_canonical.load(Ordering::Relaxed), CanonicalOwner::load)
-    }
-
-    pub(crate) fn set_canonical(&mut self, is_canonical: bool) {
-        self.is_canonical.store(is_canonical, Ordering::Relaxed);
-        if let Some(owner) = self.canonical_owner {
-            owner.store(self.shape, is_canonical);
-        }
     }
 }
 
@@ -304,13 +230,10 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> ZnxZero for VecZnx<D, W> {
     fn zero(&mut self) {
-        self.raw_mut().fill(W::zero());
-        self.set_canonical(true);
+        self.raw_mut().fill(W::zero())
     }
     fn zero_at(&mut self, i: usize, j: usize) {
-        let was_canonical = self.is_canonical();
         self.at_mut(i, j).fill(W::zero());
-        self.set_canonical(was_canonical);
     }
 }
 
@@ -328,8 +251,6 @@ impl<W: ZnxWord> VecZnx<Vec<u8>, W> {
         Self {
             data,
             shape: VecZnxShape::new(n, cols, size),
-            is_canonical: AtomicBool::new(true),
-            canonical_owner: None,
             _phantom: PhantomData,
         }
     }
@@ -355,8 +276,6 @@ impl<W: ZnxWord> VecZnx<Vec<u8>, W> {
         Self {
             data,
             shape: VecZnxShape::new(n, cols, size),
-            is_canonical: AtomicBool::new(false),
-            canonical_owner: None,
             _phantom: PhantomData,
         }
     }
@@ -368,8 +287,6 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
         Self {
             data,
             shape: VecZnxShape::new(n, cols, size),
-            is_canonical: AtomicBool::new(false),
-            canonical_owner: None,
             _phantom: PhantomData,
         }
     }
@@ -415,7 +332,6 @@ impl<D: HostDataMut, W: ZnxWord> FillUniform for VecZnx<D, W> {
             W::BITS
         );
         if log_bound == W::BITS {
-            self.set_canonical(false);
             source.fill_bytes(self.data.as_mut());
             return;
         }
@@ -444,8 +360,6 @@ pub fn vec_znx_alloc_zeroed<B: Backend>(n: usize, cols: usize, size: usize) -> V
     VecZnx {
         data: B::alloc_zeroed_bytes(B::bytes_of_vec_znx(n, cols, size)),
         shape: VecZnxShape::new(n, cols, size),
-        is_canonical: AtomicBool::new(true),
-        canonical_owner: None,
         _phantom: PhantomData,
     }
 }
@@ -480,7 +394,6 @@ pub trait VecZnxAsScalarBackendMut<B: Backend> {
 
 impl<B: Backend> VecZnxAsScalarBackendMut<B> for VecZnx<B::OwnedBuf, B::ZnxWord> {
     fn as_scalar_znx_backend_mut(&mut self, col: usize, limb: usize) -> ScalarZnx<B::BufMut<'_>, B::ZnxWord> {
-        self.set_canonical(false);
         let n = self.n();
         assert!(limb < self.size(), "size: {limb} >= {}", self.size());
         assert!(col < self.cols(), "cols: {col} >= {}", self.cols());
@@ -507,8 +420,6 @@ impl<B: Backend> VecZnxToBackendRef<B> for VecZnx<B::OwnedBuf, B::ZnxWord> {
         VecZnx {
             data: B::view(&self.data),
             shape: self.shape,
-            is_canonical: AtomicBool::new(self.is_canonical()),
-            canonical_owner: None,
             _phantom: PhantomData,
         }
     }
@@ -525,8 +436,6 @@ impl VecZnxToBackendRef<crate::layouts::HostBytesBackend> for VecZnx<&mut [u8], 
         VecZnx {
             data: self.data,
             shape: self.shape,
-            is_canonical: AtomicBool::new(self.is_canonical()),
-            canonical_owner: None,
             _phantom: PhantomData,
         }
     }
@@ -537,8 +446,6 @@ impl VecZnxToBackendRef<crate::layouts::HostBytesBackend> for VecZnx<&[u8], i64>
         VecZnx {
             data: self.data,
             shape: self.shape,
-            is_canonical: AtomicBool::new(self.is_canonical()),
-            canonical_owner: None,
             _phantom: PhantomData,
         }
     }
@@ -555,8 +462,6 @@ pub fn vec_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
     VecZnx {
         data: B::view_ref(&vec.data),
         shape: vec.shape,
-        is_canonical: AtomicBool::new(vec.is_canonical()),
-        canonical_owner: None,
         _phantom: PhantomData,
     }
 }
@@ -567,8 +472,6 @@ pub fn vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
     VecZnx {
         data: B::view_ref_mut(&vec.data),
         shape: vec.shape,
-        is_canonical: AtomicBool::new(vec.is_canonical()),
-        canonical_owner: None,
         _phantom: PhantomData,
     }
 }
@@ -586,16 +489,9 @@ pub trait VecZnxToBackendMut<B: Backend = crate::layouts::HostBytesBackend> {
 
 impl<B: Backend> VecZnxToBackendMut<B> for VecZnx<B::OwnedBuf, B::ZnxWord> {
     fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, B> {
-        self.set_canonical(false);
-        let canonical_owner = self.canonical_owner.unwrap_or_else(|| CanonicalOwner {
-            state: NonNull::from(&mut self.is_canonical),
-            shape: self.shape,
-        });
         VecZnx {
             data: B::view_mut(&mut self.data),
             shape: self.shape,
-            is_canonical: AtomicBool::new(false),
-            canonical_owner: Some(canonical_owner),
             _phantom: PhantomData,
         }
     }
@@ -609,16 +505,9 @@ impl<'b, B: Backend + 'b> VecZnxToBackendMut<B> for &mut VecZnx<B::BufMut<'b>, B
 
 impl VecZnxToBackendMut<crate::layouts::HostBytesBackend> for VecZnx<&mut [u8], i64> {
     fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, crate::layouts::HostBytesBackend> {
-        self.set_canonical(false);
-        let canonical_owner = self.canonical_owner.unwrap_or_else(|| CanonicalOwner {
-            state: NonNull::from(&mut self.is_canonical),
-            shape: self.shape,
-        });
         VecZnx {
             data: self.data,
             shape: self.shape,
-            is_canonical: AtomicBool::new(false),
-            canonical_owner: Some(canonical_owner),
             _phantom: PhantomData,
         }
     }
@@ -633,8 +522,6 @@ pub fn vec_znx_host_backend_ref<D: HostDataRef>(vec: &VecZnx<D, i64>) -> VecZnxB
     VecZnx {
         data: vec.data.as_ref(),
         shape: vec.shape,
-        is_canonical: AtomicBool::new(vec.is_canonical()),
-        canonical_owner: None,
         _phantom: PhantomData,
     }
 }
@@ -642,16 +529,9 @@ pub fn vec_znx_host_backend_ref<D: HostDataRef>(vec: &VecZnx<D, i64>) -> VecZnxB
 pub fn vec_znx_host_backend_mut<D: HostDataMut>(
     vec: &mut VecZnx<D, i64>,
 ) -> VecZnxBackendMut<'_, crate::layouts::HostBytesBackend> {
-    vec.set_canonical(false);
-    let canonical_owner = vec.canonical_owner.unwrap_or_else(|| CanonicalOwner {
-        state: NonNull::from(&mut vec.is_canonical),
-        shape: vec.shape,
-    });
     VecZnx {
         data: vec.data.as_mut(),
         shape: vec.shape,
-        is_canonical: AtomicBool::new(false),
-        canonical_owner: Some(canonical_owner),
         _phantom: PhantomData,
     }
 }
@@ -659,16 +539,9 @@ pub fn vec_znx_host_backend_mut<D: HostDataMut>(
 pub fn vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
     vec: &'a mut VecZnx<B::BufMut<'b>, B::ZnxWord>,
 ) -> VecZnxBackendMut<'a, B> {
-    vec.set_canonical(false);
-    let canonical_owner = vec.canonical_owner.unwrap_or_else(|| CanonicalOwner {
-        state: NonNull::from(&mut vec.is_canonical),
-        shape: vec.shape,
-    });
     VecZnx {
         data: B::view_mut_ref(&mut vec.data),
         shape: vec.shape,
-        is_canonical: AtomicBool::new(false),
-        canonical_owner: Some(canonical_owner),
         _phantom: PhantomData,
     }
 }
@@ -722,8 +595,6 @@ pub fn vec_znx_backend_mut_with_size<'a, B: Backend>(vec: VecZnxBackendMut<'a, B
     VecZnx {
         data: vec.data,
         shape: vec.shape.with_size(size),
-        is_canonical: vec.is_canonical,
-        canonical_owner: vec.canonical_owner,
         _phantom: PhantomData,
     }
 }
@@ -749,7 +620,6 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for VecZnx<D, W> {
             ));
         }
 
-        self.set_canonical(false);
         let buf: &mut [u8] = self.data.as_mut();
         if buf.len() < len {
             return Err(std::io::Error::new(

@@ -13,9 +13,10 @@ use poulpy_hal::{
     api::{
         CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
-        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCanonicalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
+        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
         VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssignBackend,
+        VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, GaloisElement, ScratchArena},
 };
@@ -57,7 +58,8 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,
@@ -84,7 +86,10 @@ where
     let rot_dft = module.bytes_of_vec_znx_dft(cols, key.size());
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
     let lazy_dft = glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key);
-    let fallback_path = prod_dft + prod_col_big + inner_dft;
+    let fallback_work = inner_dft
+        .max(module.glwe_automorphism_tmp_bytes(res, a, key))
+        .max(module.vec_znx_normalize_tmp_bytes());
+    let fallback_path = prod_dft + prod_col_big + fallback_work;
     let lazy_dft_rot = rot_dft + lazy_dft;
     let lazy_dft_path = prod_dft + lazy_acc_dft + inner_dft + lazy_dft_rot + lazy_acc_big;
 
@@ -150,7 +155,6 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
@@ -206,7 +210,6 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + VecZnxBigBytesOf
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxCopyBackend<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
@@ -217,6 +220,8 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeTmpBytes
         + GLWEMulPlain<BE>
         + GaloisElement,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -259,7 +264,8 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,

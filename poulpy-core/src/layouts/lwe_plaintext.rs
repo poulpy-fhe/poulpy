@@ -39,7 +39,6 @@ pub type LWEPlaintextBackendMut<'a, BE> = LWEPlaintext<<BE as Backend>::BufMut<'
 
 impl<D: Data, W: ZnxWord> SetBase2k for LWEPlaintext<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
-        let _ = self.data.data_mut();
         self.base2k = base2k
     }
 }

@@ -121,6 +121,7 @@ where
         let rank_in: usize = res.rank_in().into();
         let rank_out = res.rank_out().as_usize();
         let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
+        let tmp_pt_k = tmp_pt.k().as_usize();
 
         // For each input column (i.e. rank) produces a GGLWE of rank_out+1 columns
         //
@@ -144,7 +145,7 @@ where
                     &pt_backend,
                     col_i,
                 );
-                self.vec_znx_normalize_assign_backend(base2k, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
+                self.vec_znx_normalize_assign_backend(base2k, tmp_pt_k, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
                 let mut res_view = res.at_view_mut(row_i, col_i);
                 self.fill_glwe_mask_from_source_default(base2k, &mut res_view, 1, rank_out, source_xa);
                 self.glwe_encrypt_sk_internal(

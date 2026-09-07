@@ -273,12 +273,13 @@ pub trait VecZnxBigNormalizeTmpBytes {
 
 #[allow(clippy::too_many_arguments)]
 /// Normalizes a [`VecZnxBig`](crate::layouts::VecZnxBig) into a coefficient-domain
-/// [`VecZnx`](crate::layouts::VecZnx) with the target base and offset.
+/// [`VecZnx`](crate::layouts::VecZnx) with the target base, precision, and offset.
 pub trait VecZnxBigNormalize<B: Backend> {
     fn vec_znx_big_normalize(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &VecZnxBigBackendRef<'_, B>,

@@ -9,7 +9,7 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxCanonicalize, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
     },
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
@@ -53,12 +53,7 @@ pub(crate) fn ship_masking_accumulate<BE>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftBytesOf
-        + VecZnxIdftApplyTmpA<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>,
+    Module<BE>: Convolution<BE> + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxIdftApplyTmpA<BE> + VecZnxBigNormalize<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
 {
@@ -138,6 +133,7 @@ where
             module.vec_znx_big_normalize(
                 acc_mut.data_mut(),
                 base2k,
+                res_log_budget + res_log_delta,
                 cnv_offset_lo,
                 col,
                 &res_big_ref,
@@ -147,6 +143,5 @@ where
             );
         }
     }
-    module.vec_znx_canonicalize(base2k, res_log_budget + res_log_delta, acc.to_backend_mut().data_mut());
     Ok(())
 }

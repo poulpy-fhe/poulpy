@@ -46,6 +46,7 @@ where
 pub fn vec_znx_normalize_par<B, T>(
     res: &mut VecZnxBackendMut<'_, B>,
     res_base2k: usize,
+    res_k: usize,
     res_offset: i64,
     res_col: usize,
     a: &VecZnxBackendRef<'_, B>,
@@ -71,10 +72,11 @@ pub fn vec_znx_normalize_par<B, T>(
     B: 'static,
     T: RayonTuning,
 {
+    assert!(res_k <= res.size() * res_base2k);
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_normalize::<B>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        return vec_znx_normalize::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     let (cols, size) = (res.cols(), res.size());
@@ -90,6 +92,7 @@ pub fn vec_znx_normalize_par<B, T>(
                 cols,
                 size,
                 res_base2k,
+                res_k,
                 res_offset,
                 res_col,
                 &a_view,
@@ -104,23 +107,29 @@ pub fn vec_znx_normalize_par<B, T>(
 }
 
 /// Parallel [`vec_znx_normalize_assign`], `B` being the serial kernel backend.
-pub fn vec_znx_normalize_assign_par<B, T>(base2k: usize, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, carry: &mut [i64])
-where
+pub fn vec_znx_normalize_assign_par<B, T>(
+    base2k: usize,
+    k: usize,
+    res: &mut VecZnxBackendMut<'_, B>,
+    res_col: usize,
+    carry: &mut [i64],
+) where
     B: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
     for<'x> B: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
     B: 'static,
     T: RayonTuning,
 {
+    assert!(k <= res.size() * base2k);
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_normalize_assign::<B>(base2k, res, res_col, carry);
+        return vec_znx_normalize_assign::<B>(base2k, k, res, res_col, carry);
     }
 
     let (cols, size) = (res.cols(), res.size());
     let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
     for_each_range(n, tasks, 1, carry, |start, len, task_carry| unsafe {
-        vec_znx_normalize_assign_range_raw::<B>(res_ptr.get(), n, cols, size, base2k, res_col, start, len, task_carry)
+        vec_znx_normalize_assign_range_raw::<B>(res_ptr.get(), n, cols, size, base2k, k, res_col, start, len, task_carry)
     });
 }
 
@@ -130,6 +139,7 @@ where
 pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
     res: &mut VecZnxBackendMut<'_, B>,
     res_base2k: usize,
+    res_k: usize,
     res_offset: i64,
     res_col: usize,
     a: &VecZnxBigBackendRef<'_, B>,
@@ -150,6 +160,7 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
         return ntt4x30_vec_znx_big_normalize::<_, _, B>(
             &mut res_ref,
             res_base2k,
+            res_k,
             res_offset,
             res_col,
             &a_ref,
@@ -172,6 +183,7 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
                 cols,
                 size,
                 res_base2k,
+                res_k,
                 res_offset,
                 res_col,
                 &&a_view,

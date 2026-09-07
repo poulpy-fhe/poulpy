@@ -8,7 +8,7 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCanonicalize, VecZnxCopyRangeBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopyRangeBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
         VecZnxExtractCoeffBackend, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
         VecZnxRotateBackend, VecZnxZeroBackend,
     },
@@ -316,6 +316,7 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
         module.vec_znx_normalize(
             &mut glwe.data,
             ksk.base2k().into(),
+            lwe.k().as_usize(),
             0,
             0,
             &a_conv.to_backend_ref(),
@@ -332,6 +333,7 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
         module.vec_znx_normalize(
             &mut glwe.data,
             ksk.base2k().into(),
+            lwe.k().as_usize(),
             0,
             1,
             &a_conv.to_backend_ref(),
@@ -534,7 +536,6 @@ pub fn ggsw_expand_row_default<BE, M, R>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
@@ -570,6 +571,7 @@ pub fn ggsw_expand_row_default<BE, M, R>(
                     module.vec_znx_normalize(
                         &mut a_0,
                         tsk_base2k,
+                        res_backend.k().as_usize(),
                         0,
                         0,
                         &glwe_mi_1.data,
@@ -583,6 +585,7 @@ pub fn ggsw_expand_row_default<BE, M, R>(
                 module.vec_znx_normalize(
                     &mut a_0,
                     tsk_base2k,
+                    res_backend.k().as_usize(),
                     0,
                     0,
                     &glwe_mi_1.data,
@@ -626,7 +629,6 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
         + VecZnxBigBytesOf
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>,
     R: GGSWAtViewMut<BE> + GGSWInfos,
@@ -658,6 +660,7 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
             module.vec_znx_big_normalize(
                 &mut res_col.data,
                 res_base2k,
+                res_k,
                 0,
                 j,
                 &res_big_ref,
@@ -666,6 +669,5 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
                 scratch_norm,
             );
         }
-        module.vec_znx_canonicalize(res_base2k, res_k, &mut res_col.data);
     }
 }

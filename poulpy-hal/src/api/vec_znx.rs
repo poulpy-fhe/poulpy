@@ -11,15 +11,6 @@ pub trait VecZnxNormalizeTmpBytes {
     fn vec_znx_normalize_tmp_bytes(&self) -> usize;
 }
 
-/// Restores the canonical representation of a normalized `VecZnx`.
-///
-/// Limbs outside the first `k` bits are cleared. When `k` ends inside a limb,
-/// the inactive low bits of that limb are removed and any resulting carry is
-/// propagated toward the most-significant limb.
-pub trait VecZnxCanonicalize<B: Backend> {
-    fn vec_znx_canonicalize(&self, base2k: usize, k: usize, a: &mut VecZnxBackendMut<'_, B>);
-}
-
 pub trait VecZnxZeroBackend<B: Backend> {
     fn vec_znx_zero_backend(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize);
 }
@@ -82,11 +73,12 @@ pub trait VecZnxHadamardProductScalarZnxBackend<B: Backend> {
 
 pub trait VecZnxNormalize<B: Backend> {
     #[allow(clippy::too_many_arguments)]
-    /// Normalizes the selected column of `a` and stores the result into the selected column of `res`.
+    /// Normalizes the selected column of `a` at `res_k` bits into `res`.
     fn vec_znx_normalize(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &VecZnxBackendRef<'_, B>,
@@ -100,6 +92,7 @@ pub trait VecZnxNormalizeAssignBackend<B: Backend> {
     fn vec_znx_normalize_assign_backend(
         &self,
         base2k: usize,
+        k: usize,
         a: &mut VecZnxBackendMut<'_, B>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,

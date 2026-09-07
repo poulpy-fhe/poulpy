@@ -70,13 +70,14 @@ pub trait VecZnxIdftNormalizeConsumeTmpBytes {
 }
 
 /// Inverse DFT fused with normalization: `res[res_col] = normalize(idft(a[a_col]) + addend)`,
-/// clobbering `a[a_col]`.
+/// clobbering `a[a_col]`, at precision `res_k`.
 pub trait VecZnxIdftNormalizeConsume<B: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_base2k: usize,
+        res_k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, B>,
         a_col: usize,

@@ -40,7 +40,6 @@ where
 unsafe impl HalVecZnxImpl<FFT64Neon> for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
 
     fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
@@ -74,7 +73,6 @@ unsafe impl HalVecZnxDftImpl<FFT64Neon> for FFT64Neon {
 unsafe impl HalVecZnxImpl<NTT4x30Neon> for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
 
     fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)

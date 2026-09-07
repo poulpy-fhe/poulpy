@@ -1,19 +1,4 @@
-/// HAL `VecZnx` canonicalization.
-#[macro_export]
-macro_rules! hal_impl_vec_znx_canonicalize {
-    () => {
-        fn vec_znx_canonicalize(
-            module: &Module<Self>,
-            base2k: usize,
-            k: usize,
-            a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-        ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_canonicalize_backend_default(module, base2k, k, a);
-        }
-    };
-}
-
-/// HAL `VecZnx` methods other than full-width normalization.
+/// HAL `VecZnx` methods excluding normalization.
 #[macro_export]
 macro_rules! hal_impl_vec_znx_without_normalize {
     () => {
@@ -869,7 +854,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
     };
 }
 
-/// Full-width HAL `VecZnx` normalization methods.
+/// HAL `VecZnx` normalization methods.
 #[macro_export]
 macro_rules! hal_impl_vec_znx_normalize {
     () => {
@@ -877,6 +862,7 @@ macro_rules! hal_impl_vec_znx_normalize {
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_base2k: usize,
+            res_k: usize,
             res_offset: i64,
             res_col: usize,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
@@ -889,6 +875,7 @@ macro_rules! hal_impl_vec_znx_normalize {
                 module,
                 res,
                 res_base2k,
+                res_k,
                 res_offset,
                 res_col,
                 a,
@@ -901,12 +888,13 @@ macro_rules! hal_impl_vec_znx_normalize {
         fn vec_znx_normalize_assign_backend(
             module: &Module<Self>,
             base2k: usize,
+            k: usize,
             a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_assign_backend_default(module, base2k, a, a_col, &mut scratch);
+            <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_assign_backend_default(module, base2k, k, a, a_col, &mut scratch);
         }
     };
 }
@@ -916,6 +904,5 @@ macro_rules! hal_impl_vec_znx {
     () => {
         $crate::hal_impl_vec_znx_without_normalize!();
         $crate::hal_impl_vec_znx_normalize!();
-        $crate::hal_impl_vec_znx_canonicalize!();
     };
 }

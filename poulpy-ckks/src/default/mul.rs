@@ -10,7 +10,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, VecZnxCanonicalize, VecZnxCopyBackend},
+    api::{CnvPVecAlloc, Convolution, VecZnxCopyBackend},
     layouts::{Backend, ScratchArena},
 };
 
@@ -153,7 +153,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWETensoring<BE> + GiantStepTensorBounds<BE> + VecZnxCanonicalize<BE>,
+        Self: GLWETensoring<BE> + GiantStepTensorBounds<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GetTensorKey<BE>,
     {
@@ -420,8 +420,8 @@ struct MulStamp {
 /// `_into` variants stamp **before**: `dst.size()` is meta-derived and a
 /// freshly-allocated `dst` carries zero meta (hence `size() == 0`), which
 /// would leave the relinearized output empty. `_assign` variants stamp
-/// after `apply` has consumed `dst`, but before relinearization writes and
-/// canonicalizes the result.
+/// **after**: `dst` is also an operand read by `apply`, so its metadata must
+/// stay untouched until the tensoring has consumed it.
 enum StampOrder {
     BeforeApply,
     AfterApply,

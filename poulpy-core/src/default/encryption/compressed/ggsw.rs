@@ -99,6 +99,7 @@ where
 
             let scratch = scratch.borrow();
             let (mut tmp_pt, mut scratch_1) = scratch.take_glwe_plaintext_scratch(&res);
+            let tmp_pt_k = tmp_pt.k().as_usize();
 
             let mut source = Source::new(seed_xa);
 
@@ -118,7 +119,7 @@ where
                 }
                 scratch_1 = scratch_1.apply_mut(|scratch| {
                     let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                    self.vec_znx_normalize_assign_backend(base2k, &mut tmp_pt_backend.data, 0, scratch)
+                    self.vec_znx_normalize_assign_backend(base2k, tmp_pt_k, &mut tmp_pt_backend.data, 0, scratch)
                 });
 
                 for col_j in 0..rank + 1 {

@@ -491,7 +491,6 @@ impl BigWordHadamardProduct for $rayon {
 
 unsafe impl HalVecZnxImpl<$rayon> for $rayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
     fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
@@ -500,6 +499,7 @@ unsafe impl HalVecZnxImpl<$rayon> for $rayon {
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &VecZnxBackendRef<'_, Self>,
@@ -508,18 +508,21 @@ unsafe impl HalVecZnxImpl<$rayon> for $rayon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
-        $crate::normalize::vec_znx_normalize_par::<$base, $rayon>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        $crate::normalize::vec_znx_normalize_par::<$base, $rayon>(
+            res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry,
+        );
     }
 
     fn vec_znx_normalize_assign_backend(
         module: &Module<Self>,
         base2k: usize,
+        k: usize,
         a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
-        $crate::normalize::vec_znx_normalize_assign_par::<$base, $rayon>(base2k, a, a_col, carry);
+        $crate::normalize::vec_znx_normalize_assign_par::<$base, $rayon>(base2k, k, a, a_col, carry);
     }
 }
 unsafe impl HalModuleImpl<$rayon> for $rayon {
@@ -1015,6 +1018,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &VecZnxBigBackendRef<'_, Self>,
@@ -1024,7 +1028,9 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
     ) {
         let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
         let a_vec: VecZnxBackendRef<'_, $base> = VecZnx::from_data(&**a.data(), a.n(), a.cols(), a.size());
-        $crate::normalize::vec_znx_normalize_par::<$base, $rayon>(res, res_base2k, res_offset, res_col, &a_vec, a_base2k, a_col, carry);
+        $crate::normalize::vec_znx_normalize_par::<$base, $rayon>(
+            res, res_base2k, res_k, res_offset, res_col, &a_vec, a_base2k, a_col, carry,
+        );
     }
 
     fn vec_znx_big_automorphism(
@@ -1080,6 +1086,7 @@ unsafe impl HalVecZnxDftImpl<$rayon> for $rayon {
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
+        res_k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
@@ -1118,7 +1125,9 @@ unsafe impl HalVecZnxDftImpl<$rayon> for $rayon {
             );
         }
         let a_vec: VecZnxBackendRef<'_, $base> = VecZnx::from_data(&**a.data(), n, a_cols, a_size);
-        $crate::normalize::vec_znx_normalize_par::<$base, $rayon>(res, res_base2k, 0, res_col, &a_vec, a_base2k, a_col, carry);
+        $crate::normalize::vec_znx_normalize_par::<$base, $rayon>(
+            res, res_base2k, res_k, 0, res_col, &a_vec, a_base2k, a_col, carry,
+        );
     }
     fn vec_znx_dft_apply(
         module: &Module<Self>,

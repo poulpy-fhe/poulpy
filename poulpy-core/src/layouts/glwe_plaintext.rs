@@ -83,28 +83,24 @@ pub type GLWEPlaintextBackendMut<'a, BE> = GLWEPlaintext<<BE as Backend>::BufMut
 
 impl<D: Data, W: ZnxWord> SetBase2k for GLWEPlaintext<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
-        let _ = self.data.data_mut();
         self.base2k = base2k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetBase2k for &mut GLWEPlaintext<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
-        let _ = self.data.data_mut();
         self.base2k = base2k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetK for GLWEPlaintext<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
-        let _ = self.data.data_mut();
         self.k = k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetK for &mut GLWEPlaintext<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
-        let _ = self.data.data_mut();
         self.k = k
     }
 }

@@ -104,10 +104,12 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
 
     let c0_big_ref = c0_big.to_backend_ref();
     let pt_base2k = pt.base2k();
+    let pt_k = pt.k().as_usize();
     let _ = scratch_1.apply_mut(|scratch| {
         module.vec_znx_big_normalize(
             &mut pt.data,
             pt_base2k.into(),
+            pt_k,
             0,
             0,
             &c0_big_ref,

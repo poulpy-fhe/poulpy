@@ -100,28 +100,24 @@ pub type GLWEBackendMut<'a, BE> = GLWE<<BE as Backend>::BufMut<'a>, <BE as Backe
 
 impl<D: Data, W: ZnxWord> SetBase2k for GLWE<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
-        let _ = self.data.data_mut();
         self.base2k = base2k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetBase2k for &mut GLWE<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
-        let _ = self.data.data_mut();
         self.base2k = base2k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetK for GLWE<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
-        let _ = self.data.data_mut();
         self.k = k
     }
 }
 
 impl<D: Data, W: ZnxWord> SetK for &mut GLWE<D, W> {
     fn set_k(&mut self, k: TorusPrecision) {
-        let _ = self.data.data_mut();
         self.k = k
     }
 }

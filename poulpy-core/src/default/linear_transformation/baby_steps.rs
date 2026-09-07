@@ -19,8 +19,8 @@ use std::collections::BTreeMap;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxCanonicalize,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxDftApply,
+        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     execution::{for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
     layouts::{Backend, GaloisElement, ScratchArena, VecZnxDftBackendRef, VecZnxDftToBackendRef},
@@ -130,7 +130,6 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
         + GaloisElement
         + GGLWEProductDefault<BE>
         + VecZnxAutomorphismAssignBackend<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
         + VecZnxIdftNormalizeConsume<BE>,
@@ -152,6 +151,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
             module.vec_znx_idft_normalize_consume(
                 &mut baby_ref.data,
                 baby_base2k,
+                baby_k,
                 col,
                 &mut res_dft,
                 col,
@@ -160,7 +160,6 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
                 &mut scratch_1.borrow(),
             );
         }
-        module.vec_znx_canonicalize(baby_base2k, baby_k, &mut baby_ref.data);
         for col in 0..cols {
             module.vec_znx_automorphism_assign_backend(key_p, &mut baby_ref.data, col, &mut scratch_1.borrow());
         }
@@ -191,7 +190,6 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         + GGLWEProductDefault<BE>
         + ModuleN
         + VecZnxAutomorphismAssignBackend<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>

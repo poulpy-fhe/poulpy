@@ -172,6 +172,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     let n_glwe: usize = brk.n_glwe().into();
     let extension_factor: usize = lut.extension_factor();
     let base2k: usize = res.base2k().into();
+    let res_k = res.k().as_usize();
     let dnum: usize = brk.dnum().into();
     let cols: usize = (res.rank() + 1).into();
 
@@ -331,7 +332,17 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
                         module.vec_znx_big_add_small_assign(&mut acc_add_big, 0, &acc_ref, i);
                     }
                     let acc_add_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&acc_add_big);
-                    module.vec_znx_big_normalize(&mut acc[j], base2k, 0, i, &acc_add_big_ref, base2k, 0, &mut scratch7.borrow());
+                    module.vec_znx_big_normalize(
+                        &mut acc[j],
+                        base2k,
+                        res_k,
+                        0,
+                        i,
+                        &acc_add_big_ref,
+                        base2k,
+                        0,
+                        &mut scratch7.borrow(),
+                    );
                 }
             }
         });
@@ -378,6 +389,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     let mut out_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
     let two_n: usize = n_glwe << 1;
     let base2k: usize = brk.base2k().into();
+    let res_k = out_tmp.k().as_usize();
     let dnum: usize = brk.dnum().into();
 
     let cols: usize = (out_tmp.rank() + 1).into();
@@ -474,6 +486,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
                 module.vec_znx_big_normalize(
                     out_backend.data_mut(),
                     base2k,
+                    res_k,
                     0,
                     col,
                     &acc_add_big_ref,
@@ -549,6 +562,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
                     module.vec_znx_big_normalize(
                         out_backend.data_mut(),
                         base2k,
+                        res_k,
                         0,
                         i,
                         &acc_add_big_ref,

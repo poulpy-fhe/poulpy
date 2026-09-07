@@ -466,8 +466,9 @@ where
                 let (mut ci, scratch_4) = scratch_3.take_vec_znx_scratch(self.n(), 1, size_pk);
                 let scratch_next = {
                     let ci_big_ref = ci_big.to_backend_ref();
-                    scratch_4
-                        .apply_mut(|scratch| self.vec_znx_big_normalize(&mut ci, base2k, 0, 0, &ci_big_ref, base2k, 0, scratch))
+                    scratch_4.apply_mut(|scratch| {
+                        self.vec_znx_big_normalize(&mut ci, base2k, size_pk * base2k, 0, 0, &ci_big_ref, base2k, 0, scratch)
+                    })
                 };
                 scratch_1 = scratch_next;
 
@@ -563,7 +564,13 @@ where
                     self.vec_znx_copy_backend(&mut ci, 0, &pt.data, 0);
                     let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
                     self.vec_znx_sub_negate_assign_backend(&mut ci, 0, &ct_ref, i);
-                    self.vec_znx_normalize_assign_backend(base2k, &mut ci.to_backend_mut(), 0, &mut scratch_2.borrow());
+                    self.vec_znx_normalize_assign_backend(
+                        base2k,
+                        size * base2k,
+                        &mut ci.to_backend_mut(),
+                        0,
+                        &mut scratch_2.borrow(),
+                    );
                 } else {
                     let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
                     self.vec_znx_copy_backend(&mut ci, 0, &ct_ref, i);
@@ -582,6 +589,7 @@ where
                 self.vec_znx_big_normalize(
                     &mut ci.to_backend_mut(),
                     base2k,
+                    size * base2k,
                     0,
                     0,
                     &ci_big.to_backend_ref(),
@@ -602,7 +610,7 @@ where
             && *col == 0
         {
             self.vec_znx_add_assign_backend(&mut c0.to_backend_mut(), 0, &pt.data, 0);
-            self.vec_znx_normalize_assign_backend(base2k, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
+            self.vec_znx_normalize_assign_backend(base2k, size * base2k, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
         }
         self.vec_znx_copy_backend(res, 0, &c0.to_backend_ref(), 0);
     }

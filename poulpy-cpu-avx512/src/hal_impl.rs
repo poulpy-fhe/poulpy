@@ -36,7 +36,6 @@ where
 unsafe impl HalVecZnxImpl<FFT64Avx512> for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
 
     // TODO: add an AVX-512-accelerated tiled transpose kernel; falls back to
     // the reference impl for now.
@@ -83,7 +82,6 @@ unsafe impl HalVecZnxDftImpl<FFT64Avx512> for FFT64Avx512 {
 unsafe impl HalVecZnxImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
 
     // TODO: add an AVX-512-accelerated tiled transpose kernel; falls back to
     // the reference impl for now.
@@ -548,6 +546,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
+        res_k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
@@ -578,6 +577,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
             &mut res_ref,
             res_base2k,
+            res_k,
             0,
             res_col,
             &&big_ref,
@@ -765,7 +765,6 @@ mod ifma_impl {
     unsafe impl HalVecZnxImpl<NTT3x42Ifma> for NTT3x42Ifma {
         poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
         poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
-        poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
 
         // TODO: add an AVX-512/IFMA-accelerated tiled transpose kernel; falls
         // back to the reference impl for now.
@@ -1003,6 +1002,7 @@ mod ifma_impl {
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_base2k: usize,
+            res_k: usize,
             res_col: usize,
             a: &mut VecZnxDftBackendMut<'_, Self>,
             a_col: usize,
@@ -1035,6 +1035,7 @@ mod ifma_impl {
             poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
                 &mut res_ref,
                 res_base2k,
+                res_k,
                 0,
                 res_col,
                 &&big_ref,

@@ -277,6 +277,7 @@ where
     module.vec_znx_normalize(
         &mut vec_znx_backend_mut::<BE>(&mut lwe_pt_conv.data),
         glwe_pt.base2k().as_usize(),
+        lwe_pt.k().as_usize(),
         0,
         0,
         &vec_znx_backend_ref::<BE>(&lwe_pt.data),
@@ -407,6 +408,7 @@ where
     module.vec_znx_normalize(
         &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
         lwe_pt.base2k().as_usize(),
+        lwe_pt.k().as_usize(),
         0,
         0,
         &vec_znx_backend_ref::<BE>(&glwe_pt.data),
@@ -497,6 +499,7 @@ where
         module.vec_znx_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
             lwe_pt.base2k().as_usize(),
+            lwe_pt.k().as_usize(),
             0,
             0,
             &vec_znx_backend_ref::<BE>(&glwe_pt.data),

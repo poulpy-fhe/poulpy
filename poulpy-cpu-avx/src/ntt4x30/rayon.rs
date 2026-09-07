@@ -392,12 +392,12 @@ impl BigWordHadamardProduct for NTT4x30AvxRayon {
 
 unsafe impl HalVecZnxImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
-    poulpy_cpu_ref::hal_impl_vec_znx_canonicalize!();
 
     fn vec_znx_normalize_backend(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &VecZnxBackendRef<'_, Self>,
@@ -407,19 +407,20 @@ unsafe impl HalVecZnxImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     ) {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
         poulpy_cpu_rayon::normalize::vec_znx_normalize_par::<NTT4x30Avx, Self>(
-            res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry,
+            res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry,
         );
     }
 
     fn vec_znx_normalize_assign_backend(
         module: &Module<Self>,
         base2k: usize,
+        k: usize,
         a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
-        poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT4x30Avx, Self>(base2k, a, a_col, carry);
+        poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT4x30Avx, Self>(base2k, k, a, a_col, carry);
     }
     fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
@@ -931,6 +932,7 @@ unsafe impl HalVecZnxBigImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
@@ -942,6 +944,7 @@ unsafe impl HalVecZnxBigImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par::<NTT4x30Avx, Self>(
             res,
             res_base2k,
+            res_k,
             res_offset,
             res_col,
             &base_big_ref(a),
@@ -1054,6 +1057,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
+        res_k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
@@ -1070,6 +1074,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
                 base_module(module),
                 &mut base_res,
                 res_base2k,
+                res_k,
                 res_col,
                 &mut base_a,
                 a_col,
@@ -1082,6 +1087,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
                 base_module(module),
                 &mut base_res,
                 res_base2k,
+                res_k,
                 res_col,
                 &mut base_a,
                 a_col,

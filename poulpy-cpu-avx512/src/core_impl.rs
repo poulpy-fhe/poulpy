@@ -254,6 +254,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     BP: CnvPVecRToBackendRef<BE>,
 {
     let res_base2k = res.base2k().as_usize();
+    let res_k = res.k().as_usize();
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, in_base2k);
     let dft_size = normalize_input_limb_bound_with_offset(
         a_size + b_size - cnv_offset_hi,
@@ -283,6 +284,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         module.vec_znx_big_normalize(
             res.to_backend_mut().data_mut(),
             res_base2k,
+            res_k,
             cnv_offset_lo,
             res_col,
             &product_big.to_backend_ref(),
@@ -298,6 +300,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     module.vec_znx_big_normalize(
         &mut pairwise.to_backend_mut(),
         res_base2k,
+        res_k,
         cnv_offset_lo,
         0,
         &product_big.to_backend_ref(),

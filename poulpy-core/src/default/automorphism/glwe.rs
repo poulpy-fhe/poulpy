@@ -15,7 +15,7 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
         VecZnxBigAddSmallAssign, VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigSubSmallAssign,
-        VecZnxBigSubSmallNegateAssign, VecZnxCanonicalize, VecZnxDftBytesOf, VecZnxIdftApply,
+        VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply,
     },
     layouts::{Backend, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
@@ -134,7 +134,6 @@ pub fn glwe_automorphism_add_default<BE, M, R, A>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -156,6 +155,7 @@ pub fn glwe_automorphism_add_default<BE, M, R, A>(
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &key);
+    a_layout.k = a_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2);
@@ -182,6 +182,7 @@ pub fn glwe_automorphism_add_default<BE, M, R, A>(
             module.vec_znx_big_normalize(
                 &mut res_ref.data,
                 res_base2k,
+                res_k,
                 0,
                 i,
                 &res_big_ref,
@@ -191,7 +192,6 @@ pub fn glwe_automorphism_add_default<BE, M, R, A>(
             );
         }
     }
-    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }
 
 pub fn glwe_automorphism_add_assign_default<BE, M, R>(
@@ -210,7 +210,6 @@ pub fn glwe_automorphism_add_assign_default<BE, M, R>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -231,6 +230,7 @@ pub fn glwe_automorphism_add_assign_default<BE, M, R>(
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &key);
+    res_layout.k = res_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
@@ -256,6 +256,7 @@ pub fn glwe_automorphism_add_assign_default<BE, M, R>(
             module.vec_znx_big_normalize(
                 &mut res_ref.data,
                 res_base2k,
+                res_k,
                 0,
                 i,
                 &res_big_ref,
@@ -265,7 +266,6 @@ pub fn glwe_automorphism_add_assign_default<BE, M, R>(
             );
         }
     }
-    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }
 
 pub fn glwe_automorphism_sub_default<BE, M, R, A>(
@@ -285,7 +285,6 @@ pub fn glwe_automorphism_sub_default<BE, M, R, A>(
         + VecZnxBigSubSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -307,6 +306,7 @@ pub fn glwe_automorphism_sub_default<BE, M, R, A>(
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &key);
+    a_layout.k = a_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2);
@@ -332,6 +332,7 @@ pub fn glwe_automorphism_sub_default<BE, M, R, A>(
             module.vec_znx_big_normalize(
                 &mut res_ref.data,
                 res_base2k,
+                res_k,
                 0,
                 i,
                 &res_big_ref,
@@ -341,7 +342,6 @@ pub fn glwe_automorphism_sub_default<BE, M, R, A>(
             );
         }
     }
-    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }
 
 pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
@@ -361,7 +361,6 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
         + VecZnxBigSubSmallNegateAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -383,6 +382,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
     let mut a_layout = a.glwe_layout();
     a_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &a_layout, &key);
+    a_layout.k = a_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut a_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&a_layout);
     module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2);
@@ -408,6 +408,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
             module.vec_znx_big_normalize(
                 &mut res_ref.data,
                 res_base2k,
+                res_k,
                 0,
                 i,
                 &res_big_ref,
@@ -417,7 +418,6 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A>(
             );
         }
     }
-    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }
 
 pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
@@ -436,7 +436,6 @@ pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
         + VecZnxBigSubSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -457,6 +456,7 @@ pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &key);
+    res_layout.k = res_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
@@ -481,6 +481,7 @@ pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
             module.vec_znx_big_normalize(
                 &mut res_ref.data,
                 res_base2k,
+                res_k,
                 0,
                 i,
                 &res_big_ref,
@@ -490,7 +491,6 @@ pub fn glwe_automorphism_sub_assign_default<BE, M, R>(
             );
         }
     }
-    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }
 
 pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R>(
@@ -509,7 +509,6 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R>(
         + VecZnxBigSubSmallNegateAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -530,6 +529,7 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R>(
     let mut res_layout = res.glwe_layout();
     res_layout.base2k = key.base2k();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res, &res_layout, &key);
+    res_layout.k = res_layout.max_k();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
@@ -554,6 +554,7 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R>(
             module.vec_znx_big_normalize(
                 &mut res_ref.data,
                 res_base2k,
+                res_k,
                 0,
                 i,
                 &res_big_ref,
@@ -563,5 +564,4 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R>(
             );
         }
     }
-    module.vec_znx_canonicalize(res_base2k, res_k, &mut res.to_backend_mut().data);
 }

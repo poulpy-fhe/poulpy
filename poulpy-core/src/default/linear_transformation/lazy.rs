@@ -10,8 +10,8 @@
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxCanonicalize, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy,
-        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
+        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -117,6 +117,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
             module.vec_znx_big_normalize(
                 &mut col_small,
                 key_base2k,
+                mask_small_size * key_base2k,
                 0,
                 0,
                 &mask_big_ref,
@@ -202,7 +203,7 @@ pub(super) fn glwe_normalize_big_into<BE, M, R>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: VecZnxBigNormalize<BE> + VecZnxCanonicalize<BE>,
+    M: VecZnxBigNormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
     let cols = res.rank().as_usize() + 1;
@@ -213,6 +214,7 @@ pub(super) fn glwe_normalize_big_into<BE, M, R>(
         module.vec_znx_big_normalize(
             &mut res_ref.data,
             res_base2k,
+            res_k,
             cnv_offset_lo,
             col,
             a,
@@ -221,17 +223,4 @@ pub(super) fn glwe_normalize_big_into<BE, M, R>(
             &mut scratch.borrow(),
         );
     }
-    module.vec_znx_canonicalize(res_base2k, res_k, &mut res_ref.data);
-}
-
-pub(super) fn glwe_canonicalize<BE, M, R>(module: &M, res: &mut R)
-where
-    BE: Backend,
-    M: VecZnxCanonicalize<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos,
-{
-    let base2k = res.base2k().as_usize();
-    let k = res.k().as_usize();
-    let mut res_ref = res.to_backend_mut();
-    module.vec_znx_canonicalize(base2k, k, &mut res_ref.data);
 }

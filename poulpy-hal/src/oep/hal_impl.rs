@@ -97,13 +97,12 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
 
     fn vec_znx_normalize_tmp_bytes_backend(module: &Module<BE>) -> usize;
 
-    fn vec_znx_canonicalize(module: &Module<BE>, base2k: usize, k: usize, a: &mut VecZnxBackendMut<'_, BE>);
-
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize_backend(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &VecZnxBackendRef<'_, BE>,
@@ -115,6 +114,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
     fn vec_znx_normalize_assign_backend(
         module: &Module<BE>,
         base2k: usize,
+        k: usize,
         a: &mut VecZnxBackendMut<'_, BE>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -776,6 +776,7 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
@@ -847,6 +848,7 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBackendMut<'_, BE>,
         res_base2k: usize,
+        res_k: usize,
         res_col: usize,
         a: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
         a_col: usize,

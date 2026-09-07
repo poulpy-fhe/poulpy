@@ -5,8 +5,8 @@ use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendR
 use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero, GiantStepTensorBounds};
 use poulpy_hal::{
     api::{
-        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCanonicalize,
-        VecZnxRshCoeffBackend, VecZnxRshTmpBytes,
+        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxRshCoeffBackend,
+        VecZnxRshTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
@@ -83,7 +83,6 @@ where
         + CKKSCopyOps<BE>
         + GLWEZero<BE>
         + GiantStepTensorBounds<BE>
-        + VecZnxCanonicalize<BE>
         + VecZnxRshCoeffBackend<BE>
         + VecZnxRshTmpBytes,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
@@ -237,13 +236,20 @@ where
                 }
                 let acc_ref = acc.to_backend_ref();
                 let mut res_bk = res.to_backend_mut();
-                module.vec_znx_big_normalize(res_bk.data_mut(), kb, 0, col, &acc_ref, kb, 0, &mut scratch_local.borrow());
+                module.vec_znx_big_normalize(
+                    res_bk.data_mut(),
+                    kb,
+                    budget + delta,
+                    0,
+                    col,
+                    &acc_ref,
+                    kb,
+                    0,
+                    &mut scratch_local.borrow(),
+                );
             }
             Ok(())
         })?;
-        let mut res_ref = res.to_backend_mut();
-        module.vec_znx_canonicalize(kb, budget + delta, res_ref.data_mut());
-
         Ok(true)
     }
 
@@ -373,10 +379,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         H: GetTensorKey<BE>;
 }
 
-impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE>
-where
-    Module<BE>: VecZnxCanonicalize<BE>,
-{
+impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_default<R, B, A, G, H>(
         &self,
         res: &mut R,

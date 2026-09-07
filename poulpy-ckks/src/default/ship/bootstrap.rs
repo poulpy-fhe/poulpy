@@ -116,7 +116,6 @@ where
         + VecZnxDftAutomorphism<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
-        + poulpy_hal::api::VecZnxCanonicalize<BE>
         + VmpApplyDftToDft<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -250,7 +249,6 @@ where
         + VecZnxDftAutomorphism<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
-        + poulpy_hal::api::VecZnxCanonicalize<BE>
         + VmpApplyDftToDft<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -303,7 +301,6 @@ where
         + VecZnxDftAutomorphism<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
-        + poulpy_hal::api::VecZnxCanonicalize<BE>
         + VmpApplyDftToDft<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf

@@ -77,6 +77,7 @@ where
         module.vec_znx_big_normalize(
             &mut <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut backend),
             base2k,
+            big.size() * base2k,
             0,
             j,
             &big.to_backend_ref(),
@@ -906,6 +907,7 @@ fn idft_normalize_consume_check_one_backend<BE>(
                     module.vec_znx_idft_normalize_consume(
                         &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
                         res_base2k,
+                        res_size * res_base2k,
                         0,
                         &mut a_dft.to_backend_mut(),
                         col,
@@ -932,6 +934,7 @@ fn idft_normalize_consume_check_one_backend<BE>(
                     module.vec_znx_big_normalize(
                         &mut vec_znx_backend_mut::<BE>(&mut res_want_backend),
                         res_base2k,
+                        res_size * res_base2k,
                         0,
                         0,
                         &big.to_backend_ref(),

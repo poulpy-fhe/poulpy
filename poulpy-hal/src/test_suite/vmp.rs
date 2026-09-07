@@ -139,6 +139,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                         module_ref.vec_znx_big_normalize(
                             &mut vec_znx_backend_mut::<BR>(&mut res_small_ref_backend),
                             base2k,
+                            size_out * base2k,
                             0,
                             j,
                             &res_big_ref.to_backend_ref(),
@@ -149,6 +150,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                         module_test.vec_znx_big_normalize(
                             &mut vec_znx_backend_mut::<BT>(&mut res_small_test_backend),
                             base2k,
+                            size_out * base2k,
                             0,
                             j,
                             &res_big_test.to_backend_ref(),
@@ -320,6 +322,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                         module_ref.vec_znx_big_normalize(
                             &mut vec_znx_backend_mut::<BR>(&mut res_small_ref_backend),
                             base2k,
+                            size_out * base2k,
                             0,
                             j,
                             &res_big_ref.to_backend_ref(),
@@ -330,6 +333,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                         module_test.vec_znx_big_normalize(
                             &mut vec_znx_backend_mut::<BT>(&mut res_small_test_backend),
                             base2k,
+                            size_out * base2k,
                             0,
                             j,
                             &res_big_test.to_backend_ref(),
@@ -682,6 +686,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                 module_ref.vec_znx_big_normalize(
                                     &mut vec_znx_backend_mut::<BR>(&mut res_apply_small_ref),
                                     base2k,
+                                    size_out * base2k,
                                     0,
                                     j,
                                     &res_apply_big_ref.to_backend_ref(),
@@ -692,6 +697,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                 module_test.vec_znx_big_normalize(
                                     &mut vec_znx_backend_mut::<BT>(&mut res_apply_small_test),
                                     base2k,
+                                    size_out * base2k,
                                     0,
                                     j,
                                     &res_apply_big_test.to_backend_ref(),
@@ -702,6 +708,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                 module_ref.vec_znx_big_normalize(
                                     &mut vec_znx_backend_mut::<BR>(&mut res_acc_small_ref),
                                     base2k,
+                                    size_out * base2k,
                                     0,
                                     j,
                                     &res_acc_big_ref.to_backend_ref(),
@@ -712,6 +719,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                 module_test.vec_znx_big_normalize(
                                     &mut vec_znx_backend_mut::<BT>(&mut res_acc_small_test),
                                     base2k,
+                                    size_out * base2k,
                                     0,
                                     j,
                                     &res_acc_big_test.to_backend_ref(),

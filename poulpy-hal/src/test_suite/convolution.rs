@@ -80,6 +80,7 @@ where
             module.vec_znx_big_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
                 base2k,
+                res_size * base2k,
                 0,
                 0,
                 &res_big.to_backend_ref(),
@@ -200,6 +201,7 @@ where
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut res_backend),
                     base2k,
+                    res_size * base2k,
                     0,
                     0,
                     &big.to_backend_ref(),
@@ -308,6 +310,7 @@ where
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
                     base2k,
+                    res_size * base2k,
                     0,
                     0,
                     &res_big.to_backend_ref(),
@@ -584,6 +587,7 @@ where
         module.vec_znx_big_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut have_backend),
             base2k,
+            res_size * base2k,
             0,
             0,
             &big_fused.to_backend_ref(),
@@ -594,6 +598,7 @@ where
         module.vec_znx_big_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut want_backend),
             base2k,
+            res_size * base2k,
             0,
             0,
             &big_ref.to_backend_ref(),
@@ -699,6 +704,7 @@ where
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
                     base2k,
+                    res_size * base2k,
                     0,
                     0,
                     &res_big.to_backend_ref(),
@@ -807,7 +813,13 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     }
 
     let mut res_backend = upload_vec_znx::<BE>(res);
-    module.vec_znx_normalize_assign_backend(base2k, &mut vec_znx_backend_mut::<BE>(&mut res_backend), res_col, scratch);
+    module.vec_znx_normalize_assign_backend(
+        base2k,
+        res_backend.size() * base2k,
+        &mut vec_znx_backend_mut::<BE>(&mut res_backend),
+        res_col,
+        scratch,
+    );
     *res = download_vec_znx::<BE>(&res_backend);
 }
 
@@ -864,7 +876,13 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
 
     let mut res_backend = upload_vec_znx::<BE>(res);
     for i in 0..cols {
-        module.vec_znx_normalize_assign_backend(base2k, &mut vec_znx_backend_mut::<BE>(&mut res_backend), i, scratch);
+        module.vec_znx_normalize_assign_backend(
+            base2k,
+            res_backend.size() * base2k,
+            &mut vec_znx_backend_mut::<BE>(&mut res_backend),
+            i,
+            scratch,
+        );
     }
     *res = download_vec_znx::<BE>(&res_backend);
 }

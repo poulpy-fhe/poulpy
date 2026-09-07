@@ -81,8 +81,6 @@ impl<D: Data, W: ZnxWord> LWEMatrixInfos for LWEMatrix<D, W> {
 
 impl<D: Data, W: ZnxWord> SetBase2k for LWEMatrix<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
-        let _ = self.body.data_mut();
-        let _ = self.mask.data_mut();
         self.base2k = base2k;
     }
 }

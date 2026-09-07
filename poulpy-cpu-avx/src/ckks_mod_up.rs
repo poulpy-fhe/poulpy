@@ -200,10 +200,12 @@ where
     let res_big_ref = res_big.to_backend_ref();
     let mut dst_ref = dst.to_backend_mut();
     let base2k = dst_ref.base2k().as_usize();
+    let k = dst_ref.k().as_usize();
     for col in 0..output_cols {
         module.vec_znx_big_normalize(
             dst_ref.data_mut(),
             base2k,
+            k,
             0,
             col,
             &res_big_ref,

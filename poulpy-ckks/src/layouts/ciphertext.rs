@@ -26,10 +26,10 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// Marker for CKKS ciphertexts whose limb digits are carry-normalized.
+/// Marker for CKKS ciphertexts normalized and canonical at their declared precision.
 pub struct Normalized;
 
-/// Marker for CKKS ciphertexts whose limb digits may contain unpropagated carries.
+/// Marker for CKKS ciphertexts that may be unnormalized or non-canonical.
 pub struct Unnormalized;
 
 impl sealed::Sealed for Normalized {}
@@ -492,10 +492,8 @@ impl<D: Data, W: ZnxWord> CKKSCiphertext<D, W, Unnormalized> {
 
     /// Normalizes the ciphertext and returns the result as a [`CKKSCiphertext`].
     ///
-    /// Propagates carries through the limb chain (only the top limb discards
-    /// overflow), making each digit fit within `base2k` bits and the result
-    /// safe to pass to any DFT-domain primitive (keyswitching, convolution,
-    /// automorphisms).
+    /// Propagates carries and rounds at the declared precision, making the result
+    /// safe to pass to DFT-domain primitives.
     pub fn normalize<M, BE>(self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> CKKSCiphertext<D, W>
     where
         BE: Backend<ZnxWord = W>,

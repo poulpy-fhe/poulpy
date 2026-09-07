@@ -33,7 +33,6 @@ impl<D: HostDataMut> VecZnx<D, i64> {
     /// - `gap == 0` or `data.len() * gap != N`
     pub fn encode_vec_i64_strided(&mut self, base2k: usize, col: usize, k: usize, gap: usize, data: &[i64]) {
         let size: usize = k.div_ceil(base2k);
-        let was_canonical = self.is_canonical();
 
         #[cfg(debug_assertions)]
         {
@@ -87,7 +86,6 @@ impl<D: HostDataMut> VecZnx<D, i64> {
                 znx_normalize_middle_step_assign(base2k, k_rem, a.at_mut(col, j), &mut carry);
             }
         }
-        self.set_canonical(was_canonical);
     }
 
     /// Encodes an `i128` slice into the limb-decomposed (base-2^k) representation.
@@ -102,7 +100,6 @@ impl<D: HostDataMut> VecZnx<D, i64> {
     /// [`encode_vec_i64_strided`](VecZnx::encode_vec_i64_strided).
     pub fn encode_vec_i128_strided(&mut self, base2k: usize, col: usize, k: usize, gap: usize, data: &[i128]) {
         let size: usize = k.div_ceil(base2k);
-        let was_canonical = self.is_canonical();
 
         #[cfg(debug_assertions)]
         {
@@ -164,14 +161,12 @@ impl<D: HostDataMut> VecZnx<D, i64> {
                 znx_normalize_middle_step_assign(base2k, k_rem, a.at_mut(col, j), &mut carry);
             }
         }
-        self.set_canonical(was_canonical);
     }
 
     /// Encodes a single coefficient at index `idx` into the limb-decomposed
     /// representation, zeroing all other coefficients of column `col`.
     pub fn encode_coeff_i64(&mut self, base2k: usize, col: usize, k: usize, idx: usize, data: i64) {
         let size: usize = k.div_ceil(base2k);
-        let was_canonical = self.is_canonical();
 
         #[cfg(debug_assertions)]
         {
@@ -211,7 +206,6 @@ impl<D: HostDataMut> VecZnx<D, i64> {
                 znx_normalize_middle_step_assign(base2k, k_rem, slice, &mut carry);
             }
         }
-        self.set_canonical(was_canonical);
     }
 }
 

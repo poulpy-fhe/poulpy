@@ -303,9 +303,11 @@ where
                 }
                 {
                     let a_ij_big = a_ij_big_backend.to_backend_ref();
+                    let res_k = res_backend.size() * base2k;
                     self.vec_znx_big_normalize(
                         &mut res_backend,
                         base2k,
+                        res_k,
                         0,
                         idx,
                         &a_ij_big,

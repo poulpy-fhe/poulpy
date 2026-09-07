@@ -351,7 +351,13 @@ where
 
         for a in res.data.iter_mut() {
             let mut a_data = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(a.data_mut());
-            self.vec_znx_normalize_assign_backend(res.base2k.into(), &mut a_data, 0, &mut scratch.borrow());
+            self.vec_znx_normalize_assign_backend(
+                res.base2k.into(),
+                res.k.as_usize(),
+                &mut a_data,
+                0,
+                &mut scratch.borrow(),
+            );
         }
 
         res.rotate(self, -(drift as i64));
