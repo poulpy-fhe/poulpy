@@ -113,9 +113,9 @@ where
 /// Builds the shared `E(x) = exp(2πi·x)` power basis for a batch of general
 /// LUTs: one EvalMod, then the union of every LUT's baby-step schedule.
 ///
-/// Equal-arity LUTs have the same message ratio, but their coefficient parity
-/// (and, for some split strategies, their BSGS split) can still differ, so the
-/// populated schedule must not depend on which LUT happens to be first.
+/// LUTs with the same padded length share a message ratio, but their coefficient
+/// parity (and, for some split strategies, their BSGS split) can still differ,
+/// so the populated schedule must not depend on which LUT happens to be first.
 pub(crate) fn ckks_lut_power_basis<BE, F, C, H>(
     module: &Module<BE>,
     ct: &C,
@@ -268,6 +268,26 @@ mod tests {
     #[test]
     fn trig_lut_rejects_empty_table() {
         assert!(trig_hermite_lut::<f64>(&[]).is_err());
+    }
+
+    #[test]
+    fn trig_lut_interpolates_values_with_zero_derivatives() {
+        for p in [1, 2, 3, 4, 5, 6, 7, 8, 9] {
+            let table: Vec<_> = (0..p).map(|m| ((m * m + 3 * m + 2) % 7) as f64 - 3.0).collect();
+            let poly = trig_hermite_lut(&table).unwrap();
+            for (m, &expected) in table.iter().enumerate() {
+                let angle = std::f64::consts::TAU * m as f64 / p as f64;
+                let mut value = 0.0;
+                let mut derivative = 0.0;
+                for (k, (&re, &im)) in poly.re.iter().zip(&poly.im).enumerate() {
+                    let (sin, cos) = (k as f64 * angle).sin_cos();
+                    value += 2.0 * (re * cos - im * sin);
+                    derivative -= 2.0 * k as f64 * (re * sin + im * cos);
+                }
+                assert!((value - expected).abs() < 1e-12, "p={p}, m={m}: {value} != {expected}");
+                assert!(derivative.abs() < 1e-12, "p={p}, m={m}: derivative={derivative}");
+            }
+        }
     }
 
     #[test]

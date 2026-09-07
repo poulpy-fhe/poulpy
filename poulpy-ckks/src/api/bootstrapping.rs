@@ -151,15 +151,16 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// `luts` to it, writing the results into `ct_outs`.
     ///
     /// One LUT or many: the batch shares the SlotsToCoeffs, ModUp and
-    /// CoeffsToSlots stages, and equal-arity general LUTs additionally share
-    /// the power basis of each transformed half, so `n` LUTs cost one bootstrap
+    /// CoeffsToSlots stages, and general LUTs additionally share the power basis
+    /// of each transformed half, so `n` LUTs cost one bootstrap
     /// plus `n` polynomial evaluations. `ct_outs` and `luts` must have the same
     /// length, every LUT must have the same message ratio, and every output
     /// must share one rank-1 layout.
     ///
-    /// Each LUT derives its required message ratio from its table length, and
-    /// the slot kind of `ct_in` selects the pipeline: [`SlotsKind::Real`] slots
-    /// skip the imaginary branch entirely.
+    /// Each LUT derives its required message ratio from its table length rounded
+    /// up to a power of two. Different lengths with the same padded length can
+    /// share a batch. The slot kind of `ct_in` selects the pipeline:
+    /// [`SlotsKind::Real`] slots skip the imaginary branch entirely.
     ///
     /// [`SlotsKind::Real`]: crate::SlotsKind::Real
     fn ckks_functional_bootstrap<F, K>(

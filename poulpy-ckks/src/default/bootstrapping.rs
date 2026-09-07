@@ -807,9 +807,9 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
     /// [`CKKSBootstrappingOps::ckks_functional_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_functional_bootstrap).
     ///
     /// One LUT or many: the batch shares the S2C, ModUp and CoeffsToSlots stages,
-    /// and equal-arity general LUTs additionally share the power basis of each
-    /// transformed half. The slot kind of `ct_in` selects the pipeline: real slots
-    /// skip the imaginary branch entirely.
+    /// and general LUTs additionally share the power basis of each transformed
+    /// half. The slot kind of `ct_in` selects the pipeline: real slots skip the
+    /// imaginary branch entirely.
     pub(crate) fn ckks_functional_bootstrap_default<F, K>(
         &self,
         ct_outs: &mut [CKKSCiphertextOwned<BE>],

@@ -22,8 +22,8 @@ use crate::{
 /// A lookup table encoded as plaintext polynomial coefficients.
 ///
 /// Functional bootstrapping expects an input satisfying
-/// `log_budget - s2c_consumed_bits == log2(p)`, where `p` is the table size.
-/// Its output scale is the input scale plus `log2(p)`.
+/// `log_budget - s2c_consumed_bits == ceil(log2(p))`, where `p` is the table size.
+/// Its output scale is the input scale plus `ceil(log2(p))`.
 pub struct EncodedLut<P> {
     kind: EncodedLutKind<P>,
     log_msg_ratio: usize,
@@ -41,8 +41,10 @@ pub(crate) enum EncodedLutKind<P> {
 impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     /// Encodes `table[m]` for each integer message `m` in `0..table.len()`.
     ///
-    /// The table length must be a nonzero power of two. This general form
-    /// supports arbitrary such tables and requires EvalMod at evaluation time.
+    /// The table must be nonempty. Unused entries up to the next power of two
+    /// are filled with zero, preserving integer inputs `m` and a power-of-two
+    /// message ratio. Evaluation is periodic with that padded length, rather
+    /// than modulo `table.len()`. This form requires EvalMod at evaluation time.
     pub fn general<F>(
         host_module: &Module<HostBytesBackend>,
         table: &[F],
@@ -55,7 +57,9 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
         CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         let log_msg_ratio = table_log_msg_ratio(table.len())?;
-        let bsgs = trig_hermite_lut(table)?.encode_bsgs_with(host_module, base2k, coeffs_meta, strategy)?;
+        let mut padded = table.to_vec();
+        padded.resize(1usize << log_msg_ratio, F::zero());
+        let bsgs = trig_hermite_lut(&padded)?.encode_bsgs_with(host_module, base2k, coeffs_meta, strategy)?;
         Ok(Self {
             kind: EncodedLutKind::General(bsgs),
             log_msg_ratio,
@@ -142,7 +146,7 @@ impl<P> EncodedLut<P> {
         }
     }
 
-    /// Returns `log2(p)`, where `p` is the number of integer messages.
+    /// Returns `ceil(log2(p))`, where `p` is the number of table entries.
     pub fn log_msg_ratio(&self) -> usize {
         self.log_msg_ratio
     }
@@ -180,8 +184,11 @@ impl<P> EncodedLut<P> {
 }
 
 fn table_log_msg_ratio(len: usize) -> Result<usize> {
-    ensure!(len.is_power_of_two(), "LUT length must be a nonzero power of two, got {len}");
-    Ok(len.ilog2() as usize)
+    ensure!(len > 0, "LUT length must be nonzero");
+    let padded_len = len
+        .checked_next_power_of_two()
+        .ok_or_else(|| anyhow!("LUT length {len} is too large"))?;
+    Ok(padded_len.ilog2() as usize)
 }
 
 #[cfg(test)]
@@ -190,9 +197,16 @@ mod tests {
 
     #[test]
     fn message_ratio_is_derived_from_table_length() {
+        assert_eq!(table_log_msg_ratio(1).unwrap(), 0);
+        assert_eq!(table_log_msg_ratio(2).unwrap(), 1);
+        assert_eq!(table_log_msg_ratio(3).unwrap(), 2);
         assert_eq!(table_log_msg_ratio(4).unwrap(), 2);
+        assert_eq!(table_log_msg_ratio(5).unwrap(), 3);
+        assert_eq!(table_log_msg_ratio(6).unwrap(), 3);
+        assert_eq!(table_log_msg_ratio(7).unwrap(), 3);
         assert_eq!(table_log_msg_ratio(8).unwrap(), 3);
+        assert_eq!(table_log_msg_ratio(9).unwrap(), 4);
         assert!(table_log_msg_ratio(0).is_err());
-        assert!(table_log_msg_ratio(3).is_err());
+        assert!(table_log_msg_ratio(usize::MAX).is_err());
     }
 }
