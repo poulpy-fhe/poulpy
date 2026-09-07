@@ -208,8 +208,25 @@ impl ZnxNormalizeMiddleStepAssign for ZnxRef {
 
 impl ZnxExtractDigitAddMul for ZnxRef {
     #[inline(always)]
+    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        super::znx_extract_digit_mul_ref(base2k, lsh, res, src);
+    }
+
+    #[inline(always)]
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         znx_extract_digit_addmul_ref(base2k, lsh, res, src);
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i64],
+        carry: &mut [i64],
+    ) {
+        super::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
     }
 }
 

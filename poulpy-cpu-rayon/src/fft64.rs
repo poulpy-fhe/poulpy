@@ -204,7 +204,23 @@ $crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeMiddleStepAssign, znx_norm
 $crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeMiddleStepSub, znx_normalize_middle_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
 $crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFinalStepSub, znx_normalize_final_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
 $crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeFinalStepAssign, znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-$crate::rayon_forward_znx!($rayon, $base, ZnxExtractDigitAddMul, znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]));
+impl ZnxExtractDigitAddMul for $rayon {
+    #[inline(always)]
+    fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        <$base as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
+    }
+    #[inline(always)]
+    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        <$base as ZnxExtractDigitAddMul>::znx_extract_digit_mul(base2k, lsh, res, src);
+    }
+    #[inline(always)]
+    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
+        base2k: usize, lsh: usize, res_base2k: usize,
+        res: &mut [i64], src: &mut [i64], carry: &mut [i64],
+    ) {
+        <$base as ZnxExtractDigitAddMul>::znx_extract_digit_addmul_normalize::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
+    }
+}
 $crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
 
 impl ReimFFTExecute<ReimFFTTable<f64>, f64> for $rayon {

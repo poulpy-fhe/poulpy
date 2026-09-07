@@ -31,6 +31,9 @@ where
     T: Send,
     F: Fn(usize, usize, &mut [T]) + Send + Sync,
 {
+    if n == 0 {
+        return;
+    }
     let chunk = n.div_ceil(tasks).next_multiple_of(8);
     carry[..words * n]
         .par_chunks_mut(words * chunk)
@@ -183,4 +186,39 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
             )
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::for_each_range;
+
+    #[test]
+    fn test_normalization_ranges_private_scratch() {
+        rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap().install(|| {
+            for n in 0..=129 {
+                for tasks in 1..=17 {
+                    for words in [1, 3] {
+                        let visits: Vec<_> = (0..n).map(|_| AtomicUsize::new(0)).collect();
+                        let mut scratch = vec![usize::MAX; words * n + 12];
+                        let carry = &mut scratch[5..5 + words * n];
+                        let base = carry.as_ptr() as usize;
+                        for_each_range(n, tasks, words, carry, |start, len, private| {
+                            assert!(len > 0 && start + len <= n);
+                            assert_eq!(private.len(), words * len);
+                            assert_eq!(private.as_ptr() as usize - base, words * start * size_of::<usize>());
+                            for visit in &visits[start..start + len] {
+                                assert_eq!(visit.fetch_add(1, Ordering::Relaxed), 0);
+                            }
+                            private.fill(start);
+                        });
+                        assert!(visits.iter().all(|v| v.load(Ordering::Relaxed) == 1));
+                        assert!(scratch[..5].iter().chain(&scratch[5 + words * n..]).all(|&v| v == usize::MAX));
+                        assert!(scratch[5..5 + words * n].iter().all(|&v| v < n));
+                    }
+                }
+            }
+        });
+    }
 }

@@ -213,8 +213,25 @@ impl ZnxNormalizeMiddleStepAssign for FFT64Ref {
 
 impl ZnxExtractDigitAddMul for FFT64Ref {
     #[inline(always)]
+    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        crate::reference::znx::znx_extract_digit_mul_ref(base2k, lsh, res, src);
+    }
+
+    #[inline(always)]
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         znx_extract_digit_addmul_ref(base2k, lsh, res, src);
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i64],
+        carry: &mut [i64],
+    ) {
+        crate::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
     }
 }
 
@@ -222,5 +239,14 @@ impl ZnxNormalizeDigit for FFT64Ref {
     #[inline(always)]
     fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]) {
         znx_normalize_digit_ref(base2k, res, src);
+    }
+}
+
+#[cfg(test)]
+mod normalization_tests {
+    #[test]
+    fn test_normalization_kernels_bounded_inputs() {
+        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::FFT64Ref>();
+        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Ref>();
     }
 }

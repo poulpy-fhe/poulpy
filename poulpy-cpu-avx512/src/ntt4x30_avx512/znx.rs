@@ -211,8 +211,29 @@ impl ZnxNormalizeMiddleStepAssign for NTT4x30Avx512 {
 
 impl ZnxExtractDigitAddMul for NTT4x30Avx512 {
     #[inline(always)]
+    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        unsafe {
+            crate::znx_avx512::znx_extract_digit_mul_avx512(base2k, lsh, res, src);
+        }
+    }
+
+    #[inline(always)]
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         unsafe { znx_extract_digit_addmul_avx512(base2k, lsh, res, src) }
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i64],
+        carry: &mut [i64],
+    ) {
+        unsafe {
+            crate::znx_avx512::znx_extract_digit_addmul_normalize_avx512::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
+        }
     }
 }
 

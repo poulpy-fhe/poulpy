@@ -4,6 +4,7 @@
 
 ### `poulpy-hal`
 
+- **Breaking:** add overwrite and fused normalization methods to `ZnxExtractDigitAddMul`, with a `ZnxExtractDigitAddMulI128` counterpart for wide CPU backends.
 - **Breaking:** uniform `VecZnx` sampling now takes the target precision `k`; the sampler masks the unused low bits of the last live limb and clears limbs above `k`.
 - The cross-backend `test_vmp_apply_dft_to_dft_accumulate` now sweeps `res` sizes that differ from the prepared matrix size and non-zero `limb_offset`, so the output limb window is compared across transform families.
 
@@ -24,6 +25,11 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 
 ### CPU backends
 
+- Document normalization input headroom and fix single-round precision truncation, extreme offsets, and overflowing wide add/sub normalization.
+- Reduce normalization zeroing, specialize exact bit arithmetic by source width, and block serial i64 cross-base calls without changing scratch reservations.
+- Add bounded exact integer normalization tests, exhaustive centered small cases, and cross-base benchmark sweeps.
+- Restore selected-row VMP extraction forwarding for the NEON Rayon backend.
+- Fix cross-`base2k` normalization leaving output limbs outside `[-2^(base2k-1), 2^(base2k-1))` in `VecZnx` and FFT64/NTT4x30 `VecZnxBig`, including coefficient normalization and partial limbs ([#256](https://github.com/poulpy-fhe/poulpy/issues/256)).
 - Fix the FFT64 `vmp_apply_dft_to_dft` limb window when `res` is narrower than the prepared matrix: output limb `c` reads matrix limb `c + limb_offset`, but the window was clamped at `res.size()` instead of `res.size() + limb_offset`, dropping the top `limb_offset` limbs of every narrowed accumulating gadget digit. Shared by every FFT64 backend (reference, AVX2, AVX-512, NEON and their Rayon variants).
 - Fix the NTT4x30 reference `vmp_apply_dft_to_dft_accumulate_tmp_bytes` under-reporting scratch when `res` is wider than the prepared matrix.
 - Add `poulpy-cpu-rayon`, which provides the shared Rayon executor, nested-parallelism guard, scheduling thresholds, FFT64 kernels, coefficient normalization, and tuning utilities used by the accelerated CPU crates.

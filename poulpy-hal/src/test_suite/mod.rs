@@ -12,6 +12,7 @@ use crate::layouts::{
 };
 
 pub mod convolution;
+pub mod normalization;
 pub mod serialization;
 pub mod svp;
 pub mod vec_znx;
@@ -204,3 +205,4 @@ macro_rules! cross_backend_test_suite {
         }
     };
 }
+pub mod normalization_i128;

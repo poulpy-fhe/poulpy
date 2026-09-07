@@ -114,11 +114,37 @@ impl_forward_znx_trait!(
     ZnxNormalizeFinalStepAssign,
     znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64])
 );
-impl_forward_znx_trait!(
-    ZnxExtractDigitAddMul,
-    znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64])
-);
+impl ZnxExtractDigitAddMul for DelegatingFFT64Ref {
+    #[inline(always)]
+    fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        <FFT64Ref as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        <FFT64Ref as ZnxExtractDigitAddMul>::znx_extract_digit_mul(base2k, lsh, res, src);
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i64],
+        carry: &mut [i64],
+    ) {
+        <FFT64Ref as ZnxExtractDigitAddMul>::znx_extract_digit_addmul_normalize::<OVERWRITE>(
+            base2k, lsh, res_base2k, res, src, carry,
+        );
+    }
+}
 impl_forward_znx_trait!(ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
+
+#[test]
+fn test_normalization_kernels_delegating_fft64_ref() {
+    poulpy_hal::test_suite::normalization::test_normalization_kernels::<DelegatingFFT64Ref>();
+}
 
 impl ReimFFTExecute<ReimFFTTable<f64>, f64> for DelegatingFFT64Ref {
     #[inline(always)]

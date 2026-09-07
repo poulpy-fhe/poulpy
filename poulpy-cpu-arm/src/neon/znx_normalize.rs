@@ -3,10 +3,10 @@
 use core::arch::aarch64::{int64x2_t, vaddq_s64, vandq_s64, vdupq_n_s64, veorq_s64, vld1q_s64, vshlq_s64, vst1q_s64, vsubq_s64};
 
 use poulpy_cpu_ref::reference::znx::{
-    znx_extract_digit_addmul_ref, znx_normalize_digit_ref, znx_normalize_final_step_assign_ref, znx_normalize_final_step_ref,
-    znx_normalize_final_step_sub_ref, znx_normalize_first_step_assign_ref, znx_normalize_first_step_carry_only_ref,
-    znx_normalize_first_step_ref, znx_normalize_middle_step_assign_ref, znx_normalize_middle_step_carry_only_ref,
-    znx_normalize_middle_step_ref, znx_normalize_middle_step_sub_ref,
+    znx_normalize_digit_ref, znx_normalize_final_step_assign_ref, znx_normalize_final_step_ref, znx_normalize_final_step_sub_ref,
+    znx_normalize_first_step_assign_ref, znx_normalize_first_step_carry_only_ref, znx_normalize_first_step_ref,
+    znx_normalize_middle_step_assign_ref, znx_normalize_middle_step_carry_only_ref, znx_normalize_middle_step_ref,
+    znx_normalize_middle_step_sub_ref,
 };
 
 /// `(mask_k, sign_k, cnt_neg)` with `cnt_neg = -base2k` for `vshlq_s64` arithmetic right shift.
@@ -27,7 +27,7 @@ unsafe fn get_digit_neon(x: int64x2_t, mask_k: int64x2_t, sign_k: int64x2_t) -> 
     }
 }
 
-/// `carry = (x - digit) >>_arith base2k`.
+/// `carry = (x - digit) >>_arith base2k`; the subtraction must be representable.
 #[inline(always)]
 unsafe fn get_carry_neon(x: int64x2_t, digit: int64x2_t, cnt_neg: int64x2_t) -> int64x2_t {
     unsafe { vshlq_s64(vsubq_s64(x, digit), cnt_neg) }
@@ -35,7 +35,12 @@ unsafe fn get_carry_neon(x: int64x2_t, digit: int64x2_t, cnt_neg: int64x2_t) -> 
 
 /// `res += digit(src) << lsh` ; `src = carry`.
 #[inline]
-pub(crate) fn znx_extract_digit_addmul_neon(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+pub(crate) fn znx_extract_digit_addmul_impl_neon<const OVERWRITE: bool>(
+    base2k: usize,
+    lsh: usize,
+    res: &mut [i64],
+    src: &mut [i64],
+) {
     debug_assert_eq!(res.len(), src.len());
     let n = res.len();
     let span = n >> 2;
@@ -51,8 +56,16 @@ pub(crate) fn znx_extract_digit_addmul_neon(base2k: usize, lsh: usize, res: &mut
             let d1 = get_digit_neon(s1, mask, sign);
             let c0 = get_carry_neon(s0, d0, cnt_neg);
             let c1 = get_carry_neon(s1, d1, cnt_neg);
-            let r0 = vaddq_s64(vld1q_s64(rr), vshlq_s64(d0, lsh_v));
-            let r1 = vaddq_s64(vld1q_s64(rr.add(2)), vshlq_s64(d1, lsh_v));
+            let r0 = if OVERWRITE {
+                vshlq_s64(d0, lsh_v)
+            } else {
+                vaddq_s64(vld1q_s64(rr), vshlq_s64(d0, lsh_v))
+            };
+            let r1 = if OVERWRITE {
+                vshlq_s64(d1, lsh_v)
+            } else {
+                vaddq_s64(vld1q_s64(rr.add(2)), vshlq_s64(d1, lsh_v))
+            };
             vst1q_s64(rr, r0);
             vst1q_s64(rr.add(2), r1);
             vst1q_s64(ss, c0);
@@ -63,8 +76,23 @@ pub(crate) fn znx_extract_digit_addmul_neon(base2k: usize, lsh: usize, res: &mut
     }
     let tail = span << 2;
     if tail < n {
-        znx_extract_digit_addmul_ref(base2k, lsh, &mut res[tail..], &mut src[tail..]);
+        poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_impl_ref::<OVERWRITE>(
+            base2k,
+            lsh,
+            &mut res[tail..],
+            &mut src[tail..],
+        );
     }
+}
+
+#[inline]
+pub(crate) fn znx_extract_digit_addmul_neon(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+    znx_extract_digit_addmul_impl_neon::<false>(base2k, lsh, res, src);
+}
+
+#[inline]
+pub(crate) fn znx_extract_digit_mul_neon(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+    znx_extract_digit_addmul_impl_neon::<true>(base2k, lsh, res, src);
 }
 
 /// `res = digit(res)` ; `src += carry(res)`.
@@ -628,5 +656,63 @@ pub(crate) fn znx_normalize_final_step_sub_neon(base2k: usize, lsh: usize, x: &m
     let tail = span << 2;
     if tail < n {
         znx_normalize_final_step_sub_ref(base2k, lsh, &mut x[tail..], &a[tail..], &mut carry[tail..]);
+    }
+}
+
+/// Extracts the completing subdigit and normalizes the destination in one pass.
+#[inline]
+pub(crate) fn znx_extract_digit_addmul_normalize_neon<const OVERWRITE: bool>(
+    base2k: usize,
+    lsh: usize,
+    res_base2k: usize,
+    res: &mut [i64],
+    src: &mut [i64],
+    carry: &mut [i64],
+) {
+    debug_assert_eq!(res.len(), src.len());
+    debug_assert!(carry.len() >= res.len());
+    let end = res.len() / 2 * 2;
+    unsafe {
+        let (mask, sign, shift) = normalize_consts_neon(base2k);
+        let (res_mask, res_sign, res_shift) = normalize_consts_neon(res_base2k);
+        let scale = vdupq_n_s64(lsh as i64);
+        for i in (0..end).step_by(2) {
+            let source = vld1q_s64(src.as_ptr().add(i));
+            let digit = get_digit_neon(source, mask, sign);
+            let quotient = get_carry_neon(source, digit, shift);
+            let partial = if OVERWRITE {
+                vshlq_s64(digit, scale)
+            } else {
+                vaddq_s64(vld1q_s64(res.as_ptr().add(i)), vshlq_s64(digit, scale))
+            };
+            let sum = vaddq_s64(partial, vld1q_s64(carry.as_ptr().add(i)));
+            let output = get_digit_neon(sum, res_mask, res_sign);
+            let output_carry = get_carry_neon(sum, output, res_shift);
+            vst1q_s64(src.as_mut_ptr().add(i), quotient);
+            vst1q_s64(res.as_mut_ptr().add(i), output);
+            vst1q_s64(carry.as_mut_ptr().add(i), output_carry);
+        }
+    }
+    poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
+        base2k,
+        lsh,
+        res_base2k,
+        &mut res[end..],
+        &mut src[end..],
+        &mut carry[end..],
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_normalization_kernels_bounded_inputs() {
+        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::FFT64Neon>();
+        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Neon>();
+        #[cfg(feature = "enable-rayon")]
+        {
+            poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::FFT64NeonRayon>();
+            poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30NeonRayon>();
+        }
     }
 }

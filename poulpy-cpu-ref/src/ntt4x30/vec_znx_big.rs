@@ -8,3 +8,7 @@ use crate::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
 
 impl I128BigOps for NTT4x30Ref {}
 impl I128NormalizeOps for NTT4x30Ref {}
+
+impl poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128 for NTT4x30Ref {
+    const FUSE_NORMALIZE: bool = false;
+}

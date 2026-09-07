@@ -1,3 +1,7 @@
+//! Shared normalization loops. Public inputs follow [`crate::api::VecZnxNormalize`]:
+//! i64 coefficients in `[-2^62, 2^62]` and radix widths in `1..=62`.
+//! Coefficient, in-place and disjoint-range entrypoints share these bounds.
+
 use std::{marker::PhantomData, mem::size_of};
 
 use crate::{
@@ -83,6 +87,20 @@ pub fn vec_znx_normalize_coeff<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    let a_bits = (a.size() * a_base2k) as i64;
+    let res_bits = (res.size() * res_base2k) as i64;
+    if a.size() == 0 || a_base2k > 63 || res_base2k > 63 || res_offset < a_bits - res_bits || res_offset >= a_bits {
+        normalize_exact::<true, _, _>(
+            |j| a.at(a_col, j)[a_coeff] as i128,
+            a.size(),
+            a_base2k,
+            res.size(),
+            res_base2k,
+            res_offset,
+            |j, digit| res.at_mut(res_col, j)[0] = digit,
+        );
+        return;
+    }
     match res_base2k == a_base2k {
         true => vec_znx_normalize_coeff_inter_base2k::<BE>(res_base2k, res, res_offset, res_col, a, a_col, a_coeff, carry),
         false => {
@@ -109,6 +127,10 @@ pub fn vec_znx_normalize_coeff_assign<'r, BE>(
 
     let res_size: usize = res.size();
     let carry = &mut carry[..1];
+
+    if base2k == 64 {
+        return;
+    }
 
     for j in (0..res_size).rev() {
         let dst = &mut res.at_mut(res_col, j)[res_coeff..res_coeff + 1];
@@ -138,7 +160,8 @@ fn vec_znx_normalize_coeff_inter_base2k<'r, 'a, BE>(
         + ZnxNormalizeMiddleStepCarryOnly
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStepAssign
-        + ZnxNormalizeMiddleStepAssign,
+        + ZnxNormalizeMiddleStepAssign
+        + ZnxExtractDigitAddMul,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -195,13 +218,8 @@ fn vec_znx_normalize_coeff_inter_base2k<'r, 'a, BE>(
         BE::znx_normalize_middle_step::<true>(base2k, lsh_pos, res.at_mut(res_col, res_start - j - 1), &src, carry);
     }
 
-    for j in 0..res_end {
-        res.at_mut(res_col, res_end - j - 1).fill(0);
-        if j == res_end - 1 {
-            BE::znx_normalize_final_step_assign(base2k, lsh_pos, res.at_mut(res_col, res_end - j - 1), carry);
-        } else {
-            BE::znx_normalize_middle_step_assign(base2k, lsh_pos, res.at_mut(res_col, res_end - j - 1), carry);
-        }
+    for j in (0..res_end).rev() {
+        BE::znx_extract_digit_mul(base2k, 0, res.at_mut(res_col, j), carry);
     }
 }
 
@@ -274,7 +292,7 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
     let a_end: usize = a_end_bit / a_base2k;
     let a_start: usize = a_start_bit.div_ceil(a_base2k);
 
-    for j in 0..res_size {
+    for j in res_start..res_size {
         res.at_mut(res_col, j).fill(0);
     }
 
@@ -298,6 +316,7 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
 
     let mut res_acc_left: usize = res_base2k;
     let mut res_limb: usize = res_start - 1;
+    let mut initialized = false;
     let mid_range: usize = a_start.saturating_sub(a_end);
 
     'outer: for j in 0..mid_range {
@@ -323,7 +342,18 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
 
             if a_take != 0 {
                 let scale: usize = res_base2k - res_acc_left;
-                BE::znx_extract_digit_addmul(a_take, scale, res_slice, a_norm);
+                if a_take == res_acc_left {
+                    if initialized {
+                        BE::znx_extract_digit_addmul_normalize::<false>(a_take, scale, res_base2k, res_slice, a_norm, res_carry);
+                    } else {
+                        BE::znx_extract_digit_addmul_normalize::<true>(a_take, scale, res_base2k, res_slice, a_norm, res_carry);
+                    }
+                } else if initialized {
+                    BE::znx_extract_digit_addmul(a_take, scale, res_slice, a_norm);
+                } else {
+                    BE::znx_extract_digit_mul(a_take, scale, res_slice, a_norm);
+                }
+                initialized = true;
                 a_take_left -= a_take;
                 res_acc_left -= a_take;
             }
@@ -335,9 +365,15 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
                         let scale: usize = res_base2k - res_acc_left;
                         BE::znx_extract_digit_addmul(res_acc_left, scale, res_slice, a_carry);
                     }
-                    BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
+                    if res_acc_left != 0 {
+                        BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
+                    }
                     BE::znx_add_assign(res_carry, a_carry);
                     break 'outer;
+                }
+
+                if res_acc_left != 0 {
+                    BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
                 }
 
                 if res_limb == 0 {
@@ -346,6 +382,7 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
 
                 res_acc_left += res_base2k;
                 res_limb -= 1;
+                initialized = false;
             }
 
             if a_take_left == 0 {
@@ -357,12 +394,8 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
 
     if res_end != 0 {
         let carry_to_use = if a_start == a_end { a_carry } else { res_carry };
-        for j in 0..res_end {
-            if j == res_end - 1 {
-                BE::znx_normalize_final_step_assign(res_base2k, 0, res.at_mut(res_col, res_end - j - 1), carry_to_use);
-            } else {
-                BE::znx_normalize_middle_step_assign(res_base2k, 0, res.at_mut(res_col, res_end - j - 1), carry_to_use);
-            }
+        for j in (0..res_end).rev() {
+            BE::znx_extract_digit_mul(res_base2k, 0, res.at_mut(res_col, j), carry_to_use);
         }
     }
 }
@@ -396,7 +429,24 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
     BE::BufRef<'a>: HostDataRef,
 {
     let n = res.n();
-    vec_znx_normalize_range::<BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry)
+    if res_base2k != a_base2k && n > 512 {
+        for start in (0..n).step_by(512) {
+            vec_znx_normalize_range::<BE>(
+                res,
+                res_base2k,
+                res_offset,
+                res_col,
+                a,
+                a_base2k,
+                a_col,
+                start,
+                512.min(n - start),
+                carry,
+            );
+        }
+    } else {
+        vec_znx_normalize_range::<BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry);
+    }
 }
 
 /// [`vec_znx_normalize`] restricted to `[coeff_start, coeff_start + coeff_len)`;
@@ -462,8 +512,16 @@ fn vec_znx_normalize_range<'r, 'a, BE>(
 ///
 /// # Safety
 ///
-/// `res_ptr` must address a valid `n * cols * size` allocation. Any live calls
-/// using the same allocation must write disjoint coefficient ranges.
+/// `res_ptr` must be non-null, aligned for `i64`, and address at least
+/// `n * cols * size` initialized `i64` values; layout arithmetic must not overflow.
+/// The source must have valid initialized storage, degree `n`, and column `a_col`.
+/// Require `res_col < cols`, `coeff_start <= n`, `coeff_len <= n - coeff_start`,
+/// and at least `3 * coeff_len` private scratch words in `carry`.
+///
+/// For every destination limb, the selected coefficient range must be exclusively
+/// writable for this call and must not overlap source or scratch storage. Concurrent
+/// calls may share the destination allocation only with disjoint coefficient ranges.
+/// Source reads must remain immutable, and scratch must not overlap the source.
 #[allow(clippy::too_many_arguments)]
 #[doc(hidden)]
 pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
@@ -505,6 +563,22 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
         assert!(carry.len() >= 3 * coeff_len);
     }
     let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
+    let a_bits = (a.size() * a_base2k) as i64;
+    let res_bits = (size * res_base2k) as i64;
+    if a.size() == 0 || a_base2k > 63 || res_base2k > 63 || res_offset < a_bits - res_bits || res_offset >= a_bits {
+        for i in 0..coeff_len {
+            normalize_exact::<true, _, _>(
+                |j| a.at(a_col, j)[coeff_start + i] as i128,
+                a.size(),
+                a_base2k,
+                size,
+                res_base2k,
+                res_offset,
+                |j, digit| res.at_mut(j)[i] = digit,
+            );
+        }
+        return;
+    }
     match res_base2k == a_base2k {
         true => vec_znx_normalize_inter_base2k::<BE>(
             res_base2k,
@@ -550,7 +624,8 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
         + ZnxNormalizeMiddleStepCarryOnly
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStepAssign
-        + ZnxNormalizeMiddleStepAssign,
+        + ZnxNormalizeMiddleStepAssign
+        + ZnxExtractDigitAddMul,
     BE::BufRef<'a>: HostDataRef,
 {
     let (lo, hi) = (coeff_start, coeff_start + coeff_len);
@@ -611,13 +686,8 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
     }
 
     // Propagates the carry over the non-overlapping limbs between res and a
-    for j in 0..res_end {
-        BE::znx_zero(res.at_mut(res_end - j - 1));
-        if j == res_end - 1 {
-            BE::znx_normalize_final_step_assign(base2k, lsh_pos, res.at_mut(res_end - j - 1), carry);
-        } else {
-            BE::znx_normalize_middle_step_assign(base2k, lsh_pos, res.at_mut(res_end - j - 1), carry);
-        }
+    for j in (0..res_end).rev() {
+        BE::znx_extract_digit_mul(base2k, 0, res.at_mut(j), carry);
     }
 }
 
@@ -686,11 +756,8 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
     let a_end: usize = a_end_bit / a_base2k;
     let a_start: usize = a_start_bit.div_ceil(a_base2k);
 
-    // Zero all limbs of `res`. Unlike the simple case
-    // where `res_base2k` is equal to `a_base2k`, we also
-    // need to ensure that the limbs starting from `res_end`
-    // are zero.
-    for j in 0..res_size {
+    // Every overlapping limb is overwritten by its first extraction.
+    for j in res_start..res_size {
         BE::znx_zero(res.at_mut(j));
     }
 
@@ -721,6 +788,7 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
 
     // Starting limb of `res`.
     let mut res_limb: usize = res_start - 1;
+    let mut initialized = false;
 
     // How many limbs of `a` overlap with `res` (after taking into account the offset).
     let mid_range: usize = a_start.saturating_sub(a_end);
@@ -779,7 +847,18 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
             if a_take != 0 {
                 // Extract `a_take` bits from a_norm and accumulates them on `res_slice`.
                 let scale: usize = res_base2k - res_acc_left;
-                BE::znx_extract_digit_addmul(a_take, scale, res_slice, a_norm);
+                if a_take == res_acc_left {
+                    if initialized {
+                        BE::znx_extract_digit_addmul_normalize::<false>(a_take, scale, res_base2k, res_slice, a_norm, res_carry);
+                    } else {
+                        BE::znx_extract_digit_addmul_normalize::<true>(a_take, scale, res_base2k, res_slice, a_norm, res_carry);
+                    }
+                } else if initialized {
+                    BE::znx_extract_digit_addmul(a_take, scale, res_slice, a_norm);
+                } else {
+                    BE::znx_extract_digit_mul(a_take, scale, res_slice, a_norm);
+                }
+                initialized = true;
                 a_take_left -= a_take;
                 res_acc_left -= a_take;
             }
@@ -794,7 +873,7 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
                 // the normalization to ensure the `res-offset` overflowing bits of `a`
                 // are in the MSB of `res` instead of being discarded.
                 if a_limb == 0 && a_take_left == 0 {
-                    // TODO: prove no overflow can happen here (should not intuitively)
+                    // Exhausting a normalized source leaves 0 or 1; its carry has room for that unit.
                     BE::znx_add_assign(a_carry, a_norm);
 
                     // Usual case where for example
@@ -813,10 +892,12 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
                         BE::znx_extract_digit_addmul(res_acc_left, scale, res_slice, a_carry);
                     }
 
-                    BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
+                    if res_acc_left != 0 {
+                        BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
+                    }
 
                     // Previous step might not consume all bits of a_carry
-                    // TODO: prove no overflow can happen here
+                    // Extraction reduces a_carry before adding the bounded result carry.
                     BE::znx_add_assign(res_carry, a_carry);
 
                     // We are done, so breaks out of the loop (yes we are at a[0], but
@@ -825,12 +906,17 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
                 }
 
                 // If we reached the last limb of res
+                if res_acc_left != 0 {
+                    BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
+                }
+
                 if res_limb == 0 {
                     break 'outer;
                 }
 
                 res_acc_left += res_base2k;
                 res_limb -= 1;
+                initialized = false;
             }
 
             // If a_norm is exhausted, breaks the inner loop.
@@ -860,12 +946,8 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
         // the carry of a[0].
         let carry_to_use = if a_start == a_end { a_carry } else { res_carry };
 
-        for j in 0..res_end {
-            if j == res_end - 1 {
-                BE::znx_normalize_final_step_assign(res_base2k, 0, res.at_mut(res_end - j - 1), carry_to_use);
-            } else {
-                BE::znx_normalize_middle_step_assign(res_base2k, 0, res.at_mut(res_end - j - 1), carry_to_use);
-            }
+        for j in (0..res_end).rev() {
+            BE::znx_extract_digit_mul(res_base2k, 0, res.at_mut(j), carry_to_use);
         }
     }
 }
@@ -906,8 +988,14 @@ fn vec_znx_normalize_assign_range<'r, BE>(
 ///
 /// # Safety
 ///
-/// `res_ptr` must address a valid `n * cols * size` allocation. Any live calls
-/// using the same allocation must write disjoint coefficient ranges.
+/// `res_ptr` must be non-null, aligned for `i64`, and address at least
+/// `n * cols * size` initialized `i64` values; layout arithmetic must not overflow.
+/// Require `res_col < cols`, `coeff_start <= n`, `coeff_len <= n - coeff_start`,
+/// and at least `coeff_len` private scratch words in `carry`.
+///
+/// For every limb, the selected coefficient range must be exclusively writable
+/// and must not overlap scratch storage. Concurrent calls may share the allocation
+/// only with disjoint coefficient ranges.
 #[allow(clippy::too_many_arguments)]
 #[doc(hidden)]
 pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
@@ -928,6 +1016,9 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
         assert!(res_col < cols);
         assert!(coeff_start + coeff_len <= n);
         assert!(carry.len() >= coeff_len);
+    }
+    if base2k == 64 {
+        return;
     }
     let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
     let carry = &mut carry[..coeff_len];
@@ -1171,6 +1262,612 @@ fn test_vec_znx_normalize_inter_base2k() {
                 let err_log2: f64 = f64::try_from(err).unwrap_or(0.0).max(1e-60_f64).log2();
 
                 assert!(err_log2 <= -(out_prec as f64), "{} {}", err_log2, -(out_prec as f64))
+            }
+        }
+    }
+}
+
+#[test]
+fn test_vec_znx_normalize_limb_bounds() {
+    use crate::{
+        FFT64Ref,
+        layouts::{FillUniform, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView},
+        source::Source,
+    };
+    let n: usize = 8;
+    let mut carry: Vec<i64> = vec![0i64; vec_znx_normalize_tmp_bytes(n) / size_of::<i64>()];
+    let mut source: Source = Source::new([1u8; 32]);
+    for in_base2k in 1..=51usize {
+        for out_base2k in 1..=51usize {
+            for offset in [-(in_base2k as i64), -3, -1, 0, 1, 3, in_base2k as i64] {
+                for in_size in 1..=4usize {
+                    for out_size in 1..=4usize {
+                        let mut want: VecZnx<Vec<u8>, i64> = alloc_host_vec_znx(n, 1, in_size);
+                        want.fill_uniform(62, &mut source);
+                        let mut have: VecZnx<Vec<u8>, i64> = alloc_host_vec_znx(n, 1, out_size);
+                        vec_znx_normalize::<FFT64Ref>(
+                            &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),
+                            out_base2k,
+                            offset,
+                            0,
+                            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&want),
+                            in_base2k,
+                            0,
+                            &mut carry,
+                        );
+                        let bound: i64 = 1 << (out_base2k - 1);
+                        for j in 0..out_size {
+                            assert!(
+                                have.at(0, j).iter().all(|x| (-bound..bound).contains(x)),
+                                "in_base2k={in_base2k} out_base2k={out_base2k} offset={offset} in_size={in_size} out_size={out_size} limb={j}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Exact fixed-point quantization, with ties toward positive infinity.
+#[cfg(test)]
+pub(crate) fn normalize_integer_oracle(a: &[i128], a_base2k: usize, res_base2k: usize, res_size: usize, offset: i64) -> Vec<i64> {
+    use dashu_int::IBig;
+    let mut value = IBig::ZERO;
+    for &limb in a {
+        value = (value << a_base2k) + IBig::from(limb);
+    }
+    let shift = res_size as i64 * res_base2k as i64 + offset - a.len() as i64 * a_base2k as i64;
+    if shift >= 0 {
+        value <<= shift as usize;
+    } else {
+        let drop = (-shift) as usize;
+        value = (value + (IBig::ONE << (drop - 1))) >> drop;
+    }
+    let radix = IBig::ONE << res_base2k;
+    let half = IBig::ONE << (res_base2k - 1);
+    let mut result = vec![0; res_size];
+    for limb in result.iter_mut().rev() {
+        let next = (&value + &half) >> res_base2k;
+        *limb = i64::try_from(&value - &next * &radix).unwrap();
+        value = next;
+    }
+    result
+}
+
+#[cfg(test)]
+fn check_normalize_integer(a: &[i128], a_base2k: usize, res_base2k: usize, res_size: usize, offset: i64) {
+    use crate::{
+        FFT64Ref,
+        layouts::{VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+    };
+    let mut input = alloc_host_vec_znx(1, 1, a.len());
+    for (j, &x) in a.iter().enumerate() {
+        input.at_mut(0, j)[0] = x as i64;
+    }
+    let mut output = alloc_host_vec_znx(1, 1, res_size);
+    for j in 0..res_size {
+        output.at_mut(0, j)[0] = 12345;
+    }
+    vec_znx_normalize::<FFT64Ref>(
+        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
+        res_base2k,
+        offset,
+        0,
+        &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input),
+        a_base2k,
+        0,
+        &mut [91; 3],
+    );
+    let have: Vec<i64> = (0..res_size).map(|j| output.at(0, j)[0]).collect();
+    assert_eq!(
+        have,
+        normalize_integer_oracle(a, a_base2k, res_base2k, res_size, offset),
+        "a={a:?}, a_base2k={a_base2k}, res_base2k={res_base2k}, res_size={res_size}, offset={offset}"
+    );
+}
+
+#[test]
+fn test_normalize_exact_regressions() {
+    check_normalize_integer(&[], 2, 3, 1, -1);
+    check_normalize_integer(&[0, 1, 2], 2, 2, 1, 0);
+    check_normalize_integer(&[9], 2, 2, 1, -4);
+    check_normalize_integer(&[9], 2, 3, 1, -4);
+    check_normalize_integer(&[-1], 3, 2, 1, 0);
+    check_normalize_integer(&[1i128 << 62], 2, 3, 1, -5);
+}
+
+#[test]
+fn test_normalize_integer_input_bound() {
+    let mut state = 0x123456789abcdefu64;
+    for a_base2k in 1..=62 {
+        for res_base2k in 1..=62 {
+            for a_size in 1..=8 {
+                let a: Vec<i128> = (0..a_size)
+                    .map(|j| {
+                        state ^= state << 13;
+                        state ^= state >> 7;
+                        state ^= state << 17;
+                        match j % 4 {
+                            0 => -(1i128 << 62),
+                            1 => 1i128 << 62,
+                            _ => (state as i64 >> 1) as i128,
+                        }
+                    })
+                    .collect();
+                for a in [a, vec![-(1i128 << 62); a_size], vec![1i128 << 62; a_size]] {
+                    for res_size in [1, 3, 8] {
+                        let bracket = (a_size * a_base2k + res_size * res_base2k) as i64;
+                        for offset in [-bracket, -(a_base2k as i64) - 1, -1, 0, 1, a_base2k as i64, bracket] {
+                            check_normalize_integer(&a, a_base2k, res_base2k, res_size, offset);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Reads the two's-complement bits of the exact radix-weighted input integer.
+pub(crate) struct NormalizationBits<F, const NARROW: bool> {
+    source: F,
+    left: usize,
+    base2k: usize,
+    carry: i128,
+    digit: u64,
+    available: usize,
+}
+
+impl<F: FnMut(usize) -> i128, const NARROW: bool> NormalizationBits<F, NARROW> {
+    pub(crate) fn new(source: F, size: usize, base2k: usize) -> Self {
+        Self {
+            source,
+            left: size,
+            base2k,
+            carry: 0,
+            digit: 0,
+            available: 0,
+        }
+    }
+
+    fn refill(&mut self) {
+        let mask = (1u64 << self.base2k) - 1;
+        if self.left != 0 {
+            self.left -= 1;
+            let a = (self.source)(self.left);
+            let low = (a as u64 & mask) + (self.carry as u64 & mask);
+            self.carry = if NARROW {
+                ((a as i64 >> self.base2k) + (self.carry as i64 >> self.base2k) + (low >> self.base2k) as i64) as i128
+            } else {
+                (a >> self.base2k) + (self.carry >> self.base2k) + (low >> self.base2k) as i128
+            };
+            self.digit = low & mask;
+        } else {
+            self.digit = self.carry as u64 & mask;
+            self.carry = if NARROW {
+                (self.carry as i64 >> self.base2k) as i128
+            } else {
+                self.carry >> self.base2k
+            };
+        }
+        self.available = self.base2k;
+    }
+
+    fn read(&mut self, mut count: usize) -> u64 {
+        let mut value = 0;
+        let mut written = 0;
+        while count != 0 {
+            if self.available == 0 {
+                self.refill();
+            }
+            let take = count.min(self.available);
+            value |= (self.digit & ((1u64 << take) - 1)) << written;
+            self.digit >>= take;
+            self.available -= take;
+            count -= take;
+            written += take;
+        }
+        value
+    }
+
+    fn skip(&mut self, mut count: i128) {
+        while count != 0 {
+            if self.available == 0 {
+                if self.left == 0 && (self.carry == 0 || self.carry == -1) {
+                    return;
+                }
+                self.refill();
+            }
+            let take = count.min(self.available as i128) as usize;
+            self.digit >>= take;
+            self.available -= take;
+            count -= take as i128;
+        }
+    }
+}
+
+/// Quantizes once at the destination precision, then emits centered digits.
+/// `NARROW` requires every source coefficient to fit in i64.
+pub(crate) fn normalize_exact<const NARROW: bool, F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
+    source: F,
+    a_size: usize,
+    a_base2k: usize,
+    res_size: usize,
+    res_base2k: usize,
+    offset: i64,
+    mut output: G,
+) {
+    if a_base2k > 63 || res_base2k > 63 {
+        normalize_exact_wide(source, a_size, a_base2k, res_size, res_base2k, offset, output);
+        return;
+    }
+    let mut bits = NormalizationBits::<_, NARROW>::new(source, a_size, a_base2k);
+    let drop = a_size as i128 * a_base2k as i128 - res_size as i128 * res_base2k as i128 - offset as i128;
+    let mut carry = 0u64;
+    let mut padding = 0i128;
+    if drop > 0 {
+        bits.skip(drop - 1);
+        carry = bits.read(1);
+    } else {
+        padding = -drop;
+    }
+    let half = 1u64 << (res_base2k - 1);
+    for j in (0..res_size).rev() {
+        let zeroes = padding.min(res_base2k as i128) as usize;
+        padding -= zeroes as i128;
+        let raw = bits.read(res_base2k - zeroes) << zeroes;
+        let value = raw + carry;
+        carry = (value + half) >> res_base2k;
+        output(j, (value as i128 - ((carry as i128) << res_base2k)) as i64);
+    }
+}
+
+// Preserves the wider source radices and base-64 output supported by NTT.
+fn normalize_exact_wide<F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
+    mut source: F,
+    a_size: usize,
+    a_base2k: usize,
+    res_size: usize,
+    res_base2k: usize,
+    offset: i64,
+    mut output: G,
+) {
+    assert!((1..=127).contains(&a_base2k));
+    assert!((1..=64).contains(&res_base2k));
+    let mask = (1u128 << a_base2k) - 1;
+    let mut left = a_size;
+    let mut carry = 0i128;
+    let mut pending = 0u128;
+    let mut available = 0usize;
+    let mut read = |mut count: i128, discard: bool| {
+        let mut result = 0u128;
+        let mut written = 0usize;
+        while count != 0 {
+            if available == 0 {
+                if discard && left == 0 && (carry == 0 || carry == -1) {
+                    break;
+                }
+                if left != 0 {
+                    left -= 1;
+                    let a = source(left);
+                    let low = (a as u128 & mask) + (carry as u128 & mask);
+                    carry = (a >> a_base2k) + (carry >> a_base2k) + (low >> a_base2k) as i128;
+                    pending = low & mask;
+                } else {
+                    pending = carry as u128 & mask;
+                    carry >>= a_base2k;
+                }
+                available = a_base2k;
+            }
+            let take = count.min(available as i128) as usize;
+            if !discard {
+                result |= (pending & ((1u128 << take) - 1)) << written;
+                written += take;
+            }
+            pending >>= take;
+            available -= take;
+            count -= take as i128;
+        }
+        result
+    };
+    let drop = a_size as i128 * a_base2k as i128 - res_size as i128 * res_base2k as i128 - offset as i128;
+    let mut rounding = 0u128;
+    let mut padding = 0i128;
+    if drop > 0 {
+        read(drop - 1, true);
+        rounding = read(1, false);
+    } else {
+        padding = -drop;
+    }
+    let half = 1u128 << (res_base2k - 1);
+    for j in (0..res_size).rev() {
+        let zeroes = padding.min(res_base2k as i128) as usize;
+        padding -= zeroes as i128;
+        let value = (read((res_base2k - zeroes) as i128, false) << zeroes) + rounding;
+        rounding = (value + half) >> res_base2k;
+        output(j, (value as i128 - ((rounding as i128) << res_base2k)) as i64);
+    }
+}
+
+#[test]
+fn test_normalize_inter_window_exhaustive() {
+    for k in 1..=62i64 {
+        for a_size in 1..=8i64 {
+            for res_size in 1..=8i64 {
+                let bracket = (a_size + res_size) * k;
+                for offset in -bracket..=bracket {
+                    let q = offset.div_euclid(k);
+                    let lsh = offset.rem_euclid(k);
+                    assert_eq!(offset, q * k + lsh);
+                    let res_end = (-q).clamp(0, res_size);
+                    let res_start = (a_size - q).clamp(0, res_size);
+                    let a_end = q.clamp(0, a_size);
+                    let a_start = (res_size + q).clamp(0, a_size);
+                    assert_eq!(res_start - res_end, a_start - a_end);
+                    for j in 0..a_size {
+                        assert_eq!((a_end..a_start).contains(&j), (0..res_size).contains(&(j - q)));
+                    }
+                    for j in 0..res_size {
+                        assert_eq!((res_end..res_start).contains(&j), (0..a_size).contains(&(j + q)));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_normalize_exhaustive_centered_small() {
+    use dashu_int::IBig;
+
+    use crate::{
+        FFT64Ref,
+        layouts::{VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+    };
+    for a_base2k in 1..=6usize {
+        let radix = 1usize << a_base2k;
+        for a_size in 1..=3usize {
+            let mut input = alloc_host_vec_znx(1, 1, a_size);
+            for res_base2k in 1..=6usize {
+                let half = IBig::ONE << (res_base2k - 1);
+                for res_size in 1..=3usize {
+                    let mut output = alloc_host_vec_znx(1, 1, res_size);
+                    let bracket = (a_size * a_base2k + res_size * res_base2k + 1) as i64;
+                    let offsets: Vec<_> = (-bracket..=bracket)
+                        .map(|offset| {
+                            let shift = res_size as i64 * res_base2k as i64 + offset - a_size as i64 * a_base2k as i64;
+                            let rounding = if shift < 0 {
+                                IBig::ONE << (-shift - 1) as usize
+                            } else {
+                                IBig::ZERO
+                            };
+                            (offset, shift, rounding)
+                        })
+                        .collect();
+                    for code in 0..(1usize << (a_size * a_base2k)) {
+                        let mut digits = code;
+                        let mut integer = IBig::ZERO;
+                        for j in 0..a_size {
+                            let digit = (digits & (radix - 1)) as i64 - (radix / 2) as i64;
+                            digits >>= a_base2k;
+                            input.at_mut(0, j)[0] = digit;
+                            integer = (integer << a_base2k) + IBig::from(digit);
+                        }
+                        for (offset, shift, rounding) in &offsets {
+                            vec_znx_normalize::<FFT64Ref>(
+                                &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
+                                res_base2k,
+                                *offset,
+                                0,
+                                &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input),
+                                a_base2k,
+                                0,
+                                &mut [37; 3],
+                            );
+                            let mut expected = if *shift >= 0 {
+                                &integer << *shift as usize
+                            } else {
+                                (&integer + rounding) >> (-shift) as usize
+                            };
+                            for j in (0..res_size).rev() {
+                                let next = (&expected + &half) >> res_base2k;
+                                let digit = i64::try_from(&expected - (&next << res_base2k)).unwrap();
+                                assert_eq!(
+                                    output.at(0, j)[0],
+                                    digit,
+                                    "code={code}, ka={a_base2k}, kr={res_base2k}, sa={a_size}, sr={res_size}, offset={offset}, limb={j}"
+                                );
+                                expected = next;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_normalize_coeff_and_range_integer() {
+    use crate::{
+        FFT64Ref,
+        layouts::{VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+    };
+    let n = 35;
+    let mut state = 0x58d719b3ce42a670u64;
+    for a_base2k in 1..=62usize {
+        for res_base2k in [1, 2, 17, 50, 62] {
+            for size in [1, 2, 8] {
+                let mut input = alloc_host_vec_znx(n, 2, size);
+                for j in 0..size {
+                    for x in input.at_mut(1, j) {
+                        state ^= state << 13;
+                        state ^= state >> 7;
+                        state ^= state << 17;
+                        *x = state as i64 >> 1;
+                    }
+                }
+                for offset in [
+                    i64::MIN,
+                    -1001,
+                    -(a_base2k as i64) - 1,
+                    -1,
+                    0,
+                    1,
+                    a_base2k as i64,
+                    1001,
+                    i64::MAX,
+                ] {
+                    let mut whole = alloc_host_vec_znx(n, 2, size);
+                    let mut split = alloc_host_vec_znx(n, 2, size);
+                    for j in 0..size {
+                        whole.at_mut(0, j).fill(93);
+                        split.at_mut(0, j).fill(93);
+                    }
+                    let a = <VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input);
+                    vec_znx_normalize::<FFT64Ref>(
+                        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut whole),
+                        res_base2k,
+                        offset,
+                        1,
+                        &a,
+                        a_base2k,
+                        1,
+                        &mut vec![73; 3 * n],
+                    );
+                    for (start, end) in [(17, 35), (1, 8), (0, 1), (8, 17)] {
+                        let mut scratch = vec![83; 3 * (end - start) + 2];
+                        vec_znx_normalize_range::<FFT64Ref>(
+                            &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut split),
+                            res_base2k,
+                            offset,
+                            1,
+                            &a,
+                            a_base2k,
+                            1,
+                            start,
+                            end - start,
+                            &mut scratch[1..3 * (end - start) + 1],
+                        );
+                        assert_eq!(scratch[0], 83);
+                        assert_eq!(*scratch.last().unwrap(), 83);
+                    }
+                    for i in 0..n {
+                        let mut single = alloc_host_vec_znx(1, 1, size);
+                        vec_znx_normalize_coeff::<FFT64Ref>(
+                            &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut single),
+                            res_base2k,
+                            offset,
+                            0,
+                            &a,
+                            a_base2k,
+                            1,
+                            i,
+                            &mut [53; 3],
+                        );
+                        // Extreme offsets reduce to zero without enormous oracle allocations.
+                        let expected = if offset == i64::MIN || offset == i64::MAX {
+                            vec![0; size]
+                        } else {
+                            normalize_integer_oracle(
+                                &(0..size).map(|j| input.at(1, j)[i] as i128).collect::<Vec<_>>(),
+                                a_base2k,
+                                res_base2k,
+                                size,
+                                offset,
+                            )
+                        };
+                        for (j, &digit) in expected.iter().enumerate() {
+                            assert_eq!(
+                                whole.at(1, j)[i],
+                                digit,
+                                "ka={a_base2k}, kr={res_base2k}, size={size}, offset={offset}, i={i}, j={j}"
+                            );
+                            assert_eq!(split.at(1, j)[i], digit);
+                            assert_eq!(single.at(0, j)[0], digit);
+                            assert_eq!(whole.at(0, j)[i], 93);
+                            assert_eq!(split.at(0, j)[i], 93);
+                        }
+                    }
+                }
+                let mut assigned = input.clone();
+                vec_znx_normalize_assign::<FFT64Ref>(
+                    a_base2k,
+                    &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut assigned),
+                    1,
+                    &mut vec![37; n],
+                );
+                let mut coeff_assigned = input.clone();
+                for i in 0..n {
+                    vec_znx_normalize_coeff_assign::<FFT64Ref>(
+                        a_base2k,
+                        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut coeff_assigned),
+                        1,
+                        i,
+                        &mut [91],
+                    );
+                    let want = normalize_integer_oracle(
+                        &(0..size).map(|j| input.at(1, j)[i] as i128).collect::<Vec<_>>(),
+                        a_base2k,
+                        a_base2k,
+                        size,
+                        0,
+                    );
+                    for (j, &digit) in want.iter().enumerate() {
+                        assert_eq!(assigned.at(1, j)[i], digit);
+                        assert_eq!(coeff_assigned.at(1, j)[i], digit);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_normalize_blocked_matches_single_range() {
+    use crate::{
+        FFT64Ref,
+        layouts::{VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+    };
+    let n = 1031;
+    for (a_base2k, res_base2k) in [(17, 19), (51, 50), (62, 1), (1, 62)] {
+        for size in [3, 8] {
+            let mut input = alloc_host_vec_znx(n, 1, size);
+            for j in 0..size {
+                for (i, x) in input.at_mut(0, j).iter_mut().enumerate() {
+                    *x = (i as i64).wrapping_mul(0x31e5cd283792b601).wrapping_add(j as i64) >> 1;
+                }
+            }
+            let a = <VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input);
+            for offset in [-(a_base2k as i64), 0, 1, a_base2k as i64] {
+                let mut whole = alloc_host_vec_znx(n, 1, size);
+                let mut blocked = alloc_host_vec_znx(n, 1, size);
+                let mut carry = vec![31; 3 * n];
+                vec_znx_normalize_range::<FFT64Ref>(
+                    &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut whole),
+                    res_base2k,
+                    offset,
+                    0,
+                    &a,
+                    a_base2k,
+                    0,
+                    0,
+                    n,
+                    &mut carry,
+                );
+                vec_znx_normalize::<FFT64Ref>(
+                    &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut blocked),
+                    res_base2k,
+                    offset,
+                    0,
+                    &a,
+                    a_base2k,
+                    0,
+                    &mut carry,
+                );
+                for j in 0..size {
+                    assert_eq!(whole.at(0, j), blocked.at(0, j));
+                }
             }
         }
     }

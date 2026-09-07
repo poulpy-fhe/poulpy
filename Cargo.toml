@@ -22,6 +22,7 @@ poulpy-bin-fhe = {path = "poulpy-bin-fhe"}
 poulpy-bench = {path = "poulpy-bench"}
 poulpy-ckks = {path = "poulpy-ckks", version = "0.8.2"}
 dashu-float = "0.6.0"
+dashu-int = "0.6.0"
 astro-float-num = { version = "0.3.7", default-features = false, features = ["std"] }
 # `poulpy-ckks` enables `unstable-float` only for its portable target graph.
 # Cargo then unifies that feature onto transitive users of this same libm; the

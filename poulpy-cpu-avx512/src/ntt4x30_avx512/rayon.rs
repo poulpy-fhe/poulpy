@@ -239,7 +239,29 @@ forward_znx!(ZnxNormalizeMiddleStepAssign, znx_normalize_middle_step_assign(base
 forward_znx!(ZnxNormalizeMiddleStepSub, znx_normalize_middle_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
 forward_znx!(ZnxNormalizeFinalStepSub, znx_normalize_final_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]));
 forward_znx!(ZnxNormalizeFinalStepAssign, znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]));
-forward_znx!(ZnxExtractDigitAddMul, znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]));
+impl ZnxExtractDigitAddMul for NTT4x30Avx512Rayon {
+    #[inline(always)]
+    fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        <NTT4x30Avx512 as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
+    }
+    #[inline(always)]
+    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        <NTT4x30Avx512 as ZnxExtractDigitAddMul>::znx_extract_digit_mul(base2k, lsh, res, src);
+    }
+    #[inline(always)]
+    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i64],
+        carry: &mut [i64],
+    ) {
+        <NTT4x30Avx512 as ZnxExtractDigitAddMul>::znx_extract_digit_addmul_normalize::<OVERWRITE>(
+            base2k, lsh, res_base2k, res, src, carry,
+        );
+    }
+}
 forward_znx!(ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
 
 impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Avx512Rayon {
@@ -1594,6 +1616,29 @@ impl poulpy_cpu_rayon::RayonTuning for NTT4x30Avx512Rayon {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;
+}
+
+impl poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128 for NTT4x30Avx512Rayon {
+    const FUSE_NORMALIZE: bool = <NTT4x30Avx512 as poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128>::FUSE_NORMALIZE;
+
+    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        <NTT4x30Avx512 as poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128>::znx_extract_digit_mul_i128(
+            base2k, lsh, res, src,
+        )
+    }
+
+    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i128],
+        carry: &mut [i128],
+    ) {
+        <NTT4x30Avx512 as poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128>::znx_extract_digit_addmul_normalize_i128::<
+            OVERWRITE,
+        >(base2k, lsh, res_base2k, res, src, carry)
+    }
 }
 
 #[cfg(test)]

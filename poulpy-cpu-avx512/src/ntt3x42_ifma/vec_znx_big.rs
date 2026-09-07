@@ -154,3 +154,24 @@ impl I128NormalizeOps for NTT3x42Ifma {
         }
     }
 }
+
+impl poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128 for NTT3x42Ifma {
+    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        unsafe {
+            crate::vec_znx_big_avx512::nfc_extract_normalize_avx512::<true, false>(base2k, lsh, base2k + lsh, res, src, &mut [])
+        }
+    }
+
+    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i128],
+        carry: &mut [i128],
+    ) {
+        unsafe {
+            crate::vec_znx_big_avx512::nfc_extract_normalize_avx512::<OVERWRITE, true>(base2k, lsh, res_base2k, res, src, carry)
+        }
+    }
+}

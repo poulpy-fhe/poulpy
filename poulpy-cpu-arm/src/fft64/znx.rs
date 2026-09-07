@@ -236,8 +236,35 @@ impl ZnxNormalizeMiddleStepAssign for FFT64Neon {
 
 impl ZnxExtractDigitAddMul for FFT64Neon {
     #[inline(always)]
+    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        #[cfg(target_arch = "aarch64")]
+        crate::neon::znx_normalize::znx_extract_digit_mul_neon(base2k, lsh, res, src);
+        #[cfg(not(target_arch = "aarch64"))]
+        poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_ref(base2k, lsh, res, src);
+    }
+
+    #[inline(always)]
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         kn_extract_digit_addmul(base2k, lsh, res, src);
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i64],
+        carry: &mut [i64],
+    ) {
+        #[cfg(target_arch = "aarch64")]
+        crate::neon::znx_normalize::znx_extract_digit_addmul_normalize_neon::<OVERWRITE>(
+            base2k, lsh, res_base2k, res, src, carry,
+        );
+        #[cfg(not(target_arch = "aarch64"))]
+        poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
+            base2k, lsh, res_base2k, res, src, carry,
+        );
     }
 }
 
