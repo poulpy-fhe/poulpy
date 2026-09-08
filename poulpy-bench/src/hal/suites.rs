@@ -30,11 +30,38 @@ use crate::{
         convolution,
         params::{
             CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms, default_bench_params_cnv, default_bench_params_hal,
-            default_bench_params_vmp,
+            default_bench_params_normalize, default_bench_params_vmp,
         },
         reim, svp, vec_znx, vec_znx_big, vec_znx_dft, vmp,
     },
 };
+
+/// Small and big normalization across radix widths, offsets, sizes and degrees.
+pub fn bench_normalization<B: Backend<ZnxWord = i64>>(c: &mut Criterion<WallTime>)
+where
+    Module<B>: ModuleNew<B>
+        + VecZnxNormalize<B>
+        + VecZnxNormalizeTmpBytes
+        + VecZnxBigAlloc<B>
+        + VecZnxBigNormalize<B>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+    B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
+{
+    let ops = [
+        BenchOp {
+            layer: "hal",
+            name: "vec_znx_normalize",
+            runner: vec_znx::runner_vec_znx_normalize_sweep::<B, WallTime>,
+        },
+        BenchOp {
+            layer: "hal",
+            name: "vec_znx_big_normalize",
+            runner: vec_znx_big::runner_vec_znx_big_normalize_sweep::<B, WallTime>,
+        },
+    ];
+    bench_ops(PhantomData::<B>, &ops, default_bench_params_normalize(), c);
+}
 
 // Op tables for each HAL capability group. Each function returns the raw
 // [`BenchOp`] table for that group only, scoped to the traits its own ops need —

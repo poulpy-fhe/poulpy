@@ -92,50 +92,72 @@ pub trait ZnxSwitchRing {
     fn znx_switch_ring(res: &mut [i64], a: &[i64]);
 }
 
+/// Starts centered normalization of i64 coefficients in `[-2^62, 2^62]`.
+/// Requires `1 <= base2k <= 62`, `lsh < base2k`, and representable destination
+/// sums when `OVERWRITE` is false.
 pub trait ZnxNormalizeFirstStep {
     fn znx_normalize_first_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]);
 }
 
+/// Uses the input and radix bounds of [`ZnxNormalizeFirstStep`].
+/// Incoming carries must lie in `[-2^62, 2^62]`; the output carry stays there.
+/// These bounds keep the shifted digit sum and centered subtraction in i64.
 pub trait ZnxNormalizeMiddleStep {
     fn znx_normalize_middle_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]);
 }
 
+/// Uses the bounds of [`ZnxNormalizeMiddleStep`] and discards the final carry.
 pub trait ZnxNormalizeFinalStep {
     fn znx_normalize_final_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]);
 }
 
+/// Uses the input and radix bounds of [`ZnxNormalizeFirstStep`].
 pub trait ZnxNormalizeFirstStepCarryOnly {
     fn znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]);
 }
 
+/// In-place form with the input and radix bounds of [`ZnxNormalizeFirstStep`].
 pub trait ZnxNormalizeFirstStepAssign {
     fn znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);
 }
 
+/// Uses the carry bound of [`ZnxNormalizeMiddleStep`].
 pub trait ZnxNormalizeMiddleStepCarryOnly {
     fn znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]);
 }
 
+/// Uses the carry bound of [`ZnxNormalizeMiddleStep`].
 pub trait ZnxNormalizeMiddleStepAssign {
     fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);
 }
 
+/// Uses the carry bound of [`ZnxNormalizeMiddleStep`].
 pub trait ZnxNormalizeMiddleStepSub {
     fn znx_normalize_middle_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]);
 }
 
+/// Uses the bounds of [`ZnxNormalizeMiddleStep`] and requires representable destination differences.
 pub trait ZnxNormalizeFinalStepSub {
     fn znx_normalize_final_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]);
 }
 
+/// In-place form with the bounds of [`ZnxNormalizeMiddleStep`].
 pub trait ZnxNormalizeFinalStepAssign {
     fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);
 }
 
+/// Extracts a centered digit and adds it shifted by `lsh` to the destination.
+/// Requires `1 <= base2k`, `base2k + lsh <= 62`, a representable destination
+/// sum, and `src - get_digit_i64(base2k, src)` representable in i64.
+/// Panics before writing if `src` is shorter than `res`.
+/// Entries beyond `res.len()` are unchanged.
 pub trait ZnxExtractDigitAddMul {
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]);
 }
 
+/// Centers the destination and adds its quotient to `src`.
+/// Requires `1 <= base2k <= 62`, the centered subtraction from `res` to fit
+/// in i64, and the updated `src` coefficient to fit in i64.
 pub trait ZnxNormalizeDigit {
     fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]);
 }

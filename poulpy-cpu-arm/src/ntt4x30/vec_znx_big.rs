@@ -94,6 +94,24 @@ impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for NTT4x30Neon {
 
 #[cfg(target_arch = "aarch64")]
 impl I128NormalizeOps for NTT4x30Neon {
+    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        assert!(src.len() >= res.len());
+        unsafe { crate::neon::normalize::nfc_extract_normalize_neon::<true, false>(base2k, lsh, base2k + lsh, res, src, &mut []) }
+    }
+
+    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i128],
+        carry: &mut [i128],
+    ) {
+        assert!(src.len() >= res.len());
+        assert!(carry.len() >= res.len());
+        unsafe { crate::neon::normalize::nfc_extract_normalize_neon::<OVERWRITE, true>(base2k, lsh, res_base2k, res, src, carry) }
+    }
+
     #[inline(always)]
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
         nfc_middle_step_neon(base2k, lsh, res, a, carry);

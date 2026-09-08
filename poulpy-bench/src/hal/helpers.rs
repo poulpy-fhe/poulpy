@@ -46,6 +46,41 @@ pub fn random_host_vec_znx(n: usize, cols: usize, size: usize, source: &mut Sour
     VecZnx::from_bytes(n, cols, size, bytes)
 }
 
+fn random_normalization_bytes(len: usize, word_bytes: usize, source: &mut Source) -> Vec<u8> {
+    let mut bytes = random_aligned_host_bytes(len, source);
+    for word in bytes.chunks_exact_mut(word_bytes) {
+        match word_bytes {
+            8 => {
+                let value = i64::from_ne_bytes(word.try_into().unwrap()) >> 1;
+                word.copy_from_slice(&value.to_ne_bytes());
+            }
+            16 => {
+                let value = i128::from_ne_bytes(word.try_into().unwrap()) >> 1;
+                word.copy_from_slice(&value.to_ne_bytes());
+            }
+            _ => unreachable!("normalization requires i64 or i128 words"),
+        }
+    }
+    bytes
+}
+
+/// Random coefficients with the signed headroom required by normalization.
+pub fn random_normalization_vec_znx(n: usize, cols: usize, size: usize, source: &mut Source) -> VecZnx<Vec<u8>, i64> {
+    let bytes = random_normalization_bytes(VecZnx::<Vec<u8>, i64>::bytes_of(n, cols, size), size_of::<i64>(), source);
+    VecZnx::from_bytes(n, cols, size, bytes)
+}
+
+/// Random big coefficients bounded by 2^(word_bits-2).
+pub fn random_normalization_vec_znx_big<BE: Backend<ZnxWord = i64>>(
+    n: usize,
+    cols: usize,
+    size: usize,
+    source: &mut Source,
+) -> VecZnxBigOwned<BE> {
+    let bytes = random_normalization_bytes(BE::bytes_of_vec_znx_big(n, cols, size), size_of::<BE::BigWord>(), source);
+    VecZnxBigOwned::<BE>::from_bytes(n, cols, size, bytes)
+}
+
 pub fn random_host_mat_znx(
     n: usize,
     rows: usize,

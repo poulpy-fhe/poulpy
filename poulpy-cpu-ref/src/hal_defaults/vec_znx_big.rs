@@ -38,8 +38,8 @@ use crate::reference::{
         ntt4x30_vec_znx_big_sub_small_assign, ntt4x30_vec_znx_big_sub_small_b, ntt4x30_vec_znx_big_sub_small_negate_assign,
     },
     znx::{
-        ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNegate,
-        ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
+        I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
+        ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
         ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
         ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero, znx_copy_ref, znx_zero_ref,
     },
@@ -499,7 +499,7 @@ where
             + ZnxNormalizeMiddleStep
             + ZnxNormalizeFinalStep
             + ZnxNormalizeFirstStep
-            + ZnxExtractDigitAddMul
+            + I64NormalizeOps
             + ZnxNormalizeDigit
             + ZnxNormalizeMiddleStepAssign
             + ZnxNormalizeFinalStepAssign,

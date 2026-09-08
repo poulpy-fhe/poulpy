@@ -5,6 +5,8 @@ pub fn get_digit_i64(base2k: usize, x: i64) -> i64 {
     (x << (u64::BITS - base2k as u32)) >> (u64::BITS - base2k as u32)
 }
 
+/// Requires `digit == get_digit_i64(base2k, x)` and a representable mathematical `x - digit`.
+/// Sufficient bounds are `|x| <= 2^62` and `1 <= base2k <= 62`.
 #[inline(always)]
 pub fn get_carry_i64(base2k: usize, x: i64, digit: i64) -> i64 {
     (x.wrapping_sub(digit)) >> base2k
@@ -15,6 +17,8 @@ pub fn get_digit_i128(base2k: usize, x: i128) -> i128 {
     (x << (u128::BITS - base2k as u32)) >> (u128::BITS - base2k as u32)
 }
 
+/// Requires `digit == get_digit_i128(base2k, x)` and a representable mathematical `x - digit`.
+/// Sufficient bounds are `|x| <= 2^126` and `1 <= base2k <= 126`.
 #[inline(always)]
 pub fn get_carry_i128(base2k: usize, x: i128, digit: i128) -> i128 {
     (x.wrapping_sub(digit)) >> base2k
@@ -158,8 +162,9 @@ pub fn znx_normalize_middle_step_assign_ref(base2k: usize, lsh: usize, x: &mut [
 
 #[inline(always)]
 pub fn znx_extract_digit_addmul_ref(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+    assert!(src.len() >= res.len());
     for (r, s) in res.iter_mut().zip(src.iter_mut()) {
-        let digit: i64 = get_digit_i64(base2k, *s);
+        let digit = get_digit_i64(base2k, *s);
         *s = get_carry_i64(base2k, *s, digit);
         *r += digit << lsh;
     }
@@ -319,5 +324,43 @@ pub fn znx_normalize_final_step_sub_ref(base2k: usize, lsh: usize, x: &mut [i64]
         izip!(x.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(x, a, c)| {
             *x -= get_digit_i64(base2k, (get_digit_i64(base2k_lsh, *a) << lsh) + *c);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_centered_digit_bounded_word() {
+        let mut state = 0xa631_77da_ce94_3201u128;
+        let bound = 1i128 << 126;
+        for k in 1..=126 {
+            let half = 1i128 << (k - 1);
+            let edges = [-bound, bound, -half, half, -half - 1, half - 1, -1, 0, 1];
+            for i in 0..1033 {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                let x = if i < edges.len() { edges[i] } else { (state as i128) >> 1 };
+                let digit = get_digit_i128(k, x);
+                let carry = get_carry_i128(k, x, digit);
+                let base = 1i128 << k;
+                let expected = x.div_euclid(base) + i128::from(x.rem_euclid(base) >= half);
+                assert!((-half..half).contains(&digit));
+                assert_eq!(carry, expected, "i128 k={k}, x={x}");
+                assert_eq!(carry * base + digit, x);
+                if k <= 62 {
+                    let bound = 1i64 << 62;
+                    let half = half as i64;
+                    let edges = [-bound, bound, -half, half, -half - 1, half - 1, -1, 0, 1];
+                    let x = if i < edges.len() { edges[i] } else { (state as i64) >> 1 };
+                    let digit = get_digit_i64(k, x);
+                    let carry = get_carry_i64(k, x, digit);
+                    assert_eq!(x as i128, digit as i128 + (carry as i128) * base);
+                    assert!((-half..half).contains(&digit));
+                }
+            }
+        }
     }
 }

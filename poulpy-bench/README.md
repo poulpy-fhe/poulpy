@@ -163,3 +163,23 @@ cargo bench -p poulpy-cpu-ref --bench standard  --features enable-ckks -- "vec_z
 # See what a filter would run, without running it
 cargo bench -p poulpy-cpu-ref --bench standard --features enable-ckks -- --list "core"
 ```
+
+## Normalization sweep
+
+`hal::params::default_bench_params_normalize()` covers input and output bases
+`{17, 19, 21, 50, 51}`, offsets `{-a_base2k, 0, 1, a_base2k}`, equal input/output
+sizes `{4, 8, 16}`, and ring degrees `{4096, 65536}`, with one column. The Criterion
+runners `runner_vec_znx_normalize_sweep` and
+`runner_vec_znx_big_normalize_sweep` accept these parameters.
+
+The `normalize` benchmark compares small and big normalization on FFT64 and
+NTT4x30, with reference and AVX2 backends, for 4,800 cases. Input generation
+and allocation happen outside the timed loop, using the documented input bounds.
+
+```bash
+RUSTFLAGS="-C target-feature=+avx2,+fma" cargo bench \
+  -p poulpy-cpu-avx --features enable-avx --bench normalize
+```
+
+Append `-- 'k=17->19/offset=0'` to select a cross-base conversion, or
+`-- --list` to list cases. Results use Criterion's standard reports and baselines.

@@ -50,7 +50,7 @@ use crate::reference::{
         },
     },
     znx::{
-        ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
+        I64NormalizeOps, ZnxAddAssign, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
         ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep,
         ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxZero,
     },
@@ -182,7 +182,7 @@ where
             + ZnxNormalizeMiddleStep
             + ZnxNormalizeFinalStep
             + ZnxNormalizeFirstStep
-            + ZnxExtractDigitAddMul
+            + I64NormalizeOps
             + ZnxNormalizeMiddleStepAssign
             + ZnxNormalizeFinalStepAssign
             + ZnxNormalizeDigit,

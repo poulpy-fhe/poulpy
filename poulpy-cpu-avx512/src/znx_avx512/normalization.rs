@@ -33,7 +33,8 @@ unsafe fn get_digit_avx512(x: __m512i, mask_k: __m512i, sign_k: __m512i) -> __m5
     _mm512_sub_epi64(t, sign_k)
 }
 
-/// AVX-512 `get_carry`:  `carry = (x - digit) >>_arith k`.
+/// AVX-512 `get_carry`: `carry = (x - digit) >>_arith k`.
+/// The subtraction must be representable.
 ///
 /// Uses `_mm512_srav_epi64` for a native variable arithmetic right shift,
 /// replacing the 4-instruction workaround needed by AVX2.
@@ -52,8 +53,13 @@ unsafe fn get_carry_avx512(x: __m512i, digit: __m512i, base2k: __m512i) -> __m51
 /// `res += digit(src) << lsh;  src = carry(src)`
 #[inline]
 #[target_feature(enable = "avx512f")]
-pub unsafe fn znx_extract_digit_addmul_avx512(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-    debug_assert_eq!(res.len(), src.len());
+pub unsafe fn znx_extract_digit_addmul_impl_avx512<const OVERWRITE: bool>(
+    base2k: usize,
+    lsh: usize,
+    res: &mut [i64],
+    src: &mut [i64],
+) {
+    assert!(src.len() >= res.len());
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_set1_epi64, _mm512_sllv_epi64, _mm512_storeu_si512};
 
@@ -71,9 +77,12 @@ pub unsafe fn znx_extract_digit_addmul_avx512(base2k: usize, lsh: usize, res: &m
         let digit_512: __m512i = get_digit_avx512(sv, mask, sign);
         let carry_512: __m512i = get_carry_avx512(sv, digit_512, base2k_vec);
 
-        let rv: __m512i = _mm512_loadu_si512(rr as *const _);
         let madd: __m512i = _mm512_sllv_epi64(digit_512, lsh_v);
-        let sum: __m512i = _mm512_add_epi64(rv, madd);
+        let sum = if OVERWRITE {
+            madd
+        } else {
+            _mm512_add_epi64(_mm512_loadu_si512(rr as *const _), madd)
+        };
 
         _mm512_storeu_si512(rr, sum);
         _mm512_storeu_si512(ss, carry_512);
@@ -84,10 +93,30 @@ pub unsafe fn znx_extract_digit_addmul_avx512(base2k: usize, lsh: usize, res: &m
 
     // scalar tail
     if !n.is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_ref;
+        use poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_impl_ref;
 
         let off: usize = span << 3;
-        znx_extract_digit_addmul_ref(base2k, lsh, &mut res[off..], &mut src[off..]);
+        znx_extract_digit_addmul_impl_ref::<OVERWRITE>(base2k, lsh, &mut res[off..], &mut src[off..]);
+    }
+}
+
+/// # Safety
+/// Requires compatible slice lengths and the backend ISA.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub unsafe fn znx_extract_digit_addmul_avx512(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+    unsafe {
+        znx_extract_digit_addmul_impl_avx512::<false>(base2k, lsh, res, src);
+    }
+}
+
+/// # Safety
+/// Requires compatible slice lengths and the backend ISA.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub unsafe fn znx_extract_digit_mul_avx512(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+    unsafe {
+        znx_extract_digit_addmul_impl_avx512::<true>(base2k, lsh, res, src);
     }
 }
 
@@ -843,12 +872,80 @@ pub unsafe fn znx_normalize_final_step_sub_avx512(base2k: usize, lsh: usize, x: 
     }
 }
 
+/// Extracts the completing subdigit and normalizes the destination in one pass.
+///
+/// # Safety
+/// Requires AVX-512F and representable accumulated sums.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub unsafe fn znx_extract_digit_addmul_normalize_avx512<const OVERWRITE: bool>(
+    base2k: usize,
+    lsh: usize,
+    res_base2k: usize,
+    res: &mut [i64],
+    src: &mut [i64],
+    carry: &mut [i64],
+) {
+    assert!(src.len() >= res.len());
+    assert!(carry.len() >= res.len());
+    use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_set1_epi64, _mm512_sllv_epi64, _mm512_storeu_si512};
+    let end = res.len() / 8 * 8;
+    let (mask, sign, shift) = normalize_consts_avx512(base2k);
+    let (res_mask, res_sign, res_shift) = normalize_consts_avx512(res_base2k);
+    let scale = _mm512_set1_epi64(lsh as i64);
+    for i in (0..end).step_by(8) {
+        let source = _mm512_loadu_si512(src.as_ptr().add(i).cast());
+        let digit = get_digit_avx512(source, mask, sign);
+        let quotient = get_carry_avx512(source, digit, shift);
+        let partial = if OVERWRITE {
+            _mm512_sllv_epi64(digit, scale)
+        } else {
+            _mm512_add_epi64(
+                _mm512_loadu_si512(res.as_ptr().add(i).cast()),
+                _mm512_sllv_epi64(digit, scale),
+            )
+        };
+        let sum = _mm512_add_epi64(partial, _mm512_loadu_si512(carry.as_ptr().add(i).cast()));
+        let output = get_digit_avx512(sum, res_mask, res_sign);
+        let output_carry = get_carry_avx512(sum, output, res_shift);
+        _mm512_storeu_si512(src.as_mut_ptr().add(i).cast(), quotient);
+        _mm512_storeu_si512(res.as_mut_ptr().add(i).cast(), output);
+        _mm512_storeu_si512(carry.as_mut_ptr().add(i).cast(), output_carry);
+    }
+    poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
+        base2k,
+        lsh,
+        res_base2k,
+        &mut res[end..],
+        &mut src[end..],
+        &mut carry[end..],
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_normalization_kernels_bounded_inputs() {
+        if !std::is_x86_feature_detected!("avx512f") {
+            return;
+        }
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx512>();
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx512>();
+        #[cfg(feature = "enable-ifma")]
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT3x42Ifma>();
+        #[cfg(feature = "enable-rayon")]
+        {
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx512Rayon>();
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx512Rayon>();
+            #[cfg(feature = "enable-ifma")]
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT3x42IfmaRayon>();
+        }
+    }
+
     use poulpy_cpu_ref::reference::znx::{
         get_carry_i64, get_digit_i64, znx_extract_digit_addmul_ref, znx_normalize_digit_ref, znx_normalize_final_step_assign_ref,
         znx_normalize_final_step_ref, znx_normalize_first_step_assign_ref, znx_normalize_first_step_ref,

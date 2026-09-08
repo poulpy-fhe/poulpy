@@ -196,7 +196,6 @@ const INTERLEAVE_HI: [i64; 8] = [4, 12, 5, 13, 6, 14, 7, 15]; // second 4 pairs
 /// Fields with `__m128i` type are variable shift counts for `_mm512_srl/sll_epi64`.
 /// Fields with `__m128i` type (sra) are shift counts for `_mm512_sra_epi64`.
 struct NfcShifts512 {
-    lsh_is_zero: bool,
     /// `_mm_cvtsi64_si128((64 - base2k_lsh) as i64)` -- left-shift for digit extraction.
     sll_b2klsh: __m128i,
     /// `_mm_cvtsi64_si128((64 - base2k_lsh) as i64)` -- arithmetic right-shift count for digit extraction.
@@ -227,7 +226,6 @@ impl NfcShifts512 {
         unsafe {
             let b2klsh = base2k - lsh;
             Self {
-                lsh_is_zero: lsh == 0,
                 sll_b2klsh: _mm_cvtsi64_si128((64 - b2klsh) as i64),
                 sra_b2klsh: _mm_cvtsi64_si128((64 - b2klsh) as i64),
                 srl_b2klsh: _mm_cvtsi64_si128(b2klsh as i64),
@@ -259,22 +257,7 @@ unsafe fn nfc_middle_chunk_512(
     hi_c: __m512i,
 ) -> (__m512i, __m512i, __m512i) {
     unsafe {
-        if s.lsh_is_zero {
-            let lo_sum = _mm512_add_epi64(lo_a, lo_c);
-            let carry_mask = _mm512_cmp_epu64_mask(lo_sum, lo_a, _MM_CMPINT_LT);
-            let carry = _mm512_maskz_set1_epi64(carry_mask, 1);
-            let hi_sum = _mm512_add_epi64(_mm512_add_epi64(hi_a, hi_c), carry);
-            let lo_out = _mm512_sra_epi64(_mm512_sll_epi64(lo_sum, s.sll_b2k), s.sra_b2k);
-            let hi_out = _mm512_sra_epi64(lo_out, s.sra_63);
-            let diff_lo = _mm512_sub_epi64(lo_sum, lo_out);
-            let borrow_mask = _mm512_cmp_epu64_mask(lo_out, lo_sum, _MM_CMPINT_NLE);
-            let borrow = _mm512_maskz_set1_epi64(borrow_mask, 1);
-            let diff_hi = _mm512_sub_epi64(_mm512_sub_epi64(hi_sum, hi_out), borrow);
-            let new_lo_c = _mm512_or_si512(_mm512_srl_epi64(diff_lo, s.srl_b2k), _mm512_sll_epi64(diff_hi, s.sll_b2k));
-            let new_hi_c = _mm512_sra_epi64(diff_hi, s.sra_b2k_val);
-            return (lo_out, new_lo_c, new_hi_c);
-        }
-
+        // Extract before adding carry, since the positive bounded endpoints can sum to 2^127.
         // digit = get_digit_i128(base2k_lsh, a)
         let lo_dig = _mm512_sra_epi64(_mm512_sll_epi64(lo_a, s.sll_b2klsh), s.sra_b2klsh);
         let hi_dig = _mm512_sra_epi64(lo_dig, s.sra_63);
@@ -358,6 +341,11 @@ unsafe fn nfc_final_chunk_512(s: &NfcShifts512, lo_a: __m512i, lo_c: __m512i) ->
 /// Requires AVX-512F.  `res`, `a`, `carry` must each have at least `n` elements.
 #[target_feature(enable = "avx512f")]
 pub(super) unsafe fn nfc_middle_step_avx512(base2k: u32, lsh: u32, n: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+    if base2k >= 64 {
+        nfc_middle_step_scalar(base2k as usize, lsh as usize, res, a, carry);
+        return;
+    }
+
     unsafe {
         let s = NfcShifts512::new(base2k, lsh);
         let a_ptr = a.as_ptr() as *const __m512i;
@@ -415,6 +403,11 @@ pub(super) unsafe fn nfc_middle_step_add_assign_avx512(
     a: &[i128],
     carry: &mut [i128],
 ) {
+    if base2k >= 64 {
+        nfc_middle_step_add_assign_scalar(base2k as usize, lsh as usize, res, a, carry);
+        return;
+    }
+
     unsafe {
         let s = NfcShifts512::new(base2k, lsh);
         let a_ptr = a.as_ptr() as *const __m512i;
@@ -472,6 +465,11 @@ pub(super) unsafe fn nfc_middle_step_sub_assign_avx512(
     a: &[i128],
     carry: &mut [i128],
 ) {
+    if base2k >= 64 {
+        nfc_middle_step_sub_assign_scalar(base2k as usize, lsh as usize, res, a, carry);
+        return;
+    }
+
     unsafe {
         let s = NfcShifts512::new(base2k, lsh);
         let a_ptr = a.as_ptr() as *const __m512i;
@@ -529,6 +527,11 @@ pub(super) unsafe fn nfc_middle_step_sub_assign_avx512(
 /// Requires AVX-512F.
 #[target_feature(enable = "avx512f")]
 pub(super) unsafe fn nfc_middle_step_assign_avx512(base2k: u32, lsh: u32, n: usize, res: &mut [i64], carry: &mut [i128]) {
+    if base2k >= 64 {
+        nfc_middle_step_assign_scalar(base2k as usize, lsh as usize, res, carry);
+        return;
+    }
+
     unsafe {
         let s = NfcShifts512::new(base2k, lsh);
         let c_ptr = carry.as_mut_ptr() as *mut __m512i;
@@ -1258,6 +1261,79 @@ pub(super) unsafe fn vi128_neg_from_small_avx512(n: usize, res: &mut [i128], a: 
 // Tests
 // ──────────────────────────────────────────────────────────────────────────────
 
+#[target_feature(enable = "avx512f")]
+pub(super) unsafe fn nfc_extract_normalize_avx512<const OVERWRITE: bool, const FINALIZE: bool>(
+    base2k: usize,
+    lsh: usize,
+    res_base2k: usize,
+    res: &mut [i64],
+    src: &mut [i128],
+    carry: &mut [i128],
+) {
+    if base2k >= 64 || res_base2k >= 64 {
+        if FINALIZE {
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+                base2k, lsh, res_base2k, res, src, carry,
+            );
+        } else {
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
+        }
+        return;
+    }
+    unsafe {
+        let source_shifts = NfcShifts512::new(base2k as u32, 0);
+        let result_shifts = NfcShifts512::new(res_base2k as u32, 0);
+        let scale = _mm_cvtsi64_si128(lsh as i64);
+        let zero = _mm512_setzero_si512();
+        let dl = _mm512_loadu_si512(DEINTERLEAVE_LO.as_ptr().cast::<__m512i>());
+        let dh = _mm512_loadu_si512(DEINTERLEAVE_HI.as_ptr().cast::<__m512i>());
+        let il = _mm512_loadu_si512(INTERLEAVE_LO.as_ptr().cast::<__m512i>());
+        let ih = _mm512_loadu_si512(INTERLEAVE_HI.as_ptr().cast::<__m512i>());
+        let load = |ptr: *const i128| {
+            let x0 = _mm512_loadu_si512(ptr.cast::<__m512i>());
+            let x1 = _mm512_loadu_si512(ptr.cast::<__m512i>().add(1));
+            (_mm512_permutex2var_epi64(x0, dl, x1), _mm512_permutex2var_epi64(x0, dh, x1))
+        };
+        let store = |ptr: *mut i128, lo, hi| {
+            _mm512_storeu_si512(ptr.cast::<__m512i>(), _mm512_permutex2var_epi64(lo, il, hi));
+            _mm512_storeu_si512(ptr.cast::<__m512i>().add(1), _mm512_permutex2var_epi64(lo, ih, hi));
+        };
+        let end = res.len() / 8 * 8;
+        for i in (0..end).step_by(8) {
+            let (a_lo, a_hi) = load(src.as_ptr().add(i));
+            let (digit, next_lo, next_hi) = nfc_middle_chunk_512(&source_shifts, a_lo, a_hi, zero, zero);
+            store(src.as_mut_ptr().add(i), next_lo, next_hi);
+            let initial = if OVERWRITE {
+                zero
+            } else {
+                _mm512_loadu_si512(res.as_ptr().add(i).cast::<__m512i>())
+            };
+            let accum = _mm512_add_epi64(initial, _mm512_sll_epi64(digit, scale));
+            if FINALIZE {
+                let (c_lo, c_hi) = load(carry.as_ptr().add(i));
+                let (out, next_lo, next_hi) =
+                    nfc_middle_chunk_512(&result_shifts, accum, _mm512_srai_epi64(accum, 63), c_lo, c_hi);
+                _mm512_storeu_si512(res.as_mut_ptr().add(i).cast::<__m512i>(), out);
+                store(carry.as_mut_ptr().add(i), next_lo, next_hi);
+            } else {
+                _mm512_storeu_si512(res.as_mut_ptr().add(i).cast::<__m512i>(), accum);
+            }
+        }
+        if FINALIZE {
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+                base2k,
+                lsh,
+                res_base2k,
+                &mut res[end..],
+                &mut src[end..],
+                &mut carry[end..],
+            );
+        } else {
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
+        }
+    }
+}
+
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
     use super::{
@@ -1332,62 +1408,117 @@ mod tests {
     }
 
     #[test]
-    fn nfc_middle_step_avx512_vs_scalar() {
-        let n = 64usize;
-        let base2k = 16usize;
-        let lsh = 0usize;
-        let a = i128_data(n, 37i128);
-        let carry_init: Vec<i128> = (0..n).map(|i| (i as i128 * 3) % (1i128 << 20)).collect();
+    fn nfc_bounded_inputs_match_scalar() {
+        let bound = 1i128 << 126;
+        let idft_bound = 657821220234910467805273421263929344i128;
+        for base2k in 1..=63 {
+            let half = 1i128 << (base2k - 1);
+            let mut a = vec![
+                -bound,
+                bound,
+                0,
+                1,
+                -1,
+                half,
+                -half,
+                half - 1,
+                -half - 1,
+                i64::MIN as i128,
+                i64::MAX as i128,
+                idft_bound,
+                -idft_bound,
+            ];
+            let mut state = 0x123456789abcdef0u128;
+            for _ in 0..10 {
+                state ^= state << 17;
+                state ^= state >> 29;
+                state ^= state << 43;
+                a.push((state as i128) >> 1);
+            }
+            let n = a.len();
+            for lsh in 0..base2k {
+                for round in 0..3 {
+                    let carry: Vec<_> = (0..n).map(|i| a[(i + round) % n]).collect();
+                    let initial: Vec<_> = a.iter().map(|&v| (v as i64) >> 1).collect();
+                    let mut want = initial.clone();
+                    let mut got = initial.clone();
+                    let mut want_carry = carry.clone();
+                    let mut got_carry = carry.clone();
+                    nfc_middle_step_scalar(base2k, lsh, &mut want, &a, &mut want_carry);
+                    if lsh == 0 && round == 0 {
+                        assert_eq!((want[1], want_carry[1]), (0, bound >> (base2k - 1)));
+                    }
+                    unsafe { nfc_middle_step_avx512(base2k as u32, lsh as u32, n, &mut got, &a, &mut got_carry) };
+                    assert_eq!(
+                        (&got, &got_carry),
+                        (&want, &want_carry),
+                        "middle k={base2k} lsh={lsh} round={round}"
+                    );
+                    want.clone_from(&initial);
+                    got.clone_from(&initial);
+                    want_carry.clone_from(&carry);
+                    got_carry.clone_from(&carry);
+                    nfc_middle_step_assign_scalar(base2k, lsh, &mut want, &mut want_carry);
+                    unsafe { nfc_middle_step_assign_avx512(base2k as u32, lsh as u32, n, &mut got, &mut got_carry) };
+                    assert_eq!((&got, &got_carry), (&want, &want_carry), "assign k={base2k} lsh={lsh}");
+                    want.clone_from(&initial);
+                    got.clone_from(&initial);
+                    want_carry.clone_from(&carry);
+                    got_carry.clone_from(&carry);
+                    nfc_final_step_assign_scalar(base2k, lsh, &mut want, &mut want_carry);
+                    unsafe { nfc_final_step_assign_avx512(base2k as u32, lsh as u32, n, &mut got, &mut got_carry) };
+                    assert_eq!((&got, &got_carry), (&want, &want_carry), "final k={base2k} lsh={lsh}");
+                    want.clone_from(&initial);
+                    got.clone_from(&initial);
+                    want_carry.clone_from(&carry);
+                    got_carry.clone_from(&carry);
+                    super::nfc_middle_step_add_assign_scalar(base2k, lsh, &mut want, &a, &mut want_carry);
+                    unsafe {
+                        super::nfc_middle_step_add_assign_avx512(base2k as u32, lsh as u32, n, &mut got, &a, &mut got_carry)
+                    };
+                    assert_eq!((&got, &got_carry), (&want, &want_carry), "middle add k={base2k} lsh={lsh}");
 
-        let mut res_avx = vec![0i64; n];
-        let mut carry_avx = carry_init.clone();
-        let mut res_ref = vec![0i64; n];
-        let mut carry_ref = carry_init.clone();
+                    want.clone_from(&initial);
+                    got.clone_from(&initial);
+                    want_carry.clone_from(&carry);
+                    got_carry.clone_from(&carry);
+                    super::nfc_middle_step_sub_assign_scalar(base2k, lsh, &mut want, &a, &mut want_carry);
+                    unsafe {
+                        super::nfc_middle_step_sub_assign_avx512(base2k as u32, lsh as u32, n, &mut got, &a, &mut got_carry)
+                    };
+                    assert_eq!((&got, &got_carry), (&want, &want_carry), "middle sub k={base2k} lsh={lsh}");
 
-        unsafe { nfc_middle_step_avx512(base2k as u32, lsh as u32, n, &mut res_avx, &a, &mut carry_avx) };
-        nfc_middle_step_scalar(base2k, lsh, &mut res_ref, &a, &mut carry_ref);
+                    want.clone_from(&initial);
+                    got.clone_from(&initial);
+                    want_carry.clone_from(&carry);
+                    got_carry.clone_from(&carry);
+                    super::nfc_final_step_add_assign_scalar(base2k, lsh, &mut want, &mut want_carry);
+                    unsafe { super::nfc_final_step_add_assign_avx512(base2k as u32, lsh as u32, n, &mut got, &mut got_carry) };
+                    assert_eq!((&got, &got_carry), (&want, &want_carry), "final add k={base2k} lsh={lsh}");
 
-        assert_eq!(res_avx, res_ref, "nfc_middle_step res mismatch");
-        assert_eq!(carry_avx, carry_ref, "nfc_middle_step carry mismatch");
+                    want.clone_from(&initial);
+                    got.clone_from(&initial);
+                    want_carry.clone_from(&carry);
+                    got_carry.clone_from(&carry);
+                    super::nfc_final_step_sub_assign_scalar(base2k, lsh, &mut want, &mut want_carry);
+                    unsafe { super::nfc_final_step_sub_assign_avx512(base2k as u32, lsh as u32, n, &mut got, &mut got_carry) };
+                    assert_eq!((&got, &got_carry), (&want, &want_carry), "final sub k={base2k} lsh={lsh}");
+                }
+            }
+        }
+    }
+    #[test]
+    fn nfc_fused_matches_scalar() {
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx512>();
+        #[cfg(feature = "enable-rayon")]
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx512Rayon>();
     }
 
     #[test]
-    fn nfc_middle_step_assign_avx512_vs_scalar() {
-        let n = 64usize;
-        let base2k = 16usize;
-        let lsh = 8usize;
-        let init: Vec<i64> = (0..n).map(|i| (i as i64 * 5) % (1i64 << 20)).collect();
-        let carry_init: Vec<i128> = (0..n).map(|i| (i as i128 * 7) % (1i128 << 20)).collect();
-
-        let mut res_avx = init.clone();
-        let mut carry_avx = carry_init.clone();
-        let mut res_ref = init.clone();
-        let mut carry_ref = carry_init.clone();
-
-        unsafe { nfc_middle_step_assign_avx512(base2k as u32, lsh as u32, n, &mut res_avx, &mut carry_avx) };
-        nfc_middle_step_assign_scalar(base2k, lsh, &mut res_ref, &mut carry_ref);
-
-        assert_eq!(res_avx, res_ref, "nfc_middle_step_assign res mismatch");
-        assert_eq!(carry_avx, carry_ref, "nfc_middle_step_assign carry mismatch");
-    }
-
-    #[test]
-    fn nfc_final_step_assign_avx512_vs_scalar() {
-        let n = 64usize;
-        let base2k = 16usize;
-        let lsh = 0usize;
-        let init: Vec<i64> = (0..n).map(|i| (i as i64 * 3) % (1i64 << 20)).collect();
-        let carry_init: Vec<i128> = (0..n).map(|i| (i as i128 * 11) % (1i128 << 20)).collect();
-
-        let mut res_avx = init.clone();
-        let mut carry_avx = carry_init.clone();
-        let mut res_ref = init.clone();
-        let mut carry_ref = carry_init.clone();
-
-        unsafe { nfc_final_step_assign_avx512(base2k as u32, lsh as u32, n, &mut res_avx, &mut carry_avx) };
-        nfc_final_step_assign_scalar(base2k, lsh, &mut res_ref, &mut carry_ref);
-
-        assert_eq!(res_avx, res_ref, "nfc_final_step_assign res mismatch");
-        assert_eq!(carry_avx, carry_ref, "nfc_final_step_assign carry mismatch");
+    #[cfg(feature = "enable-ifma")]
+    fn nfc_ifma_fused_matches_scalar() {
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT3x42Ifma>();
+        #[cfg(feature = "enable-rayon")]
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT3x42IfmaRayon>();
     }
 }

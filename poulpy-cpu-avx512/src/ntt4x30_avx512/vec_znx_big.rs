@@ -1,6 +1,6 @@
 //! Large-coefficient (i128) ring element vector support for [`NTT4x30Avx512`](super::NTT4x30Avx512).
 //!
-//! The shared `poulpy-hal` NTT4x30 defaults rely on backend-provided `I128BigOps`
+//! The shared `poulpy-cpu-ref` NTT4x30 defaults rely on backend-provided `I128BigOps`
 //! and `I128NormalizeOps` hooks for vectorized i128 operations. The kernels themselves
 //! live in [`crate::vec_znx_big_avx512`] and operate on **4 i128 per `__m512i`**
 //! (the 256-bit AVX backend handles 2 i128 per `__m256i`). Mask-form compares
@@ -98,6 +98,28 @@ impl BigWordHadamardProduct for NTT4x30Avx512 {
 }
 
 impl I128NormalizeOps for NTT4x30Avx512 {
+    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        assert!(src.len() >= res.len());
+        unsafe {
+            crate::vec_znx_big_avx512::nfc_extract_normalize_avx512::<true, false>(base2k, lsh, base2k + lsh, res, src, &mut [])
+        }
+    }
+
+    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i128],
+        carry: &mut [i128],
+    ) {
+        assert!(src.len() >= res.len());
+        assert!(carry.len() >= res.len());
+        unsafe {
+            crate::vec_znx_big_avx512::nfc_extract_normalize_avx512::<OVERWRITE, true>(base2k, lsh, res_base2k, res, src, carry)
+        }
+    }
+
     #[inline(always)]
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
         if base2k <= 64 && res.len() >= 8 {

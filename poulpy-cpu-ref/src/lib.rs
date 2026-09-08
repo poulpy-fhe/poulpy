@@ -47,6 +47,7 @@ pub mod ntt4x30;
 pub mod capabilities;
 pub mod reference;
 pub mod table_cache;
+pub mod test_suite;
 
 #[cfg(test)]
 mod tests;

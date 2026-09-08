@@ -274,6 +274,13 @@ pub trait VecZnxBigNormalizeTmpBytes {
 #[allow(clippy::too_many_arguments)]
 /// Normalizes a [`VecZnxBig`](crate::layouts::VecZnxBig) into a coefficient-domain
 /// [`VecZnx`](crate::layouts::VecZnx) with the target base and offset.
+///
+/// For i64 big words, the input and radix bounds of [`super::VecZnxNormalize`]
+/// apply. For i128 big words, input coefficients must lie in `[-2^126, 2^126]`,
+/// with input radix width in `1..=127` and output radix width in `1..=64`.
+/// NTT4x30 IDFT coefficients have the tighter bound `abs(a) < 2^119`.
+/// Additions before normalization must preserve the applicable coefficient
+/// bound. These are caller preconditions and are not checked by an input scan.
 pub trait VecZnxBigNormalize<B: Backend> {
     fn vec_znx_big_normalize(
         &self,

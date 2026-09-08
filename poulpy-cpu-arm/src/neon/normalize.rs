@@ -186,7 +186,7 @@ unsafe fn nfc_final_chunk(s: &NfcShifts, lo_a: int64x2_t, lo_c: int64x2_t) -> in
 /// `base2k > 64`. Caller must satisfy `lsh < base2k`.
 #[inline]
 pub(crate) fn nfc_middle_step_neon(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-    if base2k > 64 || res.len() < 2 {
+    if base2k >= 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step(base2k, lsh, res, a, carry);
         return;
     }
@@ -217,7 +217,7 @@ pub(crate) fn nfc_middle_step_neon(base2k: usize, lsh: usize, res: &mut [i64], a
 /// `nfc_middle_step_into` — fused middle step for `res ±= normalize(a)`.
 #[inline]
 pub(crate) fn nfc_middle_step_into_neon<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-    if base2k > 64 || res.len() < 2 {
+    if base2k >= 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step_into::<O>(base2k, lsh, res, a, carry);
         return;
     }
@@ -261,7 +261,7 @@ pub(crate) fn nfc_middle_step_into_neon<O: AssignOp>(base2k: usize, lsh: usize, 
 /// `nfc_middle_step_assign` — in-place `i64` `res` update with `i128` carry.
 #[inline]
 pub(crate) fn nfc_middle_step_assign_neon(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-    if base2k > 64 || res.len() < 2 {
+    if base2k >= 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step_assign(base2k, lsh, res, carry);
         return;
     }
@@ -290,7 +290,7 @@ pub(crate) fn nfc_middle_step_assign_neon(base2k: usize, lsh: usize, res: &mut [
 /// `nfc_final_step_assign` — flush i128 carry into the last i64 limb.
 #[inline]
 pub(crate) fn nfc_final_step_assign_neon(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-    if base2k > 64 || res.len() < 2 {
+    if base2k >= 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_final_step_assign(base2k, lsh, res, carry);
         return;
     }
@@ -321,7 +321,7 @@ pub(crate) fn nfc_final_step_assign_neon(base2k: usize, lsh: usize, res: &mut [i
 /// `nfc_final_step_into` — fused final step for `res ±= normalize(a)`.
 #[inline]
 pub(crate) fn nfc_final_step_into_neon<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-    if base2k > 64 || res.len() < 2 {
+    if base2k >= 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_final_step_into::<O>(base2k, lsh, res, carry);
         return;
     }
@@ -354,6 +354,61 @@ pub(crate) fn nfc_final_step_into_neon<O: AssignOp>(base2k: usize, lsh: usize, r
     }
 }
 
+pub(crate) unsafe fn nfc_extract_normalize_neon<const OVERWRITE: bool, const FINALIZE: bool>(
+    base2k: usize,
+    lsh: usize,
+    res_base2k: usize,
+    res: &mut [i64],
+    src: &mut [i128],
+    carry: &mut [i128],
+) {
+    if base2k >= 64 || res_base2k >= 64 {
+        if FINALIZE {
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+                base2k, lsh, res_base2k, res, src, carry,
+            );
+        } else {
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
+        }
+        return;
+    }
+    unsafe {
+        let source_shifts = NfcShifts::new(base2k as u32, 0);
+        let result_shifts = NfcShifts::new(res_base2k as u32, 0);
+        let scale = vdupq_n_s64(lsh as i64);
+        let zero = vdupq_n_s64(0);
+        let end = res.len() / 2 * 2;
+        for i in (0..end).step_by(2) {
+            let (a_lo, a_hi) = load2_split_i128(src.as_ptr().add(i));
+            let (digit, next_lo, next_hi) = nfc_middle_chunk(&source_shifts, a_lo, a_hi, zero, zero);
+            store2_split_i128(src.as_mut_ptr().add(i), next_lo, next_hi);
+            let initial = if OVERWRITE { zero } else { vld1q_s64(res.as_ptr().add(i)) };
+            let accum = vaddq_s64(initial, vshlq_s64(digit, scale));
+            if FINALIZE {
+                let (c_lo, c_hi) = load2_split_i128(carry.as_ptr().add(i));
+                let (out, next_lo, next_hi) =
+                    nfc_middle_chunk(&result_shifts, accum, vshlq_s64(accum, vdupq_n_s64(-63)), c_lo, c_hi);
+                vst1q_s64(res.as_mut_ptr().add(i), out);
+                store2_split_i128(carry.as_mut_ptr().add(i), next_lo, next_hi);
+            } else {
+                vst1q_s64(res.as_mut_ptr().add(i), accum);
+            }
+        }
+        if FINALIZE {
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+                base2k,
+                lsh,
+                res_base2k,
+                &mut res[end..],
+                &mut src[end..],
+                &mut carry[end..],
+            );
+        } else {
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -362,25 +417,45 @@ mod tests {
 
     /// Lengths exercise the SIMD body and the scalar tail.
     const LENGTHS: &[usize] = &[0, 1, 2, 3, 4, 5, 7, 8, 16, 17, 64, 65];
-    /// Representative `(base2k, lsh)` pairs spanning lsh==0 and lsh!=0.
-    const SHIFTS: &[(usize, usize)] = &[(12, 0), (50, 0), (50, 7), (60, 0), (60, 30), (64, 0), (64, 17)];
+    fn shifts() -> impl Iterator<Item = (usize, usize)> {
+        (1..=64).flat_map(|base2k| (0..base2k).map(move |lsh| (base2k, lsh)))
+    }
 
     fn rng() -> ChaCha8Rng {
         ChaCha8Rng::seed_from_u64(0xb00b_b00b_b00b_b00b)
     }
 
-    fn random_i128(rng: &mut ChaCha8Rng, n: usize) -> Vec<i128> {
+    fn random_i128(rng: &mut ChaCha8Rng, n: usize, base2k: usize) -> Vec<i128> {
         (0..n)
-            .map(|_| {
+            .map(|i| {
+                let half = 1i128 << (base2k - 1);
+                let bound = 1i128 << 126;
+                let idft_bound = 657821220234910467805273421263929344i128;
+                let special = [
+                    -bound,
+                    bound,
+                    -idft_bound,
+                    idft_bound,
+                    -half - 1,
+                    -half,
+                    half - 1,
+                    half,
+                    -1,
+                    0,
+                    1,
+                ];
+                if i % 13 < special.len() {
+                    return special[i % 13];
+                }
                 let lo: u64 = rng.random();
                 let hi: u64 = rng.random();
-                (((hi as u128) << 64) | lo as u128) as i128
+                ((((hi as u128) << 64) | lo as u128) as i128) >> 1
             })
             .collect()
     }
 
     fn random_i64(rng: &mut ChaCha8Rng, n: usize) -> Vec<i64> {
-        (0..n).map(|_| rng.random::<i64>()).collect()
+        (0..n).map(|_| rng.random::<i64>() >> 1).collect()
     }
 
     /// `AddOp` / `SubOp` re-export for tests.
@@ -390,12 +465,12 @@ mod tests {
     fn nfc_middle_step_matches_scalar() {
         let mut rng = rng();
         for &n in LENGTHS {
-            for &(b, l) in SHIFTS {
+            for (b, l) in shifts() {
                 if l >= b {
                     continue;
                 }
-                let a = random_i128(&mut rng, n);
-                let c0 = random_i128(&mut rng, n);
+                let a = random_i128(&mut rng, n, b);
+                let c0 = random_i128(&mut rng, n, b);
                 let mut got_r = vec![0i64; n];
                 let mut got_c = c0.clone();
                 let mut want_r = vec![0i64; n];
@@ -412,12 +487,12 @@ mod tests {
     fn nfc_middle_step_assign_matches_scalar() {
         let mut rng = rng();
         for &n in LENGTHS {
-            for &(b, l) in SHIFTS {
+            for (b, l) in shifts() {
                 if l >= b {
                     continue;
                 }
                 let r0 = random_i64(&mut rng, n);
-                let c0 = random_i128(&mut rng, n);
+                let c0 = random_i128(&mut rng, n, b);
                 let mut got_r = r0.clone();
                 let mut got_c = c0.clone();
                 let mut want_r = r0;
@@ -434,13 +509,13 @@ mod tests {
     fn nfc_middle_step_into_add_matches_scalar() {
         let mut rng = rng();
         for &n in LENGTHS {
-            for &(b, l) in SHIFTS {
+            for (b, l) in shifts() {
                 if l >= b {
                     continue;
                 }
                 let r0 = random_i64(&mut rng, n);
-                let a = random_i128(&mut rng, n);
-                let c0 = random_i128(&mut rng, n);
+                let a = random_i128(&mut rng, n, b);
+                let c0 = random_i128(&mut rng, n, b);
                 let mut got_r = r0.clone();
                 let mut got_c = c0.clone();
                 let mut want_r = r0;
@@ -457,13 +532,13 @@ mod tests {
     fn nfc_middle_step_into_sub_matches_scalar() {
         let mut rng = rng();
         for &n in LENGTHS {
-            for &(b, l) in SHIFTS {
+            for (b, l) in shifts() {
                 if l >= b {
                     continue;
                 }
                 let r0 = random_i64(&mut rng, n);
-                let a = random_i128(&mut rng, n);
-                let c0 = random_i128(&mut rng, n);
+                let a = random_i128(&mut rng, n, b);
+                let c0 = random_i128(&mut rng, n, b);
                 let mut got_r = r0.clone();
                 let mut got_c = c0.clone();
                 let mut want_r = r0;
@@ -480,12 +555,12 @@ mod tests {
     fn nfc_final_step_assign_matches_scalar() {
         let mut rng = rng();
         for &n in LENGTHS {
-            for &(b, l) in SHIFTS {
+            for (b, l) in shifts() {
                 if l >= b {
                     continue;
                 }
                 let r0 = random_i64(&mut rng, n);
-                let c0 = random_i128(&mut rng, n);
+                let c0 = random_i128(&mut rng, n, b);
                 let mut got_r = r0.clone();
                 let mut got_c = c0.clone();
                 let mut want_r = r0;
@@ -501,12 +576,12 @@ mod tests {
     fn nfc_final_step_into_add_matches_scalar() {
         let mut rng = rng();
         for &n in LENGTHS {
-            for &(b, l) in SHIFTS {
+            for (b, l) in shifts() {
                 if l >= b {
                     continue;
                 }
                 let r0 = random_i64(&mut rng, n);
-                let c0 = random_i128(&mut rng, n);
+                let c0 = random_i128(&mut rng, n, b);
                 let mut got_r = r0.clone();
                 let mut got_c = c0.clone();
                 let mut want_r = r0;
@@ -522,12 +597,12 @@ mod tests {
     fn nfc_final_step_into_sub_matches_scalar() {
         let mut rng = rng();
         for &n in LENGTHS {
-            for &(b, l) in SHIFTS {
+            for (b, l) in shifts() {
                 if l >= b {
                     continue;
                 }
                 let r0 = random_i64(&mut rng, n);
-                let c0 = random_i128(&mut rng, n);
+                let c0 = random_i128(&mut rng, n, b);
                 let mut got_r = r0.clone();
                 let mut got_c = c0.clone();
                 let mut want_r = r0;
@@ -537,5 +612,11 @@ mod tests {
                 assert_eq!(got_r, want_r, "res mismatch n={n} base2k={b} lsh={l}");
             }
         }
+    }
+    #[test]
+    fn nfc_fused_matches_scalar() {
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Neon>();
+        #[cfg(feature = "enable-rayon")]
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30NeonRayon>();
     }
 }

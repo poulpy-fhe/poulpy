@@ -42,6 +42,7 @@ pub trait VecZnxExtractCoeffBackend<B: Backend> {
     );
 }
 
+/// Coefficient form of [`VecZnxNormalize`], with the same input and radix bounds.
 pub trait VecZnxNormalizeCoeffBackend<B: Backend> {
     #[allow(clippy::too_many_arguments)]
     /// Normalizes the selected coefficient of `a` across its limbs into a 1-coeff destination column.
@@ -71,6 +72,12 @@ pub trait VecZnxHadamardProductScalarZnxBackend<B: Backend> {
     );
 }
 
+/// Converts a column to centered digits, rounding once at the destination precision.
+///
+/// For i64 backends, each input limb coefficient must lie in `[-2^62, 2^62]`,
+/// and both radix widths must lie in `1..=62`. These bounds leave room for
+/// shifted digits and propagated carries. They are caller preconditions;
+/// normalization does not scan the input to validate them.
 pub trait VecZnxNormalize<B: Backend> {
     #[allow(clippy::too_many_arguments)]
     /// Normalizes the selected column of `a` and stores the result into the selected column of `res`.
@@ -87,6 +94,7 @@ pub trait VecZnxNormalize<B: Backend> {
     );
 }
 
+/// In-place normalization with the input and radix bounds of [`VecZnxNormalize`].
 pub trait VecZnxNormalizeAssignBackend<B: Backend> {
     fn vec_znx_normalize_assign_backend(
         &self,
@@ -97,6 +105,7 @@ pub trait VecZnxNormalizeAssignBackend<B: Backend> {
     );
 }
 
+/// In-place coefficient normalization with the bounds of [`VecZnxNormalize`].
 pub trait VecZnxNormalizeCoeffAssignBackend<B: Backend> {
     fn vec_znx_normalize_coeff_assign_backend(
         &self,

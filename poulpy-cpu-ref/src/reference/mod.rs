@@ -6,6 +6,7 @@
 //! [`poulpy_hal::test_suite`] module.
 
 pub mod fft64;
+pub mod normalization;
 pub mod ntt4x30;
 pub mod vec_znx;
 pub mod vmp_select;
@@ -27,7 +28,8 @@ impl<T> SendPtr<T> {
 unsafe impl<T> Send for SendPtr<T> {}
 unsafe impl<T> Sync for SendPtr<T> {}
 
-/// Re-exported from [`poulpy_hal::reference::znx`], where the portable scalar
-/// kernels now live so that every crate can reach them without depending on a
-/// backend.
-pub use poulpy_hal::reference::znx;
+/// Portable HAL primitives and CPU-specific normalization kernels.
+pub mod znx {
+    pub use super::normalization::*;
+    pub use poulpy_hal::reference::znx::*;
+}
