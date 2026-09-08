@@ -247,10 +247,14 @@ impl ZnxExtractDigitAddMul for NTT3x42IfmaRayon {
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         <NTT3x42Ifma as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
     }
+}
+
+impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT3x42IfmaRayon {
     #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <NTT3x42Ifma as ZnxExtractDigitAddMul>::znx_extract_digit_mul(base2k, lsh, res, src);
+        <NTT3x42Ifma as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
     }
+
     #[inline(always)]
     fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
         base2k: usize,
@@ -260,7 +264,7 @@ impl ZnxExtractDigitAddMul for NTT3x42IfmaRayon {
         src: &mut [i64],
         carry: &mut [i64],
     ) {
-        <NTT3x42Ifma as ZnxExtractDigitAddMul>::znx_extract_digit_addmul_normalize::<OVERWRITE>(
+        <NTT3x42Ifma as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(
             base2k, lsh, res_base2k, res, src, carry,
         );
     }
@@ -339,6 +343,25 @@ impl I128BigOps for NTT3x42IfmaRayon {
 }
 
 impl I128NormalizeOps for NTT3x42IfmaRayon {
+    const FUSE_NORMALIZE: bool = <NTT3x42Ifma as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
+
+    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        <NTT3x42Ifma as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(base2k, lsh, res, src)
+    }
+
+    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i128],
+        carry: &mut [i128],
+    ) {
+        <NTT3x42Ifma as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<OVERWRITE>(
+            base2k, lsh, res_base2k, res, src, carry,
+        )
+    }
+
     #[inline(always)]
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
         <NTT3x42Ifma as I128NormalizeOps>::nfc_middle_step(base2k, lsh, res, a, carry)
@@ -1467,27 +1490,6 @@ impl poulpy_cpu_rayon::RayonTuning for NTT3x42IfmaRayon {
     const COEFF_MIN_LEN: usize = 1 << 15;
     const COEFF_MIN_TASK: usize = 1 << 13;
     const NORMALIZE_MIN_TASK: usize = 1 << 12;
-}
-
-impl poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128 for NTT3x42IfmaRayon {
-    const FUSE_NORMALIZE: bool = <NTT3x42Ifma as poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128>::FUSE_NORMALIZE;
-
-    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        <NTT3x42Ifma as poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128>::znx_extract_digit_mul_i128(base2k, lsh, res, src)
-    }
-
-    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
-        base2k: usize,
-        lsh: usize,
-        res_base2k: usize,
-        res: &mut [i64],
-        src: &mut [i128],
-        carry: &mut [i128],
-    ) {
-        <NTT3x42Ifma as poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128>::znx_extract_digit_addmul_normalize_i128::<OVERWRITE>(
-            base2k, lsh, res_base2k, res, src, carry,
-        )
-    }
 }
 
 #[cfg(test)]

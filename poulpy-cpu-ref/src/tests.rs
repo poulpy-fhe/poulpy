@@ -656,7 +656,7 @@ fn test_i128_normalization_kernel_integer() {
 fn test_i128_normalize_fused_reference() {
     use crate::reference::{
         ntt4x30::I128NormalizeOps,
-        znx::{ZnxExtractDigitAddMulI128, get_carry_i128, get_digit_i128},
+        znx::{get_carry_i128, get_digit_i128},
     };
     for base2k in 1..=63 {
         for take in 1..=base2k {
@@ -677,7 +677,7 @@ fn test_i128_normalize_fused_reference() {
                 *r = r.wrapping_add((digit as i64).wrapping_shl(scale as u32));
             }
             <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step_assign(base2k, 0, &mut want_res, &mut want_carry);
-            <NTT4x30Ref as ZnxExtractDigitAddMulI128>::znx_extract_digit_addmul_normalize_i128::<false>(
+            <NTT4x30Ref as I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<false>(
                 take, scale, base2k, &mut res, &mut src, &mut carry,
             );
             assert_eq!((res, src, carry), (want_res, want_src, want_carry));

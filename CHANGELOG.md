@@ -5,7 +5,6 @@
 ### `poulpy-hal`
 
 - Reject short source and carry slices before extraction kernels write, including the AVX2, AVX-512, IFMA and NEON implementations.
-- **Breaking:** add overwrite and fused normalization methods to `ZnxExtractDigitAddMul`, with a `ZnxExtractDigitAddMulI128` counterpart for wide CPU backends.
 - **Breaking:** uniform `VecZnx` sampling now takes the target precision `k`; the sampler masks the unused low bits of the last live limb and clears limbs above `k`.
 - The cross-backend `test_vmp_apply_dft_to_dft_accumulate` now sweeps `res` sizes that differ from the prepared matrix size and non-zero `limb_offset`, so the output limb window is compared across transform families.
 

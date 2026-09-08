@@ -1,8 +1,10 @@
 //! Wide fused normalization parity across backend implementations.
 
-use crate::reference::znx::{ZnxExtractDigitAddMulI128, get_digit_i64, znx_extract_digit_addmul_normalize_i128_ref};
+use crate::reference::ntt4x30::I128NormalizeOps;
 
-pub fn test_i128_normalize_fused<BE: ZnxExtractDigitAddMulI128>() {
+use crate::reference::znx::{get_digit_i64, znx_extract_digit_addmul_normalize_i128_ref};
+
+pub fn test_i128_normalize_fused<BE: I128NormalizeOps>() {
     let idft_bound = (1_073_479_681i128 * 1_071_513_601 * 1_070_727_169 * 1_068_236_801 - 1) / 2;
     for res_base2k in 1..=63 {
         for base2k in 1..=res_base2k {

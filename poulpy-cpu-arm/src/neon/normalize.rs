@@ -364,11 +364,11 @@ pub(crate) unsafe fn nfc_extract_normalize_neon<const OVERWRITE: bool, const FIN
 ) {
     if base2k >= 64 || res_base2k >= 64 {
         if FINALIZE {
-            poulpy_hal::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
                 base2k, lsh, res_base2k, res, src, carry,
             );
         } else {
-            poulpy_hal::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
         }
         return;
     }
@@ -395,7 +395,7 @@ pub(crate) unsafe fn nfc_extract_normalize_neon<const OVERWRITE: bool, const FIN
             }
         }
         if FINALIZE {
-            poulpy_hal::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
                 base2k,
                 lsh,
                 res_base2k,
@@ -404,7 +404,7 @@ pub(crate) unsafe fn nfc_extract_normalize_neon<const OVERWRITE: bool, const FIN
                 &mut carry[end..],
             );
         } else {
-            poulpy_hal::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
         }
     }
 }
@@ -615,8 +615,8 @@ mod tests {
     }
     #[test]
     fn nfc_fused_matches_scalar() {
-        poulpy_hal::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Neon>();
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Neon>();
         #[cfg(feature = "enable-rayon")]
-        poulpy_hal::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30NeonRayon>();
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30NeonRayon>();
     }
 }

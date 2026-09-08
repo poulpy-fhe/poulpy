@@ -7,7 +7,7 @@ use std::{marker::PhantomData, mem::size_of};
 use crate::{
     layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
     reference::znx::{
-        ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
+        I64NormalizeOps, ZnxAddAssign, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
         ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
         ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxZero,
     },
@@ -96,7 +96,7 @@ pub fn vec_znx_normalize_coeff<'r, 'a, BE>(
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStep
         + ZnxNormalizeFirstStep
-        + ZnxExtractDigitAddMul
+        + I64NormalizeOps
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign
         + ZnxNormalizeDigit,
@@ -175,7 +175,7 @@ fn vec_znx_normalize_coeff_inter_base2k<'r, 'a, BE>(
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStepAssign
         + ZnxNormalizeMiddleStepAssign
-        + ZnxExtractDigitAddMul,
+        + I64NormalizeOps,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -259,7 +259,7 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStep
         + ZnxNormalizeFirstStep
-        + ZnxExtractDigitAddMul
+        + I64NormalizeOps
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign
         + ZnxNormalizeDigit,
@@ -435,7 +435,7 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStep
         + ZnxNormalizeFirstStep
-        + ZnxExtractDigitAddMul
+        + I64NormalizeOps
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign
         + ZnxNormalizeDigit,
@@ -488,7 +488,7 @@ fn vec_znx_normalize_range<'r, 'a, BE>(
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStep
         + ZnxNormalizeFirstStep
-        + ZnxExtractDigitAddMul
+        + I64NormalizeOps
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign
         + ZnxNormalizeDigit,
@@ -563,7 +563,7 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStep
         + ZnxNormalizeFirstStep
-        + ZnxExtractDigitAddMul
+        + I64NormalizeOps
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign
         + ZnxNormalizeDigit,
@@ -637,7 +637,7 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStepAssign
         + ZnxNormalizeMiddleStepAssign
-        + ZnxExtractDigitAddMul,
+        + I64NormalizeOps,
     BE::BufRef<'a>: HostDataRef,
 {
     let (lo, hi) = (coeff_start, coeff_start + coeff_len);
@@ -726,7 +726,7 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStep
         + ZnxNormalizeFirstStep
-        + ZnxExtractDigitAddMul
+        + I64NormalizeOps
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign
         + ZnxNormalizeDigit,

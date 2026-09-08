@@ -1045,12 +1045,12 @@ mod tests {
         if !std::is_x86_feature_detected!("avx2") {
             return;
         }
-        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx>();
-        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx>();
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx>();
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx>();
         #[cfg(feature = "enable-rayon")]
         {
-            poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::FFT64AvxRayon>();
-            poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30AvxRayon>();
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64AvxRayon>();
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30AvxRayon>();
         }
     }
 

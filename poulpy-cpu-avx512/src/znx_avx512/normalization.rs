@@ -933,16 +933,16 @@ mod tests {
         if !std::is_x86_feature_detected!("avx512f") {
             return;
         }
-        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx512>();
-        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx512>();
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx512>();
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx512>();
         #[cfg(feature = "enable-ifma")]
-        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT3x42Ifma>();
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT3x42Ifma>();
         #[cfg(feature = "enable-rayon")]
         {
-            poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx512Rayon>();
-            poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx512Rayon>();
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx512Rayon>();
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx512Rayon>();
             #[cfg(feature = "enable-ifma")]
-            poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT3x42IfmaRayon>();
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT3x42IfmaRayon>();
         }
     }
 

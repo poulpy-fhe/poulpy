@@ -149,25 +149,10 @@ pub trait ZnxNormalizeFinalStepAssign {
 /// Extracts a centered digit and adds it shifted by `lsh` to the destination.
 /// Requires `1 <= base2k`, `base2k + lsh <= 62`, a representable destination
 /// sum, and `src - get_digit_i64(base2k, src)` representable in i64.
-/// Panics before writing if `src` or the supplied carry is shorter than `res`.
+/// Panics before writing if `src` is shorter than `res`.
 /// Entries beyond `res.len()` are unchanged.
 pub trait ZnxExtractDigitAddMul {
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]);
-
-    /// Extracts a shifted digit into `res`, replacing its previous contents.
-    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]);
-
-    /// Extracts and adds a digit, then centers `res + carry` in the output base.
-    /// Requires `1 <= res_base2k <= 62`, both accumulated sums to fit in i64,
-    /// and their centered subtraction to fit in i64.
-    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
-        base2k: usize,
-        lsh: usize,
-        res_base2k: usize,
-        res: &mut [i64],
-        src: &mut [i64],
-        carry: &mut [i64],
-    );
 }
 
 /// Centers the destination and adds its quotient to `src`.
@@ -175,29 +160,4 @@ pub trait ZnxExtractDigitAddMul {
 /// in i64, and the updated `src` coefficient to fit in i64.
 pub trait ZnxNormalizeDigit {
     fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]);
-}
-
-/// Extract a wide source digit and normalize the completed destination limb.
-/// Source coefficients and incoming carries must lie in `[-2^126, 2^126]`.
-/// Requires positive radix widths, `base2k + lsh <= 63`, `res_base2k <= 63`,
-/// and a representable i64 destination sum.
-/// Panics before writing if `src` or the supplied carry is shorter than `res`.
-/// Entries beyond `res.len()` are unchanged.
-pub trait ZnxExtractDigitAddMulI128 {
-    const FUSE_NORMALIZE: bool = true;
-
-    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
-    }
-
-    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
-        base2k: usize,
-        lsh: usize,
-        res_base2k: usize,
-        res: &mut [i64],
-        src: &mut [i128],
-        carry: &mut [i128],
-    ) {
-        znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
-    }
 }

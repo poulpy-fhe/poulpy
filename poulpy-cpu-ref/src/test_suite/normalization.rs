@@ -18,7 +18,7 @@ where
         + ZnxNormalizeMiddleStepSub
         + ZnxNormalizeFinalStepSub
         + ZnxNormalizeFinalStepAssign
-        + ZnxExtractDigitAddMul
+        + I64NormalizeOps
         + ZnxNormalizeDigit,
 {
     let steps: [(Step, Step); 8] = [

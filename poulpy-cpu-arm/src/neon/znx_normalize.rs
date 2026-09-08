@@ -707,12 +707,12 @@ pub(crate) fn znx_extract_digit_addmul_normalize_neon<const OVERWRITE: bool>(
 mod tests {
     #[test]
     fn test_normalization_kernels_bounded_inputs() {
-        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::FFT64Neon>();
-        poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Neon>();
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Neon>();
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Neon>();
         #[cfg(feature = "enable-rayon")]
         {
-            poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::FFT64NeonRayon>();
-            poulpy_hal::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30NeonRayon>();
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64NeonRayon>();
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30NeonRayon>();
         }
     }
 }

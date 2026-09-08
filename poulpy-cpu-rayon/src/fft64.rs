@@ -209,16 +209,20 @@ impl ZnxExtractDigitAddMul for $rayon {
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         <$base as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
     }
+}
+
+impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for $rayon {
     #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <$base as ZnxExtractDigitAddMul>::znx_extract_digit_mul(base2k, lsh, res, src);
+        <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
     }
+
     #[inline(always)]
     fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
         base2k: usize, lsh: usize, res_base2k: usize,
         res: &mut [i64], src: &mut [i64], carry: &mut [i64],
     ) {
-        <$base as ZnxExtractDigitAddMul>::znx_extract_digit_addmul_normalize::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
+        <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
     }
 }
 $crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));

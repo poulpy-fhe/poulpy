@@ -1,6 +1,6 @@
 //! Large-coefficient (i128) ring element vector support for [`NTT4x30Avx`](super::NTT4x30Avx).
 //!
-//! The shared `poulpy-hal` NTT4x30 defaults rely on backend-provided `I128BigOps`
+//! The shared `poulpy-cpu-ref` NTT4x30 defaults rely on backend-provided `I128BigOps`
 //! and `I128NormalizeOps` hooks for vectorized i128 operations.
 
 use super::{
@@ -93,6 +93,24 @@ impl BigWordHadamardProduct for NTT4x30Avx {
 }
 
 impl I128NormalizeOps for NTT4x30Avx {
+    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        assert!(src.len() >= res.len());
+        unsafe { super::vec_znx_big_avx::nfc_extract_normalize_avx2::<true, false>(base2k, lsh, base2k + lsh, res, src, &mut []) }
+    }
+
+    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i128],
+        carry: &mut [i128],
+    ) {
+        assert!(src.len() >= res.len());
+        assert!(carry.len() >= res.len());
+        unsafe { super::vec_znx_big_avx::nfc_extract_normalize_avx2::<OVERWRITE, true>(base2k, lsh, res_base2k, res, src, carry) }
+    }
+
     #[inline(always)]
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
@@ -121,25 +139,5 @@ impl I128NormalizeOps for NTT4x30Avx {
         } else {
             nfc_final_step_assign_scalar(base2k, lsh, res, carry);
         }
-    }
-}
-
-impl poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128 for NTT4x30Avx {
-    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        assert!(src.len() >= res.len());
-        unsafe { super::vec_znx_big_avx::nfc_extract_normalize_avx2::<true, false>(base2k, lsh, base2k + lsh, res, src, &mut []) }
-    }
-
-    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
-        base2k: usize,
-        lsh: usize,
-        res_base2k: usize,
-        res: &mut [i64],
-        src: &mut [i128],
-        carry: &mut [i128],
-    ) {
-        assert!(src.len() >= res.len());
-        assert!(carry.len() >= res.len());
-        unsafe { super::vec_znx_big_avx::nfc_extract_normalize_avx2::<OVERWRITE, true>(base2k, lsh, res_base2k, res, src, carry) }
     }
 }

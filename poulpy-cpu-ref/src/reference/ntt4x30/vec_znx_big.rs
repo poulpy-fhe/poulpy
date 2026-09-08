@@ -39,7 +39,7 @@ use crate::{
     },
     reference::{
         vec_znx::VecZnxRangeMut,
-        znx::{get_carry_i128, get_digit_i128},
+        znx::{get_carry_i128, get_digit_i128, znx_extract_digit_addmul_normalize_i128_ref, znx_extract_digit_mul_i128_ref},
     },
     source::Source,
 };
@@ -713,7 +713,7 @@ pub trait I128BigOps {
 
 /// Per-slice `i128→i64` normalization kernels, dispatched via the backend type parameter.
 ///
-/// The three hot-path helpers used inside [`ntt4x30_vec_znx_big_normalize`] are expressed
+/// The hot-path helpers used inside [`ntt4x30_vec_znx_big_normalize`] are expressed
 /// as trait methods so that SIMD backends can override them without duplicating the outer
 /// loop logic.  All methods have scalar default implementations.
 ///
@@ -721,7 +721,28 @@ pub trait I128BigOps {
 /// Input limbs and incoming carries must have magnitude at most `2^126`;
 /// shifted digits and destination sums must be representable. These bounds
 /// include the centered NTT4x30 IDFT output, whose magnitude is below `2^119`.
-pub trait I128NormalizeOps: crate::reference::znx::ZnxExtractDigitAddMulI128 {
+pub trait I128NormalizeOps {
+    /// Selects the fused flush in the shared CPU loop.
+    const FUSE_NORMALIZE: bool = true;
+
+    /// Requires `1 <= base2k`, `base2k + lsh <= 63` and `src.len() >= res.len()`.
+    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
+    }
+
+    /// Also requires `1 <= res_base2k <= 63` and a representable i64 destination sum.
+    /// Short source or carry slices panic before writing; unused tails are unchanged.
+    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i128],
+        carry: &mut [i128],
+    ) {
+        znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
+    }
+
     /// Convert `i128` input + carry into `i64` output, updating carry in place.
     ///
     /// Equivalent to the private `nfc_middle_step` helper.

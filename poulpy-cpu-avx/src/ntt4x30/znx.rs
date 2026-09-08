@@ -209,15 +209,17 @@ impl ZnxNormalizeMiddleStepAssign for NTT4x30Avx {
 
 impl ZnxExtractDigitAddMul for NTT4x30Avx {
     #[inline(always)]
+    fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        unsafe { znx_extract_digit_addmul_avx(base2k, lsh, res, src) }
+    }
+}
+
+impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30Avx {
+    #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         unsafe {
             crate::znx_avx::znx_extract_digit_mul_avx(base2k, lsh, res, src);
         }
-    }
-
-    #[inline(always)]
-    fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        unsafe { znx_extract_digit_addmul_avx(base2k, lsh, res, src) }
     }
 
     #[inline(always)]

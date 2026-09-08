@@ -1272,11 +1272,11 @@ pub(super) unsafe fn nfc_extract_normalize_avx512<const OVERWRITE: bool, const F
 ) {
     if base2k >= 64 || res_base2k >= 64 {
         if FINALIZE {
-            poulpy_hal::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
                 base2k, lsh, res_base2k, res, src, carry,
             );
         } else {
-            poulpy_hal::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
         }
         return;
     }
@@ -1320,7 +1320,7 @@ pub(super) unsafe fn nfc_extract_normalize_avx512<const OVERWRITE: bool, const F
             }
         }
         if FINALIZE {
-            poulpy_hal::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
                 base2k,
                 lsh,
                 res_base2k,
@@ -1329,7 +1329,7 @@ pub(super) unsafe fn nfc_extract_normalize_avx512<const OVERWRITE: bool, const F
                 &mut carry[end..],
             );
         } else {
-            poulpy_hal::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
+            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
         }
     }
 }
@@ -1509,16 +1509,16 @@ mod tests {
     }
     #[test]
     fn nfc_fused_matches_scalar() {
-        poulpy_hal::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx512>();
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx512>();
         #[cfg(feature = "enable-rayon")]
-        poulpy_hal::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx512Rayon>();
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx512Rayon>();
     }
 
     #[test]
     #[cfg(feature = "enable-ifma")]
     fn nfc_ifma_fused_matches_scalar() {
-        poulpy_hal::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT3x42Ifma>();
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT3x42Ifma>();
         #[cfg(feature = "enable-rayon")]
-        poulpy_hal::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT3x42IfmaRayon>();
+        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT3x42IfmaRayon>();
     }
 }

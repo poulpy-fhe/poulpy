@@ -6,7 +6,7 @@ use poulpy_cpu_ref::reference::{
     ntt4x30::vec_znx_big::{I128NormalizeOps, ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_range_raw},
     vec_znx::{vec_znx_normalize, vec_znx_normalize_assign, vec_znx_normalize_assign_range_raw, vec_znx_normalize_range_raw},
     znx::{
-        ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
+        I64NormalizeOps, ZnxAddAssign, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
         ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
         ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxZero,
     },
@@ -66,7 +66,7 @@ pub fn vec_znx_normalize_par<B, T>(
         + ZnxNormalizeMiddleStep
         + ZnxNormalizeFinalStep
         + ZnxNormalizeFirstStep
-        + ZnxExtractDigitAddMul
+        + I64NormalizeOps
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign
         + ZnxNormalizeDigit,
