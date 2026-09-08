@@ -146,10 +146,12 @@ where
 
         // Normalize into res.body.
         {
+            let res_k = res.k().as_usize();
             let mut res_mut = res.to_backend_mut();
             self.vec_znx_big_normalize(
                 &mut res_mut.body,
                 base2k,
+                res_k,
                 0,
                 0,
                 &tmp_scalar.to_backend_ref(),

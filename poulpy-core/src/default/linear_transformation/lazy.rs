@@ -117,6 +117,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
             module.vec_znx_big_normalize(
                 &mut col_small,
                 key_base2k,
+                mask_small_size * key_base2k,
                 0,
                 0,
                 &mask_big_ref,
@@ -190,8 +191,7 @@ pub(super) fn glwe_idft_dft_into_big<BE, M>(
     }
 }
 
-/// Final BIG → SMALL normalize with sub-limb offset; this is the single
-/// rounding allowed by docs/linear_transformation.md. `cnv_offset_lo` is the
+/// Final BIG → SMALL normalize with sub-limb offset. `cnv_offset_lo` is the
 /// fractional limb shift PROD never applied, so it lands here at the end.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn glwe_normalize_big_into<BE, M, R>(
@@ -208,11 +208,13 @@ pub(super) fn glwe_normalize_big_into<BE, M, R>(
 {
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k().as_usize();
+    let res_k = res.k().as_usize();
     let mut res_ref = res.to_backend_mut();
     for col in 0..cols {
         module.vec_znx_big_normalize(
             &mut res_ref.data,
             res_base2k,
+            res_k,
             cnv_offset_lo,
             col,
             a,

@@ -593,6 +593,8 @@ where
         );
 
         let res_base2k: usize = res_a.base2k().as_usize();
+        let res_a_k = res_a.k().as_usize();
+        let res_b_k = res_b.k().as_usize();
         let s_base2k: usize = s.base2k().as_usize();
         let cols: usize = (s.rank() + 1).into();
         let tmp_c_infos = GLWELayout {
@@ -642,6 +644,7 @@ where
                 self.vec_znx_big_normalize(
                     res_a_backend.data_mut(),
                     res_base2k,
+                    res_a_k,
                     0,
                     j,
                     &res_big_tmp_ref,
@@ -665,6 +668,7 @@ where
                 self.vec_znx_big_normalize(
                     res_b_backend.data_mut(),
                     res_base2k,
+                    res_b_k,
                     0,
                     j,
                     &res_big_tmp_ref,
@@ -724,6 +728,7 @@ where
                 self.vec_znx_big_normalize(
                     res_a_backend.data_mut(),
                     res_base2k,
+                    res_a_k,
                     0,
                     j,
                     &res_big_tmp_ref,
@@ -747,6 +752,7 @@ where
                 self.vec_znx_big_normalize(
                     res_b_backend.data_mut(),
                     res_base2k,
+                    res_b_k,
                     0,
                     j,
                     &res_big_tmp_ref,
@@ -827,6 +833,7 @@ where
 
         let scratch = scratch.borrow();
         let res_base2k: usize = res.base2k().into();
+        let res_k = res.k().as_usize();
         let ggsw_base2k: usize = s.base2k().into();
 
         self.glwe_sub(res, t, f);
@@ -856,6 +863,7 @@ where
             self.vec_znx_big_normalize(
                 tmp_in.data_mut(),
                 res_base2k,
+                res_k,
                 0,
                 j,
                 &res_big_ref,
@@ -885,6 +893,7 @@ where
 
         let scratch = scratch.borrow();
         let res_base2k: usize = res.base2k().into();
+        let res_k = res.k().as_usize();
         let ggsw_base2k: usize = s.base2k().into();
         let tmp_infos = GLWELayout {
             n: s.n(),
@@ -918,6 +927,7 @@ where
             self.vec_znx_big_normalize(
                 tmp.data_mut(),
                 res_base2k,
+                res_k,
                 0,
                 j,
                 &res_big_ref,
@@ -939,6 +949,7 @@ where
         let a_backend = a.to_backend_ref();
         let scratch = scratch.borrow();
         let res_base2k: usize = res.base2k().into();
+        let res_k = res.k().as_usize();
         let ggsw_base2k: usize = s.base2k().into();
         self.glwe_sub_assign(res, a);
         let cols: usize = (res.rank() + 1).into();
@@ -967,6 +978,7 @@ where
             self.vec_znx_big_normalize(
                 tmp.data_mut(),
                 res_base2k,
+                res_k,
                 0,
                 j,
                 &res_big_ref,

@@ -316,6 +316,7 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
         module.vec_znx_normalize(
             &mut glwe.data,
             ksk.base2k().into(),
+            lwe.k().as_usize(),
             0,
             0,
             &a_conv.to_backend_ref(),
@@ -332,6 +333,7 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
         module.vec_znx_normalize(
             &mut glwe.data,
             ksk.base2k().into(),
+            lwe.k().as_usize(),
             0,
             1,
             &a_conv.to_backend_ref(),
@@ -569,6 +571,7 @@ pub fn ggsw_expand_row_default<BE, M, R>(
                     module.vec_znx_normalize(
                         &mut a_0,
                         tsk_base2k,
+                        res_backend.k().as_usize(),
                         0,
                         0,
                         &glwe_mi_1.data,
@@ -582,6 +585,7 @@ pub fn ggsw_expand_row_default<BE, M, R>(
                 module.vec_znx_normalize(
                     &mut a_0,
                     tsk_base2k,
+                    res_backend.k().as_usize(),
                     0,
                     0,
                     &glwe_mi_1.data,
@@ -630,6 +634,8 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
     R: GGSWAtViewMut<BE> + GGSWInfos,
 {
     let cols: usize = res.rank().as_usize() + 1;
+    let res_base2k = res.base2k().as_usize();
+    let res_k = res.k().as_usize();
 
     for col in 1..cols {
         let scratch_row = scratch.borrow();
@@ -648,14 +654,13 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
         module.vec_znx_big_add_small_assign(&mut res_big, col, a_0, 0);
         let res_big_ref = res_big.to_backend_ref();
 
-        let res_base2k: usize = res.base2k().as_usize();
-
+        let mut res_col: GLWEViewMut<'_, _> = res.at_view_mut(row, col);
         for j in 0..cols {
-            let mut res_col: GLWEViewMut<'_, _> = res.at_view_mut(row, col);
             let scratch_norm = &mut scratch_2.borrow();
             module.vec_znx_big_normalize(
                 &mut res_col.data,
                 res_base2k,
+                res_k,
                 0,
                 j,
                 &res_big_ref,

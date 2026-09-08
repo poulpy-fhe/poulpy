@@ -30,6 +30,29 @@ pub fn vec_znx_normalize_tmp_bytes(n: usize) -> usize {
 }
 
 #[inline]
+fn split_digit(base2k: usize, value: i128) -> (i64, i128) {
+    let modulus = 1i128 << base2k;
+    let half = modulus >> 1;
+    let unsigned = value.rem_euclid(modulus);
+    let digit = if unsigned >= half { unsigned - modulus } else { unsigned };
+    (digit as i64, (value - digit) >> base2k)
+}
+
+#[inline]
+fn finish_normalized_limb(base2k: usize, active_size: usize, padding: usize, limb: usize, digit: &mut [i64], carry: &mut [i64]) {
+    if limb >= active_size {
+        digit.fill(0);
+    } else if limb + 1 == active_size && padding != 0 {
+        for (digit, carry) in digit.iter_mut().zip(carry.iter_mut()) {
+            let low_digit = split_digit(padding, *digit as i128).0;
+            let (rounded_digit, rounding_carry) = split_digit(base2k, *digit as i128 - low_digit as i128);
+            *digit = rounded_digit;
+            *carry = carry.wrapping_add(rounding_carry as i64);
+        }
+    }
+}
+
+#[inline]
 pub(crate) fn normalize_needs_exact(a_size: usize, a_base2k: usize, res_size: usize, res_base2k: usize, offset: i64) -> bool {
     if a_size == 0 || res_size == 0 || a_base2k > 63 || res_base2k > 63 {
         return true;
@@ -110,6 +133,7 @@ pub fn vec_znx_normalize_coeff<'r, 'a, BE>(
             a_base2k,
             res.size(),
             res_base2k,
+            res.size() * res_base2k,
             res_offset,
             |j, digit| res.at_mut(res_col, j)[0] = digit,
         );
@@ -418,6 +442,7 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
 pub fn vec_znx_normalize<'r, 'a, BE>(
     res: &mut VecZnxBackendMut<'r, BE>,
     res_base2k: usize,
+    res_k: usize,
     res_offset: i64,
     res_col: usize,
     a: &VecZnxBackendRef<'a, BE>,
@@ -442,12 +467,14 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    assert!(res_k <= res.size() * res_base2k);
     let n = res.n();
     if res_base2k != a_base2k && n > 512 {
         for start in (0..n).step_by(512) {
             vec_znx_normalize_range::<BE>(
                 res,
                 res_base2k,
+                res_k,
                 res_offset,
                 res_col,
                 a,
@@ -459,7 +486,7 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
             );
         }
     } else {
-        vec_znx_normalize_range::<BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry);
+        vec_znx_normalize_range::<BE>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry);
     }
 }
 
@@ -469,6 +496,7 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
 fn vec_znx_normalize_range<'r, 'a, BE>(
     res: &mut VecZnxBackendMut<'r, BE>,
     res_base2k: usize,
+    res_k: usize,
     res_offset: i64,
     res_col: usize,
     a: &VecZnxBackendRef<'a, BE>,
@@ -502,7 +530,7 @@ fn vec_znx_normalize_range<'r, 'a, BE>(
         assert!(carry.len() >= 3 * coeff_len);
     }
     let (n, cols, size) = (res.n(), res.cols(), res.size());
-    let ptr = res.data.as_mut().as_mut_ptr().cast::<i64>();
+    let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
     unsafe {
         vec_znx_normalize_range_raw::<BE>(
             ptr,
@@ -510,6 +538,7 @@ fn vec_znx_normalize_range<'r, 'a, BE>(
             cols,
             size,
             res_base2k,
+            res_k,
             res_offset,
             res_col,
             a,
@@ -544,6 +573,7 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
     cols: usize,
     size: usize,
     res_base2k: usize,
+    res_k: usize,
     res_offset: i64,
     res_col: usize,
     a: &VecZnxBackendRef<'a, BE>,
@@ -575,8 +605,17 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
         assert!(res_col < cols);
         assert!(coeff_start + coeff_len <= n);
         assert!(carry.len() >= 3 * coeff_len);
+        assert!(res_k <= size * res_base2k);
     }
     let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
+    if res_k == 0 {
+        for limb in 0..size {
+            res.at_mut(limb).fill(0);
+        }
+        return;
+    }
+    let active_size = res_k.div_ceil(res_base2k);
+    let padding = (res_base2k - res_k % res_base2k) % res_base2k;
     if normalize_needs_exact(a.size(), a_base2k, size, res_base2k, res_offset) {
         for i in 0..coeff_len {
             normalize_exact::<true, _, _>(
@@ -585,6 +624,7 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
                 a_base2k,
                 size,
                 res_base2k,
+                res_k,
                 res_offset,
                 |j, digit| res.at_mut(j)[i] = digit,
             );
@@ -596,6 +636,8 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
             res_base2k,
             &mut res,
             size,
+            active_size,
+            padding,
             res_offset,
             a,
             a_col,
@@ -607,6 +649,8 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
             &mut res,
             size,
             res_base2k,
+            active_size,
+            padding,
             res_offset,
             a,
             a_base2k,
@@ -623,6 +667,8 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
     base2k: usize,
     res: &mut VecZnxRangeMut<'r>,
     res_size: usize,
+    active_size: usize,
+    padding: usize,
     res_offset: i64,
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
@@ -688,18 +734,21 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
 
     // Regular normalization over the overlapping limbs of res and a.
     for j in 0..mid_range {
+        let res_limb = res_start - j - 1;
         BE::znx_normalize_middle_step::<true>(
             base2k,
             lsh_pos,
-            res.at_mut(res_start - j - 1),
+            res.at_mut(res_limb),
             &a.at(a_col, a_start - j - 1)[lo..hi],
             carry,
         );
+        finish_normalized_limb(base2k, active_size, padding, res_limb, res.at_mut(res_limb), carry);
     }
 
     // Propagates the carry over the non-overlapping limbs between res and a
     for j in (0..res_end).rev() {
         BE::znx_extract_digit_mul(base2k, 0, res.at_mut(j), carry);
+        finish_normalized_limb(base2k, active_size, padding, j, res.at_mut(j), carry);
     }
 }
 
@@ -708,6 +757,8 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
     res: &mut VecZnxRangeMut<'r>,
     res_size: usize,
     res_base2k: usize,
+    active_size: usize,
+    padding: usize,
     res_offset: i64,
     a: &VecZnxBackendRef<'a, BE>,
     a_base2k: usize,
@@ -911,6 +962,7 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
                     // Previous step might not consume all bits of a_carry
                     // Extraction reduces a_carry before adding the bounded result carry.
                     BE::znx_add_assign(res_carry, a_carry);
+                    finish_normalized_limb(res_base2k, active_size, padding, res_limb, res_slice, res_carry);
 
                     // We are done, so breaks out of the loop (yes we are at a[0], but
                     // this avoids possible over/under flows of tracking variables)
@@ -921,6 +973,8 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
                 if res_acc_left != 0 {
                     BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
                 }
+
+                finish_normalized_limb(res_base2k, active_size, padding, res_limb, res_slice, res_carry);
 
                 if res_limb == 0 {
                     break 'outer;
@@ -960,22 +1014,30 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
 
         for j in (0..res_end).rev() {
             BE::znx_extract_digit_mul(res_base2k, 0, res.at_mut(j), carry_to_use);
+            finish_normalized_limb(res_base2k, active_size, padding, j, res.at_mut(j), carry_to_use);
         }
     }
 }
 
-pub fn vec_znx_normalize_assign<'r, BE>(base2k: usize, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, carry: &mut [i64])
-where
+pub fn vec_znx_normalize_assign<'r, BE>(
+    base2k: usize,
+    res_k: usize,
+    res: &mut VecZnxBackendMut<'r, BE>,
+    res_col: usize,
+    carry: &mut [i64],
+) where
     BE: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
+    assert!(res_k <= res.size() * base2k);
     let n = res.n();
-    vec_znx_normalize_assign_range::<BE>(base2k, res, res_col, 0, n, carry)
+    vec_znx_normalize_assign_range::<BE>(base2k, res_k, res, res_col, 0, n, carry)
 }
 
 /// [`vec_znx_normalize_assign`] restricted to `[coeff_start, coeff_start + coeff_len)`.
 fn vec_znx_normalize_assign_range<'r, BE>(
     base2k: usize,
+    res_k: usize,
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     coeff_start: usize,
@@ -992,8 +1054,8 @@ fn vec_znx_normalize_assign_range<'r, BE>(
     }
 
     let (n, cols, size) = (res.n(), res.cols(), res.size());
-    let ptr = res.data.as_mut().as_mut_ptr().cast::<i64>();
-    unsafe { vec_znx_normalize_assign_range_raw::<BE>(ptr, n, cols, size, base2k, res_col, coeff_start, coeff_len, carry) }
+    let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
+    unsafe { vec_znx_normalize_assign_range_raw::<BE>(ptr, n, cols, size, base2k, res_k, res_col, coeff_start, coeff_len, carry) }
 }
 
 /// Normalizes one coefficient range in a raw host output.
@@ -1016,6 +1078,7 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
     cols: usize,
     size: usize,
     base2k: usize,
+    res_k: usize,
     res_col: usize,
     coeff_start: usize,
     coeff_len: usize,
@@ -1028,12 +1091,24 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
         assert!(res_col < cols);
         assert!(coeff_start + coeff_len <= n);
         assert!(carry.len() >= coeff_len);
-    }
-    if base2k == 64 {
-        return;
+        assert!(res_k <= size * base2k);
     }
     let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
     let carry = &mut carry[..coeff_len];
+    let active_size = res_k.div_ceil(base2k);
+    let padding = (base2k - res_k % base2k) % base2k;
+    if base2k == 64 {
+        carry.fill(0);
+        for j in (0..size).rev() {
+            for (digit, carry) in res.at_mut(j).iter_mut().zip(carry.iter_mut()) {
+                let (value, next) = split_digit(base2k, *digit as i128 + *carry as i128);
+                *digit = value;
+                *carry = next as i64;
+            }
+            finish_normalized_limb(base2k, active_size, padding, j, res.at_mut(j), carry);
+        }
+        return;
+    }
     for j in (0..size).rev() {
         if j == size - 1 {
             BE::znx_normalize_first_step_assign(base2k, 0, res.at_mut(j), carry);
@@ -1042,7 +1117,70 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
         } else {
             BE::znx_normalize_middle_step_assign(base2k, 0, res.at_mut(j), carry);
         }
+        finish_normalized_limb(base2k, active_size, padding, j, res.at_mut(j), carry);
     }
+}
+
+#[test]
+fn test_vec_znx_normalize_canonical_precision() {
+    use crate::{
+        FFT64Ref,
+        layouts::{VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+    };
+
+    let (n, base2k, k) = (1, 4, 10);
+    let mut a: VecZnx<Vec<u8>, i64> = alloc_host_vec_znx(n, 1, 3);
+    a.at_mut(0, 0)[0] = 3;
+    a.at_mut(0, 1)[0] = 7;
+    a.at_mut(0, 2)[0] = 7;
+
+    let mut res: VecZnx<Vec<u8>, i64> = alloc_host_vec_znx(n, 1, 4);
+    let mut carry = vec![0i64; vec_znx_normalize_tmp_bytes(n) / size_of::<i64>()];
+    vec_znx_normalize::<FFT64Ref>(
+        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut res),
+        base2k,
+        k,
+        0,
+        0,
+        &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&a),
+        base2k,
+        0,
+        &mut carry,
+    );
+
+    assert_eq!(res.at(0, 0)[0], 4);
+    assert_eq!(res.at(0, 1)[0], -8);
+    assert_eq!(res.at(0, 2)[0], -8);
+    assert_eq!(res.at(0, 3)[0], 0);
+
+    vec_znx_normalize::<FFT64Ref>(
+        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut res),
+        base2k,
+        k,
+        0,
+        0,
+        &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&a),
+        5,
+        0,
+        &mut carry,
+    );
+    assert_eq!(res.at(0, 0)[0], 2);
+    assert_eq!(res.at(0, 1)[0], -6);
+    assert_eq!(res.at(0, 2)[0], -4);
+    assert_eq!(res.at(0, 3)[0], 0);
+
+    vec_znx_normalize::<FFT64Ref>(
+        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut res),
+        base2k,
+        0,
+        0,
+        0,
+        &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&a),
+        5,
+        0,
+        &mut carry,
+    );
+    assert!(res.data().iter().all(|&byte| byte == 0));
 }
 
 #[test]
@@ -1117,6 +1255,7 @@ fn test_vec_znx_normalize_cross_base2k() {
                 vec_znx_normalize::<FFT64Ref>(
                     &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),
                     out_base2k,
+                    out_size * out_base2k,
                     offset,
                     0,
                     &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&want),
@@ -1226,6 +1365,7 @@ fn test_vec_znx_normalize_inter_base2k() {
             vec_znx_normalize::<FFT64Ref>(
                 &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),
                 base2k,
+                size * base2k,
                 offset,
                 0,
                 &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&want),
@@ -1300,6 +1440,7 @@ fn test_vec_znx_normalize_limb_bounds() {
                         vec_znx_normalize::<FFT64Ref>(
                             &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),
                             out_base2k,
+                            out_size * out_base2k,
                             offset,
                             0,
                             &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&want),
@@ -1364,6 +1505,7 @@ fn check_normalize_integer(a: &[i128], a_base2k: usize, res_base2k: usize, res_s
     vec_znx_normalize::<FFT64Ref>(
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
         res_base2k,
+        res_size * res_base2k,
         offset,
         0,
         &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input),
@@ -1511,17 +1653,37 @@ impl<F: FnMut(usize) -> i128, const NARROW: bool> NormalizationBits<F, NARROW> {
     }
 }
 
-/// Quantizes once at the destination precision, then emits centered digits.
+/// Quantizes at the destination capacity, then emits canonical digits at `res_k`.
 /// `NARROW` requires every source coefficient to fit in i64.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn normalize_exact<const NARROW: bool, F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
     source: F,
     a_size: usize,
     a_base2k: usize,
     res_size: usize,
     res_base2k: usize,
+    res_k: usize,
     offset: i64,
     mut output: G,
 ) {
+    let active_size = res_k.div_ceil(res_base2k);
+    let precision_padding = (res_base2k - res_k % res_base2k) % res_base2k;
+    let mut precision_carry = 0i128;
+    let mut output = |j, digit: i64| {
+        if j >= active_size {
+            output(j, 0);
+        } else if res_k == res_size * res_base2k {
+            output(j, digit);
+        } else {
+            let mut value = digit as i128 + precision_carry;
+            if j + 1 == active_size && precision_padding != 0 {
+                value -= split_digit(precision_padding, value).0 as i128;
+            }
+            let (digit, carry) = split_digit(res_base2k, value);
+            precision_carry = carry;
+            output(j, digit);
+        }
+    };
     if a_base2k > 63 || res_base2k > 63 {
         normalize_exact_wide(source, a_size, a_base2k, res_size, res_base2k, offset, output);
         return;
@@ -1731,6 +1893,7 @@ fn check_normalize_centered(exhaustive: bool) {
                             vec_znx_normalize::<FFT64Ref>(
                                 &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
                                 res_base2k,
+                                res_size * res_base2k,
                                 *offset,
                                 0,
                                 &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input),
@@ -1803,6 +1966,7 @@ fn test_normalize_coeff_and_range_integer() {
                     vec_znx_normalize::<FFT64Ref>(
                         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut whole),
                         res_base2k,
+                        size * res_base2k,
                         offset,
                         1,
                         &a,
@@ -1815,6 +1979,7 @@ fn test_normalize_coeff_and_range_integer() {
                         vec_znx_normalize_range::<FFT64Ref>(
                             &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut split),
                             res_base2k,
+                            size * res_base2k,
                             offset,
                             1,
                             &a,
@@ -1868,6 +2033,7 @@ fn test_normalize_coeff_and_range_integer() {
                 let mut assigned = input.clone();
                 vec_znx_normalize_assign::<FFT64Ref>(
                     a_base2k,
+                    size * a_base2k,
                     &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut assigned),
                     1,
                     &mut vec![37; n],
@@ -1921,6 +2087,7 @@ fn test_normalize_blocked_matches_single_range() {
                 vec_znx_normalize_range::<FFT64Ref>(
                     &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut whole),
                     res_base2k,
+                    size * res_base2k,
                     offset,
                     0,
                     &a,
@@ -1933,6 +2100,7 @@ fn test_normalize_blocked_matches_single_range() {
                 vec_znx_normalize::<FFT64Ref>(
                     &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut blocked),
                     res_base2k,
+                    size * res_base2k,
                     offset,
                     0,
                     &a,

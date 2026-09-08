@@ -160,6 +160,7 @@ fn main() {
     // Normalize plaintext to nicely print coefficients
     module.vec_znx_normalize_assign_backend(
         base2k,
+        pt_lwe.size() * base2k,
         &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_lwe.data_mut()),
         0,
         &mut scratch.borrow(),
@@ -260,6 +261,7 @@ fn main() {
     pt_glwe.encode_vec_i64(&data_vec, (k_lwe_pt + 2).into());
     module.vec_znx_normalize_assign_backend(
         base2k,
+        pt_glwe.size() * base2k,
         &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_glwe.data_mut()),
         0,
         &mut scratch.borrow(),

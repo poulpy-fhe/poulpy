@@ -219,7 +219,6 @@ where
     );
 }
 
-/// Key set that records the precision each lookup was made at.
 /// The stored keys, with the Galois elements listed in `coarse_ps` answered
 /// through a coarser `dsize`: one key set carrying two different layouts.
 struct MixedDsize<BE: Backend> {
@@ -247,6 +246,7 @@ impl<BE: Backend> GetAutomorphismKey<BE> for MixedDsize<BE> {
     }
 }
 
+/// Key set that records the precision each lookup was made at.
 struct QueryLog<K> {
     keys: HashMap<i64, K>,
     seen: RefCell<Vec<(i64, TorusPrecision)>>,
@@ -322,12 +322,10 @@ pub fn test_linear_transformation_pins_operation_precisions<BE, F, E>(
 
     let prepared = prepare_lt(module, &lt, &mut scratch.borrow());
     let mut res = alloc_ct(&params, module, params.k - params.base2k);
-    // The evaluation stamps its own result metadata onto `res`, so the giant
-    // precision to compare against is the one it was given, not the one left.
-    let dst_k = res.k();
     module
         .ckks_eval_linear_transformation_self_into(&mut res, &ct, &prepared, &keys, &mut scratch.borrow())
         .unwrap();
+    let dst_k = res.k();
 
     let baby_elements: HashSet<i64> = lt
         .baby_steps()

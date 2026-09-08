@@ -2,7 +2,7 @@ use poulpy_core::{
     GLWECopy, GLWERotate, GLWEZero, ScratchArenaTakeCore,
     layouts::{
         GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
-        GLWEToBackendRef,
+        GLWEToBackendRef, LWEInfos,
     },
 };
 use poulpy_hal::{
@@ -148,6 +148,7 @@ where
         let base2k: usize = res.base2k().into();
         let dsize: usize = res.dsize().into();
         let (mut tmp_glwe, mut scratch_1) = scratch.borrow().take_glwe_scratch(res);
+        let tmp_glwe_k = tmp_glwe.k().as_usize();
         let test_vector = test_vector.to_backend_ref();
 
         for col in 0..(res.rank() + 1).into() {
@@ -157,7 +158,7 @@ where
                     let mut tmp_glwe_inner = tmp_glwe.data_mut();
                     let mut tmp_glwe_data = VecZnxToBackendMut::<BE>::to_backend_mut(&mut tmp_glwe_inner);
                     self.vec_znx_add_scalar_assign_backend(&mut tmp_glwe_data, col, (dsize - 1) + row * dsize, &test_vector, 0);
-                    self.vec_znx_normalize_assign_backend(base2k, &mut tmp_glwe_data, col, &mut scratch_1.borrow());
+                    self.vec_znx_normalize_assign_backend(base2k, tmp_glwe_k, &mut tmp_glwe_data, col, &mut scratch_1.borrow());
                 }
 
                 self.glwe_blind_rotation(

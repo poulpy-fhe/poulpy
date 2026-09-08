@@ -104,6 +104,7 @@ fn main() {
     m.encode_vec_i64(base2k, 0, log_scale, &want);
     module.vec_znx_normalize_assign_backend(
         base2k,
+        msg_size * base2k,
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut m),
         0,
         &mut scratch.borrow(),
@@ -122,6 +123,7 @@ fn main() {
     module.vec_znx_big_normalize(
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
         base2k,
+        ct_size * base2k,
         0,
         0, // Selects the first column of ct (ct[0])
         &buf_big.to_backend_ref(),
@@ -170,6 +172,7 @@ fn main() {
     module.vec_znx_big_normalize(
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut res),
         base2k,
+        ct_size * base2k,
         0,
         0,
         &buf_big.to_backend_ref(),

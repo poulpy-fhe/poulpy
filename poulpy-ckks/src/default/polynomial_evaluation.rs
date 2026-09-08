@@ -236,11 +236,20 @@ where
                 }
                 let acc_ref = acc.to_backend_ref();
                 let mut res_bk = res.to_backend_mut();
-                module.vec_znx_big_normalize(res_bk.data_mut(), kb, 0, col, &acc_ref, kb, 0, &mut scratch_local.borrow());
+                module.vec_znx_big_normalize(
+                    res_bk.data_mut(),
+                    kb,
+                    budget + delta,
+                    0,
+                    col,
+                    &acc_ref,
+                    kb,
+                    0,
+                    &mut scratch_local.borrow(),
+                );
             }
             Ok(())
         })?;
-
         Ok(true)
     }
 

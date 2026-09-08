@@ -157,6 +157,7 @@ pub fn vec_znx_big_normalize_tmp_bytes(n: usize) -> usize {
 pub fn vec_znx_big_normalize<R, A, BE>(
     res: &mut R,
     res_base2k: usize,
+    res_k: usize,
     res_offset: i64,
     res_col: usize,
     a: &A,
@@ -185,7 +186,17 @@ pub fn vec_znx_big_normalize<R, A, BE>(
 {
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let mut res_ref = res.to_backend_mut();
-    vec_znx_normalize::<BE>(&mut res_ref, res_base2k, res_offset, res_col, &a_vznx, a_base2k, a_col, carry);
+    vec_znx_normalize::<BE>(
+        &mut res_ref,
+        res_base2k,
+        res_k,
+        res_offset,
+        res_col,
+        &a_vznx,
+        a_base2k,
+        a_col,
+        carry,
+    );
 }
 
 pub fn vec_znx_big_add_normal_ref<R, B>(base2k: usize, res: &mut R, res_col: usize, noise_infos: NoiseInfos, source: &mut Source)

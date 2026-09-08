@@ -162,6 +162,7 @@ where
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_base2k: usize,
+        res_k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, BE>,
         a_col: usize,
@@ -205,7 +206,17 @@ where
         }
         let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, BE> = VecZnxBig::from_data(&*big_bytes, n, 1, a_size);
         let mut res_ref: &mut VecZnxBackendMut<'_, BE> = res;
-        fft64_default_vec_znx_big_normalize::<_, _, BE>(&mut res_ref, res_base2k, 0, res_col, &&big_ref, a_base2k, 0, carry);
+        fft64_default_vec_znx_big_normalize::<_, _, BE>(
+            &mut res_ref,
+            res_base2k,
+            res_k,
+            0,
+            res_col,
+            &&big_ref,
+            a_base2k,
+            0,
+            carry,
+        );
     }
 
     fn vec_znx_dft_add_into_default(
@@ -448,6 +459,7 @@ where
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_base2k: usize,
+        res_k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, BE>,
         a_col: usize,
@@ -480,7 +492,17 @@ where
         }
         let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, BE> = VecZnxBig::from_data(&*big_bytes, n, 1, a_size);
         let mut res_ref: &mut VecZnxBackendMut<'_, BE> = res;
-        ntt4x30_default_vec_znx_big_normalize::<_, _, BE>(&mut res_ref, res_base2k, 0, res_col, &&big_ref, a_base2k, 0, carry);
+        ntt4x30_default_vec_znx_big_normalize::<_, _, BE>(
+            &mut res_ref,
+            res_base2k,
+            res_k,
+            0,
+            res_col,
+            &&big_ref,
+            a_base2k,
+            0,
+            carry,
+        );
     }
 
     fn vec_znx_dft_add_into_default(

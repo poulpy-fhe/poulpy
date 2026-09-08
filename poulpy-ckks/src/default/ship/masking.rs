@@ -124,6 +124,8 @@ where
             module.vec_znx_idft_apply_tmpa(&mut res_big_mut, col, &mut sum_dft_mut, col);
         }
     }
+    acc.set_log_budget(res_log_budget);
+    acc.set_log_delta(res_log_delta);
     let res_big_ref = res_big.to_backend_ref();
     {
         let mut acc_mut = acc.to_backend_mut();
@@ -131,6 +133,7 @@ where
             module.vec_znx_big_normalize(
                 acc_mut.data_mut(),
                 base2k,
+                res_log_budget + res_log_delta,
                 cnv_offset_lo,
                 col,
                 &res_big_ref,
@@ -140,7 +143,5 @@ where
             );
         }
     }
-    acc.set_log_budget(res_log_budget);
-    acc.set_log_delta(res_log_delta);
     Ok(())
 }

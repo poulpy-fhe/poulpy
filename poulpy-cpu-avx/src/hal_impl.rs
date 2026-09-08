@@ -35,7 +35,8 @@ where
 }
 
 unsafe impl HalVecZnxImpl<FFT64Avx> for FFT64Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx!();
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 
     // TODO: add an AVX-accelerated tiled transpose kernel; falls back to the
     // reference impl for now.
@@ -81,7 +82,8 @@ unsafe impl HalVecZnxDftImpl<FFT64Avx> for FFT64Avx {
 }
 
 unsafe impl HalVecZnxImpl<NTT4x30Avx> for NTT4x30Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx!();
+    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 
     // TODO: add an AVX-accelerated tiled transpose kernel; falls back to the
     // reference impl for now.
@@ -484,6 +486,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx> for NTT4x30Avx {
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
+        res_k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
@@ -514,6 +517,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx> for NTT4x30Avx {
         poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
             &mut res_ref,
             res_base2k,
+            res_k,
             0,
             res_col,
             &&big_ref,

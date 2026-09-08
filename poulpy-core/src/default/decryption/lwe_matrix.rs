@@ -52,6 +52,7 @@ pub fn lwe_matrix_decrypt_default<BE, R, P, S>(
     );
 
     let pt_base2k = pt.base2k().into();
+    let pt_k = pt.k().as_usize();
     let res_base2k = res.base2k().into();
     let mut pt = pt.to_backend_mut();
     assert_eq!(pt.rank(), Rank(0), "lwe_matrix_decrypt: plaintext must have rank 0");
@@ -76,6 +77,7 @@ pub fn lwe_matrix_decrypt_default<BE, R, P, S>(
     module.vec_znx_big_normalize(
         &mut rows_pt,
         pt_base2k,
+        pt_k,
         0,
         0,
         &tmp.to_backend_ref(),

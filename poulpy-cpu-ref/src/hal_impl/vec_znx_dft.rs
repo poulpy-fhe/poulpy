@@ -90,6 +90,7 @@ macro_rules! __hal_impl_vec_znx_dft_common {
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_base2k: usize,
+            res_k: usize,
             res_col: usize,
             a: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
             a_col: usize,
@@ -98,7 +99,7 @@ macro_rules! __hal_impl_vec_znx_dft_common {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             <Self as $defaults<Self>>::vec_znx_idft_normalize_consume_default(
-                module, res, res_base2k, res_col, a, a_col, a_base2k, addend, scratch,
+                module, res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch,
             )
         }
 

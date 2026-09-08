@@ -79,7 +79,7 @@ pub mod layouts;
 pub use api::*;
 pub use default::encryption::*;
 pub use default::linear_transformation::*;
-pub(crate) use default::noise::log2_std_noise_glwe_tensor;
+pub(crate) use default::noise::{log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized};
 pub use default::operations::*;
 pub use default::polynomial_evaluation::{BSGSOps, GiantStepTensorBounds};
 pub use dist::*;

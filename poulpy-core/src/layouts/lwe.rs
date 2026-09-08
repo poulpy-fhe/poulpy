@@ -246,9 +246,9 @@ impl<D: Data, W: ZnxWord> LWE<D, W> {
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         let body_shape = self.body.shape();
-        let body_data = self.body.data;
+        let body_data = self.body.into_data();
         let mask_shape = self.mask.shape();
-        let mask_data = self.mask.data;
+        let mask_data = self.mask.into_data();
         LWE {
             body: VecZnx::from_data(body_data, body_shape.n(), body_shape.cols(), body_shape.size()),
             mask: VecZnx::from_data(mask_data, mask_shape.n(), mask_shape.cols(), mask_shape.size()),
@@ -400,7 +400,7 @@ impl<'b, BE: Backend + 'b> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'b>, BE::
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWE<D, W> {
     /// Deserialises an [`LWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        self.set_base2k(Base2K(reader.read_u32::<LittleEndian>()?));
         self.body.read_from(reader)?;
         self.mask.read_from(reader)?;
         self.validate_shape()

@@ -13,6 +13,7 @@ use poulpy_hal::{
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
         VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
         VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
     },
     layouts::{
         Backend, GaloisElement, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -167,6 +168,8 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeTmpBytes
         + GLWEMulPlain<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
@@ -174,6 +177,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
 {
     let cols = res.rank().as_usize() + 1;
     let res_base2k = res.base2k();
+    let res_k = res.k().as_usize();
 
     // PROD writes its result in the diagonals' base2k.
     let first_diagonal = rhs
@@ -335,6 +339,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
                 module.vec_znx_big_normalize(
                     &mut acc_backend.data,
                     res_base2k.as_usize(),
+                    res_k,
                     cnv_offset_lo,
                     col,
                     &prod_col_big_ref,
@@ -355,5 +360,16 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
             module.glwe_copy(res, &fallback_acc);
             res_initialized = true;
         }
+    }
+
+    let mut res_backend = res.to_backend_mut();
+    for col in 0..cols {
+        module.vec_znx_normalize_assign_backend(
+            res_base2k.as_usize(),
+            res_k,
+            &mut res_backend.data,
+            col,
+            &mut scratch_phase.borrow(),
+        );
     }
 }

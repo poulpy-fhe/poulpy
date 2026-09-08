@@ -200,7 +200,7 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
         To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         let shape = self.data.shape();
-        let data = self.data.data;
+        let data = self.data.into_data();
         GLWE {
             data: VecZnx::from_data(data, shape.n(), shape.cols(), shape.size()),
             base2k: self.base2k,
@@ -286,7 +286,7 @@ impl<W: ZnxWord> GLWE<Vec<u8>, W> {
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWE<D, W> {
     /// Deserialises a [`GLWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
+        self.set_base2k(Base2K(reader.read_u32::<LittleEndian>()?));
         self.data.read_from(reader)?;
         Ok(())
     }

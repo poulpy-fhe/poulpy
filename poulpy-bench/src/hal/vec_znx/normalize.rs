@@ -57,6 +57,7 @@ pub fn runner_vec_znx_normalize_sweep<B: Backend<ZnxWord = i64>, M: Measurement>
             module.vec_znx_normalize(
                 &mut res,
                 params.res_base2k,
+                sweep.size * params.res_base2k,
                 params.res_offset,
                 i,
                 &a,
@@ -90,7 +91,7 @@ pub fn runner_vec_znx_normalize_assign<B: Backend<ZnxWord = i64>, M: Measurement
     bencher.iter(|| {
         let mut a = vec_znx_backend_mut::<B>(&mut a);
         for i in 0..sweep.cols {
-            module.vec_znx_normalize_assign_backend(base2k, &mut a, i, &mut scratch.borrow());
+            module.vec_znx_normalize_assign_backend(base2k, sweep.size * base2k, &mut a, i, &mut scratch.borrow());
         }
         black_box(());
     });

@@ -143,6 +143,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
     module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
 
     let baby_base2k = baby.base2k().as_usize();
+    let baby_k = baby.k().as_usize();
     let a_base2k = a.base2k().as_usize();
     {
         let mut baby_ref = baby.to_backend_mut();
@@ -150,6 +151,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
             module.vec_znx_idft_normalize_consume(
                 &mut baby_ref.data,
                 baby_base2k,
+                baby_k,
                 col,
                 &mut res_dft,
                 col,

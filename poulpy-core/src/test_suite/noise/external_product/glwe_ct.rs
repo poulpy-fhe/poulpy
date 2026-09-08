@@ -160,6 +160,7 @@ where
             let var_a1_err: f64 = 0f64;
 
             let max_noise: f64 = ggsw_apply_infos.log2_std_noise_external_product(
+                &glwe_out_infos,
                 &glwe_in_infos,
                 0.5,
                 var_msg,
@@ -304,6 +305,7 @@ where
             let var_a1_err: f64 = 0f64;
 
             let max_noise: f64 = ggsw_apply_infos.log2_std_noise_external_product(
+                &glwe_out_infos,
                 &glwe_out_infos,
                 0.5,
                 var_msg,

@@ -264,6 +264,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut have),
                     ct.base2k().as_usize(),
+                    ct.k().as_usize(),
                     0,
                     0,
                     &have_big.to_backend_ref(),
@@ -286,6 +287,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut want),
                     ct.base2k().as_usize(),
+                    ct.k().as_usize(),
                     0,
                     0,
                     &want_big.to_backend_ref(),

@@ -15,7 +15,8 @@ use poulpy_hal::{
         VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
         VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
         VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssignBackend,
+        VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, GaloisElement, ScratchArena},
 };
@@ -57,7 +58,8 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,
@@ -84,7 +86,10 @@ where
     let rot_dft = module.bytes_of_vec_znx_dft(cols, key.size());
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
     let lazy_dft = glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key);
-    let fallback_path = prod_dft + prod_col_big + inner_dft;
+    let fallback_work = inner_dft
+        .max(module.glwe_automorphism_tmp_bytes(res, a, key))
+        .max(module.vec_znx_normalize_tmp_bytes());
+    let fallback_path = prod_dft + prod_col_big + fallback_work;
     let lazy_dft_rot = rot_dft + lazy_dft;
     let lazy_dft_path = prod_dft + lazy_acc_dft + inner_dft + lazy_dft_rot + lazy_acc_big;
 
@@ -130,8 +135,7 @@ where
 /// every baby rotation `k` it already holds, reusing one DFT of the input mask
 /// across all keys (docs/linear_transformation.md). The LHS is independent of the matrix
 /// diagonals, so the same prepared cache is reused across every giant step and
-/// across transforms that share the input. `a_k` is the CKKS-supplied
-/// base2k alignment for the input. Forwards to the internal
+/// across transforms that share the input. Forwards to the internal
 /// `glwe_prepare_linear_transformation_baby_steps`.
 pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
     module: &M,
@@ -216,6 +220,8 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
+        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeTmpBytes
         + GLWEMulPlain<BE>
         + GaloisElement,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -258,7 +264,8 @@ where
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
-        + VecZnxIdftNormalizeConsumeTmpBytes,
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,

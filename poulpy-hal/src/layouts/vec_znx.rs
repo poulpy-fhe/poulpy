@@ -70,9 +70,9 @@ impl VecZnxShape {
 }
 
 #[repr(C)]
-#[derive(PartialEq, Eq, Clone, Copy, Hash)]
+#[derive(PartialEq, Eq, Clone, Hash)]
 pub struct VecZnx<D: Data, W: ZnxWord> {
-    pub data: D,
+    data: D,
     shape: VecZnxShape,
     pub _phantom: PhantomData<W>,
 }
@@ -206,6 +206,18 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
 
     pub fn shape(&self) -> VecZnxShape {
         self.shape
+    }
+
+    pub fn data(&self) -> &D {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut D {
+        &mut self.data
+    }
+
+    pub fn into_data(self) -> D {
+        self.data
     }
 }
 
@@ -342,6 +354,15 @@ pub type VecZnxRef<'a, W> = VecZnx<&'a [u8], W>;
 pub type VecZnxBackendRef<'a, B> = VecZnx<<B as Backend>::BufRef<'a>, <B as Backend>::ZnxWord>;
 /// Mutable backend-native borrow of a `VecZnx`.
 pub type VecZnxBackendMut<'a, B> = VecZnx<<B as Backend>::BufMut<'a>, <B as Backend>::ZnxWord>;
+
+/// Allocates a zero-initialized backend-owned `VecZnx`.
+pub fn vec_znx_alloc_zeroed<B: Backend>(n: usize, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
+    VecZnx {
+        data: B::alloc_zeroed_bytes(B::bytes_of_vec_znx(n, cols, size)),
+        shape: VecZnxShape::new(n, cols, size),
+        _phantom: PhantomData,
+    }
+}
 
 /// Returns a shared backend-native scalar view into a backend-owned `VecZnx`.
 pub trait VecZnxAsScalarBackendRef<B: Backend> {

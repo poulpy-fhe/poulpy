@@ -366,7 +366,7 @@ where
                         ZnxRef::znx_switch_ring(res_at.at_mut(0, limb), limb_data);
                     }
                 }
-                BE::copy_from_host(&mut res.data[i].data_mut().data, &host.data);
+                BE::copy_from_host(res.data[i].data_mut().data_mut(), host.data());
                 if i + 1 < res.extension_factor() {
                     for limb_data in &mut lut_full_limbs {
                         ZnxRef::znx_rotate(-1, &mut tmp, limb_data);
@@ -391,12 +391,12 @@ where
                     res_at.at_mut(0, limb).copy_from_slice(limb_data);
                 }
             }
-            BE::copy_from_host(&mut res.data[0].data_mut().data, &host.data);
+            BE::copy_from_host(res.data[0].data_mut().data_mut(), host.data());
         }
 
         for a in res.data.iter_mut() {
             let mut a_data = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(a.data_mut());
-            self.vec_znx_normalize_assign_backend(res.base2k.into(), &mut a_data, 0, &mut scratch.borrow());
+            self.vec_znx_normalize_assign_backend(res.base2k.into(), res.k.as_usize(), &mut a_data, 0, &mut scratch.borrow());
         }
 
         res.rotate(self, -(drift as i64));

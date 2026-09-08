@@ -4,12 +4,14 @@
 
 ### `poulpy-hal`
 
+- **Breaking:** normalization now takes the target precision `k` and produces its canonical representation.
 - Reject short source and carry slices before extraction kernels write, including the AVX2, AVX-512, IFMA and NEON implementations.
 - **Breaking:** uniform `VecZnx` sampling now takes the target precision `k`; the sampler masks the unused low bits of the last live limb and clears limbs above `k`.
 - The cross-backend `test_vmp_apply_dft_to_dft_accumulate` now sweeps `res` sizes that differ from the prepared matrix size and non-zero `limb_offset`, so the output limb window is compared across transform families.
 
 ### `poulpy-core`
 
+- Normalize linear-transformation outputs at their declared precision so inactive partial-limb bits remain clear.
 - Apply the gadget-product limb window on every backend. The window was gated on `DFT_IS_EXACT` because FFT64 lost precision with it; the loss was the FFT64 VMP bug below, not a property of approximate transforms, so FFT64 backends now materialize the same reduced key region as the NTT backends.
 - Add a cross-family parity suite (NTT4x30 reference against FFT64) to `poulpy-cpu-ref`, at a radix where FFT64 products round exactly.
 - Fix precision loss at non-`base2k`-aligned ciphertext widths. Masks and Gaussian noise are sampled at `k`-bit precision, avoiding redundant post-encryption rounding for both secret- and public-key ciphertexts.

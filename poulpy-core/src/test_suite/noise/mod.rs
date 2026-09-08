@@ -161,7 +161,7 @@ pub fn download_glwe<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
 ) -> GLWE<Vec<u8>, BE::ZnxWord> {
     let shape = src.data.shape();
     GLWE {
-        data: poulpy_hal::layouts::VecZnx::from_data(BE::to_host_bytes(&src.data.data), shape.n(), shape.cols(), shape.size()),
+        data: poulpy_hal::layouts::VecZnx::from_data(BE::to_host_bytes(src.data.data()), shape.n(), shape.cols(), shape.size()),
         k: src.k,
         base2k: src.base2k,
     }
@@ -182,7 +182,7 @@ pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64
 ) -> GLWEPlaintext<Vec<u8>, BE::ZnxWord> {
     let shape = src.data.shape();
     GLWEPlaintext {
-        data: poulpy_hal::layouts::VecZnx::from_data(BE::to_host_bytes(&src.data.data), shape.n(), shape.cols(), shape.size()),
+        data: poulpy_hal::layouts::VecZnx::from_data(BE::to_host_bytes(src.data.data()), shape.n(), shape.cols(), shape.size()),
         k: src.k,
         base2k: src.base2k,
     }

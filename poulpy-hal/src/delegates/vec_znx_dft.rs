@@ -75,6 +75,7 @@ impl_vec_znx_dft_delegate!(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_base2k: usize,
+        res_k: usize,
         res_col: usize,
         a: &mut VecZnxDftBackendMut<'_, B>,
         a_col: usize,
@@ -82,7 +83,7 @@ impl_vec_znx_dft_delegate!(
         addend: Option<(&VecZnxBackendRef<'_, B>, usize)>,
         scratch: &mut ScratchArena<'_, B>,
     ) {
-        B::vec_znx_idft_normalize_consume(self, res, res_base2k, res_col, a, a_col, a_base2k, addend, scratch);
+        B::vec_znx_idft_normalize_consume(self, res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch);
     }
 );
 

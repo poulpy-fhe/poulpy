@@ -55,11 +55,13 @@ where
     module.vec_znx_big_add_small_assign(&mut tmp_scalar, 0, &res.body, 0);
 
     let pt_base2k = pt.base2k().into();
+    let pt_k = pt.k().as_usize();
     let res_base2k = res.base2k().into();
     let mut pt = pt.to_backend_mut();
     module.vec_znx_big_normalize(
         &mut pt.data,
         pt_base2k,
+        pt_k,
         0,
         0,
         &tmp_scalar.to_backend_ref(),

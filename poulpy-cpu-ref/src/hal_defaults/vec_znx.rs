@@ -192,6 +192,7 @@ where
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &VecZnxBackendRef<'_, BE>,
@@ -224,12 +225,13 @@ where
             size_of::<i64>()
         );
         let (carry, _) = take_host_typed::<BE, i64>(scratch.borrow(), byte_count / size_of::<i64>());
-        vec_znx_normalize::<BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        vec_znx_normalize::<BE>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     fn vec_znx_normalize_assign_backend_default(
         module: &Module<BE>,
         base2k: usize,
+        k: usize,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -246,7 +248,7 @@ where
             size_of::<i64>()
         );
         let (carry, _) = take_host_typed::<BE, i64>(scratch.borrow(), byte_count / size_of::<i64>());
-        vec_znx_normalize_assign::<BE>(base2k, res, res_col, carry);
+        vec_znx_normalize_assign::<BE>(base2k, k, res, res_col, carry);
     }
 
     fn vec_znx_normalize_coeff_assign_backend_default(

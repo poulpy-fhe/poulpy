@@ -13,7 +13,7 @@ use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, VecZnxAddAssignBackend, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNegateBackend,
-        VecZnxSubAssignBackend,
+        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend,
     },
     layouts::{Backend, Module, ScratchArena},
 };
@@ -42,6 +42,8 @@ pub trait GiantStepTensorBounds<BE: Backend>:
     + VecZnxBigNormalizeTmpBytes
     + VecZnxCopyBackend<BE>
     + VecZnxNegateBackend<BE>
+    + VecZnxNormalizeAssignBackend<BE>
+    + VecZnxNormalizeTmpBytes
 {
 }
 
@@ -59,6 +61,8 @@ impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopyBackend<BE>
         + VecZnxNegateBackend<BE>
+        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeTmpBytes
 {
 }
 

@@ -99,6 +99,7 @@ where
         let sk_backend = sk_prepared.to_backend_ref();
 
         let base2k: usize = res_backend.base2k().into();
+        let res_k = res_backend.k().as_usize();
         let dsize: usize = res_backend.dsize().into();
         assert!(
             scratch.available() >= self.ggsw_noise_tmp_bytes(res),
@@ -142,6 +143,7 @@ where
                 self.vec_znx_big_normalize(
                     &mut pt_backend.data,
                     base2k,
+                    res_k,
                     0,
                     0,
                     &pt_big.to_backend_ref(),

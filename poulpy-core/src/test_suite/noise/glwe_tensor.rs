@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssignBackend},
-    layouts::{FillUniform, Module, ScratchOwned, VecZnx, ZnxViewMut},
+    layouts::{FillUniform, HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::convolution::bivariate_convolution_naive,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -18,7 +18,7 @@ use crate::{
         GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::GLWESecretPrepared,
     },
-    log2_std_noise_glwe_tensor,
+    log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized,
 };
 
 /// Slack allowed above [`log2_std_noise_glwe_tensor`] for the measured
@@ -33,6 +33,24 @@ use crate::{
 /// measured draw inside the bound while still catching a noise regression of
 /// 4x or more.
 const TENSOR_NOISE_MARGIN: f64 = 2.0;
+
+fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
+    let active_size = k.div_ceil(base2k);
+    let half = 1i128 << (base2k - 1);
+    for col in 0..a.cols() {
+        for limb in 0..active_size {
+            assert!(a.at(col, limb).iter().all(|&digit| (-half..half).contains(&(digit as i128))));
+        }
+        for limb in active_size..a.size() {
+            assert!(a.at(col, limb).iter().all(|&digit| digit == 0));
+        }
+        let padding = (base2k - k % base2k) % base2k;
+        if active_size != 0 && padding != 0 {
+            let mask = (1u64 << padding) - 1;
+            assert!(a.at(col, active_size - 1).iter().all(|&digit| digit as u64 & mask == 0));
+        }
+    }
+}
 
 pub fn test_glwe_tensoring<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -164,6 +182,24 @@ where
                 noise.sigma,
                 noise.k,
                 scale + res_offset,
+                k,
+                out_base2k,
+            )
+        };
+        let noise_want_relinearized = |res_offset: usize| -> f64 {
+            log2_std_noise_glwe_tensor_relinearized(
+                n as f64,
+                rank as f64,
+                0.5,
+                noise.sigma,
+                noise.k,
+                noise.sigma,
+                noise.k,
+                scale + res_offset,
+                k,
+                out_base2k,
+                k,
+                out_base2k,
             )
         };
 
@@ -202,11 +238,13 @@ where
 
         for res_offset in 0..scale {
             module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &b, &mut scratch.borrow());
+            assert_canonical(res_tensor.data(), out_base2k, k);
 
             module.glwe_tensor_decrypt(&res_tensor, &mut pt_have, &sk_dft, &sk_tensor_prep, &mut scratch.borrow());
             module.vec_znx_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
                 out_base2k,
+                k,
                 res_offset as i64,
                 0,
                 &vec_znx_backend_ref::<BE>(&pt_want_base2k_in),
@@ -218,6 +256,7 @@ where
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
             module.vec_znx_normalize_assign_backend(
                 pt_tmp.base2k().as_usize(),
+                pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
@@ -238,19 +277,18 @@ where
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
             module.vec_znx_normalize_assign_backend(
                 pt_tmp.base2k().as_usize(),
+                pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
             );
 
-            // We can reuse the same noise bound because the relinearization noise (which is additive)
-            // is much smaller than the tensoring noise (which is multiplicative)
             let noise_have: f64 = pt_tmp.stats().std().log2();
             assert!(
-                noise_have - noise_want(res_offset) <= TENSOR_NOISE_MARGIN,
+                noise_have - noise_want_relinearized(res_offset) <= TENSOR_NOISE_MARGIN,
                 "{} > {}",
                 noise_have,
-                noise_want(res_offset)
+                noise_want_relinearized(res_offset)
             );
         }
     }
@@ -374,6 +412,8 @@ where
         for res_offset in 0..scale {
             module.glwe_tensor_square_apply(scale + res_offset, &mut res_square, &a, &mut scratch.borrow());
             module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &a, &mut scratch.borrow());
+            assert_canonical(res_square.data(), out_base2k, k);
+            assert_canonical(res_tensor.data(), out_base2k, k);
 
             module.glwe_tensor_relinearize(&mut res_relin_square, &res_square, &tsk_prep, &mut scratch.borrow());
             module.glwe_tensor_relinearize(&mut res_relin_tensor, &res_tensor, &tsk_prep, &mut scratch.borrow());
@@ -384,6 +424,7 @@ where
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
             module.vec_znx_normalize_assign_backend(
                 pt_tmp.base2k().as_usize(),
+                pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
@@ -497,6 +538,7 @@ where
             module.vec_znx_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
                 out_base2k,
+                k,
                 res_offset as i64,
                 0,
                 &vec_znx_backend_ref::<BE>(&pt_want_base2k_in),
@@ -508,6 +550,7 @@ where
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
             module.vec_znx_normalize_assign_backend(
                 pt_tmp.base2k().as_usize(),
+                pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
@@ -629,6 +672,7 @@ where
             module.vec_znx_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
                 out_base2k,
+                k,
                 res_offset as i64,
                 0,
                 &vec_znx_backend_ref::<BE>(&pt_want_base2k_in),
@@ -640,6 +684,7 @@ where
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
             module.vec_znx_normalize_assign_backend(
                 pt_tmp.base2k().as_usize(),
+                pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
@@ -764,6 +809,7 @@ pub fn test_glwe_tensor_relinearize_cross_radix<BE: crate::test_suite::noise::Te
             &mut scratch.borrow(),
         );
         module.glwe_tensor_apply(scale, &mut res_tensor, &a, &a, &mut scratch.borrow());
+        assert_canonical(res_tensor.data(), a_base2k, k);
 
         let mut tsk: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&cross_infos);
         module.glwe_tensor_key_encrypt_sk(

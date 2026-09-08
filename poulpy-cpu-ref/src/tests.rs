@@ -377,6 +377,7 @@ where
                         module.vec_znx_big_normalize(
                             &mut <VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut res),
                             res_base2k,
+                            res_size * res_base2k,
                             offset,
                             0,
                             &big.to_backend_ref(),
@@ -479,6 +480,7 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                         ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
                             &mut output,
                             res_base2k,
+                            res_size * res_base2k,
                             offset,
                             0,
                             &input,
@@ -489,6 +491,7 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                         vec_znx_normalize::<FFT64Ref>(
                             &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small_output),
                             res_base2k,
+                            res_size * res_base2k,
                             offset,
                             0,
                             &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&small_input),
@@ -513,6 +516,72 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                     }
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn test_normalize_exact_canonical_precision() {
+    use crate::reference::{
+        ntt4x30::ntt4x30_vec_znx_big_normalize,
+        vec_znx::{vec_znx_normalize, vec_znx_normalize_assign},
+    };
+    use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut};
+
+    type Case<'a> = (&'a [i64], usize, usize, usize, i64, &'a [i64]);
+    let cases: &[Case<'_>] = &[
+        (&[3, 7, 5, 0], 4, 4, 6, 0, &[4, -8]),
+        (&[-3, -7, -5, 0], 4, 4, 6, 0, &[-3, -8]),
+        (&[3, 7, 7], 5, 4, 6, 0, &[2, -4]),
+        (&[3, 7, 7], 5, 4, 4, 0, &[2, 0]),
+        (&[3, 7, 7], 5, 4, 0, 0, &[0, 0]),
+        (&[1400], 4, 4, 14, -20, &[0, 0, 0, 4]),
+        (&[1400], 4, 4, 14, i64::MIN, &[0, 0, 0, 0]),
+        (&[1400], 4, 4, 14, i64::MAX, &[0, 0, 0, 0]),
+        (&[i64::MAX], 64, 64, 62, 0, &[i64::MIN]),
+    ];
+    for &(values, a_base2k, res_base2k, res_k, offset, expected) in cases {
+        let mut small = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * values.len()], 1, 1, values.len());
+        let mut big = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16 * values.len()], 1, 1, values.len());
+        for (j, &value) in values.iter().enumerate() {
+            small.at_mut(0, j)[0] = value;
+            big.at_mut(0, j)[0] = value as i128;
+        }
+        let mut output = VecZnx::<Vec<u8>, i64>::from_data(vec![93; 8 * expected.len()], 1, 1, expected.len());
+        ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
+            &mut output,
+            res_base2k,
+            res_k,
+            offset,
+            0,
+            &big,
+            a_base2k,
+            0,
+            &mut [0; 3],
+        );
+        assert_eq!((0..expected.len()).map(|j| output.at(0, j)[0]).collect::<Vec<_>>(), expected);
+        if a_base2k <= 62 && res_base2k <= 62 {
+            vec_znx_normalize::<FFT64Ref>(
+                &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
+                res_base2k,
+                res_k,
+                offset,
+                0,
+                &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&small),
+                a_base2k,
+                0,
+                &mut [0; 3],
+            );
+            assert_eq!((0..expected.len()).map(|j| output.at(0, j)[0]).collect::<Vec<_>>(), expected);
+        } else if a_base2k == 64 && res_base2k == 64 {
+            vec_znx_normalize_assign::<FFT64Ref>(
+                res_base2k,
+                res_k,
+                &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small),
+                0,
+                &mut [0],
+            );
+            assert_eq!(small.at(0, 0), expected);
         }
     }
 }
@@ -552,10 +621,18 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
                 let mut want = alloc();
                 let mut carry = [0i128; 3 * N];
                 ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
-                    &mut want, res_base2k, offset, 0, &input, a_base2k, 0, &mut carry,
+                    &mut want,
+                    res_base2k,
+                    3 * res_base2k,
+                    offset,
+                    0,
+                    &input,
+                    a_base2k,
+                    0,
+                    &mut carry,
                 );
                 let mut split = alloc();
-                let ptr = split.data.as_mut_ptr().cast::<i64>();
+                let ptr = split.data_mut().as_mut_ptr().cast::<i64>();
                 for (start, len) in [(0, 3), (3, 7), (10, 7)] {
                     let mut private = vec![0i128; 3 * len];
                     unsafe {
@@ -565,6 +642,7 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
                             1,
                             3,
                             res_base2k,
+                            3 * res_base2k,
                             offset,
                             0,
                             &input,
@@ -709,6 +787,7 @@ fn test_vec_znx_big_normalize_wide_radices() {
                     ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
                         &mut output,
                         res_base2k,
+                        size * res_base2k,
                         offset,
                         0,
                         &input,

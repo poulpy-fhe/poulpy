@@ -98,7 +98,7 @@ pub use prepared::*;
 pub use scratch_views::*;
 
 use crate::dist::Distribution;
-use poulpy_hal::layouts::{Backend, Data, MatZnx, Module, ScalarZnx, VecZnx, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, MatZnx, Module, ScalarZnx, ZnxWord, vec_znx_alloc_zeroed};
 
 /// Backend-indexed ownership aliases for the non-prepared layouts.
 ///
@@ -299,12 +299,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn glwe_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWE<B::OwnedBuf, B::ZnxWord> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         GLWE {
-            data: VecZnx::from_data(
-                B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(infos.n().as_usize(), (infos.rank() + 1).as_usize(), size)),
-                infos.n().as_usize(),
-                (infos.rank() + 1).as_usize(),
-                size,
-            ),
+            data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), (infos.rank() + 1).as_usize(), size),
             k: infos.k(),
             base2k: infos.base2k(),
         }
@@ -322,7 +317,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let n = self.ring_degree().as_usize();
         let cols = (rank + 1).as_usize();
         GLWE {
-            data: VecZnx::from_data(B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(n, cols, size)), n, cols, size),
+            data: vec_znx_alloc_zeroed::<B>(n, cols, size),
             k: TorusPrecision((size * base2k.as_usize()) as u32),
             base2k,
         }
@@ -418,12 +413,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn glwe_plaintext_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWEPlaintext<B::OwnedBuf, B::ZnxWord> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         GLWEPlaintext {
-            data: VecZnx::from_data(
-                B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(infos.n().as_usize(), 1, size)),
-                infos.n().as_usize(),
-                1,
-                size,
-            ),
+            data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), 1, size),
             k: infos.k(),
             base2k: infos.base2k(),
         }
@@ -477,12 +467,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let pairs = (((cols + 1) * cols) >> 1).max(1);
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         GLWETensor {
-            data: VecZnx::from_data(
-                B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(infos.n().as_usize(), pairs, size)),
-                infos.n().as_usize(),
-                pairs,
-                size,
-            ),
+            data: vec_znx_alloc_zeroed::<B>(infos.n().as_usize(), pairs, size),
             k: infos.k(),
             base2k: infos.base2k(),
             rank: infos.rank(),
@@ -650,8 +635,8 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         let n = infos.n().as_usize();
         LWE {
-            body: VecZnx::from_data(B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(1, 1, size)), 1, 1, size),
-            mask: VecZnx::from_data(B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(n, 1, size)), n, 1, size),
+            body: vec_znx_alloc_zeroed::<B>(1, 1, size),
+            mask: vec_znx_alloc_zeroed::<B>(n, 1, size),
             base2k: infos.base2k(),
             k: infos.k(),
         }
@@ -664,13 +649,8 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         let rows = infos.rows();
         LWEMatrix {
-            body: VecZnx::from_data(B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(rows, 1, size)), rows, 1, size),
-            mask: VecZnx::from_data(
-                B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(rows, infos.n().as_usize(), size)),
-                rows,
-                infos.n().as_usize(),
-                size,
-            ),
+            body: vec_znx_alloc_zeroed::<B>(rows, 1, size),
+            mask: vec_znx_alloc_zeroed::<B>(rows, infos.n().as_usize(), size),
             k: infos.k(),
             base2k: infos.base2k(),
         }
@@ -693,7 +673,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn lwe_plaintext_alloc_from_infos<A: LWEInfos>(&self, infos: &A) -> LWEPlaintext<B::OwnedBuf, B::ZnxWord> {
         let size = infos.k().as_usize().div_ceil(infos.base2k().as_usize());
         LWEPlaintext {
-            data: VecZnx::from_data(B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(1, 1, size)), 1, 1, size),
+            data: vec_znx_alloc_zeroed::<B>(1, 1, size),
             k: infos.k(),
             base2k: infos.base2k(),
         }
@@ -701,7 +681,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn lwe_plaintext_alloc(&self, base2k: Base2K, k: TorusPrecision) -> LWEPlaintext<B::OwnedBuf, B::ZnxWord> {
         let size = k.as_usize().div_ceil(base2k.as_usize());
         LWEPlaintext {
-            data: VecZnx::from_data(B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(1, 1, size)), 1, 1, size),
+            data: vec_znx_alloc_zeroed::<B>(1, 1, size),
             k,
             base2k,
         }

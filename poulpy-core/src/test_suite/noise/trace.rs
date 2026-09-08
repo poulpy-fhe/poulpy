@@ -149,6 +149,7 @@ where
         let mut pt_noise = upload_glwe_plaintext(module, &pt_want);
         module.vec_znx_normalize_assign_backend(
             pt_noise.base2k().as_usize(),
+            pt_noise.data.size() * pt_noise.base2k().as_usize(),
             &mut vec_znx_backend_mut::<BE>(&mut pt_noise.data),
             0,
             &mut scratch.borrow(),
@@ -158,6 +159,7 @@ where
         let noise_have: f64 = pt_want.stats().std().log2();
 
         let mut noise_want: f64 = key_infos.var_noise_keyswitch(
+            &glwe_out_infos,
             &glwe_out_infos,
             0.5,
             0.5,

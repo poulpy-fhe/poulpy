@@ -152,8 +152,8 @@ where
     let mask_bytes = BE::bytes_of_vec_znx(lwe.mask().n(), lwe.mask().cols(), lwe.mask().size());
     let mut body_host = vec![0u8; body_bytes];
     let mut mask_host = vec![0u8; mask_bytes];
-    BE::copy_view_to_host(&BE::region_ref(&lwe.body().data, 0, body_bytes), &mut body_host);
-    BE::copy_view_to_host(&BE::region_ref(&lwe.mask().data, 0, mask_bytes), &mut mask_host);
+    BE::copy_view_to_host(&BE::region_ref(lwe.body().data(), 0, body_bytes), &mut body_host);
+    BE::copy_view_to_host(&BE::region_ref(lwe.mask().data(), 0, mask_bytes), &mut mask_host);
     let word = |bytes: &[u8], index: usize| {
         let start = index * size_of::<i64>();
         i64::from_ne_bytes(bytes[start..start + size_of::<i64>()].try_into().unwrap())

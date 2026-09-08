@@ -258,6 +258,7 @@ pub fn runner_vec_znx_big_normalize_sweep<B: Backend<ZnxWord = i64>, M: Measurem
             module.vec_znx_big_normalize(
                 &mut res,
                 params.res_base2k,
+                sweep.size * params.res_base2k,
                 params.res_offset,
                 i,
                 &a,
@@ -300,7 +301,17 @@ pub fn runner_vec_znx_big_normalize_add_assign<B: Backend<ZnxWord = i64>, M: Mea
             let a = a.to_backend_ref();
             {
                 let mut tmp_ref = vec_znx_backend_mut::<B>(&mut tmp);
-                module.vec_znx_big_normalize(&mut tmp_ref, base2k, 0, 0, &a, base2k, i, &mut scratch.borrow());
+                module.vec_znx_big_normalize(
+                    &mut tmp_ref,
+                    base2k,
+                    sweep.size * base2k,
+                    0,
+                    0,
+                    &a,
+                    base2k,
+                    i,
+                    &mut scratch.borrow(),
+                );
             }
 
             let tmp_ref = vec_znx_backend_ref::<B>(&tmp);
@@ -341,7 +352,17 @@ pub fn runner_vec_znx_big_normalize_sub_assign<B: Backend<ZnxWord = i64>, M: Mea
             let a = a.to_backend_ref();
             {
                 let mut tmp_ref = vec_znx_backend_mut::<B>(&mut tmp);
-                module.vec_znx_big_normalize(&mut tmp_ref, base2k, 0, 0, &a, base2k, i, &mut scratch.borrow());
+                module.vec_znx_big_normalize(
+                    &mut tmp_ref,
+                    base2k,
+                    sweep.size * base2k,
+                    0,
+                    0,
+                    &a,
+                    base2k,
+                    i,
+                    &mut scratch.borrow(),
+                );
             }
 
             let tmp_ref = vec_znx_backend_ref::<B>(&tmp);

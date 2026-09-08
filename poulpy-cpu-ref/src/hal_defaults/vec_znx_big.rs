@@ -86,7 +86,7 @@ where
     BE: Backend<ZnxWord = i64> + 'b,
     for<'x> BE::BufRef<'x>: AsRef<[u8]>,
 {
-    VecZnx::from_data(a.data.as_ref(), a.n(), a.cols(), a.size())
+    VecZnx::from_data(a.data().as_ref(), a.n(), a.cols(), a.size())
 }
 
 fn vec_znx_big_inner_sum_default_impl<R, A, BE>(res: &mut R, res_col: usize, res_coeff: usize, a: &A, a_col: usize)
@@ -482,6 +482,7 @@ where
         module: &Module<BE>,
         res: &mut R,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &A,
@@ -511,7 +512,7 @@ where
             scratch.borrow(),
             fft64_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i64>(),
         );
-        fft64_vec_znx_big_normalize::<_, _, BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        fft64_vec_znx_big_normalize::<_, _, BE>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     fn vec_znx_big_automorphism_default<R, A>(_module: &Module<BE>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -844,6 +845,7 @@ where
         module: &Module<BE>,
         res: &mut R,
         res_base2k: usize,
+        res_k: usize,
         res_offset: i64,
         res_col: usize,
         a: &A,
@@ -860,7 +862,7 @@ where
             scratch.borrow(),
             ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>(),
         );
-        ntt4x30_vec_znx_big_normalize::<_, _, BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        ntt4x30_vec_znx_big_normalize::<_, _, BE>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     fn vec_znx_big_normalize_add_assign_default<R, A>(
