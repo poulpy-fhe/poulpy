@@ -44,6 +44,8 @@ enum Case {
     General,
     Multi,
     Binary,
+    NonPowerOfTwo,
+    MultiNonPowerOfTwo,
 }
 
 pub fn test_functional_bootstrapping_e2e<BE, F, E>(
@@ -69,6 +71,32 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     run_case::<BE, F, E>(Case::General, params, module, host_module);
+}
+
+pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
+    Module<BE>: TestContextModule<BE>
+        + CKKSEncodingOps<BE, F>
+        + CKKSBootstrappingOps<BE>
+        + CKKSDFTMatrixOps<BE, F>
+        + CKKSPolynomialEvaluationOps<BE>,
+    Module<HostBytesBackend>: TestContextHostModule,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    run_case::<BE, F, E>(Case::NonPowerOfTwo, params, module, host_module);
+    run_case::<BE, F, E>(Case::MultiNonPowerOfTwo, params, module, host_module);
 }
 
 pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
@@ -142,6 +170,13 @@ where
 {
     let table_values: &[&[usize]] = match case {
         Case::General => &[&[0, 1, 0, 0]],
+        Case::NonPowerOfTwo => &[&[2, 0, 1]],
+        Case::MultiNonPowerOfTwo => &[
+            &[5, 2, 7, 0, 3],
+            &[0, 1, 2, 3, 4, 5],
+            &[0, 0, 0, 0, 0, 0, 0],
+            &[7, 6, 5, 4, 3, 2, 1, 0],
+        ],
         Case::Multi => &[
             &[5, 2, 7, 0, 3, 6, 1, 4],
             &[0, 1, 2, 3, 4, 5, 6, 7],
@@ -153,7 +188,7 @@ where
         .iter()
         .map(|table| table.iter().map(|&value| F::from_usize(value).unwrap()).collect())
         .collect();
-    let p = tables[0].len();
+    let p = tables[0].len().next_power_of_two();
     let plan = fbt_plan(params.base2k);
     let coeffs_meta = CoeffsMeta::from_delta_budget(LUT_LOG_DELTA, params.base2k);
 
@@ -172,7 +207,7 @@ where
             )
             .unwrap(),
         ],
-        Case::General | Case::Multi => tables
+        Case::General | Case::Multi | Case::NonPowerOfTwo | Case::MultiNonPowerOfTwo => tables
             .iter()
             .enumerate()
             .map(|(index, table)| {
@@ -193,8 +228,8 @@ where
     let output_k = log_modulus_in + 2 * INPUT_LOG_DELTA;
     let functional_k = plan.functional_bootstrap_k(output_k, INPUT_LOG_DELTA, &host_luts[0]).unwrap();
     let expected_functional_k = match case {
-        Case::General => 769,
-        Case::Multi => 814,
+        Case::General | Case::NonPowerOfTwo => 769,
+        Case::Multi | Case::MultiNonPowerOfTwo => 814,
         Case::Binary => 668,
     };
     assert_eq!(functional_k, expected_functional_k);
@@ -272,7 +307,9 @@ where
     let mut source = Source::new([9u8; 32]);
     let sample = |source: &mut Source| ((source.next_f64(0.0, 1.0) * p as f64) as usize).min(p - 1);
     for slots_kind in [SlotsKind::Complex, SlotsKind::Real] {
-        let messages_re: Vec<_> = (0..params.n / 2).map(|_| sample(&mut source)).collect();
+        let messages_re: Vec<_> = (0..params.n / 2)
+            .map(|i| if i < p { i } else { sample(&mut source) })
+            .collect();
         let messages_im: Vec<_> = (0..params.n / 2)
             .map(|_| {
                 if slots_kind == SlotsKind::Real {
@@ -322,11 +359,17 @@ where
             assert_eq!(output.log_delta(), output_log_delta);
             assert_eq!(output.slots(), slots_kind);
             let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, output, &sk, &mut scratch.borrow());
-            let want_re: Vec<F> = messages_re.iter().map(|&message| table[message]).collect();
+            let want_re: Vec<F> = messages_re
+                .iter()
+                .map(|&message| table.get(message).copied().unwrap_or_else(F::zero))
+                .collect();
             let want_im: Vec<F> = if slots_kind == SlotsKind::Real {
                 vec![F::zero(); messages_im.len()]
             } else {
-                messages_im.iter().map(|&message| table[message]).collect()
+                messages_im
+                    .iter()
+                    .map(|&message| table.get(message).copied().unwrap_or_else(F::zero))
+                    .collect()
             };
             for (got, want, part) in [(&got_re, &want_re, "re"), (&got_im, &want_im, "im")] {
                 let stats = precision_stats(got, want, output.log_delta());
