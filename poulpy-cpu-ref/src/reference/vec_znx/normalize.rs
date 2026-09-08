@@ -1642,23 +1642,72 @@ fn test_normalize_inter_window_exhaustive() {
 }
 
 #[test]
-fn test_normalize_exhaustive_centered_small() {
+fn test_normalize_centered_boundaries() {
+    check_normalize_centered(false);
+}
+
+#[test]
+#[ignore = "285 million cases; run explicitly with --release --ignored"]
+fn test_normalize_exhaustive_centered_full() {
+    check_normalize_centered(true);
+}
+
+#[cfg(test)]
+fn check_normalize_centered(exhaustive: bool) {
     use dashu_int::IBig;
 
     use crate::{
         FFT64Ref,
         layouts::{VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
     };
-    for a_base2k in 1..=6usize {
-        let radix = 1usize << a_base2k;
+    let bases = if exhaustive {
+        (1..=6usize).collect::<Vec<_>>()
+    } else {
+        vec![1, 2, 17, 19, 21, 50, 51, 61, 62]
+    };
+    for &a_base2k in &bases {
+        let half_input = 1i64 << (a_base2k - 1);
+        let alphabet = if exhaustive {
+            (-half_input..half_input).collect::<Vec<_>>()
+        } else {
+            let mut digits = vec![-half_input, -half_input + 1, -1, 0, 1, half_input - 1];
+            digits.retain(|x| (-half_input..half_input).contains(x));
+            digits.sort_unstable();
+            digits.dedup();
+            digits
+        };
         for a_size in 1..=3usize {
             let mut input = alloc_host_vec_znx(1, 1, a_size);
-            for res_base2k in 1..=6usize {
+            for &res_base2k in &bases {
                 let half = IBig::ONE << (res_base2k - 1);
                 for res_size in 1..=3usize {
                     let mut output = alloc_host_vec_znx(1, 1, res_size);
                     let bracket = (a_size * a_base2k + res_size * res_base2k + 1) as i64;
-                    let offsets: Vec<_> = (-bracket..=bracket)
+                    let gap = (a_size * a_base2k) as i64 - (res_size * res_base2k) as i64;
+                    let offsets = if exhaustive {
+                        (-bracket..=bracket).collect::<Vec<_>>()
+                    } else {
+                        let k = a_base2k as i64;
+                        let mut offsets = vec![
+                            -bracket,
+                            -k,
+                            -1,
+                            0,
+                            1,
+                            k,
+                            bracket,
+                            gap - k - 1,
+                            gap - k,
+                            gap - 1,
+                            gap,
+                            gap + 1,
+                        ];
+                        offsets.sort_unstable();
+                        offsets.dedup();
+                        offsets
+                    };
+                    let offsets: Vec<_> = offsets
+                        .into_iter()
                         .map(|offset| {
                             let shift = res_size as i64 * res_base2k as i64 + offset - a_size as i64 * a_base2k as i64;
                             let rounding = if shift < 0 {
@@ -1669,12 +1718,12 @@ fn test_normalize_exhaustive_centered_small() {
                             (offset, shift, rounding)
                         })
                         .collect();
-                    for code in 0..(1usize << (a_size * a_base2k)) {
+                    for code in 0..alphabet.len().pow(a_size as u32) {
                         let mut digits = code;
                         let mut integer = IBig::ZERO;
                         for j in 0..a_size {
-                            let digit = (digits & (radix - 1)) as i64 - (radix / 2) as i64;
-                            digits >>= a_base2k;
+                            let digit = alphabet[digits % alphabet.len()];
+                            digits /= alphabet.len();
                             input.at_mut(0, j)[0] = digit;
                             integer = (integer << a_base2k) + IBig::from(digit);
                         }
