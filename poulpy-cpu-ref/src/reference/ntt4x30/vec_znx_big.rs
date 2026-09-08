@@ -39,7 +39,7 @@ use crate::{
     },
     reference::{
         vec_znx::VecZnxRangeMut,
-        znx::{get_carry_i128, get_digit_i128},
+        znx::{get_carry_i128, get_digit_i128, znx_extract_digit_addmul_normalize_i128_ref, znx_extract_digit_mul_i128_ref},
     },
     source::Source,
 };
@@ -60,15 +60,6 @@ fn nfc_add_assign(res: &mut [i128], a: &[i128]) {
     res.iter_mut().zip(a.iter()).for_each(|(r, &ai)| *r = r.wrapping_add(ai));
 }
 
-#[inline(always)]
-fn nfc_acc_assign<O: AssignOp>(res: &mut [i128], a: &[i128]) {
-    if O::SUB {
-        res.iter_mut().zip(a.iter()).for_each(|(r, &ai)| *r = r.wrapping_sub(ai));
-    } else {
-        nfc_add_assign(res, a);
-    }
-}
-
 /// Multiply an `i128` slice by `2^power` in-place (positive = left shift, negative = right shift).
 #[inline(always)]
 fn nfc_mul_pow2_assign(power: i64, x: &mut [i128]) {
@@ -79,7 +70,7 @@ fn nfc_mul_pow2_assign(power: i64, x: &mut [i128]) {
     }
 }
 
-/// First carry-only step from the MSB `i128` limb of `a` (no prior carry).
+/// First carry-only step from the least significant `i128` limb of `a` (no prior carry).
 ///
 /// Analogous to `znx_normalize_first_step_carry_only_ref` but for `i128`.
 #[inline(always)]
@@ -221,16 +212,6 @@ fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64],
     }
 }
 
-#[inline(always)]
-fn nfc_middle_carry_assign<O: AssignOp>(base2k: usize, res: &mut [i64], carry: &mut [i128]) {
-    debug_assert!(res.len() <= carry.len());
-    res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
-        let out = get_digit_i128(base2k, *c);
-        *r = O::apply_i64(*r, out as i64);
-        *c = get_carry_i128(base2k, *c, out);
-    });
-}
-
 /// Middle in-place: update an existing `i64` `res` limb using `i128` carry.
 ///
 /// Analogous to `znx_normalize_middle_step_assign_ref` but with `i128` carry.
@@ -306,14 +287,6 @@ fn nfc_final_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], 
     }
 }
 
-#[inline(always)]
-fn nfc_final_carry_assign<O: AssignOp>(base2k: usize, res: &mut [i64], carry: &mut [i128]) {
-    debug_assert!(res.len() <= carry.len());
-    res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
-        *r = O::apply_i64(*r, get_digit_i128(base2k, *c) as i64);
-    });
-}
-
 /// Normalize an `i128` limb into an `i128` intermediate (`a_norm`), with `i128` carry.
 ///
 /// Used in the cross-base2k path to convert the `a` limb to the standard representation
@@ -359,15 +332,6 @@ fn nfc_extract_digit_addmul(base2k: usize, scale: usize, res: &mut [i64], src: &
     }
 }
 
-#[inline(always)]
-fn nfc_extract_digit_assignmul<O: AssignOp>(base2k: usize, scale: usize, res: &mut [i64], src: &mut [i128]) {
-    for (r, s) in res.iter_mut().zip(src.iter_mut()) {
-        let digit = get_digit_i128(base2k, *s);
-        *s = get_carry_i128(base2k, *s, digit);
-        *r = O::apply_i64(*r, (digit as i64).wrapping_shl(scale as u32));
-    }
-}
-
 #[inline]
 fn finish_nfc_normalized_limb(
     base2k: usize,
@@ -387,26 +351,6 @@ fn finish_nfc_normalized_limb(
             *digit = rounded_digit as i64;
             *carry = carry.wrapping_add(get_carry_i128(base2k, rounded_value, rounded_digit));
         }
-    }
-}
-
-#[inline]
-fn finish_nfc_assembled_limb<BE>(
-    base2k: usize,
-    active_size: usize,
-    padding: usize,
-    limb: usize,
-    digit: &mut [i64],
-    carry: &mut [i128],
-) where
-    BE: I128NormalizeOps,
-{
-    if limb >= active_size {
-        digit.fill(0);
-    } else if limb + 1 == active_size {
-        finish_nfc_normalized_limb(base2k, active_size, padding, limb, digit, carry);
-    } else if padding != 0 {
-        BE::nfc_middle_step_assign(base2k, 0, digit, carry);
     }
 }
 
@@ -493,92 +437,9 @@ fn ntt4x30_vec_znx_big_normalize_inter<A, BE>(
         finish_nfc_normalized_limb(base2k, active_size, padding, res_limb, res.at_mut(res_limb), carry);
     }
 
-    // Propagate carry to remaining lower res limbs (which were zeroed above).
-    for j in 0..res_end {
-        let res_limb = res_end - j - 1;
-        res.at_mut(res_limb).fill(0);
-        if j == res_end - 1 {
-            BE::nfc_final_step_assign(base2k, lsh_pos, res.at_mut(res_limb), carry);
-        } else {
-            BE::nfc_middle_step_assign(base2k, lsh_pos, res.at_mut(res_limb), carry);
-        }
-        finish_nfc_normalized_limb(base2k, active_size, padding, res_limb, res.at_mut(res_limb), carry);
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn ntt4x30_vec_znx_big_normalize_inter_assign<O, R, A, BE>(
-    base2k: usize,
-    res: &mut R,
-    res_offset: i64,
-    res_col: usize,
-    a: &A,
-    a_col: usize,
-    carry: &mut [i128],
-) where
-    O: AssignOp,
-    R: VecZnxToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
-    for<'x> BE::BufMut<'x>: HostDataMut,
-    for<'x> BE::BufRef<'x>: HostDataRef,
-{
-    let mut res = res.to_backend_mut();
-    let a = a.to_backend_ref();
-
-    let n = res.n();
-    let res_size = res.size();
-    let a_size = a.size();
-
-    let (carry, _) = carry.split_at_mut(n);
-
-    let mut lsh: i64 = res_offset % base2k as i64;
-    let mut limbs_offset: i64 = res_offset / base2k as i64;
-
-    if res_offset < 0 && lsh != 0 {
-        lsh = (lsh + base2k as i64) % (base2k as i64);
-        limbs_offset -= 1;
-    }
-
-    let lsh_pos: usize = lsh as usize;
-
-    let res_end: usize = (-limbs_offset).clamp(0, res_size as i64) as usize;
-    let res_start: usize = (a_size as i64 - limbs_offset).clamp(0, res_size as i64) as usize;
-    let a_end: usize = limbs_offset.clamp(0, a_size as i64) as usize;
-    let a_start: usize = (res_size as i64 + limbs_offset).clamp(0, a_size as i64) as usize;
-
-    let a_out_range: usize = a_size.saturating_sub(a_start);
-
-    for j in 0..a_out_range {
-        if j == 0 {
-            nfc_first_carry_only(base2k, lsh_pos, a.at(a_col, a_size - j - 1), carry);
-        } else {
-            nfc_middle_carry_only(base2k, lsh_pos, a.at(a_col, a_size - j - 1), carry);
-        }
-    }
-
-    if a_out_range == 0 {
-        nfc_zero(carry);
-    }
-
-    let mid_range: usize = a_start.saturating_sub(a_end);
-
-    for j in 0..mid_range {
-        BE::nfc_middle_step_into::<O>(
-            base2k,
-            lsh_pos,
-            res.at_mut(res_col, res_start - j - 1),
-            a.at(a_col, a_start - j - 1),
-            carry,
-        );
-    }
-
-    for j in 0..res_end {
-        if j == res_end - 1 {
-            nfc_final_carry_assign::<O>(base2k, res.at_mut(res_col, res_end - j - 1), carry);
-        } else {
-            nfc_middle_carry_assign::<O>(base2k, res.at_mut(res_col, res_end - j - 1), carry);
-        }
+    for j in (0..res_end).rev() {
+        BE::znx_extract_digit_mul_i128(base2k, 0, res.at_mut(j), carry);
+        finish_nfc_normalized_limb(base2k, active_size, padding, j, res.at_mut(j), carry);
     }
 }
 
@@ -638,8 +499,7 @@ fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
     let a_end: usize = a_end_bit / a_base2k;
     let a_start: usize = a_start_bit.div_ceil(a_base2k);
 
-    // Zero all res limbs.
-    for j in 0..res_size {
+    for j in res_start..res_size {
         res.at_mut(j).fill(0);
     }
 
@@ -662,6 +522,7 @@ fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
 
     let mut res_acc_left: usize = res_base2k;
     let mut res_limb: usize = res_start - 1;
+    let mut initialized = false;
 
     let mid_range: usize = a_start.saturating_sub(a_end);
 
@@ -688,9 +549,25 @@ fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
             let res_slice = res.at_mut(res_limb);
             let a_take: usize = a_base2k.min(a_take_left).min(res_acc_left);
 
+            let flushed = BE::FUSE_NORMALIZE && a_take != 0 && a_take == res_acc_left;
             if a_take != 0 {
                 let scale: usize = res_base2k - res_acc_left;
-                nfc_extract_digit_addmul(a_take, scale, res_slice, a_norm);
+                if flushed {
+                    if initialized {
+                        BE::znx_extract_digit_addmul_normalize_i128::<false>(
+                            a_take, scale, res_base2k, res_slice, a_norm, res_carry,
+                        );
+                    } else {
+                        BE::znx_extract_digit_addmul_normalize_i128::<true>(
+                            a_take, scale, res_base2k, res_slice, a_norm, res_carry,
+                        );
+                    }
+                } else if initialized {
+                    nfc_extract_digit_addmul(a_take, scale, res_slice, a_norm);
+                } else {
+                    BE::znx_extract_digit_mul_i128(a_take, scale, res_slice, a_norm);
+                }
+                initialized = true;
                 a_take_left -= a_take;
                 res_acc_left -= a_take;
             }
@@ -702,156 +579,19 @@ fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
                         let scale: usize = res_base2k - res_acc_left;
                         nfc_extract_digit_addmul(res_acc_left, scale, res_slice, a_carry);
                     }
-                    BE::nfc_middle_step_assign(res_base2k, 0, res_slice, res_carry);
+                    if !flushed {
+                        BE::nfc_middle_step_assign(res_base2k, 0, res_slice, res_carry);
+                    }
                     nfc_add_assign(res_carry, a_carry);
                     finish_nfc_normalized_limb(res_base2k, active_size, padding, res_limb, res_slice, res_carry);
                     break 'outer;
                 }
 
-                if res_limb == 0 {
-                    finish_nfc_assembled_limb::<BE>(res_base2k, active_size, padding, res_limb, res_slice, res_carry);
-                    break 'outer;
-                }
-
-                finish_nfc_assembled_limb::<BE>(res_base2k, active_size, padding, res_limb, res_slice, res_carry);
-
-                res_acc_left += res_base2k;
-                res_limb -= 1;
-            }
-
-            if a_take_left == 0 {
-                nfc_add_assign(a_carry, a_norm);
-                break 'inner;
-            }
-        }
-    }
-
-    // Propagate carry into the lower (already-zero) res limbs.
-    if res_end != 0 {
-        let carry_to_use = if a_start == a_end { a_carry } else { res_carry };
-        for j in 0..res_end {
-            let res_limb = res_end - j - 1;
-            if j == res_end - 1 {
-                BE::nfc_final_step_assign(res_base2k, 0, res.at_mut(res_limb), carry_to_use);
-            } else {
-                BE::nfc_middle_step_assign(res_base2k, 0, res.at_mut(res_limb), carry_to_use);
-            }
-            finish_nfc_normalized_limb(res_base2k, active_size, padding, res_limb, res.at_mut(res_limb), carry_to_use);
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn ntt4x30_vec_znx_big_normalize_cross_assign<O, R, A, BE>(
-    res: &mut R,
-    res_base2k: usize,
-    res_offset: i64,
-    res_col: usize,
-    a: &A,
-    a_base2k: usize,
-    a_col: usize,
-    carry: &mut [i128],
-) where
-    O: AssignOp,
-    R: VecZnxToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
-    for<'x> BE::BufMut<'x>: HostDataMut,
-    for<'x> BE::BufRef<'x>: HostDataRef,
-{
-    let mut res = res.to_backend_mut();
-    let a = a.to_backend_ref();
-
-    let n = res.n();
-    let res_size = res.size();
-    let a_size = a.size();
-
-    let (a_norm, carry) = carry.split_at_mut(n);
-    let (res_carry, a_carry) = carry[..2 * n].split_at_mut(n);
-    nfc_zero(res_carry);
-
-    let a_tot_bits: usize = a_size * a_base2k;
-    let res_tot_bits: usize = res_size * res_base2k;
-
-    let mut lsh: i64 = res_offset % a_base2k as i64;
-    let mut limbs_offset: i64 = res_offset / a_base2k as i64;
-
-    if res_offset < 0 && lsh != 0 {
-        lsh = (lsh + a_base2k as i64) % (a_base2k as i64);
-        limbs_offset -= 1;
-    }
-
-    let lsh_pos: usize = lsh as usize;
-
-    let res_end_bit: usize = (-limbs_offset * a_base2k as i64).clamp(0, res_tot_bits as i64) as usize;
-    let res_start_bit: usize = (a_tot_bits as i64 - limbs_offset * a_base2k as i64).clamp(0, res_tot_bits as i64) as usize;
-    let a_end_bit: usize = (limbs_offset * a_base2k as i64).clamp(0, a_tot_bits as i64) as usize;
-    let a_start_bit: usize = (res_tot_bits as i64 + limbs_offset * a_base2k as i64).clamp(0, a_tot_bits as i64) as usize;
-
-    let res_end: usize = res_end_bit / res_base2k;
-    let res_start: usize = res_start_bit.div_ceil(res_base2k);
-    let a_end: usize = a_end_bit / a_base2k;
-    let a_start: usize = a_start_bit.div_ceil(a_base2k);
-
-    if res_start == 0 {
-        return;
-    }
-
-    let a_out_range: usize = a_size.saturating_sub(a_start);
-    for j in 0..a_out_range {
-        if j == 0 {
-            nfc_first_carry_only(a_base2k, lsh_pos, a.at(a_col, a_size - j - 1), a_carry);
-        } else {
-            nfc_middle_carry_only(a_base2k, lsh_pos, a.at(a_col, a_size - j - 1), a_carry);
-        }
-    }
-    if a_out_range == 0 {
-        nfc_zero(a_carry);
-    }
-
-    let mut res_acc_left: usize = res_base2k;
-    let mut res_limb: usize = res_start - 1;
-    let mid_range: usize = a_start.saturating_sub(a_end);
-
-    'outer: for j in 0..mid_range {
-        let a_limb: usize = a_start - j - 1;
-        let a_slice: &[i128] = a.at(a_col, a_limb);
-
-        let mut a_take_left: usize = a_base2k;
-        nfc_middle_step_i128(a_base2k, lsh_pos, a_norm, a_slice, a_carry);
-
-        if j == 0 {
-            if !(a_tot_bits - a_start_bit).is_multiple_of(a_base2k) {
-                let take: usize = (a_tot_bits - a_start_bit) % a_base2k;
-                nfc_mul_pow2_assign(-(take as i64), a_norm);
-                a_take_left -= take;
-            } else if !(res_tot_bits - res_start_bit).is_multiple_of(res_base2k) {
-                res_acc_left -= (res_tot_bits - res_start_bit) % res_base2k;
-            }
-        }
-
-        'inner: loop {
-            let res_slice: &mut [i64] = res.at_mut(res_col, res_limb);
-            let a_take: usize = a_base2k.min(a_take_left).min(res_acc_left);
-
-            if a_take != 0 {
-                let scale: usize = res_base2k - res_acc_left;
-                nfc_extract_digit_assignmul::<O>(a_take, scale, res_slice, a_norm);
-                a_take_left -= a_take;
-                res_acc_left -= a_take;
-            }
-
-            if res_acc_left == 0 || a_limb == 0 {
-                if a_limb == 0 && a_take_left == 0 {
-                    nfc_add_assign(a_carry, a_norm);
-                    if res_acc_left != 0 {
-                        let scale: usize = res_base2k - res_acc_left;
-                        nfc_extract_digit_assignmul::<O>(res_acc_left, scale, res_slice, a_carry);
-                    }
+                if !flushed {
                     BE::nfc_middle_step_assign(res_base2k, 0, res_slice, res_carry);
-                    nfc_acc_assign::<O>(res_carry, a_carry);
-                    break 'outer;
                 }
+
+                finish_nfc_normalized_limb(res_base2k, active_size, padding, res_limb, res_slice, res_carry);
 
                 if res_limb == 0 {
                     break 'outer;
@@ -859,6 +599,7 @@ fn ntt4x30_vec_znx_big_normalize_cross_assign<O, R, A, BE>(
 
                 res_acc_left += res_base2k;
                 res_limb -= 1;
+                initialized = false;
             }
 
             if a_take_left == 0 {
@@ -868,14 +609,12 @@ fn ntt4x30_vec_znx_big_normalize_cross_assign<O, R, A, BE>(
         }
     }
 
+    // Write the remaining more significant digits.
     if res_end != 0 {
         let carry_to_use = if a_start == a_end { a_carry } else { res_carry };
-        for j in 0..res_end {
-            if j == res_end - 1 {
-                nfc_final_carry_assign::<O>(res_base2k, res.at_mut(res_col, res_end - j - 1), carry_to_use);
-            } else {
-                nfc_middle_carry_assign::<O>(res_base2k, res.at_mut(res_col, res_end - j - 1), carry_to_use);
-            }
+        for j in (0..res_end).rev() {
+            BE::znx_extract_digit_mul_i128(res_base2k, 0, res.at_mut(j), carry_to_use);
+            finish_nfc_normalized_limb(res_base2k, active_size, padding, j, res.at_mut(j), carry_to_use);
         }
     }
 }
@@ -1007,12 +746,36 @@ pub trait I128BigOps {
 
 /// Per-slice `i128→i64` normalization kernels, dispatched via the backend type parameter.
 ///
-/// The three hot-path helpers used inside [`ntt4x30_vec_znx_big_normalize`] are expressed
+/// The hot-path helpers used inside [`ntt4x30_vec_znx_big_normalize`] are expressed
 /// as trait methods so that SIMD backends can override them without duplicating the outer
 /// loop logic.  All methods have scalar default implementations.
 ///
 /// This is the normalization-specific counterpart of [`I128BigOps`].
+/// Input limbs and incoming carries must have magnitude at most `2^126`;
+/// shifted digits and destination sums must be representable. These bounds
+/// include the centered NTT4x30 IDFT output, whose magnitude is below `2^119`.
 pub trait I128NormalizeOps {
+    /// Selects the fused flush in the shared CPU loop.
+    const FUSE_NORMALIZE: bool = true;
+
+    /// Requires `1 <= base2k`, `base2k + lsh <= 63` and `src.len() >= res.len()`.
+    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
+    }
+
+    /// Also requires `1 <= res_base2k <= 63` and a representable i64 destination sum.
+    /// Short source or carry slices panic before writing; unused tails are unchanged.
+    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i128],
+        carry: &mut [i128],
+    ) {
+        znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
+    }
+
     /// Convert `i128` input + carry into `i64` output, updating carry in place.
     ///
     /// Equivalent to the private `nfc_middle_step` helper.
@@ -1486,6 +1249,8 @@ where
 ///
 /// Extracts `res_k` bits in base `2^res_base2k`, applying `res_offset` before
 /// decomposition.
+/// Source coefficients must have magnitude at most `2^126`, including after additions.
+/// The centered NTT4x30 IDFT output satisfies the stronger bound `|a| < 2^119`.
 ///
 /// `carry` must have at least `ntt4x30_vec_znx_big_normalize_tmp_bytes(n) / size_of::<i128>()`
 /// elements (i.e., `3 * n` `i128` values).
@@ -1568,8 +1333,16 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
 ///
 /// # Safety
 ///
-/// `res_ptr` must address a valid `n * cols * size` allocation. Any live calls
-/// using the same allocation must write disjoint coefficient ranges.
+/// `res_ptr` must be non-null, aligned for `i64`, and address at least
+/// `n * cols * size` initialized `i64` values; layout arithmetic must not overflow.
+/// The source must have valid initialized storage, degree `n`, and column `a_col`.
+/// Require `res_col < cols`, `coeff_start <= n`, `coeff_len <= n - coeff_start`,
+/// and at least `3 * coeff_len` private scratch words in `carry`.
+///
+/// For every destination limb, the selected coefficient range must be exclusively
+/// writable for this call and must not overlap source or scratch storage. Concurrent
+/// calls may share the destination allocation only with disjoint coefficient ranges.
+/// Source reads must remain immutable, and scratch must not overlap the source.
 #[allow(clippy::too_many_arguments)]
 #[doc(hidden)]
 pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
@@ -1609,6 +1382,23 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
     }
     let active_size = res_k.div_ceil(res_base2k);
     let padding = (res_base2k - res_k % res_base2k) % res_base2k;
+    let input = a.to_backend_ref();
+    if crate::reference::vec_znx::normalize_needs_exact(input.size(), a_base2k, size, res_base2k, res_offset) {
+        for i in 0..coeff_len {
+            crate::reference::vec_znx::normalize_exact::<false, _, _>(
+                |j| input.at(a_col, j)[coeff_start + i],
+                input.size(),
+                a_base2k,
+                size,
+                res_base2k,
+                res_k,
+                res_offset,
+                |j, digit| res.at_mut(j)[i] = digit,
+            );
+        }
+        return;
+    }
+
     if res_base2k == a_base2k {
         ntt4x30_vec_znx_big_normalize_inter(
             res_base2k,
@@ -1641,6 +1431,8 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
     }
 }
 
+/// Adds or subtracts normalized `a` under the source bounds of
+/// [`ntt4x30_vec_znx_big_normalize`].
 #[allow(clippy::too_many_arguments)]
 pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
     res: &mut R,
@@ -1659,13 +1451,32 @@ pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
-    if res_base2k == a_base2k {
-        ntt4x30_vec_znx_big_normalize_inter_assign::<O, _, _, _>(res_base2k, res, res_offset, res_col, a, a_col, carry);
-    } else {
-        ntt4x30_vec_znx_big_normalize_cross_assign::<O, _, _, _>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+    let input = a.to_backend_ref();
+    let mut output = res.to_backend_mut();
+    let output_size = output.size();
+    debug_assert!(carry.len() >= 3 * output.n());
+    for i in 0..output.n() {
+        let mut extra = 0i128;
+        crate::reference::vec_znx::normalize_exact::<false, _, _>(
+            |j| input.at(a_col, j)[i],
+            input.size(),
+            a_base2k,
+            output_size,
+            res_base2k,
+            output_size * res_base2k,
+            res_offset,
+            |j, digit| {
+                let value = &mut output.at_mut(res_col, j)[i];
+                let signed = if O::SUB { -(digit as i128) } else { digit as i128 };
+                let total = *value as i128 + signed + extra;
+                *value = total as i64;
+                extra = (total - *value as i128) >> res_base2k;
+            },
+        );
     }
 }
 
+/// Adds normalized `a` under the source bounds of [`ntt4x30_vec_znx_big_normalize`].
 #[allow(clippy::too_many_arguments)]
 pub fn ntt4x30_vec_znx_big_normalize_add_assign<R, A, BE>(
     res: &mut R,
@@ -1686,6 +1497,7 @@ pub fn ntt4x30_vec_znx_big_normalize_add_assign<R, A, BE>(
     ntt4x30_vec_znx_big_normalize_assign::<AddOp, _, _, _>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
 }
 
+/// Subtracts normalized `a` under the source bounds of [`ntt4x30_vec_znx_big_normalize`].
 #[allow(clippy::too_many_arguments)]
 pub fn ntt4x30_vec_znx_big_normalize_sub_assign<R, A, BE>(
     res: &mut R,

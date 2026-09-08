@@ -17,8 +17,8 @@ use crate::reference::vec_znx::{
     vec_znx_zero,
 };
 use crate::reference::znx::{
-    ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign,
-    ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub,
+    I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate,
+    ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub,
     ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep,
     ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign,
     ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
@@ -209,7 +209,7 @@ where
             + ZnxNormalizeMiddleStep
             + ZnxNormalizeFinalStep
             + ZnxNormalizeFirstStep
-            + ZnxExtractDigitAddMul
+            + I64NormalizeOps
             + ZnxNormalizeMiddleStepAssign
             + ZnxNormalizeFinalStepAssign
             + ZnxNormalizeDigit,
@@ -289,7 +289,7 @@ where
             + ZnxNormalizeMiddleStep
             + ZnxNormalizeFinalStep
             + ZnxNormalizeFirstStep
-            + ZnxExtractDigitAddMul
+            + I64NormalizeOps
             + ZnxNormalizeMiddleStepAssign
             + ZnxNormalizeFinalStepAssign
             + ZnxNormalizeDigit,

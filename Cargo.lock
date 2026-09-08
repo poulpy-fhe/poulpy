@@ -278,6 +278,7 @@ dependencies = [
  "cfg-if",
  "dashu-base",
  "num-modular",
+ "num-order",
  "static_assertions",
 ]
 
@@ -715,6 +716,7 @@ dependencies = [
  "byteorder",
  "criterion",
  "dashu-float",
+ "dashu-int",
  "itertools 0.15.0",
  "once_cell",
  "poulpy-bench",

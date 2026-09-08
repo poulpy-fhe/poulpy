@@ -148,3 +148,43 @@ pub fn default_bench_params_cnv() -> Vec<CnvSweepParms> {
         CnvSweepParms { n: 1 << 15, size: 64 },
     ]
 }
+
+/// Base conversion and displacement parameters for normalization benchmarks.
+#[derive(Debug, Clone)]
+pub struct NormalizeSweepParams {
+    pub shape: HalSweepParms,
+    pub a_base2k: usize,
+    pub res_base2k: usize,
+    pub res_offset: i64,
+}
+
+impl Display for NormalizeSweepParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}/k={}->{}/offset={}",
+            self.shape, self.a_base2k, self.res_base2k, self.res_offset
+        )
+    }
+}
+
+pub fn default_bench_params_normalize() -> Vec<NormalizeSweepParams> {
+    let mut result = Vec::new();
+    for n in [1 << 12, 1 << 16] {
+        for size in [4, 8, 16] {
+            for a_base2k in [17, 19, 21, 50, 51] {
+                for res_base2k in [17, 19, 21, 50, 51] {
+                    for res_offset in [-(a_base2k as i64), 0, 1, a_base2k as i64] {
+                        result.push(NormalizeSweepParams {
+                            shape: HalSweepParms { n, cols: 1, size },
+                            a_base2k,
+                            res_base2k,
+                            res_offset,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    result
+}

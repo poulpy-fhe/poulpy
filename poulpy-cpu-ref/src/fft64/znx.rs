@@ -218,9 +218,20 @@ impl ZnxExtractDigitAddMul for FFT64Ref {
     }
 }
 
+impl crate::reference::normalization::I64NormalizeOps for FFT64Ref {}
+
 impl ZnxNormalizeDigit for FFT64Ref {
     #[inline(always)]
     fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]) {
         znx_normalize_digit_ref(base2k, res, src);
+    }
+}
+
+#[cfg(test)]
+mod normalization_tests {
+    #[test]
+    fn test_normalization_kernels_bounded_inputs() {
+        crate::test_suite::normalization::test_normalization_kernels::<crate::FFT64Ref>();
+        crate::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Ref>();
     }
 }

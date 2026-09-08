@@ -242,10 +242,33 @@ forward_znx!(
     ZnxNormalizeFinalStepAssign,
     znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64])
 );
-forward_znx!(
-    ZnxExtractDigitAddMul,
-    znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64])
-);
+impl ZnxExtractDigitAddMul for NTT3x42IfmaRayon {
+    #[inline(always)]
+    fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        <NTT3x42Ifma as ZnxExtractDigitAddMul>::znx_extract_digit_addmul(base2k, lsh, res, src);
+    }
+}
+
+impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT3x42IfmaRayon {
+    #[inline(always)]
+    fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+        <NTT3x42Ifma as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_addmul_normalize<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i64],
+        carry: &mut [i64],
+    ) {
+        <NTT3x42Ifma as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(
+            base2k, lsh, res_base2k, res, src, carry,
+        );
+    }
+}
 forward_znx!(ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
 
 unsafe impl HalModuleImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
@@ -322,6 +345,25 @@ impl I128BigOps for NTT3x42IfmaRayon {
 }
 
 impl I128NormalizeOps for NTT3x42IfmaRayon {
+    const FUSE_NORMALIZE: bool = <NTT3x42Ifma as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
+
+    fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        <NTT3x42Ifma as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(base2k, lsh, res, src)
+    }
+
+    fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
+        base2k: usize,
+        lsh: usize,
+        res_base2k: usize,
+        res: &mut [i64],
+        src: &mut [i128],
+        carry: &mut [i128],
+    ) {
+        <NTT3x42Ifma as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<OVERWRITE>(
+            base2k, lsh, res_base2k, res, src, carry,
+        )
+    }
+
     #[inline(always)]
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
         <NTT3x42Ifma as I128NormalizeOps>::nfc_middle_step(base2k, lsh, res, a, carry)

@@ -210,6 +210,8 @@ impl ZnxExtractDigitAddMul for NTT4x30Ref {
     }
 }
 
+impl crate::reference::normalization::I64NormalizeOps for NTT4x30Ref {}
+
 impl ZnxNormalizeDigit for NTT4x30Ref {
     #[inline(always)]
     fn znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]) {

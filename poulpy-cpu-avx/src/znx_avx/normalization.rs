@@ -39,7 +39,7 @@ fn get_digit_avx(x: __m256i, mask_k: __m256i, sign_k: __m256i) -> __m256i {
 }
 
 /// AVX2 get_carry using precomputed shift and topmask:
-/// carry = (x - digit) >>_arith k
+/// carry = (x - digit) >>_arith k; the subtraction must be representable.
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
@@ -64,15 +64,12 @@ unsafe fn get_carry_avx(
 
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
-/// `res` and `src` must have the same length and must not alias.
+/// Slice lengths are checked before accessing coefficients.
 #[cfg(target_arch = "x86_64")]
 #[inline]
 #[target_feature(enable = "avx2")]
-pub fn znx_extract_digit_addmul_avx(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-    #[cfg(debug_assertions)]
-    {
-        assert_eq!(res.len(), src.len());
-    }
+pub fn znx_extract_digit_addmul_impl_avx<const OVERWRITE: bool>(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+    assert!(src.len() >= res.len());
 
     use std::arch::x86_64::{
         __m256i, _mm256_add_epi64, _mm256_loadu_si256, _mm256_set1_epi64x, _mm256_sllv_epi64, _mm256_storeu_si256,
@@ -96,9 +93,12 @@ pub fn znx_extract_digit_addmul_avx(base2k: usize, lsh: usize, res: &mut [i64], 
             let carry_256: __m256i = get_carry_avx(sv, digit_256, base2k_vec, top_mask);
 
             // res += (digit << lsh)
-            let rv: __m256i = _mm256_loadu_si256(rr);
             let madd: __m256i = _mm256_sllv_epi64(digit_256, lsh_v);
-            let sum: __m256i = _mm256_add_epi64(rv, madd);
+            let sum = if OVERWRITE {
+                madd
+            } else {
+                _mm256_add_epi64(_mm256_loadu_si256(rr), madd)
+            };
 
             _mm256_storeu_si256(rr, sum);
             _mm256_storeu_si256(ss, carry_256);
@@ -110,11 +110,27 @@ pub fn znx_extract_digit_addmul_avx(base2k: usize, lsh: usize, res: &mut [i64], 
 
     // tail (scalar)
     if !n.is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_ref;
+        use poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_impl_ref;
 
         let off: usize = span << 2;
-        znx_extract_digit_addmul_ref(base2k, lsh, &mut res[off..], &mut src[off..]);
+        znx_extract_digit_addmul_impl_ref::<OVERWRITE>(base2k, lsh, &mut res[off..], &mut src[off..]);
     }
+}
+
+/// # Safety
+/// Requires compatible slice lengths and the backend ISA.
+#[inline]
+#[target_feature(enable = "avx2")]
+pub fn znx_extract_digit_addmul_avx(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+    znx_extract_digit_addmul_impl_avx::<false>(base2k, lsh, res, src);
+}
+
+/// # Safety
+/// Requires compatible slice lengths and the backend ISA.
+#[inline]
+#[target_feature(enable = "avx2")]
+pub fn znx_extract_digit_mul_avx(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+    znx_extract_digit_addmul_impl_avx::<true>(base2k, lsh, res, src);
 }
 
 /// # Safety
@@ -973,7 +989,71 @@ pub fn znx_normalize_final_step_sub_avx(base2k: usize, lsh: usize, x: &mut [i64]
     }
 }
 
+/// # Safety
+/// Requires AVX2 and representable accumulated sums.
+#[inline]
+#[target_feature(enable = "avx2")]
+pub fn znx_extract_digit_addmul_normalize_avx<const OVERWRITE: bool>(
+    base2k: usize,
+    lsh: usize,
+    res_base2k: usize,
+    res: &mut [i64],
+    src: &mut [i64],
+    carry: &mut [i64],
+) {
+    assert!(src.len() >= res.len());
+    assert!(carry.len() >= res.len());
+    use std::arch::x86_64::{_mm256_loadu_si256, _mm256_set1_epi64x, _mm256_sllv_epi64, _mm256_storeu_si256};
+    let end = res.len() / 4 * 4;
+    unsafe {
+        let (mask, sign, shift, top) = normalize_consts_avx(base2k);
+        let (res_mask, res_sign, res_shift, res_top) = normalize_consts_avx(res_base2k);
+        let scale = _mm256_set1_epi64x(lsh as i64);
+        for i in (0..end).step_by(4) {
+            let source = _mm256_loadu_si256(src.as_ptr().add(i).cast());
+            let digit = get_digit_avx(source, mask, sign);
+            let quotient = get_carry_avx(source, digit, shift, top);
+            let partial = if OVERWRITE {
+                _mm256_sllv_epi64(digit, scale)
+            } else {
+                _mm256_add_epi64(
+                    _mm256_loadu_si256(res.as_ptr().add(i).cast()),
+                    _mm256_sllv_epi64(digit, scale),
+                )
+            };
+            let sum = _mm256_add_epi64(partial, _mm256_loadu_si256(carry.as_ptr().add(i).cast()));
+            let output = get_digit_avx(sum, res_mask, res_sign);
+            let output_carry = get_carry_avx(sum, output, res_shift, res_top);
+            _mm256_storeu_si256(src.as_mut_ptr().add(i).cast(), quotient);
+            _mm256_storeu_si256(res.as_mut_ptr().add(i).cast(), output);
+            _mm256_storeu_si256(carry.as_mut_ptr().add(i).cast(), output_carry);
+        }
+    }
+    poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
+        base2k,
+        lsh,
+        res_base2k,
+        &mut res[end..],
+        &mut src[end..],
+        &mut carry[end..],
+    );
+}
+
 mod tests {
+    #[test]
+    fn test_normalization_kernels_bounded_inputs() {
+        if !std::is_x86_feature_detected!("avx2") {
+            return;
+        }
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx>();
+        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx>();
+        #[cfg(feature = "enable-rayon")]
+        {
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64AvxRayon>();
+            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30AvxRayon>();
+        }
+    }
+
     use poulpy_cpu_ref::reference::znx::{
         get_carry_i64, get_digit_i64, znx_extract_digit_addmul_ref, znx_normalize_digit_ref, znx_normalize_final_step_assign_ref,
         znx_normalize_final_step_ref, znx_normalize_first_step_assign_ref, znx_normalize_first_step_ref,
