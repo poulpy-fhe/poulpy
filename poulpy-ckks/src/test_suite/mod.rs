@@ -890,6 +890,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_e2e
             );
             run_test!(
+                functional_bootstrapping_non_power_of_two_e2e,
+                $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_non_power_of_two_e2e
+            );
+            run_test!(
                 functional_bootstrapping_multi_e2e,
                 $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_multi_e2e
             );
