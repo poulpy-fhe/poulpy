@@ -41,7 +41,7 @@ pub(crate) fn znx_extract_digit_addmul_impl_neon<const OVERWRITE: bool>(
     res: &mut [i64],
     src: &mut [i64],
 ) {
-    debug_assert_eq!(res.len(), src.len());
+    assert!(src.len() >= res.len());
     let n = res.len();
     let span = n >> 2;
     unsafe {
@@ -669,8 +669,8 @@ pub(crate) fn znx_extract_digit_addmul_normalize_neon<const OVERWRITE: bool>(
     src: &mut [i64],
     carry: &mut [i64],
 ) {
-    debug_assert_eq!(res.len(), src.len());
-    debug_assert!(carry.len() >= res.len());
+    assert!(src.len() >= res.len());
+    assert!(carry.len() >= res.len());
     let end = res.len() / 2 * 2;
     unsafe {
         let (mask, sign, shift) = normalize_consts_neon(base2k);

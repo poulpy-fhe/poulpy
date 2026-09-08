@@ -59,7 +59,7 @@ pub unsafe fn znx_extract_digit_addmul_impl_avx512<const OVERWRITE: bool>(
     res: &mut [i64],
     src: &mut [i64],
 ) {
-    debug_assert_eq!(res.len(), src.len());
+    assert!(src.len() >= res.len());
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_set1_epi64, _mm512_sllv_epi64, _mm512_storeu_si512};
 
@@ -875,7 +875,7 @@ pub unsafe fn znx_normalize_final_step_sub_avx512(base2k: usize, lsh: usize, x: 
 /// Extracts the completing subdigit and normalizes the destination in one pass.
 ///
 /// # Safety
-/// Requires AVX-512F, disjoint equal-length slices and representable accumulated sums.
+/// Requires AVX-512F and representable accumulated sums.
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_extract_digit_addmul_normalize_avx512<const OVERWRITE: bool>(
@@ -886,8 +886,8 @@ pub unsafe fn znx_extract_digit_addmul_normalize_avx512<const OVERWRITE: bool>(
     src: &mut [i64],
     carry: &mut [i64],
 ) {
-    debug_assert_eq!(res.len(), src.len());
-    debug_assert!(carry.len() >= res.len());
+    assert!(src.len() >= res.len());
+    assert!(carry.len() >= res.len());
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_set1_epi64, _mm512_sllv_epi64, _mm512_storeu_si512};
     let end = res.len() / 8 * 8;
     let (mask, sign, shift) = normalize_consts_avx512(base2k);

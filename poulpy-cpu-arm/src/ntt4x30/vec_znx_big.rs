@@ -122,6 +122,7 @@ impl I128NormalizeOps for NTT4x30Neon {}
 #[cfg(target_arch = "aarch64")]
 impl poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128 for NTT4x30Neon {
     fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        assert!(src.len() >= res.len());
         unsafe { crate::neon::normalize::nfc_extract_normalize_neon::<true, false>(base2k, lsh, base2k + lsh, res, src, &mut []) }
     }
 
@@ -133,6 +134,8 @@ impl poulpy_hal::reference::znx::ZnxExtractDigitAddMulI128 for NTT4x30Neon {
         src: &mut [i128],
         carry: &mut [i128],
     ) {
+        assert!(src.len() >= res.len());
+        assert!(carry.len() >= res.len());
         unsafe { crate::neon::normalize::nfc_extract_normalize_neon::<OVERWRITE, true>(base2k, lsh, res_base2k, res, src, carry) }
     }
 }

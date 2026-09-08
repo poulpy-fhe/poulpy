@@ -64,15 +64,12 @@ unsafe fn get_carry_avx(
 
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
-/// `res` and `src` must have the same length and must not alias.
+/// Slice lengths are checked before accessing coefficients.
 #[cfg(target_arch = "x86_64")]
 #[inline]
 #[target_feature(enable = "avx2")]
 pub fn znx_extract_digit_addmul_impl_avx<const OVERWRITE: bool>(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-    #[cfg(debug_assertions)]
-    {
-        assert_eq!(res.len(), src.len());
-    }
+    assert!(src.len() >= res.len());
 
     use std::arch::x86_64::{
         __m256i, _mm256_add_epi64, _mm256_loadu_si256, _mm256_set1_epi64x, _mm256_sllv_epi64, _mm256_storeu_si256,
@@ -993,7 +990,7 @@ pub fn znx_normalize_final_step_sub_avx(base2k: usize, lsh: usize, x: &mut [i64]
 }
 
 /// # Safety
-/// Requires AVX2, disjoint equal-length slices and representable accumulated sums.
+/// Requires AVX2 and representable accumulated sums.
 #[inline]
 #[target_feature(enable = "avx2")]
 pub fn znx_extract_digit_addmul_normalize_avx<const OVERWRITE: bool>(
@@ -1004,8 +1001,8 @@ pub fn znx_extract_digit_addmul_normalize_avx<const OVERWRITE: bool>(
     src: &mut [i64],
     carry: &mut [i64],
 ) {
-    debug_assert_eq!(res.len(), src.len());
-    debug_assert!(carry.len() >= res.len());
+    assert!(src.len() >= res.len());
+    assert!(carry.len() >= res.len());
     use std::arch::x86_64::{_mm256_loadu_si256, _mm256_set1_epi64x, _mm256_sllv_epi64, _mm256_storeu_si256};
     let end = res.len() / 4 * 4;
     unsafe {

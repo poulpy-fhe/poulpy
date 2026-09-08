@@ -149,6 +149,8 @@ pub trait ZnxNormalizeFinalStepAssign {
 /// Extracts a centered digit and adds it shifted by `lsh` to the destination.
 /// Requires `1 <= base2k`, `base2k + lsh <= 62`, a representable destination
 /// sum, and `src - get_digit_i64(base2k, src)` representable in i64.
+/// Panics before writing if `src` or the supplied carry is shorter than `res`.
+/// Entries beyond `res.len()` are unchanged.
 pub trait ZnxExtractDigitAddMul {
     fn znx_extract_digit_addmul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]);
 
@@ -179,6 +181,8 @@ pub trait ZnxNormalizeDigit {
 /// Source coefficients and incoming carries must lie in `[-2^126, 2^126]`.
 /// Requires positive radix widths, `base2k + lsh <= 63`, `res_base2k <= 63`,
 /// and a representable i64 destination sum.
+/// Panics before writing if `src` or the supplied carry is shorter than `res`.
+/// Entries beyond `res.len()` are unchanged.
 pub trait ZnxExtractDigitAddMulI128 {
     const FUSE_NORMALIZE: bool = true;
 

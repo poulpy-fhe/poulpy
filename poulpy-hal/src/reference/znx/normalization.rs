@@ -162,6 +162,7 @@ pub fn znx_normalize_middle_step_assign_ref(base2k: usize, lsh: usize, x: &mut [
 
 #[inline(always)]
 pub fn znx_extract_digit_addmul_impl_ref<const OVERWRITE: bool>(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
+    assert!(src.len() >= res.len());
     for (r, s) in res.iter_mut().zip(src.iter_mut()) {
         let digit: i64 = get_digit_i64(base2k, *s);
         *s = get_carry_i64(base2k, *s, digit);
@@ -188,6 +189,8 @@ pub fn znx_extract_digit_addmul_normalize_ref<const OVERWRITE: bool>(
     src: &mut [i64],
     carry: &mut [i64],
 ) {
+    assert!(src.len() >= res.len());
+    assert!(carry.len() >= res.len());
     for ((r, s), c) in res.iter_mut().zip(src.iter_mut()).zip(carry.iter_mut()) {
         let digit = get_digit_i64(base2k, *s);
         *s = get_carry_i64(base2k, *s, digit);
@@ -364,6 +367,8 @@ pub fn znx_extract_digit_addmul_normalize_i128_ref<const OVERWRITE: bool>(
     src: &mut [i128],
     carry: &mut [i128],
 ) {
+    assert!(src.len() >= res.len());
+    assert!(carry.len() >= res.len());
     for ((r, s), c) in res.iter_mut().zip(src).zip(carry) {
         let digit = get_digit_i128(base2k, *s);
         *s = get_carry_i128(base2k, *s, digit);
@@ -380,6 +385,7 @@ pub fn znx_extract_digit_addmul_normalize_i128_ref<const OVERWRITE: bool>(
 
 /// Extract a wide source digit and initialize a destination limb.
 pub fn znx_extract_digit_mul_i128_ref(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+    assert!(src.len() >= res.len());
     for (r, s) in res.iter_mut().zip(src) {
         let digit = get_digit_i128(base2k, *s);
         *s = get_carry_i128(base2k, *s, digit);
