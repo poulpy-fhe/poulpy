@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### `poulpy-hal`
+
+- **Breaking:** prepared types (`SvpPPol`, `VmpPMat`, `CnvPVecL`, `CnvPVecR`) carry a `PrepareHint` chosen at allocation; `bytes_of_*`, `*_alloc`, `take_*_scratch` and `from_data` take it. In-tree backends have one representation and ignore it.
+- Add window views on `VecZnx` and `VecZnxBig` (`window_coeffs`, `window_limbs`, `from_shape`, `with_shape`). `zero`, `copy`, `add`, `sub`, `negate` and `big_from_small` accept windows; other operations and the flat accessors `raw`/`as_ptr` reject them with a panic until they are made window-aware.
+- Document the value model, limb rule, mutation classes and exactness classes in the `api` and `layouts` module docs.
+- **Breaking:** `poulpy_hal::reference` moved to `poulpy_cpu_ref::reference::znx`.
+- **Breaking:** remove 30 unused api methods (coefficient shift/normalize variants, `add_const`, `add_scalar_into`, `sub_scalar`, `automorphism_rotate`, `split_ring`, `merge_rings`, `transpose`, `hadamard_product_scalar_znx`, `*_from_bytes` wrappers, `vec_znx_big_alloc_n`, `ModuleNew::new_with`) and the eight seeded `[u8; 32]` sampler twins; the `Source`-based samplers stay.
+
 ## [0.8.3] - 2026-09-09
 
 Adds opt-in Rayon parallelism to every accelerated CPU family behind a backend-selected task executor, packs NTT4x30 transform words into `u32` pairs on AVX2/AVX-512, fuses paired gadget digits in strided key switching, and resolves evaluation keys per precision, including reading a prepared key at a coarser digit size. Normalization takes an explicit target precision, fixing cross-base and partial-limb noise. CKKS gains `LogN=16` bootstrapping presets, non-power-of-two LUTs, an even Han–Ki EvalMod and a native NTT ModUp; bin-FHE runs on device backends.
