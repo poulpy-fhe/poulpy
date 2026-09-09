@@ -137,16 +137,16 @@ For example, a CKKS application can depend on:
 
 ```toml
 [dependencies]
-poulpy-ckks = "0.8.0"
-poulpy-cpu-ref = "0.8.0"
+poulpy-ckks = "0.8.3"
+poulpy-cpu-ref = "0.8.3"
 ```
 
 For binary FHE:
 
 ```toml
 [dependencies]
-poulpy-bin-fhe = "0.8.0"
-poulpy-cpu-ref = "0.8.0"
+poulpy-bin-fhe = "0.8.3"
+poulpy-cpu-ref = "0.8.3"
 ```
 
 ## Documentation
@@ -227,10 +227,10 @@ For anything better suited to a direct exchange, reach the organisation administ
 Please use the following BibTeX entry for citing Poulpy:
 
     @misc{poulpy,
-        title = {Poulpy v0.8.0},
+        title = {Poulpy v0.8.3},
         author = {Jean-Philippe Bossuat and Jules Dumezy and Rasoul Akhavan Mahdavi and Janmajaya Mall and Cedoor and Luis Ruiz-Lopez and Christian Mouchet},
         affiliation = {Jean-Philippe Bossuat: Ideal Rings Lab and PhantomZone; Jules Dumezy: CEA-List, Universit{\'e} Paris-Saclay; Rasoul Akhavan Mahdavi: University of Waterloo; Janmajaya Mall: PhantomZone; Cedoor: Independent contributor; Luis Ruiz-Lopez: University of Waterloo; Christian Mouchet: Independent contributor},
         howpublished = {Online: \url{https://github.com/poulpy-fhe/poulpy}},
-        month = August,
+        month = September,
         year = 2026,
     }
