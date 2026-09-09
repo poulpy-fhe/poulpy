@@ -14,7 +14,7 @@ Small, self-evident changes (typos, documentation, an obvious bug with an obviou
 
 Most discussion happens on [GitHub issues](https://github.com/poulpy-fhe/poulpy/issues). For design questions and quicker exchanges, join our [Telegram group](https://t.me/+uy7_HADsdN1jNmU1).
 
-For anything better suited to a direct exchange, reach the maintainer at [jeanphilippe.bossuat@gmail.com](mailto:jeanphilippe.bossuat@gmail.com). Security vulnerabilities are the exception and follow [SECURITY.md](./SECURITY.md).
+For anything better suited to a direct exchange, reach the maintainer at [jean-philippe.bossuat@idealringslab.com](mailto:jean-philippe.bossuat@idealringslab.com). Security vulnerabilities are the exception and follow [SECURITY.md](./SECURITY.md).
 
 ## Reporting bugs and requesting features
 

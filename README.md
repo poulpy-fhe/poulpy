@@ -7,6 +7,9 @@
 
 [![CI](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml)
 [![HEIR](https://img.shields.io/badge/HEIR-Poulpy_backend-4285F4)](https://github.com/google/heir/tree/main/lib/Target/Poulpy)
+[![Website](https://img.shields.io/badge/website-poulpy.dev-8A2BE2)](https://www.poulpy.dev/)
+
+📖 **[poulpy.dev](https://www.poulpy.dev/)**: [quickstart](https://www.poulpy.dev/docs/quickstart/), [architecture](https://www.poulpy.dev/architecture/), [layouts](https://www.poulpy.dev/layouts/), [benchmarks](https://www.poulpy.dev/benchmarks/), [ecosystem](https://www.poulpy.dev/ecosystem/) and the [documentation](https://www.poulpy.dev/docs/) for CKKS, binary FHE, security and the API.
 
 **Poulpy** is a **fast and modular** FHE library that implements Ring-Learning-With-Errors based homomorphic encryption over the Torus. It adopts the bivariate polynomial representation proposed in [Revisiting Key Decomposition Techniques for FHE: Simpler, Faster and More Generic](https://eprint.iacr.org/2023/771) to represent Torus polynomials. Compared with the residue number system (RNS), this representation provides simpler and more reusable arithmetic, a **common plaintext space** for all schemes, and native bridges between schemes. Poulpy also decouples scheme implementations from the polynomial arithmetic backend by being built from the ground up around a **hardware abstraction layer**. Leveraging the HAL, users can develop applications generic over the backend and choose a backend at runtime.
 
@@ -137,16 +140,16 @@ For example, a CKKS application can depend on:
 
 ```toml
 [dependencies]
-poulpy-ckks = "0.8.0"
-poulpy-cpu-ref = "0.8.0"
+poulpy-ckks = "0.8.3"
+poulpy-cpu-ref = "0.8.3"
 ```
 
 For binary FHE:
 
 ```toml
 [dependencies]
-poulpy-bin-fhe = "0.8.0"
-poulpy-cpu-ref = "0.8.0"
+poulpy-bin-fhe = "0.8.3"
+poulpy-cpu-ref = "0.8.3"
 ```
 
 ## Documentation
@@ -219,7 +222,7 @@ Poulpy is now actively supported, funded, and developed by [PhantomZone](https:/
 
 ## Contact
 
-Consider joining our [telegram](https://t.me/+uy7_HADsdN1jNmU1) group for any questions or discussions. We also have a channel on the FHE.org discord.
+Guides, benchmarks and the ecosystem overview live at [poulpy.dev](https://www.poulpy.dev/). Consider joining our [telegram](https://t.me/+uy7_HADsdN1jNmU1) group for any questions or discussions. We also have a channel on the FHE.org discord.
 
 For anything better suited to a direct exchange, reach the organisation administrator at [jean-philippe.bossuat@idealringslab.com](mailto:jean-philippe.bossuat@idealringslab.com).
 
@@ -227,10 +230,10 @@ For anything better suited to a direct exchange, reach the organisation administ
 Please use the following BibTeX entry for citing Poulpy:
 
     @misc{poulpy,
-        title = {Poulpy v0.8.0},
+        title = {Poulpy v0.8.3},
         author = {Jean-Philippe Bossuat and Jules Dumezy and Rasoul Akhavan Mahdavi and Janmajaya Mall and Cedoor and Luis Ruiz-Lopez and Christian Mouchet},
         affiliation = {Jean-Philippe Bossuat: Ideal Rings Lab and PhantomZone; Jules Dumezy: CEA-List, Universit{\'e} Paris-Saclay; Rasoul Akhavan Mahdavi: University of Waterloo; Janmajaya Mall: PhantomZone; Cedoor: Independent contributor; Luis Ruiz-Lopez: University of Waterloo; Christian Mouchet: Independent contributor},
         howpublished = {Online: \url{https://github.com/poulpy-fhe/poulpy}},
-        month = August,
+        month = September,
         year = 2026,
     }
