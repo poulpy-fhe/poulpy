@@ -85,6 +85,7 @@ pub struct BootstrappingTechniques {
 #[derive(Clone, Debug)]
 pub struct BootstrappingPlan {
     pipeline: BootstrappingPipeline,
+    c2s_guard_bits: usize,
 
     techniques: BootstrappingTechniques,
 
@@ -154,6 +155,7 @@ impl BootstrappingPlan {
         }
         Ok(Self {
             pipeline,
+            c2s_guard_bits: 0,
             techniques,
             coeffs_to_slots,
             eval_mod,
@@ -164,6 +166,28 @@ impl BootstrappingPlan {
     /// The selected ModUp/EvalMod bootstrapping pipeline.
     pub fn pipeline(&self) -> BootstrappingPipeline {
         self.pipeline
+    }
+
+    /// Lifts S2C-first ciphertexts at ModUp to protect CoeffsToSlots from rounding.
+    /// The lift is removed after the transform and charged to the raised width.
+    pub fn with_c2s_guard_bits(mut self, bits: usize) -> Result<Self> {
+        ensure!(
+            self.pipeline == BootstrappingPipeline::S2CFirst,
+            "C2S guard bits require an S2C-first plan"
+        );
+        ensure!(
+            (self.post_mod_up_consumed_bits() - self.c2s_guard_bits)
+                .checked_add(bits)
+                .is_some(),
+            "C2S guard bits overflow the post-ModUp budget"
+        );
+        self.c2s_guard_bits = bits;
+        Ok(self)
+    }
+
+    /// Extra internal scale bits used between ModUp and CoeffsToSlots.
+    pub fn c2s_guard_bits(&self) -> usize {
+        self.c2s_guard_bits
     }
 
     /// Optional techniques applied by the recipe.
@@ -212,6 +236,7 @@ impl BootstrappingPlan {
     /// EvalRound+ evaluates its bypass in parallel with the low-precision
     /// CoeffsToSlots + EvalMod branch, so the wider of the two branch costs is
     /// charged before any trailing SlotsToCoeffs.
+    /// S2C-first also charges the guard bits removed after CoeffsToSlots.
     pub fn post_mod_up_consumed_bits(&self) -> usize {
         let c2s_eval_mod = self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits();
         let eval_round = self
@@ -219,7 +244,7 @@ impl BootstrappingPlan {
             .map_or(c2s_eval_mod, |bypass| c2s_eval_mod.max(bypass.consumed_bits()));
         match self.pipeline {
             BootstrappingPipeline::C2SFirst => eval_round + self.slots_to_coeffs.consumed_bits(),
-            BootstrappingPipeline::S2CFirst => eval_round,
+            BootstrappingPipeline::S2CFirst => eval_round + self.c2s_guard_bits,
         }
     }
 
@@ -228,9 +253,18 @@ impl BootstrappingPlan {
         log_modulus + self.pre_mod_up_consumed_bits()
     }
 
-    /// Bootstrap width for a desired output width.
-    pub fn bootstrap_k(&self, output_k: usize) -> usize {
-        output_k + self.post_mod_up_consumed_bits()
+    /// Bootstrap width for an output at the input scale `log_delta`.
+    /// C2S-first includes the width removed when restoring that scale.
+    pub fn bootstrap_k(&self, output_k: usize, log_delta: usize) -> usize {
+        let scale_drop = match self.pipeline {
+            BootstrappingPipeline::C2SFirst => self
+                .eval_mod
+                .f_mod_log_delta
+                .checked_sub(log_delta)
+                .expect("C2S-first input scale exceeds EvalMod scale"),
+            BootstrappingPipeline::S2CFirst => 0,
+        };
+        output_k + self.post_mod_up_consumed_bits() + scale_drop
     }
 
     /// Raised width required by an S2C-first functional bootstrap.
@@ -251,12 +285,12 @@ impl BootstrappingPlan {
             0
         };
         let lut_log_delta = log_delta + lut.log_msg_ratio();
-        Ok(output_k + self.coeffs_to_slots.consumed_bits() + eval_mod + lut.consumed_bits(lut_log_delta))
+        Ok(output_k + self.c2s_guard_bits + self.coeffs_to_slots.consumed_bits() + eval_mod + lut.consumed_bits(lut_log_delta))
     }
 
     /// Total `log_budget` bits the pipeline consumes: the two DFT stages plus
-    /// EvalMod (charged at its own `f_mod_log_delta` scale; the surrounding
-    /// set-scale round-trip is budget-neutral).
+    /// EvalMod, plus any CoeffsToSlots guard bits. EvalMod is charged at its
+    /// own `f_mod_log_delta` scale; its set-scale round-trip is budget-neutral.
     pub fn consumed_bits(&self) -> usize {
         self.pre_mod_up_consumed_bits() + self.post_mod_up_consumed_bits()
     }
@@ -284,6 +318,7 @@ impl BootstrappingPlan {
 /// `SplitRealAndImag` format is used for both transforms so the real and
 /// imaginary coefficient halves can be reduced independently by EvalMod.
 pub struct BootstrappingContext<BE: Backend, F> {
+    c2s_guard_bits: usize,
     /// Prepared CoeffsToSlots matrix (homomorphic encoding).
     ///
     /// The plan constructor scales this transform for its EvalMod variant.
@@ -307,6 +342,11 @@ pub struct BootstrappingContext<BE: Backend, F> {
 }
 
 impl<BE: Backend, F> BootstrappingContext<BE, F> {
+    /// Extra internal scale bits removed after CoeffsToSlots.
+    pub fn c2s_guard_bits(&self) -> usize {
+        self.c2s_guard_bits
+    }
+
     /// Selected ModUp/EvalMod pipeline.
     pub fn pipeline(&self) -> BootstrappingPipeline {
         self.pipeline
@@ -376,6 +416,7 @@ where
         };
 
         Ok(Self {
+            c2s_guard_bits: plan.c2s_guard_bits,
             coeffs_to_slots,
             coeffs_to_slots_bypass,
             slots_to_coeffs,
@@ -403,6 +444,30 @@ mod tests {
             CoeffsMeta::from_delta_budget(8, 2),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn c2s_guard_bits_preserve_input_width_and_charge_raised_width() {
+        let input_log_delta = 8;
+        let plain = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
+        let guarded = plain.clone().with_c2s_guard_bits(6).unwrap();
+        assert_eq!(guarded.input_k(48), plain.input_k(48));
+        assert_eq!(
+            guarded.bootstrap_k(720, input_log_delta),
+            plain.bootstrap_k(720, input_log_delta) + 6
+        );
+        assert_eq!(guarded.consumed_bits(), plain.consumed_bits() + 6);
+        assert_eq!(
+            guarded.with_c2s_guard_bits(3).unwrap().bootstrap_k(720, input_log_delta),
+            plain.bootstrap_k(720, input_log_delta) + 3
+        );
+        assert!(plain.with_c2s_guard_bits(usize::MAX).is_err());
+        assert!(
+            plan(BootstrappingPipeline::C2SFirst, BootstrappingTechniques::default(), 16)
+                .unwrap()
+                .with_c2s_guard_bits(6)
+                .is_err()
+        );
     }
 
     fn eval_mod(f_mod_interval: usize) -> EvalModPlan {
@@ -483,11 +548,17 @@ mod tests {
 
     #[test]
     fn recipe_accounts_for_pipeline_order() {
+        let input_log_delta = 8;
+        let output_k = 30;
         let c2s = plan(BootstrappingPipeline::C2SFirst, BootstrappingTechniques::default(), 16).unwrap();
         assert_eq!(c2s.pre_mod_up_consumed_bits(), 0);
         assert_eq!(c2s.post_mod_up_consumed_bits(), c2s.consumed_bits());
         assert_eq!(c2s.input_k(20), 20);
-        assert_eq!(c2s.bootstrap_k(30), 30 + c2s.consumed_bits());
+        let scale_restoration_bits = c2s.eval_mod().f_mod_log_delta - input_log_delta;
+        assert_eq!(
+            c2s.bootstrap_k(output_k, input_log_delta),
+            output_k + c2s.consumed_bits() + scale_restoration_bits
+        );
 
         let s2c = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
         assert_eq!(s2c.pre_mod_up_consumed_bits(), s2c.slots_to_coeffs().consumed_bits());
@@ -496,7 +567,10 @@ mod tests {
             s2c.coeffs_to_slots().consumed_bits() + s2c.eval_mod().consumed_bits()
         );
         assert_eq!(s2c.input_k(20), 20 + s2c.slots_to_coeffs().consumed_bits());
-        assert_eq!(s2c.bootstrap_k(30), 30 + s2c.post_mod_up_consumed_bits());
+        assert_eq!(
+            s2c.bootstrap_k(output_k, input_log_delta),
+            output_k + s2c.post_mod_up_consumed_bits()
+        );
     }
 
     #[test]

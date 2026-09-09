@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### `poulpy-ckks`
+
+- Restore the input scale automatically at the end of C2S-first bootstrapping, including EvalRound+. The `n16_d35_k600_p19_c2s` preset returns 600 bits at scale `2^35`, restoring 16 net levels with a 1427-bit working modulus.
+- **Breaking:** `BootstrappingPlan::bootstrap_k(output_k, log_delta)` now takes the input/output scale and accounts for C2S-first's final scale restoration. Preset output layouts describe the returned ciphertext directly.
+
+- Restore the S2C-first preset's 19-bit precision at scale `2^35` with six internal CoeffsToSlots guard bits and adjusted message-ratio and matrix precision. Rename it to `n16_d35_k720_p19_s2c`, preserving 560 usable bits with input width 160 and raised width 1382.
+- Add optional S2C-first `BootstrappingPlan::with_c2s_guard_bits`, including width accounting for standard, EvalRound+ and functional bootstrapping.
+
 ### `poulpy-hal`
 
 - **Breaking:** normalization now takes the target precision `k` and produces its canonical representation.
@@ -31,6 +39,8 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 - Add `VmpExtractSelectedRows`: copies rows `first_row + i * row_step` of a `VmpPMat` into a smaller one, reading only the selected cells. The delegate validates the selection before dispatch.
 
 ### CPU backends
+
+- Canonicalize rank-one AVX-512/IFMA tensor products after diagonal subtraction, including partial precision and Rayon paths.
 
 - Accelerate normalization floor carries, precision-boundary rounding and wide carry propagation with native AVX2, AVX-512/IFMA and NEON kernels, including Rayon delegation.
 - Check source and carry lengths before wide normalization kernels access memory.

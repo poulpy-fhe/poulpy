@@ -2,6 +2,24 @@ use poulpy_ckks::ckks_backend_test_suite;
 
 const ATK_ROTATIONS: &[i64] = &[1, 7];
 
+#[cfg(feature = "enable-ifma")]
+mod bootstrapping_presets {
+    use poulpy_ckks::test_suite::presets::bootstrapping_presets_meet_precision;
+
+    #[test]
+    #[ignore = "full logN16 bootstrapping presets"]
+    fn ifma() {
+        bootstrapping_presets_meet_precision::<crate::NTT3x42Ifma>();
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    #[ignore = "full logN16 bootstrapping presets"]
+    fn ifma_rayon() {
+        bootstrapping_presets_meet_precision::<crate::NTT3x42IfmaRayon>();
+    }
+}
+
 ckks_backend_test_suite!(
     mod fft64_avx512_f64,
     backend = crate::FFT64Avx512,

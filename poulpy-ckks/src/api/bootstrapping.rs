@@ -127,14 +127,16 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// The pipeline is selected from [`BootstrappingContext::pipeline`]:
     ///
     /// - [`C2SFirst`](crate::layouts::BootstrappingPipeline::C2SFirst): `ModUp → CoeffsToSlots →
-    ///   EvalMod → SlotsToCoeffs`. The final transform restores the message ratio.
+    ///   EvalMod → SlotsToCoeffs`. The final transform restores the message ratio,
+    ///   then the output scale and modulus width are reduced to return to the input scale.
     /// - [`S2CFirst`](crate::layouts::BootstrappingPipeline::S2CFirst): `SlotsToCoeffs → ModUp →
     ///   CoeffsToSlots → EvalMod`. The first transform uses scaling `1/2`; the
     ///   output is relabeled at `ct_in.log_delta`.
     ///
     /// Use [`BootstrappingPlan::input_k`](crate::layouts::BootstrappingPlan::input_k)
     /// and [`BootstrappingPlan::bootstrap_k`](crate::layouts::BootstrappingPlan::bootstrap_k)
-    /// to place the pre- and post-ModUp costs correctly.
+    /// to place the pre- and post-ModUp costs correctly. Pass the input `log_delta`
+    /// to `bootstrap_k` so it accounts for C2S-first's output scale restoration.
     fn ckks_bootstrap<F, K>(
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,

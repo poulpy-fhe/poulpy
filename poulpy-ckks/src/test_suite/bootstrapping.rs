@@ -40,7 +40,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, ZnxView},
     source::Source,
 };
 
@@ -158,7 +158,9 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     // Scale of the ciphertext entering the pipeline.
     let log_modulus_in = log_delta + plan.eval_mod().log_msg_ratio;
 
-    let k_boot = plan.bootstrap_k(log_modulus_in + 2 * log_delta).next_multiple_of(base2k);
+    let k_boot = plan
+        .bootstrap_k(log_modulus_in + 2 * log_delta, log_delta)
+        .next_multiple_of(base2k);
 
     let module = Module::<BE>::new(n as u64);
     let host_module = Module::<HostBytesBackend>::new(n as u64);
@@ -296,11 +298,16 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     // Cross-check the one-shot orchestrator (the public API) against the explicit
     // pipeline below — run first, on the fresh input, since the manual path mutates
     // `ct0` in place for the encapsulation key-switch.
-    {
+    let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
             .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
             .unwrap();
+        assert_eq!(ct_bs.log_delta(), log_delta);
+        assert_eq!(
+            ct_bs.k().as_usize(),
+            k_boot - plan.consumed_bits() - (plan.eval_mod().f_mod_log_delta - log_delta)
+        );
         let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
         for (got, want, tag) in [(&re_bs, &re, "re"), (&im_bs, &im, "im")] {
             let s = precision_stats(got, want, log_delta);
@@ -314,7 +321,8 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
                 s.avg_log2_prec
             );
         }
-    }
+        ct_bs
+    };
 
     // A real-tagged input must come back real-tagged, whichever pipeline the
     // recipe selects, and its imaginary part must stay zero.
@@ -338,6 +346,11 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
             .unwrap();
         assert_eq!(ct_bs.slots(), SlotsKind::Real, "standard output slot kind");
+        assert_eq!(ct_bs.log_delta(), log_delta);
+        assert_eq!(
+            ct_bs.k().as_usize(),
+            k_boot - plan.consumed_bits() - (plan.eval_mod().f_mod_log_delta - log_delta)
+        );
         let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
         assert!(precision_stats(&re_bs, &re, log_delta).avg_log2_prec >= MIN_AVG_LOG2_PREC);
         assert!(precision_stats(&im_bs, &im_zero, log_delta).avg_log2_prec >= 5.0);
@@ -476,6 +489,8 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     assert_eq!(log_budget_check, k_boot - plan.consumed_bits() - ct_out.log_delta());
     assert_eq!(ct_out.log_budget(), log_budget_check);
 
+    ct_out.set_log_delta(log_delta);
+    assert_same_bootstrap::<BE>(&ct_out, &ct_bs);
     let (re_out, im_out) = decrypt(&module, &encoder, &ct_out, &sk, &mut scratch.borrow());
 
     for (got, want, tag) in [(&re_out, &re, "re"), (&im_out, &im, "im")] {
@@ -597,7 +612,9 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let log_delta = 45;
     let log_modulus_in = log_delta + plan.eval_mod().log_msg_ratio;
 
-    let k_boot = plan.bootstrap_k(log_modulus_in + 2 * log_delta).next_multiple_of(base2k);
+    let k_boot = plan
+        .bootstrap_k(log_modulus_in + 2 * log_delta, log_delta)
+        .next_multiple_of(base2k);
 
     let module = Module::<BE>::new(n as u64);
     let host_module = Module::<HostBytesBackend>::new(n as u64);
@@ -702,11 +719,16 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     // Cross-check the one-shot EvalRound+ orchestrator (the public API) against the
     // explicit pipeline below — run first, on the fresh input, since the manual path
     // mutates `ct0` in place for the encapsulation key-switch.
-    {
+    let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
             .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
             .unwrap();
+        assert_eq!(ct_bs.log_delta(), log_delta);
+        assert_eq!(
+            ct_bs.k().as_usize(),
+            k_boot - plan.consumed_bits() - (plan.eval_mod().f_mod_log_delta - log_delta)
+        );
         let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
         for (got, want, tag) in [(&re_bs, &re, "re"), (&im_bs, &im, "im")] {
             let s = precision_stats(got, want, log_delta);
@@ -720,7 +742,8 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
                 s.avg_log2_prec
             );
         }
-    }
+        ct_bs
+    };
 
     // A real-tagged input must come back real-tagged, whichever pipeline the
     // recipe selects, and its imaginary part must stay zero.
@@ -744,6 +767,11 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
             .unwrap();
         assert_eq!(ct_bs.slots(), SlotsKind::Real, "evalround output slot kind");
+        assert_eq!(ct_bs.log_delta(), log_delta);
+        assert_eq!(
+            ct_bs.k().as_usize(),
+            k_boot - plan.consumed_bits() - (plan.eval_mod().f_mod_log_delta - log_delta)
+        );
         let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
         assert!(precision_stats(&re_bs, &re, log_delta).avg_log2_prec >= MIN_AVG_LOG2_PREC);
         assert!(precision_stats(&im_bs, &im_zero, log_delta).avg_log2_prec >= 5.0);
@@ -829,6 +857,8 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         .unwrap();
     println!("[evalround] slots_to_coeffs: {:?}", now.elapsed());
 
+    ct_out.set_log_delta(log_delta);
+    assert_same_bootstrap::<BE>(&ct_out, &ct_bs);
     let (re_out, im_out) = decrypt(&module, &encoder, &ct_out, &sk, &mut scratch.borrow());
 
     for (got, want, tag) in [(&re_out, &re, "re"), (&im_out, &im, "im")] {
@@ -870,8 +900,13 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    for (eval_round_plus, case) in [(false, "standard"), (true, "evalround+")] {
-        let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, 40, 16, FMOD_INTERVAL, eval_round_plus);
+    for (eval_round_plus, guard_bits, case) in [
+        (false, 0, "standard"),
+        (false, 6, "guarded"),
+        (true, 0, "evalround+"),
+        (true, 6, "guarded_evalround+"),
+    ] {
+        let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, 40, 16, FMOD_INTERVAL, eval_round_plus, guard_bits);
         for (avg, tag) in [(re, "re"), (im, "im")] {
             println!("[s2c_first/{case}] BOOTSTRAP-PREC ({tag}) avg={avg:.2} bits");
             assert!(
@@ -888,6 +923,7 @@ fn run_s2c_first_case<BE, F, E>(
     log_msg_ratio: usize,
     fmod_interval: usize,
     eval_round_plus: bool,
+    guard_bits: usize,
 ) -> (f64, f64)
 where
     BE: TestContextBackend,
@@ -955,13 +991,15 @@ where
         },
         slots_to_coeffs,
     )
+    .unwrap()
+    .with_c2s_guard_bits(guard_bits)
     .unwrap();
 
     let n = 1 << (LOG_SLOTS + 1);
     let m = n / 2;
     let log_modulus_in = log_delta + plan.eval_mod().log_msg_ratio;
     let k_in = plan.input_k(log_modulus_in);
-    let k_boot = plan.bootstrap_k(3 * log_delta).next_multiple_of(base2k);
+    let k_boot = plan.bootstrap_k(3 * log_delta, log_delta).next_multiple_of(base2k);
 
     let module = Module::<BE>::new(n as u64);
     let host_module = Module::<HostBytesBackend>::new(n as u64);
@@ -1196,4 +1234,20 @@ fn snr_bits(got: &[f64], want: &[f64]) -> f64 {
         return f64::INFINITY;
     }
     -0.5 * (err2 / sig2).log2()
+}
+
+fn assert_same_bootstrap<BE: Backend>(got: &CKKSCiphertextOwned<BE>, want: &CKKSCiphertextOwned<BE>) {
+    assert_eq!(got.meta(), want.meta());
+    assert_eq!(got.k(), want.k());
+    let got = got.to_host_owned::<BE>();
+    let want = want.to_host_owned::<BE>();
+    for col in 0..got.data().cols() {
+        for limb in 0..got.size() {
+            assert_eq!(
+                got.data().at(col, limb),
+                want.data().at(col, limb),
+                "bootstrap output col={col} limb={limb}"
+            );
+        }
+    }
 }

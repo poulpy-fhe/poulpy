@@ -21,7 +21,8 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
+        VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend,
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
@@ -182,19 +183,27 @@ fn rank_one_tensor_work_bytes<BE: RankOneTensorDft>(
     b_size: usize,
 ) -> usize
 where
-    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxNormalizeTmpBytes,
 {
     let kernel = BE::rank_one_tensor_dft_tmp_bytes(dft_size, a_size, b_size);
     let normalize = module.bytes_of_vec_znx_big(1, dft_size)
         + BE::bytes_of_vec_znx(module.n(), 1, res_size)
-        + module.vec_znx_big_normalize_tmp_bytes();
+        + module
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module.vec_znx_normalize_tmp_bytes());
     BE::bytes_of_vec_znx(module.n(), 2, res_size) + module.bytes_of_vec_znx_dft(3, dft_size) + kernel.max(normalize)
 }
 
 fn rank_one_tensor_apply_tmp_bytes<BE, R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
 where
     BE: RankOneTensorDft,
-    Module<BE>: ModuleN + CnvPVecBytesOf + Convolution<BE> + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: ModuleN
+        + CnvPVecBytesOf
+        + Convolution<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     B: GLWEInfos,
@@ -215,7 +224,13 @@ where
 fn rank_one_tensor_square_tmp_bytes<BE, R, A>(module: &Module<BE>, res: &R, a: &A) -> usize
 where
     BE: RankOneTensorDft,
-    Module<BE>: ModuleN + CnvPVecBytesOf + Convolution<BE> + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: ModuleN
+        + CnvPVecBytesOf
+        + Convolution<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
 {
@@ -248,7 +263,9 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopyBackend<BE>
-        + VecZnxSubAssignBackend<BE>,
+        + VecZnxSubAssignBackend<BE>
+        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     AP: CnvPVecLToBackendRef<BE>,
     BP: CnvPVecRToBackendRef<BE>,
@@ -314,6 +331,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 0);
         module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 2);
     }
+    module.vec_znx_normalize_assign_backend(res_base2k, res_k, &mut pairwise.to_backend_mut(), 0, &mut norm_scratch);
     module.vec_znx_copy_backend(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
 }
 
@@ -335,7 +353,9 @@ fn rank_one_tensor_apply<BE, R, A, B>(
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopyBackend<BE>
-        + VecZnxSubAssignBackend<BE>,
+        + VecZnxSubAssignBackend<BE>
+        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     B: GLWEToBackendRef<BE> + GLWEInfos,
@@ -395,7 +415,9 @@ fn rank_one_tensor_square<BE, R, A>(
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopyBackend<BE>
-        + VecZnxSubAssignBackend<BE>,
+        + VecZnxSubAssignBackend<BE>
+        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {

@@ -98,16 +98,17 @@ EvalMod runs at its own scale.
 
 ## Scale and budget chain
 
-A ciphertext enters at the input modulus `2^log_modulus_in` carrying `Δ·m` with `log_msg_ratio` bits of headroom, and leaves at the bootstrap modulus `2^k_boot` carrying the same `Δ·m` with a much larger budget.
+A ciphertext enters at the input modulus `2^log_modulus_in` carrying `Δ·m` with `log_msg_ratio` bits of headroom, and leaves at the output modulus `2^k_out` carrying the same `Δ·m` with a much larger budget. Both pipelines restore the input scale automatically.
 For C2S-first, the budget is tracked as follows.
 
 | After stage | `log_budget` |
 | --- | --- |
 | Input | `log_msg_ratio` |
-| ModUp | `k_boot − log_modulus_in` |
+| ModUp | `k_boot − f_mod_log_delta` |
 | CoeffsToSlots | previous `−` `coeffs_to_slots.consumed_bits()` |
 | EvalMod | previous `−` `eval_mod.consumed_bits()` |
 | SlotsToCoeffs | previous `−` `slots_to_coeffs.consumed_bits()` |
+| Return to input scale | unchanged; `k` decreases by `f_mod_log_delta − log_delta` |
 
 The total circuit cost is
 
@@ -120,10 +121,10 @@ S2C-first places SlotsToCoeffs at the bottom of the input modulus. CoeffsToSlots
 
 ```text
 k_in   = plan.input_k(log_modulus_in)
-k_boot = plan.bootstrap_k(k_out)
+k_boot = plan.bootstrap_k(k_out, log_delta)
 ```
 
-`k_out` is the desired output torus width before limb rounding. For C2S-first it uses the post-SlotsToCoeffs scale; for S2C-first it uses the original input scale.
+`k_out` is the desired output torus width at the input scale `log_delta`, before limb rounding. C2S-first includes the extra working width needed to restore that scale at the end of the pipeline.
 
 EvalMod is charged at the scale it runs (`f_mod_log_delta`), not the message scale; the surrounding set-scale round-trip is budget-neutral and does not enter the total.
 
@@ -239,19 +240,23 @@ let bootstrap_layout = preset.bootstrap_layout();
 ```
 
 Presets are named by what they offer, one token per axis: `n{log_n}_d{log_delta}_k{output_k}_p{log2_precision}_{circuit}`, i.e. ring-degree exponent, input scale exponent, output width in bits, guaranteed output precision in bits, and circuit (`c2s` for C2S-first, `s2c` for S2C-first).
-The plan fixes the input width, so `output_k - input_k` is the usable budget: the application must hand the ciphertext back at `input_k`, not drain it.
+Both output layouts use the input scale. The net usable budget is `output_k - input_k`: the application must stop consuming at `input_k`.
 This matters for S2C-first presets: their SlotsToCoeffs runs before ModUp on the application's width, so `input_k` includes that consumption and a larger tail of the output is reserved than for a C2S-first preset; compare presets across circuits by their usable budget, never by `k`.
 The current presets both take inputs at scale `2^35`, offer 560 usable bits (16 rescales at that scale) with at least 19 bits of precision, and use an optimized Han–Ki EvalMod:
 
-| Constructor | Pipeline | Input `k` | Output `k` | Usable (`output - input`) | Bootstrap `k` |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `n16_d35_k600_p19_c2s` | C2S-first | 40 | 600 | 560 | 1404 |
-| `n16_d35_k718_p19_s2c` | S2C-first | 158 | 718 | 560 | 1358 |
+| Constructor | Pipeline | Input `k` | Output `k` | Output scale | Net usable bits | Bootstrap `k` |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `n16_d35_k600_p19_c2s` | C2S-first | 40 | 600 | `2^35` | 560 | 1427 |
+| `n16_d35_k720_p19_s2c` | S2C-first | 160 | 720 | `2^35` | 560 | 1382 |
 
-Both use weight 1024 for the dense secret, weight 32 for sparse-secret encapsulation, `dsize = 4` for the high-modulus keys, and `dsize = 3` for the dense-to-sparse key.
+C2S-first internally reaches 623 bits at scale `2^58`; `ckks_bootstrap` restores scale `2^35` and returns 600 bits automatically. This leaves exactly `600 - 40 = 560` bits before the next bootstrap. No caller-side scale adjustment is needed.
+
+The S2C-first preset uses six internal guard bits between ModUp and CoeffsToSlots, log message ratio 13, and C2S matrix scale 48. The guard bits are removed before EvalMod; the application scale remains `2^35`. Custom S2C-first plans can select this lift with `with_c2s_guard_bits`; width accounting includes its cost.
+
+Both use weight 1024 for the dense secret, weight 32 for sparse-secret encapsulation, `dsize = 4` for the high-modulus keys, and `dsize = 1` for the dense-to-sparse key. That small key uses 52 gadget bits plus 68 auxiliary bits, ofr a 120-bit modulus cap.
 Preset construction validates the ciphertext, gadget, auxiliary, and total key moduli against the configured bounds.
 The key digit counts come from `GGLWELayout::dnum_for_input` (`⌈k / (dsize · base2k)⌉`), the same rounding the key-switch operations apply, with the guard `k_aux = dsize · base2k + log2(N)`.
-`with_base2k` and `with_dsizes` re-derive a preset at another limb radix or digit size, keeping the plan and widths and re-running the same validation; the benchmarks use this to obtain the FFT64 shape (`base2k = 19`, `dsize = 7`).
+`with_base2k` and `with_dsizes` re-derive a preset at another limb radix or digit size, keeping the plan and widths and re-running the same validation; the benchmarks use this to obtain the FFT64 shape (`base2k = 19`, high-modulus `dsize = 7`, dense-to-sparse `dsize = 1`).
 The advertised precision is the minimum slot-wise precision measured on the reference vector at the nominal shape with `f64` DFT matrices; `test_suite::presets::bootstrapping_presets_meet_precision` (registered as an ignored test by the backend crates) and the `ckks_bootstrapping` benchmark assert the measurement against it on exact backends.
 
 The keys are generated by `generate_keys`, which returns the unprepared `BootstrappingKeySet` — the serializable, GPU-resident form — and a `prepare` step preprocesses the whole set for evaluation.

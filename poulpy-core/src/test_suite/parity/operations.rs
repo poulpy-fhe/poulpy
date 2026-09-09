@@ -272,7 +272,15 @@ pub fn test_glwe_tensor_parity<BR, BT>(
     let base2k = params.base2k;
     let mut source = Source::new([29u8; 32]);
 
-    for a_infos in layouts(n, base2k, shapes) {
+    for a_infos in layouts(n, base2k, shapes).into_iter().flat_map(|infos| {
+        [
+            infos,
+            GLWELayout {
+                k: TorusPrecision(infos.k.0 - 1),
+                ..infos
+            },
+        ]
+    }) {
         let res_infos = GLWELayout {
             n: a_infos.n,
             base2k: a_infos.base2k,
