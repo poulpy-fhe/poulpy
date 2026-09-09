@@ -165,6 +165,11 @@ where
         run.bootstrap();
         assert_eq!(run.output.k().as_usize(), run.preset.output_k());
         assert_eq!(run.output.meta(), run.preset.output_layout().meta());
+        assert_eq!(run.output.log_delta(), run.input.log_delta());
+        assert_eq!(
+            run.output.k().as_usize() - run.input.k().as_usize(),
+            16 * run.input.log_delta()
+        );
         run
     }
 

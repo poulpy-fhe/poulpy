@@ -762,6 +762,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                     )?;
                 }
             }
+            ct_out.set_log_delta(ct_in.log_delta());
             ct_out.set_slots(ct_in.slots());
             Result::Ok(())
         })

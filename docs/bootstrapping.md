@@ -98,16 +98,17 @@ EvalMod runs at its own scale.
 
 ## Scale and budget chain
 
-A ciphertext enters at the input modulus `2^log_modulus_in` carrying `Δ·m` with `log_msg_ratio` bits of headroom, and leaves at the bootstrap modulus `2^k_boot` carrying the same `Δ·m` with a much larger budget.
+A ciphertext enters at the input modulus `2^log_modulus_in` carrying `Δ·m` with `log_msg_ratio` bits of headroom, and leaves at the output modulus `2^k_out` carrying the same `Δ·m` with a much larger budget. Both pipelines restore the input scale automatically.
 For C2S-first, the budget is tracked as follows.
 
 | After stage | `log_budget` |
 | --- | --- |
 | Input | `log_msg_ratio` |
-| ModUp | `k_boot − log_modulus_in` |
+| ModUp | `k_boot − f_mod_log_delta` |
 | CoeffsToSlots | previous `−` `coeffs_to_slots.consumed_bits()` |
 | EvalMod | previous `−` `eval_mod.consumed_bits()` |
 | SlotsToCoeffs | previous `−` `slots_to_coeffs.consumed_bits()` |
+| Return to input scale | unchanged; `k` decreases by `f_mod_log_delta − log_delta` |
 
 The total circuit cost is
 
@@ -120,10 +121,10 @@ S2C-first places SlotsToCoeffs at the bottom of the input modulus. CoeffsToSlots
 
 ```text
 k_in   = plan.input_k(log_modulus_in)
-k_boot = plan.bootstrap_k(k_out)
+k_boot = plan.bootstrap_k(k_out, log_delta)
 ```
 
-`k_out` is the desired output torus width before limb rounding. For C2S-first it uses the post-SlotsToCoeffs scale; for S2C-first it uses the original input scale.
+`k_out` is the desired output torus width at the input scale `log_delta`, before limb rounding. C2S-first includes the extra working width needed to restore that scale at the end of the pipeline.
 
 EvalMod is charged at the scale it runs (`f_mod_log_delta`), not the message scale; the surrounding set-scale round-trip is budget-neutral and does not enter the total.
 
@@ -229,9 +230,9 @@ It is built once and reused across bootstraps.
 A preset includes its circuit plan, composable input/output/bootstrap widths, secret weights, ciphertext allocation layouts, and physical evaluation-key layouts:
 
 ```rust
-use poulpy_ckks::presets::bootstrapping::n16_d35_k623_p19_c2s;
+use poulpy_ckks::presets::bootstrapping::n16_d35_k600_p19_c2s;
 
-let preset = n16_d35_k623_p19_c2s()?;
+let preset = n16_d35_k600_p19_c2s()?;
 let plan = preset.plan();
 let keys_layout = preset.keys_layout();
 let input_layout = preset.input_layout();
@@ -239,16 +240,16 @@ let bootstrap_layout = preset.bootstrap_layout();
 ```
 
 Presets are named by what they offer, one token per axis: `n{log_n}_d{log_delta}_k{output_k}_p{log2_precision}_{circuit}`, i.e. ring-degree exponent, input scale exponent, output width in bits, guaranteed output precision in bits, and circuit (`c2s` for C2S-first, `s2c` for S2C-first).
-The net usable budget is `(output_k - output_scale) - (input_k - input_scale)`: the application must return to the input scale and stop consuming at `input_k`.
+Both output layouts use the input scale. The net usable budget is `output_k - input_k`: the application must stop consuming at `input_k`.
 This matters for S2C-first presets: their SlotsToCoeffs runs before ModUp on the application's width, so `input_k` includes that consumption and a larger tail of the output is reserved than for a C2S-first preset; compare presets across circuits by their usable budget, never by `k`.
 The current presets both take inputs at scale `2^35`, offer 560 usable bits (16 rescales at that scale) with at least 19 bits of precision, and use an optimized Han–Ki EvalMod:
 
 | Constructor | Pipeline | Input `k` | Output `k` | Output scale | Net usable bits | Bootstrap `k` |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `n16_d35_k623_p19_c2s` | C2S-first | 40 | 623 | `2^58` | 560 | 1427 |
+| `n16_d35_k600_p19_c2s` | C2S-first | 40 | 600 | `2^35` | 560 | 1427 |
 | `n16_d35_k720_p19_s2c` | S2C-first | 160 | 720 | `2^35` | 560 | 1382 |
 
-For C2S-first, `ct.set_log_delta(preset.log_delta())` returns the output from scale 58 to 35 and reduces its width from 623 to 600. This leaves exactly `600 - 40 = 560` bits before the next bootstrap.
+C2S-first internally reaches 623 bits at scale `2^58`; `ckks_bootstrap` restores scale `2^35` and returns 600 bits automatically. This leaves exactly `600 - 40 = 560` bits before the next bootstrap. No caller-side scale adjustment is needed.
 
 The S2C-first preset uses six internal guard bits between ModUp and CoeffsToSlots, log message ratio 13, and C2S matrix scale 48. The guard bits are removed before EvalMod; the application scale remains `2^35`. Custom S2C-first plans can select this lift with `with_c2s_guard_bits`; width accounting includes its cost.
 

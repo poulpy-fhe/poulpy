@@ -253,9 +253,18 @@ impl BootstrappingPlan {
         log_modulus + self.pre_mod_up_consumed_bits()
     }
 
-    /// Bootstrap width for a desired output width.
-    pub fn bootstrap_k(&self, output_k: usize) -> usize {
-        output_k + self.post_mod_up_consumed_bits()
+    /// Bootstrap width for an output at the input scale `log_delta`.
+    /// C2S-first includes the width removed when restoring that scale.
+    pub fn bootstrap_k(&self, output_k: usize, log_delta: usize) -> usize {
+        let scale_drop = match self.pipeline {
+            BootstrappingPipeline::C2SFirst => self
+                .eval_mod
+                .f_mod_log_delta
+                .checked_sub(log_delta)
+                .expect("C2S-first input scale exceeds EvalMod scale"),
+            BootstrappingPipeline::S2CFirst => 0,
+        };
+        output_k + self.post_mod_up_consumed_bits() + scale_drop
     }
 
     /// Raised width required by an S2C-first functional bootstrap.
@@ -442,11 +451,11 @@ mod tests {
         let plain = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
         let guarded = plain.clone().with_c2s_guard_bits(6).unwrap();
         assert_eq!(guarded.input_k(48), plain.input_k(48));
-        assert_eq!(guarded.bootstrap_k(720), plain.bootstrap_k(720) + 6);
+        assert_eq!(guarded.bootstrap_k(720, 8), plain.bootstrap_k(720, 8) + 6);
         assert_eq!(guarded.consumed_bits(), plain.consumed_bits() + 6);
         assert_eq!(
-            guarded.with_c2s_guard_bits(3).unwrap().bootstrap_k(720),
-            plain.bootstrap_k(720) + 3
+            guarded.with_c2s_guard_bits(3).unwrap().bootstrap_k(720, 8),
+            plain.bootstrap_k(720, 8) + 3
         );
         assert!(plain.with_c2s_guard_bits(usize::MAX).is_err());
         assert!(
@@ -539,7 +548,7 @@ mod tests {
         assert_eq!(c2s.pre_mod_up_consumed_bits(), 0);
         assert_eq!(c2s.post_mod_up_consumed_bits(), c2s.consumed_bits());
         assert_eq!(c2s.input_k(20), 20);
-        assert_eq!(c2s.bootstrap_k(30), 30 + c2s.consumed_bits());
+        assert_eq!(c2s.bootstrap_k(30, 8), 30 + c2s.consumed_bits() + 2);
 
         let s2c = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
         assert_eq!(s2c.pre_mod_up_consumed_bits(), s2c.slots_to_coeffs().consumed_bits());
@@ -548,7 +557,7 @@ mod tests {
             s2c.coeffs_to_slots().consumed_bits() + s2c.eval_mod().consumed_bits()
         );
         assert_eq!(s2c.input_k(20), 20 + s2c.slots_to_coeffs().consumed_bits());
-        assert_eq!(s2c.bootstrap_k(30), 30 + s2c.post_mod_up_consumed_bits());
+        assert_eq!(s2c.bootstrap_k(30, 8), 30 + s2c.post_mod_up_consumed_bits());
     }
 
     #[test]
