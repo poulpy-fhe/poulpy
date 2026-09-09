@@ -70,7 +70,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-portable-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-portable-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-portable-
             ${{ runner.os }}-cargo-
@@ -85,7 +85,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --features "$PORTABLE_FEATURES" -- -D warnings
 
       - name: Test all non-AVX features
-        run: cargo test --workspace --features "$PORTABLE_FEATURES"
+        run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES"
 
   avx:
     name: AVX backend
@@ -114,7 +114,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-avx-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-avx-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-avx-
             ${{ runner.os }}-cargo-
@@ -138,7 +138,7 @@ jobs:
 
       - name: Test AVX backend
         if: steps.avx.outputs.supported == 'true'
-        run: cargo test --workspace --features "$AVX_FEATURES"
+        run: cargo test -p poulpy-cpu-avx --profile ci --features "$AVX_FEATURES"
 
       - name: Skip AVX backend
         if: steps.avx.outputs.supported != 'true'
@@ -304,7 +304,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: arm64-cargo-neon-${{ hashFiles('**/Cargo.lock') }}
+          key: arm64-cargo-neon-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
           restore-keys: |
             arm64-cargo-neon-
 
@@ -315,7 +315,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --features "$NEON_FEATURES" -- -D warnings
 
       - name: Test NEON backend
-        run: cargo test -p poulpy-cpu-arm --features "enable-neon,enable-ckks"
+        run: cargo test -p poulpy-cpu-arm --profile ci --features "enable-neon,enable-ckks"
 
   build-and-test:
     name: build-and-test
