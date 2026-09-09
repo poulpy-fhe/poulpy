@@ -48,7 +48,9 @@
 //!
 //! `res` is a distinct object from every input; the signatures (`&mut res`,
 //! `&a`, `&b`) make anything else unrepresentable. Inputs may share an object.
-//! There is no in-place form.
+//! There is no in-place form. The remaining `*_assign` operations are the
+//! legacy in-place surface; they are being removed and carry no contract of
+//! their own.
 //!
 //! # Exactness
 //!
