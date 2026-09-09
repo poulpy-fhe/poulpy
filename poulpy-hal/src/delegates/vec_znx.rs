@@ -455,6 +455,8 @@ impl_vec_znx_delegate!(
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_rotate_backend");
+        crate::layouts::assert_dense(a, "vec_znx_rotate_backend");
         B::vec_znx_rotate_backend(self, k, res, res_col, a, a_col);
     }
 );
@@ -475,6 +477,7 @@ impl_vec_znx_delegate!(
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
+        crate::layouts::assert_dense(a, "vec_znx_rotate_assign_backend");
         B::vec_znx_rotate_assign_backend(self, k, a, a_col, scratch);
     }
 );
@@ -489,6 +492,8 @@ impl_vec_znx_delegate!(
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_automorphism_backend");
+        crate::layouts::assert_dense(a, "vec_znx_automorphism_backend");
         B::vec_znx_automorphism_backend(self, k, res, res_col, a, a_col);
     }
 );
@@ -509,6 +514,7 @@ impl_vec_znx_delegate!(
         res_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_automorphism_assign_backend");
         B::vec_znx_automorphism_assign_backend(self, k, res, res_col, scratch);
     }
 );
@@ -539,6 +545,8 @@ impl_vec_znx_delegate!(
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_mul_xp_minus_one_backend");
+        crate::layouts::assert_dense(a, "vec_znx_mul_xp_minus_one_backend");
         B::vec_znx_mul_xp_minus_one_backend(self, p, res, res_col, a, a_col);
     }
 );
@@ -559,6 +567,7 @@ impl_vec_znx_delegate!(
         res_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_mul_xp_minus_one_assign_backend");
         B::vec_znx_mul_xp_minus_one_assign_backend(self, p, res, res_col, scratch);
     }
 );
@@ -572,6 +581,8 @@ impl_vec_znx_delegate!(
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_switch_ring_backend");
+        crate::layouts::assert_dense(a, "vec_znx_switch_ring_backend");
         B::vec_znx_switch_ring_backend(self, res, res_col, a, a_col);
     }
 );

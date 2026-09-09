@@ -169,6 +169,7 @@ mod ntt3x42_ifma_tests {
         tests = {
             test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
             test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+            test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
         }
     }
 
@@ -180,6 +181,7 @@ mod ntt3x42_ifma_tests {
         tests = {
             test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
             test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+            test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
         }
     }
 

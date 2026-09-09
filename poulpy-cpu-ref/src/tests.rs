@@ -191,6 +191,7 @@ cross_backend_test_suite! {
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
         test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
         test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
+        test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
     }
 }
 
@@ -214,6 +215,7 @@ backend_test_suite! {
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
 
@@ -224,6 +226,7 @@ backend_test_suite! {
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
 

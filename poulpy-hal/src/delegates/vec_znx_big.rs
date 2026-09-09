@@ -322,6 +322,8 @@ impl_vec_znx_big_delegate!(
         a: &VecZnxBigBackendRef<'_, B>,
         a_col: usize,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_big_automorphism");
+        crate::layouts::assert_dense(a, "vec_znx_big_automorphism");
         B::vec_znx_big_automorphism(self, k, res, res_col, a, a_col);
     }
 );
@@ -342,6 +344,7 @@ impl_vec_znx_big_delegate!(
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
+        crate::layouts::assert_dense(a, "vec_znx_big_automorphism_assign");
         B::vec_znx_big_automorphism_assign(self, k, a, a_col, scratch)
     }
 );

@@ -4,8 +4,8 @@
 
 use crate::{
     api::{
-        VecZnxAddIntoBackend, VecZnxBigAddInto, VecZnxBigFromSmallBackend, VecZnxBigNegate, VecZnxBigSub, VecZnxCopyBackend,
-        VecZnxNegateBackend, VecZnxSubBackend, VecZnxZeroBackend,
+        VecZnxAddIntoBackend, VecZnxAutomorphismBackend, VecZnxBigAddInto, VecZnxBigFromSmallBackend, VecZnxBigNegate,
+        VecZnxBigSub, VecZnxCopyBackend, VecZnxNegateBackend, VecZnxRotateBackend, VecZnxSubBackend, VecZnxZeroBackend,
     },
     layouts::{
         Backend, DataView, FillUniform, HostBytesBackend, HostDataRef, Module, VecZnx, VecZnxBig, VecZnxBigOwned,
@@ -184,6 +184,76 @@ where
             assert_untouched_outside(&res_before, &res_after, shape);
         }
     }
+}
+
+/// Ring operations require `n == n_full == N` and must reject a coefficient
+/// window rather than silently compute in `Z[X]/(X^n+1)` for the window's
+/// `n`: `vec_znx_rotate_backend` and `vec_znx_automorphism_backend` panic on
+/// a windowed view, while a coefficient-wise op (`vec_znx_add_into_backend`)
+/// keeps accepting it.
+pub fn test_vec_znx_window_rejected_by_ring_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxRotateBackend<BE> + VecZnxAutomorphismBackend<BE> + VecZnxAddIntoBackend<BE>,
+{
+    let n = params.size;
+    let base2k = params.base2k;
+    let (cols, size) = (2usize, 4usize);
+    let mut source = Source::new([11u8; 32]);
+    let shape = VecZnxShape::new(n, cols, size).window_coeffs(0, 4);
+
+    let mut a = VecZnxOwned::<i64>::alloc(n, cols, size);
+    let mut b = VecZnxOwned::<i64>::alloc(n, cols, size);
+    let mut res = VecZnxOwned::<i64>::alloc(n, cols, size);
+    a.fill_uniform(base2k, &mut source);
+    b.fill_uniform(base2k, &mut source);
+    res.fill_uniform(base2k, &mut source);
+
+    let a_be = upload_vec_znx::<BE>(&a);
+    let b_be = upload_vec_znx::<BE>(&b);
+    let mut res_be = upload_vec_znx::<BE>(&res);
+
+    let rotate_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.vec_znx_rotate_backend(
+            1,
+            &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+            0,
+            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+            0,
+        );
+    }))
+    .is_err();
+    assert!(
+        rotate_panicked,
+        "vec_znx_rotate_backend accepted a windowed view instead of panicking"
+    );
+
+    let automorphism_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.vec_znx_automorphism_backend(
+            5,
+            &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+            0,
+            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+            0,
+        );
+    }))
+    .is_err();
+    assert!(
+        automorphism_panicked,
+        "vec_znx_automorphism_backend accepted a windowed view instead of panicking"
+    );
+
+    let add_into_ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.vec_znx_add_into_backend(
+            &mut vec_znx_backend_mut::<BE>(&mut res_be).with_shape(shape),
+            0,
+            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+            0,
+            &vec_znx_backend_ref::<BE>(&b_be).with_shape(shape),
+            0,
+        );
+    }))
+    .is_ok();
+    assert!(add_into_ok, "vec_znx_add_into_backend rejected a windowed view unexpectedly");
 }
 
 fn download_big<BE: Backend>(v: &VecZnxBigOwned<BE>) -> VecZnxBig<Vec<u8>, BE::BigWord, BE> {

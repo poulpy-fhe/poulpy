@@ -50,6 +50,7 @@ impl_convolution_delegate!(
         mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
+        crate::layouts::assert_dense(a, "cnv_prepare_left");
         <BE as HalConvolutionImpl<BE>>::cnv_prepare_left(self, res, a, mask, scratch);
     },
     fn cnv_prepare_right_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
@@ -62,6 +63,7 @@ impl_convolution_delegate!(
         mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
+        crate::layouts::assert_dense(a, "cnv_prepare_right");
         <BE as HalConvolutionImpl<BE>>::cnv_prepare_right(self, res, a, mask, scratch);
     },
     fn cnv_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
@@ -82,6 +84,9 @@ impl_convolution_delegate!(
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
+        crate::layouts::assert_dense(res, "cnv_by_const_apply");
+        crate::layouts::assert_dense(a, "cnv_by_const_apply");
+        crate::layouts::assert_dense(b, "cnv_by_const_apply");
         <BE as HalConvolutionImpl<BE>>::cnv_by_const_apply(self, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     },
     fn cnv_by_const_apply_add(
@@ -96,6 +101,9 @@ impl_convolution_delegate!(
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
+        crate::layouts::assert_dense(res, "cnv_by_const_apply_add");
+        crate::layouts::assert_dense(a, "cnv_by_const_apply_add");
+        crate::layouts::assert_dense(b, "cnv_by_const_apply_add");
         <BE as HalConvolutionImpl<BE>>::cnv_by_const_apply_add(
             self, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch,
         )
@@ -208,6 +216,7 @@ impl_convolution_delegate!(
         mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
+        crate::layouts::assert_dense(a, "cnv_prepare_self");
         <BE as HalConvolutionImpl<BE>>::cnv_prepare_self(self, left, right, a, mask, scratch)
     }
 );

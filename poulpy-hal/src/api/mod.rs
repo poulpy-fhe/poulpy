@@ -2,10 +2,11 @@
 //!
 //! Scheme authors program against these traits; the computation is dispatched
 //! to a backend through the [`oep`](crate::oep) extension points. Each trait
-//! documents one operation with a structured contract (`op / class / mutation /
+//! will document one operation with a structured contract (`op / class / mutation /
 //! definition / domain / requires / ensures / fallback / override / exact /
-//! test`; basis operations omit `definition`, `fallback` and `override`). The
-//! shared vocabulary those contracts use is defined here, once.
+//! test`; basis operations omit `definition`, `fallback` and `override`) once
+//! the contract pass lands. The shared vocabulary those contracts use is
+//! defined here, once.
 //!
 //! # Value model
 //!

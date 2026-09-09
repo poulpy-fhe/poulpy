@@ -61,6 +61,8 @@ impl_svp_delegate!(
         b: &VecZnxBackendRef<'_, B>,
         b_col: usize,
     ) {
+        crate::layouts::assert_dense(res, "svp_apply_dft");
+        crate::layouts::assert_dense(b, "svp_apply_dft");
         B::svp_apply_dft(self, res, res_col, a, a_col, b, b_col);
     }
 );

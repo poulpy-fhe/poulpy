@@ -749,6 +749,7 @@ pub fn vec_znx_backend_mut_with_size<'a, B: Backend>(vec: VecZnxBackendMut<'a, B
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for VecZnx<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        crate::layouts::assert_dense(self, "VecZnx::read_from");
         // Read into temporaries first to avoid leaving self in an inconsistent state on error.
         let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
         let new_cols: usize = reader.read_u64::<LittleEndian>()? as usize;

@@ -302,8 +302,8 @@ where
         let res_k = res.k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size(), PrepareHint::Reuse);
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, b.size(), PrepareHint::Reuse);
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size(), PrepareHint::OneShot);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, b.size(), PrepareHint::OneShot);
 
         let a_mask = msb_mask_bottom_limb(ab_base2k, a_k);
         let b_mask = msb_mask_bottom_limb(ab_base2k, b_k);
@@ -379,8 +379,8 @@ where
 
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, res.size(), PrepareHint::Reuse);
-        let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, a.size(), PrepareHint::Reuse);
+        let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, res.size(), PrepareHint::OneShot);
+        let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, a.size(), PrepareHint::OneShot);
 
         let mask_res = msb_mask_bottom_limb(ab_base2k, res_k);
         let mask_a = msb_mask_bottom_limb(ab_base2k, a_k);

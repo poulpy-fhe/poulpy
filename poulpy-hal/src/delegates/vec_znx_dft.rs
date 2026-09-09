@@ -52,6 +52,8 @@ impl_vec_znx_dft_delegate!(
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_idft_apply");
+        crate::layouts::assert_dense(a, "vec_znx_idft_apply");
         B::vec_znx_idft_apply(self, res, res_col, a, a_col, scratch)
     }
 );
@@ -77,6 +79,11 @@ impl_vec_znx_dft_delegate!(
         addend: Option<(&VecZnxBackendRef<'_, B>, usize)>,
         scratch: &mut ScratchArena<'_, B>,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_idft_normalize_consume");
+        crate::layouts::assert_dense(a, "vec_znx_idft_normalize_consume");
+        if let Some((addend, _)) = addend {
+            crate::layouts::assert_dense(addend, "vec_znx_idft_normalize_consume");
+        }
         B::vec_znx_idft_normalize_consume(self, res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch);
     }
 );
@@ -90,6 +97,8 @@ impl_vec_znx_dft_delegate!(
         a: &mut VecZnxDftBackendMut<'_, B>,
         a_col: usize,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
+        crate::layouts::assert_dense(a, "vec_znx_idft_apply_tmpa");
         B::vec_znx_idft_apply_tmpa(self, res, res_col, a, a_col);
     }
 );
@@ -105,6 +114,8 @@ impl_vec_znx_dft_delegate!(
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
+        crate::layouts::assert_dense(res, "vec_znx_dft_apply");
+        crate::layouts::assert_dense(a, "vec_znx_dft_apply");
         B::vec_znx_dft_apply(self, step, offset, res, res_col, a, a_col);
     }
 );

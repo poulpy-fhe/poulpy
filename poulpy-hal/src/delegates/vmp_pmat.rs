@@ -73,6 +73,8 @@ impl_vmp_delegate!(
     ) where
         R: VecZnxDftToBackendMut<B>,
     {
+        crate::layouts::assert_dense(&res.to_backend_mut(), "vmp_apply_dft");
+        crate::layouts::assert_dense(a, "vmp_apply_dft");
         B::vmp_apply_dft(self, res, a, b, scratch)
     }
 );

@@ -4,11 +4,12 @@
 
 ### `poulpy-hal`
 
-- **Breaking:** prepared types (`SvpPPol`, `VmpPMat`, `CnvPVecL`, `CnvPVecR`) carry a `PrepareHint` chosen at allocation; `bytes_of_*`, `*_alloc`, `take_*_scratch` and `from_data` take it. In-tree backends have one representation and ignore it.
+- **Breaking:** prepared types (`SvpPPol`, `VmpPMat`, `CnvPVecL`, `CnvPVecR`) carry a `PrepareHint` chosen at allocation; `bytes_of_*`, `*_alloc`, `take_*_scratch` and `from_data` take it, including the `Backend` trait methods `Backend::bytes_of_svp_ppol`, `bytes_of_vmp_pmat`, `bytes_of_cnv_pvec_left` and `bytes_of_cnv_pvec_right` (not only their api-level counterparts). `SvpPPol::shape()` now returns `SvpPPolShape` rather than the dimensions directly. In-tree backends have one representation and ignore it.
 - Add window views on `VecZnx` and `VecZnxBig` (`window_coeffs`, `window_limbs`, `from_shape`, `with_shape`). `zero`, `copy`, `add`, `sub`, `negate` and `big_from_small` accept windows; other operations and the flat accessors `raw`/`as_ptr` reject them with a panic until they are made window-aware.
+- **Breaking:** ring operations and transforms (`rotate`, `automorphism`, `mul_xp_minus_one`, `switch_ring`, `dft`, `idft`, prepares, coefficient-input products) reject window views with a panic in the delegate layer; only coefficient-wise operations accept them.
 - Document the value model, limb rule, mutation classes and exactness classes in the `api` and `layouts` module docs.
 - **Breaking:** `poulpy_hal::reference` moved to `poulpy_cpu_ref::reference::znx`.
-- **Breaking:** remove 30 unused api methods (coefficient shift/normalize variants, `add_const`, `add_scalar_into`, `sub_scalar`, `automorphism_rotate`, `split_ring`, `merge_rings`, `transpose`, `hadamard_product_scalar_znx`, `*_from_bytes` wrappers, `vec_znx_big_alloc_n`, `ModuleNew::new_with`) and the eight seeded `[u8; 32]` sampler twins; the `Source`-based samplers stay.
+- **Breaking:** remove 30 unused api methods (coefficient shift/normalize variants, `add_const`, `add_scalar_into`, `sub_scalar`, `automorphism_rotate`, `split_ring`, `merge_rings`, `transpose`, `hadamard_product_scalar_znx`, `*_from_bytes` wrappers, `vec_znx_big_alloc_n`, `ModuleNew::new_with`) and the eight seeded `[u8; 32]` sampler twins; the `Source`-based samplers stay. The corresponding `Hal*Impl` OEP methods are removed too, including `HalModuleImpl::Config` and `new_with`.
 
 ## [0.8.3] - 2026-09-09
 

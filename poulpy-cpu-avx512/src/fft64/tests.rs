@@ -133,6 +133,7 @@ backend_test_suite! {
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
 
@@ -144,6 +145,7 @@ backend_test_suite! {
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
 
@@ -173,6 +175,7 @@ cross_backend_test_suite! {
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
         test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
+        test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
     }
 }
 

@@ -183,6 +183,7 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
     ///
     /// Panics unless `start <= end <= self.size()`.
     pub fn with_limb_range_mut(&mut self, start: usize, end: usize) -> VecZnxDftBackendMut<'_, B> {
+        crate::layouts::assert_dense(self, "VecZnxDft::with_limb_range_mut");
         assert!(start <= end, "DFT limb range start ({start}) exceeds end ({end})");
         assert!(
             end <= self.size(),
@@ -327,7 +328,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     /// Wraps `data` with an explicit shape. No validation; element access is
     /// bounds-checked against the buffer.
     ///
-    /// No window constructors on `VecZnxDft` yet: kernel support lands in PR3.
+    /// No window constructors on `VecZnxDft` yet: kernel support arrives with Dft window support in a later PR.
     pub fn from_shape(data: D, shape: VecZnxShape) -> Self {
         Self {
             data,
