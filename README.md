@@ -7,6 +7,9 @@
 
 [![CI](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/poulpy-fhe/poulpy/actions/workflows/ci.yml)
 [![HEIR](https://img.shields.io/badge/HEIR-Poulpy_backend-4285F4)](https://github.com/google/heir/tree/main/lib/Target/Poulpy)
+[![Website](https://img.shields.io/badge/website-poulpy.dev-8A2BE2)](https://www.poulpy.dev/)
+
+📖 **[poulpy.dev](https://www.poulpy.dev/)**: [quickstart](https://www.poulpy.dev/docs/quickstart/), [architecture](https://www.poulpy.dev/architecture/), [layouts](https://www.poulpy.dev/layouts/), [benchmarks](https://www.poulpy.dev/benchmarks/), [ecosystem](https://www.poulpy.dev/ecosystem/) and the [documentation](https://www.poulpy.dev/docs/) for CKKS, binary FHE, security and the API.
 
 **Poulpy** is a **fast and modular** FHE library that implements Ring-Learning-With-Errors based homomorphic encryption over the Torus. It adopts the bivariate polynomial representation proposed in [Revisiting Key Decomposition Techniques for FHE: Simpler, Faster and More Generic](https://eprint.iacr.org/2023/771) to represent Torus polynomials. Compared with the residue number system (RNS), this representation provides simpler and more reusable arithmetic, a **common plaintext space** for all schemes, and native bridges between schemes. Poulpy also decouples scheme implementations from the polynomial arithmetic backend by being built from the ground up around a **hardware abstraction layer**. Leveraging the HAL, users can develop applications generic over the backend and choose a backend at runtime.
 
@@ -219,7 +222,7 @@ Poulpy is now actively supported, funded, and developed by [PhantomZone](https:/
 
 ## Contact
 
-Consider joining our [telegram](https://t.me/+uy7_HADsdN1jNmU1) group for any questions or discussions. We also have a channel on the FHE.org discord.
+Guides, benchmarks and the ecosystem overview live at [poulpy.dev](https://www.poulpy.dev/). Consider joining our [telegram](https://t.me/+uy7_HADsdN1jNmU1) group for any questions or discussions. We also have a channel on the FHE.org discord.
 
 For anything better suited to a direct exchange, reach the organisation administrator at [jean-philippe.bossuat@idealringslab.com](mailto:jean-philippe.bossuat@idealringslab.com).
 
