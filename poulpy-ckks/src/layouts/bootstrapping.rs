@@ -448,14 +448,18 @@ mod tests {
 
     #[test]
     fn c2s_guard_bits_preserve_input_width_and_charge_raised_width() {
+        let input_log_delta = 8;
         let plain = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
         let guarded = plain.clone().with_c2s_guard_bits(6).unwrap();
         assert_eq!(guarded.input_k(48), plain.input_k(48));
-        assert_eq!(guarded.bootstrap_k(720, 8), plain.bootstrap_k(720, 8) + 6);
+        assert_eq!(
+            guarded.bootstrap_k(720, input_log_delta),
+            plain.bootstrap_k(720, input_log_delta) + 6
+        );
         assert_eq!(guarded.consumed_bits(), plain.consumed_bits() + 6);
         assert_eq!(
-            guarded.with_c2s_guard_bits(3).unwrap().bootstrap_k(720, 8),
-            plain.bootstrap_k(720, 8) + 3
+            guarded.with_c2s_guard_bits(3).unwrap().bootstrap_k(720, input_log_delta),
+            plain.bootstrap_k(720, input_log_delta) + 3
         );
         assert!(plain.with_c2s_guard_bits(usize::MAX).is_err());
         assert!(
@@ -544,11 +548,17 @@ mod tests {
 
     #[test]
     fn recipe_accounts_for_pipeline_order() {
+        let input_log_delta = 8;
+        let output_k = 30;
         let c2s = plan(BootstrappingPipeline::C2SFirst, BootstrappingTechniques::default(), 16).unwrap();
         assert_eq!(c2s.pre_mod_up_consumed_bits(), 0);
         assert_eq!(c2s.post_mod_up_consumed_bits(), c2s.consumed_bits());
         assert_eq!(c2s.input_k(20), 20);
-        assert_eq!(c2s.bootstrap_k(30, 8), 30 + c2s.consumed_bits() + 2);
+        let scale_restoration_bits = c2s.eval_mod().f_mod_log_delta - input_log_delta;
+        assert_eq!(
+            c2s.bootstrap_k(output_k, input_log_delta),
+            output_k + c2s.consumed_bits() + scale_restoration_bits
+        );
 
         let s2c = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
         assert_eq!(s2c.pre_mod_up_consumed_bits(), s2c.slots_to_coeffs().consumed_bits());
@@ -557,7 +567,10 @@ mod tests {
             s2c.coeffs_to_slots().consumed_bits() + s2c.eval_mod().consumed_bits()
         );
         assert_eq!(s2c.input_k(20), 20 + s2c.slots_to_coeffs().consumed_bits());
-        assert_eq!(s2c.bootstrap_k(30, 8), 30 + s2c.post_mod_up_consumed_bits());
+        assert_eq!(
+            s2c.bootstrap_k(output_k, input_log_delta),
+            output_k + s2c.post_mod_up_consumed_bits()
+        );
     }
 
     #[test]
