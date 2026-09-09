@@ -180,6 +180,17 @@ mod ntt3x42_ifma_tests {
         }
     }
 
+    #[cfg(feature = "enable-rayon")]
+    backend_test_suite! {
+        mod window_rayon,
+        backend = crate::NTT3x42IfmaRayon,
+        params = TestParams { size: 1 << 8, base2k: 50 },
+        tests = {
+            test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
+            test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        }
+    }
+
     // NTT size-range coverage.
     //
     // The planar IFMA NTT runs breadth-first level loops with fused head/tail

@@ -8,8 +8,8 @@ use crate::{
         VecZnxNegateBackend, VecZnxSubBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, DataView, FillUniform, HostDataRef, Module, VecZnx, VecZnxBig, VecZnxBigOwned, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxOwned, VecZnxShape, ZnxView, ZnxViewMut, ZnxWord,
+        Backend, DataView, FillUniform, HostBytesBackend, HostDataRef, Module, VecZnx, VecZnxBig, VecZnxBigOwned,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned, VecZnxShape, ZnxView, ZnxViewMut, ZnxWord,
     },
     source::Source,
     test_suite::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -43,11 +43,10 @@ fn materialize<W: ZnxWord>(host: &VecZnx<impl HostDataRef, W>, shape: VecZnxShap
 }
 
 /// Asserts `after == before` at every element outside `shape`.
-fn assert_untouched_outside<W: ZnxWord>(
-    before: &VecZnx<impl HostDataRef, W>,
-    after: &VecZnx<impl HostDataRef, W>,
-    shape: VecZnxShape,
-) {
+fn assert_untouched_outside<T: ZnxView>(before: &T, after: &T, shape: VecZnxShape)
+where
+    T::Scalar: PartialEq,
+{
     let sel_limbs: Vec<usize> = (0..shape.size())
         .map(|j| shape.limb_offset() + j * shape.limb_step())
         .collect();
@@ -188,7 +187,8 @@ where
 }
 
 fn download_big<BE: Backend>(v: &VecZnxBigOwned<BE>) -> VecZnxBig<Vec<u8>, BE::BigWord, BE> {
-    VecZnxBig::from_shape(BE::to_host_bytes(v.data()), v.shape())
+    let host_bytes = BE::to_host_bytes(v.data());
+    VecZnxBig::from_shape(HostBytesBackend::from_host_bytes(&host_bytes), v.shape())
 }
 
 pub fn test_vec_znx_big_window_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
@@ -216,6 +216,21 @@ where
         let mut big_a = VecZnxBigOwned::<BE>::alloc(n, cols, size);
         let mut big_b = VecZnxBigOwned::<BE>::alloc(n, cols, size);
         let mut big_r = VecZnxBigOwned::<BE>::alloc(n, cols, size);
+        // Seed the whole dense buffers with unrelated content, so that a kernel
+        // running past the window shows up as a changed outside-window element.
+        for big in [&mut big_a, &mut big_b, &mut big_r] {
+            let mut seed = VecZnxOwned::<i64>::alloc(n, cols, size);
+            seed.fill_uniform(base2k, &mut source);
+            let seed_be = upload_vec_znx::<BE>(&seed);
+            for col in 0..cols {
+                module.vec_znx_big_from_small_backend(&mut big.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&seed_be), col);
+            }
+        }
+        let (seed_a, seed_b, seed_r) = (
+            download_big::<BE>(&big_a),
+            download_big::<BE>(&big_b),
+            download_big::<BE>(&big_r),
+        );
         // Dense oracle on the materialized windows.
         let am_be = upload_vec_znx::<BE>(&am);
         let bm_be = upload_vec_znx::<BE>(&bm);
@@ -280,8 +295,17 @@ where
             module.vec_znx_big_negate(&mut big_bm.to_backend_mut(), col, &big_am.to_backend_ref(), col);
         }
 
-        let hr = download_big::<BE>(&big_r).with_shape(shape);
-        let hb = download_big::<BE>(&big_b).with_shape(shape);
+        let (after_a, after_b, after_r) = (
+            download_big::<BE>(&big_a),
+            download_big::<BE>(&big_b),
+            download_big::<BE>(&big_r),
+        );
+        assert_untouched_outside(&seed_a, &after_a, shape);
+        assert_untouched_outside(&seed_b, &after_b, shape);
+        assert_untouched_outside(&seed_r, &after_r, shape);
+
+        let hr = after_r.with_shape(shape);
+        let hb = after_b.with_shape(shape);
         let hrm = download_big::<BE>(&big_rm);
         let hbm = download_big::<BE>(&big_bm);
         for j in 0..shape.size() {
