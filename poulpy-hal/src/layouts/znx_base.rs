@@ -40,6 +40,42 @@ pub trait ZnxInfos {
 pub trait VecZnxInfos: ZnxInfos {
     /// Returns the number of polynomial columns.
     fn cols(&self) -> usize;
+
+    /// Coefficients per limb in the dense buffer (`n()` unless windowed).
+    fn n_full(&self) -> usize {
+        self.n()
+    }
+    /// First visible coefficient of every limb.
+    fn coeff_offset(&self) -> usize {
+        0
+    }
+    /// First visible limb, in dense limb indices.
+    fn limb_offset(&self) -> usize {
+        0
+    }
+    /// Dense limb stride between consecutive visible limbs.
+    fn limb_step(&self) -> usize {
+        1
+    }
+    /// True when the view is a contiguous prefix of the dense buffer.
+    fn is_dense(&self) -> bool {
+        self.coeff_offset() == 0 && self.n() == self.n_full() && self.limb_offset() == 0 && self.limb_step() == 1
+    }
+    /// Scalar offset of visible coefficient 0 of block `(col, limb)`, checked against overflow.
+    fn scalar_offset(&self, col: usize, limb: usize) -> usize {
+        limb.checked_mul(self.limb_step())
+            .and_then(|x| x.checked_add(self.limb_offset()))
+            .and_then(|x| x.checked_mul(self.cols()))
+            .and_then(|x| x.checked_add(col))
+            .and_then(|x| x.checked_mul(self.n_full()))
+            .and_then(|x| x.checked_add(self.coeff_offset()))
+            .expect("element view offset overflows usize")
+    }
+}
+
+/// Panics with `what` when `v` is a windowed view.
+pub fn assert_dense<T: VecZnxInfos + ?Sized>(v: &T, what: &str) {
+    assert!(v.is_dense(), "{what}: windowed views are not supported here");
 }
 
 /// Shape of a matrix-shaped container: `rows` x `cols_in` blocks, each holding
@@ -135,8 +171,9 @@ pub trait ZnxView: VecZnxInfos + DataView<D: HostDataRef> {
     #[doc(hidden)]
     fn validate_element_view(&self) {}
 
-    /// Returns a non-mutable pointer to the underlying coefficients array.
-    fn as_ptr(&self) -> *const Self::Scalar {
+    /// Returns a non-mutable pointer to the underlying coefficients array, ignoring any window.
+    #[doc(hidden)]
+    fn base_ptr(&self) -> *const Self::Scalar {
         self.validate_element_view();
         let ptr: *const u8 = self.data().as_ref().as_ptr();
         assert!(
@@ -147,6 +184,12 @@ pub trait ZnxView: VecZnxInfos + DataView<D: HostDataRef> {
         ptr as *const Self::Scalar
     }
 
+    /// Returns a pointer to the dense element view. Panics on a windowed view.
+    fn as_ptr(&self) -> *const Self::Scalar {
+        assert_dense(self, "ZnxView::as_ptr");
+        self.base_ptr()
+    }
+
     /// Returns a non-mutable reference to the entire underlying coefficient array.
     ///
     /// # Panics
@@ -154,7 +197,9 @@ pub trait ZnxView: VecZnxInfos + DataView<D: HostDataRef> {
     /// Panics if the buffer is smaller than the element view (`n * poly_count`
     /// scalars), which happens when the backend sizes this container below its
     /// word type's element view (the word is then a sizing/identity token only).
+    /// Also panics on a windowed view.
     fn raw(&self) -> &[Self::Scalar] {
+        assert_dense(self, "ZnxView::raw");
         self.validate_element_view();
         raw_scalars(self.data().as_ref(), element_view_span(self))
     }
@@ -164,23 +209,19 @@ pub trait ZnxView: VecZnxInfos + DataView<D: HostDataRef> {
         self.validate_element_view();
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
-        let offset: usize = j
-            .checked_mul(self.cols())
-            .and_then(|x| x.checked_add(i))
-            .and_then(|x| x.checked_mul(self.n()))
-            .expect("element view offset overflows usize");
+        let offset: usize = self.scalar_offset(i, j);
         assert!(
             offset
                 .checked_add(self.n())
                 .and_then(|x| x.checked_mul(size_of::<Self::Scalar>()))
                 .expect("element view byte size overflows usize")
                 <= self.data().as_ref().len(),
-            "element view of block ({}, {}) exceeds the {}-byte buffer: this container has no element view for its word type",
+            "element view of block ({}, {}) exceeds the {}-byte buffer",
             i,
             j,
             self.data().as_ref().len()
         );
-        unsafe { self.as_ptr().add(offset) }
+        unsafe { self.base_ptr().add(offset) }
     }
 
     /// Returns non-mutable reference to the (i, j)-th small polynomial.
@@ -193,8 +234,9 @@ pub trait ZnxView: VecZnxInfos + DataView<D: HostDataRef> {
 ///
 /// Extends [`ZnxView`] with mutable pointer and slice accessors.
 pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
-    /// Returns a mutable pointer to the underlying coefficients array.
-    fn as_mut_ptr(&mut self) -> *mut Self::Scalar {
+    /// Returns a mutable pointer to the underlying coefficients array, ignoring any window.
+    #[doc(hidden)]
+    fn base_mut_ptr(&mut self) -> *mut Self::Scalar {
         self.validate_element_view();
         let ptr: *mut u8 = self.data_mut().as_mut().as_mut_ptr();
         assert!(
@@ -205,12 +247,20 @@ pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
         ptr as *mut Self::Scalar
     }
 
+    /// Returns a pointer to the dense element view. Panics on a windowed view.
+    fn as_mut_ptr(&mut self) -> *mut Self::Scalar {
+        assert_dense(self, "ZnxViewMut::as_mut_ptr");
+        self.base_mut_ptr()
+    }
+
     /// Returns a mutable reference to the entire underlying coefficient array.
     ///
     /// # Panics
     ///
     /// Panics if the buffer is smaller than the element view (see [`ZnxView::raw`]).
+    /// Also panics on a windowed view.
     fn raw_mut(&mut self) -> &mut [Self::Scalar] {
+        assert_dense(self, "ZnxViewMut::raw_mut");
         self.validate_element_view();
         let span: usize = element_view_span(self);
         raw_scalars_mut(self.data_mut().as_mut(), span)
@@ -221,23 +271,19 @@ pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
         self.validate_element_view();
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
-        let offset: usize = j
-            .checked_mul(self.cols())
-            .and_then(|x| x.checked_add(i))
-            .and_then(|x| x.checked_mul(self.n()))
-            .expect("element view offset overflows usize");
+        let offset: usize = self.scalar_offset(i, j);
         assert!(
             offset
                 .checked_add(self.n())
                 .and_then(|x| x.checked_mul(size_of::<Self::Scalar>()))
                 .expect("element view byte size overflows usize")
                 <= self.data().as_ref().len(),
-            "element view of block ({}, {}) exceeds the {}-byte buffer: this container has no element view for its word type",
+            "element view of block ({}, {}) exceeds the {}-byte buffer",
             i,
             j,
             self.data().as_ref().len()
         );
-        unsafe { self.as_mut_ptr().add(offset) }
+        unsafe { self.base_mut_ptr().add(offset) }
     }
 
     /// Returns mutable reference to the (i, j)-th small polynomial.

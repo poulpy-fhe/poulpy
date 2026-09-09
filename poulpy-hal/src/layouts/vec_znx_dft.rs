@@ -109,6 +109,18 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for VecZnxDft<D, 
     fn cols(&self) -> usize {
         self.shape.cols()
     }
+    fn n_full(&self) -> usize {
+        self.shape.n_full()
+    }
+    fn coeff_offset(&self) -> usize {
+        self.shape.coeff_offset()
+    }
+    fn limb_offset(&self) -> usize {
+        self.shape.limb_offset()
+    }
+    fn limb_step(&self) -> usize {
+        self.shape.limb_step()
+    }
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for VecZnxDft<D, W, B> {
