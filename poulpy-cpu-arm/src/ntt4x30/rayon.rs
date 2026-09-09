@@ -53,23 +53,23 @@ fn base_module(module: &Module<NTT4x30NeonRayon>) -> &Module<NTT4x30Neon> {
 }
 
 fn base_dft_ref<'a>(a: &'a VecZnxDftBackendRef<'_, NTT4x30NeonRayon>) -> VecZnxDftBackendRef<'a, NTT4x30Neon> {
-    VecZnxDft::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    VecZnxDft::from_shape(&**a.data(), a.shape())
 }
 
 fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, NTT4x30NeonRayon>) -> VecZnxDftBackendMut<'a, NTT4x30Neon> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnxDft::from_data(&mut **a.data_mut(), n, cols, size)
+    let shape = a.shape();
+    VecZnxDft::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_big_mut<'a>(a: &'a mut VecZnxBigBackendMut<'_, NTT4x30NeonRayon>) -> VecZnxBigBackendMut<'a, NTT4x30Neon> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnxBig::from_data(&mut **a.data_mut(), n, cols, size)
+    let shape = a.shape();
+    VecZnxBig::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_big_ref<'a>(
     a: &'a poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT4x30NeonRayon>,
 ) -> poulpy_hal::layouts::VecZnxBigBackendRef<'a, NTT4x30Neon> {
-    VecZnxBig::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    VecZnxBig::from_shape(&**a.data(), a.shape())
 }
 
 fn base_vmp_ref<'a>(a: &'a VmpPMatBackendRef<'_, NTT4x30NeonRayon>) -> VmpPMatBackendRef<'a, NTT4x30Neon> {

@@ -114,6 +114,8 @@ pub fn vec_znx_normalize_coeff<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_coeff");
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_normalize_coeff");
     if normalize_needs_exact(a.size(), a_base2k, res.size(), res_base2k, res_offset) {
         normalize_exact::<true, _, _>(
             |j| a.at(a_col, j)[a_coeff] as i128,
@@ -145,6 +147,7 @@ pub fn vec_znx_normalize_coeff_assign<'r, BE>(
     BE: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_coeff_assign");
     #[cfg(debug_assertions)]
     {
         assert!(!carry.is_empty());
@@ -455,6 +458,8 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize");
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_normalize");
     assert!(res_k <= res.size() * res_base2k);
     let n = res.n();
     if res_base2k != a_base2k && n > 512 {
@@ -1051,6 +1056,7 @@ pub fn vec_znx_normalize_assign<'r, BE>(
         + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_assign");
     assert!(res_k <= res.size() * base2k);
     let n = res.n();
     vec_znx_normalize_assign_range::<BE>(base2k, res_k, res, res_col, 0, n, carry)

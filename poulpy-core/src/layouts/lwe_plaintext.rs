@@ -82,7 +82,7 @@ impl<D: Data, W: ZnxWord> LWEPlaintext<D, W> {
         let shape = self.data.shape();
         let data = self.data.into_data();
         LWEPlaintext {
-            data: VecZnx::from_data(data, shape.n(), shape.cols(), shape.size()),
+            data: VecZnx::from_shape(data, shape),
             base2k: self.base2k,
             k: self.k,
         }
@@ -150,12 +150,7 @@ impl<BE: Backend> LWEPlaintextToBackendRef<BE> for LWEPlaintext<BE::OwnedBuf, BE
 impl<'b, BE: Backend + 'b> LWEPlaintextToBackendRef<BE> for &LWEPlaintext<BE::BufRef<'b>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWEPlaintextBackendRef<'_, BE> {
         LWEPlaintext {
-            data: VecZnx::from_data(
-                BE::view_ref(self.data.data()),
-                self.data.n(),
-                self.data.cols(),
-                self.data.size(),
-            ),
+            data: VecZnx::from_shape(BE::view_ref(self.data.data()), self.data.shape()),
             base2k: self.base2k,
             k: self.k,
         }
@@ -165,12 +160,7 @@ impl<'b, BE: Backend + 'b> LWEPlaintextToBackendRef<BE> for &LWEPlaintext<BE::Bu
 impl<'b, BE: Backend + 'b> LWEPlaintextToBackendRef<BE> for &mut LWEPlaintext<BE::BufMut<'b>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWEPlaintextBackendRef<'_, BE> {
         LWEPlaintext {
-            data: VecZnx::from_data(
-                BE::view_ref_mut(self.data.data()),
-                self.data.n(),
-                self.data.cols(),
-                self.data.size(),
-            ),
+            data: VecZnx::from_shape(BE::view_ref_mut(self.data.data()), self.data.shape()),
             base2k: self.base2k,
             k: self.k,
         }

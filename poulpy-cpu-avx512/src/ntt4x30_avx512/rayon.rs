@@ -51,16 +51,16 @@ fn base_module(module: &Module<NTT4x30Avx512Rayon>) -> &Module<NTT4x30Avx512> {
 }
 
 fn base_dft_ref<'a>(a: &'a VecZnxDftBackendRef<'_, NTT4x30Avx512Rayon>) -> VecZnxDftBackendRef<'a, NTT4x30Avx512> {
-    VecZnxDft::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    VecZnxDft::from_shape(&**a.data(), a.shape())
 }
 
 fn base_znx_ref<'a>(a: &'a VecZnxBackendRef<'_, NTT4x30Avx512Rayon>) -> VecZnxBackendRef<'a, NTT4x30Avx512> {
-    VecZnx::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    VecZnx::from_shape(&**a.data(), a.shape())
 }
 
 fn base_znx_mut<'a>(a: &'a mut VecZnxBackendMut<'_, NTT4x30Avx512Rayon>) -> VecZnxBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnx::from_data(&mut **a.data_mut(), n, cols, size)
+    let shape = a.shape();
+    VecZnx::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_scalar_ref<'a>(a: &'a ScalarZnxBackendRef<'_, NTT4x30Avx512Rayon>) -> ScalarZnxBackendRef<'a, NTT4x30Avx512> {
@@ -77,19 +77,19 @@ fn base_svp_mut<'a>(a: &'a mut SvpPPolBackendMut<'_, NTT4x30Avx512Rayon>) -> Svp
 }
 
 pub(crate) fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, NTT4x30Avx512Rayon>) -> VecZnxDftBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnxDft::from_data(&mut **a.data_mut(), n, cols, size)
+    let shape = a.shape();
+    VecZnxDft::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_big_mut<'a>(a: &'a mut VecZnxBigBackendMut<'_, NTT4x30Avx512Rayon>) -> VecZnxBigBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnxBig::from_data(&mut **a.data_mut(), n, cols, size)
+    let shape = a.shape();
+    VecZnxBig::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_big_ref<'a>(
     a: &'a poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT4x30Avx512Rayon>,
 ) -> poulpy_hal::layouts::VecZnxBigBackendRef<'a, NTT4x30Avx512> {
-    VecZnxBig::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    VecZnxBig::from_shape(&**a.data(), a.shape())
 }
 
 fn base_vmp_ref<'a>(a: &'a VmpPMatBackendRef<'_, NTT4x30Avx512Rayon>) -> VmpPMatBackendRef<'a, NTT4x30Avx512> {

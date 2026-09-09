@@ -194,6 +194,7 @@ impl<D: Data + Default, W: ZnxWord> Default for VecZnx<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> DigestU64 for VecZnx<D, W> {
     fn digest_u64(&self) -> u64 {
+        crate::layouts::assert_dense(self, "VecZnx::digest_u64");
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
         h.write_usize(self.n());
@@ -206,6 +207,7 @@ impl<D: HostDataRef, W: ZnxWord> DigestU64 for VecZnx<D, W> {
 impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for VecZnx<D, W> {
     type Owned = VecZnx<Vec<u8>, W>;
     fn to_owned_deep(&self) -> Self::Owned {
+        crate::layouts::assert_dense(self, "VecZnx::to_owned_deep");
         VecZnx {
             data: self.data.as_ref().to_vec(),
             shape: self.shape,
@@ -220,12 +222,11 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     where
         BE: Backend<OwnedBuf = D>,
     {
+        crate::layouts::assert_dense(self, "VecZnx::to_host_owned");
         let shape = self.shape();
-        VecZnx::from_data(
+        VecZnx::from_shape(
             crate::layouts::HostBytesBackend::from_bytes(BE::to_host_bytes(&self.data)),
-            shape.n(),
-            shape.cols(),
-            shape.size(),
+            shape,
         )
     }
 
@@ -319,6 +320,7 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     }
 
     pub fn into_data(self) -> D {
+        crate::layouts::assert_dense(&self, "VecZnx::into_data");
         self.data
     }
 }
@@ -332,7 +334,15 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> ZnxZero for VecZnx<D, W> {
     fn zero(&mut self) {
-        self.raw_mut().fill(W::zero())
+        if self.is_dense() {
+            self.raw_mut().fill(W::zero());
+            return;
+        }
+        for j in 0..self.size() {
+            for i in 0..self.cols() {
+                self.at_mut(i, j).fill(W::zero());
+            }
+        }
     }
     fn zero_at(&mut self, i: usize, j: usize) {
         self.at_mut(i, j).fill(W::zero());
@@ -394,6 +404,39 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     }
 }
 
+impl<D: Data, W: ZnxWord> VecZnx<D, W> {
+    /// Wraps `data` with an explicit shape, windowed or dense. No validation;
+    /// element access is bounds-checked against the buffer.
+    pub fn from_shape(data: D, shape: VecZnxShape) -> Self {
+        Self {
+            data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Re-tags this container with `shape`, keeping the buffer.
+    pub fn with_shape(self, shape: VecZnxShape) -> Self {
+        Self {
+            data: self.data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// View of coefficients `offset..offset + len` of every visible limb. See [`VecZnxShape::window_coeffs`].
+    pub fn window_coeffs(self, offset: usize, len: usize) -> Self {
+        let shape = self.shape.window_coeffs(offset, len);
+        self.with_shape(shape)
+    }
+
+    /// View of visible limbs `offset, offset + step, ...` (`count` of them). See [`VecZnxShape::window_limbs`].
+    pub fn window_limbs(self, offset: usize, step: usize, count: usize) -> Self {
+        let shape = self.shape.window_limbs(offset, step, count);
+        self.with_shape(shape)
+    }
+}
+
 impl<D: HostDataRef, W: ZnxWord> fmt::Display for VecZnx<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "VecZnx(n={}, cols={}, size={})", self.n(), self.cols(), self.size())?;
@@ -427,6 +470,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for VecZnx<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> FillUniform for VecZnx<D, W> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
+        crate::layouts::assert_dense(self, "VecZnx::fill_uniform");
         assert!(log_bound != 0, "invalid log_bound, cannot be zero");
         assert!(
             log_bound <= W::BITS,
@@ -475,11 +519,10 @@ impl<B: Backend> VecZnxAsScalarBackendRef<B> for VecZnx<B::OwnedBuf, B::ZnxWord>
     fn as_scalar_znx_backend_ref(&self, col: usize, limb: usize) -> ScalarZnx<B::BufRef<'_>, B::ZnxWord> {
         assert!(limb < self.size(), "size: {limb} >= {}", self.size());
         assert!(col < self.cols(), "cols: {col} >= {}", self.cols());
-        let start: usize = limb
-            .checked_mul(self.cols())
-            .and_then(|x| x.checked_add(col))
-            .and_then(|x| x.checked_mul(self.n()))
-            .and_then(|x| x.checked_mul(B::size_of_znx_word()))
+        let start: usize = self
+            .shape
+            .scalar_offset(col, limb)
+            .checked_mul(B::size_of_znx_word())
             .expect("VecZnx scalar backend view offset overflows usize");
         let len: usize = self
             .n()
@@ -499,11 +542,10 @@ impl<B: Backend> VecZnxAsScalarBackendMut<B> for VecZnx<B::OwnedBuf, B::ZnxWord>
         let n = self.n();
         assert!(limb < self.size(), "size: {limb} >= {}", self.size());
         assert!(col < self.cols(), "cols: {col} >= {}", self.cols());
-        let start: usize = limb
-            .checked_mul(self.cols())
-            .and_then(|x| x.checked_add(col))
-            .and_then(|x| x.checked_mul(n))
-            .and_then(|x| x.checked_mul(B::size_of_znx_word()))
+        let start: usize = self
+            .shape
+            .scalar_offset(col, limb)
+            .checked_mul(B::size_of_znx_word())
             .expect("VecZnx scalar backend view offset overflows usize");
         let len: usize = n
             .checked_mul(B::size_of_znx_word())
@@ -739,6 +781,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for VecZnx<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for VecZnx<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        crate::layouts::assert_dense(self, "VecZnx::write_to");
         writer.write_u64::<LittleEndian>(self.n() as u64)?;
         writer.write_u64::<LittleEndian>(self.cols() as u64)?;
         writer.write_u64::<LittleEndian>(self.size() as u64)?;
@@ -810,5 +853,56 @@ mod window_shape_tests {
     #[should_panic]
     fn limb_window_out_of_range_panics() {
         let _ = VecZnxShape::new(16, 1, 4).window_limbs(2, 2, 2);
+    }
+
+    use crate::layouts::{VecZnx, ZnxView, ZnxViewMut, ZnxZero};
+
+    fn ramp(n: usize, cols: usize, size: usize) -> VecZnx<Vec<u8>, i64> {
+        let mut v = VecZnx::<Vec<u8>, i64>::alloc(n, cols, size);
+        for j in 0..size {
+            for i in 0..cols {
+                for (k, x) in v.at_mut(i, j).iter_mut().enumerate() {
+                    *x = (j * 1000 + i * 100 + k) as i64;
+                }
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn window_view_reads_the_expected_elements() {
+        let v = ramp(8, 2, 4);
+        let shape = v.shape().window_coeffs(3, 2).window_limbs(1, 2, 2);
+        let w = VecZnx::<&[u8], i64>::from_shape(v.data().as_slice(), shape);
+        assert_eq!(w.at(1, 0), &[1103, 1104]);
+        assert_eq!(w.at(0, 1), &[3003, 3004]);
+    }
+
+    #[test]
+    fn zero_on_window_touches_only_the_window() {
+        let mut v = ramp(8, 2, 4);
+        let before = v.clone();
+        let shape = before.shape().window_coeffs(3, 2).window_limbs(1, 2, 2);
+        {
+            let mut w = VecZnx::<&mut [u8], i64>::from_shape(v.data_mut().as_mut_slice(), shape);
+            w.zero();
+        }
+        for j in 0..4 {
+            for i in 0..2 {
+                for k in 0..8 {
+                    let inside = (j == 1 || j == 3) && (3..5).contains(&k);
+                    let expected = if inside { 0 } else { before.at(i, j)[k] };
+                    assert_eq!(v.at(i, j)[k], expected, "col {i} limb {j} coeff {k}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "ZnxView::raw")]
+    fn raw_on_window_panics() {
+        let v = ramp(8, 1, 1);
+        let w = VecZnx::<&[u8], i64>::from_shape(v.data().as_slice(), v.shape().window_coeffs(1, 2));
+        let _ = w.raw();
     }
 }

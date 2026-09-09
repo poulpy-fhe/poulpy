@@ -34,6 +34,8 @@ pub struct VecZnxBig<D: Data, W: BigWord, B: Backend<BigWord = W>> {
 // for non-`Eq` words like `f64` (byte equality is a total equivalence).
 impl<D: Data, W: BigWord, B: Backend<BigWord = W>> PartialEq for VecZnxBig<D, W, B> {
     fn eq(&self, other: &Self) -> bool {
+        crate::layouts::assert_dense(self, "VecZnxBig::eq");
+        crate::layouts::assert_dense(other, "VecZnxBig::eq");
         self.shape == other.shape && self.data == other.data
     }
 }
@@ -42,6 +44,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> Eq for VecZnxBig<D, W, B> {}
 
 impl<D: Data + std::hash::Hash, W: BigWord, B: Backend<BigWord = W>> std::hash::Hash for VecZnxBig<D, W, B> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        crate::layouts::assert_dense(self, "VecZnxBig::hash");
         self.shape.hash(state);
         self.data.hash(state);
     }
@@ -49,6 +52,7 @@ impl<D: Data + std::hash::Hash, W: BigWord, B: Backend<BigWord = W>> std::hash::
 
 impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>> DigestU64 for VecZnxBig<D, W, B> {
     fn digest_u64(&self) -> u64 {
+        crate::layouts::assert_dense(self, "VecZnxBig::digest_u64");
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
         h.write_usize(self.n());
@@ -127,7 +131,15 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
 
 impl<D: HostDataMut, W: BigWord, B: Backend<BigWord = W>> ZnxZero for VecZnxBig<D, W, B> {
     fn zero(&mut self) {
-        self.raw_mut().fill(W::zero())
+        if self.is_dense() {
+            self.raw_mut().fill(W::zero());
+            return;
+        }
+        for j in 0..self.size() {
+            for i in 0..self.cols() {
+                self.at_mut(i, j).fill(W::zero());
+            }
+        }
     }
     fn zero_at(&mut self, i: usize, j: usize) {
         self.at_mut(i, j).fill(W::zero());
@@ -175,6 +187,39 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
             shape: VecZnxShape::new(n, cols, size),
             _phantom: PhantomData,
         }
+    }
+}
+
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
+    /// Wraps `data` with an explicit shape, windowed or dense. No validation;
+    /// element access is bounds-checked against the buffer.
+    pub fn from_shape(data: D, shape: VecZnxShape) -> Self {
+        Self {
+            data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Re-tags this container with `shape`, keeping the buffer.
+    pub fn with_shape(self, shape: VecZnxShape) -> Self {
+        Self {
+            data: self.data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// View of coefficients `offset..offset + len` of every visible limb. See [`VecZnxShape::window_coeffs`].
+    pub fn window_coeffs(self, offset: usize, len: usize) -> Self {
+        let shape = self.shape.window_coeffs(offset, len);
+        self.with_shape(shape)
+    }
+
+    /// View of visible limbs `offset, offset + step, ...` (`count` of them). See [`VecZnxShape::window_limbs`].
+    pub fn window_limbs(self, offset: usize, step: usize, count: usize) -> Self {
+        let shape = self.shape.window_limbs(offset, step, count);
+        self.with_shape(shape)
     }
 }
 
@@ -315,6 +360,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
         B2: Backend<BigWord = W>,
         B: crate::layouts::VecZnxBigLayoutCompatible<B2>,
     {
+        crate::layouts::assert_dense(&self, "VecZnxBig::into_backend");
         let shape = self.shape;
         assert_eq!(
             B::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.size()),

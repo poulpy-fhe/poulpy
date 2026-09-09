@@ -229,6 +229,7 @@ where
         + ZnxNormalizeFirstStepAssign
         + ZnxNormalizeFinalStepAssign,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_lsh_assign");
     let n: usize = res.n();
     let cols: usize = res.cols();
     let size: usize = res.size();

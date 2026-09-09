@@ -14,13 +14,13 @@ fn dft_automorphism(
     a: &VecZnxDftBackendRef<'_, FFT64NeonRayon>,
     a_col: usize,
 ) {
-    let (n, cols, size) = (res.n(), res.cols(), res.size());
+    let res_shape = res.shape();
     <FFT64Neon as HalVecZnxDftImpl<FFT64Neon>>::vec_znx_dft_automorphism_with_plan(
         module.reinterpret(),
         plan,
-        &mut VecZnxDft::from_data(&mut **res.data_mut(), n, cols, size),
+        &mut VecZnxDft::from_shape(&mut **res.data_mut(), res_shape),
         res_col,
-        &VecZnxDft::from_data(&**a.data(), a.n(), a.cols(), a.size()),
+        &VecZnxDft::from_shape(&**a.data(), a.shape()),
         a_col,
     );
 }

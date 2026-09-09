@@ -1178,8 +1178,10 @@ pub fn ntt4x30_vec_znx_big_normalize<R, A, BE>(
 {
     let (n, res_size) = {
         let res_view = res.to_backend_mut();
+        poulpy_hal::layouts::assert_dense(&res_view, "ntt4x30_vec_znx_big_normalize");
         (res_view.n(), res_view.size())
     };
+    poulpy_hal::layouts::assert_dense(&a.to_backend_ref(), "ntt4x30_vec_znx_big_normalize");
     assert!(res_k <= res_size * res_base2k);
     ntt4x30_vec_znx_big_normalize_range(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry);
 }

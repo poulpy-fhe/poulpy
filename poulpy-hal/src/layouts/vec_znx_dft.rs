@@ -40,6 +40,8 @@ pub struct VecZnxDft<D: Data, W: DftWord, B: Backend<DftWord = W>> {
 // for non-`Eq` words like `f64` (byte equality is a total equivalence).
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for VecZnxDft<D, W, B> {
     fn eq(&self, other: &Self) -> bool {
+        crate::layouts::assert_dense(self, "VecZnxDft::eq");
+        crate::layouts::assert_dense(other, "VecZnxDft::eq");
         self.shape == other.shape && self.data == other.data
     }
 }
@@ -48,6 +50,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for VecZnxDft<D, W, B> {}
 
 impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VecZnxDft<D, W, B> {
     fn digest_u64(&self) -> u64 {
+        crate::layouts::assert_dense(self, "VecZnxDft::digest_u64");
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
         h.write_usize(self.n());
@@ -81,13 +84,14 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     /// words, which guarantees the buffer is large enough for the big-domain
     /// interpretation.
     pub fn into_big(self) -> VecZnxBig<D, B::BigWord, B> {
+        crate::layouts::assert_dense(&self, "VecZnxDft::into_big");
         let shape = self.shape;
         assert!(
             B::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.size())
                 <= B::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.size()),
             "into_big: big-domain buffer would exceed the DFT-domain allocation"
         );
-        VecZnxBig::<D, B::BigWord, B>::from_data(self.data, shape.n(), shape.cols(), shape.size())
+        VecZnxBig::<D, B::BigWord, B>::from_shape(self.data, shape)
     }
 }
 
@@ -315,6 +319,29 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     }
 }
 
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
+    /// Wraps `data` with an explicit shape. No validation; element access is
+    /// bounds-checked against the buffer.
+    ///
+    /// No window constructors on `VecZnxDft` yet: kernel support lands in PR3.
+    pub fn from_shape(data: D, shape: VecZnxShape) -> Self {
+        Self {
+            data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Re-tags this container with `shape`, keeping the buffer.
+    pub fn with_shape(self, shape: VecZnxShape) -> Self {
+        Self {
+            data: self.data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+}
+
 /// Borrow a backend-owned `VecZnxDft` using the backend's native view type.
 pub trait VecZnxDftToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> VecZnxDftBackendRef<'_, B>;
@@ -434,6 +461,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
         B2: Backend<DftWord = W>,
         B: crate::layouts::VecZnxDftLayoutCompatible<B2>,
     {
+        crate::layouts::assert_dense(&self, "VecZnxDft::into_backend");
         let shape = self.shape;
         assert_eq!(
             B::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.size()),
