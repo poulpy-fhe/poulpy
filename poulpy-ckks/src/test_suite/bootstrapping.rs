@@ -870,8 +870,13 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    for (eval_round_plus, case) in [(false, "standard"), (true, "evalround+")] {
-        let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, 40, 16, FMOD_INTERVAL, eval_round_plus);
+    for (eval_round_plus, guard_bits, case) in [
+        (false, 0, "standard"),
+        (false, 6, "guarded"),
+        (true, 0, "evalround+"),
+        (true, 6, "guarded_evalround+"),
+    ] {
+        let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, 40, 16, FMOD_INTERVAL, eval_round_plus, guard_bits);
         for (avg, tag) in [(re, "re"), (im, "im")] {
             println!("[s2c_first/{case}] BOOTSTRAP-PREC ({tag}) avg={avg:.2} bits");
             assert!(
@@ -888,6 +893,7 @@ fn run_s2c_first_case<BE, F, E>(
     log_msg_ratio: usize,
     fmod_interval: usize,
     eval_round_plus: bool,
+    guard_bits: usize,
 ) -> (f64, f64)
 where
     BE: TestContextBackend,
@@ -955,6 +961,8 @@ where
         },
         slots_to_coeffs,
     )
+    .unwrap()
+    .with_c2s_guard_bits(guard_bits)
     .unwrap();
 
     let n = 1 << (LOG_SLOTS + 1);

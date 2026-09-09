@@ -299,7 +299,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         scratch.scope(|scratch_inner| {
             let (mut ct0, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(src, src.meta());
             self.ckks_copy(&mut ct0, src, &mut scratch_inner)?;
-            self.ckks_bootstrap_mod_up_from_mut(dst, &mut ct0, Some(eval_mod), keys, &mut scratch_inner)
+            self.ckks_bootstrap_mod_up_from_mut(dst, &mut ct0, Some(eval_mod), 0, keys, &mut scratch_inner)
         })?;
 
         dst.set_meta(CKKSMeta {
@@ -315,6 +315,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         dst: &mut Dst,
         src: &mut Src,
         lift: Option<&EvalModPlan>,
+        mut scale_up: usize,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -324,11 +325,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        // Both lifts come from the plan; `None` skips them (for pipelines whose
-        // input does not meet the plan's message-ratio contract). The first
-        // normalizes the input to that ratio, the second takes the raised
-        // ciphertext up to EvalMod's own scale and is fused into ModUp's shift.
-        let mut scale_up = 0;
+        // C2S-first derives both lifts from EvalMod; S2C-first supplies only
+        // the internal guard bits, fused into ModUp's shift.
         if let Some(plan) = lift {
             let k: usize = src.k().as_usize();
             let log_delta: usize = src.log_delta();
@@ -387,7 +385,10 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        self.ckks_coeffs_to_slots_split(r0, i0, ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)
+        self.ckks_coeffs_to_slots_split(r0, i0, ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
+        r0.set_log_delta(r0.log_delta() - ctx.c2s_guard_bits());
+        i0.set_log_delta(i0.log_delta() - ctx.c2s_guard_bits());
+        Ok(())
     }
 
     fn ckks_bootstrap_coeffs_to_slots_real<F, K, R1, R2>(
@@ -407,6 +408,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         self.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
         self.ckks_conjugate_into(conjugate, &*ct, keys.rotation_keys(), scratch)?;
         self.ckks_add_assign(ct, &*conjugate, scratch)?;
+        ct.set_log_delta(ct.log_delta() - ctx.c2s_guard_bits());
         // `z + conj(z) = 2·Re(z)` holds the input polynomial's coefficients.
         ct.set_slots(SlotsKind::Real);
         Ok(())
@@ -523,6 +525,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                         keys.rotation_keys(),
                         &mut scratch_local,
                     )?;
+                    r0_hp.set_log_delta(r0_hp.log_delta() - ctx.c2s_guard_bits());
+                    i0_hp.set_log_delta(i0_hp.log_delta() - ctx.c2s_guard_bits());
 
                     {
                         let r0_ref = r0.to_backend_view_ref();
@@ -601,10 +605,17 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             )?;
 
             let log_modulus_in = ct_coeffs.k().as_usize();
-            self.ckks_bootstrap_mod_up_from_mut(ct_raised, &mut ct_coeffs, None, keys, &mut scratch_inner)?;
+            self.ckks_bootstrap_mod_up_from_mut(
+                ct_raised,
+                &mut ct_coeffs,
+                None,
+                ctx.c2s_guard_bits(),
+                keys,
+                &mut scratch_inner,
+            )?;
             ct_raised.set_meta(CKKSMeta {
                 log_sparsity: ct_in.log_sparsity(),
-                log_delta: log_modulus_in,
+                log_delta: log_modulus_in + ctx.c2s_guard_bits(),
                 slots: ct_in.slots(),
             });
             Result::Ok(())
@@ -1038,7 +1049,8 @@ fn functional_output_contract<BE: Backend, F>(
     let consumed = ctx
         .coeffs_to_slots()
         .consumed_bits()
-        .checked_add(eval_mod)
+        .checked_add(ctx.c2s_guard_bits())
+        .and_then(|bits| bits.checked_add(eval_mod))
         .and_then(|bits| bits.checked_add(lut.consumed_bits(log_delta)))
         .ok_or_else(|| crate::CKKSError::Internal(anyhow::anyhow!("functional bootstrap budget overflow")))?;
     let output_k = bootstrap_k.checked_sub(consumed).ok_or_else(|| {

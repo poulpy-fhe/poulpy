@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### `poulpy-ckks`
+
+- Correct the C2S-first preset's output scale and net budget. Rename it to `n16_d35_k623_p19_c2s`: its 623-bit output at scale `2^58` becomes 600 bits at scale `2^35`, restoring 16 net levels.
+
+- Restore the S2C-first preset's 19-bit precision at scale `2^35` with six internal CoeffsToSlots guard bits and adjusted message-ratio and matrix precision. Rename it to `n16_d35_k720_p19_s2c`, preserving 560 usable bits with input width 160 and raised width 1382.
+- Add optional S2C-first `BootstrappingPlan::with_c2s_guard_bits`, including width accounting for standard, EvalRound+ and functional bootstrapping.
+
 ### `poulpy-hal`
 
 - **Breaking:** normalization now takes the target precision `k` and produces its canonical representation.

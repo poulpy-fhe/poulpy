@@ -70,7 +70,9 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    run_case::<BE, F, E>(Case::General, params, module, host_module);
+    for guard_bits in [0, 6] {
+        run_case::<BE, F, E>(Case::General, params, module, host_module, guard_bits);
+    }
 }
 
 pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
@@ -95,8 +97,12 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    run_case::<BE, F, E>(Case::NonPowerOfTwo, params, module, host_module);
-    run_case::<BE, F, E>(Case::MultiNonPowerOfTwo, params, module, host_module);
+    for guard_bits in [0, 6] {
+        run_case::<BE, F, E>(Case::NonPowerOfTwo, params, module, host_module, guard_bits);
+    }
+    for guard_bits in [0, 6] {
+        run_case::<BE, F, E>(Case::MultiNonPowerOfTwo, params, module, host_module, guard_bits);
+    }
 }
 
 pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
@@ -121,7 +127,9 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    run_case::<BE, F, E>(Case::Multi, params, module, host_module);
+    for guard_bits in [0, 6] {
+        run_case::<BE, F, E>(Case::Multi, params, module, host_module, guard_bits);
+    }
 }
 
 pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
@@ -146,11 +154,18 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    run_case::<BE, F, E>(Case::Binary, params, module, host_module);
+    for guard_bits in [0, 6] {
+        run_case::<BE, F, E>(Case::Binary, params, module, host_module, guard_bits);
+    }
 }
 
-fn run_case<BE, F, E>(case: Case, params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
-where
+fn run_case<BE, F, E>(
+    case: Case,
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    guard_bits: usize,
+) where
     BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
@@ -189,7 +204,7 @@ where
         .map(|table| table.iter().map(|&value| F::from_usize(value).unwrap()).collect())
         .collect();
     let p = tables[0].len().next_power_of_two();
-    let plan = fbt_plan(params.base2k);
+    let plan = fbt_plan(params.base2k, guard_bits);
     let coeffs_meta = CoeffsMeta::from_delta_budget(LUT_LOG_DELTA, params.base2k);
 
     let host_luts: Vec<EncodedLut<CKKSPlaintextOwned<HostBytesBackend>>> = match case {
@@ -228,9 +243,9 @@ where
     let output_k = log_modulus_in + 2 * INPUT_LOG_DELTA;
     let functional_k = plan.functional_bootstrap_k(output_k, INPUT_LOG_DELTA, &host_luts[0]).unwrap();
     let expected_functional_k = match case {
-        Case::General | Case::NonPowerOfTwo => 769,
-        Case::Multi | Case::MultiNonPowerOfTwo => 814,
-        Case::Binary => 668,
+        Case::General | Case::NonPowerOfTwo => 769 + guard_bits,
+        Case::Multi | Case::MultiNonPowerOfTwo => 814 + guard_bits,
+        Case::Binary => 668 + guard_bits,
     };
     assert_eq!(functional_k, expected_functional_k);
     let k_boot = functional_k.next_multiple_of(2 * params.base2k);
@@ -353,8 +368,11 @@ where
             } else {
                 0
             };
-            let expected_k =
-                k_boot - plan.coeffs_to_slots().consumed_bits() - eval_mod_bits - lut.consumed_bits(output_log_delta);
+            let expected_k = k_boot
+                - plan.c2s_guard_bits()
+                - plan.coeffs_to_slots().consumed_bits()
+                - eval_mod_bits
+                - lut.consumed_bits(output_log_delta);
             assert_eq!(output.k().as_usize(), expected_k);
             assert_eq!(output.log_delta(), output_log_delta);
             assert_eq!(output.slots(), slots_kind);
@@ -526,7 +544,7 @@ where
     }
 }
 
-fn fbt_plan(base2k: usize) -> BootstrappingPlan {
+fn fbt_plan(base2k: usize, guard_bits: usize) -> BootstrappingPlan {
     let slots_to_coeffs = DFTPlan::new(
         DFTType::Decode,
         vec![(2, 4), (3, 4), (2, 4)],
@@ -560,5 +578,7 @@ fn fbt_plan(base2k: usize) -> BootstrappingPlan {
         ),
         slots_to_coeffs,
     )
+    .unwrap()
+    .with_c2s_guard_bits(guard_bits)
     .unwrap()
 }

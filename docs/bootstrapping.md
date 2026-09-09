@@ -229,9 +229,9 @@ It is built once and reused across bootstraps.
 A preset includes its circuit plan, composable input/output/bootstrap widths, secret weights, ciphertext allocation layouts, and physical evaluation-key layouts:
 
 ```rust
-use poulpy_ckks::presets::bootstrapping::n16_d35_k600_p19_c2s;
+use poulpy_ckks::presets::bootstrapping::n16_d35_k623_p19_c2s;
 
-let preset = n16_d35_k600_p19_c2s()?;
+let preset = n16_d35_k623_p19_c2s()?;
 let plan = preset.plan();
 let keys_layout = preset.keys_layout();
 let input_layout = preset.input_layout();
@@ -239,14 +239,18 @@ let bootstrap_layout = preset.bootstrap_layout();
 ```
 
 Presets are named by what they offer, one token per axis: `n{log_n}_d{log_delta}_k{output_k}_p{log2_precision}_{circuit}`, i.e. ring-degree exponent, input scale exponent, output width in bits, guaranteed output precision in bits, and circuit (`c2s` for C2S-first, `s2c` for S2C-first).
-The plan fixes the input width, so `output_k - input_k` is the usable budget: the application must hand the ciphertext back at `input_k`, not drain it.
+The net usable budget is `(output_k - output_scale) - (input_k - input_scale)`: the application must return to the input scale and stop consuming at `input_k`.
 This matters for S2C-first presets: their SlotsToCoeffs runs before ModUp on the application's width, so `input_k` includes that consumption and a larger tail of the output is reserved than for a C2S-first preset; compare presets across circuits by their usable budget, never by `k`.
 The current presets both take inputs at scale `2^35`, offer 560 usable bits (16 rescales at that scale) with at least 19 bits of precision, and use an optimized Han–Ki EvalMod:
 
-| Constructor | Pipeline | Input `k` | Output `k` | Usable (`output - input`) | Bootstrap `k` |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `n16_d35_k600_p19_c2s` | C2S-first | 40 | 600 | 560 | 1404 |
-| `n16_d35_k718_p19_s2c` | S2C-first | 158 | 718 | 560 | 1358 |
+| Constructor | Pipeline | Input `k` | Output `k` | Output scale | Net usable bits | Bootstrap `k` |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `n16_d35_k623_p19_c2s` | C2S-first | 40 | 623 | `2^58` | 560 | 1427 |
+| `n16_d35_k720_p19_s2c` | S2C-first | 160 | 720 | `2^35` | 560 | 1382 |
+
+For C2S-first, `ct.set_log_delta(preset.log_delta())` returns the output from scale 58 to 35 and reduces its width from 623 to 600. This leaves exactly `600 - 40 = 560` bits before the next bootstrap.
+
+The S2C-first preset uses six internal guard bits between ModUp and CoeffsToSlots, log message ratio 13, and C2S matrix scale 48. The guard bits are removed before EvalMod; the application scale remains `2^35`. Custom S2C-first plans can select this lift with `with_c2s_guard_bits`; width accounting includes its cost.
 
 Both use weight 1024 for the dense secret, weight 32 for sparse-secret encapsulation, `dsize = 4` for the high-modulus keys, and `dsize = 3` for the dense-to-sparse key.
 Preset construction validates the ciphertext, gadget, auxiliary, and total key moduli against the configured bounds.

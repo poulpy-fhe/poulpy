@@ -164,6 +164,7 @@ where
         };
         run.bootstrap();
         assert_eq!(run.output.k().as_usize(), run.preset.output_k());
+        assert_eq!(run.output.meta(), run.preset.output_layout().meta());
         run
     }
 
