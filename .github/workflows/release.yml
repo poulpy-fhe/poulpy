@@ -51,7 +51,28 @@ jobs:
         uses: rust-lang/crates-io-auth-action@v1
         id: auth
 
-      - name: Publish
-        run: cargo publish --workspace
+      - name: Publish crates not yet on crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          cargo metadata --format-version 1 --no-deps > "$RUNNER_TEMP/meta.json"
+          PKGS=$(python3 - <<'EOF'
+          import json, os, sys, urllib.request
+          for p in json.load(open(os.environ["RUNNER_TEMP"] + "/meta.json"))["packages"]:
+              if p["publish"] == []:
+                  continue
+              url = "https://crates.io/api/v1/crates/%s/%s" % (p["name"], p["version"])
+              try:
+                  urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "poulpy-release"}))
+                  print("already published: %s %s" % (p["name"], p["version"]), file=sys.stderr)
+              except urllib.error.HTTPError as e:
+                  if e.code != 404:
+                      raise
+                  print("-p", p["name"])
+          EOF
+          )
+          if [ -n "$PKGS" ]; then
+              cargo publish $PKGS
+          else
+              echo "nothing to publish"
+          fi
