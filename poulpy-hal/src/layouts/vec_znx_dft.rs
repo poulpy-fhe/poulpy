@@ -27,6 +27,10 @@ use crate::layouts::{
 /// [`VecZnxDftApply`](crate::api::VecZnxDftApply) /
 /// [`VecZnxIdftApply`](crate::api::VecZnxIdftApply) to convert
 /// between coefficient and DFT domains.
+///
+/// See [layouts](crate::layouts#value-model) for how this fits the container
+/// value model; its contracts are stated through `idft` (see the
+/// [`api`](crate::api#exactness) module doc).
 #[repr(C)]
 pub struct VecZnxDft<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     pub data: D,

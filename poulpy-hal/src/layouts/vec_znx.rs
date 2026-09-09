@@ -159,6 +159,10 @@ impl VecZnxShape {
 /// is fixed at construction. Operating on a narrower width is done through a
 /// borrowed view (see [`vec_znx_backend_mut_with_size`]), never by mutating the
 /// owner.
+///
+/// See [layouts](crate::layouts#value-model) for the container value model
+/// this type implements, and [windows](crate::layouts#windows) for the
+/// semantics of `window_coeffs`/`window_limbs`.
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub struct VecZnx<D: Data, W: ZnxWord> {

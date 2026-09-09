@@ -45,6 +45,11 @@ impl SvpPPolShape {
 ///
 /// Ring degree `n` is always a power of two, so the DFT-domain layout has a
 /// coefficient count that matches vector lane widths relative to buffer alignment.
+///
+/// Denotes `prep(s)` in the [layouts value model](crate::layouts#value-model):
+/// an opaque value fixed only by the equations `svp_apply` satisfies, in the
+/// representation the [`PrepareHint`] chosen at allocation selected (see
+/// [`SvpPPolShape::hint`]).
 #[repr(C)]
 pub struct SvpPPol<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     pub data: D,

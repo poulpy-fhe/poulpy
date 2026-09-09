@@ -39,6 +39,10 @@ impl CnvPVecShape {
 /// [`DftWord`] type `W`, ready to be used as the right operand of
 /// [`Convolution::cnv_apply_dft`](crate::api::Convolution::cnv_apply_dft).
 /// Created via [`Convolution::cnv_prepare_right`](crate::api::Convolution::cnv_prepare_right).
+///
+/// A prepared value in the [layouts value model](crate::layouts#value-model),
+/// opaque in the representation the [`PrepareHint`] chosen at allocation
+/// selected (see [`CnvPVecShape::hint`]).
 pub struct CnvPVecR<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     data: D,
     shape: CnvPVecShape,
@@ -160,6 +164,10 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
 /// [`DftWord`] type `W`, ready to be used as the left operand of
 /// [`Convolution::cnv_apply_dft`](crate::api::Convolution::cnv_apply_dft).
 /// Created via [`Convolution::cnv_prepare_left`](crate::api::Convolution::cnv_prepare_left).
+///
+/// A prepared value in the [layouts value model](crate::layouts#value-model),
+/// opaque in the representation the [`PrepareHint`] chosen at allocation
+/// selected (see [`CnvPVecShape::hint`]).
 pub struct CnvPVecL<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     data: D,
     shape: CnvPVecShape,

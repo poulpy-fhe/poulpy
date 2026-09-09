@@ -1,18 +1,76 @@
 //! Safe, user-facing trait definitions for polynomial arithmetic operations.
 //!
-//! Traits are organized by operation category:
-//! - **module** -- module instantiation and ring degree queries.
-//! - **vec\_znx** -- coefficient-domain arithmetic (add, sub, negate, shift, rotate, automorphism, normalization).
-//! - **vec\_znx\_big** -- extended-precision accumulator operations.
-//! - **vec\_znx\_dft** -- DFT-domain operations (forward/inverse transform, arithmetic).
-//! - **svp\_ppol** -- scalar-vector product preparation and application.
-//! - **vmp\_pmat** -- vector-matrix product preparation and application.
-//! - **coeff\_mat\_pmat** -- coefficient-matrix preparation and application.
-//! - **convolution** -- bivariate convolution preparation and application.
-//! - **scratch** -- scratch buffer management.
+//! Scheme authors program against these traits; the computation is dispatched
+//! to a backend through the [`oep`](crate::oep) extension points. Each trait
+//! documents one operation with a structured contract (`op / domain /
+//! requires / ensures / exact / test`). The shared vocabulary those contracts
+//! use is defined here, once.
 //!
-//! Scheme authors program against these traits; the actual computation is
-//! dispatched to a backend via the [`oep`](crate::oep) extension points.
+//! # Value model
+//!
+//! The ring is `R_N = Z[X]/(X^N + 1)`, `N` the module degree. A column of a
+//! [`VecZnx`](crate::layouts::VecZnx) with `size` limbs, read at radix
+//! `base2k`, denotes
+//!
+//! ```text
+//! [[a]]_base2k = sum_{j < size} a_j * 2^(-base2k * (j + 1)),   a_j in R_N
+//! ```
+//!
+//! `base2k` is a call parameter, not a property of the buffer, so the value is
+//! always written with its radix. On a window (see
+//! [`layouts`](crate::layouts#windows)) `a_j` is an element of `Z^n` instead.
+//! [`VecZnxBig`](crate::layouts::VecZnxBig) denotes the same quantity with
+//! wider limbs. [`VecZnxDft`](crate::layouts::VecZnxDft) and the prepared
+//! types are opaque; their contracts are stated through `idft`.
+//!
+//! # Canonical form
+//!
+//! A column is canonical at radix `base2k` when every digit lies in the
+//! centered range the normalization kernels produce. The exact range and the
+//! rounding rule applied when precision is dropped are those pinned by the
+//! `assert_canonical` helper of the test suite and the `znx_normalize_*`
+//! step kernels of `poulpy-cpu-ref`; `normalize` is the only operation that
+//! produces canonical output, and its contract restates them.
+//!
+//! # Limb rule
+//!
+//! Every operation fully defines every visible element of `res`. Inputs
+//! shorter than `res` are zero-extended; a `res` shorter than the exact
+//! result truncates in the `2^(-base2k)` expansion. No operation leaves
+//! limbs of `res` untouched.
+//!
+//! # Columns
+//!
+//! An operation takes one column index per operand, reads that column of each
+//! input object and writes that column of `res`. Columns are independent.
+//!
+//! # Disjointness
+//!
+//! `res` is a distinct object from every input; the signatures (`&mut res`,
+//! `&a`, `&b`) make anything else unrepresentable. Inputs may share an object.
+//! There is no in-place form.
+//!
+//! # Exactness
+//!
+//! Coefficient-domain and big-domain operations are exact and bit-identical
+//! across backends. DFT-domain operations carry the backend's exactness class:
+//! exact for NTT backends, approximate for FFT64, whose error bound is a
+//! function of `N`, `base2k` and the operand sizes. Their contracts are stated
+//! on `idft(...)`: `idft(dft(a)) = a`, `idft(svp_apply(dft(a), prep(s))) =
+//! a * s`, `idft(vmp_apply(dft(a), prep(M))) = a * M`, and the DFT-domain
+//! `add`, `sub`, `automorphism` are the images of the ring operations.
+//!
+//! # Preconditions
+//!
+//! Shape and parameter preconditions are checked by the delegate layer with
+//! `assert!` in every build, so an OEP implementation may assume them.
+//! Numeric-range preconditions on input digits are caller obligations and are
+//! never scanned.
+//!
+//! # Scratch
+//!
+//! A `scratch` argument must offer at least the matching `*_tmp_bytes`; its
+//! contents are unspecified afterwards.
 
 mod convolution;
 mod module;

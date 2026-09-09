@@ -9,6 +9,30 @@
 //! `Data` models backend-owned storage in the abstract, while
 //! `HostDataRef`/`HostDataMut` capture host-byte-readable buffers for the
 //! portions of the API that still require direct byte access.
+//!
+//! # Value model
+//!
+//! A vector-shaped container is a map `(col, limb, coeff) -> word` on a box
+//! `cols x size x n`. [`VecZnx`](crate::layouts::VecZnx) holds
+//! coefficient-domain words, [`VecZnxBig`](crate::layouts::VecZnxBig) wide
+//! accumulator words, [`VecZnxDft`](crate::layouts::VecZnxDft) backend-defined
+//! transform words. [`ScalarZnx`](crate::layouts::ScalarZnx) is a single-limb
+//! `VecZnx`. Prepared types ([`SvpPPol`](crate::layouts::SvpPPol),
+//! [`VmpPMat`](crate::layouts::VmpPMat), [`CnvPVecL`](crate::layouts::CnvPVecL),
+//! [`CnvPVecR`](crate::layouts::CnvPVecR)) denote `prep(s)` or `prep(M)`:
+//! opaque values fixed only by the equations the apply operations satisfy, in
+//! the representation their [`PrepareHint`](crate::layouts::PrepareHint)
+//! selected at allocation.
+//!
+//! # Windows
+//!
+//! A window is an affine restriction of the box: coefficients
+//! `coeff_offset..coeff_offset + n` of limbs `limb_offset + k * limb_step`.
+//! The value read through a window is the restricted map. Windows are built
+//! with `window_coeffs` and `window_limbs` on [`VecZnx`](crate::layouts::VecZnx)
+//! and [`VecZnxBig`](crate::layouts::VecZnxBig); coefficient-wise operations
+//! accept them, ring operations require `n == n_full == N`. Flat accessors
+//! (`raw`, `as_ptr`) panic on a window.
 
 mod convolution;
 mod crt;

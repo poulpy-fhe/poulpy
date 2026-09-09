@@ -10,7 +10,7 @@
 //!   backends must produce the same bytes for the same input.
 //! - [`test_word_compat_dft_cross_idft`] asserts **cross-consumption**: a DFT
 //!   buffer produced by one backend is consumed by the other. This holds for
-//!   every pair that declares [`VecZnxDftLayoutCompatible`](crate::layouts::VecZnxDftLayoutCompatible),
+//!   every pair that declares [`VecZnxDftLayoutCompatible`],
 //!   including `f64` FFT backends whose DFT-domain values may differ in final ulps.
 //!
 //! A backend whose byte layout deviates in any aspect must either mint a new

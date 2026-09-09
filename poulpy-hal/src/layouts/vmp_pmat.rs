@@ -73,6 +73,11 @@ impl VmpPMatShape {
 ///
 /// Ring degree `n` is always a power of two, so each prepared polynomial's DFT
 /// coefficient count matches vector lane widths relative to buffer alignment.
+///
+/// Denotes `prep(M)` in the [layouts value model](crate::layouts#value-model):
+/// an opaque value fixed only by the equations `vmp_apply` satisfies, in the
+/// representation the [`PrepareHint`] chosen at allocation selected (see
+/// [`VmpPMatShape::hint`]).
 #[repr(C)]
 pub struct VmpPMat<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     data: D,

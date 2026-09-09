@@ -21,6 +21,10 @@ use crate::layouts::{
 /// The word type `W` names the byte-layout convention of the buffer. The
 /// backend `B` pins producer provenance, and cross-backend zero-copy movement
 /// additionally requires the relevant layout-compatibility marker.
+///
+/// See [layouts](crate::layouts#value-model) for the container value model
+/// this type implements, and [windows](crate::layouts#windows) for the
+/// semantics of `window_coeffs`/`window_limbs`.
 #[repr(C)]
 pub struct VecZnxBig<D: Data, W: BigWord, B: Backend<BigWord = W>> {
     pub data: D,
