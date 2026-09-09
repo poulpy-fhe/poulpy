@@ -32,6 +32,8 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 
 ### CPU backends
 
+- Canonicalize rank-one AVX-512/IFMA tensor products after diagonal subtraction, including partial precision and Rayon paths.
+
 - Accelerate normalization floor carries, precision-boundary rounding and wide carry propagation with native AVX2, AVX-512/IFMA and NEON kernels, including Rayon delegation.
 - Check source and carry lengths before wide normalization kernels access memory.
 - Extend normalization kernel parity tests and benchmark sweeps to full, partial and multi-limb truncated precision across every CPU family.
