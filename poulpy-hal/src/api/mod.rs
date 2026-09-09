@@ -2,9 +2,10 @@
 //!
 //! Scheme authors program against these traits; the computation is dispatched
 //! to a backend through the [`oep`](crate::oep) extension points. Each trait
-//! documents one operation with a structured contract (`op / domain /
-//! requires / ensures / exact / test`). The shared vocabulary those contracts
-//! use is defined here, once.
+//! documents one operation with a structured contract (`op / class / mutation /
+//! definition / domain / requires / ensures / fallback / override / exact /
+//! test`; basis operations omit `definition`, `fallback` and `override`). The
+//! shared vocabulary those contracts use is defined here, once.
 //!
 //! # Value model
 //!
@@ -44,13 +45,22 @@
 //! An operation takes one column index per operand, reads that column of each
 //! input object and writes that column of `res`. Columns are independent.
 //!
-//! # Disjointness
+//! # Mutation classes
 //!
-//! `res` is a distinct object from every input; the signatures (`&mut res`,
-//! `&a`, `&b`) make anything else unrepresentable. Inputs may share an object.
-//! There is no in-place form. The remaining `*_assign` operations are the
-//! legacy in-place surface; they are being removed and carry no contract of
-//! their own.
+//! Every operation belongs to one of three classes. The classes share one
+//! arithmetic definition `f`; only the storage and mutation contract differs.
+//!
+//! - Out-of-place: `res_after = f(a, b)`. `res` is a distinct object from every
+//!   input; the signatures (`&mut res`, `&a`, `&b`) make anything else
+//!   unrepresentable, so no operation has an aliasing precondition. Inputs may
+//!   share an object.
+//! - In-place application, the `*_assign` operations: `res_after = f(res_before, a)`.
+//!   The contract refers to the destination's value before the call.
+//! - Accumulation: `res_after = res_before + f(a, b)`.
+//!
+//! Every contract names its class. An in-place or accumulating operation may be
+//! realized by a scratch-based default body (`tmp = f(...)`, then copy or add
+//! into `res`); a backend may override it with a kernel that needs no temporary.
 //!
 //! # Exactness
 //!
