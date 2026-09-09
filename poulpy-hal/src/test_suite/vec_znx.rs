@@ -1,3 +1,5 @@
+use std::f64::consts::SQRT_2;
+
 use super::{
     TestParams, alloc_host_vec_znx, download_scalar_znx, download_vec_znx, scalar_znx_backend_mut, scalar_znx_backend_ref,
     upload_scalar_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_mut_sized, vec_znx_backend_ref,
@@ -5,8 +7,10 @@ use super::{
 
 use crate::{
     api::{
-        ModuleNew, ScalarZnxAutomorphismBackend, ScalarZnxFillBinaryHwSourceBackend, ScratchOwnedAlloc, VecZnxAddAssignBackend,
-        VecZnxAddIntoBackend, VecZnxAddScalarAssignBackend, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
+        ModuleNew, ScalarZnxAutomorphismBackend, ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwSourceBackend,
+        ScalarZnxFillBinaryProbSourceBackend, ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend,
+        ScratchOwnedAlloc, VecZnxAddAssignBackend, VecZnxAddIntoBackend, VecZnxAddNormalSourceBackend,
+        VecZnxAddScalarAssignBackend, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
         VecZnxAutomorphismBackend, VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend,
         VecZnxFillUniformSourceBackend, VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAssignBackend, VecZnxLshBackend,
         VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneAssignTmpBytes,
@@ -17,8 +21,8 @@ use crate::{
         VecZnxSwitchRingBackend, VecZnxZeroBackend,
     },
     layouts::{
-        DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScratchOwned, VecZnx,
-        ZnxView, ZnxViewMut,
+        DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendMut,
+        ScratchOwned, VecZnx, ZnxView, ZnxViewMut,
     },
     source::Source,
 };
@@ -1786,6 +1790,134 @@ where
 
     assert!(coefficients.iter().all(|&x| x == 0 || x == 1));
     assert_eq!(coefficients.iter().filter(|&&x| x == 1).count(), hw);
+}
+
+pub fn test_scalar_znx_secret_sampling<B: crate::test_suite::TestBackend>(_params: &TestParams, module: &Module<B>)
+where
+    Module<B>: ScalarZnxFillTernaryHwSourceBackend<B>
+        + ScalarZnxFillTernaryProbSourceBackend<B>
+        + ScalarZnxFillBinaryProbSourceBackend<B>
+        + ScalarZnxFillBinaryBlockSourceBackend<B>,
+{
+    let n: usize = module.n();
+    let cols: usize = 2;
+    let col_i: usize = 1;
+
+    fn check<B, F>(module: &Module<B>, seed_bytes: [u8; 32], cols: usize, col_i: usize, mut fill: F) -> Vec<i64>
+    where
+        B: crate::test_suite::TestBackend,
+        F: FnMut(&mut ScalarZnx<B::OwnedBuf, B::ZnxWord>, &mut Source),
+    {
+        let mut source = Source::new(seed_bytes);
+        let host_init = ScalarZnx::alloc(module.n(), cols);
+        let mut sampled = upload_scalar_znx::<B>(&host_init);
+        fill(&mut sampled, &mut source);
+        download_scalar_znx::<B>(&sampled).at(col_i, 0).to_vec()
+    }
+
+    // Ternary, exact hamming weight: hw non-zero entries in {-1, 1}, the rest zero.
+    let hw = n / 8;
+    let coefficients = check::<B, _>(module, [2u8; 32], cols, col_i, move |res, source| {
+        module.scalar_znx_fill_ternary_hw_source_backend(
+            &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(res),
+            col_i,
+            hw,
+            source,
+        )
+    });
+    assert!(coefficients.iter().all(|&x| x == -1 || x == 0 || x == 1));
+    assert_eq!(coefficients.iter().filter(|&&x| x != 0).count(), hw);
+
+    // Ternary, probabilistic: value set is {-1, 0, 1}.
+    let coefficients = check::<B, _>(module, [3u8; 32], cols, col_i, move |res, source| {
+        module.scalar_znx_fill_ternary_prob_source_backend(
+            &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(res),
+            col_i,
+            0.5,
+            source,
+        )
+    });
+    assert!(coefficients.iter().all(|&x| x == -1 || x == 0 || x == 1));
+
+    // Binary, probabilistic: value set is {0, 1}.
+    let coefficients = check::<B, _>(module, [5u8; 32], cols, col_i, move |res, source| {
+        module.scalar_znx_fill_binary_prob_source_backend(
+            &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(res),
+            col_i,
+            0.5,
+            source,
+        )
+    });
+    assert!(coefficients.iter().all(|&x| x == 0 || x == 1));
+
+    // Binary, block-sparse: value set is {0, 1} and each block of `block_size`
+    // holds at most one 1.
+    let block_size = 8;
+    let coefficients = check::<B, _>(module, [6u8; 32], cols, col_i, move |res, source| {
+        module.scalar_znx_fill_binary_block_source_backend(
+            &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(res),
+            col_i,
+            block_size,
+            source,
+        )
+    });
+    assert!(coefficients.iter().all(|&x| x == 0 || x == 1));
+    assert!(
+        coefficients
+            .chunks(block_size)
+            .all(|block| block.iter().filter(|&&x| x == 1).count() <= 1)
+    );
+}
+
+pub fn test_vec_znx_add_normal<B: crate::test_suite::TestBackend>(_params: &TestParams, module: &Module<B>)
+where
+    Module<B>: VecZnxAddNormalSourceBackend<B>,
+{
+    let n: usize = module.n();
+    let base2k: usize = 17;
+    let size: usize = 5;
+    let noise_infos = NoiseInfos::new(2 * 17 - 3, 3.2, 6.0 * 3.2).unwrap();
+    let mut source_xe: Source = Source::new([0u8; 32]);
+    let cols: usize = 2;
+    let zero: Vec<i64> = vec![0; n];
+    let k_f64: f64 = (1u64 << noise_infos.k as u64) as f64;
+    let sqrt2: f64 = SQRT_2;
+    (0..cols).for_each(|col_i| {
+        let host_init = VecZnx::alloc(module.n(), cols, size);
+        let mut a = upload_vec_znx::<B>(&host_init);
+        module.vec_znx_add_normal_source_backend(
+            base2k,
+            &mut vec_znx_backend_mut::<B>(&mut a),
+            col_i,
+            noise_infos,
+            &mut source_xe,
+        );
+        module.vec_znx_add_normal_source_backend(
+            base2k,
+            &mut vec_znx_backend_mut::<B>(&mut a),
+            col_i,
+            noise_infos,
+            &mut source_xe,
+        );
+        let a = download_vec_znx::<B>(&a);
+        (0..cols).for_each(|col_j| {
+            if col_j != col_i {
+                (0..size).for_each(|limb_i| {
+                    assert_eq!(a.at(col_j, limb_i), zero);
+                })
+            } else {
+                let std: f64 = a.stats(base2k, col_i).std() * k_f64;
+                assert!(
+                    (std - noise_infos.sigma * sqrt2).abs() < 0.1,
+                    "std={std} ~!= {}",
+                    noise_infos.sigma * sqrt2
+                );
+                let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
+                let low_mask = (1i64 << shift) - 1;
+                assert!(a.at(col_i, limb).iter().all(|value| value & low_mask == 0));
+            }
+        })
+    });
 }
 
 pub fn test_vec_znx_lsh<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(

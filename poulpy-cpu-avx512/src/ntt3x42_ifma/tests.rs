@@ -156,6 +156,9 @@ mod ntt3x42_ifma_tests {
         params = TestParams { size: 1<<12, base2k: 50 },
         tests = {
             test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
+            test_scalar_znx_secret_sampling => poulpy_hal::test_suite::vec_znx::test_scalar_znx_secret_sampling,
+            test_vec_znx_add_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_normal,
+            test_vec_znx_big_add_normal => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_normal,
         }
     }
 

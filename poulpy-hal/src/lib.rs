@@ -81,7 +81,7 @@
 //!
 //! ## Compatibility
 //!
-//! - Requires **nightly** Rust (uses `trait_alias` and `associated_type_defaults`).
+//! - Requires **nightly** Rust (uses `trait_alias`).
 //! - All memory allocations are aligned to [`DEFAULTALIGN`] (64 bytes).
 //! - Types matching the API of **spqlios-arithmetic**.
 
