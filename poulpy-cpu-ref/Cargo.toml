@@ -83,3 +83,7 @@ required-features = ["enable-core", "enable-ckks"]
 name = "light"
 harness = false
 required-features = ["enable-core", "enable-ckks"]
+
+[[bench]]
+name = "normalize"
+harness = false

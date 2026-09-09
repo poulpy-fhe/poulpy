@@ -46,6 +46,23 @@ fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) 
     }
 }
 
+pub(super) fn cross_normalization_cases(a_size: usize, res_size: usize) -> Vec<(usize, usize, usize, i64)> {
+    let mut cases = Vec::new();
+    if matches!(a_size, 1 | 4) && matches!(res_size, 1 | 4) {
+        for (a_base, res_base) in [(1, 2), (2, 1), (17, 50), (50, 17), (50, 51), (51, 50), (51, 62), (62, 51)] {
+            for k in [
+                res_size * res_base - res_base / 2 - 1,
+                res_size.saturating_sub(1).max(1) * res_base - 1,
+            ] {
+                for offset in [-(a_base as i64) - 1, 0, a_base as i64 + 1] {
+                    cases.push((a_base, res_base, k, offset));
+                }
+            }
+        }
+    }
+    cases
+}
+
 pub fn test_vec_znx_zero_backend_matches_wrapper<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
@@ -1442,37 +1459,43 @@ pub fn test_vec_znx_normalize<BR: crate::test_suite::TestBackend, BT: crate::tes
                 );
             }
 
-            let res_k = res_size.saturating_sub(1).max(1) * base2k - 1;
-            let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
-            let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
-            for i in 0..cols {
-                module_ref.vec_znx_normalize(
-                    &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
-                    base2k,
-                    res_k,
-                    0,
-                    i,
-                    &vec_znx_backend_ref::<BR>(&a_ref),
-                    base2k,
-                    i,
-                    &mut scratch_ref.arena(),
+            let same_base = (base2k, base2k, res_size.saturating_sub(1).max(1) * base2k - 1, 0);
+            for (a_base, res_base, res_k, offset) in std::iter::once(same_base).chain(cross_normalization_cases(a_size, res_size))
+            {
+                let mut res_ref_backend = upload_vec_znx::<BR>(&res_ref);
+                let mut res_test_backend = upload_vec_znx::<BT>(&res_test);
+                for i in 0..cols {
+                    module_ref.vec_znx_normalize(
+                        &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
+                        res_base,
+                        res_k,
+                        offset,
+                        i,
+                        &vec_znx_backend_ref::<BR>(&a_ref),
+                        a_base,
+                        i,
+                        &mut scratch_ref.arena(),
+                    );
+                    module_test.vec_znx_normalize(
+                        &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
+                        res_base,
+                        res_k,
+                        offset,
+                        i,
+                        &vec_znx_backend_ref::<BT>(&a_test),
+                        a_base,
+                        i,
+                        &mut scratch_test.arena(),
+                    );
+                }
+                let res_ref_host = download_vec_znx::<BR>(&res_ref_backend);
+                let res_test_host = download_vec_znx::<BT>(&res_test_backend);
+                assert_eq!(
+                    res_ref_host, res_test_host,
+                    "a_base={a_base} res_base={res_base} k={res_k} offset={offset}"
                 );
-                module_test.vec_znx_normalize(
-                    &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
-                    base2k,
-                    res_k,
-                    0,
-                    i,
-                    &vec_znx_backend_ref::<BT>(&a_test),
-                    base2k,
-                    i,
-                    &mut scratch_test.arena(),
-                );
+                assert_canonical(&res_test_host, res_base, res_k);
             }
-            let res_ref_host = download_vec_znx::<BR>(&res_ref_backend);
-            let res_test_host = download_vec_znx::<BT>(&res_test_backend);
-            assert_eq!(res_ref_host, res_test_host);
-            assert_canonical(&res_test_host, base2k, res_k);
         }
     }
 }

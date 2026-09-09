@@ -63,3 +63,8 @@ required-features = ["enable-neon", "enable-ckks"]
 name = "light"
 harness = false
 required-features = ["enable-neon", "enable-ckks"]
+
+[[bench]]
+name = "normalize"
+harness = false
+required-features = ["enable-neon"]

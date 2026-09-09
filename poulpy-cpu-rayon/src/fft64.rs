@@ -213,6 +213,21 @@ impl ZnxExtractDigitAddMul for $rayon {
 
 impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for $rayon {
     #[inline(always)]
+    fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
+        <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
+    }
+
+    #[inline(always)]
+    fn znx_normalize_round<const CARRY_IN: bool, const PAD: bool>(base2k: usize, lsh: usize, padding: usize, res: &mut [i64], a: &[i64], carry: &mut [i64]) {
+        <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry);
+    }
+
+    #[inline(always)]
+    fn znx_normalize_round_assign<const CARRY_IN: bool>(base2k: usize, lsh: usize, padding: usize, res: &mut [i64], carry: &mut [i64]) {
+        <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(base2k, lsh, padding, res, carry);
+    }
+
+    #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
     }

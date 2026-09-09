@@ -30,29 +30,6 @@ pub fn vec_znx_normalize_tmp_bytes(n: usize) -> usize {
 }
 
 #[inline]
-fn split_digit(base2k: usize, value: i128) -> (i64, i128) {
-    let modulus = 1i128 << base2k;
-    let half = modulus >> 1;
-    let unsigned = value.rem_euclid(modulus);
-    let digit = if unsigned >= half { unsigned - modulus } else { unsigned };
-    (digit as i64, (value - digit) >> base2k)
-}
-
-#[inline]
-fn finish_normalized_limb(base2k: usize, active_size: usize, padding: usize, limb: usize, digit: &mut [i64], carry: &mut [i64]) {
-    if limb >= active_size {
-        digit.fill(0);
-    } else if limb + 1 == active_size && padding != 0 {
-        for (digit, carry) in digit.iter_mut().zip(carry.iter_mut()) {
-            let low_digit = split_digit(padding, *digit as i128).0;
-            let (rounded_digit, rounding_carry) = split_digit(base2k, *digit as i128 - low_digit as i128);
-            *digit = rounded_digit;
-            *carry = carry.wrapping_add(rounding_carry as i64);
-        }
-    }
-}
-
-#[inline]
 pub(crate) fn normalize_needs_exact(a_size: usize, a_base2k: usize, res_size: usize, res_base2k: usize, offset: i64) -> bool {
     if a_size == 0 || res_size == 0 || a_base2k > 63 || res_base2k > 63 {
         return true;
@@ -66,6 +43,17 @@ pub(crate) fn normalize_needs_exact(a_size: usize, a_base2k: usize, res_size: us
         a_bits - res_bits
     };
     offset < min_offset || offset >= a_bits
+}
+
+#[inline]
+pub(crate) fn normalize_cross_needs_exact(a_size: usize, a_base2k: usize, res_base2k: usize, res_k: usize, offset: i64) -> bool {
+    if a_size == 0 || !(1..=63).contains(&a_base2k) || !(1..=63).contains(&res_base2k) {
+        return true;
+    }
+    let a_bits = a_size as i128 * a_base2k as i128;
+    let aligned_offset = offset.div_euclid(a_base2k as i64) as i128 * a_base2k as i128;
+    // The slice traversal needs a source limb at the rounding boundary.
+    a_bits + res_k as i128 > i64::MAX as i128 || res_k as i128 + aligned_offset <= 0 || offset as i128 >= a_bits
 }
 
 pub(crate) struct VecZnxRangeMut<'a> {
@@ -616,7 +604,59 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
     }
     let active_size = res_k.div_ceil(res_base2k);
     let padding = (res_base2k - res_k % res_base2k) % res_base2k;
-    if normalize_needs_exact(a.size(), a_base2k, size, res_base2k, res_offset) {
+    let partial = res_k != size * res_base2k;
+    if res_base2k == a_base2k
+        && res_base2k <= 63
+        && (partial || normalize_needs_exact(a.size(), a_base2k, active_size, res_base2k, res_offset))
+    {
+        let limb_offset = res_offset.div_euclid(res_base2k as i64);
+        let boundary = (active_size as i64 - 1).saturating_add(limb_offset);
+        if (0..a.size() as i64).contains(&boundary) {
+            let lsh = res_offset.rem_euclid(res_base2k as i64) as usize;
+            let carry = &mut carry[..coeff_len];
+            let discarded = boundary as usize + 1 < a.size();
+            for j in (boundary as usize + 1..a.size()).rev() {
+                let source = &a.at(a_col, j)[coeff_start..coeff_start + coeff_len];
+                match (j + 1 == a.size(), padding == 0 && j == boundary as usize + 1) {
+                    (true, false) => BE::znx_normalize_floor::<false, false>(res_base2k, lsh, source, carry),
+                    (true, true) => BE::znx_normalize_floor::<false, true>(res_base2k, lsh, source, carry),
+                    (false, false) => BE::znx_normalize_floor::<true, false>(res_base2k, lsh, source, carry),
+                    (false, true) => BE::znx_normalize_floor::<true, true>(res_base2k, lsh, source, carry),
+                }
+            }
+            let source = &a.at(a_col, boundary as usize)[coeff_start..coeff_start + coeff_len];
+            if discarded {
+                BE::znx_normalize_round::<true, true>(res_base2k, lsh, padding, res.at_mut(active_size - 1), source, carry);
+            } else {
+                BE::znx_normalize_round::<false, true>(res_base2k, lsh, padding, res.at_mut(active_size - 1), source, carry);
+            }
+            for j in (0..active_size - 1).rev() {
+                let source = j as i64 + limb_offset;
+                if source >= 0 {
+                    BE::znx_normalize_middle_step::<true>(
+                        res_base2k,
+                        lsh,
+                        res.at_mut(j),
+                        &a.at(a_col, source as usize)[coeff_start..coeff_start + coeff_len],
+                        carry,
+                    );
+                } else {
+                    BE::znx_extract_digit_mul(res_base2k, 0, res.at_mut(j), carry);
+                }
+            }
+            for j in active_size..size {
+                res.at_mut(j).fill(0);
+            }
+            return;
+        }
+    }
+    let drops_precision = a.size() as i128 * a_base2k as i128 > res_k as i128 + res_offset as i128;
+    let needs_exact = if res_base2k == a_base2k {
+        normalize_needs_exact(a.size(), a_base2k, active_size, res_base2k, res_offset) || (partial && drops_precision)
+    } else {
+        normalize_cross_needs_exact(a.size(), a_base2k, res_base2k, res_k, res_offset)
+    };
+    if needs_exact {
         for i in 0..coeff_len {
             normalize_exact::<true, _, _>(
                 |j| a.at(a_col, j)[coeff_start + i] as i128,
@@ -635,9 +675,7 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
         true => vec_znx_normalize_inter_base2k::<BE>(
             res_base2k,
             &mut res,
-            size,
             active_size,
-            padding,
             res_offset,
             a,
             a_col,
@@ -647,10 +685,9 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
         ),
         false => vec_znx_normalize_cross_base2k::<BE>(
             &mut res,
-            size,
-            res_base2k,
             active_size,
-            padding,
+            res_base2k,
+            res_k,
             res_offset,
             a,
             a_base2k,
@@ -660,6 +697,9 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
             carry,
         ),
     }
+    for j in active_size..size {
+        res.at_mut(j).fill(0);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -667,8 +707,6 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
     base2k: usize,
     res: &mut VecZnxRangeMut<'r>,
     res_size: usize,
-    active_size: usize,
-    padding: usize,
     res_offset: i64,
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
@@ -742,13 +780,11 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
             &a.at(a_col, a_start - j - 1)[lo..hi],
             carry,
         );
-        finish_normalized_limb(base2k, active_size, padding, res_limb, res.at_mut(res_limb), carry);
     }
 
     // Propagates the carry over the non-overlapping limbs between res and a
     for j in (0..res_end).rev() {
         BE::znx_extract_digit_mul(base2k, 0, res.at_mut(j), carry);
-        finish_normalized_limb(base2k, active_size, padding, j, res.at_mut(j), carry);
     }
 }
 
@@ -757,8 +793,7 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
     res: &mut VecZnxRangeMut<'r>,
     res_size: usize,
     res_base2k: usize,
-    active_size: usize,
-    padding: usize,
+    res_k: usize,
     res_offset: i64,
     a: &VecZnxBackendRef<'a, BE>,
     a_base2k: usize,
@@ -792,7 +827,8 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
 
     // Total precision (in bits) that `a` and `res` can represent.
     let a_tot_bits: usize = a_size * a_base2k;
-    let res_tot_bits: usize = res_size * res_base2k;
+    let res_tot_bits: usize = res_k;
+    let drops_precision = a_tot_bits as i128 > res_k as i128 + res_offset as i128;
 
     // Derive intra-limb shift and cross-limb offset.
     let mut lsh: i64 = res_offset % a_base2k as i64;
@@ -830,26 +866,25 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
         return;
     }
 
-    // Limbs of `a` that have a greater precision than `res`.
-    let a_out_range: usize = a_size.saturating_sub(a_start);
-
-    for j in 0..a_out_range {
-        if j == 0 {
-            BE::znx_normalize_first_step_carry_only(a_base2k, lsh_pos, &a.at(a_col, a_size - j - 1)[lo..hi], a_carry);
-        } else {
-            BE::znx_normalize_middle_step_carry_only(a_base2k, lsh_pos, &a.at(a_col, a_size - j - 1)[lo..hi], a_carry);
+    // Floor the discarded limbs; only the boundary contributes rounding.
+    let a_out_range = a_size.saturating_sub(a_start);
+    let take = (a_tot_bits - a_start_bit) % a_base2k;
+    if a_out_range != 0 {
+        for j in (a_start..a_size).rev() {
+            let source = &a.at(a_col, j)[lo..hi];
+            match (j + 1 == a_size, take == 0 && j == a_start) {
+                (true, false) => BE::znx_normalize_floor::<false, false>(a_base2k, lsh_pos, source, a_carry),
+                (true, true) => BE::znx_normalize_floor::<false, true>(a_base2k, lsh_pos, source, a_carry),
+                (false, false) => BE::znx_normalize_floor::<true, false>(a_base2k, lsh_pos, source, a_carry),
+                (false, true) => BE::znx_normalize_floor::<true, true>(a_base2k, lsh_pos, source, a_carry),
+            }
         }
-    }
-
-    // Zero carry if the above loop didn't trigger.
-    if a_out_range == 0 {
+    } else if !drops_precision {
         BE::znx_zero(a_carry);
     }
 
-    // How much is left to accumulate to fill a limb of `res`.
-    let mut res_acc_left: usize = res_base2k;
+    let mut res_acc_left = res_start_bit - (res_start - 1) * res_base2k;
 
-    // Starting limb of `res`.
     let mut res_limb: usize = res_start - 1;
     let mut initialized = false;
 
@@ -867,31 +902,18 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
         // be flushed on res.
         let mut a_take_left: usize = a_base2k;
 
-        // Normalizes the j-th limb of a and store the results into `a_norm``.
-        // This step is required to avoid overflow in the next step,
-        // which assumes that |a| is bounded by 2^{a_base2k -1} (i.e. normalized).
-        BE::znx_normalize_middle_step::<true>(a_base2k, lsh_pos, a_norm, a_slice, a_carry);
-
-        // In the first iteration we need to match the precision `res` and `a`.
-        if j == 0 {
-            // Case where `a` has more precision than `res` (after taking into account the offset)
-            //
-            // For example:
-            //
-            // a:      [x  x  x  x  x][x  x  x  x  x][x  x  x  x  x][x  x  x  x  x]
-            // res: [x  x  x  x  x  x][x  x  x  x  x  x][x  x  x  x  x  x]
-            if !(a_tot_bits - a_start_bit).is_multiple_of(a_base2k) {
-                let take: usize = (a_tot_bits - a_start_bit) % a_base2k;
+        if j == 0 && drops_precision {
+            if a_out_range != 0 {
+                BE::znx_normalize_round::<true, false>(a_base2k, lsh_pos, take, a_norm, a_slice, a_carry);
+            } else {
+                BE::znx_normalize_round::<false, false>(a_base2k, lsh_pos, take, a_norm, a_slice, a_carry);
+            }
+            a_take_left -= take;
+        } else {
+            BE::znx_normalize_middle_step::<true>(a_base2k, lsh_pos, a_norm, a_slice, a_carry);
+            if j == 0 && take != 0 {
                 BE::znx_mul_power_of_two_assign(-(take as i64), a_norm);
                 a_take_left -= take;
-            // Case where `res` has more precision than `a` (after taking into account the offset)
-            //
-            // For example:
-            //
-            // a:    [x  x  x  x  x][x  x  x  x  x][x  x  x  x  x][x  x  x  x  x]
-            // res:           [x  x  x  x  x  x][x  x  x  x  x  x][x  x  x  x  x  x]
-            } else if !(res_tot_bits - res_start_bit).is_multiple_of(res_base2k) {
-                res_acc_left -= (res_tot_bits - res_start_bit) % res_base2k;
             }
         }
 
@@ -962,7 +984,6 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
                     // Previous step might not consume all bits of a_carry
                     // Extraction reduces a_carry before adding the bounded result carry.
                     BE::znx_add_assign(res_carry, a_carry);
-                    finish_normalized_limb(res_base2k, active_size, padding, res_limb, res_slice, res_carry);
 
                     // We are done, so breaks out of the loop (yes we are at a[0], but
                     // this avoids possible over/under flows of tracking variables)
@@ -973,8 +994,6 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
                 if res_acc_left != 0 {
                     BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
                 }
-
-                finish_normalized_limb(res_base2k, active_size, padding, res_limb, res_slice, res_carry);
 
                 if res_limb == 0 {
                     break 'outer;
@@ -1014,7 +1033,6 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
 
         for j in (0..res_end).rev() {
             BE::znx_extract_digit_mul(res_base2k, 0, res.at_mut(j), carry_to_use);
-            finish_normalized_limb(res_base2k, active_size, padding, j, res.at_mut(j), carry_to_use);
         }
     }
 }
@@ -1026,7 +1044,11 @@ pub fn vec_znx_normalize_assign<'r, BE>(
     res_col: usize,
     carry: &mut [i64],
 ) where
-    BE: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
+    BE: Backend<ZnxWord = i64>
+        + I64NormalizeOps
+        + ZnxNormalizeFirstStepAssign
+        + ZnxNormalizeMiddleStepAssign
+        + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
     assert!(res_k <= res.size() * base2k);
@@ -1044,7 +1066,11 @@ fn vec_znx_normalize_assign_range<'r, BE>(
     coeff_len: usize,
     carry: &mut [i64],
 ) where
-    BE: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
+    BE: Backend<ZnxWord = i64>
+        + I64NormalizeOps
+        + ZnxNormalizeFirstStepAssign
+        + ZnxNormalizeMiddleStepAssign
+        + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
     #[cfg(debug_assertions)]
@@ -1084,7 +1110,11 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
     coeff_len: usize,
     carry: &mut [i64],
 ) where
-    BE: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
+    BE: Backend<ZnxWord = i64>
+        + I64NormalizeOps
+        + ZnxNormalizeFirstStepAssign
+        + ZnxNormalizeMiddleStepAssign
+        + ZnxNormalizeFinalStepAssign,
 {
     #[cfg(debug_assertions)]
     {
@@ -1095,17 +1125,49 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
     }
     let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
     let carry = &mut carry[..coeff_len];
-    let active_size = res_k.div_ceil(base2k);
-    let padding = (base2k - res_k % base2k) % base2k;
+    if res_k == 0 {
+        for j in 0..size {
+            res.at_mut(j).fill(0);
+        }
+        return;
+    }
     if base2k == 64 {
-        carry.fill(0);
-        for j in (0..size).rev() {
-            for (digit, carry) in res.at_mut(j).iter_mut().zip(carry.iter_mut()) {
-                let (value, next) = split_digit(base2k, *digit as i128 + *carry as i128);
-                *digit = value;
-                *carry = next as i64;
+        for i in 0..coeff_len {
+            normalize_exact::<true, _, _>(
+                |j| unsafe { *res_ptr.add((j * cols + res_col) * n + coeff_start + i) } as i128,
+                size,
+                base2k,
+                size,
+                base2k,
+                res_k,
+                0,
+                |j, digit| res.at_mut(j)[i] = digit,
+            );
+        }
+        return;
+    }
+    let active_size = res_k.div_ceil(base2k);
+    if res_k != size * base2k {
+        let padding = active_size * base2k - res_k;
+        let discarded = active_size < size;
+        for j in (active_size..size).rev() {
+            match (j + 1 == size, padding == 0 && j == active_size) {
+                (true, false) => BE::znx_normalize_floor::<false, false>(base2k, 0, res.at_mut(j), carry),
+                (true, true) => BE::znx_normalize_floor::<false, true>(base2k, 0, res.at_mut(j), carry),
+                (false, false) => BE::znx_normalize_floor::<true, false>(base2k, 0, res.at_mut(j), carry),
+                (false, true) => BE::znx_normalize_floor::<true, true>(base2k, 0, res.at_mut(j), carry),
             }
-            finish_normalized_limb(base2k, active_size, padding, j, res.at_mut(j), carry);
+        }
+        if discarded {
+            BE::znx_normalize_round_assign::<true>(base2k, 0, padding, res.at_mut(active_size - 1), carry);
+        } else {
+            BE::znx_normalize_round_assign::<false>(base2k, 0, padding, res.at_mut(active_size - 1), carry);
+        }
+        for j in (0..active_size - 1).rev() {
+            BE::znx_normalize_middle_step_assign(base2k, 0, res.at_mut(j), carry);
+        }
+        for j in active_size..size {
+            res.at_mut(j).fill(0);
         }
         return;
     }
@@ -1117,7 +1179,6 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
         } else {
             BE::znx_normalize_middle_step_assign(base2k, 0, res.at_mut(j), carry);
         }
-        finish_normalized_limb(base2k, active_size, padding, j, res.at_mut(j), carry);
     }
 }
 
@@ -1653,7 +1714,7 @@ impl<F: FnMut(usize) -> i128, const NARROW: bool> NormalizationBits<F, NARROW> {
     }
 }
 
-/// Quantizes at the destination capacity, then emits canonical digits at `res_k`.
+/// Quantizes once at `res_k`, then emits centered digits with zero precision padding.
 /// `NARROW` requires every source coefficient to fit in i64.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn normalize_exact<const NARROW: bool, F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
@@ -1666,30 +1727,18 @@ pub(crate) fn normalize_exact<const NARROW: bool, F: FnMut(usize) -> i128, G: Fn
     offset: i64,
     mut output: G,
 ) {
-    let active_size = res_k.div_ceil(res_base2k);
-    let precision_padding = (res_base2k - res_k % res_base2k) % res_base2k;
-    let mut precision_carry = 0i128;
-    let mut output = |j, digit: i64| {
-        if j >= active_size {
-            output(j, 0);
-        } else if res_k == res_size * res_base2k {
-            output(j, digit);
-        } else {
-            let mut value = digit as i128 + precision_carry;
-            if j + 1 == active_size && precision_padding != 0 {
-                value -= split_digit(precision_padding, value).0 as i128;
-            }
-            let (digit, carry) = split_digit(res_base2k, value);
-            precision_carry = carry;
-            output(j, digit);
-        }
-    };
     if a_base2k > 63 || res_base2k > 63 {
-        normalize_exact_wide(source, a_size, a_base2k, res_size, res_base2k, offset, output);
+        normalize_exact_wide(source, a_size, a_base2k, res_size, res_base2k, res_k, offset, output);
         return;
     }
+    let (active_size, precision_padding) = if res_k == res_size * res_base2k {
+        (res_size, 0)
+    } else {
+        let active_size = res_k.div_ceil(res_base2k);
+        (active_size, active_size * res_base2k - res_k)
+    };
     let mut bits = NormalizationBits::<_, NARROW>::new(source, a_size, a_base2k);
-    let drop = a_size as i128 * a_base2k as i128 - res_size as i128 * res_base2k as i128 - offset as i128;
+    let drop = a_size as i128 * a_base2k as i128 - res_k as i128 - offset as i128;
     let mut carry = 0u64;
     let mut padding = 0i128;
     if drop > 0 {
@@ -1698,8 +1747,22 @@ pub(crate) fn normalize_exact<const NARROW: bool, F: FnMut(usize) -> i128, G: Fn
     } else {
         padding = -drop;
     }
+    let mut full_size = active_size;
+    if precision_padding != 0 {
+        full_size -= 1;
+        let width = res_base2k - precision_padding;
+        let zeroes = padding.min(width as i128) as usize;
+        padding -= zeroes as i128;
+        let raw = bits.read(width - zeroes) << zeroes;
+        let value = raw + carry;
+        carry = (value + (1u64 << (width - 1))) >> width;
+        output(
+            full_size,
+            ((value as i128 - ((carry as i128) << width)) << precision_padding) as i64,
+        );
+    }
     let half = 1u64 << (res_base2k - 1);
-    for j in (0..res_size).rev() {
+    for j in (0..full_size).rev() {
         let zeroes = padding.min(res_base2k as i128) as usize;
         padding -= zeroes as i128;
         let raw = bits.read(res_base2k - zeroes) << zeroes;
@@ -1707,20 +1770,31 @@ pub(crate) fn normalize_exact<const NARROW: bool, F: FnMut(usize) -> i128, G: Fn
         carry = (value + half) >> res_base2k;
         output(j, (value as i128 - ((carry as i128) << res_base2k)) as i64);
     }
+    for j in active_size..res_size {
+        output(j, 0);
+    }
 }
 
 // Preserves the wider source radices and base-64 output supported by NTT.
+#[allow(clippy::too_many_arguments)]
 fn normalize_exact_wide<F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
     mut source: F,
     a_size: usize,
     a_base2k: usize,
     res_size: usize,
     res_base2k: usize,
+    res_k: usize,
     offset: i64,
     mut output: G,
 ) {
     assert!((1..=127).contains(&a_base2k));
     assert!((1..=64).contains(&res_base2k));
+    let (active_size, precision_padding) = if res_k == res_size * res_base2k {
+        (res_size, 0)
+    } else {
+        let active_size = res_k.div_ceil(res_base2k);
+        (active_size, active_size * res_base2k - res_k)
+    };
     let mask = (1u128 << a_base2k) - 1;
     let mut left = a_size;
     let mut carry = 0i128;
@@ -1757,7 +1831,7 @@ fn normalize_exact_wide<F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
         }
         result
     };
-    let drop = a_size as i128 * a_base2k as i128 - res_size as i128 * res_base2k as i128 - offset as i128;
+    let drop = a_size as i128 * a_base2k as i128 - res_k as i128 - offset as i128;
     let mut rounding = 0u128;
     let mut padding = 0i128;
     if drop > 0 {
@@ -1766,13 +1840,29 @@ fn normalize_exact_wide<F: FnMut(usize) -> i128, G: FnMut(usize, i64)>(
     } else {
         padding = -drop;
     }
+    let mut full_size = active_size;
+    if precision_padding != 0 {
+        full_size -= 1;
+        let width = res_base2k - precision_padding;
+        let zeroes = padding.min(width as i128) as usize;
+        padding -= zeroes as i128;
+        let value = (read((width - zeroes) as i128, false) << zeroes) + rounding;
+        rounding = (value + (1u128 << (width - 1))) >> width;
+        output(
+            full_size,
+            ((value as i128 - ((rounding as i128) << width)) << precision_padding) as i64,
+        );
+    }
     let half = 1u128 << (res_base2k - 1);
-    for j in (0..res_size).rev() {
+    for j in (0..full_size).rev() {
         let zeroes = padding.min(res_base2k as i128) as usize;
         padding -= zeroes as i128;
         let value = (read((res_base2k - zeroes) as i128, false) << zeroes) + rounding;
         rounding = (value + half) >> res_base2k;
         output(j, (value as i128 - ((rounding as i128) << res_base2k)) as i64);
+    }
+    for j in active_size..res_size {
+        output(j, 0);
     }
 }
 

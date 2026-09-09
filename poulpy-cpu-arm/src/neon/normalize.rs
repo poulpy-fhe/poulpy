@@ -186,6 +186,7 @@ unsafe fn nfc_final_chunk(s: &NfcShifts, lo_a: int64x2_t, lo_c: int64x2_t) -> in
 /// `base2k > 64`. Caller must satisfy `lsh < base2k`.
 #[inline]
 pub(crate) fn nfc_middle_step_neon(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+    assert!(a.len() >= res.len() && carry.len() >= res.len());
     if base2k >= 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step(base2k, lsh, res, a, carry);
         return;
@@ -217,6 +218,7 @@ pub(crate) fn nfc_middle_step_neon(base2k: usize, lsh: usize, res: &mut [i64], a
 /// `nfc_middle_step_into` — fused middle step for `res ±= normalize(a)`.
 #[inline]
 pub(crate) fn nfc_middle_step_into_neon<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+    assert!(a.len() >= res.len() && carry.len() >= res.len());
     if base2k >= 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step_into::<O>(base2k, lsh, res, a, carry);
         return;
@@ -261,6 +263,7 @@ pub(crate) fn nfc_middle_step_into_neon<O: AssignOp>(base2k: usize, lsh: usize, 
 /// `nfc_middle_step_assign` — in-place `i64` `res` update with `i128` carry.
 #[inline]
 pub(crate) fn nfc_middle_step_assign_neon(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+    assert!(carry.len() >= res.len());
     if base2k >= 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step_assign(base2k, lsh, res, carry);
         return;
@@ -290,6 +293,7 @@ pub(crate) fn nfc_middle_step_assign_neon(base2k: usize, lsh: usize, res: &mut [
 /// `nfc_final_step_assign` — flush i128 carry into the last i64 limb.
 #[inline]
 pub(crate) fn nfc_final_step_assign_neon(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+    assert!(carry.len() >= res.len());
     if base2k >= 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_final_step_assign(base2k, lsh, res, carry);
         return;
@@ -321,6 +325,7 @@ pub(crate) fn nfc_final_step_assign_neon(base2k: usize, lsh: usize, res: &mut [i
 /// `nfc_final_step_into` — fused final step for `res ±= normalize(a)`.
 #[inline]
 pub(crate) fn nfc_final_step_into_neon<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+    assert!(carry.len() >= res.len());
     if base2k >= 64 || res.len() < 2 {
         <NTT4x30Ref as I128NormalizeOps>::nfc_final_step_into::<O>(base2k, lsh, res, carry);
         return;
@@ -367,8 +372,10 @@ pub(crate) unsafe fn nfc_extract_normalize_neon<const OVERWRITE: bool, const FIN
             poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
                 base2k, lsh, res_base2k, res, src, carry,
             );
-        } else {
+        } else if OVERWRITE {
             poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
+        } else {
+            <NTT4x30Ref as I128NormalizeOps>::znx_extract_digit_addmul_i128(base2k, lsh, res, src);
         }
         return;
     }
@@ -403,8 +410,10 @@ pub(crate) unsafe fn nfc_extract_normalize_neon<const OVERWRITE: bool, const FIN
                 &mut src[end..],
                 &mut carry[end..],
             );
-        } else {
+        } else if OVERWRITE {
             poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
+        } else {
+            <NTT4x30Ref as I128NormalizeOps>::znx_extract_digit_addmul_i128(base2k, lsh, &mut res[end..], &mut src[end..]);
         }
     }
 }

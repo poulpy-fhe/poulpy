@@ -6,7 +6,7 @@ use core::arch::aarch64::{
 };
 
 #[inline(always)]
-unsafe fn load2_i128(p: *const i128) -> (uint64x2_t, int64x2_t) {
+pub(super) unsafe fn load2_i128(p: *const i128) -> (uint64x2_t, int64x2_t) {
     unsafe {
         let v0: int64x2_t = vld1q_s64(p as *const i64); // [lo0, hi0]
         let v1: int64x2_t = vld1q_s64((p as *const i64).add(2)); // [lo1, hi1]
@@ -37,7 +37,7 @@ unsafe fn vshrq_helper_arith_63(v: int64x2_t) -> int64x2_t {
 }
 
 #[inline(always)]
-unsafe fn store2_i128(p: *mut i128, lo: uint64x2_t, hi: int64x2_t) {
+pub(super) unsafe fn store2_i128(p: *mut i128, lo: uint64x2_t, hi: int64x2_t) {
     unsafe {
         let lo_s: int64x2_t = vreinterpretq_s64_u64(lo);
         let v0: int64x2_t = vzip1q_s64(lo_s, hi); // [lo0, hi0]
@@ -49,7 +49,7 @@ unsafe fn store2_i128(p: *mut i128, lo: uint64x2_t, hi: int64x2_t) {
 
 /// `(lo_r, hi_r) = (lo_a, hi_a) + (lo_b, hi_b)` over 2 lanes of i128.
 #[inline(always)]
-unsafe fn add2_i128(lo_a: uint64x2_t, hi_a: int64x2_t, lo_b: uint64x2_t, hi_b: int64x2_t) -> (uint64x2_t, int64x2_t) {
+pub(super) unsafe fn add2_i128(lo_a: uint64x2_t, hi_a: int64x2_t, lo_b: uint64x2_t, hi_b: int64x2_t) -> (uint64x2_t, int64x2_t) {
     unsafe {
         let lo_r: uint64x2_t = vaddq_u64(lo_a, lo_b);
         // carry mask: lanes where lo_r < lo_a (unsigned overflow) = -1.

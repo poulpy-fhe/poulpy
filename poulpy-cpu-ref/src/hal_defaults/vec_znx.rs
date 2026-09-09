@@ -236,7 +236,7 @@ where
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
+        BE: I64NormalizeOps + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {

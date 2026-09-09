@@ -244,7 +244,7 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
         let pt_infos = GLWEPlaintextLayout {
             n: self.n(),
             base2k: self.base2k(),
-            k: 1_usize.into(),
+            k: 2_usize.into(),
         };
 
         // TODO(device): this decrypt helper still stages the plaintext in a
@@ -276,7 +276,7 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T, i64> {
         let pt_infos = GLWEPlaintextLayout {
             n: self.n(),
             base2k: self.base2k(),
-            k: 1_usize.into(),
+            k: 2_usize.into(),
         };
         module.glwe_plaintext_bytes_of_from_infos(&pt_infos) + module.glwe_decrypt_tmp_bytes(self)
     }
