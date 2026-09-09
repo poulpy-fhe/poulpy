@@ -117,7 +117,11 @@ pub fn vec_znx_normalize_assign_par<B, T>(
     res_col: usize,
     carry: &mut [i64],
 ) where
-    B: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
+    B: Backend<ZnxWord = i64>
+        + I64NormalizeOps
+        + ZnxNormalizeFirstStepAssign
+        + ZnxNormalizeMiddleStepAssign
+        + ZnxNormalizeFinalStepAssign,
     for<'x> B: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
     B: 'static,
     T: RayonTuning,

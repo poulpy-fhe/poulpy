@@ -2,6 +2,7 @@
 
 pub(crate) mod conv_i64;
 pub(crate) mod fft;
+pub(crate) mod normalization_boundary;
 pub(crate) mod normalize;
 pub(crate) mod ntt4x30_arithmetic;
 pub(crate) mod ntt4x30_convert;

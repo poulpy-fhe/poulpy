@@ -30,6 +30,119 @@ use std::arch::x86_64::*;
 use itertools::izip;
 use poulpy_cpu_ref::reference::znx::{get_carry_i128, get_digit_i128};
 
+/// Floor-decompose four shifted i128 values without a signed left shift.
+#[inline(always)]
+unsafe fn nfc_floor_chunk<const CARRY_IN: bool>(
+    shifts: &NfcShifts,
+    boundary: &crate::znx_avx::NormalizationBoundaryAvx,
+    source: (__m256i, __m256i),
+    carry: (__m256i, __m256i),
+) -> (__m256i, __m256i, __m256i) {
+    unsafe {
+        let (low, overflow) = boundary.floor_low::<CARRY_IN>(source.0, carry.0);
+        let source_lo = _mm256_or_si256(
+            _mm256_srl_epi64(source.0, shifts.srl_b2klsh),
+            _mm256_sll_epi64(source.1, shifts.sll_b2klsh),
+        );
+        let source_hi = sra_epi64(source.1, shifts.b2klsh);
+        let (high_lo, high_hi) = if CARRY_IN {
+            let carry_lo = _mm256_or_si256(
+                _mm256_srl_epi64(carry.0, shifts.srl_b2k),
+                _mm256_sll_epi64(carry.1, shifts.sll_b2k),
+            );
+            let carry_hi = sra_epi64(carry.1, shifts.b2k);
+            add4_i128(source_lo, source_hi, carry_lo, carry_hi)
+        } else {
+            (source_lo, source_hi)
+        };
+        let (high_lo, high_hi) = add4_i128(high_lo, high_hi, overflow, shifts.zero);
+        (low, high_lo, high_hi)
+    }
+}
+
+/// # Safety
+/// Requires AVX2. Slice lengths and radix parameters are checked before access.
+#[inline]
+#[target_feature(enable = "avx2")]
+pub(super) unsafe fn nfc_normalize_floor_avx2<const CARRY_IN: bool, const ROUND: bool>(
+    base2k: usize,
+    lsh: usize,
+    a: &[i128],
+    carry: &mut [i128],
+) {
+    assert!(a.len() >= carry.len());
+    unsafe {
+        let boundary = crate::znx_avx::NormalizationBoundaryAvx::new(base2k, lsh, 0);
+        let shifts = NfcShifts::new(base2k as u32, lsh as u32);
+        let chunks = carry.len() / 4;
+        for i in 0..chunks {
+            let source = load4_i128(a.as_ptr().cast(), i);
+            let incoming = if CARRY_IN {
+                load4_i128(carry.as_ptr().cast(), i)
+            } else {
+                (shifts.zero, shifts.zero)
+            };
+            let (low, mut high_lo, mut high_hi) = nfc_floor_chunk::<CARRY_IN>(&shifts, &boundary, source, incoming);
+            if ROUND {
+                (high_lo, high_hi) = add4_i128(high_lo, high_hi, boundary.round_bit(low), shifts.zero);
+            }
+            store4_i128(carry.as_mut_ptr().cast(), i, high_lo, high_hi);
+        }
+        let end = chunks * 4;
+        poulpy_cpu_ref::reference::normalization::nfc_normalize_floor_ref::<CARRY_IN, ROUND>(
+            base2k,
+            lsh,
+            &a[end..],
+            &mut carry[end..],
+        );
+    }
+}
+
+/// # Safety
+/// Requires AVX2. Slice lengths and radix parameters are checked before access.
+#[inline]
+#[target_feature(enable = "avx2")]
+pub(super) unsafe fn nfc_normalize_round_avx2<const CARRY_IN: bool, const PAD: bool>(
+    base2k: usize,
+    lsh: usize,
+    padding: usize,
+    res: &mut [i64],
+    a: &[i128],
+    carry: &mut [i128],
+) {
+    assert!(a.len() >= res.len() && carry.len() >= res.len());
+    unsafe {
+        let boundary = crate::znx_avx::NormalizationBoundaryAvx::new(base2k, lsh, padding);
+        let shifts = NfcShifts::new(base2k as u32, lsh as u32);
+        let chunks = res.len() / 4;
+        for i in 0..chunks {
+            let source = load4_i128(a.as_ptr().cast(), i);
+            let incoming = if CARRY_IN {
+                load4_i128(carry.as_ptr().cast(), i)
+            } else {
+                (shifts.zero, shifts.zero)
+            };
+            let (low, high_lo, high_hi) = nfc_floor_chunk::<CARRY_IN>(&shifts, &boundary, source, incoming);
+            let (digit, extra) = boundary.round::<PAD>(low);
+            let (high_lo, high_hi) = add4_i128(high_lo, high_hi, extra, shifts.zero);
+            _mm256_storeu_si256(
+                res.as_mut_ptr().cast::<__m256i>().add(i),
+                _mm256_permute4x64_epi64(digit, 0xD8),
+            );
+            store4_i128(carry.as_mut_ptr().cast(), i, high_lo, high_hi);
+        }
+        let end = chunks * 4;
+        poulpy_cpu_ref::reference::normalization::nfc_normalize_round_ref::<CARRY_IN, PAD>(
+            base2k,
+            lsh,
+            padding,
+            &mut res[end..],
+            &a[end..],
+            &mut carry[end..],
+        );
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Scalar fallback helpers (used as tails in AVX2 kernels)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -961,19 +1074,27 @@ pub(super) unsafe fn nfc_extract_normalize_avx2<const OVERWRITE: bool, const FIN
     src: &mut [i128],
     carry: &mut [i128],
 ) {
-    if base2k >= 64 || res_base2k >= 64 {
+    let extract_tail = |res: &mut [i64], src: &mut [i128]| {
+        for (out, source) in res.iter_mut().zip(src) {
+            let digit = get_digit_i128(base2k, *source);
+            let value = (digit as i64).wrapping_shl(lsh as u32);
+            *out = if OVERWRITE { value } else { out.wrapping_add(value) };
+            *source = get_carry_i128(base2k, *source, digit);
+        }
+    };
+    if base2k >= 64 || (FINALIZE && res_base2k >= 64) {
         if FINALIZE {
             poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
                 base2k, lsh, res_base2k, res, src, carry,
             );
         } else {
-            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
+            extract_tail(res, src);
         }
         return;
     }
     unsafe {
         let source_shifts = NfcShifts::new(base2k as u32, 0);
-        let result_shifts = NfcShifts::new(res_base2k as u32, 0);
+        let result_shifts = NfcShifts::new(if FINALIZE { res_base2k } else { base2k } as u32, 0);
         let scale = _mm_cvtsi64_si128(lsh as i64);
         let zero = _mm256_setzero_si256();
 
@@ -1019,7 +1140,7 @@ pub(super) unsafe fn nfc_extract_normalize_avx2<const OVERWRITE: bool, const FIN
                 &mut carry[end..],
             );
         } else {
-            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
+            extract_tail(&mut res[end..], &mut src[end..]);
         }
     }
 }

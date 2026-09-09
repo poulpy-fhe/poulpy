@@ -94,6 +94,37 @@ impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for NTT4x30Neon {
 
 #[cfg(target_arch = "aarch64")]
 impl I128NormalizeOps for NTT4x30Neon {
+    #[inline(always)]
+    fn nfc_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i128], carry: &mut [i128]) {
+        crate::neon::normalization_boundary::nfc_normalize_floor_neon::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
+    }
+
+    #[inline(always)]
+    fn nfc_normalize_round<const CARRY_IN: bool, const PAD: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        a: &[i128],
+        carry: &mut [i128],
+    ) {
+        crate::neon::normalization_boundary::nfc_normalize_round_neon::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry);
+    }
+
+    #[inline(always)]
+    fn nfc_add_small_carry(carry: &mut [i128], a: &[i64]) {
+        assert!(a.len() >= carry.len());
+        vi128_add_small_assign_neon(carry.len(), carry, a);
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_addmul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        assert!(src.len() >= res.len());
+        unsafe {
+            crate::neon::normalize::nfc_extract_normalize_neon::<false, false>(base2k, lsh, base2k + lsh, res, src, &mut []);
+        }
+    }
+
     fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
         assert!(src.len() >= res.len());
         unsafe { crate::neon::normalize::nfc_extract_normalize_neon::<true, false>(base2k, lsh, base2k + lsh, res, src, &mut []) }

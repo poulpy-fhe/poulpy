@@ -27,6 +27,7 @@ where
             a_base2k: 50,
             res_base2k: 50,
             res_offset: 0,
+            drop_bits: 0,
         },
     );
 }
@@ -57,7 +58,7 @@ pub fn runner_vec_znx_normalize_sweep<B: Backend<ZnxWord = i64>, M: Measurement>
             module.vec_znx_normalize(
                 &mut res,
                 params.res_base2k,
-                sweep.size * params.res_base2k,
+                sweep.size * params.res_base2k - params.drop_bits,
                 params.res_offset,
                 i,
                 &a,

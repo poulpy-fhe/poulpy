@@ -2,6 +2,194 @@
 
 use core::arch::x86_64::__m512i;
 
+pub(crate) struct NormalizationBoundary512 {
+    mask: __m512i,
+    source_mask: __m512i,
+    pub(crate) base2k: __m512i,
+    pub(crate) source_bits: __m512i,
+    lsh: __m512i,
+    padding: __m512i,
+    width: __m512i,
+    center: __m512i,
+    half: __m512i,
+}
+
+impl NormalizationBoundary512 {
+    #[inline]
+    #[target_feature(enable = "avx512f")]
+    pub(crate) unsafe fn new(base2k: usize, lsh: usize, padding: usize) -> Self {
+        use core::arch::x86_64::_mm512_set1_epi64;
+
+        assert!((1..=63).contains(&base2k));
+        assert!(lsh < base2k && padding < base2k);
+        Self {
+            mask: _mm512_set1_epi64(((1u64 << base2k) - 1) as i64),
+            source_mask: _mm512_set1_epi64(((1u64 << (base2k - lsh)) - 1) as i64),
+            base2k: _mm512_set1_epi64(base2k as i64),
+            source_bits: _mm512_set1_epi64((base2k - lsh) as i64),
+            lsh: _mm512_set1_epi64(lsh as i64),
+            padding: _mm512_set1_epi64(padding as i64),
+            width: _mm512_set1_epi64((base2k - padding) as i64),
+            center: _mm512_set1_epi64((64 - base2k + padding) as i64),
+            half: _mm512_set1_epi64(if padding == 0 { 0 } else { 1i64 << (padding - 1) }),
+        }
+    }
+
+    #[inline]
+    #[target_feature(enable = "avx512f")]
+    pub(crate) unsafe fn low<const CARRY_IN: bool>(&self, a: __m512i, carry: __m512i) -> (__m512i, __m512i) {
+        use core::arch::x86_64::*;
+
+        let source_low = _mm512_sllv_epi64(_mm512_and_si512(a, self.source_mask), self.lsh);
+        let sum = if CARRY_IN {
+            _mm512_add_epi64(source_low, _mm512_and_si512(carry, self.mask))
+        } else {
+            source_low
+        };
+        (_mm512_and_si512(sum, self.mask), _mm512_srlv_epi64(sum, self.base2k))
+    }
+
+    #[inline]
+    #[target_feature(enable = "avx512f")]
+    unsafe fn floor<const CARRY_IN: bool>(&self, a: __m512i, carry: __m512i) -> (__m512i, __m512i) {
+        use core::arch::x86_64::*;
+
+        let (low, overflow) = self.low::<CARRY_IN>(a, carry);
+        let high = _mm512_srav_epi64(a, self.source_bits);
+        let high = if CARRY_IN {
+            _mm512_add_epi64(high, _mm512_srav_epi64(carry, self.base2k))
+        } else {
+            high
+        };
+        (low, _mm512_add_epi64(high, overflow))
+    }
+
+    #[inline]
+    #[target_feature(enable = "avx512f")]
+    pub(crate) unsafe fn round<const PAD: bool>(&self, low: __m512i) -> (__m512i, __m512i) {
+        use core::arch::x86_64::*;
+
+        let rounded = _mm512_srlv_epi64(_mm512_add_epi64(low, self.half), self.padding);
+        let digit = _mm512_srav_epi64(_mm512_sllv_epi64(rounded, self.center), self.center);
+        let carry = _mm512_srlv_epi64(_mm512_sub_epi64(rounded, digit), self.width);
+        (if PAD { _mm512_sllv_epi64(digit, self.padding) } else { digit }, carry)
+    }
+}
+
+/// # Safety
+/// Requires AVX-512F.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn znx_normalize_floor_avx512<const CARRY_IN: bool, const ROUND: bool>(
+    base2k: usize,
+    lsh: usize,
+    a: &[i64],
+    carry: &mut [i64],
+) {
+    use core::arch::x86_64::*;
+
+    assert!(a.len() >= carry.len());
+    let step = NormalizationBoundary512::new(base2k, lsh, 0);
+    let round_shift = _mm512_set1_epi64((base2k - 1) as i64);
+    let end = carry.len() / 8 * 8;
+    for i in (0..end).step_by(8) {
+        let source = _mm512_loadu_si512(a.as_ptr().add(i).cast());
+        let incoming = if CARRY_IN {
+            _mm512_loadu_si512(carry.as_ptr().add(i).cast())
+        } else {
+            _mm512_setzero_si512()
+        };
+        let (low, high) = step.floor::<CARRY_IN>(source, incoming);
+        let out = if ROUND {
+            _mm512_add_epi64(high, _mm512_srlv_epi64(low, round_shift))
+        } else {
+            high
+        };
+        _mm512_storeu_si512(carry.as_mut_ptr().add(i).cast(), out);
+    }
+    poulpy_cpu_ref::reference::normalization::znx_normalize_floor_ref::<CARRY_IN, ROUND>(
+        base2k,
+        lsh,
+        &a[end..],
+        &mut carry[end..],
+    );
+}
+
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn znx_normalize_round_chunks_avx512<const CARRY_IN: bool, const PAD: bool>(
+    step: &NormalizationBoundary512,
+    end: usize,
+    res: *mut i64,
+    a: *const i64,
+    carry: *mut i64,
+) {
+    use core::arch::x86_64::*;
+
+    for i in (0..end).step_by(8) {
+        let source = _mm512_loadu_si512(a.add(i).cast());
+        let incoming = if CARRY_IN {
+            _mm512_loadu_si512(carry.add(i).cast())
+        } else {
+            _mm512_setzero_si512()
+        };
+        let (low, high) = step.floor::<CARRY_IN>(source, incoming);
+        let (digit, round_carry) = step.round::<PAD>(low);
+        _mm512_storeu_si512(res.add(i).cast(), digit);
+        _mm512_storeu_si512(carry.add(i).cast(), _mm512_add_epi64(high, round_carry));
+    }
+}
+
+/// # Safety
+/// Requires AVX-512F.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn znx_normalize_round_avx512<const CARRY_IN: bool, const PAD: bool>(
+    base2k: usize,
+    lsh: usize,
+    padding: usize,
+    res: &mut [i64],
+    a: &[i64],
+    carry: &mut [i64],
+) {
+    assert!(a.len() >= res.len() && carry.len() >= res.len());
+    let step = NormalizationBoundary512::new(base2k, lsh, padding);
+    let end = res.len() / 8 * 8;
+    znx_normalize_round_chunks_avx512::<CARRY_IN, PAD>(&step, end, res.as_mut_ptr(), a.as_ptr(), carry.as_mut_ptr());
+    poulpy_cpu_ref::reference::normalization::znx_normalize_round_ref::<CARRY_IN, PAD>(
+        base2k,
+        lsh,
+        padding,
+        &mut res[end..],
+        &a[end..],
+        &mut carry[end..],
+    );
+}
+
+/// # Safety
+/// Requires AVX-512F.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn znx_normalize_round_assign_avx512<const CARRY_IN: bool>(
+    base2k: usize,
+    lsh: usize,
+    padding: usize,
+    res: &mut [i64],
+    carry: &mut [i64],
+) {
+    assert!(carry.len() >= res.len());
+    let step = NormalizationBoundary512::new(base2k, lsh, padding);
+    let end = res.len() / 8 * 8;
+    znx_normalize_round_chunks_avx512::<CARRY_IN, true>(&step, end, res.as_mut_ptr(), res.as_ptr(), carry.as_mut_ptr());
+    poulpy_cpu_ref::reference::normalization::znx_normalize_round_assign_ref::<CARRY_IN>(
+        base2k,
+        lsh,
+        padding,
+        &mut res[end..],
+        &mut carry[end..],
+    );
+}
+
 /// Vector forms of normalisation constants (broadcast to all 8 lanes).
 ///
 /// Returns `(mask_k, sign_k, base2k_vec)`.

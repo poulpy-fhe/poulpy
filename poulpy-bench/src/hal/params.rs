@@ -156,14 +156,15 @@ pub struct NormalizeSweepParams {
     pub a_base2k: usize,
     pub res_base2k: usize,
     pub res_offset: i64,
+    pub drop_bits: usize,
 }
 
 impl Display for NormalizeSweepParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}/k={}->{}/offset={}",
-            self.shape, self.a_base2k, self.res_base2k, self.res_offset
+            "{}/k={}->{}/offset={}/drop={}",
+            self.shape, self.a_base2k, self.res_base2k, self.res_offset, self.drop_bits
         )
     }
 }
@@ -175,12 +176,15 @@ pub fn default_bench_params_normalize() -> Vec<NormalizeSweepParams> {
             for a_base2k in [17, 19, 21, 50, 51] {
                 for res_base2k in [17, 19, 21, 50, 51] {
                     for res_offset in [-(a_base2k as i64), 0, 1, a_base2k as i64] {
-                        result.push(NormalizeSweepParams {
-                            shape: HalSweepParms { n, cols: 1, size },
-                            a_base2k,
-                            res_base2k,
-                            res_offset,
-                        });
+                        for drop_bits in [0, res_base2k / 2, 2 * res_base2k + 1] {
+                            result.push(NormalizeSweepParams {
+                                shape: HalSweepParms { n, cols: 1, size },
+                                a_base2k,
+                                res_base2k,
+                                res_offset,
+                                drop_bits,
+                            });
+                        }
                     }
                 }
             }

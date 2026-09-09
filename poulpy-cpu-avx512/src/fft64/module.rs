@@ -458,6 +458,37 @@ impl ZnxExtractDigitAddMul for FFT64Avx512 {
 
 impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for FFT64Avx512 {
     #[inline(always)]
+    fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
+        assert!(a.len() >= carry.len());
+        unsafe { crate::znx_avx512::znx_normalize_floor_avx512::<CARRY_IN, ROUND>(base2k, lsh, a, carry) }
+    }
+
+    #[inline(always)]
+    fn znx_normalize_round<const CARRY_IN: bool, const PAD: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        a: &[i64],
+        carry: &mut [i64],
+    ) {
+        assert!(a.len() >= res.len() && carry.len() >= res.len());
+        unsafe { crate::znx_avx512::znx_normalize_round_avx512::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry) }
+    }
+
+    #[inline(always)]
+    fn znx_normalize_round_assign<const CARRY_IN: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        carry: &mut [i64],
+    ) {
+        assert!(carry.len() >= res.len());
+        unsafe { crate::znx_avx512::znx_normalize_round_assign_avx512::<CARRY_IN>(base2k, lsh, padding, res, carry) }
+    }
+
+    #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         unsafe {
             crate::znx_avx512::znx_extract_digit_mul_avx512(base2k, lsh, res, src);

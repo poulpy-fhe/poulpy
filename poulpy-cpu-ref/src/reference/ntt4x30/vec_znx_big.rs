@@ -38,8 +38,12 @@ use crate::{
         VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
+        normalization::I64NormalizeOps,
         vec_znx::VecZnxRangeMut,
-        znx::{get_carry_i128, get_digit_i128, znx_extract_digit_addmul_normalize_i128_ref, znx_extract_digit_mul_i128_ref},
+        znx::{
+            ZnxNormalizeMiddleStepAssign, get_carry_i128, get_digit_i128, znx_extract_digit_addmul_normalize_i128_ref,
+            znx_extract_digit_mul_i128_ref,
+        },
     },
     source::Source,
 };
@@ -52,68 +56,6 @@ use crate::{
 #[inline(always)]
 fn nfc_zero(x: &mut [i128]) {
     x.iter_mut().for_each(|v| *v = 0);
-}
-
-/// Add two `i128` slices in-place: `res += a`.
-#[inline(always)]
-fn nfc_add_assign(res: &mut [i128], a: &[i128]) {
-    res.iter_mut().zip(a.iter()).for_each(|(r, &ai)| *r = r.wrapping_add(ai));
-}
-
-/// Multiply an `i128` slice by `2^power` in-place (positive = left shift, negative = right shift).
-#[inline(always)]
-fn nfc_mul_pow2_assign(power: i64, x: &mut [i128]) {
-    if power > 0 {
-        x.iter_mut().for_each(|xi| *xi <<= power as u32);
-    } else if power < 0 {
-        x.iter_mut().for_each(|xi| *xi >>= (-power) as u32);
-    }
-}
-
-/// First carry-only step from the least significant `i128` limb of `a` (no prior carry).
-///
-/// Analogous to `znx_normalize_first_step_carry_only_ref` but for `i128`.
-#[inline(always)]
-fn nfc_first_carry_only(base2k: usize, lsh: usize, a: &[i128], carry: &mut [i128]) {
-    debug_assert!(a.len() <= carry.len());
-    debug_assert!(lsh < base2k);
-
-    if lsh == 0 {
-        a.iter().zip(carry.iter_mut()).for_each(|(&ai, c)| {
-            *c = get_carry_i128(base2k, ai, get_digit_i128(base2k, ai));
-        });
-    } else {
-        let base2k_lsh = base2k - lsh;
-        a.iter().zip(carry.iter_mut()).for_each(|(&ai, c)| {
-            *c = get_carry_i128(base2k_lsh, ai, get_digit_i128(base2k_lsh, ai));
-        });
-    }
-}
-
-/// Middle carry-only step from an inner `i128` limb of `a` (adds previous carry).
-///
-/// Analogous to `znx_normalize_middle_step_carry_only_ref` but for `i128`.
-#[inline(always)]
-fn nfc_middle_carry_only(base2k: usize, lsh: usize, a: &[i128], carry: &mut [i128]) {
-    debug_assert!(a.len() <= carry.len());
-    debug_assert!(lsh < base2k);
-
-    if lsh == 0 {
-        a.iter().zip(carry.iter_mut()).for_each(|(&ai, c)| {
-            let digit = get_digit_i128(base2k, ai);
-            let co = get_carry_i128(base2k, ai, digit);
-            let d_plus_c = digit + *c;
-            *c = co + get_carry_i128(base2k, d_plus_c, get_digit_i128(base2k, d_plus_c));
-        });
-    } else {
-        let base2k_lsh = base2k - lsh;
-        a.iter().zip(carry.iter_mut()).for_each(|(&ai, c)| {
-            let digit = get_digit_i128(base2k_lsh, ai);
-            let co = get_carry_i128(base2k_lsh, ai, digit);
-            let d_plus_c = (digit << lsh) + *c;
-            *c = co + get_carry_i128(base2k, d_plus_c, get_digit_i128(base2k, d_plus_c));
-        });
-    }
 }
 
 /// Middle normalization: convert `i128` input `a` + `i128` carry into `i64` output `res`,
@@ -287,73 +229,6 @@ fn nfc_final_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], 
     }
 }
 
-/// Normalize an `i128` limb into an `i128` intermediate (`a_norm`), with `i128` carry.
-///
-/// Used in the cross-base2k path to convert the `a` limb to the standard representation
-/// before bit-extraction. Analogous to `znx_normalize_middle_step_ref` but fully `i128`.
-#[inline(always)]
-fn nfc_middle_step_i128(base2k: usize, lsh: usize, a_norm: &mut [i128], a: &[i128], carry: &mut [i128]) {
-    debug_assert_eq!(a_norm.len(), a.len());
-    debug_assert!(a.len() <= carry.len());
-    debug_assert!(lsh < base2k);
-
-    if lsh == 0 {
-        izip!(a_norm.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(x, &ai, c)| {
-            let digit = get_digit_i128(base2k, ai);
-            let co = get_carry_i128(base2k, ai, digit);
-            let d_plus_c = digit + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
-            *x = out;
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
-        });
-    } else {
-        let base2k_lsh = base2k - lsh;
-        izip!(a_norm.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(x, &ai, c)| {
-            let digit = get_digit_i128(base2k_lsh, ai);
-            let co = get_carry_i128(base2k_lsh, ai, digit);
-            let d_plus_c = (digit << lsh) + *c;
-            let out = get_digit_i128(base2k, d_plus_c);
-            *x = out;
-            *c = co + get_carry_i128(base2k, d_plus_c, out);
-        });
-    }
-}
-
-/// Extract `base2k` bits from `src` (i128) shifted by `scale`, accumulate into `res` (i64).
-/// Updates `src` to hold the remaining carry.
-///
-/// Analogous to `znx_extract_digit_addmul_ref` but with `i128` src.
-#[inline(always)]
-fn nfc_extract_digit_addmul(base2k: usize, scale: usize, res: &mut [i64], src: &mut [i128]) {
-    for (r, s) in res.iter_mut().zip(src.iter_mut()) {
-        let digit = get_digit_i128(base2k, *s);
-        *s = get_carry_i128(base2k, *s, digit);
-        *r = r.wrapping_add((digit as i64).wrapping_shl(scale as u32));
-    }
-}
-
-#[inline]
-fn finish_nfc_normalized_limb(
-    base2k: usize,
-    active_size: usize,
-    padding: usize,
-    limb: usize,
-    digit: &mut [i64],
-    carry: &mut [i128],
-) {
-    if limb >= active_size {
-        digit.fill(0);
-    } else if limb + 1 == active_size && padding != 0 {
-        for (digit, carry) in digit.iter_mut().zip(carry.iter_mut()) {
-            let low_digit = get_digit_i128(padding, *digit as i128);
-            let rounded_value = *digit as i128 - low_digit;
-            let rounded_digit = get_digit_i128(base2k, rounded_value);
-            *digit = rounded_digit as i64;
-            *carry = carry.wrapping_add(get_carry_i128(base2k, rounded_value, rounded_digit));
-        }
-    }
-}
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Normalization internals
 // ──────────────────────────────────────────────────────────────────────────────
@@ -367,8 +242,6 @@ fn ntt4x30_vec_znx_big_normalize_inter<A, BE>(
     base2k: usize,
     res: &mut VecZnxRangeMut<'_>,
     res_size: usize,
-    active_size: usize,
-    padding: usize,
     res_offset: i64,
     a: &A,
     a_col: usize,
@@ -404,12 +277,14 @@ fn ntt4x30_vec_znx_big_normalize_inter<A, BE>(
 
     let a_out_range: usize = a_size.saturating_sub(a_start);
 
-    // Compute carry over discarded a limbs (those beyond res capacity).
+    // Floor discarded limbs and retain the rounding bit only at the cutoff.
     for j in 0..a_out_range {
-        if j == 0 {
-            nfc_first_carry_only(base2k, lsh_pos, &a.at(a_col, a_size - j - 1)[lo..hi], carry);
-        } else {
-            nfc_middle_carry_only(base2k, lsh_pos, &a.at(a_col, a_size - j - 1)[lo..hi], carry);
+        let source = &a.at(a_col, a_size - j - 1)[lo..hi];
+        match (j == 0, j + 1 == a_out_range) {
+            (true, false) => BE::nfc_normalize_floor::<false, false>(base2k, lsh_pos, source, carry),
+            (true, true) => BE::nfc_normalize_floor::<false, true>(base2k, lsh_pos, source, carry),
+            (false, false) => BE::nfc_normalize_floor::<true, false>(base2k, lsh_pos, source, carry),
+            (false, true) => BE::nfc_normalize_floor::<true, true>(base2k, lsh_pos, source, carry),
         }
     }
 
@@ -434,26 +309,23 @@ fn ntt4x30_vec_znx_big_normalize_inter<A, BE>(
             &a.at(a_col, a_start - j - 1)[lo..hi],
             carry,
         );
-        finish_nfc_normalized_limb(base2k, active_size, padding, res_limb, res.at_mut(res_limb), carry);
     }
 
     for j in (0..res_end).rev() {
         BE::znx_extract_digit_mul_i128(base2k, 0, res.at_mut(j), carry);
-        finish_nfc_normalized_limb(base2k, active_size, padding, j, res.at_mut(j), carry);
     }
 }
 
 /// Cross-base2k normalization: `a_base2k ≠ res_base2k`.
 ///
 /// Structurally identical to `vec_znx_normalize_cross_base2k` but with `i128` input
-/// limbs, `i128` carry buffers, and `i64` output.
+/// limbs and source carry, and `i64` normalized digits, output carry and output.
 #[allow(clippy::too_many_arguments)]
 fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
     res: &mut VecZnxRangeMut<'_>,
     res_size: usize,
     res_base2k: usize,
-    active_size: usize,
-    padding: usize,
+    res_k: usize,
     res_offset: i64,
     a: &A,
     a_base2k: usize,
@@ -471,13 +343,15 @@ fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
     let (lo, hi) = (coeff_start, coeff_start + coeff_len);
     let a_size = a.size();
 
-    // Partition the scratch: [a_norm | res_carry | a_carry]
-    let (a_norm, carry) = carry.split_at_mut(coeff_len);
-    let (res_carry, a_carry) = carry[..2 * coeff_len].split_at_mut(coeff_len);
-    nfc_zero(res_carry);
+    // Normalized source digits and output carries fit in i64; source carries stay wide.
+    let (small, carry) = carry.split_at_mut(coeff_len);
+    let (a_norm, res_carry) = bytemuck::cast_slice_mut::<i128, i64>(small).split_at_mut(coeff_len);
+    let a_carry = &mut carry[..coeff_len];
+    res_carry.fill(0);
 
     let a_tot_bits: usize = a_size * a_base2k;
-    let res_tot_bits: usize = res_size * res_base2k;
+    let res_tot_bits = res_k;
+    let drops_precision = a_tot_bits as i128 > res_k as i128 + res_offset as i128;
 
     let mut lsh: i64 = res_offset % a_base2k as i64;
     let mut limbs_offset: i64 = res_offset / a_base2k as i64;
@@ -507,20 +381,24 @@ fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
         return;
     }
 
-    // Compute carry over the a limbs that lie beyond the res precision range.
+    // Floor the discarded limbs; only the boundary contributes rounding.
     let a_out_range: usize = a_size.saturating_sub(a_start);
-    for j in 0..a_out_range {
-        if j == 0 {
-            nfc_first_carry_only(a_base2k, lsh_pos, &a.at(a_col, a_size - j - 1)[lo..hi], a_carry);
-        } else {
-            nfc_middle_carry_only(a_base2k, lsh_pos, &a.at(a_col, a_size - j - 1)[lo..hi], a_carry);
+    let take = (a_tot_bits - a_start_bit) % a_base2k;
+    if a_out_range != 0 {
+        for j in (a_start..a_size).rev() {
+            let source = &a.at(a_col, j)[lo..hi];
+            match (j + 1 == a_size, take == 0 && j == a_start) {
+                (true, false) => BE::nfc_normalize_floor::<false, false>(a_base2k, lsh_pos, source, a_carry),
+                (true, true) => BE::nfc_normalize_floor::<false, true>(a_base2k, lsh_pos, source, a_carry),
+                (false, false) => BE::nfc_normalize_floor::<true, false>(a_base2k, lsh_pos, source, a_carry),
+                (false, true) => BE::nfc_normalize_floor::<true, true>(a_base2k, lsh_pos, source, a_carry),
+            }
         }
-    }
-    if a_out_range == 0 {
+    } else if !drops_precision && take == 0 {
         nfc_zero(a_carry);
     }
 
-    let mut res_acc_left: usize = res_base2k;
+    let mut res_acc_left = res_start_bit - (res_start - 1) * res_base2k;
     let mut res_limb: usize = res_start - 1;
     let mut initialized = false;
 
@@ -532,40 +410,34 @@ fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
 
         let mut a_take_left: usize = a_base2k;
 
-        // Normalize the j-th limb of a into a_norm (i128→i128, with i128 carry).
-        nfc_middle_step_i128(a_base2k, lsh_pos, a_norm, a_slice, a_carry);
-
-        if j == 0 {
-            if !(a_tot_bits - a_start_bit).is_multiple_of(a_base2k) {
-                let take: usize = (a_tot_bits - a_start_bit) % a_base2k;
-                nfc_mul_pow2_assign(-(take as i64), a_norm);
-                a_take_left -= take;
-            } else if !(res_tot_bits - res_start_bit).is_multiple_of(res_base2k) {
-                res_acc_left -= (res_tot_bits - res_start_bit) % res_base2k;
+        if j == 0 && (drops_precision || take != 0) {
+            if a_out_range != 0 {
+                BE::nfc_normalize_round::<true, false>(a_base2k, lsh_pos, take, a_norm, a_slice, a_carry);
+            } else {
+                BE::nfc_normalize_round::<false, false>(a_base2k, lsh_pos, take, a_norm, a_slice, a_carry);
             }
+            a_take_left -= take;
+        } else {
+            BE::nfc_middle_step(a_base2k, lsh_pos, a_norm, a_slice, a_carry);
         }
 
         'inner: loop {
             let res_slice = res.at_mut(res_limb);
             let a_take: usize = a_base2k.min(a_take_left).min(res_acc_left);
 
-            let flushed = BE::FUSE_NORMALIZE && a_take != 0 && a_take == res_acc_left;
+            let flushed = a_take != 0 && a_take == res_acc_left;
             if a_take != 0 {
                 let scale: usize = res_base2k - res_acc_left;
                 if flushed {
                     if initialized {
-                        BE::znx_extract_digit_addmul_normalize_i128::<false>(
-                            a_take, scale, res_base2k, res_slice, a_norm, res_carry,
-                        );
+                        BE::znx_extract_digit_addmul_normalize::<false>(a_take, scale, res_base2k, res_slice, a_norm, res_carry);
                     } else {
-                        BE::znx_extract_digit_addmul_normalize_i128::<true>(
-                            a_take, scale, res_base2k, res_slice, a_norm, res_carry,
-                        );
+                        BE::znx_extract_digit_addmul_normalize::<true>(a_take, scale, res_base2k, res_slice, a_norm, res_carry);
                     }
                 } else if initialized {
-                    nfc_extract_digit_addmul(a_take, scale, res_slice, a_norm);
+                    BE::znx_extract_digit_addmul(a_take, scale, res_slice, a_norm);
                 } else {
-                    BE::znx_extract_digit_mul_i128(a_take, scale, res_slice, a_norm);
+                    BE::znx_extract_digit_mul(a_take, scale, res_slice, a_norm);
                 }
                 initialized = true;
                 a_take_left -= a_take;
@@ -574,24 +446,22 @@ fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
 
             if res_acc_left == 0 || a_limb == 0 {
                 if a_limb == 0 && a_take_left == 0 {
-                    nfc_add_assign(a_carry, a_norm);
+                    BE::nfc_add_small_carry(a_carry, a_norm);
                     if res_acc_left != 0 {
                         let scale: usize = res_base2k - res_acc_left;
-                        nfc_extract_digit_addmul(res_acc_left, scale, res_slice, a_carry);
+                        BE::znx_extract_digit_addmul_i128(res_acc_left, scale, res_slice, a_carry);
                     }
                     if !flushed {
-                        BE::nfc_middle_step_assign(res_base2k, 0, res_slice, res_carry);
+                        BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
                     }
-                    nfc_add_assign(res_carry, a_carry);
-                    finish_nfc_normalized_limb(res_base2k, active_size, padding, res_limb, res_slice, res_carry);
+                    BE::nfc_add_small_carry(a_carry, res_carry);
+
                     break 'outer;
                 }
 
                 if !flushed {
-                    BE::nfc_middle_step_assign(res_base2k, 0, res_slice, res_carry);
+                    BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
                 }
-
-                finish_nfc_normalized_limb(res_base2k, active_size, padding, res_limb, res_slice, res_carry);
 
                 if res_limb == 0 {
                     break 'outer;
@@ -603,7 +473,7 @@ fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
             }
 
             if a_take_left == 0 {
-                nfc_add_assign(a_carry, a_norm);
+                BE::nfc_add_small_carry(a_carry, a_norm);
                 break 'inner;
             }
         }
@@ -611,10 +481,8 @@ fn ntt4x30_vec_znx_big_normalize_cross<A, BE>(
 
     // Write the remaining more significant digits.
     if res_end != 0 {
-        let carry_to_use = if a_start == a_end { a_carry } else { res_carry };
         for j in (0..res_end).rev() {
-            BE::znx_extract_digit_mul_i128(res_base2k, 0, res.at_mut(j), carry_to_use);
-            finish_nfc_normalized_limb(res_base2k, active_size, padding, j, res.at_mut(j), carry_to_use);
+            BE::znx_extract_digit_mul_i128(res_base2k, 0, res.at_mut(j), a_carry);
         }
     }
 }
@@ -754,8 +622,39 @@ pub trait I128BigOps {
 /// Input limbs and incoming carries must have magnitude at most `2^126`;
 /// shifted digits and destination sums must be representable. These bounds
 /// include the centered NTT4x30 IDFT output, whose magnitude is below `2^119`.
-pub trait I128NormalizeOps {
-    /// Selects the fused flush in the shared CPU loop.
+pub trait I128NormalizeOps: I64NormalizeOps + ZnxNormalizeMiddleStepAssign {
+    #[inline(always)]
+    fn nfc_add_small_carry(carry: &mut [i128], a: &[i64]) {
+        assert!(a.len() >= carry.len());
+        for (carry, &digit) in carry.iter_mut().zip(a) {
+            *carry += digit as i128;
+        }
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_addmul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        crate::reference::normalization::znx_extract_digit_addmul_i128_ref(base2k, lsh, res, src);
+    }
+
+    /// Floor-carry and boundary operations retain the reference kernels' magnitude bounds.
+    #[inline(always)]
+    fn nfc_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i128], carry: &mut [i128]) {
+        crate::reference::normalization::nfc_normalize_floor_ref::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
+    }
+
+    #[inline(always)]
+    fn nfc_normalize_round<const CARRY_IN: bool, const PAD: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        a: &[i128],
+        carry: &mut [i128],
+    ) {
+        crate::reference::normalization::nfc_normalize_round_ref::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry);
+    }
+
+    /// Retained for compatibility; cross-base extraction now uses the i64 kernels.
     const FUSE_NORMALIZE: bool = true;
 
     /// Requires `1 <= base2k`, `base2k + lsh <= 63` and `src.len() >= res.len()`.
@@ -781,6 +680,7 @@ pub trait I128NormalizeOps {
     /// Equivalent to the private `nfc_middle_step` helper.
     #[inline(always)]
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+        assert!(a.len() >= res.len() && carry.len() >= res.len());
         if lsh == 0 {
             izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
                 let digit = get_digit_i128(base2k, ai);
@@ -806,6 +706,7 @@ pub trait I128NormalizeOps {
     /// Fused middle step for `res ±= normalize(a)`.  `O = AddOp` adds; `O = SubOp` subtracts.
     #[inline(always)]
     fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+        assert!(a.len() >= res.len() && carry.len() >= res.len());
         nfc_middle_step_into::<O>(base2k, lsh, res, a, carry);
     }
 
@@ -814,6 +715,7 @@ pub trait I128NormalizeOps {
     /// Equivalent to the private `nfc_middle_step_assign` helper.
     #[inline(always)]
     fn nfc_middle_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+        assert!(carry.len() >= res.len());
         if lsh == 0 {
             res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
                 let ri = *r as i128;
@@ -843,6 +745,7 @@ pub trait I128NormalizeOps {
     /// Equivalent to the private `nfc_final_step_assign` helper.
     #[inline(always)]
     fn nfc_final_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+        assert!(carry.len() >= res.len());
         if lsh == 0 {
             res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
                 let ri = *r as i128;
@@ -860,6 +763,7 @@ pub trait I128NormalizeOps {
     /// Fused final step for `res ±= normalize(a)`.  `O = AddOp` adds; `O = SubOp` subtracts.
     #[inline(always)]
     fn nfc_final_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+        assert!(carry.len() >= res.len());
         nfc_final_step_into::<O>(base2k, lsh, res, carry);
     }
 }
@@ -1383,7 +1287,60 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
     let active_size = res_k.div_ceil(res_base2k);
     let padding = (res_base2k - res_k % res_base2k) % res_base2k;
     let input = a.to_backend_ref();
-    if crate::reference::vec_znx::normalize_needs_exact(input.size(), a_base2k, size, res_base2k, res_offset) {
+    let partial = res_k != size * res_base2k;
+    if res_base2k == a_base2k
+        && res_base2k <= 63
+        && (partial
+            || crate::reference::vec_znx::normalize_needs_exact(input.size(), a_base2k, active_size, res_base2k, res_offset))
+    {
+        let limb_offset = res_offset.div_euclid(res_base2k as i64);
+        let boundary = (active_size as i64 - 1).saturating_add(limb_offset);
+        if (0..input.size() as i64).contains(&boundary) {
+            let lsh = res_offset.rem_euclid(res_base2k as i64) as usize;
+            let carry = &mut carry[..coeff_len];
+            for j in (boundary as usize + 1..input.size()).rev() {
+                let source = &input.at(a_col, j)[coeff_start..coeff_start + coeff_len];
+                match (j + 1 == input.size(), padding == 0 && j == boundary as usize + 1) {
+                    (true, false) => BE::nfc_normalize_floor::<false, false>(res_base2k, lsh, source, carry),
+                    (true, true) => BE::nfc_normalize_floor::<false, true>(res_base2k, lsh, source, carry),
+                    (false, false) => BE::nfc_normalize_floor::<true, false>(res_base2k, lsh, source, carry),
+                    (false, true) => BE::nfc_normalize_floor::<true, true>(res_base2k, lsh, source, carry),
+                }
+            }
+            let source = &input.at(a_col, boundary as usize)[coeff_start..coeff_start + coeff_len];
+            if boundary as usize + 1 < input.size() {
+                BE::nfc_normalize_round::<true, true>(res_base2k, lsh, padding, res.at_mut(active_size - 1), source, carry);
+            } else {
+                BE::nfc_normalize_round::<false, true>(res_base2k, lsh, padding, res.at_mut(active_size - 1), source, carry);
+            }
+            for j in (0..active_size - 1).rev() {
+                let source = j as i64 + limb_offset;
+                if source >= 0 {
+                    BE::nfc_middle_step(
+                        res_base2k,
+                        lsh,
+                        res.at_mut(j),
+                        &input.at(a_col, source as usize)[coeff_start..coeff_start + coeff_len],
+                        carry,
+                    );
+                } else {
+                    BE::znx_extract_digit_mul_i128(res_base2k, 0, res.at_mut(j), carry);
+                }
+            }
+            for j in active_size..size {
+                res.at_mut(j).fill(0);
+            }
+            return;
+        }
+    }
+    let needs_exact = if a_base2k == res_base2k {
+        crate::reference::vec_znx::normalize_needs_exact(input.size(), a_base2k, active_size, res_base2k, res_offset)
+            || (partial && input.size() as i128 * a_base2k as i128 > res_k as i128 + res_offset as i128)
+    } else {
+        res_base2k > 62
+            || crate::reference::vec_znx::normalize_cross_needs_exact(input.size(), a_base2k, res_base2k, res_k, res_offset)
+    };
+    if needs_exact {
         for i in 0..coeff_len {
             crate::reference::vec_znx::normalize_exact::<false, _, _>(
                 |j| input.at(a_col, j)[coeff_start + i],
@@ -1403,9 +1360,7 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
         ntt4x30_vec_znx_big_normalize_inter(
             res_base2k,
             &mut res,
-            size,
             active_size,
-            padding,
             res_offset,
             a,
             a_col,
@@ -1416,10 +1371,9 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
     } else {
         ntt4x30_vec_znx_big_normalize_cross(
             &mut res,
-            size,
-            res_base2k,
             active_size,
-            padding,
+            res_base2k,
+            res_k,
             res_offset,
             a,
             a_base2k,
@@ -1428,6 +1382,9 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
             coeff_len,
             carry,
         );
+    }
+    for j in active_size..size {
+        res.at_mut(j).fill(0);
     }
 }
 

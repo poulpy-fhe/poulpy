@@ -74,12 +74,20 @@ where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigNormalize<BE>,
 {
-    normalize_big_to_host_with_precision(module, base2k, res_size * base2k, res_offset, res_size, backend, scratch)
+    normalize_big_to_host_with_precision(
+        module,
+        (base2k, base2k),
+        res_size * base2k,
+        res_offset,
+        res_size,
+        backend,
+        scratch,
+    )
 }
 
 fn normalize_big_to_host_with_precision<BE>(
     module: &Module<BE>,
-    base2k: usize,
+    base2k: (usize, usize),
     res_k: usize,
     res_offset: i64,
     res_size: usize,
@@ -90,17 +98,18 @@ where
     BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigNormalize<BE>,
 {
+    let (a_base2k, res_base2k) = base2k;
     let shape = backend.shape();
     let mut res_backend = module.vec_znx_alloc(shape.cols(), res_size);
     for j in 0..shape.cols() {
         module.vec_znx_big_normalize(
             &mut <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut res_backend),
-            base2k,
+            res_base2k,
             res_k,
             res_offset,
             j,
             &backend.to_backend_ref(),
-            base2k,
+            a_base2k,
             j,
             &mut scratch.arena(),
         );
@@ -691,7 +700,7 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
                 let res_k = res_size.saturating_sub(1).max(1) * base2k - 1;
                 let res_ref = normalize_big_to_host_with_precision(
                     module_ref,
-                    base2k,
+                    (base2k, base2k),
                     res_k,
                     res_offset,
                     res_size,
@@ -700,7 +709,7 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
                 );
                 let res_test = normalize_big_to_host_with_precision(
                     module_test,
-                    base2k,
+                    (base2k, base2k),
                     res_k,
                     res_offset,
                     res_size,
@@ -709,6 +718,31 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
                 );
                 assert_eq!(res_ref, res_test);
                 assert_canonical(&res_test, base2k, res_k);
+            }
+            for (a_base, res_base, res_k, offset) in super::vec_znx::cross_normalization_cases(a_size, res_size) {
+                let res_ref = normalize_big_to_host_with_precision(
+                    module_ref,
+                    (a_base, res_base),
+                    res_k,
+                    offset,
+                    res_size,
+                    &a_ref,
+                    &mut scratch_ref,
+                );
+                let res_test = normalize_big_to_host_with_precision(
+                    module_test,
+                    (a_base, res_base),
+                    res_k,
+                    offset,
+                    res_size,
+                    &a_test,
+                    &mut scratch_test,
+                );
+                assert_eq!(
+                    res_ref, res_test,
+                    "a_base={a_base} res_base={res_base} k={res_k} offset={offset}"
+                );
+                assert_canonical(&res_test, res_base, res_k);
             }
         }
     }

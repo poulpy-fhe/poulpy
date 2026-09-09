@@ -21,6 +21,7 @@ where
         + I64NormalizeOps
         + ZnxNormalizeDigit,
 {
+    test_boundary_kernels::<B>();
     let steps: [(Step, Step); 8] = [
         (znx_normalize_first_step_ref::<true>, B::znx_normalize_first_step::<true>),
         (znx_normalize_first_step_ref::<false>, B::znx_normalize_first_step::<false>),
@@ -171,6 +172,79 @@ where
                 znx_normalize_digit_ref(k, &mut r, &mut rs);
                 B::znx_normalize_digit(k, &mut b, &mut bs);
                 assert_eq!((&r, &rs), (&b, &bs), "digit k={k}, lsh={lsh}, n={n}");
+            }
+        }
+    }
+}
+
+fn test_boundary_kernels<B: I64NormalizeOps>() {
+    fn check<B: I64NormalizeOps, const INPUT: bool, const MODE: bool>(k: usize, lsh: usize, padding: usize, n: usize) {
+        use crate::reference::normalization::{znx_normalize_floor_ref, znx_normalize_round_assign_ref, znx_normalize_round_ref};
+        let mut state = 0x1234_5678_abcd_ef90u64;
+        let half = 1i64 << (k - 1);
+        let edge = [-(1i64 << 62), 1i64 << 62, -half, half, half - 1, -half + 1, -1, 0, 1];
+        let a: Vec<_> = (0..n + 2)
+            .map(|i| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                if i > 0 && i <= edge.len() {
+                    edge[(i - 1 + lsh) % edge.len()]
+                } else {
+                    state as i64 >> 1
+                }
+            })
+            .collect();
+        let carry: Vec<_> = (0..n + 2).map(|i| edge[(i + padding) % edge.len()]).collect();
+        let (mut got, mut want) = (carry.clone(), carry.clone());
+        znx_normalize_floor_ref::<INPUT, MODE>(k, lsh, &a[1..], &mut want[1..n + 1]);
+        B::znx_normalize_floor::<INPUT, MODE>(k, lsh, &a[1..], &mut got[1..n + 1]);
+        assert_eq!(got, want, "floor k={k} lsh={lsh} n={n} input={INPUT} guard={MODE}");
+        for i in 1..n + 1 {
+            let value = ((a[i] as i128) << lsh) + if INPUT { carry[i] as i128 } else { 0 };
+            assert_eq!(got[i] as i128, (value + if MODE { 1i128 << (k - 1) } else { 0 }) >> k);
+        }
+        let (mut got_c, mut want_c) = (carry.clone(), carry.clone());
+        let (mut got_r, mut want_r) = (a.clone(), a.clone());
+        znx_normalize_round_ref::<INPUT, MODE>(k, lsh, padding, &mut want_r[1..n + 1], &a[1..], &mut want_c[1..]);
+        B::znx_normalize_round::<INPUT, MODE>(k, lsh, padding, &mut got_r[1..n + 1], &a[1..], &mut got_c[1..]);
+        assert_eq!(
+            (&got_r, &got_c),
+            (&want_r, &want_c),
+            "round k={k} lsh={lsh} padding={padding} n={n} input={INPUT} pad={MODE}"
+        );
+        for i in 1..n + 1 {
+            let value = ((a[i] as i128) << lsh) + if INPUT { carry[i] as i128 } else { 0 };
+            let rounded = (value + if padding == 0 { 0 } else { 1i128 << (padding - 1) }) >> padding;
+            let width = k - padding;
+            let high = (rounded + (1i128 << (width - 1))) >> width;
+            let digit = rounded - (high << width);
+            assert_eq!(got_c[i] as i128, high);
+            assert_eq!(got_r[i] as i128, digit << if MODE { padding } else { 0 });
+        }
+        if MODE {
+            let (mut got_c, mut want_c) = (carry.clone(), carry);
+            let (mut got_r, mut want_r) = (a.clone(), a);
+            znx_normalize_round_assign_ref::<INPUT>(k, lsh, padding, &mut want_r[1..n + 1], &mut want_c[1..]);
+            B::znx_normalize_round_assign::<INPUT>(k, lsh, padding, &mut got_r[1..n + 1], &mut got_c[1..]);
+            assert_eq!(
+                (got_r, got_c),
+                (want_r, want_c),
+                "round assign k={k} lsh={lsh} padding={padding} n={n}"
+            );
+        }
+    }
+    for k in 1..=63 {
+        for lsh in 0..k {
+            let mut paddings = vec![0, k / 2, k - 1];
+            paddings.dedup();
+            for padding in paddings {
+                for n in [0, 1, 3, 7, 8, 9, 17] {
+                    check::<B, false, false>(k, lsh, padding, n);
+                    check::<B, false, true>(k, lsh, padding, n);
+                    check::<B, true, false>(k, lsh, padding, n);
+                    check::<B, true, true>(k, lsh, padding, n);
+                }
             }
         }
     }

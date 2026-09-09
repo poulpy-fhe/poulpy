@@ -97,6 +97,37 @@ impl BigWordHadamardProduct for NTT3x42Ifma {
 }
 
 impl I128NormalizeOps for NTT3x42Ifma {
+    #[inline(always)]
+    fn nfc_add_small_carry(carry: &mut [i128], a: &[i64]) {
+        assert!(a.len() >= carry.len());
+        unsafe { vi128_add_small_assign_avx512(carry.len(), carry, a) }
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_addmul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        assert!(src.len() >= res.len());
+        unsafe { crate::vec_znx_big_avx512::nfc_extract_normalize_avx512::<false, false>(base2k, lsh, base2k, res, src, &mut []) }
+    }
+
+    #[inline(always)]
+    fn nfc_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i128], carry: &mut [i128]) {
+        assert!(a.len() >= carry.len());
+        unsafe { crate::vec_znx_big_avx512::nfc_normalize_floor_avx512::<CARRY_IN, ROUND>(base2k, lsh, a, carry) }
+    }
+
+    #[inline(always)]
+    fn nfc_normalize_round<const CARRY_IN: bool, const PAD: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        a: &[i128],
+        carry: &mut [i128],
+    ) {
+        assert!(a.len() >= res.len() && carry.len() >= res.len());
+        unsafe { crate::vec_znx_big_avx512::nfc_normalize_round_avx512::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry) }
+    }
+
     fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
         assert!(src.len() >= res.len());
         unsafe {
@@ -121,6 +152,7 @@ impl I128NormalizeOps for NTT3x42Ifma {
 
     #[inline(always)]
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+        assert!(a.len() >= res.len() && carry.len() >= res.len());
         if base2k <= 64 && res.len() >= 8 {
             unsafe { nfc_middle_step_avx512(base2k as u32, lsh as u32, res.len(), res, a, carry) }
         } else {
@@ -130,6 +162,7 @@ impl I128NormalizeOps for NTT3x42Ifma {
 
     #[inline(always)]
     fn nfc_middle_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+        assert!(carry.len() >= res.len());
         if base2k <= 64 && res.len() >= 8 {
             unsafe { nfc_middle_step_assign_avx512(base2k as u32, lsh as u32, res.len(), res, carry) }
         } else {
@@ -139,6 +172,7 @@ impl I128NormalizeOps for NTT3x42Ifma {
 
     #[inline(always)]
     fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
+        assert!(a.len() >= res.len() && carry.len() >= res.len());
         if base2k <= 64 && res.len() >= 8 {
             if O::SUB {
                 unsafe { nfc_middle_step_sub_assign_avx512(base2k as u32, lsh as u32, res.len(), res, a, carry) }
@@ -154,6 +188,7 @@ impl I128NormalizeOps for NTT3x42Ifma {
 
     #[inline(always)]
     fn nfc_final_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+        assert!(carry.len() >= res.len());
         if base2k <= 64 && res.len() >= 8 {
             unsafe { nfc_final_step_assign_avx512(base2k as u32, lsh as u32, res.len(), res, carry) }
         } else {
@@ -163,6 +198,7 @@ impl I128NormalizeOps for NTT3x42Ifma {
 
     #[inline(always)]
     fn nfc_final_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
+        assert!(carry.len() >= res.len());
         if base2k <= 64 && res.len() >= 8 {
             if O::SUB {
                 unsafe { nfc_final_step_sub_assign_avx512(base2k as u32, lsh as u32, res.len(), res, carry) }

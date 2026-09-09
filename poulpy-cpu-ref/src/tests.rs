@@ -532,7 +532,7 @@ fn test_normalize_exact_canonical_precision() {
     let cases: &[Case<'_>] = &[
         (&[3, 7, 5, 0], 4, 4, 6, 0, &[4, -8]),
         (&[-3, -7, -5, 0], 4, 4, 6, 0, &[-3, -8]),
-        (&[3, 7, 7], 5, 4, 6, 0, &[2, -4]),
+        (&[3, 7, 7], 5, 4, 6, 0, &[2, -8]),
         (&[3, 7, 7], 5, 4, 4, 0, &[2, 0]),
         (&[3, 7, 7], 5, 4, 0, 0, &[0, 0]),
         (&[1400], 4, 4, 14, -20, &[0, 0, 0, 4]),
@@ -847,6 +847,293 @@ fn test_vec_znx_big_normalize_wide_radices() {
                         let want = normalize_integer_oracle(&limbs, a_base2k, res_base2k, size, offset);
                         let got: Vec<_> = (0..size).map(|j| output.at(0, j)[i]).collect();
                         assert_eq!(got, want, "ka={a_base2k} kr={res_base2k} size={size} offset={offset}");
+                    }
+                }
+            }
+        }
+    }
+}
+mod canonical_precision_tests {
+    use crate::{
+        FFT64Ref, NTT4x30Ref,
+        reference::{
+            ntt4x30::{ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_range_raw},
+            vec_znx::{
+                vec_znx_normalize, vec_znx_normalize_assign, vec_znx_normalize_assign_range_raw, vec_znx_normalize_range_raw,
+            },
+        },
+    };
+    use dashu_int::IBig;
+    use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut};
+
+    const N: usize = 9;
+    const IDFT_BOUND: i128 = (1_073_479_681i128 * 1_071_513_601 * 1_070_727_169 * 1_068_236_801 - 1) / 2;
+
+    // One rounding decision on the exact integer value, independent of limb scheduling.
+    fn oracle(a: &[i128], ka: usize, kr: usize, k: usize, size: usize, offset: i64) -> Vec<i64> {
+        let mut result = vec![0; size];
+        let shift = k as i128 + offset as i128 - (a.len() * ka) as i128;
+        if k == 0 || offset as i128 >= (a.len() * ka) as i128 || shift < -((a.len() * ka + 130) as i128) {
+            return result;
+        }
+        let mut value = a.iter().fold(IBig::ZERO, |sum, &limb| (sum << ka) + IBig::from(limb));
+        if shift >= 0 {
+            value <<= shift as usize;
+        } else {
+            let drop = (-shift) as usize;
+            value = (value + (IBig::ONE << (drop - 1))) >> drop;
+        }
+        value <<= size * kr - k;
+        for digit in result.iter_mut().rev() {
+            let carry = (&value + (IBig::ONE << (kr - 1))) >> kr;
+            *digit = i64::try_from(&value - (&carry << kr)).unwrap();
+            value = carry;
+        }
+        result
+    }
+
+    fn small(size: usize) -> VecZnx<Vec<u8>, i64> {
+        VecZnx::from_data(vec![0xa5; 8 * N * 2 * size], N, 2, size)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check(a: &[Vec<i128>], ka: usize, kr: usize, k: usize, size: usize, offset: i64, ranges: bool) {
+        let mut input = small(a.len());
+        let mut wide = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16 * N * 2 * a.len()], N, 2, a.len());
+        for (j, values) in a.iter().enumerate() {
+            for (i, &value) in values.iter().enumerate() {
+                input.at_mut(1, j)[i] = value as i64;
+                wide.at_mut(1, j)[i] = value;
+            }
+        }
+        let narrow = ka <= 62 && kr <= 62 && a.iter().flatten().all(|&x| (-(1i128 << 62)..=1i128 << 62).contains(&x));
+        let expected: Vec<_> = (0..N)
+            .map(|i| oracle(&a.iter().map(|v| v[i]).collect::<Vec<_>>(), ka, kr, k, size, offset))
+            .collect();
+        let verify = |name: &str, output: &VecZnx<Vec<u8>, i64>| {
+            for (i, want) in expected.iter().enumerate() {
+                let got: Vec<_> = (0..size).map(|j| output.at(1, j)[i]).collect();
+                assert_eq!(
+                    got, *want,
+                    "{name}: ka={ka} kr={kr} k={k} size={size} offset={offset} i={i} a={a:?}"
+                );
+            }
+            for j in 0..size {
+                assert!(output.at(0, j).iter().all(|&x| x == i64::from_ne_bytes([0xa5; 8])));
+            }
+        };
+        let mut output = small(size);
+        if narrow {
+            let src = <VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input);
+            if ranges {
+                let ptr = output.data_mut().as_mut_ptr().cast::<i64>();
+                for (start, len) in [(0, 2), (2, 3), (5, 4)] {
+                    unsafe {
+                        vec_znx_normalize_range_raw::<FFT64Ref>(
+                            ptr,
+                            N,
+                            2,
+                            size,
+                            kr,
+                            k,
+                            offset,
+                            1,
+                            &src,
+                            ka,
+                            1,
+                            start,
+                            len,
+                            &mut vec![73; 3 * len],
+                        );
+                    }
+                }
+            } else {
+                vec_znx_normalize::<FFT64Ref>(
+                    &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
+                    kr,
+                    k,
+                    offset,
+                    1,
+                    &src,
+                    ka,
+                    1,
+                    &mut [73; 3 * N],
+                );
+            }
+            verify("narrow", &output);
+        }
+        output = small(size);
+        if ranges {
+            let ptr = output.data_mut().as_mut_ptr().cast::<i64>();
+            for (start, len) in [(0, 2), (2, 3), (5, 4)] {
+                unsafe {
+                    ntt4x30_vec_znx_big_normalize_range_raw::<_, NTT4x30Ref>(
+                        ptr,
+                        N,
+                        2,
+                        size,
+                        kr,
+                        k,
+                        offset,
+                        1,
+                        &wide,
+                        ka,
+                        1,
+                        start,
+                        len,
+                        &mut vec![73; 3 * len],
+                    );
+                }
+            }
+        } else {
+            ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(&mut output, kr, k, offset, 1, &wide, ka, 1, &mut [73; 3 * N]);
+        }
+        verify("wide", &output);
+        if narrow && ka == kr && size == a.len() && offset == 0 {
+            if ranges {
+                let ptr = input.data_mut().as_mut_ptr().cast::<i64>();
+                for (start, len) in [(0, 2), (2, 3), (5, 4)] {
+                    unsafe {
+                        vec_znx_normalize_assign_range_raw::<FFT64Ref>(ptr, N, 2, size, kr, k, 1, start, len, &mut vec![73; len]);
+                    }
+                }
+            } else {
+                vec_znx_normalize_assign::<FFT64Ref>(
+                    kr,
+                    k,
+                    &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut input),
+                    1,
+                    &mut [73; N],
+                );
+            }
+            verify("assign", &input);
+        }
+    }
+
+    #[test]
+    fn test_canonical_precision_round_once_regressions() {
+        for (a, ka, kr, k, size) in [
+            (vec![1, -8], 4, 4, 3, 1),
+            (vec![0, 1, 2], 2, 3, 2, 1),
+            (vec![1, -8, -8], 4, 4, 4, 3),
+            (vec![1, -8, -8], 4, 4, 4, 1),
+            (vec![1, -(1i128 << 49)], 50, 50, 49, 1),
+        ] {
+            for sign in [-1, 1] {
+                check(
+                    &a.iter().map(|&x| vec![sign * x; N]).collect::<Vec<_>>(),
+                    ka,
+                    kr,
+                    k,
+                    size,
+                    0,
+                    false,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_canonical_precision_integer_oracle() {
+        for ka in [1, 2, 17, 19, 21, 50, 51, 62] {
+            for kr in [1, 2, 17, 19, 21, 50, 51, 62] {
+                for a_size in [1, 3] {
+                    let half = 1i128 << (ka - 1);
+                    let digits = [0, 1, -1, 1i128 << 62, -(1i128 << 62), half, -half, half - 1, -half - 1];
+                    let input: Vec<Vec<_>> = (0..a_size)
+                        .map(|j| (0..N).map(|i| digits[(i + 2 * j) % N]).collect())
+                        .collect();
+                    for size in [1, 3] {
+                        let mut precisions = vec![0, 1, kr - 1, kr, size * kr / 2, size * kr - 1, size * kr];
+                        precisions.sort_unstable();
+                        precisions.dedup();
+                        for k in precisions {
+                            for offset in [-(ka as i64), -1, 0, 1, ka as i64, i64::MIN, i64::MAX] {
+                                check(&input, ka, kr, k, size, offset, k.is_multiple_of(2));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_canonical_precision_cross_boundaries() {
+        for (ka, kr) in [(1, 2), (2, 1), (17, 50), (50, 17), (50, 51), (51, 50), (51, 62), (62, 51)] {
+            let digits = [
+                0,
+                1,
+                -1,
+                1i128 << 62,
+                -(1i128 << 62),
+                (1i128 << 62) - 1,
+                -(1i128 << 62) + 1,
+                7,
+                -7,
+            ];
+            let input: Vec<Vec<_>> = (0..8).map(|j| (0..N).map(|i| digits[(i + 2 * j) % N]).collect()).collect();
+            // Every width of the last active limb, including the 50 -> 51 dispatch boundary at k=399/400.
+            let mut precisions: Vec<_> = (7 * kr + 1..=8 * kr).chain([1, kr - 1, kr, 4 * kr]).collect();
+            precisions.sort_unstable();
+            precisions.dedup();
+            for k in precisions {
+                for offset in [-(ka as i64) - 1, -1, 0, 1, ka as i64 + 1] {
+                    for size in [8, 9] {
+                        check(&input, ka, kr, k, size, offset, k.is_multiple_of(2));
+                    }
+                    let drop = 8 * ka as i64 - k as i64 - offset;
+                    if !(1..8 * ka as i64).contains(&drop) {
+                        continue;
+                    }
+                    // Encode exact values immediately below, at and above both signed rounding ties.
+                    let half = IBig::ONE << (drop as usize - 1);
+                    let mut ties = vec![vec![0; N]; 8];
+                    let mut values: Vec<_> = (0..N).map(|i| &half * (i / 3) as i32 - &half + (i % 3) as i32 - 1).collect();
+                    for limb in ties[1..].iter_mut().rev() {
+                        for (digit, value) in limb.iter_mut().zip(values.iter_mut()) {
+                            let carry = &*value >> ka;
+                            *digit = i128::try_from(&*value - (&carry << ka)).unwrap();
+                            *value = carry;
+                        }
+                    }
+                    for (digit, value) in ties[0].iter_mut().zip(values) {
+                        *digit = i128::try_from(value).unwrap();
+                    }
+                    check(&ties, ka, kr, k, 9, offset, !k.is_multiple_of(2));
+                }
+            }
+            let wide_digits = [IDFT_BOUND, -IDFT_BOUND, i64::MAX as i128, i64::MIN as i128, 0, 1, -1, 7, -7];
+            let wide: Vec<Vec<_>> = (0..8)
+                .map(|j| (0..N).map(|i| wide_digits[(i + 2 * j) % N]).collect())
+                .collect();
+            for k in [1, kr, 4 * kr, 8 * kr - 1, 8 * kr] {
+                for offset in [-(ka as i64) - 1, 0, ka as i64 + 1] {
+                    check(&wide, ka, kr, k, 9, offset, k.is_multiple_of(2));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_canonical_precision_wide_integer_oracle() {
+        for ka in [1, 17, 50, 62, 63, 64, 119, 127] {
+            for kr in [1, 19, 51, 62, 63, 64] {
+                let digits = [
+                    IDFT_BOUND,
+                    -IDFT_BOUND,
+                    i64::MAX as i128,
+                    i64::MIN as i128,
+                    0,
+                    1,
+                    -1,
+                    (1i128 << 100) + 1,
+                    -(1i128 << 100) - 1,
+                ];
+                let input: Vec<Vec<_>> = (0..3).map(|j| (0..N).map(|i| digits[(i + 2 * j) % N]).collect()).collect();
+                for k in [0, 1, kr - 1, kr, 2 * kr + 1, 3 * kr] {
+                    for offset in [-(ka as i64) - 1, 0, 1, ka as i64 + 1] {
+                        check(&input, ka, kr, k, 3, offset, k.is_multiple_of(2));
                     }
                 }
             }

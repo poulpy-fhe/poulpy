@@ -242,6 +242,37 @@ impl ZnxExtractDigitAddMul for FFT64Neon {
 }
 
 impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for FFT64Neon {
+    #[cfg(target_arch = "aarch64")]
+    #[inline(always)]
+    fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
+        crate::neon::normalization_boundary::znx_normalize_floor_neon::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[inline(always)]
+    fn znx_normalize_round<const CARRY_IN: bool, const PAD: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        a: &[i64],
+        carry: &mut [i64],
+    ) {
+        crate::neon::normalization_boundary::znx_normalize_round_neon::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry);
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[inline(always)]
+    fn znx_normalize_round_assign<const CARRY_IN: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        carry: &mut [i64],
+    ) {
+        crate::neon::normalization_boundary::znx_normalize_round_assign_neon::<CARRY_IN>(base2k, lsh, padding, res, carry);
+    }
+
     #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         #[cfg(target_arch = "aarch64")]

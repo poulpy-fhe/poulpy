@@ -64,3 +64,8 @@ required-features = ["enable-avx512f", "enable-ckks"]
 name = "light"
 harness = false
 required-features = ["enable-avx512f", "enable-ckks"]
+
+[[bench]]
+name = "normalize"
+harness = false
+required-features = ["enable-avx512f"]

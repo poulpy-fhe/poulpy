@@ -5,9 +5,14 @@
 ### `poulpy-hal`
 
 - **Breaking:** normalization now takes the target precision `k` and produces its canonical representation.
+- Round normalization once at the requested precision within its existing traversal, removing the separate canonicalization pass and per-coefficient i128 remainder operations.
 - Reject short source and carry slices before extraction kernels write, including the AVX2, AVX-512, IFMA and NEON implementations.
 - **Breaking:** uniform `VecZnx` sampling now takes the target precision `k`; the sampler masks the unused low bits of the last live limb and clears limbs above `k`.
 - The cross-backend `test_vmp_apply_dft_to_dft_accumulate` now sweeps `res` sizes that differ from the prepared matrix size and non-zero `limb_offset`, so the output limb window is compared across transform families.
+
+### `poulpy-bin-fhe`
+
+- Decrypt `FheUint` at its two-bit encoding precision so normalization preserves noisy bit values.
 
 ### `poulpy-core`
 
@@ -27,6 +32,10 @@ Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic
 
 ### CPU backends
 
+- Accelerate normalization floor carries, precision-boundary rounding and wide carry propagation with native AVX2, AVX-512/IFMA and NEON kernels, including Rayon delegation.
+- Check source and carry lengths before wide normalization kernels access memory.
+- Extend normalization kernel parity tests and benchmark sweeps to full, partial and multi-limb truncated precision across every CPU family.
+- Retain slice kernels for cross-base precision truncation and use i64 scratch for normalized NTT digits without changing public scratch sizes. The CPU `I128NormalizeOps` trait now also requires `I64NormalizeOps` and `ZnxNormalizeMiddleStepAssign`.
 - Document normalization input headroom and fix single-round precision truncation, extreme offsets, and overflowing wide add/sub normalization.
 - Reduce normalization zeroing, specialize exact bit arithmetic by source width, block serial i64 cross-base calls, and retain vector kernels for same-base truncation of at most one limb without changing scratch reservations.
 - Add bounded exact integer normalization tests, centered boundary cases across usual and extreme base widths (full enumeration of bases 1 through 6 via `--ignored`), and cross-base Criterion sweeps via `cargo bench --bench normalize` in `poulpy-cpu-avx`.

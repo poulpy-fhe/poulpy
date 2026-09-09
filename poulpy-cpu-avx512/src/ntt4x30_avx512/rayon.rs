@@ -248,6 +248,40 @@ impl ZnxExtractDigitAddMul for NTT4x30Avx512Rayon {
 
 impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30Avx512Rayon {
     #[inline(always)]
+    fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
+        <NTT4x30Avx512 as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(
+            base2k, lsh, a, carry,
+        )
+    }
+
+    #[inline(always)]
+    fn znx_normalize_round<const CARRY_IN: bool, const PAD: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        a: &[i64],
+        carry: &mut [i64],
+    ) {
+        <NTT4x30Avx512 as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(
+            base2k, lsh, padding, res, a, carry,
+        )
+    }
+
+    #[inline(always)]
+    fn znx_normalize_round_assign<const CARRY_IN: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        carry: &mut [i64],
+    ) {
+        <NTT4x30Avx512 as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(
+            base2k, lsh, padding, res, carry,
+        )
+    }
+
+    #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
         <NTT4x30Avx512 as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(
             base2k, lsh, res, src,
@@ -414,6 +448,33 @@ impl I128BigOps for NTT4x30Avx512Rayon {
 }
 
 impl I128NormalizeOps for NTT4x30Avx512Rayon {
+    #[inline(always)]
+    fn nfc_add_small_carry(carry: &mut [i128], a: &[i64]) {
+        <NTT4x30Avx512 as I128NormalizeOps>::nfc_add_small_carry(carry, a)
+    }
+
+    #[inline(always)]
+    fn znx_extract_digit_addmul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
+        <NTT4x30Avx512 as I128NormalizeOps>::znx_extract_digit_addmul_i128(base2k, lsh, res, src)
+    }
+
+    #[inline(always)]
+    fn nfc_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i128], carry: &mut [i128]) {
+        <NTT4x30Avx512 as I128NormalizeOps>::nfc_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry)
+    }
+
+    #[inline(always)]
+    fn nfc_normalize_round<const CARRY_IN: bool, const PAD: bool>(
+        base2k: usize,
+        lsh: usize,
+        padding: usize,
+        res: &mut [i64],
+        a: &[i128],
+        carry: &mut [i128],
+    ) {
+        <NTT4x30Avx512 as I128NormalizeOps>::nfc_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry)
+    }
+
     const FUSE_NORMALIZE: bool = <NTT4x30Avx512 as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
 
     fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {

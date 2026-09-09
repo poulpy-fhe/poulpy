@@ -26,6 +26,111 @@ use std::arch::x86_64::*;
 use itertools::izip;
 use poulpy_cpu_ref::reference::znx::{get_carry_i128, get_digit_i128};
 
+/// # Safety
+/// Requires AVX-512F.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn nfc_normalize_floor_avx512<const CARRY_IN: bool, const ROUND: bool>(
+    base2k: usize,
+    lsh: usize,
+    a: &[i128],
+    carry: &mut [i128],
+) {
+    assert!(a.len() >= carry.len());
+    unsafe { nfc_normalize_boundary_avx512::<CARRY_IN, ROUND, false, false>(base2k, lsh, 0, &mut [], a, carry) }
+}
+
+/// # Safety
+/// Requires AVX-512F.
+#[inline]
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn nfc_normalize_round_avx512<const CARRY_IN: bool, const PAD: bool>(
+    base2k: usize,
+    lsh: usize,
+    padding: usize,
+    res: &mut [i64],
+    a: &[i128],
+    carry: &mut [i128],
+) {
+    assert!(a.len() >= res.len() && carry.len() >= res.len());
+    unsafe { nfc_normalize_boundary_avx512::<CARRY_IN, false, true, PAD>(base2k, lsh, padding, res, a, carry) }
+}
+
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn nfc_normalize_boundary_avx512<const CARRY_IN: bool, const ROUND: bool, const WRITE: bool, const PAD: bool>(
+    base2k: usize,
+    lsh: usize,
+    padding: usize,
+    res: &mut [i64],
+    a: &[i128],
+    carry: &mut [i128],
+) {
+    unsafe {
+        let step = crate::znx_avx512::NormalizationBoundary512::new(base2k, lsh, padding);
+        let source_left = _mm512_set1_epi64((64 - base2k + lsh) as i64);
+        let carry_left = _mm512_set1_epi64((64 - base2k) as i64);
+        let round_shift = _mm512_set1_epi64((base2k - 1) as i64);
+        let zero = _mm512_setzero_si512();
+        let dl = _mm512_loadu_si512(DEINTERLEAVE_LO.as_ptr().cast());
+        let dh = _mm512_loadu_si512(DEINTERLEAVE_HI.as_ptr().cast());
+        let il = _mm512_loadu_si512(INTERLEAVE_LO.as_ptr().cast());
+        let ih = _mm512_loadu_si512(INTERLEAVE_HI.as_ptr().cast());
+        let n = if WRITE { res.len() } else { carry.len() };
+        let chunks = n / 8;
+        for i in 0..chunks {
+            let (a_lo, a_hi) = load8_i128(a.as_ptr().cast(), i, dl, dh);
+            let (c_lo, c_hi) = if CARRY_IN {
+                load8_i128(carry.as_ptr().cast(), i, dl, dh)
+            } else {
+                (zero, zero)
+            };
+            let (low, overflow) = step.low::<CARRY_IN>(a_lo, c_lo);
+            let source_lo = _mm512_or_si512(
+                _mm512_srlv_epi64(a_lo, step.source_bits),
+                _mm512_sllv_epi64(a_hi, source_left),
+            );
+            let source_hi = _mm512_srav_epi64(a_hi, step.source_bits);
+            let (high_lo, high_hi) = if CARRY_IN {
+                let carry_lo = _mm512_or_si512(_mm512_srlv_epi64(c_lo, step.base2k), _mm512_sllv_epi64(c_hi, carry_left));
+                let carry_hi = _mm512_srav_epi64(c_hi, step.base2k);
+                add8_i128(source_lo, source_hi, carry_lo, carry_hi)
+            } else {
+                (source_lo, source_hi)
+            };
+            let increment = if WRITE {
+                let (digit, round_carry) = step.round::<PAD>(low);
+                _mm512_storeu_si512(res.as_mut_ptr().add(8 * i).cast(), digit);
+                _mm512_add_epi64(overflow, round_carry)
+            } else if ROUND {
+                _mm512_add_epi64(overflow, _mm512_srlv_epi64(low, round_shift))
+            } else {
+                overflow
+            };
+            let (out_lo, out_hi) = add8_i128(high_lo, high_hi, increment, zero);
+            store8_i128(carry.as_mut_ptr().cast(), i, out_lo, out_hi, il, ih);
+        }
+        let end = chunks * 8;
+        if WRITE {
+            poulpy_cpu_ref::reference::normalization::nfc_normalize_round_ref::<CARRY_IN, PAD>(
+                base2k,
+                lsh,
+                padding,
+                &mut res[end..],
+                &a[end..],
+                &mut carry[end..],
+            );
+        } else {
+            poulpy_cpu_ref::reference::normalization::nfc_normalize_floor_ref::<CARRY_IN, ROUND>(
+                base2k,
+                lsh,
+                &a[end..],
+                &mut carry[end..],
+            );
+        }
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Scalar fallback helpers (used as tails in AVX-512 kernels)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1275,8 +1380,10 @@ pub(super) unsafe fn nfc_extract_normalize_avx512<const OVERWRITE: bool, const F
             poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
                 base2k, lsh, res_base2k, res, src, carry,
             );
-        } else {
+        } else if OVERWRITE {
             poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
+        } else {
+            poulpy_cpu_ref::reference::normalization::znx_extract_digit_addmul_i128_ref(base2k, lsh, res, src);
         }
         return;
     }
@@ -1328,8 +1435,15 @@ pub(super) unsafe fn nfc_extract_normalize_avx512<const OVERWRITE: bool, const F
                 &mut src[end..],
                 &mut carry[end..],
             );
-        } else {
+        } else if OVERWRITE {
             poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
+        } else {
+            poulpy_cpu_ref::reference::normalization::znx_extract_digit_addmul_i128_ref(
+                base2k,
+                lsh,
+                &mut res[end..],
+                &mut src[end..],
+            );
         }
     }
 }
