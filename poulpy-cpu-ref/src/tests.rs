@@ -220,6 +220,26 @@ backend_test_suite! {
     }
 }
 
+backend_test_suite! {
+    mod window_fft64,
+    backend = crate::FFT64Ref,
+    params = TestParams { size: 1 << 8, base2k: 12 },
+    tests = {
+        test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
+        test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+    }
+}
+
+backend_test_suite! {
+    mod window_ntt4x30,
+    backend = crate::NTT4x30Ref,
+    params = TestParams { size: 1 << 8, base2k: 12 },
+    tests = {
+        test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
+        test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+    }
+}
+
 #[cfg(feature = "enable-core")]
 poulpy_core::core_backend_test_suite!(
     mod fft64,

@@ -128,6 +128,16 @@ backend_test_suite! {
     }
 }
 
+backend_test_suite! {
+    mod window,
+    backend = crate::FFT64Neon,
+    params = TestParams { size: 1 << 8, base2k: 12 },
+    tests = {
+        test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
+        test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+    }
+}
+
 #[test]
 fn test_convolution_direct() {
     let module = Module::<FFT64Neon>::new(1 << 8);

@@ -134,6 +134,16 @@ backend_test_suite! {
 }
 
 backend_test_suite! {
+    mod window,
+    backend = crate::FFT64Avx,
+    params = TestParams { size: 1 << 8, base2k: 12 },
+    tests = {
+        test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
+        test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+    }
+}
+
+backend_test_suite! {
     mod lwe_matrix,
     backend = crate::FFT64Avx,
     params = TestParams { size: 1<<8, base2k: 17 },

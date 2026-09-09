@@ -18,6 +18,7 @@ pub mod vec_znx;
 pub mod vec_znx_big;
 pub mod vec_znx_dft;
 pub mod vmp;
+pub mod window;
 pub mod word_compat;
 
 /// Parameters passed to every test function in a
