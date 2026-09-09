@@ -273,9 +273,9 @@ pub fn n16_d35_k600_p19_c2s() -> Result<BootstrappingPreset> {
         dense_secret_hamming_weight: 1024,
         sparse_secret_hamming_weight: 32,
         max_dense_modulus: 1714,
-        max_sparse_modulus: 349,
+        max_sparse_modulus: 120,
         key_dsize: 4,
-        dense_to_sparse_dsize: 3,
+        dense_to_sparse_dsize: 1,
         pipeline: BootstrappingPipeline::C2SFirst,
         log_msg_ratio: 5,
         c2s_schedule: &C2S_SCHEDULE,
@@ -309,9 +309,9 @@ pub fn n16_d35_k720_p19_s2c() -> Result<BootstrappingPreset> {
         dense_secret_hamming_weight: 1024,
         sparse_secret_hamming_weight: 32,
         max_dense_modulus: 1714,
-        max_sparse_modulus: 349,
+        max_sparse_modulus: 120,
         key_dsize: 4,
-        dense_to_sparse_dsize: 3,
+        dense_to_sparse_dsize: 1,
         pipeline: BootstrappingPipeline::S2CFirst,
         log_msg_ratio: 13,
         c2s_schedule: &C2S_SCHEDULE,
@@ -591,10 +591,10 @@ mod tests {
         assert_eq!(encapsulation.sparse_to_dense.k().as_usize(), 1680);
         assert!(keys.automorphism_key.k().as_usize() <= preset.max_dense_modulus());
 
-        assert_eq!(encapsulation.dense_to_sparse.dsize.as_usize(), 3);
-        assert_eq!(gadget_k(&encapsulation.dense_to_sparse), 156);
-        assert_eq!(encapsulation.dense_to_sparse.k_aux.as_usize(), 172);
-        assert_eq!(encapsulation.dense_to_sparse.k().as_usize(), 328);
+        assert_eq!(encapsulation.dense_to_sparse.dsize.as_usize(), 1);
+        assert_eq!(gadget_k(&encapsulation.dense_to_sparse), 52);
+        assert_eq!(encapsulation.dense_to_sparse.k_aux.as_usize(), 68);
+        assert_eq!(encapsulation.dense_to_sparse.k().as_usize(), 120);
         assert!(encapsulation.dense_to_sparse.k().as_usize() <= preset.max_sparse_modulus());
     }
 
@@ -606,20 +606,27 @@ mod tests {
 
     #[test]
     fn rederived_key_shape_keeps_widths_and_revalidates() {
-        let preset = n16_d35_k600_p19_c2s().unwrap();
-        let widths = (preset.input_k(), preset.output_k(), preset.bootstrap_k());
+        for preset in all().unwrap() {
+            let widths = (preset.input_k(), preset.output_k(), preset.bootstrap_k());
 
-        // The FFT64 shape used by the benchmarks: radix 19, digits of 7 limbs.
-        let fft = preset.with_base2k(19).unwrap().with_dsizes(7, 7).unwrap();
-        assert_eq!((fft.input_k(), fft.output_k(), fft.bootstrap_k()), widths);
-        assert_eq!((fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()), (19, 7, 7));
-        assert_eq!(fft.bootstrap_layout().glwe_layout.base2k.as_usize(), 19);
-        let keys = fft.keys_layout();
-        assert_eq!(keys.automorphism_key.dnum.as_usize(), 1427usize.div_ceil(7 * 19));
-        assert_eq!(keys.automorphism_key.k_aux.as_usize(), 7 * 19 + 16);
-        assert!(keys.automorphism_key.k().as_usize() <= fft.max_dense_modulus());
+            // FFT64 uses 7-limb high-modulus digits and 1-limb dense-to-sparse digits.
+            let fft = preset.with_base2k(19).unwrap().with_dsizes(7, 1).unwrap();
+            assert_eq!((fft.input_k(), fft.output_k(), fft.bootstrap_k()), widths);
+            assert_eq!((fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()), (19, 7, 1));
+            assert_eq!(fft.bootstrap_layout().glwe_layout.base2k.as_usize(), 19);
+            let keys = fft.keys_layout();
+            assert_eq!(keys.automorphism_key.dnum.as_usize(), preset.bootstrap_k().div_ceil(7 * 19));
+            assert_eq!(keys.automorphism_key.k_aux.as_usize(), 7 * 19 + 16);
+            assert!(keys.automorphism_key.k().as_usize() <= fft.max_dense_modulus());
 
-        // A digit too wide for the dense bound is rejected by the same validation.
-        assert!(preset.with_dsizes(10, 3).is_err());
+            let small_key = &keys.encapsulation.as_ref().unwrap().dense_to_sparse;
+            assert_eq!(small_key.k().as_usize(), 92);
+            assert!(small_key.k().as_usize() <= fft.max_sparse_modulus());
+
+            // Oversized digits are rejected for both secret bounds.
+            assert!(preset.with_dsizes(10, 1).is_err());
+            assert!(preset.with_dsizes(4, 2).is_err());
+            assert!(preset.with_dsizes(4, 3).is_err());
+        }
     }
 }

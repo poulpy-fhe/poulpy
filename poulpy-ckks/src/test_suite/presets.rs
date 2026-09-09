@@ -38,12 +38,13 @@ pub const PRECISION_LOG_BUDGET: usize = 8;
 
 /// The digit shape a backend runs a preset at: the preset's nominal shape for
 /// exact (NTT) backends, and `base2k = 19` with 7-limb digits for approximate
-/// FFT64 backends, whose products cannot carry the nominal radix.
+/// FFT64 backends, whose products cannot carry the nominal radix. Their
+/// dense-to-sparse keys use 1-limb digits to stay within the sparse modulus bound.
 pub fn preset_for_backend<BE: Backend>(preset: &BootstrappingPreset) -> Result<BootstrappingPreset> {
     if BE::DFT_IS_EXACT {
         Ok(preset.clone())
     } else {
-        preset.with_base2k(19)?.with_dsizes(7, 7)
+        preset.with_base2k(19)?.with_dsizes(7, 1)
     }
 }
 
