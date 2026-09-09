@@ -204,6 +204,7 @@ cross_backend_test_suite! {
         test_word_compat_dft_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_dft_bytes,
         test_word_compat_svp_prepare_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_bytes,
         test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
+        test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
     }
 }
 

@@ -18,8 +18,8 @@ use poulpy_hal::{
         VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
     },
     layouts::{
-        Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxBigOwned,
-        VecZnxDftOwned, VecZnxToBackendMut, VecZnxToBackendRef,
+        Module, NoiseInfos, PrepareHint, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ScratchOwned, VecZnx,
+        VecZnxBigOwned, VecZnxDftOwned, VecZnxToBackendMut, VecZnxToBackendRef,
     },
     source::Source,
 };
@@ -50,7 +50,7 @@ fn main() {
     );
 
     // Buffer to store s in the DFT domain
-    let mut s_dft = module.svp_ppol_alloc(s.cols());
+    let mut s_dft = module.svp_ppol_alloc(s.cols(), PrepareHint::Reuse);
 
     // s_dft <- DFT(s)
     module.svp_prepare(

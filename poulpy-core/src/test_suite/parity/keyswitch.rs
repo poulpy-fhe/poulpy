@@ -8,8 +8,8 @@ use poulpy_hal::{
         VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        Backend, FillUniform, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendRef, Module, ScratchOwned,
-        VecZnx, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMat, VmpPMatToBackendMut,
+        Backend, FillUniform, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendRef, Module, PrepareHint,
+        ScratchOwned, VecZnx, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMat, VmpPMatToBackendMut,
         VmpPMatToBackendRef,
     },
     source::Source,
@@ -106,7 +106,7 @@ where
 
         let mut mat = module.mat_znx_alloc(rows, cols_in, cols_out, size_out);
         mat.fill_uniform(base2k, &mut source);
-        let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
+        let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
         let mat = <MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat);
         module.vmp_prepare(&mut pmat.to_backend_mut(), &mat, &mut scratch.borrow());
 
@@ -470,7 +470,7 @@ where
         }
 
         let prepare = |m: &MatZnx<Vec<u8>, i64>, rows: usize, scratch: &mut ScratchOwned<BE>| {
-            let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
+            let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size, PrepareHint::Reuse);
             module.vmp_prepare(
                 &mut pmat.to_backend_mut(),
                 &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(m)),

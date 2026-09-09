@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ModuleN, ScratchArenaTakeBasic, SvpPPolBytesOf, VmpPMatBytesOf},
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, PrepareHint, ScratchArena},
 };
 
 use crate::{
@@ -130,7 +130,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         B: 'a,
         M: ModuleN + SvpPPolBytesOf,
     {
-        let (data, scratch) = self.take_svp_ppol_scratch(module, rank.into());
+        let (data, scratch) = self.take_svp_ppol_scratch(module, rank.into(), PrepareHint::Reuse);
         (
             GLWESecretPreparedViewMut::from_inner(GLWESecretPrepared {
                 data: data.into_inner(),
@@ -209,6 +209,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             infos.rank_in().into(),
             (infos.rank_out() + 1).into(),
             infos.size(),
+            PrepareHint::Reuse,
         );
         (
             GGLWEPreparedViewMut::from_inner(GGLWEPrepared {
@@ -261,6 +262,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
             (infos.rank() + 1).into(),
             (infos.rank() + 1).into(),
             infos.size(),
+            PrepareHint::Reuse,
         );
         (
             GGSWPreparedViewMut::from_inner(GGSWPrepared {

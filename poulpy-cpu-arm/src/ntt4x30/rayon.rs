@@ -73,12 +73,12 @@ fn base_big_ref<'a>(
 }
 
 fn base_vmp_ref<'a>(a: &'a VmpPMatBackendRef<'_, NTT4x30NeonRayon>) -> VmpPMatBackendRef<'a, NTT4x30Neon> {
-    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size())
+    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint())
 }
 
 fn base_vmp_mut<'a>(a: &'a mut VmpPMatBackendMut<'_, NTT4x30NeonRayon>) -> VmpPMatBackendMut<'a, NTT4x30Neon> {
-    let (n, rows, cols_in, cols_out, size) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size());
-    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size)
+    let (n, rows, cols_in, cols_out, size, hint) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint());
+    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size, hint)
 }
 
 use poulpy_cpu_rayon::{parallel_chunk_len, parallel_limb_tasks};

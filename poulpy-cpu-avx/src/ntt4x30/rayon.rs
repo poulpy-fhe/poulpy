@@ -72,12 +72,12 @@ fn base_scalar_ref<'a>(a: &'a ScalarZnxBackendRef<'_, NTT4x30AvxRayon>) -> Scala
 }
 
 fn base_svp_ref<'a>(a: &'a SvpPPolBackendRef<'_, NTT4x30AvxRayon>) -> SvpPPolBackendRef<'a, NTT4x30Avx> {
-    SvpPPol::from_data(&**a.data(), a.n(), a.cols())
+    SvpPPol::from_data(&**a.data(), a.n(), a.cols(), a.hint())
 }
 
 fn base_svp_mut<'a>(a: &'a mut SvpPPolBackendMut<'_, NTT4x30AvxRayon>) -> SvpPPolBackendMut<'a, NTT4x30Avx> {
-    let (n, cols) = (a.n(), a.cols());
-    SvpPPol::from_data(&mut **a.data_mut(), n, cols)
+    let (n, cols, hint) = (a.n(), a.cols(), a.hint());
+    SvpPPol::from_data(&mut **a.data_mut(), n, cols, hint)
 }
 
 fn base_big_mut<'a>(a: &'a mut VecZnxBigBackendMut<'_, NTT4x30AvxRayon>) -> VecZnxBigBackendMut<'a, NTT4x30Avx> {
@@ -92,12 +92,12 @@ fn base_big_ref<'a>(
 }
 
 fn base_vmp_ref<'a>(a: &'a VmpPMatBackendRef<'_, NTT4x30AvxRayon>) -> VmpPMatBackendRef<'a, NTT4x30Avx> {
-    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size())
+    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint())
 }
 
 fn base_vmp_mut<'a>(a: &'a mut VmpPMatBackendMut<'_, NTT4x30AvxRayon>) -> VmpPMatBackendMut<'a, NTT4x30Avx> {
-    let (n, rows, cols_in, cols_out, size) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size());
-    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size)
+    let (n, rows, cols_in, cols_out, size, hint) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint());
+    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size, hint)
 }
 
 use poulpy_cpu_rayon::parallel_chunk_len;

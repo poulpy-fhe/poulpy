@@ -68,12 +68,12 @@ fn base_scalar_ref<'a>(a: &'a ScalarZnxBackendRef<'_, NTT4x30Avx512Rayon>) -> Sc
 }
 
 fn base_svp_ref<'a>(a: &'a SvpPPolBackendRef<'_, NTT4x30Avx512Rayon>) -> SvpPPolBackendRef<'a, NTT4x30Avx512> {
-    SvpPPol::from_data(&**a.data(), a.n(), a.cols())
+    SvpPPol::from_data(&**a.data(), a.n(), a.cols(), a.hint())
 }
 
 fn base_svp_mut<'a>(a: &'a mut SvpPPolBackendMut<'_, NTT4x30Avx512Rayon>) -> SvpPPolBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols) = (a.n(), a.cols());
-    SvpPPol::from_data(&mut **a.data_mut(), n, cols)
+    let (n, cols, hint) = (a.n(), a.cols(), a.hint());
+    SvpPPol::from_data(&mut **a.data_mut(), n, cols, hint)
 }
 
 pub(crate) fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, NTT4x30Avx512Rayon>) -> VecZnxDftBackendMut<'a, NTT4x30Avx512> {
@@ -93,30 +93,30 @@ fn base_big_ref<'a>(
 }
 
 fn base_vmp_ref<'a>(a: &'a VmpPMatBackendRef<'_, NTT4x30Avx512Rayon>) -> VmpPMatBackendRef<'a, NTT4x30Avx512> {
-    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size())
+    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint())
 }
 
 fn base_vmp_mut<'a>(a: &'a mut VmpPMatBackendMut<'_, NTT4x30Avx512Rayon>) -> VmpPMatBackendMut<'a, NTT4x30Avx512> {
-    let (n, rows, cols_in, cols_out, size) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size());
-    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size)
+    let (n, rows, cols_in, cols_out, size, hint) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint());
+    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size, hint)
 }
 
 pub(crate) fn base_cnv_l_ref<'a>(a: &'a CnvPVecLBackendRef<'_, NTT4x30Avx512Rayon>) -> CnvPVecLBackendRef<'a, NTT4x30Avx512> {
-    CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint())
 }
 
 fn base_cnv_l_mut<'a>(a: &'a mut CnvPVecLBackendMut<'_, NTT4x30Avx512Rayon>) -> CnvPVecLBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    CnvPVecL::from_data(&mut **a.data_mut(), n, cols, size)
+    let (n, cols, size, hint) = (a.n(), a.cols(), a.size(), a.hint());
+    CnvPVecL::from_data(&mut **a.data_mut(), n, cols, size, hint)
 }
 
 pub(crate) fn base_cnv_r_ref<'a>(a: &'a CnvPVecRBackendRef<'_, NTT4x30Avx512Rayon>) -> CnvPVecRBackendRef<'a, NTT4x30Avx512> {
-    CnvPVecR::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    CnvPVecR::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint())
 }
 
 fn base_cnv_r_mut<'a>(a: &'a mut CnvPVecRBackendMut<'_, NTT4x30Avx512Rayon>) -> CnvPVecRBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    CnvPVecR::from_data(&mut **a.data_mut(), n, cols, size)
+    let (n, cols, size, hint) = (a.n(), a.cols(), a.size(), a.hint());
+    CnvPVecR::from_data(&mut **a.data_mut(), n, cols, size, hint)
 }
 
 use poulpy_cpu_rayon::parallel_chunk_len;

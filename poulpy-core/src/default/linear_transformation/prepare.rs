@@ -13,7 +13,7 @@
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution},
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, PrepareHint, ScratchArena},
 };
 
 use crate::layouts::IntPolyInfos;
@@ -62,7 +62,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
                 diagonals.push(LinearTransformationDiagonal {
                     baby,
                     plaintext: PreparedDiagonal {
-                        cnv: module.cnv_pvec_right_alloc(1, pt_size),
+                        cnv: module.cnv_pvec_right_alloc(1, pt_size, PrepareHint::Reuse),
                         base2k,
                         k,
                         log_scale: 0,

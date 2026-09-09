@@ -2,7 +2,7 @@ use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero},
-    layouts::{Backend, Data, Module, ScratchArena, VmpPMat},
+    layouts::{Backend, Data, Module, PrepareHint, ScratchArena, VmpPMat},
 };
 
 use crate::layouts::{
@@ -80,7 +80,7 @@ where
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGSWPrepared {
-            data: self.vmp_pmat_alloc(dnum.into(), (rank + 1).into(), (rank + 1).into(), size),
+            data: self.vmp_pmat_alloc(dnum.into(), (rank + 1).into(), (rank + 1).into(), size, PrepareHint::Reuse),
             base2k,
             dsize,
             k_aux,
@@ -98,7 +98,7 @@ where
     fn ggsw_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        self.bytes_of_vmp_pmat(dnum.into(), (rank + 1).into(), (rank + 1).into(), size)
+        self.bytes_of_vmp_pmat(dnum.into(), (rank + 1).into(), (rank + 1).into(), size, PrepareHint::Reuse)
     }
 
     fn ggsw_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize

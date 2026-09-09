@@ -6,8 +6,8 @@ use poulpy_hal::{
         VmpPMatBytesOf,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef,
-        VmpPMatBackendRef, VmpPMatToBackendRef,
+        Backend, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        VecZnxDftToBackendRef, VmpPMatBackendRef, VmpPMatToBackendRef,
     },
 };
 
@@ -101,7 +101,7 @@ where
         if key_infos.stride() == 1 {
             product
         } else {
-            self.bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size) + product
+            self.bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size, PrepareHint::Reuse) + product
         }
     }
 
@@ -134,7 +134,8 @@ where
         );
         let key_size: usize = key.size();
         scratch.scope(|scratch_phase| {
-            let (mut dense, mut scratch_1) = scratch_phase.take_vmp_pmat_scratch(self, rows, cols_in, cols_out, key_size);
+            let (mut dense, mut scratch_1) =
+                scratch_phase.take_vmp_pmat_scratch(self, rows, cols_in, cols_out, key_size, PrepareHint::Reuse);
             self.vmp_extract_selected_rows(&mut dense, &key.data, stride - 1, stride);
             gglwe_product_pmat(
                 self,

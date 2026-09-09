@@ -6,7 +6,7 @@ use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
     layouts::{
         Backend, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
-        CnvPVecRToBackendRef, Module, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
+        CnvPVecRToBackendRef, Module, PrepareHint, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
     },
     source::Source,
 };
@@ -28,7 +28,7 @@ where
 
     let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(1, sweep.size);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(1, sweep.size, PrepareHint::Reuse);
 
     let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
@@ -55,7 +55,7 @@ where
 
     let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
 
-    let mut a_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(1, sweep.size);
+    let mut a_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(1, sweep.size, PrepareHint::Reuse);
 
     let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);

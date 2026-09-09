@@ -4,7 +4,7 @@ use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::layouts::vmp_pmat_backend_ref_from_ref;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{Backend, Data, Module, ScratchArena, VmpPMat},
+    layouts::{Backend, Data, Module, PrepareHint, ScratchArena, VmpPMat},
 };
 
 use crate::layouts::{
@@ -108,7 +108,7 @@ where
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGLWEPrepared {
-            data: self.vmp_pmat_alloc(dnum.into(), rank_in.into(), (rank_out + 1).into(), size),
+            data: self.vmp_pmat_alloc(dnum.into(), rank_in.into(), (rank_out + 1).into(), size, PrepareHint::Reuse),
             base2k,
             dsize,
             k_aux,
@@ -145,7 +145,7 @@ where
     ) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        self.bytes_of_vmp_pmat(dnum.into(), rank_in.into(), (rank_out + 1).into(), size)
+        self.bytes_of_vmp_pmat(dnum.into(), rank_in.into(), (rank_out + 1).into(), size, PrepareHint::Reuse)
     }
 
     /// Returns the byte size required to store a [`GGLWEPrepared`] matching `infos`.

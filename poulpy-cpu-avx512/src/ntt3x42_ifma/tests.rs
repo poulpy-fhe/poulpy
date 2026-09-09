@@ -16,7 +16,7 @@ mod ntt3x42_ifma_tests {
     };
     use poulpy_hal::{
         backend_test_suite, cross_backend_test_suite,
-        layouts::{Backend, SvpPPolOwned, VecZnxDftOwned, ZnxView, ZnxViewMut, ZnxZero},
+        layouts::{Backend, PrepareHint, SvpPPolOwned, VecZnxDftOwned, ZnxView, ZnxViewMut, ZnxZero},
     };
 
     cross_backend_test_suite! {
@@ -253,7 +253,7 @@ mod ntt3x42_ifma_tests {
         dft.zero();
         assert!(dft.data[..byte_len].iter().all(|&byte| byte == 0));
 
-        let mut svp = SvpPPolOwned::<crate::NTT3x42Ifma>::alloc(N, COLS);
+        let mut svp = SvpPPolOwned::<crate::NTT3x42Ifma>::alloc(N, COLS, PrepareHint::Reuse);
         let display = format!("{svp}");
         assert!(display.contains("<backend-packed representation:"));
         assert!(

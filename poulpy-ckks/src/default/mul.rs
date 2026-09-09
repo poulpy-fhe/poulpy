@@ -11,7 +11,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, VecZnxCopyBackend},
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, PrepareHint, ScratchArena},
 };
 
 use crate::SlotsKind;
@@ -127,7 +127,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let cols = a.rank().as_usize() + 1;
         let k: usize = a.k().into();
         let size = k.div_ceil(a.base2k().as_usize());
-        let mut prep = self.cnv_pvec_right_alloc(cols, size);
+        let mut prep = self.cnv_pvec_right_alloc(cols, size, PrepareHint::Reuse);
         glwe_prepare_right(self, &mut prep, a, k, scratch);
         Ok(CKKSPreparedRight {
             prep,

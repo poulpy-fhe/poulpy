@@ -9,8 +9,9 @@ use poulpy_hal::{
         VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
+        VecZnxToBackendRef,
     },
 };
 
@@ -254,7 +255,8 @@ where
         let a_size: usize = a.size();
         let b_size: usize = b.size();
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size) + self.bytes_of_cnv_pvec_right(1, b_size);
+        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::Reuse)
+            + self.bytes_of_cnv_pvec_right(1, b_size, PrepareHint::Reuse);
         let lvl_1: usize = self
             .cnv_prepare_left_lazy_tmp_bytes(a_size, a_size)
             .max(self.cnv_prepare_right_lazy_tmp_bytes(b_size, b_size));
@@ -300,8 +302,8 @@ where
         let res_k = res.k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size());
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, b.size());
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size(), PrepareHint::Reuse);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, b.size(), PrepareHint::Reuse);
 
         let a_mask = msb_mask_bottom_limb(ab_base2k, a_k);
         let b_mask = msb_mask_bottom_limb(ab_base2k, b_k);
@@ -377,8 +379,8 @@ where
 
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, res.size());
-        let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, a.size());
+        let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, res.size(), PrepareHint::Reuse);
+        let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, a.size(), PrepareHint::Reuse);
 
         let mask_res = msb_mask_bottom_limb(ab_base2k, res_k);
         let mask_a = msb_mask_bottom_limb(ab_base2k, a_k);
@@ -530,7 +532,8 @@ where
         let res_size: usize = res.size();
         let cnv_offset = a_size;
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size) + self.bytes_of_cnv_pvec_right(cols, a_size);
+        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::Reuse)
+            + self.bytes_of_cnv_pvec_right(cols, a_size, PrepareHint::Reuse);
         let lvl_1: usize = self.cnv_prepare_self_tmp_bytes(a_size, a_size);
         let diag_dft_size =
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
@@ -574,7 +577,8 @@ where
         let res_size: usize = res.size();
         let cnv_offset = a_size.min(b_size);
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size) + self.bytes_of_cnv_pvec_right(cols, b_size);
+        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::Reuse)
+            + self.bytes_of_cnv_pvec_right(cols, b_size, PrepareHint::Reuse);
         let lvl_1: usize = self
             .cnv_prepare_left_tmp_bytes(a_size, a_size)
             .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
@@ -777,8 +781,8 @@ where
         let res_base2k: usize = res.base2k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size);
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, a_size);
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size, PrepareHint::Reuse);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, a_size, PrepareHint::Reuse);
 
         let a_mask = msb_mask_bottom_limb(a_base2k, a_k);
         let a_backend = a.to_backend_ref();
@@ -834,8 +838,8 @@ where
 
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size);
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, b_size);
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size, PrepareHint::Reuse);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, b_size, PrepareHint::Reuse);
 
         let a_mask = msb_mask_bottom_limb(ab_base2k, a_k);
         let b_mask = msb_mask_bottom_limb(ab_base2k, b_k);
@@ -1191,7 +1195,7 @@ where
     let ab_base2k: usize = a.base2k().as_usize();
     let cnv_offset = a_size.min(b_size);
 
-    let lvl_0: usize = module.bytes_of_cnv_pvec_left(cols, a_size);
+    let lvl_0: usize = module.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::Reuse);
     let lvl_1: usize = module.cnv_prepare_left_tmp_bytes(a_size, a_size);
     let diag_dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k);
     let lvl_2_apply: usize = module.cnv_apply_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, b_size);
@@ -1264,7 +1268,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
 
     let cols: usize = res.rank().as_usize() + 1;
 
-    let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(module, cols, a_size);
+    let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(module, cols, a_size, PrepareHint::Reuse);
 
     let a_mask = msb_mask_bottom_limb(ab_base2k, a_k);
     let a_backend = a.to_backend_ref();

@@ -26,7 +26,7 @@ use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
         Backend, CnvPVecL, CnvPVecLToBackendMut, Data, GaloisElement, HostBytesBackend, HostDataMut, HostDataRef, Module,
-        ScratchArena, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        PrepareHint, ScratchArena, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -271,7 +271,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
                 masks
                     .iter()
                     .map(|ct| {
-                        let mut prep = module.cnv_pvec_left_alloc(2, mask_size);
+                        let mut prep = module.cnv_pvec_left_alloc(2, mask_size, PrepareHint::Reuse);
                         module.cnv_prepare_left(
                             &mut prep.to_backend_mut(),
                             GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),

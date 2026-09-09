@@ -2,7 +2,7 @@ use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
-    layouts::{Backend, Data, Module, SvpPPol, ZnxInfos},
+    layouts::{Backend, Data, Module, PrepareHint, SvpPPol, ZnxInfos},
 };
 
 use crate::{
@@ -68,7 +68,7 @@ where
 {
     fn glwe_secret_prepared_alloc(&self, rank: Rank) -> GLWESecretPrepared<B::OwnedBuf, B> {
         GLWESecretPrepared {
-            data: self.svp_ppol_alloc(rank.into()),
+            data: self.svp_ppol_alloc(rank.into(), PrepareHint::Reuse),
             dist: Distribution::NONE,
         }
     }
@@ -81,7 +81,7 @@ where
     }
 
     fn glwe_secret_prepared_bytes_of(&self, rank: Rank) -> usize {
-        self.bytes_of_svp_ppol(rank.into())
+        self.bytes_of_svp_ppol(rank.into(), PrepareHint::Reuse)
     }
     fn glwe_secret_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where

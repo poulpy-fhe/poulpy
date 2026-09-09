@@ -27,7 +27,7 @@ use poulpy_hal::{
     execution::ScratchWorkers,
     layouts::{
         Backend, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
-        CnvPVecRToBackendRef, FillUniform, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, VecZnx, VecZnxBigOwned,
+        CnvPVecRToBackendRef, FillUniform, MatZnx, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned, VecZnx, VecZnxBigOwned,
         VecZnxBigToBackendMut, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
         VecZnxToBackendRef, VmpPMatOwned, VmpPMatToBackendMut, VmpPMatToBackendRef,
     },
@@ -291,12 +291,12 @@ where
     let mut mat: MatZnx<BE::OwnedBuf, i64> = module.mat_znx_alloc(rows, cols, cols, size);
     mat.fill_uniform(16, &mut source);
 
-    let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols, cols, size);
+    let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols, cols, size, PrepareHint::Reuse);
     let mut a: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(cols, size);
     let mut res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(cols, size);
     let mut big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(cols, size);
-    let mut left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, size);
-    let mut right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, size);
+    let mut left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, size, PrepareHint::Reuse);
+    let mut right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, size, PrepareHint::Reuse);
     let mut cnv_res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(cols, cnv_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(

@@ -58,39 +58,39 @@ fn base_big_ref<'a>(
 }
 
 fn base_svp_ref<'a>(a: &'a SvpPPolBackendRef<'_, NTT3x42IfmaRayon>) -> SvpPPolBackendRef<'a, NTT3x42Ifma> {
-    SvpPPol::from_data(&**a.data(), a.n(), a.cols())
+    SvpPPol::from_data(&**a.data(), a.n(), a.cols(), a.hint())
 }
 
 fn base_svp_mut<'a>(a: &'a mut SvpPPolBackendMut<'_, NTT3x42IfmaRayon>) -> SvpPPolBackendMut<'a, NTT3x42Ifma> {
-    let (n, cols) = (a.n(), a.cols());
-    SvpPPol::from_data(&mut **a.data_mut(), n, cols)
+    let (n, cols, hint) = (a.n(), a.cols(), a.hint());
+    SvpPPol::from_data(&mut **a.data_mut(), n, cols, hint)
 }
 
 fn base_vmp_ref<'a>(a: &'a VmpPMatBackendRef<'_, NTT3x42IfmaRayon>) -> VmpPMatBackendRef<'a, NTT3x42Ifma> {
-    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size())
+    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint())
 }
 
 fn base_vmp_mut<'a>(a: &'a mut VmpPMatBackendMut<'_, NTT3x42IfmaRayon>) -> VmpPMatBackendMut<'a, NTT3x42Ifma> {
-    let (n, rows, cols_in, cols_out, size) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size());
-    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size)
+    let (n, rows, cols_in, cols_out, size, hint) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint());
+    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size, hint)
 }
 
 pub(crate) fn base_cnv_l_ref<'a>(a: &'a CnvPVecLBackendRef<'_, NTT3x42IfmaRayon>) -> CnvPVecLBackendRef<'a, NTT3x42Ifma> {
-    CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint())
 }
 
 fn base_cnv_l_mut<'a>(a: &'a mut CnvPVecLBackendMut<'_, NTT3x42IfmaRayon>) -> CnvPVecLBackendMut<'a, NTT3x42Ifma> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    CnvPVecL::from_data(&mut **a.data_mut(), n, cols, size)
+    let (n, cols, size, hint) = (a.n(), a.cols(), a.size(), a.hint());
+    CnvPVecL::from_data(&mut **a.data_mut(), n, cols, size, hint)
 }
 
 pub(crate) fn base_cnv_r_ref<'a>(a: &'a CnvPVecRBackendRef<'_, NTT3x42IfmaRayon>) -> CnvPVecRBackendRef<'a, NTT3x42Ifma> {
-    CnvPVecR::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    CnvPVecR::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint())
 }
 
 fn base_cnv_r_mut<'a>(a: &'a mut CnvPVecRBackendMut<'_, NTT3x42IfmaRayon>) -> CnvPVecRBackendMut<'a, NTT3x42Ifma> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    CnvPVecR::from_data(&mut **a.data_mut(), n, cols, size)
+    let (n, cols, size, hint) = (a.n(), a.cols(), a.size(), a.hint());
+    CnvPVecR::from_data(&mut **a.data_mut(), n, cols, size, hint)
 }
 
 macro_rules! forward_znx {

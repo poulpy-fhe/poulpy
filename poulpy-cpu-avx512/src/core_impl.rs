@@ -25,9 +25,9 @@ use poulpy_hal::{
         VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend,
     },
     layouts::{
-        Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef,
+        Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, PrepareHint,
+        ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendRef,
     },
 };
 
@@ -214,7 +214,8 @@ where
     let a_size = a.k().as_usize().div_ceil(base2k);
     let b_size = b.k().as_usize().div_ceil(base2k);
     let dft_size = (a_size + b_size).min((res.size() * res.base2k().as_usize() + base2k - 1).div_ceil(base2k));
-    let prepared = module.bytes_of_cnv_pvec_left(2, a_size) + module.bytes_of_cnv_pvec_right(2, b_size);
+    let prepared = module.bytes_of_cnv_pvec_left(2, a_size, PrepareHint::Reuse)
+        + module.bytes_of_cnv_pvec_right(2, b_size, PrepareHint::Reuse);
     let prepare = module
         .cnv_prepare_left_tmp_bytes(a_size, a_size)
         .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size));
@@ -238,7 +239,8 @@ where
     let base2k = a.base2k().as_usize();
     let a_size = a.k().as_usize().div_ceil(base2k);
     let dft_size = (2 * a_size).min((res.size() * res.base2k().as_usize() + base2k - 1).div_ceil(base2k));
-    let prepared = module.bytes_of_cnv_pvec_left(2, a_size) + module.bytes_of_cnv_pvec_right(2, a_size);
+    let prepared = module.bytes_of_cnv_pvec_left(2, a_size, PrepareHint::Reuse)
+        + module.bytes_of_cnv_pvec_right(2, a_size, PrepareHint::Reuse);
     let prepare = module.cnv_prepare_self_tmp_bytes(a_size, a_size);
     prepared + prepare.max(rank_one_tensor_work_bytes(module, res.size(), dft_size, a_size, a_size))
 }
@@ -368,8 +370,10 @@ fn rank_one_tensor_apply<BE, R, A, B>(
     let b_size = b.k().as_usize().div_ceil(base2k);
     assert!(a_size <= a.size());
     assert!(b_size <= b.size());
-    let (mut a_prep, scratch) = scratch.borrow().take_cnv_pvec_left_scratch(module, 2, a_size);
-    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, b_size);
+    let (mut a_prep, scratch) = scratch
+        .borrow()
+        .take_cnv_pvec_left_scratch(module, 2, a_size, PrepareHint::Reuse);
+    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, b_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
         module.cnv_prepare_left(
@@ -426,8 +430,10 @@ fn rank_one_tensor_square<BE, R, A>(
     let base2k = a.base2k().as_usize();
     let a_size = a.k().as_usize().div_ceil(base2k);
     assert!(a_size <= a.size());
-    let (mut a_prep, scratch) = scratch.borrow().take_cnv_pvec_left_scratch(module, 2, a_size);
-    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, a_size);
+    let (mut a_prep, scratch) = scratch
+        .borrow()
+        .take_cnv_pvec_left_scratch(module, 2, a_size, PrepareHint::Reuse);
+    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, a_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
         module.cnv_prepare_self(
