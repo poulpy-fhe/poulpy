@@ -1,9 +1,9 @@
 use crate::{
     api::{
         VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAddScaledAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
-        VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftFromBytes, VecZnxDftSub, VecZnxDftSubAssign,
-        VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
-        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign,
+        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
+        VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
@@ -21,12 +21,6 @@ macro_rules! impl_vec_znx_dft_delegate {
             $($body)+
         }
     };
-}
-
-impl<B: Backend> VecZnxDftFromBytes<B> for Module<B> {
-    fn vec_znx_dft_from_bytes(&self, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxDftOwned<B> {
-        VecZnxDftOwned::<B>::from_bytes(self.n(), cols, size, bytes)
-    }
 }
 
 impl<B: Backend> VecZnxDftBytesOf for Module<B> {

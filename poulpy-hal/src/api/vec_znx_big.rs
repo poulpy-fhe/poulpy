@@ -21,8 +21,6 @@ pub trait VecZnxBigFromSmallBackend<B: Backend> {
 /// Allocates as [crate::layouts::VecZnxBig].
 pub trait VecZnxBigAlloc<B: Backend> {
     fn vec_znx_big_alloc(&self, cols: usize, size: usize) -> VecZnxBigOwned<B>;
-
-    fn vec_znx_big_alloc_n(&self, n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B>;
 }
 
 /// Returns the size in bytes to allocate a [crate::layouts::VecZnxBig].
@@ -30,14 +28,6 @@ pub trait VecZnxBigBytesOf {
     fn bytes_of_vec_znx_big(&self, cols: usize, size: usize) -> usize;
 
     fn bytes_of_vec_znx_big_n(&self, n: usize, cols: usize, size: usize) -> usize;
-}
-
-/// Consume a vector of bytes into a [crate::layouts::VecZnxBig].
-/// User must ensure that bytes is memory aligned and that its length is equal to [VecZnxBigBytesOf::bytes_of_vec_znx_big].
-pub trait VecZnxBigFromBytes<B: Backend> {
-    fn vec_znx_big_from_bytes(&self, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxBigOwned<B>;
-
-    fn vec_znx_big_from_bytes_n(&self, n: usize, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxBigOwned<B>;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -59,18 +49,6 @@ pub trait VecZnxBigAddNormal<B: Backend> {
         res_col: usize,
         noise_infos: NoiseInfos,
         source: &mut Source,
-    );
-}
-
-#[allow(clippy::too_many_arguments)]
-pub trait VecZnxBigAddNormalBackend<B: Backend> {
-    fn vec_znx_big_add_normal_backend(
-        &self,
-        base2k: usize,
-        res: &mut VecZnxBigBackendMut<'_, B>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        seed: [u8; 32],
     );
 }
 

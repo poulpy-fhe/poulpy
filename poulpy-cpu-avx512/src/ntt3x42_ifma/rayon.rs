@@ -344,10 +344,6 @@ unsafe impl HalVecZnxImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
         poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT3x42Ifma, Self>(base2k, k, a, a_col, carry);
     }
-
-    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
-        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
-    }
 }
 
 macro_rules! forward_i128_big {

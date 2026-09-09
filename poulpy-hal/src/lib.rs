@@ -88,7 +88,6 @@
 #![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code, improper_ctypes)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(associated_type_defaults)]
 #![feature(trait_alias)]
 
 /// Safe, user-facing trait definitions for polynomial arithmetic operations.

@@ -549,9 +549,6 @@ unsafe impl HalVecZnxImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
         poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT4x30Avx512, Self>(base2k, k, a, a_col, carry);
     }
-    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
-        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
-    }
 }
 unsafe impl HalModuleImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
     poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);

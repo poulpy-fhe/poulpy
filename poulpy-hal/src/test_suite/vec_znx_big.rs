@@ -4,16 +4,15 @@ use crate::layouts::VecZnxBigToBackendRef;
 
 use crate::{
     api::{
-        ScratchOwnedAlloc, VecZnxBigAddAssign, VecZnxBigAddInto, VecZnxBigAddNormal, VecZnxBigAddNormalBackend,
-        VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend, VecZnxBigAlloc, VecZnxBigAutomorphism,
-        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigFromSmallBackend, VecZnxBigNegate,
-        VecZnxBigNegateAssign, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign,
-        VecZnxBigSubNegateAssign, VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend,
-        VecZnxBigSubSmallNegateAssign,
+        ScratchOwnedAlloc, VecZnxBigAddAssign, VecZnxBigAddInto, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend,
+        VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes,
+        VecZnxBigFromSmallBackend, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign,
+        VecZnxBigSubSmallBBackend, VecZnxBigSubSmallNegateAssign,
     },
     layouts::{
-        DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, NoiseInfos, ScratchOwned, VecZnx, VecZnxOwned,
-        VecZnxToBackendMut, ZnxView,
+        DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut,
+        ZnxView,
     },
     source::Source,
 };
@@ -115,46 +114,6 @@ where
         );
     }
     download_vec_znx::<BE>(&res_backend)
-}
-
-pub fn test_vec_znx_big_seed_add_normal_matches_source_wrapper<
-    BR: crate::test_suite::TestBackend,
-    BT: crate::test_suite::TestBackend,
->(
-    params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
-    _module_ref: &Module<BR>,
-    module_test: &Module<BT>,
-) where
-    Module<BT>: VecZnxBigAddNormal<BT>
-        + VecZnxBigAddNormalBackend<BT>
-        + VecZnxBigAlloc<BT>
-        + VecZnxBigNormalize<BT>
-        + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
-{
-    let base2k = params.base2k;
-    let size: usize = 5;
-    let cols: usize = 2;
-    let col_i: usize = 1;
-    let noise_infos = NoiseInfos::new(2 * base2k - 3, 3.2, 6.0 * 3.2).unwrap();
-    let mut scratch = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
-
-    let mut seed_source = Source::new([2u8; 32]);
-    let seed = seed_source.new_seed();
-    let mut wrapper_source = Source::new([2u8; 32]);
-
-    let mut wrapper: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, size);
-    let mut backend: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, size);
-    module_test.vec_znx_big_add_normal(base2k, &mut wrapper.to_backend_mut(), col_i, noise_infos, &mut wrapper_source);
-    module_test.vec_znx_big_add_normal_backend(base2k, &mut backend.to_backend_mut(), col_i, noise_infos, seed);
-    let wrapper = normalize_big_to_host(module_test, base2k, &wrapper, &mut scratch);
-    let backend = normalize_big_to_host(module_test, base2k, &backend, &mut scratch);
-    assert_eq!(wrapper, backend);
-
-    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
-    let low_mask = (1i64 << shift) - 1;
-    assert!(wrapper.at(col_i, limb).iter().all(|value| value & low_mask == 0));
 }
 
 pub fn test_vec_znx_big_add_into<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
