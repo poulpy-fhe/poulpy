@@ -1,6 +1,6 @@
 use rand_distr::{Distribution, Normal};
 
-use crate::source::Source;
+use poulpy_hal::source::Source;
 
 pub fn znx_fill_uniform_ref(base2k: usize, res: &mut [i64], source: &mut Source) {
     let pow2k: u64 = 1 << base2k;

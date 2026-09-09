@@ -1,6 +1,6 @@
 use poulpy_hal::layouts::HostStaged;
 use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
-use poulpy_hal::reference::znx::{ZnxCopy, ZnxRef, ZnxRotate, ZnxSwitchRing};
+use crate::blind_rotation::host_znx::{znx_rotate, znx_switch_ring};
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxRotateAssignBackend,
@@ -333,12 +333,12 @@ where
             for i in 0..res.extension_factor() {
                 let mut res_at = vec_znx_host_backend_mut(res.data[i].data_mut());
                 for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
-                    ZnxRef::znx_switch_ring(res_at.at_mut(0, limb), limb_data);
+                    znx_switch_ring(res_at.at_mut(0, limb), limb_data);
                 }
                 if i + 1 < res.extension_factor() {
                     for limb_data in &mut lut_full_limbs {
-                        ZnxRef::znx_rotate(-1, &mut tmp, limb_data);
-                        ZnxRef::znx_copy(limb_data, &tmp);
+                        znx_rotate(-1, &mut tmp, limb_data);
+                        limb_data.copy_from_slice(&tmp);
                     }
                 }
             }

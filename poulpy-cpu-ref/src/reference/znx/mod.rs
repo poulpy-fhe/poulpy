@@ -1,3 +1,5 @@
+pub use super::normalization::*;
+
 mod add;
 mod arithmetic_ref;
 mod automorphism;

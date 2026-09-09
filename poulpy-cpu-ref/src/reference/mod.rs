@@ -29,7 +29,4 @@ unsafe impl<T> Send for SendPtr<T> {}
 unsafe impl<T> Sync for SendPtr<T> {}
 
 /// Portable HAL primitives and CPU-specific normalization kernels.
-pub mod znx {
-    pub use super::normalization::*;
-    pub use poulpy_hal::reference::znx::*;
-}
+pub mod znx;
