@@ -2,99 +2,63 @@
 
 ## [Unreleased]
 
-### `poulpy-ckks`
+## [0.8.3] - 2026-09-09
 
-- Restore the input scale automatically at the end of C2S-first bootstrapping, including EvalRound+. The `n16_d35_k600_p19_c2s` preset returns 600 bits at scale `2^35`, restoring 16 net levels with a 1427-bit working modulus.
-- **Breaking:** `BootstrappingPlan::bootstrap_k(output_k, log_delta)` now takes the input/output scale and accounts for C2S-first's final scale restoration. Preset output layouts describe the returned ciphertext directly.
-
-- Restore the S2C-first preset's 19-bit precision at scale `2^35` with six internal CoeffsToSlots guard bits and adjusted message-ratio and matrix precision. Rename it to `n16_d35_k720_p19_s2c`, preserving 560 usable bits with input width 160 and raised width 1382.
-- Add optional S2C-first `BootstrappingPlan::with_c2s_guard_bits`, including width accounting for standard, EvalRound+ and functional bootstrapping.
+Adds opt-in Rayon parallelism to every accelerated CPU family behind a backend-selected task executor, packs NTT4x30 transform words into `u32` pairs on AVX2/AVX-512, fuses paired gadget digits in strided key switching, and resolves evaluation keys per precision, including reading a prepared key at a coarser digit size. Normalization takes an explicit target precision, fixing cross-base and partial-limb noise. CKKS gains `LogN=16` bootstrapping presets, non-power-of-two LUTs, an even Han–Ki EvalMod and a native NTT ModUp; bin-FHE runs on device backends.
 
 ### `poulpy-hal`
 
-- **Breaking:** normalization now takes the target precision `k` and produces its canonical representation.
-- Round normalization once at the requested precision within its existing traversal, removing the separate canonicalization pass and per-coefficient i128 remainder operations.
-- Reject short source and carry slices before extraction kernels write, including the AVX2, AVX-512, IFMA and NEON implementations.
-- **Breaking:** uniform `VecZnx` sampling now takes the target precision `k`; the sampler masks the unused low bits of the last live limb and clears limbs above `k`.
-- The cross-backend `test_vmp_apply_dft_to_dft_accumulate` now sweeps `res` sizes that differ from the prepared matrix size and non-zero `limb_offset`, so the output limb window is compared across transform families.
-
-### `poulpy-bin-fhe`
-
-- Decrypt `FheUint` at its two-bit encoding precision so normalization preserves noisy bit values.
+- **Breaking:** `Backend` gains the `TaskExecutor` associated type. The new `execution` module provides `TaskExecutor` (`join`, `for_each`, `for_each_chunked`), `SerialTaskExecutor`, `ScratchWorkers` and the `worker_count`, `scratch_workers`, `worker_scratch_bytes` and `for_each_with_scratch` helpers, so default algorithms schedule independent work over per-worker scratch with `*_tmp_bytes` independent of the pool width.
+- **Breaking:** the open extension points gain `cnv_by_const_apply_add`, `vec_znx_dft_automorphism_add_with_plan`, `vec_znx_idft_normalize_consume` (with `_tmp_bytes`) and `vmp_extract_selected_rows`, exposed through the API as methods on the existing traits plus `VecZnxIdftNormalizeConsume` and `VmpExtractSelectedRows`; every CPU backend implements them.
+- **Breaking:** `vec_znx_normalize*` and `vec_znx_big_normalize*` take the target precision `res_k` and round once at it.
+- **Breaking:** `vec_znx_fill_uniform*` take `k`, masking the unused low bits of the last live limb and clearing the limbs above it.
+- Fix cross-`base2k` normalization leaving limbs outside `[-2^(base2k-1), 2^(base2k-1))` in `VecZnx` and `VecZnxBig` ([#256](https://github.com/poulpy-fhe/poulpy/issues/256)).
+- Kernels check source and carry slice lengths with `assert` instead of `debug_assert`.
+- **Breaking:** `NoiseInfos::target_limb_and_scale` and `target_limb_and_shift` are removed; add `vec_znx_alloc_zeroed`.
 
 ### `poulpy-core`
 
-- Normalize linear-transformation outputs at their declared precision so inactive partial-limb bits remain clear.
-- Apply the gadget-product limb window on every backend. The window was gated on `DFT_IS_EXACT` because FFT64 lost precision with it; the loss was the FFT64 VMP bug below, not a property of approximate transforms, so FFT64 backends now materialize the same reduced key region as the NTT backends.
-- Add a cross-family parity suite (NTT4x30 reference against FFT64) to `poulpy-cpu-ref`, at a radix where FFT64 products round exactly.
-- Fix precision loss at non-`base2k`-aligned ciphertext widths. Masks and Gaussian noise are sampled at `k`-bit precision, avoiding redundant post-encryption rounding for both secret- and public-key ciphertexts.
+- **Breaking:** every operation consuming an evaluation key takes its backend view, written `&key.to_backend_ref()`: `&GGLWEPreparedBackendRef`, `&GLWEAutomorphismKeyPreparedBackendRef`, `&GGSWPreparedBackendRef` or `&GGLWEToGGSWKeyPreparedBackendRef`.
+- **Breaking:** `GLWEAutomorphismKeyHelper` and `automorphism_key_infos()` are removed, with the key type parameter of automorphism-consuming signatures. Add `GetAutomorphismKey` and `GetTensorKey`: a source answers a function and the precision it is used at with a prepared-key view; a map or a bare key implement them as stored. Linear transformations resolve baby-step keys at the source precision and giant-step keys at the post-product precision.
+- `GGLWEInfos` gains `stride` (digit `i` is stored at row `(i + 1) * stride - 1`), `GGLWELayout` gains `at_dsize`, `dnum_for_input` and `gadget_k`, and `with_dsize` re-tags a prepared GGLWE, automorphism or tensor key at a coarser `dsize`; a product over that view gathers the selected rows once.
+- Apply the gadget-product limb window on every backend. It was gated on `DFT_IS_EXACT` because of the FFT64 VMP bug fixed below, not a property of approximate transforms ([#222](https://github.com/poulpy-fhe/poulpy/issues/222)).
+- Fix precision loss at non-`base2k`-aligned ciphertext widths: masks and Gaussian noise are sampled at `k` bits for secret- and public-key encryption.
+- Fix cross-radix tensor relinearization sizing the DFT operand from the storage precision instead of `a.k()`.
+- Fix noise in the first slots of linear transformations at non-limb-aligned precisions: outputs are normalized at their declared precision.
+- GLWE key switching consumes inverse-DFT results directly into normalized outputs, lazy and prepared-giant linear transformations use DFT automorphism accumulation, and generic polynomial evaluation gains an optional one-pass baby-step linear-combination hook.
+- Add `TransferInto` for `GLWEToLWEKey` and `GGLWEToGGSWKey`; `GGSWPrepared::data` no longer requires host data.
 
-Adds opt-in intra-operation Rayon scheduling to every accelerated CPU arithmetic family, backed by a shared HAL execution and scratch-allocation model. Fused primitives reduce intermediate traffic in core and CKKS paths, bin-FHE gains backend-driven parallel evaluation, and CKKS gains an even-Chebyshev EvalMod variant.
+### `poulpy-ckks`
 
-### `poulpy-hal`
+- Add `presets::bootstrapping` with the `LogN=16` bundles `n16_d35_k600_p19_c2s` and `n16_d35_k720_p19_s2c` (plan, widths, secret weights and key layouts), re-derivable at another radix or digit size with `with_base2k` and `with_dsizes`. See `docs/bootstrapping.md`.
+- `EncodedLut::general` accepts any nonempty table length, zero-padded to the next power of two; LUTs with the same padded length share a batch.
+- Add `EvalModType::CosHKEven`, a centred Han–Ki approximation folded through `T₂` when it lowers multiplication cost within the same modulus budget.
+- **Breaking:** `BootstrappingPlan::new` validates the EvalMod plan and derives the CoeffsToSlots input scaling from it.
+- **Breaking:** `BootstrappingPlan::bootstrap_k(output_k, log_delta)` takes the input/output scale; C2S-first bootstrapping restores the input scale at the end, including EvalRound+. Add `with_c2s_guard_bits` for S2C-first plans.
+- **Breaking:** the ciphertext-ciphertext operations (`ckks_mul_*`, `ckks_square_*`, `mul_add`/`mul_sub`/`dot_product`, polynomial evaluation, approximation, EvalMod and the PaCo slot product) take a tensor-key source resolved at their working precision. `CKKSAtkBounds` is replaced by the `GetAutomorphismKey<BE>` bound, `CKKSCompositionError::MissingAutomorphismKey` carries the lookup precision and `MissingRelinearizationKey` is added.
+- **Breaking:** `ckks_coeffs_to_slots_{split,repack}` drop `conj_key`; `BootstrappingKeys::conjugation_key` and its `AutomorphismKey` type are removed and generation puts the conjugation key in `rotation_keys`. Add `ckks_conjugate_rotate_into(dst, src, k, ..)` for PaCo's fused conjugate-and-rotate; `PaCoPsiTailMaterial::Mask` carries the rotation instead of the Galois element.
+- Fuse each BSGS baby-step linear combination into one accumulator, run the real and imaginary EvalMod halves concurrently on parallel backends, and size the `ckks_mul_tmp_bytes` tensor intermediate from the operands' precision rather than `res`'s.
 
-- **Breaking:** `Backend` gains the required `TaskExecutor` associated type. Add `TaskExecutor`, `SerialTaskExecutor` and backend-declared `ScratchWorkers` limits, so default algorithms can schedule independent work without depending on Rayon.
-- Add aligned per-worker scratch sizing and arena splitting helpers. Scratch reservations depend on the backend's fixed worker caps rather than the ambient pool width, keeping `*_tmp_bytes` stable across Rayon pools.
-- **Breaking:** `HalConvolutionImpl` and `HalVecZnxDftImpl` gain fused constant-convolution accumulation, DFT automorphism accumulation, and consuming IDFT-plus-normalization operations. The public HAL API exposes the same primitives and every CPU backend implements them.
-- Add `VmpExtractSelectedRows`: copies rows `first_row + i * row_step` of a `VmpPMat` into a smaller one, reading only the selected cells. The delegate validates the selection before dispatch.
+### `poulpy-bin-fhe`
+
+- Device-resident backends can prepare CGGI keys and execute BDD circuits and every blind-rotation variant, with explicit host staging.
+- FHE integer preparation, BDD evaluation and block-binary CGGI blind rotation run through the backend executor with disjoint scratch arenas; serial backends keep one worker.
+- **Breaking:** multithreaded BDD execution requires its output buffer to implement `Send`.
 
 ### CPU backends
 
+- Add `poulpy-cpu-rayon` (shared executor, nested-parallelism guard, thresholds, FFT64 and normalization kernels) and, behind `enable-rayon`, the `FFT64AvxRayon`, `NTT4x30AvxRayon`, `FFT64Avx512Rayon`, `NTT4x30Avx512Rayon`, `NTT3x42IfmaRayon`, `FFT64NeonRayon` and `NTT4x30NeonRayon` backends, layout-compatible with their serial families and wired into HAL, core, CKKS and bin-FHE. Transform, convolution, VMP and normalization kernels parallelize within one operation; nested Rayon serializes its inner level. `docs/performance.md` covers backend selection and thread tuning.
+- Pack the four NTT4x30 transform-domain residues into `u32` words on AVX2 and AVX-512, halving DFT and prepared-key storage from 32 to 16 bytes per coefficient.
+- Fuse adjacent gadget digits in strided VMP key-switch kernels for AVX2 NTT4x30, AVX-512 NTT4x30 and AVX-512-IFMA NTT3x42.
 - Canonicalize rank-one AVX-512/IFMA tensor products after diagonal subtraction, including partial precision and Rayon paths.
+- The AVX2 and AVX-512 NTT backends and their Rayon variants override the encapsulated CKKS ModUp with a native kernel.
+- Speed up normalization with precision-boundary and carry kernels on AVX2, AVX-512 and NEON, and add `cargo bench --bench normalize` to `poulpy-cpu-ref`, `poulpy-cpu-avx` and `poulpy-cpu-avx512`. `I128NormalizeOps` now requires the new `I64NormalizeOps`.
+- Fix the FFT64 `vmp_apply_dft_to_dft` limb window when `res` is narrower than the prepared matrix, which dropped the top `limb_offset` limbs of every narrowed gadget digit on every FFT64 backend ([#222](https://github.com/poulpy-fhe/poulpy/issues/222)). Fix the NTT4x30 reference `vmp_apply_dft_to_dft_accumulate_tmp_bytes` under-reporting scratch when `res` is wider than the matrix.
+- Add an NTT4x30-versus-FFT64 parity suite to `poulpy-cpu-ref`, and sweep `res` sizes and `limb_offset` in the cross-backend VMP tests.
 
-- Accelerate normalization floor carries, precision-boundary rounding and wide carry propagation with native AVX2, AVX-512/IFMA and NEON kernels, including Rayon delegation.
-- Check source and carry lengths before wide normalization kernels access memory.
-- Extend normalization kernel parity tests and benchmark sweeps to full, partial and multi-limb truncated precision across every CPU family.
-- Retain slice kernels for cross-base precision truncation and use i64 scratch for normalized NTT digits without changing public scratch sizes. The CPU `I128NormalizeOps` trait now also requires `I64NormalizeOps` and `ZnxNormalizeMiddleStepAssign`.
-- Document normalization input headroom and fix single-round precision truncation, extreme offsets, and overflowing wide add/sub normalization.
-- Reduce normalization zeroing, specialize exact bit arithmetic by source width, block serial i64 cross-base calls, and retain vector kernels for same-base truncation of at most one limb without changing scratch reservations.
-- Add bounded exact integer normalization tests, centered boundary cases across usual and extreme base widths (full enumeration of bases 1 through 6 via `--ignored`), and cross-base Criterion sweeps via `cargo bench --bench normalize` in `poulpy-cpu-avx`.
-- Restore selected-row VMP extraction forwarding for the NEON Rayon backend.
-- Fix cross-`base2k` normalization leaving output limbs outside `[-2^(base2k-1), 2^(base2k-1))` in `VecZnx` and FFT64/NTT4x30 `VecZnxBig`, including coefficient normalization and partial limbs ([#256](https://github.com/poulpy-fhe/poulpy/issues/256)).
-- Fix the FFT64 `vmp_apply_dft_to_dft` limb window when `res` is narrower than the prepared matrix: output limb `c` reads matrix limb `c + limb_offset`, but the window was clamped at `res.size()` instead of `res.size() + limb_offset`, dropping the top `limb_offset` limbs of every narrowed accumulating gadget digit. Shared by every FFT64 backend (reference, AVX2, AVX-512, NEON and their Rayon variants).
-- Fix the NTT4x30 reference `vmp_apply_dft_to_dft_accumulate_tmp_bytes` under-reporting scratch when `res` is wider than the prepared matrix.
-- Add `poulpy-cpu-rayon`, which provides the shared Rayon executor, nested-parallelism guard, scheduling thresholds, FFT64 kernels, coefficient normalization, and tuning utilities used by the accelerated CPU crates.
-- Add the opt-in `FFT64AvxRayon`, `NTT4x30AvxRayon`, `FFT64Avx512Rayon`, `NTT4x30Avx512Rayon`, `NTT3x42IfmaRayon`, `FFT64NeonRayon` and `NTT4x30NeonRayon` backends. `enable-rayon` exposes them while retaining the serial backend types.
-- Pack the four NTT4x30 transform-domain residues into `u32` words on AVX2 and AVX-512, halving DFT and prepared-key storage from 32 to 16 bytes per coefficient; update the serial and Rayon transform, convolution, SVP and VMP kernels for the packed layout.
-- Parallelize the transform, convolution, VMP, normalization and coefficient-domain kernels that scale within one operation. A one-thread pool follows the serial path, and nested Rayon operations serialize their inner level rather than oversubscribing the pool.
-- Fuse adjacent gadget digits in strided VMP key-switch kernels for AVX2 NTT4x30, AVX-512 NTT4x30 and AVX-512-IFMA NTT3x42, reusing each prepared key column for both products; the Rayon variants distribute the fused block work across workers.
-- Declare the Rayon variants layout-compatible with their serial/reference families and wire them into the HAL, core, CKKS and bin-FHE operation surfaces. Backend parity suites cover the parallel types against the corresponding serial/reference result.
-- Add instruction-set and compiled-backend capability reports, plus an ignored thread-scaling diagnostic that measures VMP, convolution, IDFT and coefficient work across pool widths. `docs/performance.md` documents backend selection, key-traffic tradeoffs and thread-count tuning.
+### `poulpy-bench`
 
-### `poulpy-core`
-
-- Refactor GLWE key switching to consume inverse-DFT results directly into normalized outputs, and use DFT automorphism accumulation in lazy/prepared-giant linear transformations. These paths avoid temporary big-polynomial copies while preserving the serial/reference behavior.
-- Add an optional one-pass baby-step linear-combination hook to generic polynomial evaluation, falling back to the existing multiply-add sequence when an operation family does not override it. Extend the HAL parity suites for the new fused operations.
-- `GGLWEInfos` gains `stride`, the row map a coarser read uses (digit `i` is stored row `(i + 1) * stride - 1`, defaulting to 1), plus `gglwe_layout_at_dsize` and `valid_dsizes`: the layout a key reports at a coarser `dsize` and the decompositions it admits.
-- `GGLWEPrepared` carries its own `dnum` and `stride`, and `with_dsize` re-tags a prepared key as one read at a coarser `dsize`, or fails if the key does not admit it. It returns the same backend view every operation already takes; no new key type.
-- A GGLWE product over a view gathers the selected rows once, then runs the ordinary kernels on them; its scratch query adds that gather. Query it with the key the operation will run through, coarsened or not.
-- Add `GetAutomorphismKey` and `GetTensorKey`: a caller names a function and the precision it will use the key at, and the source answers with the backend view of a prepared key. A map and a bare key implement them as stored, so which key and which decomposition a precision gets is entirely the source's rule. Implementors write `lookup_automorphism_key`; `get_automorphism_key` checks the answer is a key for the element asked for, since operations rotate by the element they were given.
-- **Breaking:** every operation that consumes an evaluation key takes that key's backend view rather than a generic prepared-key parameter: `&GGLWEPreparedBackendRef`, `&GLWEAutomorphismKeyPreparedBackendRef`, `&GGSWPreparedBackendRef` or `&GGLWEToGGSWKeyPreparedBackendRef`, written `&key.to_backend_ref()` at the call site. A view returned by `GetAutomorphismKey`/`GetTensorKey` or by `with_dsize` passes straight through.
-- **Breaking:** `GLWEAutomorphismKeyHelper` and its `automorphism_key_infos()` are removed, along with the key type parameter every automorphism-consuming signature carried: no single layout describes a key set whose rotations resolve independently.
-- Linear transformations resolve each rotation's key at the precision that rotation actually works at: baby steps at the source, giant steps at the post-product destination.
-- Fix cross-radix tensor relinearization: the DFT operand width came from the storage precision rounded to the key's radix instead of from `a.k()`, handing the product one limb too many.
-- Add the `error` module, exporting `CoreError` and `Result`.
-
-### `poulpy-bin-fhe`
-
-- Allow device-resident backends to prepare CGGI keys and execute BDD circuits and every blind-rotation variant. Key preparation uses explicit host staging for `X^a` polynomials, modulus switching downloads the small LWE input through the backend transfer API, and accumulator zeroing and copying remain backend-native.
-- Make FHE integer preparation and BDD evaluation honor their requested worker count through the backend executor and disjoint scratch arenas; serial backends continue to execute them on one worker.
-- Parallelize the independent VMP contributions in block-binary CGGI blind rotation before deterministic accumulation, with serial-versus-Rayon parity coverage for the accelerated backend families.
-- **Breaking:** multithreaded BDD execution requires its output buffer to implement `Send`.
-
-### `poulpy-ckks`
-
-- Add `EvalModType::CosHKEven`, a centred Han–Ki approximation folded through `T₂` when it reduces multiplication cost without increasing the modulus budget.
-- **Breaking:** `BootstrappingPlan::new` now validates the EvalMod plan and derives the CoeffsToSlots input scaling from it, replacing any scaling already present on the supplied CoeffsToSlots plan.
-- Fuse each BSGS baby-step linear combination into one accumulator and use constant-convolution accumulation to avoid repeated ciphertext temporaries.
-- Run the real and imaginary EvalMod halves concurrently on parallel backends, with per-half scratch arenas; serial backends retain the existing order.
-- **Breaking:** the ciphertext-ciphertext operations (`ckks_mul_*`, `ckks_square_*`, the `mul_add`/`mul_sub`/`dot_product` composites, polynomial evaluation, approximation, EvalMod and the PaCo slot product) take a tensor-key source rather than one key, and resolve it at the precision they work at.
-- **Breaking:** `ckks_coeffs_to_slots_{split,repack}` drop their separate `conj_key`: one source answers every element, `-1` included. `BootstrappingKeys::conjugation_key` and its `AutomorphismKey` type are removed, and generation puts the conjugation key in `rotation_keys`.
-- **Breaking:** add `ckks_conjugate_rotate_into(dst, src, k, ..)` for the fused conjugate-and-rotate PaCo's psi tail needs, which was previously expressed by handing `ckks_conjugate_into` a different key. It takes the rotation like `ckks_rotate` and resolves `-galois_element(k)` itself; `k = 0` is plain conjugation. `PaCoPsiTailMaterial::Mask` carries that rotation rather than the derived element.
-- **Breaking:** `CKKSAtkBounds` is removed: a key type is now constrained as `GetAutomorphismKey<BE>`.
-- **Breaking:** `CKKSCompositionError::MissingAutomorphismKey` carries the precision the lookup was made at; add `MissingRelinearizationKey`.
-- `ckks_mul_tmp_bytes` sizes its tensor intermediate from the operands' precision; `res`'s pre-call precision no longer widens it.
-
+- Replace the bootstrapping benchmark with `ckks_bootstrapping`, driven by the CKKS presets.
 
 ## [0.8.2] - 2026-08-22
 
