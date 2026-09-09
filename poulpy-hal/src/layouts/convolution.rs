@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, HostDataRef, VecZnxInfos, ZnxInfos, ZnxView};
+use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, HostDataRef, PrepareHint, VecZnxInfos, ZnxInfos, ZnxView};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
@@ -8,11 +8,12 @@ pub struct CnvPVecShape {
     n: usize,
     size: usize,
     cols: usize,
+    hint: PrepareHint,
 }
 
 impl CnvPVecShape {
-    pub const fn new(n: usize, cols: usize, size: usize) -> Self {
-        Self { n, size, cols }
+    pub const fn new(n: usize, cols: usize, size: usize, hint: PrepareHint) -> Self {
+        Self { n, size, cols, hint }
     }
 
     pub const fn n(self) -> usize {
@@ -25,6 +26,10 @@ impl CnvPVecShape {
 
     pub const fn cols(self) -> usize {
         self.cols
+    }
+
+    pub const fn hint(self) -> PrepareHint {
+        self.hint
     }
 }
 
@@ -93,18 +98,22 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     pub fn size(&self) -> usize {
         self.shape.size()
     }
+
+    pub fn hint(&self) -> PrepareHint {
+        self.shape.hint()
+    }
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     /// Allocates a zero-initialized backend-owned `CnvPVecR`.
-    pub fn alloc(n: usize, cols: usize, size: usize) -> CnvPVecR<B::OwnedBuf, W, B>
+    pub fn alloc(n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecR<B::OwnedBuf, W, B>
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: B::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_cnv_pvec_right(n, cols, size));
+        let data: B::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_cnv_pvec_right(n, cols, size, hint));
         CnvPVecR {
             data,
-            shape: CnvPVecShape::new(n, cols, size),
+            shape: CnvPVecShape::new(n, cols, size, hint),
             _phantom: PhantomData,
         }
     }
@@ -113,27 +122,33 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_right(n, cols, size)`.
-    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<Vec<u8>>) -> CnvPVecR<B::OwnedBuf, W, B>
+    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_right(n, cols, size, hint)`.
+    pub fn from_bytes(
+        n: usize,
+        cols: usize,
+        size: usize,
+        hint: PrepareHint,
+        bytes: impl Into<Vec<u8>>,
+    ) -> CnvPVecR<B::OwnedBuf, W, B>
     where
         B: Backend<OwnedBuf = D>,
     {
         let data: Vec<u8> = bytes.into();
-        assert!(data.len() == B::bytes_of_cnv_pvec_right(n, cols, size));
+        assert!(data.len() == B::bytes_of_cnv_pvec_right(n, cols, size, hint));
         let data: B::OwnedBuf = B::from_host_bytes(&data);
         CnvPVecR {
             data,
-            shape: CnvPVecShape::new(n, cols, size),
+            shape: CnvPVecShape::new(n, cols, size, hint),
             _phantom: PhantomData,
         }
     }
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
-    pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
+    pub fn from_data(data: D, n: usize, cols: usize, size: usize, hint: PrepareHint) -> Self {
         Self {
             data,
-            shape: CnvPVecShape::new(n, cols, size),
+            shape: CnvPVecShape::new(n, cols, size, hint),
             _phantom: PhantomData,
         }
     }
@@ -204,18 +219,22 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     pub fn size(&self) -> usize {
         self.shape.size()
     }
+
+    pub fn hint(&self) -> PrepareHint {
+        self.shape.hint()
+    }
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     /// Allocates a zero-initialized backend-owned `CnvPVecL`.
-    pub fn alloc(n: usize, cols: usize, size: usize) -> CnvPVecL<B::OwnedBuf, W, B>
+    pub fn alloc(n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecL<B::OwnedBuf, W, B>
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: B::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_cnv_pvec_left(n, cols, size));
+        let data: B::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_cnv_pvec_left(n, cols, size, hint));
         CnvPVecL {
             data,
-            shape: CnvPVecShape::new(n, cols, size),
+            shape: CnvPVecShape::new(n, cols, size, hint),
             _phantom: PhantomData,
         }
     }
@@ -224,27 +243,33 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_left(n, cols, size)`.
-    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<Vec<u8>>) -> CnvPVecL<B::OwnedBuf, W, B>
+    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_left(n, cols, size, hint)`.
+    pub fn from_bytes(
+        n: usize,
+        cols: usize,
+        size: usize,
+        hint: PrepareHint,
+        bytes: impl Into<Vec<u8>>,
+    ) -> CnvPVecL<B::OwnedBuf, W, B>
     where
         B: Backend<OwnedBuf = D>,
     {
         let data: Vec<u8> = bytes.into();
-        assert!(data.len() == B::bytes_of_cnv_pvec_left(n, cols, size));
+        assert!(data.len() == B::bytes_of_cnv_pvec_left(n, cols, size, hint));
         let data: B::OwnedBuf = B::from_host_bytes(&data);
         CnvPVecL {
             data,
-            shape: CnvPVecShape::new(n, cols, size),
+            shape: CnvPVecShape::new(n, cols, size, hint),
             _phantom: PhantomData,
         }
     }
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
-    pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
+    pub fn from_data(data: D, n: usize, cols: usize, size: usize, hint: PrepareHint) -> Self {
         Self {
             data,
-            shape: CnvPVecShape::new(n, cols, size),
+            shape: CnvPVecShape::new(n, cols, size, hint),
             _phantom: PhantomData,
         }
     }
@@ -410,8 +435,8 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     {
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_cnv_pvec_left(shape.n(), shape.cols(), shape.size()),
-            B2::bytes_of_cnv_pvec_left(shape.n(), shape.cols(), shape.size()),
+            B::bytes_of_cnv_pvec_left(shape.n(), shape.cols(), shape.size(), shape.hint()),
+            B2::bytes_of_cnv_pvec_left(shape.n(), shape.cols(), shape.size(), shape.hint()),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         CnvPVecL {
@@ -436,8 +461,8 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     {
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_cnv_pvec_right(shape.n(), shape.cols(), shape.size()),
-            B2::bytes_of_cnv_pvec_right(shape.n(), shape.cols(), shape.size()),
+            B::bytes_of_cnv_pvec_right(shape.n(), shape.cols(), shape.size(), shape.hint()),
+            B2::bytes_of_cnv_pvec_right(shape.n(), shape.cols(), shape.size(), shape.hint()),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         CnvPVecR {

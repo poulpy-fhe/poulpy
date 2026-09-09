@@ -5,8 +5,33 @@ use std::{
 };
 
 use crate::layouts::{
-    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataRef, ScalarZnxShape, VecZnxInfos, ZnxInfos, ZnxView,
+    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataRef, PrepareHint, VecZnxInfos, ZnxInfos, ZnxView,
 };
+
+/// Shape of a prepared scalar polynomial: `cols` columns of degree `n`, plus
+/// the [`PrepareHint`] chosen at allocation.
+#[repr(C)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
+pub struct SvpPPolShape {
+    n: usize,
+    cols: usize,
+    hint: PrepareHint,
+}
+
+impl SvpPPolShape {
+    pub const fn new(n: usize, cols: usize, hint: PrepareHint) -> Self {
+        Self { n, cols, hint }
+    }
+    pub const fn n(self) -> usize {
+        self.n
+    }
+    pub const fn cols(self) -> usize {
+        self.cols
+    }
+    pub const fn hint(self) -> PrepareHint {
+        self.hint
+    }
+}
 
 /// Prepared (DFT-domain) scalar polynomial for scalar-vector products.
 ///
@@ -23,7 +48,7 @@ use crate::layouts::{
 #[repr(C)]
 pub struct SvpPPol<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     pub data: D,
-    shape: ScalarZnxShape,
+    shape: SvpPPolShape,
     pub _phantom: PhantomData<(W, B)>,
 }
 
@@ -63,7 +88,7 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for SvpPPol<D,
         let element_bytes = crate::layouts::element_view_span(self)
             .checked_mul(size_of::<W>())
             .expect("SvpPPol element-view byte size overflows usize");
-        let backend_bytes = B::bytes_of_svp_ppol(self.n(), self.cols());
+        let backend_bytes = B::bytes_of_svp_ppol(self.n(), self.cols(), self.hint());
         assert_eq!(
             element_bytes, backend_bytes,
             "SvpPPol backend representation ({backend_bytes} bytes) does not expose a dense {element_bytes}-byte element view"
@@ -100,8 +125,12 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
         self.shape.cols()
     }
 
-    pub fn shape(&self) -> ScalarZnxShape {
+    pub fn shape(&self) -> SvpPPolShape {
         self.shape
+    }
+
+    pub fn hint(&self) -> PrepareHint {
+        self.shape.hint()
     }
 }
 
@@ -120,14 +149,14 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for SvpPPol<D, W,
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     /// Allocates a zero-initialized backend-owned `SvpPPol`.
-    pub fn alloc(n: usize, cols: usize) -> SvpPPolOwned<B>
+    pub fn alloc(n: usize, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B>
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_svp_ppol(n, cols));
+        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_svp_ppol(n, cols, hint));
         SvpPPol {
             data,
-            shape: ScalarZnxShape::new(n, cols),
+            shape: SvpPPolShape::new(n, cols, hint),
             _phantom: PhantomData,
         }
     }
@@ -226,10 +255,10 @@ impl<'b, B: Backend + 'b> SvpPPolReborrowBackendMut<B> for SvpPPol<B::BufMut<'b>
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
-    pub fn from_data(data: D, n: usize, cols: usize) -> Self {
+    pub fn from_data(data: D, n: usize, cols: usize, hint: PrepareHint) -> Self {
         Self {
             data,
-            shape: ScalarZnxShape::new(n, cols),
+            shape: SvpPPolShape::new(n, cols, hint),
             _phantom: PhantomData,
         }
     }
@@ -242,7 +271,7 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for SvpPP
         let element_bytes = crate::layouts::element_view_span(self)
             .checked_mul(size_of::<W>())
             .expect("SvpPPol element-view byte size overflows usize");
-        let backend_bytes = B::bytes_of_svp_ppol(self.n(), self.cols());
+        let backend_bytes = B::bytes_of_svp_ppol(self.n(), self.cols(), self.hint());
         if element_bytes != backend_bytes {
             return writeln!(f, "  <backend-packed representation: {backend_bytes} bytes>");
         }
@@ -286,8 +315,8 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     {
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_svp_ppol(shape.n(), shape.cols()),
-            B2::bytes_of_svp_ppol(shape.n(), shape.cols()),
+            B::bytes_of_svp_ppol(shape.n(), shape.cols(), shape.hint()),
+            B2::bytes_of_svp_ppol(shape.n(), shape.cols(), shape.hint()),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         SvpPPol {

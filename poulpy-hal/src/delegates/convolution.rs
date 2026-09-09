@@ -2,7 +2,7 @@ use crate::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
         Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut, CnvPVecRBackendRef,
-        CnvPVecROwned, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        CnvPVecROwned, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
     },
     oep::{HalConvolutionImpl, HalVecZnxDftImpl},
 };
@@ -19,22 +19,22 @@ macro_rules! impl_convolution_delegate {
 }
 
 impl<BE: Backend> CnvPVecAlloc<BE> for Module<BE> {
-    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize) -> CnvPVecLOwned<BE> {
-        CnvPVecLOwned::<BE>::alloc(self.n(), cols, size)
+    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE> {
+        CnvPVecLOwned::<BE>::alloc(self.n(), cols, size, hint)
     }
 
-    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize) -> CnvPVecROwned<BE> {
-        CnvPVecROwned::<BE>::alloc(self.n(), cols, size)
+    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE> {
+        CnvPVecROwned::<BE>::alloc(self.n(), cols, size, hint)
     }
 }
 
 impl<BE: Backend> CnvPVecBytesOf for Module<BE> {
-    fn bytes_of_cnv_pvec_left(&self, cols: usize, size: usize) -> usize {
-        BE::bytes_of_cnv_pvec_left(self.n(), cols, size)
+    fn bytes_of_cnv_pvec_left(&self, cols: usize, size: usize, hint: PrepareHint) -> usize {
+        BE::bytes_of_cnv_pvec_left(self.n(), cols, size, hint)
     }
 
-    fn bytes_of_cnv_pvec_right(&self, cols: usize, size: usize) -> usize {
-        BE::bytes_of_cnv_pvec_right(self.n(), cols, size)
+    fn bytes_of_cnv_pvec_right(&self, cols: usize, size: usize, hint: PrepareHint) -> usize {
+        BE::bytes_of_cnv_pvec_right(self.n(), cols, size, hint)
     }
 }
 

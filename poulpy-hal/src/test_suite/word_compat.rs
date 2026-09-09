@@ -30,8 +30,8 @@ use crate::{
         VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        DataView, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, SvpPPolLayoutCompatible,
-        SvpPPolOwned, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible, VmpPMatOwned,
+        Backend, DataView, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
+        SvpPPolLayoutCompatible, SvpPPolOwned, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible, VmpPMatOwned,
     },
     source::Source,
 };
@@ -89,8 +89,8 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
     let scalar_a = upload_scalar_znx::<BA>(&scalar);
     let scalar_b = upload_scalar_znx::<BB>(&scalar);
 
-    let mut svp_a: SvpPPolOwned<BA> = module_a.svp_ppol_alloc(cols);
-    let mut svp_b: SvpPPolOwned<BB> = module_b.svp_ppol_alloc(cols);
+    let mut svp_a: SvpPPolOwned<BA> = module_a.svp_ppol_alloc(cols, PrepareHint::Reuse);
+    let mut svp_b: SvpPPolOwned<BB> = module_b.svp_ppol_alloc(cols, PrepareHint::Reuse);
     for j in 0..cols {
         module_a.svp_prepare(&mut svp_a.to_backend_mut(), j, &scalar_znx_backend_ref::<BA>(&scalar_a), j);
         module_b.svp_prepare(&mut svp_b.to_backend_mut(), j, &scalar_znx_backend_ref::<BB>(&scalar_b), j);
@@ -136,8 +136,8 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     let mat_a = upload_mat_znx::<BA>(&mat);
     let mat_b = upload_mat_znx::<BB>(&mat);
 
-    let mut pmat_a: VmpPMatOwned<BA> = module_a.vmp_pmat_alloc(rows, cols_in, cols_out, size);
-    let mut pmat_b: VmpPMatOwned<BB> = module_b.vmp_pmat_alloc(rows, cols_in, cols_out, size);
+    let mut pmat_a: VmpPMatOwned<BA> = module_a.vmp_pmat_alloc(rows, cols_in, cols_out, size, PrepareHint::Reuse);
+    let mut pmat_b: VmpPMatOwned<BB> = module_b.vmp_pmat_alloc(rows, cols_in, cols_out, size, PrepareHint::Reuse);
     module_a.vmp_prepare(
         &mut pmat_a.to_backend_mut(),
         &<MatZnx<BA::OwnedBuf, BA::ZnxWord> as MatZnxToBackendRef<BA>>::to_backend_ref(&mat_a),
@@ -210,4 +210,41 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
         assert_eq!(res_aa, res_ab, "consuming A's DFT buffer on B diverges (size={size})");
         assert_eq!(res_bb, res_ba, "consuming B's DFT buffer on A diverges (size={size})");
     }
+}
+
+/// The in-tree backends have one prepared representation, so both hints size identically
+/// and the hint round-trips through allocation.
+pub fn test_word_compat_prepare_hint_sizes<BA: Backend, BB: Backend>(
+    params: &TestParams,
+    _module_host: &Module<HostBytesBackend>,
+    _module_a: &Module<BA>,
+    _module_b: &Module<BB>,
+) {
+    fn check<BE: Backend>(n: usize) {
+        for hint in [PrepareHint::Reuse, PrepareHint::OneShot] {
+            assert_eq!(
+                BE::bytes_of_svp_ppol(n, 2, hint),
+                BE::bytes_of_svp_ppol(n, 2, PrepareHint::Reuse)
+            );
+            assert_eq!(
+                BE::bytes_of_vmp_pmat(n, 3, 2, 2, 4, hint),
+                BE::bytes_of_vmp_pmat(n, 3, 2, 2, 4, PrepareHint::Reuse)
+            );
+            assert_eq!(
+                BE::bytes_of_cnv_pvec_left(n, 2, 3, hint),
+                BE::bytes_of_cnv_pvec_left(n, 2, 3, PrepareHint::Reuse)
+            );
+            assert_eq!(
+                BE::bytes_of_cnv_pvec_right(n, 2, 3, hint),
+                BE::bytes_of_cnv_pvec_right(n, 2, 3, PrepareHint::Reuse)
+            );
+            let pmat = VmpPMatOwned::<BE>::alloc(n, 3, 2, 2, 4, hint);
+            assert_eq!(pmat.hint(), hint);
+            assert_eq!(pmat.shape().hint(), hint);
+            let ppol = SvpPPolOwned::<BE>::alloc(n, 2, hint);
+            assert_eq!(ppol.hint(), hint);
+        }
+    }
+    check::<BA>(params.size);
+    check::<BB>(params.size);
 }

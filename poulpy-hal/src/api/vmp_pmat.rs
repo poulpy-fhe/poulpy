@@ -1,16 +1,16 @@
 use crate::layouts::{
-    Backend, MatZnxBackendRef, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-    VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatOwned,
+    Backend, MatZnxBackendRef, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+    VecZnxDftToBackendMut, VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatOwned,
 };
 
 /// Allocates a [`VmpPMat`](crate::layouts::VmpPMat).
 pub trait VmpPMatAlloc<B: Backend> {
-    fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> VmpPMatOwned<B>;
+    fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> VmpPMatOwned<B>;
 }
 
 /// Returns the byte size required for a [`VmpPMat`](crate::layouts::VmpPMat).
 pub trait VmpPMatBytesOf {
-    fn bytes_of_vmp_pmat(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
+    fn bytes_of_vmp_pmat(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
 /// Returns scratch bytes required for [`VmpPrepare`].

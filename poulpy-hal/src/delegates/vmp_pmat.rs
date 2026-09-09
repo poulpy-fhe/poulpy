@@ -4,7 +4,7 @@ use crate::{
         VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
     layouts::{
-        Backend, MatZnxBackendRef, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        Backend, MatZnxBackendRef, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
         VecZnxDftToBackendMut, VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatOwned,
     },
     oep::HalVmpImpl,
@@ -22,14 +22,14 @@ macro_rules! impl_vmp_delegate {
 }
 
 impl<B: Backend> VmpPMatAlloc<B> for Module<B> {
-    fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> VmpPMatOwned<B> {
-        VmpPMatOwned::<B>::alloc(self.n(), rows, cols_in, cols_out, size)
+    fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> VmpPMatOwned<B> {
+        VmpPMatOwned::<B>::alloc(self.n(), rows, cols_in, cols_out, size, hint)
     }
 }
 
 impl<B: Backend> VmpPMatBytesOf for Module<B> {
-    fn bytes_of_vmp_pmat(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-        B::bytes_of_vmp_pmat(self.n(), rows, cols_in, cols_out, size)
+    fn bytes_of_vmp_pmat(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize {
+        B::bytes_of_vmp_pmat(self.n(), rows, cols_in, cols_out, size, hint)
     }
 }
 

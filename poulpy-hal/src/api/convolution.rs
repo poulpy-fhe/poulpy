@@ -1,18 +1,18 @@
 use crate::layouts::{
     Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut, CnvPVecRBackendRef,
-    CnvPVecROwned, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+    CnvPVecROwned, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
 };
 
 /// Allocates prepared convolution operands ([`CnvPVecL`](crate::layouts::CnvPVecL), [`CnvPVecR`](crate::layouts::CnvPVecR)).
 pub trait CnvPVecAlloc<BE: Backend> {
-    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize) -> CnvPVecLOwned<BE>;
-    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize) -> CnvPVecROwned<BE>;
+    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE>;
+    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE>;
 }
 
 /// Returns the byte sizes for prepared convolution operands.
 pub trait CnvPVecBytesOf {
-    fn bytes_of_cnv_pvec_left(&self, cols: usize, size: usize) -> usize;
-    fn bytes_of_cnv_pvec_right(&self, cols: usize, size: usize) -> usize;
+    fn bytes_of_cnv_pvec_left(&self, cols: usize, size: usize, hint: PrepareHint) -> usize;
+    fn bytes_of_cnv_pvec_right(&self, cols: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
 /// Bivariate convolution over `Z[X, Y] mod (X^N + 1)` where `Y = 2^{-K}`.

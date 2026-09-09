@@ -1,16 +1,16 @@
 use crate::layouts::{
-    Backend, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned, VecZnxBackendRef, VecZnxDftBackendMut,
-    VecZnxDftBackendRef,
+    Backend, PrepareHint, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned, VecZnxBackendRef,
+    VecZnxDftBackendMut, VecZnxDftBackendRef,
 };
 
 /// Allocates as [crate::layouts::SvpPPol].
 pub trait SvpPPolAlloc<B: Backend> {
-    fn svp_ppol_alloc(&self, cols: usize) -> SvpPPolOwned<B>;
+    fn svp_ppol_alloc(&self, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B>;
 }
 
 /// Returns the size in bytes to allocate a [crate::layouts::SvpPPol].
 pub trait SvpPPolBytesOf {
-    fn bytes_of_svp_ppol(&self, cols: usize) -> usize;
+    fn bytes_of_svp_ppol(&self, cols: usize, hint: PrepareHint) -> usize;
 }
 
 /// Prepare a [crate::layouts::ScalarZnx] into an [crate::layouts::SvpPPol].

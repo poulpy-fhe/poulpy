@@ -17,6 +17,7 @@ mod layout_compat;
 mod mat_znx;
 mod module;
 mod plan_cache;
+mod prepare_hint;
 mod scalar_znx;
 mod scratch;
 mod scratch_views;
@@ -36,6 +37,7 @@ pub use layout_compat::*;
 pub use mat_znx::*;
 pub use module::*;
 pub use plan_cache::*;
+pub use prepare_hint::*;
 pub use scalar_znx::*;
 pub use scratch::*;
 pub use scratch_views::*;
@@ -598,20 +600,27 @@ macro_rules! impl_backend_from {
                 <$from as poulpy_hal::layouts::Backend>::bytes_of_vec_znx_big(n, cols, size)
             }
 
-            fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_svp_ppol(n, cols)
+            fn bytes_of_svp_ppol(n: usize, cols: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_svp_ppol(n, cols, hint)
             }
 
-            fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size)
+            fn bytes_of_vmp_pmat(
+                n: usize,
+                rows: usize,
+                cols_in: usize,
+                cols_out: usize,
+                size: usize,
+                hint: poulpy_hal::layouts::PrepareHint,
+            ) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, hint)
             }
 
-            fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_left(n, cols, size)
+            fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_left(n, cols, size, hint)
             }
 
-            fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_right(n, cols, size)
+            fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_right(n, cols, size, hint)
             }
         }
 

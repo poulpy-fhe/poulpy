@@ -3,7 +3,9 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, MatZnxInfos, ZnxInfos};
+use crate::layouts::{
+    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, MatZnxInfos, PrepareHint, ZnxInfos,
+};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
@@ -13,16 +15,18 @@ pub struct VmpPMatShape {
     rows: usize,
     cols_in: usize,
     cols_out: usize,
+    hint: PrepareHint,
 }
 
 impl VmpPMatShape {
-    pub const fn new(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> Self {
+    pub const fn new(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> Self {
         Self {
             n,
             size,
             rows,
             cols_in,
             cols_out,
+            hint,
         }
     }
 
@@ -44,6 +48,10 @@ impl VmpPMatShape {
 
     pub const fn cols_out(self) -> usize {
         self.cols_out
+    }
+
+    pub const fn hint(self) -> PrepareHint {
+        self.hint
     }
 }
 
@@ -194,18 +202,22 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     pub fn cols_out(&self) -> usize {
         self.shape.cols_out()
     }
+
+    pub fn hint(&self) -> PrepareHint {
+        self.shape.hint()
+    }
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     /// Allocates a zero-initialized backend-owned `VmpPMat`.
-    pub fn alloc(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> VmpPMatOwned<B>
+    pub fn alloc(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> VmpPMatOwned<B>
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size));
+        let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, hint));
         VmpPMat {
             data,
-            shape: VmpPMatShape::new(n, rows, cols_in, cols_out, size),
+            shape: VmpPMatShape::new(n, rows, cols_in, cols_out, size, hint),
             _phantom: PhantomData,
         }
     }
@@ -323,10 +335,10 @@ impl<'b, B: Backend + 'b> VmpPMatReborrowBackendMut<B> for VmpPMat<B::BufMut<'b>
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
-    pub fn from_data(data: D, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> Self {
+    pub fn from_data(data: D, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> Self {
         Self {
             data,
-            shape: VmpPMatShape::new(n, rows, cols_in, cols_out, size),
+            shape: VmpPMatShape::new(n, rows, cols_in, cols_out, size, hint),
             _phantom: PhantomData,
         }
     }
@@ -346,8 +358,22 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     {
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_vmp_pmat(shape.n(), shape.rows(), shape.cols_in(), shape.cols_out(), shape.size()),
-            B2::bytes_of_vmp_pmat(shape.n(), shape.rows(), shape.cols_in(), shape.cols_out(), shape.size()),
+            B::bytes_of_vmp_pmat(
+                shape.n(),
+                shape.rows(),
+                shape.cols_in(),
+                shape.cols_out(),
+                shape.size(),
+                shape.hint()
+            ),
+            B2::bytes_of_vmp_pmat(
+                shape.n(),
+                shape.rows(),
+                shape.cols_in(),
+                shape.cols_out(),
+                shape.size(),
+                shape.hint()
+            ),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         VmpPMat {
