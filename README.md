@@ -132,6 +132,7 @@ The bivariate representation recovers bit-granular scale and capacity management
 - **`poulpy-ckks`**: https://crates.io/crates/poulpy-ckks
 - **`poulpy-bin-fhe`**: https://crates.io/crates/poulpy-bin-fhe
 - **`poulpy-cpu-ref`**: https://crates.io/crates/poulpy-cpu-ref
+- **`poulpy-cpu-rayon`**: https://crates.io/crates/poulpy-cpu-rayon
 - **`poulpy-cpu-avx`**: https://crates.io/crates/poulpy-cpu-avx
 - **`poulpy-cpu-avx512`**: https://crates.io/crates/poulpy-cpu-avx512
 - **`poulpy-cpu-arm`**: https://crates.io/crates/poulpy-cpu-arm
