@@ -27,12 +27,18 @@
 //!
 //! # Canonical form
 //!
-//! A column is canonical at radix `base2k` when every digit lies in the
-//! centered range the normalization kernels produce. The exact range and the
-//! rounding rule applied when precision is dropped are those pinned by the
-//! `assert_canonical` helper of the test suite and the `znx_normalize_*`
-//! step kernels of `poulpy-cpu-ref`; `normalize` is the only operation that
-//! produces canonical output, and its contract restates them.
+//! A column is canonical at radix `base2k` and precision `k` when both hold:
+//!
+//! - every digit lies in the centered range `[-2^(base2k-1), 2^(base2k-1))`,
+//!   the range the `znx_normalize_*` step kernels of `poulpy-cpu-ref` produce;
+//! - nothing lives below precision `k`: limbs `ceil(k / base2k)..size` are
+//!   zero, and the low `(-k) mod base2k` bits of limb `ceil(k / base2k) - 1`
+//!   are zero.
+//!
+//! The rounding rule applied when precision is dropped is the one the step
+//! kernels implement; the test suite's `assert_canonical` pins both
+//! conditions. `normalize` is the only operation that produces canonical
+//! output, and its contract restates them.
 //!
 //! # Limb rule
 //!

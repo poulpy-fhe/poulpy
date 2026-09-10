@@ -184,26 +184,22 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
         checked_product(&[n, cols, size, Self::size_of_big_word()], "VecZnxBig byte size")
     }
     /// Byte size of a [`crate::layouts::SvpPPol`] buffer in the representation `hint` selects.
-    fn bytes_of_svp_ppol(n: usize, cols: usize, hint: PrepareHint) -> usize {
-        let _ = hint;
+    fn bytes_of_svp_ppol(n: usize, cols: usize, _hint: PrepareHint) -> usize {
         checked_product(&[n, cols, Self::size_of_dft_word()], "SvpPPol byte size")
     }
     /// Byte size of a [`crate::layouts::VmpPMat`] buffer in the representation `hint` selects.
-    fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize {
-        let _ = hint;
+    fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, _hint: PrepareHint) -> usize {
         checked_product(
             &[n, rows, cols_in, cols_out, size, Self::size_of_dft_word()],
             "VmpPMat byte size",
         )
     }
     /// Byte size of a [`crate::layouts::CnvPVecL`] buffer in the representation `hint` selects.
-    fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize {
-        let _ = hint;
+    fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize, _hint: PrepareHint) -> usize {
         checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecL byte size")
     }
     /// Byte size of a [`crate::layouts::CnvPVecR`] buffer in the representation `hint` selects.
-    fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize {
-        let _ = hint;
+    fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize, _hint: PrepareHint) -> usize {
         checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecR byte size")
     }
     /// Deallocates a backend handle.

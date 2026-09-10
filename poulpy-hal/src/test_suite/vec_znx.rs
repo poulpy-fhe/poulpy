@@ -29,7 +29,16 @@ use crate::{
 
 fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
     let active_size = k.div_ceil(base2k);
+    let half = 1i64 << (base2k - 1);
     for col in 0..a.cols() {
+        for limb in 0..active_size.min(a.size()) {
+            assert!(
+                a.at(col, limb).iter().all(|&digit| (-half..half).contains(&digit)),
+                "col {col} limb {limb}: digit outside [-2^{}, 2^{})",
+                base2k - 1,
+                base2k - 1
+            );
+        }
         for limb in active_size..a.size() {
             assert!(a.at(col, limb).iter().all(|&digit| digit == 0));
         }
