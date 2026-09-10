@@ -88,6 +88,7 @@ cross_backend_test_suite! {
         test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
         test_vec_znx_add_assign_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign_matches_wrapper,
         test_vec_znx_extract_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_extract_coeff,
+        test_vec_znx_coeff_ops_match_windows => poulpy_hal::test_suite::vec_znx::test_vec_znx_coeff_ops_match_windows,
         test_vec_znx_lsh_add_coeff_to_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff,
         test_vec_znx_lsh_sub_coeff_to_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_sub_coeff_to_coeff,
         test_vec_znx_rsh_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff,

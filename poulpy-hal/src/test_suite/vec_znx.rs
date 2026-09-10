@@ -11,11 +11,11 @@ use crate::{
         ScalarZnxFillBinaryProbSource, ScalarZnxFillTernaryHwSource, ScalarZnxFillTernaryProbSource, ScratchOwnedAlloc,
         VecZnxAdd, VecZnxAddAssign, VecZnxAddNormalSource, VecZnxAddScalarAssign, VecZnxAutomorphism, VecZnxAutomorphismAssign,
         VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxCopyRange, VecZnxExtractCoeff, VecZnxFillUniformSource, VecZnxLsh,
-        VecZnxLshAddCoeffToCoeff, VecZnxLshAssign, VecZnxLshSubCoeffToCoeff, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
-        VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh,
-        VecZnxRshAddCoeff, VecZnxRshAssign, VecZnxRshCoeff, VecZnxRshSubCoeff, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign,
-        VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
+        VecZnxLshAdd, VecZnxLshAddCoeffToCoeff, VecZnxLshAssign, VecZnxLshSub, VecZnxLshSubCoeffToCoeff, VecZnxLshTmpBytes,
+        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign,
+        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign,
+        VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAddCoeff, VecZnxRshAssign, VecZnxRshCoeff, VecZnxRshSub,
+        VecZnxRshSubCoeff, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
     },
     layouts::{
         DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendMut,
@@ -2226,6 +2226,259 @@ pub fn test_vec_znx_extract_coeff<BR: crate::test_suite::TestBackend, BT: crate:
                 download_vec_znx::<BR>(&expected_backend),
                 download_vec_znx::<BT>(&actual_backend)
             );
+        }
+    }
+}
+
+/// Transitional pin (spec §9): every single-coefficient / sub-range operation
+/// equals the plain operation applied to a window view, bit for bit.
+pub fn test_vec_znx_coeff_ops_match_windows<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    _module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BT>: VecZnxCopyRange<BT>
+        + VecZnxExtractCoeff<BT>
+        + VecZnxRshCoeff<BT>
+        + VecZnxRshAddCoeff<BT>
+        + VecZnxRshSubCoeff<BT>
+        + VecZnxLshAddCoeffToCoeff<BT>
+        + VecZnxLshSubCoeffToCoeff<BT>
+        + VecZnxCopy<BT>
+        + VecZnxRsh<BT>
+        + VecZnxRshAdd<BT>
+        + VecZnxRshSub<BT>
+        + VecZnxLshAdd<BT>
+        + VecZnxLshSub<BT>
+        + VecZnxRshTmpBytes
+        + VecZnxLshTmpBytes
+        + VecZnxNormalizeAssign<BT>
+        + VecZnxNormalizeTmpBytes,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+{
+    let base2k = params.base2k;
+    let n = module_test.n();
+    let cols: usize = 2;
+    let mut source = Source::new([61u8; 32]);
+    let mut scratch: ScratchOwned<BT> = ScratchOwned::alloc(
+        module_test
+            .vec_znx_rsh_tmp_bytes()
+            .max(module_test.vec_znx_lsh_tmp_bytes())
+            .max(module_test.vec_znx_normalize_tmp_bytes()),
+    );
+    let coeffs = [0usize, 1usize.min(n - 1), (n / 2).min(n - 1), n - 1];
+
+    for a_size in [1usize, 2, 3, 4] {
+        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let a_be = upload_vec_znx::<BT>(&a);
+        for res_size in [1usize, 2, 3, 4] {
+            for (ci, &a_coeff) in coeffs.iter().enumerate() {
+                let res_coeff = coeffs[(ci + 1) % coeffs.len()];
+                let len = n - a_coeff.max(res_coeff);
+                for k in [0usize, 3, base2k, base2k + 2] {
+                    // Seed two identical destinations of the requested degree.
+                    let seed = |deg: usize, source: &mut Source| {
+                        let mut v = alloc_host_vec_znx::<BT>(deg, cols, res_size);
+                        v.fill_uniform(base2k, source);
+                        (upload_vec_znx::<BT>(&v), upload_vec_znx::<BT>(&v))
+                    };
+                    for col in 0..cols {
+                        // extract_coeff == copy on a 1-coeff window of a.
+                        let (mut old, mut new) = seed(1, &mut source);
+                        module_test.vec_znx_extract_coeff(
+                            &mut vec_znx_backend_mut::<BT>(&mut old),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be),
+                            col,
+                            a_coeff,
+                        );
+                        module_test.vec_znx_copy(
+                            &mut vec_znx_backend_mut::<BT>(&mut new),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be).window_coeffs(a_coeff, 1),
+                            col,
+                        );
+                        assert_eq!(download_vec_znx::<BT>(&old), download_vec_znx::<BT>(&new), "extract_coeff");
+
+                        // copy_range == copy on one-limb, len-coeff windows of both.
+                        let (mut old, mut new) = seed(n, &mut source);
+                        module_test.vec_znx_copy_range(
+                            &mut vec_znx_backend_mut::<BT>(&mut old),
+                            col,
+                            res_size - 1,
+                            res_coeff,
+                            &vec_znx_backend_ref::<BT>(&a_be),
+                            col,
+                            a_size - 1,
+                            a_coeff,
+                            len,
+                        );
+                        module_test.vec_znx_copy(
+                            &mut vec_znx_backend_mut::<BT>(&mut new)
+                                .window_coeffs(res_coeff, len)
+                                .window_limbs(res_size - 1, 1, 1),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be)
+                                .window_coeffs(a_coeff, len)
+                                .window_limbs(a_size - 1, 1, 1),
+                            col,
+                        );
+                        assert_eq!(download_vec_znx::<BT>(&old), download_vec_znx::<BT>(&new), "copy_range");
+
+                        // rsh_coeff == rsh into a 1-coeff destination from a 1-coeff window of a.
+                        let (mut old, mut new) = seed(1, &mut source);
+                        module_test.vec_znx_rsh_coeff(
+                            base2k,
+                            k,
+                            &mut vec_znx_backend_mut::<BT>(&mut old),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be),
+                            col,
+                            a_coeff,
+                            &mut scratch.arena(),
+                        );
+                        module_test.vec_znx_rsh(
+                            base2k,
+                            k,
+                            &mut vec_znx_backend_mut::<BT>(&mut new),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be).window_coeffs(a_coeff, 1),
+                            col,
+                            &mut scratch.arena(),
+                        );
+                        assert_eq!(download_vec_znx::<BT>(&old), download_vec_znx::<BT>(&new), "rsh_coeff k={k}");
+
+                        // rsh_add_coeff / rsh_sub_coeff / lsh_add_coeff_to_coeff / lsh_sub_coeff_to_coeff
+                        // == the accumulating shift on 1-coeff windows of res and a.
+                        let (mut old, mut new) = seed(n, &mut source);
+                        module_test.vec_znx_rsh_add_coeff(
+                            base2k,
+                            k,
+                            &mut vec_znx_backend_mut::<BT>(&mut old),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be),
+                            col,
+                            a_coeff,
+                            res_coeff,
+                            &mut scratch.arena(),
+                        );
+                        module_test.vec_znx_rsh_add(
+                            base2k,
+                            k,
+                            &mut vec_znx_backend_mut::<BT>(&mut new).window_coeffs(res_coeff, 1),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be).window_coeffs(a_coeff, 1),
+                            col,
+                            &mut scratch.arena(),
+                        );
+                        assert_eq!(
+                            download_vec_znx::<BT>(&old),
+                            download_vec_znx::<BT>(&new),
+                            "rsh_add_coeff k={k}"
+                        );
+
+                        let (mut old, mut new) = seed(n, &mut source);
+                        module_test.vec_znx_rsh_sub_coeff(
+                            base2k,
+                            k,
+                            &mut vec_znx_backend_mut::<BT>(&mut old),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be),
+                            col,
+                            a_coeff,
+                            res_coeff,
+                            &mut scratch.arena(),
+                        );
+                        module_test.vec_znx_rsh_sub(
+                            base2k,
+                            k,
+                            &mut vec_znx_backend_mut::<BT>(&mut new).window_coeffs(res_coeff, 1),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be).window_coeffs(a_coeff, 1),
+                            col,
+                            &mut scratch.arena(),
+                        );
+                        // rsh_sub_coeff_into finishes its tail as dst - normalize(carry), rsh_sub
+                        // as normalize(dst - carry): same value mod 1, different non-canonical
+                        // digits, so compare canonical forms.
+                        module_test.vec_znx_normalize_assign(
+                            base2k,
+                            res_size * base2k,
+                            &mut vec_znx_backend_mut::<BT>(&mut old),
+                            col,
+                            &mut scratch.arena(),
+                        );
+                        module_test.vec_znx_normalize_assign(
+                            base2k,
+                            res_size * base2k,
+                            &mut vec_znx_backend_mut::<BT>(&mut new),
+                            col,
+                            &mut scratch.arena(),
+                        );
+                        assert_eq!(
+                            download_vec_znx::<BT>(&old),
+                            download_vec_znx::<BT>(&new),
+                            "rsh_sub_coeff k={k} (compared in canonical form)"
+                        );
+
+                        let (mut old, mut new) = seed(n, &mut source);
+                        module_test.vec_znx_lsh_add_coeff_to_coeff(
+                            base2k,
+                            k,
+                            &mut vec_znx_backend_mut::<BT>(&mut old),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be),
+                            col,
+                            a_coeff,
+                            res_coeff,
+                            &mut scratch.arena(),
+                        );
+                        module_test.vec_znx_lsh_add(
+                            base2k,
+                            k,
+                            &mut vec_znx_backend_mut::<BT>(&mut new).window_coeffs(res_coeff, 1),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be).window_coeffs(a_coeff, 1),
+                            col,
+                            &mut scratch.arena(),
+                        );
+                        assert_eq!(
+                            download_vec_znx::<BT>(&old),
+                            download_vec_znx::<BT>(&new),
+                            "lsh_add_coeff_to_coeff k={k}"
+                        );
+
+                        let (mut old, mut new) = seed(n, &mut source);
+                        module_test.vec_znx_lsh_sub_coeff_to_coeff(
+                            base2k,
+                            k,
+                            &mut vec_znx_backend_mut::<BT>(&mut old),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be),
+                            col,
+                            a_coeff,
+                            res_coeff,
+                            &mut scratch.arena(),
+                        );
+                        module_test.vec_znx_lsh_sub(
+                            base2k,
+                            k,
+                            &mut vec_znx_backend_mut::<BT>(&mut new).window_coeffs(res_coeff, 1),
+                            col,
+                            &vec_znx_backend_ref::<BT>(&a_be).window_coeffs(a_coeff, 1),
+                            col,
+                            &mut scratch.arena(),
+                        );
+                        assert_eq!(
+                            download_vec_znx::<BT>(&old),
+                            download_vec_znx::<BT>(&new),
+                            "lsh_sub_coeff_to_coeff k={k}"
+                        );
+                    }
+                }
+            }
         }
     }
 }
