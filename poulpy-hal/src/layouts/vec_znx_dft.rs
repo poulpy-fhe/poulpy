@@ -325,11 +325,18 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
-    /// Wraps `data` with an explicit shape. No validation; element access is
+    /// Wraps `data` with an explicit dense shape. Element access is
     /// bounds-checked against the buffer.
     ///
-    /// No window constructors on `VecZnxDft` yet: kernel support arrives with Dft window support in a later PR.
+    /// # Panics
+    ///
+    /// Panics if `shape` is a window. The DFT representation is backend-owned
+    /// and packed, so a coefficient or limb offset has no meaning in it:
+    /// `zero` and the transform kernels size their work from the visible
+    /// dimensions and would touch the wrong bytes. Window support on
+    /// `VecZnxDft` arrives with its kernels in a later PR.
     pub fn from_shape(data: D, shape: VecZnxShape) -> Self {
+        assert!(shape.is_dense(), "VecZnxDft::from_shape: windowed shapes are not supported");
         Self {
             data,
             shape,
@@ -337,8 +344,13 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
         }
     }
 
-    /// Re-tags this container with `shape`, keeping the buffer.
+    /// Re-tags this container with a dense `shape`, keeping the buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `shape` is a window (see [`Self::from_shape`]).
     pub fn with_shape(self, shape: VecZnxShape) -> Self {
+        assert!(shape.is_dense(), "VecZnxDft::with_shape: windowed shapes are not supported");
         Self {
             data: self.data,
             shape,
@@ -503,5 +515,21 @@ mod limb_range_tests {
         assert!(dft.data[..limb_bytes].iter().all(|byte| *byte == 0xA5));
         assert!(dft.data[limb_bytes..3 * limb_bytes].iter().all(|byte| *byte == 0));
         assert!(dft.data[3 * limb_bytes..].iter().all(|byte| *byte == 0xA5));
+    }
+
+    #[test]
+    #[should_panic(expected = "VecZnxDft::from_shape: windowed shapes are not supported")]
+    fn from_shape_rejects_a_coefficient_window() {
+        let shape = VecZnxShape::new(8, 1, 2).window_coeffs(4, 4);
+        let bytes = HostBytesBackend::bytes_of_vec_znx_dft(8, 1, 2);
+        let _ = VecZnxDft::<Vec<u8>, i64, HostBytesBackend>::from_shape(vec![0u8; bytes], shape);
+    }
+
+    #[test]
+    #[should_panic(expected = "VecZnxDft::with_shape: windowed shapes are not supported")]
+    fn with_shape_rejects_a_limb_window() {
+        let dft = VecZnxDft::<Vec<u8>, i64, HostBytesBackend>::alloc(8, 1, 4);
+        let shape = dft.shape().window_limbs(1, 2, 2);
+        let _ = dft.with_shape(shape);
     }
 }
