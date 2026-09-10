@@ -1234,9 +1234,9 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
 ///
 /// # Safety
 ///
-/// `res_ptr` must be the base of the dense buffer `res_shape` describes and every
-/// element `res_shape` selects must be initialized; layout arithmetic is checked by
-/// [`VecZnxShape`].
+/// `res_ptr` must be non-null, aligned for `i64` and the base of the dense buffer
+/// `res_shape` describes; every element `res_shape` selects must be initialized.
+/// Layout arithmetic is checked by [`VecZnxShape`].
 /// The source must have valid initialized storage, degree `res_shape.n()`, and column `a_col`.
 /// Require `res_col < res_shape.cols()`, `coeff_start + coeff_len <= res_shape.n()`,
 /// and at least `3 * coeff_len` private scratch words in `carry`.

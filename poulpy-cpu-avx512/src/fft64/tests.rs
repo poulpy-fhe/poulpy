@@ -143,7 +143,8 @@ backend_test_suite! {
 backend_test_suite! {
     mod window_rayon,
     backend = crate::FFT64Avx512Rayon,
-    params = TestParams { size: 1 << 8, base2k: 12 },
+    // Above NORMALIZE_MIN_TASK so the windowed normalize path is split across tasks.
+    params = TestParams { size: 1 << 13, base2k: 12 },
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
