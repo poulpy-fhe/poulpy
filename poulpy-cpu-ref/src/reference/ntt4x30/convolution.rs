@@ -581,6 +581,7 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
         + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
+    poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_left");
     let n = res.n();
     let table = module.get_ntt_table();
     let cols = res.cols();
@@ -671,6 +672,7 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
+    poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_right");
     let n = res.n();
     let table = module.get_ntt_table();
     let cols = res.cols();
@@ -757,6 +759,7 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
         + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
+    poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_self");
     let n = left.n();
     let table = module.get_ntt_table();
     let cols = left.cols();
@@ -919,6 +922,9 @@ fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(res, "ntt4x30_cnv_by_const_apply_impl");
+    poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_by_const_apply_impl");
+    poulpy_hal::layouts::assert_dense(b, "ntt4x30_cnv_by_const_apply_impl");
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();

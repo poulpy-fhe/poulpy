@@ -24,6 +24,7 @@ use crate::ntt3x42_ifma::{
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_core::oep::gglwe_product_digit_output_size;
+use poulpy_cpu_ref::reference::vmp_select::assert_extractable;
 use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{
@@ -1139,6 +1140,7 @@ pub(crate) fn vmp_extract_selected_rows_ifma(
     first_row: usize,
     row_step: usize,
 ) {
+    assert_extractable(res, a, first_row, row_step);
     let n: usize = a.n();
 
     let cols_in: usize = a.cols_in();

@@ -1231,6 +1231,7 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     mask: i64,
     tmp: &mut [u8],
 ) {
+    poulpy_hal::layouts::assert_dense(a, "cnv_prepare_left");
     let n = res.n();
     let table = &handle(module).table_ntt;
     let cols = res.cols();
@@ -1300,6 +1301,7 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
     mask: i64,
     tmp: &mut [u64],
 ) {
+    poulpy_hal::layouts::assert_dense(a, "cnv_prepare_right");
     let n = res.n();
     let table = &handle(module).table_ntt;
     let cols = res.cols();
@@ -1367,6 +1369,7 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
     mask: i64,
     tmp: &mut [u8],
 ) {
+    poulpy_hal::layouts::assert_dense(a, "cnv_prepare_self");
     let n = left.n();
     let table = &handle(module).table_ntt;
     let cols = left.cols();
@@ -1483,6 +1486,9 @@ fn cnv_by_const_apply_impl<E: TaskExecutor, const ADD: bool>(
     b_coeff: usize,
     _tmp: &mut [u8],
 ) {
+    poulpy_hal::layouts::assert_dense(res, "cnv_by_const_apply_impl");
+    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply_impl");
+    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply_impl");
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();

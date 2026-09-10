@@ -177,6 +177,7 @@ pub fn vec_znx_dft_apply<BE>(
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     #[cfg(debug_assertions)]
     {
         assert!(step > 0);
@@ -214,6 +215,7 @@ pub fn vec_znx_idft_apply<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
     #[cfg(debug_assertions)]
     {
         assert_eq!(table.m() << 1, res.n());
@@ -247,6 +249,7 @@ pub fn vec_znx_idft_apply_tmpa<BE>(
     BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
     #[cfg(debug_assertions)]
     {
         assert_eq!(table.m() << 1, res.n());

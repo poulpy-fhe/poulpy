@@ -75,8 +75,9 @@
 //!
 //! # Preconditions
 //!
-//! Shape and parameter preconditions are checked by the delegate layer with
-//! `assert!` in every build, so an OEP implementation may assume them.
+//! Shape and parameter preconditions are checked by the backend kernels with
+//! `assert!` in every build; the delegate layer is pure forwarding and never
+//! asserts.
 //! Numeric-range preconditions on input digits are caller obligations and are
 //! never scanned.
 //!

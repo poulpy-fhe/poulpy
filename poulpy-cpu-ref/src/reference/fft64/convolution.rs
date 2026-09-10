@@ -48,6 +48,7 @@ fn convolution_prepare<R, BE>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     R: ZnxInfos + ZnxViewMut<Scalar = BE::DftWord>,
 {
+    poulpy_hal::layouts::assert_dense(a, "convolution_prepare");
     let cols: usize = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
 
@@ -118,6 +119,7 @@ pub fn convolution_prepare_self<BE>(
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
+    poulpy_hal::layouts::assert_dense(a, "convolution_prepare_self");
     let cols: usize = left.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());
     assert_eq!(right.cols(), cols, "right.cols():{} != left.cols():{cols}", right.cols());
@@ -252,6 +254,9 @@ fn convolution_by_const_apply_impl<BE, const ADD: bool>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(res, "convolution_by_const_apply_impl");
+    poulpy_hal::layouts::assert_dense(a, "convolution_by_const_apply_impl");
+    poulpy_hal::layouts::assert_dense(b, "convolution_by_const_apply_impl");
     let n: usize = res.n();
     assert_eq!(a.n(), n);
 

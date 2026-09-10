@@ -19,6 +19,8 @@ pub fn vec_znx_switch_ring<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_switch_ring");
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_switch_ring");
     let (n_in, n_out) = (a.n(), res.n());
 
     if n_in == n_out {

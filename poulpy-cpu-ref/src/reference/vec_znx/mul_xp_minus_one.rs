@@ -32,6 +32,7 @@ where
     BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxNegate + ZnxSubNegateAssign,
     BE::BufMut<'r>: HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_mul_xp_minus_one_assign");
     #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), tmp.len());

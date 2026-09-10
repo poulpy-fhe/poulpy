@@ -1490,6 +1490,8 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+    poulpy_hal::layouts::assert_dense(&res, "ntt4x30_vec_znx_big_automorphism");
+    poulpy_hal::layouts::assert_dense(&a, "ntt4x30_vec_znx_big_automorphism");
 
     let n = res.n();
     let size = res.size().min(a.size());
@@ -1527,6 +1529,7 @@ where
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
     let mut res = res.to_backend_mut();
+    poulpy_hal::layouts::assert_dense(&res, "ntt4x30_vec_znx_big_automorphism_assign");
     let n = res.n();
     let size = res.size();
     let mask = 2 * n - 1;

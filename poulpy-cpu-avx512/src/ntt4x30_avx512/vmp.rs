@@ -17,6 +17,7 @@ use poulpy_core::oep::gglwe_product_digit_output_size;
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
+use poulpy_cpu_ref::reference::vmp_select::assert_extractable;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
@@ -748,6 +749,7 @@ pub(crate) fn vmp_extract_selected_rows_avx512_pm(
     first_row: usize,
     row_step: usize,
 ) {
+    assert_extractable(res, a, first_row, row_step);
     let n: usize = a.n();
 
     let cols_in: usize = a.cols_in();
