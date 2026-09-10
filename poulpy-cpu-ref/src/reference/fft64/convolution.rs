@@ -486,8 +486,8 @@ pub fn convolution_pairwise_apply_dft<BE>(
 
 pub trait I64Ops {
     fn i64_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
-        debug_assert_eq!(res.len(), a.len());
-        debug_assert_eq!(res.len(), b.len());
+        assert_eq!(res.len(), a.len());
+        assert_eq!(res.len(), b.len());
 
         res.iter_mut()
             .zip(a.iter())
@@ -527,8 +527,8 @@ pub trait I64Ops {
 
 #[inline(always)]
 pub fn i64_extract_1blk_contiguous_ref(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
-    debug_assert!(blk < (n >> 3));
-    debug_assert!(dst.len() >= rows * 8, "dst.len(): {} < rows*8: {}", dst.len(), 8 * rows);
+    assert!(blk < (n >> 3));
+    assert!(dst.len() >= rows * 8, "dst.len(): {} < rows*8: {}", dst.len(), 8 * rows);
 
     let offset: usize = offset + (blk << 3);
 
@@ -543,8 +543,8 @@ pub fn i64_extract_1blk_contiguous_ref(n: usize, offset: usize, rows: usize, blk
 
 #[inline(always)]
 pub fn i64_save_1blk_contiguous_ref(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
-    debug_assert!(blk < (n >> 3));
-    debug_assert!(src.len() >= rows * 8);
+    assert!(blk < (n >> 3));
+    assert!(src.len() >= rows * 8);
 
     let offset: usize = offset + (blk << 3);
 
@@ -587,14 +587,14 @@ pub fn i64_convolution_by_const_1coeff_ref(k: usize, dst: &mut [i64; 8], a: &[i6
 #[allow(dead_code)]
 #[inline(always)]
 pub(crate) fn as_arr_i64<const SIZE: usize>(x: &[i64]) -> &[i64; SIZE] {
-    debug_assert!(x.len() >= SIZE, "x.len():{} < size:{}", x.len(), SIZE);
+    assert!(x.len() >= SIZE, "x.len():{} < size:{}", x.len(), SIZE);
     unsafe { &*(x.as_ptr() as *const [i64; SIZE]) }
 }
 
 #[allow(dead_code)]
 #[inline(always)]
 pub(crate) fn as_arr_i64_mut<const SIZE: usize>(x: &mut [i64]) -> &mut [i64; SIZE] {
-    debug_assert!(x.len() >= SIZE, "x.len():{} < size:{}", x.len(), SIZE);
+    assert!(x.len() >= SIZE, "x.len():{} < size:{}", x.len(), SIZE);
     unsafe { &mut *(x.as_mut_ptr() as *mut [i64; SIZE]) }
 }
 

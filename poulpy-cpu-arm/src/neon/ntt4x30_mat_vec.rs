@@ -318,9 +318,9 @@ pub(crate) fn vec_mat1col_product_x2_bbc_neon<const NT_STORE: bool>(
 /// identically zero and a single `mul_epu32` per lane suffices. Output `t`
 /// is `Σ_i x[t + i] ⊙ y[i]` into `res[16t..16t+16]` for `t ∈ {0, 1}`.
 pub(crate) fn vec_mat_tile2_bbc_canonical_neon(meta: &BbcMeta<Primes30>, len: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
-    debug_assert!(res.len() >= 16);
-    debug_assert!(len == 0 || x.len() >= 16 * (len + 1));
-    debug_assert!(y.len() >= 16 * len);
+    assert!(res.len() >= 16);
+    assert!(len == 0 || x.len() >= 16 * (len + 1));
+    assert!(y.len() >= 16 * len);
     unsafe {
         let mask32_v = vdupq_n_u64(u32::MAX as u64);
         let mask32 = Q120 {
@@ -489,9 +489,9 @@ pub(crate) unsafe fn vec_mat1col_product_blkpair_bbc_pm_neon(
     y_pm: &[u64],
     y_plane_stride: usize,
 ) {
-    debug_assert!(res.len() >= 16);
-    debug_assert!(x_pm.len() >= 16 * ell);
-    debug_assert!(y_pm.len() >= 3 * y_plane_stride + 4 * ell);
+    assert!(res.len() >= 16);
+    assert!(x_pm.len() >= 16 * ell);
+    assert!(y_pm.len() >= 3 * y_plane_stride + 4 * ell);
 
     unsafe {
         let mask32 = vdupq_n_u64(u32::MAX as u64);

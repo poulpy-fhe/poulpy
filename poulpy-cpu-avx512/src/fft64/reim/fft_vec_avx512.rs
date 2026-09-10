@@ -19,7 +19,6 @@
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`).
 #[target_feature(enable = "avx512f")]
 pub unsafe fn reim_add_avx512(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -49,7 +48,6 @@ pub unsafe fn reim_add_avx512(res: &mut [f64], a: &[f64], b: &[f64]) {
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`).
 #[target_feature(enable = "avx512f")]
 pub unsafe fn reim_add_assign_avx512(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -76,7 +74,6 @@ pub unsafe fn reim_add_assign_avx512(res: &mut [f64], a: &[f64]) {
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`).
 #[target_feature(enable = "avx512f")]
 pub unsafe fn reim_sub_avx512(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -106,7 +103,6 @@ pub unsafe fn reim_sub_avx512(res: &mut [f64], a: &[f64], b: &[f64]) {
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`).
 #[target_feature(enable = "avx512f")]
 pub unsafe fn reim_sub_assign_avx512(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -133,7 +129,6 @@ pub unsafe fn reim_sub_assign_avx512(res: &mut [f64], a: &[f64]) {
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`).
 #[target_feature(enable = "avx512f")]
 pub unsafe fn reim_sub_negate_assign_avx512(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -160,7 +155,6 @@ pub unsafe fn reim_sub_negate_assign_avx512(res: &mut [f64], a: &[f64]) {
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`).
 #[target_feature(enable = "avx512f")]
 pub unsafe fn reim_negate_avx512(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -208,7 +202,6 @@ pub unsafe fn reim_negate_assign_avx512(res: &mut [f64]) {
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`).
 #[target_feature(enable = "avx512f")]
 pub unsafe fn reim_addmul_avx512(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -260,7 +253,6 @@ pub unsafe fn reim_addmul_avx512(res: &mut [f64], a: &[f64], b: &[f64]) {
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`).
 #[target_feature(enable = "avx512f")]
 pub unsafe fn reim_mul_avx512(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -311,7 +303,6 @@ pub unsafe fn reim_mul_avx512(res: &mut [f64], a: &[f64], b: &[f64]) {
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`).
 #[target_feature(enable = "avx512f")]
 pub unsafe fn reim_mul_assign_avx512(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }

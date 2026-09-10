@@ -2,7 +2,7 @@ use core::arch::x86_64::*;
 
 #[inline]
 fn inv_mod_pow2(p: usize, bits: u32) -> usize {
-    debug_assert!(p % 2 == 1);
+    assert!(p % 2 == 1);
     let mut x: usize = 1usize;
     let mut i: u32 = 1;
     while i < bits {
@@ -17,13 +17,13 @@ fn inv_mod_pow2(p: usize, bits: u32) -> usize {
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_automorphism_avx512(p: i64, res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let n = res.len();
     if n == 0 {
         return;
     }
     assert!(n.is_power_of_two());
-    debug_assert!(p & 1 == 1);
+    assert!(p & 1 == 1);
 
     if n < 8 {
         use poulpy_cpu_ref::reference::znx::znx_automorphism_ref;

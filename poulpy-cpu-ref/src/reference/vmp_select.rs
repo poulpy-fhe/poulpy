@@ -78,11 +78,11 @@ pub fn vmp_extract_selected_rows_core<T: Copy>(
     first_row: usize,
     row_step: usize,
 ) {
-    debug_assert!(row_step > 0);
-    debug_assert!(res_ncols <= a_ncols);
-    debug_assert!(res_rows == 0 || first_row + (res_rows - 1) * row_step < a_rows);
-    debug_assert_eq!(res.len(), blocks * res_rows * cols_in * res_ncols * cell);
-    debug_assert_eq!(a.len(), blocks * a_rows * cols_in * a_ncols * cell);
+    assert!(row_step > 0);
+    assert!(res_ncols <= a_ncols);
+    assert!(res_rows == 0 || first_row + (res_rows - 1) * row_step < a_rows);
+    assert_eq!(res.len(), blocks * res_rows * cols_in * res_ncols * cell);
+    assert_eq!(a.len(), blocks * a_rows * cols_in * a_ncols * cell);
 
     let (res_nrows, a_nrows) = (res_rows * cols_in, a_rows * cols_in);
     for blk in 0..blocks {

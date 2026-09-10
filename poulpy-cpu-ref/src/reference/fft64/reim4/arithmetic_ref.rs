@@ -19,8 +19,8 @@ use crate::reference::fft64::reim::{as_arr, as_arr_mut, reim_zero_ref};
 
 #[inline(always)]
 pub fn reim4_extract_1blk_from_reim_contiguous_ref(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
-    debug_assert!(blk < (m >> 2));
-    debug_assert!(dst.len() >= 2 * rows * 4);
+    assert!(blk < (m >> 2));
+    assert!(dst.len() >= 2 * rows * 4);
 
     let offset: usize = blk << 2;
 
@@ -35,8 +35,8 @@ pub fn reim4_extract_1blk_from_reim_contiguous_ref(m: usize, rows: usize, blk: u
 
 #[inline(always)]
 pub fn reim4_save_1blk_to_reim_contiguous_ref(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
-    debug_assert!(blk < (m >> 2));
-    debug_assert!(src.len() >= 2 * rows * 4);
+    assert!(blk < (m >> 2));
+    assert!(src.len() >= 2 * rows * 4);
 
     let offset: usize = blk << 2;
 
@@ -53,9 +53,9 @@ pub fn reim4_save_1blk_to_reim_contiguous_ref(m: usize, rows: usize, blk: usize,
 pub fn reim4_save_1blk_to_reim_ref<const OVERWRITE: bool>(m: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
     let mut offset: usize = blk << 2;
 
-    debug_assert!(blk < (m >> 2));
-    debug_assert!(dst.len() >= offset + m + 4);
-    debug_assert!(src.len() >= 8);
+    assert!(blk < (m >> 2));
+    assert!(dst.len() >= offset + m + 4);
+    assert!(src.len() >= 8);
 
     let dst_off = &mut dst[offset..offset + 4];
 
@@ -85,9 +85,9 @@ pub fn reim4_save_1blk_to_reim_ref<const OVERWRITE: bool>(m: usize, blk: usize, 
 pub fn reim4_save_2blk_to_reim_ref<const OVERWRITE: bool>(m: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
     let mut offset: usize = blk << 2;
 
-    debug_assert!(blk < (m >> 2));
-    debug_assert!(dst.len() >= offset + 3 * m + 4);
-    debug_assert!(src.len() >= 16);
+    assert!(blk < (m >> 2));
+    assert!(dst.len() >= offset + 3 * m + 4);
+    assert!(src.len() >= 16);
 
     let dst_off: &mut [f64] = &mut dst[offset..offset + 4];
     if OVERWRITE {
@@ -141,7 +141,6 @@ pub fn reim4_vec_mat1col_product_ref(
     u: &[f64],       // nrows * 8 doubles: [ur(4) | ui(4)] per row
     v: &[f64],       // nrows * 8 doubles: [ar(4) | ai(4)] per row
 ) {
-    #[cfg(debug_assertions)]
     {
         assert!(dst.len() >= 8, "dst must have at least 8 doubles");
         assert!(u.len() >= nrows * 8, "u must be at least nrows * 8 doubles");
@@ -164,7 +163,6 @@ pub fn reim4_vec_mat2cols_product_ref(
     u: &[f64],       // nrows * 8 doubles: [ur(4) | ui(4)] per row
     v: &[f64],       // nrows * 16 doubles: [ar(4) | ai(4) | br(4) | bi(4)] per row
 ) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(dst.len(), 16, "dst must have 16 doubles");
         assert!(u.len() >= nrows * 8, "u must be at least nrows * 8 doubles");
@@ -192,7 +190,6 @@ pub fn reim4_vec_mat2cols_2ndcol_product_ref(
     u: &[f64],       // nrows * 8 doubles: [ur(4) | ui(4)] per row
     v: &[f64],       // nrows * 16 doubles: [x | x | br(4) | bi(4)] per row
 ) {
-    #[cfg(debug_assertions)]
     {
         assert!(dst.len() >= 8, "dst must be at least 8 doubles but is {}", dst.len());
         assert!(

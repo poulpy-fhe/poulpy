@@ -312,7 +312,7 @@ pub unsafe fn znx_extract_digit_mul_avx512(base2k: usize, lsh: usize, res: &mut 
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_digit_avx512(base2k: usize, res: &mut [i64], src: &mut [i64]) {
-    debug_assert_eq!(res.len(), src.len());
+    assert_eq!(res.len(), src.len());
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_storeu_si512};
 
@@ -353,8 +353,8 @@ pub unsafe fn znx_normalize_digit_avx512(base2k: usize, res: &mut [i64], src: &m
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_first_step_carry_only_avx512(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
 
     use core::arch::x86_64::{_mm512_loadu_si512, _mm512_storeu_si512};
 
@@ -394,8 +394,8 @@ pub unsafe fn znx_normalize_first_step_carry_only_avx512(base2k: usize, lsh: usi
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_first_step_assign_avx512(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
 
     use core::arch::x86_64::{_mm512_loadu_si512, _mm512_set1_epi64, _mm512_sllv_epi64, _mm512_storeu_si512};
 
@@ -457,9 +457,9 @@ pub unsafe fn znx_normalize_first_step_avx512<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    debug_assert_eq!(x.len(), a.len());
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(x.len(), a.len());
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_sllv_epi64, _mm512_storeu_si512};
 
@@ -534,8 +534,8 @@ pub unsafe fn znx_normalize_first_step_avx512<const OVERWRITE: bool>(
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_middle_step_carry_only_avx512(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_sllv_epi64, _mm512_storeu_si512};
 
@@ -607,8 +607,8 @@ pub unsafe fn znx_normalize_middle_step_carry_only_avx512(base2k: usize, lsh: us
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_middle_step_assign_avx512(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_sllv_epi64, _mm512_storeu_si512};
 
@@ -688,9 +688,9 @@ pub unsafe fn znx_normalize_middle_step_avx512<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    debug_assert_eq!(x.len(), a.len());
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(x.len(), a.len());
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_sllv_epi64, _mm512_storeu_si512};
 
@@ -773,9 +773,9 @@ pub unsafe fn znx_normalize_middle_step_avx512<const OVERWRITE: bool>(
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_middle_step_sub_avx512(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    debug_assert_eq!(x.len(), a.len());
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(x.len(), a.len());
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_sllv_epi64, _mm512_storeu_si512, _mm512_sub_epi64};
 
@@ -853,8 +853,8 @@ pub unsafe fn znx_normalize_middle_step_sub_avx512(base2k: usize, lsh: usize, x:
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_final_step_assign_avx512(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_sllv_epi64, _mm512_storeu_si512};
 
@@ -922,9 +922,9 @@ pub unsafe fn znx_normalize_final_step_avx512<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    debug_assert_eq!(x.len(), a.len());
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(x.len(), a.len());
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_sllv_epi64, _mm512_storeu_si512};
 
@@ -997,9 +997,9 @@ pub unsafe fn znx_normalize_final_step_avx512<const OVERWRITE: bool>(
 #[inline]
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_normalize_final_step_sub_avx512(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    debug_assert_eq!(x.len(), a.len());
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(x.len(), a.len());
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
 
     use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_sllv_epi64, _mm512_storeu_si512, _mm512_sub_epi64};
 

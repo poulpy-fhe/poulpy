@@ -30,7 +30,6 @@ pub fn vmp_prepare<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(mat.n(), pmat.n());
         assert_eq!(
@@ -82,7 +81,6 @@ pub(crate) fn vmp_prepare_core<REIM, E>(
     let m: usize = table.m();
     let n: usize = m << 1;
 
-    #[cfg(debug_assertions)]
     {
         assert!(n >= 8);
         assert_eq!(mat.len(), n * nrows * ncols);
@@ -136,7 +134,6 @@ where
     let cols: usize = pmat.cols_in();
     let size: usize = a.size().min(pmat.rows());
 
-    #[cfg(debug_assertions)]
     {
         assert!(tmp_bytes.len() >= vmp_apply_dft_tmp_bytes(n, size, pmat.rows(), cols));
         assert!(a.cols() <= cols);
@@ -244,7 +241,6 @@ pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL, E>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), pmat.n());
         assert_eq!(a.n(), pmat.n());
@@ -363,7 +359,6 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
     REIM: ReimArith + Reim4BlkMatVec,
     E: TaskExecutor,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(n >= 8);
         assert!(n.is_power_of_two());

@@ -21,7 +21,6 @@ pub fn vec_znx_automorphism_rotate<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
     }

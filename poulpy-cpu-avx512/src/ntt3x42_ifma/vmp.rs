@@ -815,7 +815,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_ifma<E: TaskExecutor>(
 ) {
     let n = res.n();
     let max_size = res.size();
-    debug_assert_eq!(max_size, res.size());
+    assert_eq!(max_size, res.size());
 
     let dsize = digits.len();
     if dsize == 0 || n < 2 {

@@ -107,8 +107,8 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
     let win_rows = a_size + 2 * pad;
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
+    assert!(prefix.is_empty());
+    assert!(suffix.is_empty());
     let (stage, rest) = tmp_u64.split_at_mut(8 * CNV_ACC_GROUP * min_size);
     let rest_u32: &mut [u32] = cast_slice_mut(rest);
     let (win, rest_u32) = rest_u32.split_at_mut(16 * win_rows);
@@ -407,7 +407,7 @@ pub fn cnv_accumulate_schedule(cnv_offset: usize, res_size: usize, term_sizes: &
     }
     // The q120 bbc reduction is designed for < 10 000 lazily accumulated rows.
     for sched_k in &sched {
-        debug_assert!(sched_k.iter().map(|e| e.len).sum::<usize>() < 10_000);
+        assert!(sched_k.iter().map(|e| e.len).sum::<usize>() < 10_000);
     }
     sched
 }
@@ -467,8 +467,8 @@ pub fn ntt4x30_cnv_accumulate_dft<BE>(
     );
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
+    assert!(prefix.is_empty());
+    assert!(suffix.is_empty());
     let stage = &mut tmp_u64[..8 * CNV_ACC_GROUP * res_size];
 
     for blk in 0..n_blks {
@@ -591,8 +591,8 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
     let col_stride = 8 * n * res_size;
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
+    assert!(prefix.is_empty());
+    assert!(suffix.is_empty());
     let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
     if BE::TaskExecutor::is_parallel() && cols * res_size > 1 {
         let res_addr = res_u32.as_mut_ptr() as usize;
@@ -769,8 +769,8 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
     let col_stride = 8 * n * res_size;
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
+    assert!(prefix.is_empty());
+    assert!(suffix.is_empty());
     let left_u32: &mut [u32] = cast_slice_mut(left.raw_mut());
     let right_u32: &mut [u32] = cast_slice_mut(right.raw_mut());
     if BE::TaskExecutor::is_parallel() && cols * res_size > 1 {

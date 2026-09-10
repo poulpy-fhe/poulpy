@@ -105,7 +105,7 @@ pub(crate) fn reim4_save_2blks_neon<const OVERWRITE: bool>(m: usize, blk: usize,
 
 /// `dst = Σ_row u_row * v_row` (complex), one column.
 pub(crate) fn reim4_mat1col_prod_neon(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
-    debug_assert!(dst.len() >= 8 && u.len() >= nrows * 8 && v.len() >= nrows * 8);
+    assert!(dst.len() >= 8 && u.len() >= nrows * 8 && v.len() >= nrows * 8);
     unsafe {
         let zero = vdupq_n_f64(0.0);
         let (mut re1_lo, mut re1_hi) = (zero, zero);
@@ -146,7 +146,7 @@ pub(crate) fn reim4_mat1col_prod_neon(nrows: usize, dst: &mut [f64], u: &[f64], 
 
 /// Two-column mat-vec.
 pub(crate) fn reim4_mat2cols_prod_neon(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
-    debug_assert!(dst.len() >= 16 && u.len() >= nrows * 8 && v.len() >= nrows * 16);
+    assert!(dst.len() >= 16 && u.len() >= nrows * 8 && v.len() >= nrows * 16);
     unsafe {
         let zero = vdupq_n_f64(0.0);
         let (mut re_a_pos_lo, mut re_a_pos_hi) = (zero, zero);
@@ -209,7 +209,7 @@ pub(crate) fn reim4_mat2cols_prod_neon(nrows: usize, dst: &mut [f64], u: &[f64],
 
 /// Mat-vec for the 2nd column of a packed `[col0, col1]` v-layout.
 pub(crate) fn reim4_mat2cols_2ndcol_prod_neon(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
-    debug_assert!(dst.len() >= 16 && u.len() >= nrows * 8 && v.len() >= nrows * 16);
+    assert!(dst.len() >= 16 && u.len() >= nrows * 8 && v.len() >= nrows * 16);
     unsafe {
         let zero = vdupq_n_f64(0.0);
         let (mut re_pos_lo, mut re_pos_hi) = (zero, zero);

@@ -22,7 +22,6 @@ pub fn vec_znx_automorphism<'r, 'a, BE>(
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_automorphism");
     poulpy_hal::layouts::assert_dense(a, "vec_znx_automorphism");
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
     }
@@ -44,7 +43,6 @@ where
     BE::BufMut<'r>: HostDataMut,
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_automorphism_assign");
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), tmp.len());
     }

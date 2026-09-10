@@ -78,7 +78,8 @@
 //! Violating these invariants may result in:
 //! - Undefined behavior (e.g., out-of-bounds memory access).
 //! - Silent incorrect results (e.g., exceeding numeric bounds in FP conversion).
-//! - Panics (in debug mode via assertions, or unconditionally for critical invariants).
+//! - Panics (shape/length/alignment mismatches assert in every build; numeric bound
+//!   violations are only checked in debug builds).
 //!
 //! # Performance characteristics
 //!

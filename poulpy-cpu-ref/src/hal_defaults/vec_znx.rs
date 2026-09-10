@@ -248,7 +248,6 @@ where
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        #[cfg(debug_assertions)]
         {
             assert_eq!(a.n(), res.n());
         }

@@ -24,7 +24,7 @@ pub fn ntt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable<P>, dat
     if n <= 1 {
         return;
     }
-    debug_assert!(data.len() >= 3 * n);
+    assert!(data.len() >= 3 * n);
 
     let q2 = &table.q2;
     let q4 = &table.q4;
@@ -130,7 +130,7 @@ pub fn intt3x42_ifma_ref<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTableInv<P>,
     if n <= 1 {
         return;
     }
-    debug_assert!(data.len() >= 3 * n);
+    assert!(data.len() >= 3 * n);
 
     let q4 = &table.q4;
     let mut seg_base = 0usize;

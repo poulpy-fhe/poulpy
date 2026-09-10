@@ -24,7 +24,7 @@
 /// # Preconditions
 ///
 /// - **CPU features**: AVX2 and FMA must be supported (enforced via `#[target_feature]`).
-/// - **Slice lengths**: `res.len() == a.len()` (validated in debug builds).
+/// - **Slice lengths**: `res.len() == a.len()` (validated in every build).
 /// - **Numeric bounds**: `|a[i]| <= 2^50 - 1` for all `i` (validated in debug builds).
 ///
 /// # Correctness
@@ -49,9 +49,8 @@
 ///
 /// # Panics
 ///
-/// In debug builds, panics if:
-/// - Slice lengths mismatch.
-/// - Any input element exceeds the bound `|x| > 2^50 - 1`.
+/// Panics if slice lengths mismatch (every build). In debug builds only, also
+/// panics if any input element exceeds the bound `|x| > 2^50 - 1`.
 ///
 /// # Safety
 ///
@@ -59,9 +58,9 @@
 /// Calling this function on incompatible CPUs results in `SIGILL`.
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_from_znx_i64_bnd50_fma(res: &mut [f64], a: &[i64]) {
+    assert_eq!(res.len(), a.len());
     #[cfg(debug_assertions)]
     {
-        assert_eq!(res.len(), a.len());
         const BOUND: i64 = (1i64 << 50) - 1;
         for (i, &val) in a.iter().enumerate() {
             assert!(
@@ -122,9 +121,9 @@ pub fn reim_from_znx_i64_bnd50_fma(res: &mut [f64], a: &[i64]) {
 /// Converts `(a[i] & mask)` into `f64` exactly for values bounded by `|x| < 2^50`.
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_from_znx_i64_masked_bnd50_fma(res: &mut [f64], a: &[i64], mask: i64) {
+    assert_eq!(res.len(), a.len());
     #[cfg(debug_assertions)]
     {
-        assert_eq!(res.len(), a.len());
         const BOUND: i64 = (1i64 << 50) - 1;
         for (i, &val) in a.iter().enumerate() {
             let masked = val & mask;
@@ -189,7 +188,6 @@ pub fn reim_from_znx_i64_masked_bnd50_fma(res: &mut [f64], a: &[i64], mask: i64)
 #[allow(dead_code)]
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_to_znx_i64_bnd63_avx2_fma(res: &mut [i64], divisor: f64, a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len())
     }
@@ -350,7 +348,6 @@ pub fn reim_to_znx_i64_assign_bnd63_avx2_fma(res: &mut [f64], divisor: f64) {
 #[target_feature(enable = "avx2,fma")]
 #[allow(dead_code)]
 pub fn reim_to_znx_i64_avx2_bnd50_fma(res: &mut [i64], divisor: f64, a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len())
     }

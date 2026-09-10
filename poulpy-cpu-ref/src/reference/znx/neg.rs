@@ -1,6 +1,5 @@
 #[inline(always)]
 pub fn znx_negate_ref(res: &mut [i64], src: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), src.len())
     }

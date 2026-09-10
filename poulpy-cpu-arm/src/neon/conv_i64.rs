@@ -52,7 +52,7 @@ pub(crate) fn i64_convolution_by_const_1coeff_neon(k: usize, dst: &mut [i64; 8],
 /// `dst[k0..k0+2] = Σ_j a[…] * b[j]` for two consecutive output coefficients.
 pub(crate) fn i64_convolution_by_const_2coeffs_neon(k: usize, dst: &mut [i64; 16], a: &[i64], a_size: usize, b: &[i64]) {
     let b_size = b.len();
-    debug_assert!(a.len() >= 8 * a_size);
+    assert!(a.len() >= 8 * a_size);
     let k0 = k;
     let k1 = k + 1;
     let bound = a_size + b_size;

@@ -865,9 +865,9 @@ unsafe fn mul8_i64_to_i128(lo_a: __m512i, lo_b: __m512i) -> (__m512i, __m512i) {
 /// not alias `a` or `b`.
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn vi128_hadamard_i64_avx512(n: usize, res: &mut [i128], a: &[i64], b: &[i64]) {
-    debug_assert!(res.len() >= n);
-    debug_assert!(a.len() >= n);
-    debug_assert!(b.len() >= n);
+    assert!(res.len() >= n);
+    assert!(a.len() >= n);
+    assert!(b.len() >= n);
 
     unsafe {
         let a_ptr = a.as_ptr() as *const __m512i;

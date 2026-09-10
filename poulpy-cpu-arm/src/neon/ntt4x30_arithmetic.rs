@@ -15,7 +15,7 @@ unsafe fn lazy_reduce(x: uint64x2_t, q_s: uint64x2_t) -> uint64x2_t {
 
 /// `res[j*4..j*4+4] = lazy(a[…]) + lazy(b[…])` for `n` q120b coefficients.
 pub(crate) fn ntt_add_neon(n: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
-    debug_assert!(res.len() >= 4 * n && a.len() >= 4 * n && b.len() >= 4 * n);
+    assert!(res.len() >= 4 * n && a.len() >= 4 * n && b.len() >= 4 * n);
     unsafe {
         let q_lo: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr());
         let q_hi: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr().add(2));
@@ -38,7 +38,7 @@ pub(crate) fn ntt_add_neon(n: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
 
 /// `res[…] = lazy(res[…]) + lazy(a[…])` for `n` q120b coefficients.
 pub(crate) fn ntt_add_assign_neon(n: usize, res: &mut [u64], a: &[u64]) {
-    debug_assert!(res.len() >= 4 * n && a.len() >= 4 * n);
+    assert!(res.len() >= 4 * n && a.len() >= 4 * n);
     unsafe {
         let q_lo: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr());
         let q_hi: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr().add(2));
@@ -59,7 +59,7 @@ pub(crate) fn ntt_add_assign_neon(n: usize, res: &mut [u64], a: &[u64]) {
 
 /// `res[…] = lazy(a[…]) + (q_s − lazy(b[…]))` for `n` q120b coefficients.
 pub(crate) fn ntt_sub_neon(n: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
-    debug_assert!(res.len() >= 4 * n && a.len() >= 4 * n && b.len() >= 4 * n);
+    assert!(res.len() >= 4 * n && a.len() >= 4 * n && b.len() >= 4 * n);
     unsafe {
         let q_lo: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr());
         let q_hi: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr().add(2));
@@ -82,7 +82,7 @@ pub(crate) fn ntt_sub_neon(n: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
 
 /// `res[…] = lazy(res[…]) + (q_s − lazy(a[…]))` for `n` q120b coefficients.
 pub(crate) fn ntt_sub_assign_neon(n: usize, res: &mut [u64], a: &[u64]) {
-    debug_assert!(res.len() >= 4 * n && a.len() >= 4 * n);
+    assert!(res.len() >= 4 * n && a.len() >= 4 * n);
     unsafe {
         let q_lo: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr());
         let q_hi: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr().add(2));
@@ -103,7 +103,7 @@ pub(crate) fn ntt_sub_assign_neon(n: usize, res: &mut [u64], a: &[u64]) {
 
 /// `res[…] = lazy(a[…]) + (q_s − lazy(res[…]))` for `n` q120b coefficients.
 pub(crate) fn ntt_sub_negate_assign_neon(n: usize, res: &mut [u64], a: &[u64]) {
-    debug_assert!(res.len() >= 4 * n && a.len() >= 4 * n);
+    assert!(res.len() >= 4 * n && a.len() >= 4 * n);
     unsafe {
         let q_lo: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr());
         let q_hi: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr().add(2));
@@ -126,7 +126,7 @@ pub(crate) fn ntt_sub_negate_assign_neon(n: usize, res: &mut [u64], a: &[u64]) {
 /// **Output range**: For a zero input the result is `Q_SHIFTED[k]` (≡ 0 mod `Q[k]`),
 /// not `0`. Use `val % Q[k] == 0`, not `val == 0`, to test for zero.
 pub(crate) fn ntt_negate_neon(n: usize, res: &mut [u64], a: &[u64]) {
-    debug_assert!(res.len() >= 4 * n && a.len() >= 4 * n);
+    assert!(res.len() >= 4 * n && a.len() >= 4 * n);
     unsafe {
         let q_lo: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr());
         let q_hi: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr().add(2));
@@ -146,7 +146,7 @@ pub(crate) fn ntt_negate_neon(n: usize, res: &mut [u64], a: &[u64]) {
 /// `res[…] = q_s − lazy(res[…])` for `n` q120b coefficients.
 /// **Output range**: same as [`ntt_negate_neon`].
 pub(crate) fn ntt_negate_assign_neon(n: usize, res: &mut [u64]) {
-    debug_assert!(res.len() >= 4 * n);
+    assert!(res.len() >= 4 * n);
     unsafe {
         let q_lo: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr());
         let q_hi: uint64x2_t = vld1q_u64(Q_SHIFTED.as_ptr().add(2));

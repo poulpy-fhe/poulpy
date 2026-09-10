@@ -5,7 +5,6 @@ pub unsafe fn znx_switch_ring_avx(res: &mut [i64], a: &[i64]) {
 
         let (n_in, n_out) = (a.len(), res.len());
 
-        #[cfg(debug_assertions)]
         {
             assert!(n_in.is_power_of_two());
             assert!(n_in.max(n_out).is_multiple_of(n_in.min(n_out)))

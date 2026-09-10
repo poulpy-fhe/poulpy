@@ -16,8 +16,8 @@ use poulpy_cpu_ref::reference::znx::{
 /// `res[i] = a[i].wrapping_add(b[i])` for all `i`.
 /// All slices must have the same length. Aliasing across slices is undefined.
 pub(crate) fn znx_add_neon(res: &mut [i64], a: &[i64], b: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert_eq!(res.len(), b.len());
+    assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), b.len());
 
     let n = res.len();
     let span = n >> 2;
@@ -46,7 +46,7 @@ pub(crate) fn znx_add_neon(res: &mut [i64], a: &[i64], b: &[i64]) {
 
 /// `res[i] = res[i].wrapping_add(a[i])` for all `i`.
 pub(crate) fn znx_add_assign_neon(res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
 
     let n = res.len();
     let span = n >> 2;
@@ -73,8 +73,8 @@ pub(crate) fn znx_add_assign_neon(res: &mut [i64], a: &[i64]) {
 
 /// `res[i] = a[i].wrapping_sub(b[i])` for all `i`.
 pub(crate) fn znx_sub_neon(res: &mut [i64], a: &[i64], b: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert_eq!(res.len(), b.len());
+    assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), b.len());
 
     let n = res.len();
     let span = n >> 2;
@@ -103,7 +103,7 @@ pub(crate) fn znx_sub_neon(res: &mut [i64], a: &[i64], b: &[i64]) {
 
 /// `res[i] = res[i].wrapping_sub(a[i])` for all `i`.
 pub(crate) fn znx_sub_assign_neon(res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
 
     let n = res.len();
     let span = n >> 2;
@@ -130,7 +130,7 @@ pub(crate) fn znx_sub_assign_neon(res: &mut [i64], a: &[i64]) {
 
 /// `res[i] = a[i].wrapping_sub(res[i])` for all `i`.
 pub(crate) fn znx_sub_negate_assign_neon(res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
 
     let n = res.len();
     let span = n >> 2;
@@ -157,7 +157,7 @@ pub(crate) fn znx_sub_negate_assign_neon(res: &mut [i64], a: &[i64]) {
 
 /// `res[i] = a[i].wrapping_neg()` for all `i`.
 pub(crate) fn znx_negate_neon(res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
 
     let n = res.len();
     let span = n >> 2;
@@ -207,7 +207,7 @@ pub(crate) fn znx_negate_assign_neon(res: &mut [i64]) {
 
 #[inline]
 fn inv_mod_pow2(p: usize, bits: u32) -> usize {
-    debug_assert!(p % 2 == 1);
+    assert!(p % 2 == 1);
     let mut x: usize = 1;
     let mut i: u32 = 1;
     while i < bits {
@@ -219,13 +219,13 @@ fn inv_mod_pow2(p: usize, bits: u32) -> usize {
 
 /// `res[i] = (-1)^{(i*p > n)} * a[(i*p) mod 2n]`, the negacyclic automorphism by `p`.
 pub(crate) fn znx_automorphism_neon(p: i64, res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let n: usize = res.len();
     if n == 0 {
         return;
     }
     assert!(n.is_power_of_two(), "Polynomial degree {} must be power of 2", n);
-    debug_assert!(p & 1 == 1, "p must be odd (invertible mod 2n)");
+    assert!(p & 1 == 1, "p must be odd (invertible mod 2n)");
 
     if n < 4 {
         znx_automorphism_ref(p, res, a);
@@ -295,13 +295,13 @@ pub(crate) fn znx_automorphism_neon(p: i64, res: &mut [i64], a: &[i64]) {
 
 /// `res = X^k * auto(p, a)`: the negacyclic automorphism by `p` fused with a rotation by `k`.
 pub(crate) fn znx_automorphism_rotate_neon(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let n: usize = res.len();
     if n == 0 {
         return;
     }
     assert!(n.is_power_of_two(), "Polynomial degree {} must be power of 2", n);
-    debug_assert!(p & 1 == 1, "p must be odd (invertible mod 2n)");
+    assert!(p & 1 == 1, "p must be odd (invertible mod 2n)");
 
     if n < 4 {
         znx_automorphism_rotate_ref(p, k, res, a);
@@ -374,8 +374,8 @@ pub(crate) fn znx_automorphism_rotate_neon(p: i64, k: i64, res: &mut [i64], a: &
 /// `res[k] = a[k * gap]` (downsample) or `res[k * gap] = a[k]`, else zero (upsample).
 pub(crate) fn znx_switch_ring_neon(res: &mut [i64], a: &[i64]) {
     let (n_in, n_out) = (a.len(), res.len());
-    debug_assert!(n_in.is_power_of_two());
-    debug_assert!(n_in.max(n_out).is_multiple_of(n_in.min(n_out)));
+    assert!(n_in.is_power_of_two());
+    assert!(n_in.max(n_out).is_multiple_of(n_in.min(n_out)));
 
     if n_in == n_out {
         znx_copy_ref(res, a);
@@ -441,7 +441,7 @@ unsafe fn rshift_round_neon(x: int64x2_t, bias_base: int64x2_t, cnt_right: int64
 
 /// `res[i] = a[i] << k` (k > 0) or `a[i] >>_rounded |k|` (k < 0).
 pub(crate) fn znx_mul_power_of_two_neon(k: i64, res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let n = res.len();
     if n == 0 {
         return;
@@ -455,7 +455,7 @@ pub(crate) fn znx_mul_power_of_two_neon(k: i64, res: &mut [i64], a: &[i64]) {
         let mut rr = res.as_mut_ptr();
         let mut aa = a.as_ptr();
         if k > 0 {
-            debug_assert!(k <= 63);
+            assert!(k <= 63);
             let cnt: int64x2_t = vdupq_n_s64(k);
             for _ in 0..span {
                 vst1q_s64(rr, vshlq_s64(vld1q_s64(aa), cnt));
@@ -492,7 +492,7 @@ pub(crate) fn znx_mul_power_of_two_assign_neon(k: i64, res: &mut [i64]) {
     unsafe {
         let mut rr = res.as_mut_ptr();
         if k > 0 {
-            debug_assert!(k <= 63);
+            assert!(k <= 63);
             let cnt: int64x2_t = vdupq_n_s64(k);
             for _ in 0..span {
                 vst1q_s64(rr, vshlq_s64(vld1q_s64(rr), cnt));
@@ -519,7 +519,7 @@ pub(crate) fn znx_mul_power_of_two_assign_neon(k: i64, res: &mut [i64]) {
 
 /// `res[i] += a[i] << k` (or `>> |k|` rounded) — fused multiply-add by power of two.
 pub(crate) fn znx_mul_add_power_of_two_neon(k: i64, res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let n = res.len();
     if n == 0 {
         return;
@@ -533,7 +533,7 @@ pub(crate) fn znx_mul_add_power_of_two_neon(k: i64, res: &mut [i64], a: &[i64]) 
         let mut rr = res.as_mut_ptr();
         let mut aa = a.as_ptr();
         if k > 0 {
-            debug_assert!(k <= 63);
+            assert!(k <= 63);
             let cnt: int64x2_t = vdupq_n_s64(k);
             for _ in 0..span {
                 vst1q_s64(rr, vaddq_s64(vld1q_s64(rr), vshlq_s64(vld1q_s64(aa), cnt)));

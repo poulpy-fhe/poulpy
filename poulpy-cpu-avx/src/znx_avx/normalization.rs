@@ -140,7 +140,6 @@ pub fn znx_extract_digit_mul_avx(base2k: usize, lsh: usize, res: &mut [i64], src
 #[inline]
 #[target_feature(enable = "avx2")]
 pub fn znx_normalize_digit_avx(base2k: usize, res: &mut [i64], src: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), src.len());
     }
@@ -193,7 +192,6 @@ pub fn znx_normalize_digit_avx(base2k: usize, res: &mut [i64], src: &mut [i64]) 
 #[inline]
 #[target_feature(enable = "avx2")]
 pub fn znx_normalize_first_step_carry_only_avx(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -245,7 +243,6 @@ pub fn znx_normalize_first_step_carry_only_avx(base2k: usize, lsh: usize, x: &[i
 #[inline]
 #[target_feature(enable = "avx2")]
 pub fn znx_normalize_first_step_assign_avx(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -322,7 +319,6 @@ pub fn znx_normalize_first_step_avx<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(x.len(), a.len());
         assert!(x.len() <= carry.len());
@@ -412,7 +408,6 @@ pub fn znx_normalize_first_step_avx<const OVERWRITE: bool>(
 #[inline]
 #[target_feature(enable = "avx2")]
 pub fn znx_normalize_middle_step_assign_avx(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -492,7 +487,6 @@ pub fn znx_normalize_middle_step_assign_avx(base2k: usize, lsh: usize, x: &mut [
 #[inline]
 #[target_feature(enable = "avx2")]
 pub fn znx_normalize_middle_step_carry_only_avx(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -576,7 +570,6 @@ pub fn znx_normalize_middle_step_avx<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(x.len(), a.len());
         assert!(x.len() <= carry.len());
@@ -672,7 +665,6 @@ pub fn znx_normalize_middle_step_avx<const OVERWRITE: bool>(
 #[inline]
 #[target_feature(enable = "avx2")]
 pub fn znx_normalize_middle_step_sub_avx(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(x.len(), a.len());
         assert!(x.len() <= carry.len());
@@ -758,7 +750,6 @@ pub fn znx_normalize_middle_step_sub_avx(base2k: usize, lsh: usize, x: &mut [i64
 #[inline]
 #[target_feature(enable = "avx2")]
 pub fn znx_normalize_final_step_assign_avx(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -835,7 +826,6 @@ pub fn znx_normalize_final_step_avx<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(x.len(), a.len());
         assert!(x.len() <= carry.len());
@@ -919,7 +909,6 @@ pub fn znx_normalize_final_step_avx<const OVERWRITE: bool>(
 #[inline]
 #[target_feature(enable = "avx2")]
 pub fn znx_normalize_final_step_sub_avx(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(x.len(), a.len());
         assert!(x.len() <= carry.len());

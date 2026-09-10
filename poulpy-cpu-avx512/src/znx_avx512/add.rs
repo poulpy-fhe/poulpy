@@ -5,8 +5,8 @@ use core::arch::x86_64::{__m512i, _mm512_add_epi64, _mm512_loadu_si512, _mm512_s
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_add_avx512(res: &mut [i64], a: &[i64], b: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert_eq!(res.len(), b.len());
+    assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), b.len());
 
     let n = res.len();
     let span = n >> 3;
@@ -36,7 +36,7 @@ pub unsafe fn znx_add_avx512(res: &mut [i64], a: &[i64], b: &[i64]) {
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_add_assign_avx512(res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
 
     let n = res.len();
     let span = n >> 3;

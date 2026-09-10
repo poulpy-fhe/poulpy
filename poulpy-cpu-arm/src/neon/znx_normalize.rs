@@ -12,7 +12,7 @@ use poulpy_cpu_ref::reference::znx::{
 /// `(mask_k, sign_k, cnt_neg)` with `cnt_neg = -base2k` for `vshlq_s64` arithmetic right shift.
 #[inline(always)]
 unsafe fn normalize_consts_neon(base2k: usize) -> (int64x2_t, int64x2_t, int64x2_t) {
-    debug_assert!((1..=63).contains(&base2k));
+    assert!((1..=63).contains(&base2k));
     let mask_k: i64 = ((1u64 << base2k) - 1) as i64;
     let sign_k: i64 = (1u64 << (base2k - 1)) as i64;
     unsafe { (vdupq_n_s64(mask_k), vdupq_n_s64(sign_k), vdupq_n_s64(-(base2k as i64))) }
@@ -98,7 +98,7 @@ pub(crate) fn znx_extract_digit_mul_neon(base2k: usize, lsh: usize, res: &mut [i
 /// `res = digit(res)` ; `src += carry(res)`.
 #[inline]
 pub(crate) fn znx_normalize_digit_neon(base2k: usize, res: &mut [i64], src: &mut [i64]) {
-    debug_assert_eq!(res.len(), src.len());
+    assert_eq!(res.len(), src.len());
     let n = res.len();
     let span = n >> 2;
     unsafe {
@@ -131,8 +131,8 @@ pub(crate) fn znx_normalize_digit_neon(base2k: usize, res: &mut [i64], src: &mut
 /// First step (carry-only): `carry = carry(x, base2k - lsh if lsh else base2k)`.
 #[inline]
 pub(crate) fn znx_normalize_first_step_carry_only_neon(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
     let n = x.len();
     let span = n >> 2;
     unsafe {
@@ -159,8 +159,8 @@ pub(crate) fn znx_normalize_first_step_carry_only_neon(base2k: usize, lsh: usize
 /// First step (in-place): `x = digit(x) << lsh` ; `carry = carry(x)`.
 #[inline]
 pub(crate) fn znx_normalize_first_step_assign_neon(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
     let n = x.len();
     let span = n >> 2;
     unsafe {
@@ -212,9 +212,9 @@ pub(crate) fn znx_normalize_first_step_neon<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    debug_assert_eq!(x.len(), a.len());
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(x.len(), a.len());
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
     let n = x.len();
     let span = n >> 2;
     unsafe {
@@ -312,8 +312,8 @@ unsafe fn middle_chunk(
 /// Processes 8 lanes (4 chunks) per iter to widen the OOO window.
 #[inline]
 pub(crate) fn znx_normalize_middle_step_assign_neon(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
     let n = x.len();
     let span4 = n >> 3; // 8-lane (4-chunk) iters
     let span2_extra = (n >> 2) & 1; // one 4-lane iter if n%8 == 4..7
@@ -374,8 +374,8 @@ pub(crate) fn znx_normalize_middle_step_assign_neon(base2k: usize, lsh: usize, x
 /// Middle step (carry-only): two-pass digit/carry chain on `x`, writing only the carry out.
 #[inline]
 pub(crate) fn znx_normalize_middle_step_carry_only_neon(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
     let n = x.len();
     let span = n >> 2;
     unsafe {
@@ -417,9 +417,9 @@ pub(crate) fn znx_normalize_middle_step_neon<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    debug_assert_eq!(x.len(), a.len());
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(x.len(), a.len());
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
     let n = x.len();
     let span = n >> 2;
     unsafe {
@@ -464,9 +464,9 @@ pub(crate) fn znx_normalize_middle_step_neon<const OVERWRITE: bool>(
 /// Middle step (subtract): `x -= digit_chain(a)` ; carry accumulates.
 #[inline]
 pub(crate) fn znx_normalize_middle_step_sub_neon(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    debug_assert_eq!(x.len(), a.len());
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(x.len(), a.len());
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
     let n = x.len();
     let span = n >> 2;
     unsafe {
@@ -530,8 +530,8 @@ unsafe fn final_chunk(
 /// Final step (in-place): flush `carry` into `x`, no carry-out.
 #[inline]
 pub(crate) fn znx_normalize_final_step_assign_neon(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
     let n = x.len();
     let span = n >> 2;
     unsafe {
@@ -575,9 +575,9 @@ pub(crate) fn znx_normalize_final_step_neon<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    debug_assert_eq!(x.len(), a.len());
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(x.len(), a.len());
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
     let n = x.len();
     let span = n >> 2;
     unsafe {
@@ -621,9 +621,9 @@ pub(crate) fn znx_normalize_final_step_neon<const OVERWRITE: bool>(
 /// Final step (subtract): `x -= final_chunk(a, carry)`.
 #[inline]
 pub(crate) fn znx_normalize_final_step_sub_neon(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    debug_assert_eq!(x.len(), a.len());
-    debug_assert!(x.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(x.len(), a.len());
+    assert!(x.len() <= carry.len());
+    assert!(lsh < base2k);
     let n = x.len();
     let span = n >> 2;
     unsafe {

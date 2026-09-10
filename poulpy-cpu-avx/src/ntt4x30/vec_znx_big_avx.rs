@@ -226,7 +226,7 @@ pub(super) fn nfc_final_step_assign_scalar(base2k: usize, lsh: usize, res: &mut 
 /// Must be called within an `#[target_feature(enable = "avx2")]` context.
 #[inline(always)]
 unsafe fn sra_epi64(v: __m256i, imm: u32) -> __m256i {
-    debug_assert!(imm <= 64, "sra_epi64: imm={imm} out of range [0, 64]");
+    assert!(imm <= 64, "sra_epi64: imm={imm} out of range [0, 64]");
     unsafe {
         // Broadcast the sign bit of each i64 lane into all 32-bit slots.
         // shuffle_epi32(v, 0xF5) copies the high 32-bit half of each 64-bit lane to both halves.
@@ -618,9 +618,9 @@ unsafe fn mul4_i64_to_i128(lo_a: __m256i, lo_b: __m256i) -> (__m256i, __m256i) {
 /// alias `a` or `b`.
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn vi128_hadamard_i64_avx2(n: usize, res: &mut [i128], a: &[i64], b: &[i64]) {
-    debug_assert!(res.len() >= n);
-    debug_assert!(a.len() >= n);
-    debug_assert!(b.len() >= n);
+    assert!(res.len() >= n);
+    assert!(a.len() >= n);
+    assert!(b.len() >= n);
 
     unsafe {
         let a_ptr = a.as_ptr() as *const __m256i;

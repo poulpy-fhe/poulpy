@@ -24,7 +24,7 @@
 /// # Preconditions
 ///
 /// - **CPU features**: AVX-512F must be supported (enforced via `#[target_feature]`).
-/// - **Slice lengths**: `res.len() == a.len()` (validated in debug builds).
+/// - **Slice lengths**: `res.len() == a.len()` (validated in every build).
 /// - **Numeric bounds**: `|a[i]| <= 2^50 - 1` for all `i` (validated in debug builds).
 ///
 /// # Correctness
@@ -49,9 +49,8 @@
 ///
 /// # Panics
 ///
-/// In debug builds, panics if:
-/// - Slice lengths mismatch.
-/// - Any input element exceeds the bound `|x| > 2^50 - 1`.
+/// Panics if slice lengths mismatch (every build). In debug builds only, also
+/// panics if any input element exceeds the bound `|x| > 2^50 - 1`.
 ///
 /// # Safety
 ///
@@ -59,9 +58,9 @@
 /// Calling this function on incompatible CPUs results in `SIGILL`.
 #[target_feature(enable = "avx512f")]
 pub fn reim_from_znx_i64_bnd50_fma(res: &mut [f64], a: &[i64]) {
+    assert_eq!(res.len(), a.len());
     #[cfg(debug_assertions)]
     {
-        assert_eq!(res.len(), a.len());
         const BOUND: i64 = (1i64 << 50) - 1;
         for (i, &val) in a.iter().enumerate() {
             assert!(
@@ -131,7 +130,6 @@ pub fn reim_from_znx_i64_bnd50_fma(res: &mut [f64], a: &[i64]) {
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`);
 #[target_feature(enable = "avx512f")]
 pub fn reim_to_znx_i64_bnd63_avx512(res: &mut [i64], divisor: f64, a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len())
     }

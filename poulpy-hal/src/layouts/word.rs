@@ -23,7 +23,7 @@
 //! [`alloc_aligned`](crate::alloc_aligned) (aligned to
 //! [`DEFAULTALIGN`](crate::DEFAULTALIGN), which exceeds the alignment of all
 //! word types); the requirement exists for external `Data` providers and is
-//! checked by a `debug_assert` in
+//! checked by an `assert` in
 //! [`ZnxView::as_ptr`](crate::layouts::ZnxView::as_ptr).
 
 use std::fmt::{Debug, Display};

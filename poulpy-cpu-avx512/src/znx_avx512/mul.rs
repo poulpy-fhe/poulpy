@@ -24,8 +24,8 @@ unsafe fn mullo_epi64_avx512(a: __m512i, b: __m512i) -> __m512i {
 /// length and `res` must not alias `a` or `b`.
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn znx_hadamard_product_i64_avx512(res: &mut [i64], a: &[i64], b: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert_eq!(res.len(), b.len());
+    assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), b.len());
 
     let n = res.len();
     let chunks = n >> 3;
@@ -57,7 +57,7 @@ pub(crate) unsafe fn znx_hadamard_product_i64_avx512(res: &mut [i64], a: &[i64],
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_mul_power_of_two_avx512(k: i64, res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
 
     let n = res.len();
     if n == 0 {
@@ -179,7 +179,7 @@ pub unsafe fn znx_mul_power_of_two_assign_avx512(k: i64, res: &mut [i64]) {
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_mul_add_power_of_two_avx512(k: i64, res: &mut [i64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
 
     let n = res.len();
     if n == 0 {

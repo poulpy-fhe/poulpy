@@ -385,12 +385,12 @@ impl<BE: Backend> CyclotomicOrder for Module<BE> where Self: ModuleN {}
 ///
 /// Returns `1` when `generator == 0`.
 ///
-/// # Panics (debug)
+/// # Panics
 ///
-/// Debug-asserts that `cyclotomic_order` is a positive power of two.
+/// Asserts that `cyclotomic_order` is a positive power of two.
 #[inline(always)]
 pub fn galois_element(generator: i64, cyclotomic_order: i64) -> i64 {
-    debug_assert!(
+    assert!(
         cyclotomic_order > 0 && (cyclotomic_order as u64).is_power_of_two(),
         "cyclotomic_order must be a power of two, got {cyclotomic_order}"
     );

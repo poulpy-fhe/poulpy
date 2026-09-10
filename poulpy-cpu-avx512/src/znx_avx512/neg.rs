@@ -3,7 +3,7 @@ use core::arch::x86_64::{__m512i, _mm512_loadu_si512, _mm512_setzero_si512, _mm5
 /// AVX-512 vectorised `res[i] = -src[i]`.
 #[target_feature(enable = "avx512f")]
 pub unsafe fn znx_negate_avx512(res: &mut [i64], src: &[i64]) {
-    debug_assert_eq!(res.len(), src.len());
+    assert_eq!(res.len(), src.len());
 
     let n = res.len();
     let span = n >> 3;

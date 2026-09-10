@@ -36,7 +36,6 @@ pub fn vec_znx_lsh_coeff<'r, 'a, BE, const OVERWRITE: bool>(
         + ZnxNormalizeFirstStepCarryOnly
         + ZnxNormalizeMiddleStepCarryOnly,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(!carry.is_empty());
         assert_eq!(res.n(), 1, "vec_znx_lsh_coeff expects a 1-coeff destination, got {}", res.n());
@@ -111,7 +110,6 @@ pub fn vec_znx_lsh_add_coeff_to_coeff<'r, 'a, BE>(
         + ZnxNormalizeFirstStepCarryOnly
         + ZnxNormalizeMiddleStepCarryOnly,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(!carry.is_empty());
         assert!(res_coeff < res.n(), "res_coeff: {res_coeff} >= res.n(): {}", res.n());
@@ -175,7 +173,6 @@ pub fn vec_znx_lsh_sub_coeff_to_coeff<'r, 'a, BE>(
         + ZnxNormalizeFinalStepSub
         + ZnxNormalizeMiddleStepCarryOnly,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(!carry.is_empty());
         assert!(res_coeff < res.n(), "res_coeff: {res_coeff} >= res.n(): {}", res.n());
@@ -414,7 +411,6 @@ pub fn vec_znx_rsh_coeff<'r, 'a, BE, const OVERWRITE: bool>(
         + ZnxNormalizeFirstStepAssign
         + ZnxNormalizeFinalStepAssign,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(!carry.is_empty());
         assert_eq!(res.n(), 1, "vec_znx_rsh_coeff expects a 1-coeff destination, got {}", res.n());
@@ -505,7 +501,6 @@ pub fn vec_znx_rsh_add_coeff_into<'r, 'a, BE>(
         + ZnxNormalizeFirstStepAssign
         + ZnxNormalizeFinalStepAssign,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(!carry.is_empty());
         assert!(res_coeff < res.n(), "res_coeff: {res_coeff} >= res.n(): {}", res.n());
@@ -581,7 +576,6 @@ pub fn vec_znx_rsh_sub_coeff_into<'r, 'a, BE>(
         + ZnxNormalizeMiddleStepSub
         + ZnxNormalizeFinalStepSub,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(!carry.is_empty());
         assert!(res_coeff < res.n(), "res_coeff: {res_coeff} >= res.n(): {}", res.n());

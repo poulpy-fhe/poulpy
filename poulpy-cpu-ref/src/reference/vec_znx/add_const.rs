@@ -16,7 +16,6 @@ pub fn vec_znx_add_const_into<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(res_coeff < res.n(), "res_coeff: {res_coeff} >= res.n(): {}", res.n());
         assert!(res_limb <= res.size(), "res_limb: {res_limb} > res.size(): {}", res.size());
@@ -45,7 +44,6 @@ pub fn vec_znx_add_const_assign<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(res_coeff < res.n(), "res_coeff: {res_coeff} >= res.n(): {}", res.n());
         assert!(res_limb <= res.size(), "res_limb: {res_limb} > res.size(): {}", res.size());

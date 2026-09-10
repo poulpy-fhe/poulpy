@@ -461,7 +461,7 @@ unsafe fn ntt_iter_first(begin: *mut __m256i, end: *const __m256i, meta: &NttSte
         let h = _mm_cvtsi64_si128(meta.half_bs as i64);
         let vmask_512 = _mm512_set1_epi64(meta.mask as i64);
         let count = (end as usize - begin as usize) / core::mem::size_of::<__m256i>();
-        debug_assert!(count >= 2 && count.is_power_of_two());
+        assert!(count >= 2 && count.is_power_of_two());
         let pairs = count / 2;
         let mut data512 = begin as *mut __m512i;
         let mut po512 = powomega as *const __m512i;
@@ -497,7 +497,7 @@ unsafe fn ntt_iter_first_red(
         let rmask_512 = _mm512_set1_epi64(reduc.mask as i64);
         let rcst_512 = bcast_quad_512(reduc.modulo_red_cst.as_ptr());
         let count = (end as usize - begin as usize) / core::mem::size_of::<__m256i>();
-        debug_assert!(count >= 2 && count.is_power_of_two());
+        assert!(count >= 2 && count.is_power_of_two());
         let pairs = count / 2;
         let mut data512 = begin as *mut __m512i;
         let mut po512 = powomega as *const __m512i;

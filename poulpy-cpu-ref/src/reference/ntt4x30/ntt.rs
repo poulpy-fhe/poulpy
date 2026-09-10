@@ -162,7 +162,7 @@ pub fn modq_pow(x: u32, n: i64, q: u32) -> u32 {
 
 /// Returns the primitive `2n`-th roots of unity for each prime.
 fn fill_omegas<P: PrimeSetCrt4>(n: usize) -> [u32; 4] {
-    debug_assert!((1..=(1 << 16)).contains(&n), "n must be a power of two in [1, 2^16], got {n}");
+    assert!((1..=(1 << 16)).contains(&n), "n must be a power of two in [1, 2^16], got {n}");
     std::array::from_fn(|k| modq_pow(P::OMEGA[k], (1i64 << 16) / n as i64, P::Q[k]))
 }
 
@@ -554,14 +554,14 @@ pub fn modq_red(x: u64, h: u64, mask: u64, cst: u64) -> u64 {
 /// evaluation at the corresponding point, in the same q120b layout.
 ///
 /// # Panics
-/// Panics in debug mode if `data.len() < 4 * table.n`.
+/// Panics if `data.len() < 4 * table.n`.
 pub fn ntt_ref<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
     }
 
-    debug_assert!(data.len() >= 4 * n);
+    assert!(data.len() >= 4 * n);
 
     let mut po_off = 0usize; // current offset into table.powomega
     let mut meta_idx = 0usize;
@@ -613,14 +613,14 @@ pub fn ntt_ref<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
 /// `n^{-1}` factor is baked into the last-pass twiddle table).
 ///
 /// # Panics
-/// Panics in debug mode if `data.len() < 4 * table.n`.
+/// Panics if `data.len() < 4 * table.n`.
 pub fn intt_ref<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
     }
 
-    debug_assert!(data.len() >= 4 * n);
+    assert!(data.len() >= 4 * n);
 
     let mut po_off = 0usize;
     let mut meta_idx = 0usize;

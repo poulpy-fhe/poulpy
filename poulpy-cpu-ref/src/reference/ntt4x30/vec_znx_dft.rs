@@ -692,7 +692,6 @@ pub fn ntt4x30_vec_znx_dft_copy<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), a.n())
     }
@@ -780,7 +779,6 @@ pub fn ntt4x30_vec_znx_dft_automorphism<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
         assert_eq!(plan.perm.len(), res.n());

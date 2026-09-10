@@ -55,8 +55,8 @@ pub(crate) unsafe fn pack_two_q120(a: __m256i, b: __m256i) -> __m256i {
 
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn pack_limb_q120(n: usize, dst: &mut [u32], src: &[u64]) {
-    debug_assert!(dst.len() >= 4 * n);
-    debug_assert!(src.len() >= 4 * n);
+    assert!(dst.len() >= 4 * n);
+    assert!(src.len() >= 4 * n);
     unsafe {
         let q = _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i);
         let mu = _mm256_loadu_si256(BARRETT_MU.as_ptr() as *const __m256i);
@@ -73,7 +73,7 @@ pub(crate) unsafe fn pack_limb_q120(n: usize, dst: &mut [u32], src: &[u64]) {
 
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn canonicalize_limb_q120(n: usize, src: &mut [u64]) {
-    debug_assert!(src.len() >= 4 * n);
+    assert!(src.len() >= 4 * n);
     unsafe {
         let q = _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i);
         let mu = _mm256_loadu_si256(BARRETT_MU.as_ptr() as *const __m256i);
@@ -87,8 +87,8 @@ pub(crate) unsafe fn canonicalize_limb_q120(n: usize, src: &mut [u64]) {
 
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn unpack_limb_q120(n: usize, dst: &mut [u64], src: &[u32]) {
-    debug_assert!(dst.len() >= 4 * n);
-    debug_assert!(src.len() >= 4 * n);
+    assert!(dst.len() >= 4 * n);
+    assert!(src.len() >= 4 * n);
     unsafe {
         for pair in 0..n / 2 {
             let x = _mm256_loadu_si256(src.as_ptr().add(8 * pair) as *const __m256i);

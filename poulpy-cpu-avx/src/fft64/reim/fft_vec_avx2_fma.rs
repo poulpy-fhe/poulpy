@@ -19,7 +19,6 @@
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_add_avx2_fma(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -49,7 +48,6 @@ pub fn reim_add_avx2_fma(res: &mut [f64], a: &[f64], b: &[f64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_add_assign_avx2_fma(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -76,7 +74,6 @@ pub fn reim_add_assign_avx2_fma(res: &mut [f64], a: &[f64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_sub_avx2_fma(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -106,7 +103,6 @@ pub fn reim_sub_avx2_fma(res: &mut [f64], a: &[f64], b: &[f64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_sub_assign_avx2_fma(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -133,7 +129,6 @@ pub fn reim_sub_assign_avx2_fma(res: &mut [f64], a: &[f64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_sub_negate_assign_avx2_fma(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -160,7 +155,6 @@ pub fn reim_sub_negate_assign_avx2_fma(res: &mut [f64], a: &[f64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_negate_avx2_fma(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -212,7 +206,6 @@ pub fn reim_negate_assign_avx2_fma(res: &mut [f64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_addmul_avx2_fma(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -264,7 +257,6 @@ pub fn reim_addmul_avx2_fma(res: &mut [f64], a: &[f64], b: &[f64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_mul_avx2_fma(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -315,7 +307,6 @@ pub fn reim_mul_avx2_fma(res: &mut [f64], a: &[f64], b: &[f64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 #[target_feature(enable = "avx2,fma")]
 pub fn reim_mul_assign_avx2_fma(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }

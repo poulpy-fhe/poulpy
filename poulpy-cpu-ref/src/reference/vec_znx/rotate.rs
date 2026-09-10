@@ -22,7 +22,6 @@ pub fn vec_znx_rotate<'r, 'a, BE>(
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_rotate");
     poulpy_hal::layouts::assert_dense(a, "vec_znx_rotate");
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), a.n())
     }
@@ -47,7 +46,6 @@ where
     BE::BufMut<'r>: HostDataMut,
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_rotate_assign");
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), tmp.len());
     }

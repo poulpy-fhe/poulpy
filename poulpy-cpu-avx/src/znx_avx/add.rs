@@ -3,7 +3,6 @@
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx2")]
 pub fn znx_add_avx(res: &mut [i64], a: &[i64], b: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
         assert_eq!(res.len(), b.len());
@@ -42,7 +41,6 @@ pub fn znx_add_avx(res: &mut [i64], a: &[i64], b: &[i64]) {
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx2")]
 pub fn znx_add_assign_avx(res: &mut [i64], a: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
     }

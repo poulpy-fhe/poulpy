@@ -48,8 +48,8 @@ const BIG_Q: u128 = Q01 * Q2 as u128;
 ///
 /// Output layout: `res[k*n + i] = a[i] mod Q[k]` for k ∈ {0,1,2}.
 pub fn b_ntt3x42_ifma_from_znx64_ref(n: usize, res: &mut [u64], a: &[i64]) {
-    debug_assert!(res.len() >= 3 * n);
-    debug_assert!(a.len() >= n);
+    assert!(res.len() >= 3 * n);
+    assert!(a.len() >= n);
     for i in 0..n {
         let x = a[i];
         for k in 0..3 {
@@ -67,8 +67,8 @@ pub fn b_ntt3x42_ifma_from_znx64_ref(n: usize, res: &mut [u64], a: &[i64]) {
 
 /// Equivalent to [`b_ntt3x42_ifma_from_znx64_ref`] on `a[j] & mask`.
 pub fn b_ntt3x42_ifma_from_znx64_masked_ref(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
-    debug_assert!(res.len() >= 3 * n);
-    debug_assert!(a.len() >= n);
+    assert!(res.len() >= 3 * n);
+    assert!(a.len() >= n);
     for i in 0..n {
         let x = a[i] & mask;
         for k in 0..3 {
@@ -101,8 +101,8 @@ pub fn b_ntt3x42_ifma_from_znx64_masked_ref(n: usize, res: &mut [u64], a: &[i64]
 /// The `n^{-1}` normalization is already included in the inverse NTT
 /// twiddle factors, so no extra division is needed.
 pub fn b_ntt3x42_ifma_to_znx128_ref(nn: usize, res: &mut [i128], a: &[u64]) {
-    debug_assert!(res.len() >= nn);
-    debug_assert!(a.len() >= 3 * nn);
+    assert!(res.len() >= nn);
+    assert!(a.len() >= 3 * nn);
 
     for i in 0..nn {
         // Read and reduce residues
@@ -155,8 +155,8 @@ pub fn b_ntt3x42_ifma_to_znx128_ref(nn: usize, res: &mut [i128], a: &[u64]) {
 /// The `res` parameter is typed as `&mut [u32]` for trait compatibility, but
 /// the data is actually written as u64 values (each u32 pair forms one u64).
 pub fn c_ntt3x42_ifma_from_b_ref(n: usize, res: &mut [u32], a: &[u64]) {
-    debug_assert!(res.len() >= 6 * n);
-    debug_assert!(a.len() >= 3 * n);
+    assert!(res.len() >= 6 * n);
+    assert!(a.len() >= 3 * n);
 
     // Reinterpret as u64 slice
     let res_u64: &mut [u64] = unsafe { std::slice::from_raw_parts_mut(res.as_mut_ptr() as *mut u64, res.len() / 2) };

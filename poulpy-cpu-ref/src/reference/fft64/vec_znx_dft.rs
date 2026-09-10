@@ -24,7 +24,6 @@ pub fn vec_znx_dft_add_into<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
         assert_eq!(b.n(), res.n());
@@ -77,7 +76,6 @@ pub fn vec_znx_dft_add_assign<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
     }
@@ -104,7 +102,6 @@ pub fn vec_znx_dft_add_scaled_assign<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
     }
@@ -144,7 +141,6 @@ pub fn vec_znx_dft_copy<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), a.n())
     }
@@ -178,7 +174,6 @@ pub fn vec_znx_dft_apply<BE>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
-    #[cfg(debug_assertions)]
     {
         assert!(step > 0);
         assert_eq!(table.m() << 1, res.n());
@@ -216,7 +211,6 @@ pub fn vec_znx_idft_apply<BE>(
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
-    #[cfg(debug_assertions)]
     {
         assert_eq!(table.m() << 1, res.n());
         assert_eq!(a.n(), res.n());
@@ -250,7 +244,6 @@ pub fn vec_znx_idft_apply_tmpa<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply_tmpa");
-    #[cfg(debug_assertions)]
     {
         assert_eq!(table.m() << 1, res.n());
         assert_eq!(a.n(), res.n());
@@ -284,7 +277,6 @@ where
     BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(table.m() << 1, res.n());
     }
@@ -313,7 +305,6 @@ pub fn vec_znx_dft_sub<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
         assert_eq!(b.n(), res.n());
@@ -366,7 +357,6 @@ pub fn vec_znx_dft_sub_assign<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
     }
@@ -391,7 +381,6 @@ pub fn vec_znx_dft_sub_negate_assign<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
     }
@@ -487,7 +476,6 @@ pub fn vec_znx_dft_automorphism<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
         assert_eq!(plan.perm.len(), res.n() >> 1);

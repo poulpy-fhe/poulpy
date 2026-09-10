@@ -31,7 +31,7 @@ use crate::fft64::reim::{fft_avx512::fft_avx512, ifft_avx512::ifft_avx512};
 
 #[inline(always)]
 pub(crate) fn as_arr<const SIZE: usize, R: Float + FloatConst>(x: &[R]) -> &[R; SIZE] {
-    debug_assert!(x.len() >= SIZE);
+    assert!(x.len() >= SIZE);
     unsafe { &*(x.as_ptr() as *const [R; SIZE]) }
 }
 

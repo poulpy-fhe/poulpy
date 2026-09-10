@@ -7,7 +7,6 @@
 /// exactly once (no pre-zeroing of `res` required), exactly like
 /// [`znx_automorphism_ref`](super::znx_automorphism_ref).
 pub fn znx_automorphism_rotate_ref(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
     }

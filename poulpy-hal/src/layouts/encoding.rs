@@ -11,7 +11,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
     /// The input `data` (length `N`) is placed at the appropriate limb position
     /// determined by `k` and `base2k`, then normalized across all limbs.
     ///
-    /// # Panics (debug)
+    /// # Panics
     ///
     /// - `k.div_ceil(base2k) > self.size()()`
     /// - `col >= self.cols()()`
@@ -26,7 +26,7 @@ impl<D: HostDataMut> VecZnx<D, i64> {
     /// directly — no length-`N` scratch. `gap == 1` is the dense case
     /// (`data.len() == N`, contiguous copy).
     ///
-    /// # Panics (debug)
+    /// # Panics
     ///
     /// - `k.div_ceil(base2k) > self.size()`
     /// - `col >= self.cols()`
@@ -34,7 +34,6 @@ impl<D: HostDataMut> VecZnx<D, i64> {
     pub fn encode_vec_i64_strided(&mut self, base2k: usize, col: usize, k: usize, gap: usize, data: &[i64]) {
         let size: usize = k.div_ceil(base2k);
 
-        #[cfg(debug_assertions)]
         {
             let shape = self.shape();
             let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
@@ -101,7 +100,6 @@ impl<D: HostDataMut> VecZnx<D, i64> {
     pub fn encode_vec_i128_strided(&mut self, base2k: usize, col: usize, k: usize, gap: usize, data: &[i128]) {
         let size: usize = k.div_ceil(base2k);
 
-        #[cfg(debug_assertions)]
         {
             let shape = self.shape();
             let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
@@ -168,7 +166,6 @@ impl<D: HostDataMut> VecZnx<D, i64> {
     pub fn encode_coeff_i64(&mut self, base2k: usize, col: usize, k: usize, idx: usize, data: i64) {
         let size: usize = k.div_ceil(base2k);
 
-        #[cfg(debug_assertions)]
         {
             let shape = self.shape();
             let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
@@ -223,7 +220,6 @@ impl<D: HostDataRef> VecZnx<D, i64> {
     /// dense case.
     pub fn decode_vec_i64_strided(&self, base2k: usize, col: usize, k: usize, gap: usize, data: &mut [i64]) {
         let size: usize = k.div_ceil(base2k);
-        #[cfg(debug_assertions)]
         {
             let shape = self.shape();
             let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
@@ -273,7 +269,6 @@ impl<D: HostDataRef> VecZnx<D, i64> {
     /// [`decode_vec_i64_strided`](VecZnx::decode_vec_i64_strided).
     pub fn decode_vec_i128_strided(&self, base2k: usize, col: usize, k: usize, gap: usize, data: &mut [i128]) {
         let size: usize = k.div_ceil(base2k);
-        #[cfg(debug_assertions)]
         {
             let shape = self.shape();
             let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
@@ -319,7 +314,6 @@ impl<D: HostDataRef> VecZnx<D, i64> {
     /// Decodes a single coefficient at index `idx` from the limb-decomposed
     /// representation back into an `i64`.
     pub fn decode_coeff_i64(&self, base2k: usize, col: usize, k: usize, idx: usize) -> i64 {
-        #[cfg(debug_assertions)]
         {
             let shape = self.shape();
             let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
@@ -348,7 +342,6 @@ impl<D: HostDataRef> VecZnx<D, i64> {
     /// Decodes column `col` into arbitrary-precision [`FBig`] values by
     /// evaluating `sum_j coeff[j] * 2^{-base2k * j}` using all limbs (Horner's method).
     pub fn decode_vec_float(&self, base2k: usize, col: usize, data: &mut [FBig<HalfEven>]) {
-        #[cfg(debug_assertions)]
         {
             let shape = self.shape();
             let a = VecZnx::<_, i64>::from_shape(self.data().as_ref(), shape);
@@ -445,7 +438,6 @@ fn get_carry_i128(base2k: usize, x: i128, digit: i128) -> i128 {
 
 #[inline(always)]
 fn znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -469,7 +461,6 @@ fn znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], car
 
 #[inline(always)]
 fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -497,7 +488,6 @@ fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], ca
 
 #[inline(always)]
 fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
