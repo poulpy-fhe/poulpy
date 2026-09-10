@@ -11,6 +11,11 @@
 - **Breaking:** `poulpy_hal::reference` moved to `poulpy_cpu_ref::reference::znx`.
 - **Breaking:** remove 30 unused api methods (coefficient shift/normalize variants, `add_const`, `add_scalar_into`, `sub_scalar`, `automorphism_rotate`, `split_ring`, `merge_rings`, `transpose`, `hadamard_product_scalar_znx`, `*_from_bytes` wrappers, `vec_znx_big_alloc_n`, `ModuleNew::new_with`) and the eight seeded `[u8; 32]` sampler twins; the `Source`-based samplers stay. The corresponding `Hal*Impl` OEP methods are removed too, including `HalModuleImpl::Config` and `new_with`.
 
+### `poulpy-ckks`
+
+- **Breaking:** `EncodedLut::general` uses exactly `p >= 2` entries and degree `p - 1`, without power-of-two padding. Evaluation is periodic modulo `p`, and LUTs in a batch must have the same table length.
+- Add `BootstrappingPlan::with_functional_bootstrap(&lut)` to normalize integer messages in the existing SlotsToCoeffs transform, without an extra multiplication or level. Non-power-of-two LUTs require a context compiled from this configured plan.
+
 ## [0.8.3] - 2026-09-09
 
 Adds opt-in Rayon parallelism to every accelerated CPU family behind a backend-selected task executor, packs NTT4x30 transform words into `u32` pairs on AVX2/AVX-512, fuses paired gadget digits in strided key switching, and resolves evaluation keys per precision, including reading a prepared key at a coarser digit size. Normalization takes an explicit target precision, fixing cross-base and partial-limb noise. CKKS gains `LogN=16` bootstrapping presets, non-power-of-two LUTs, an even Han–Ki EvalMod and a native NTT ModUp; bin-FHE runs on device backends.
