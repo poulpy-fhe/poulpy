@@ -4,8 +4,8 @@
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
-    api::{ModuleN, VecZnxCopyRange, VecZnxZero},
-    layouts::{Backend, ScratchArena},
+    api::{ModuleN, VecZnxCopy, VecZnxZero},
+    layouts::{Backend, ScratchArena, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref},
 };
 
 use crate::{
@@ -58,7 +58,7 @@ pub fn lwe_keyswitch_default<BE, M, R, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEBytesOf<BE> + LWEKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxCopyRange<BE> + VecZnxZero<BE>,
+    M: GLWEBytesOf<BE> + LWEKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
 {
@@ -85,10 +85,18 @@ pub fn lwe_keyswitch_default<BE, M, R, A>(
 
     let n_lwe: usize = a.n().into();
 
-    for i in 0..a.size() {
-        module.vec_znx_copy_range(&mut glwe_in.data, 0, i, 0, &a_backend.body, 0, i, 0, 1);
-        module.vec_znx_copy_range(&mut glwe_in.data, 1, i, 0, &a_backend.mask, 0, i, 0, n_lwe);
-    }
+    module.vec_znx_copy(
+        &mut vec_znx_backend_mut_from_mut::<BE>(&mut glwe_in.data).window_coeffs(0, 1),
+        0,
+        &a_backend.body,
+        0,
+    );
+    module.vec_znx_copy(
+        &mut vec_znx_backend_mut_from_mut::<BE>(&mut glwe_in.data).window_coeffs(0, n_lwe),
+        1,
+        &a_backend.mask,
+        0,
+    );
 
     let (mut glwe_out, mut scratch_2) = scratch_1.take_glwe_scratch(&GLWELayout {
         n: ksk.n(),
@@ -103,13 +111,18 @@ pub fn lwe_keyswitch_default<BE, M, R, A>(
 
     let mut res_backend = res.to_backend_mut();
     let glwe_out_ref = glwe_backend_ref_from_mut::<BE>(&glwe_out);
-    let min_size: usize = res_backend.size().min(glwe_out_ref.size());
     let n: usize = res_backend.n().into();
 
-    module.vec_znx_zero(&mut res_backend.body, 0);
-    module.vec_znx_zero(&mut res_backend.mask, 0);
-    for i in 0..min_size {
-        module.vec_znx_copy_range(&mut res_backend.body, 0, i, 0, &glwe_out_ref.data, 0, i, 0, 1);
-        module.vec_znx_copy_range(&mut res_backend.mask, 0, i, 0, &glwe_out_ref.data, 1, i, 0, n);
-    }
+    module.vec_znx_copy(
+        &mut res_backend.body,
+        0,
+        &vec_znx_backend_ref_from_ref::<BE>(&glwe_out_ref.data).window_coeffs(0, 1),
+        0,
+    );
+    module.vec_znx_copy(
+        &mut res_backend.mask,
+        0,
+        &vec_znx_backend_ref_from_ref::<BE>(&glwe_out_ref.data).window_coeffs(0, n),
+        1,
+    );
 }
