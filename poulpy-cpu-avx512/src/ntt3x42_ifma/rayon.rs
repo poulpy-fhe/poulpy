@@ -540,6 +540,7 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
+        poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         if parallel_limb_tasks(res.size()) {
             let n = res.n();
             let cols = res.cols();

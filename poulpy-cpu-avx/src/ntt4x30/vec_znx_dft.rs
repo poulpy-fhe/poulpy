@@ -227,6 +227,7 @@ pub(crate) fn vec_znx_dft_apply(
     a: &VecZnxBackendRef<'_, NTT4x30Avx>,
     a_col: usize,
 ) {
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     let n = res.n();
     let cols = res.cols();
     let res_size = res.size();
@@ -252,6 +253,7 @@ pub(crate) fn vec_znx_idft_apply(
     a_col: usize,
     tmp: &mut [u64],
 ) {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
     let n = res.n();
     let min_size = res.size().min(a.size());
     let a_cols = a.cols();

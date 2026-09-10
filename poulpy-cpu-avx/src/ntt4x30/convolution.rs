@@ -210,6 +210,7 @@ fn prepare<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
+    poulpy_hal::layouts::assert_dense(a, "prepare");
     let (n, cols, size) = if let Some(res) = left.as_ref() {
         (res.n(), res.cols(), res.size())
     } else {
@@ -533,6 +534,8 @@ pub(crate) fn cnv_by_const_apply<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply");
+    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply");
     let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
     if res_size == 0 || a_size == 0 || b_size == 0 {
         let n = res.n();
@@ -581,6 +584,8 @@ pub(crate) fn cnv_by_const_apply_add<BE, E: TaskExecutor>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply_add");
+    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply_add");
     let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
     if res_size == 0 || a_size == 0 || b_size == 0 {
         return;

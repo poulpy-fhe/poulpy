@@ -255,8 +255,8 @@ where
         let a_size: usize = a.size();
         let b_size: usize = b.size();
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::Reuse)
-            + self.bytes_of_cnv_pvec_right(1, b_size, PrepareHint::Reuse);
+        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::OneShot)
+            + self.bytes_of_cnv_pvec_right(1, b_size, PrepareHint::OneShot);
         let lvl_1: usize = self
             .cnv_prepare_left_lazy_tmp_bytes(a_size, a_size)
             .max(self.cnv_prepare_right_lazy_tmp_bytes(b_size, b_size));

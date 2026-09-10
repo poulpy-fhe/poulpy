@@ -241,6 +241,7 @@ fn prepare<E: TaskExecutor>(
     mask: i64,
     tmp: &mut [u64],
 ) {
+    poulpy_hal::layouts::assert_dense(a, "prepare");
     let (n, cols, size) = if let Some(res) = left.as_ref() {
         (res.n(), res.cols(), res.size())
     } else {
@@ -541,6 +542,8 @@ pub(crate) fn cnv_by_const_apply<E: TaskExecutor>(
     b_col: usize,
     b_coeff: usize,
 ) {
+    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply");
+    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply");
     let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
     if res_size == 0 || a_size == 0 || b_size == 0 {
         let n = res.n();
@@ -585,6 +588,8 @@ pub(crate) fn cnv_by_const_apply_add<E: TaskExecutor>(
     b_col: usize,
     b_coeff: usize,
 ) {
+    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply_add");
+    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply_add");
     let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
     if res_size == 0 || a_size == 0 || b_size == 0 {
         return;

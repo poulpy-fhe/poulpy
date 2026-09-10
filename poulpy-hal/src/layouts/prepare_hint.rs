@@ -11,6 +11,8 @@ pub enum PrepareHint {
     #[default]
     Reuse,
     /// The prepared object is applied once; optimise `prepare` + `apply` together.
+    /// "Once" means consumed by a single product operation, which may apply it
+    /// to every column of one operand.
     OneShot,
 }
 

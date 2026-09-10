@@ -133,10 +133,10 @@ pub trait VmpApplyDftToDftAccumulate<B: Backend> {
 /// is a dense prepared matrix over exactly the material a coarsened gadget
 /// decomposition uses.
 ///
-/// The delegate validates the selection before dispatch: matching `n` and both
-/// column counts, `res.size() <= a.size()`, `row_step > 0`, and a last row that
-/// is inside `a` without overflowing. An implementation may index on those
-/// facts without re-checking them.
+/// Every kernel validates the selection first via `assert_extractable`:
+/// matching `n` and both column counts, `res.size() <= a.size()`,
+/// `row_step > 0`, and a last row that is inside `a` without overflowing. Past
+/// that check the kernel may index on those facts without bounds checks.
 pub trait VmpExtractSelectedRows<B: Backend> {
     fn vmp_extract_selected_rows(
         &self,

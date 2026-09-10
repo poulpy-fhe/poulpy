@@ -446,8 +446,9 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
     check_extract_rejects_bad_selections(module, &parent);
 }
 
-/// A selection the kernel must never be handed is rejected in release, by the
-/// delegate, so a backend may index without bounds checks.
+/// A selection the kernel must never be handed is rejected in release, by
+/// `assert_extractable` at the top of every kernel, so a backend may index
+/// without bounds checks past that point.
 ///
 /// On a bounds-checked backend the out-of-range cases would also trip a slice
 /// panic; only the zero step reaches the kernel and returns quietly. A backend

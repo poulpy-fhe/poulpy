@@ -272,6 +272,6 @@ where
     K: GGLWEInfos,
 {
     glwe_eval_linear_transformation_tmp_bytes_default::<BE, _, _, _, _, _>(module, res, a, pt, key)
-        + module.bytes_of_cnv_pvec_right(1, pt.size(), PrepareHint::Reuse)
+        + module.bytes_of_cnv_pvec_right(1, pt.size(), PrepareHint::OneShot)
         + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
 }

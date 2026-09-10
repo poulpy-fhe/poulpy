@@ -4,12 +4,14 @@
 
 use crate::{
     api::{
-        VecZnxAddIntoBackend, VecZnxAutomorphismBackend, VecZnxBigAddInto, VecZnxBigFromSmallBackend, VecZnxBigNegate,
-        VecZnxBigSub, VecZnxCopyBackend, VecZnxNegateBackend, VecZnxRotateBackend, VecZnxSubBackend, VecZnxZeroBackend,
+        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxAddIntoBackend, VecZnxAutomorphismBackend, VecZnxBigAddInto,
+        VecZnxBigFromSmallBackend, VecZnxBigNegate, VecZnxBigSub, VecZnxCopyBackend, VecZnxDftAlloc, VecZnxDftApply,
+        VecZnxNegateBackend, VecZnxRotateBackend, VecZnxSubBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, DataView, FillUniform, HostBytesBackend, HostDataRef, Module, VecZnx, VecZnxBig, VecZnxBigOwned,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxOwned, VecZnxShape, ZnxView, ZnxViewMut, ZnxWord,
+        Backend, CnvPVecLToBackendMut, DataView, FillUniform, HostBytesBackend, HostDataRef, Module, PrepareHint, ScratchOwned,
+        VecZnx, VecZnxBig, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxOwned,
+        VecZnxShape, ZnxView, ZnxViewMut, ZnxWord,
     },
     source::Source,
     test_suite::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
@@ -188,12 +190,18 @@ where
 
 /// Ring operations require `n == n_full == N` and must reject a coefficient
 /// window rather than silently compute in `Z[X]/(X^n+1)` for the window's
-/// `n`: `vec_znx_rotate_backend` and `vec_znx_automorphism_backend` panic on
-/// a windowed view, while a coefficient-wise op (`vec_znx_add_into_backend`)
-/// keeps accepting it.
+/// `n`. Cases: `vec_znx_rotate_backend`, `vec_znx_automorphism_backend`,
+/// `vec_znx_dft_apply` and `cnv_prepare_left` panic on a windowed input, while
+/// a coefficient-wise op (`vec_znx_add_into_backend`) keeps accepting it.
 pub fn test_vec_znx_window_rejected_by_ring_ops<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
-    Module<BE>: VecZnxRotateBackend<BE> + VecZnxAutomorphismBackend<BE> + VecZnxAddIntoBackend<BE>,
+    Module<BE>: VecZnxRotateBackend<BE>
+        + VecZnxAutomorphismBackend<BE>
+        + VecZnxAddIntoBackend<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftApply<BE>
+        + CnvPVecAlloc<BE>
+        + Convolution<BE>,
 {
     let n = params.size;
     let base2k = params.base2k;
@@ -241,6 +249,36 @@ where
         automorphism_panicked,
         "vec_znx_automorphism_backend accepted a windowed view instead of panicking"
     );
+
+    let mut dft = module.vec_znx_dft_alloc(cols, size);
+    let dft_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.vec_znx_dft_apply(
+            1,
+            0,
+            &mut dft.to_backend_mut(),
+            0,
+            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+            0,
+        );
+    }))
+    .is_err();
+    assert!(
+        dft_panicked,
+        "vec_znx_dft_apply accepted a windowed view instead of panicking"
+    );
+
+    let mut prep = module.cnv_pvec_left_alloc(cols, size, PrepareHint::Reuse);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_left_tmp_bytes(size, size));
+    let cnv_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_left(
+            &mut prep.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
+            !0i64,
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(cnv_panicked, "cnv_prepare_left accepted a windowed view instead of panicking");
 
     let add_into_ok = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.vec_znx_add_into_backend(
