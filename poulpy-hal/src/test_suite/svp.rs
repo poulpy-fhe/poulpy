@@ -239,6 +239,19 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         );
     }
 
+    // Copying into a destination that names the other representation must be
+    // rejected before any byte moves.
+    {
+        let mut other_hint: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols, PrepareHint::OneShot);
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module_test.svp_ppol_copy_backend(&mut other_hint.to_backend_mut(), 0, &svp_test.to_backend_ref(), 0);
+        }));
+        std::panic::set_hook(hook);
+        assert!(caught.is_err(), "svp_ppol_copy accepted a mismatched PrepareHint");
+    }
+
     for a_size in [3] {
         let mut a = module_host.vec_znx_alloc(cols, a_size);
         a.fill_uniform(base2k, &mut source);

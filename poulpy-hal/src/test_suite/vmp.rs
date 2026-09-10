@@ -475,6 +475,17 @@ where
         std::panic::set_hook(hook);
         assert!(caught.is_err(), "{what} was accepted");
     }
+
+    // A destination naming the other representation must be rejected before any
+    // byte moves, even though every dimension matches.
+    let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size, PrepareHint::OneShot);
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.vmp_extract_selected_rows(&mut res.to_backend_mut(), &a.to_backend_ref(), 0, 1);
+    }));
+    std::panic::set_hook(hook);
+    assert!(caught.is_err(), "mismatched PrepareHint was accepted");
 }
 
 /// `vmp_apply_dft_to_dft` and `vmp_apply_dft_to_dft_accumulate` agree across

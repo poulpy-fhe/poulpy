@@ -134,7 +134,8 @@ pub trait VmpApplyDftToDftAccumulate<B: Backend> {
 /// decomposition uses.
 ///
 /// Every kernel validates the selection first via `assert_extractable`:
-/// matching `n` and both column counts, `res.size() <= a.size()`,
+/// matching [`PrepareHint`](crate::layouts::PrepareHint) (the copy moves
+/// representation bytes), matching `n` and both column counts, `res.size() <= a.size()`,
 /// `row_step > 0`, and a last row that is inside `a` without overflowing. Past
 /// that check the kernel may index on those facts without bounds checks.
 pub trait VmpExtractSelectedRows<B: Backend> {

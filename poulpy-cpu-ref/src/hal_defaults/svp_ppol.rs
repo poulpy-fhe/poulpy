@@ -57,6 +57,14 @@ where
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
     {
+        assert_eq!(res.n(), a.n(), "svp_ppol_copy: res.n() {} != a.n() {}", res.n(), a.n());
+        assert_eq!(
+            res.hint(),
+            a.hint(),
+            "svp_ppol_copy: res and a must carry the same PrepareHint ({:?} != {:?})",
+            res.hint(),
+            a.hint()
+        );
         res.at_mut(res_col, 0).copy_from_slice(a.at(a_col, 0));
     }
 
@@ -143,6 +151,14 @@ where
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
     {
+        assert_eq!(res.n(), a.n(), "svp_ppol_copy: res.n() {} != a.n() {}", res.n(), a.n());
+        assert_eq!(
+            res.hint(),
+            a.hint(),
+            "svp_ppol_copy: res and a must carry the same PrepareHint ({:?} != {:?})",
+            res.hint(),
+            a.hint()
+        );
         res.at_mut(res_col, 0).copy_from_slice(a.at(a_col, 0));
     }
 

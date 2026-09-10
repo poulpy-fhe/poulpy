@@ -19,6 +19,9 @@ pub trait SvpPrepare<B: Backend> {
 }
 
 /// Copy one prepared scalar polynomial column into another.
+///
+/// Copies representation bytes, so `res` and `a` must share the degree and the
+/// [`PrepareHint`](crate::layouts::PrepareHint); every kernel asserts both.
 pub trait SvpPPolCopyBackend<B: Backend> {
     fn svp_ppol_copy_backend(
         &self,
