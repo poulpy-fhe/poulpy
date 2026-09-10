@@ -12,7 +12,7 @@ mod rotate;
 mod shift;
 mod sub;
 
-pub use add::{runner_vec_znx_add_assign, runner_vec_znx_add_into};
+pub use add::{runner_vec_znx_add, runner_vec_znx_add_assign};
 pub use automorphism::{runner_vec_znx_automorphism, runner_vec_znx_automorphism_assign};
 pub use mul_xp_minus_one::{runner_vec_znx_mul_xp_minus_one, runner_vec_znx_mul_xp_minus_one_assign};
 pub use negate::{runner_vec_znx_negate, runner_vec_znx_negate_assign};

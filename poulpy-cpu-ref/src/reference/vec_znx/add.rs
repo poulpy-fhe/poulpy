@@ -3,7 +3,7 @@ use crate::{
     reference::znx::{ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxZero},
 };
 
-pub fn vec_znx_add_into<'r, 'a, BE>(
+pub fn vec_znx_add<'r, 'a, BE>(
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     a: &VecZnxBackendRef<'a, BE>,

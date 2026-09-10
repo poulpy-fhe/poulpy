@@ -297,7 +297,7 @@ pub fn test_vec_znx_big_add_assign<BR: crate::test_suite::TestBackend, BT: crate
     }
 }
 
-pub fn test_vec_znx_big_add_small_into<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_big_add_small<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,

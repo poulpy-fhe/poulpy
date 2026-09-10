@@ -68,7 +68,7 @@ pub fn runner_vec_znx_big_add_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
     });
 }
 
-pub fn runner_vec_znx_big_add_small_into<B: Backend<ZnxWord = i64>, M: Measurement>(
+pub fn runner_vec_znx_big_add_small<B: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where

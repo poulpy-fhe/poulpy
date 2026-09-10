@@ -13,7 +13,7 @@ use crate::{
     },
     reference::{
         vec_znx::{
-            vec_znx_add_assign, vec_znx_add_into, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_negate,
+            vec_znx_add, vec_znx_add_assign, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_negate,
             vec_znx_negate_assign, vec_znx_normalize, vec_znx_normalize_tmp_bytes, vec_znx_sub, vec_znx_sub_assign,
             vec_znx_sub_negate_assign,
         },
@@ -55,7 +55,7 @@ where
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let b_vznx = big_as_vec_znx_ref::<BE>(b.to_backend_ref());
-    vec_znx_add_into::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_vznx, b_col);
+    vec_znx_add::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_vznx, b_col);
 }
 
 pub fn vec_znx_big_add_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -71,7 +71,7 @@ where
     vec_znx_add_assign::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
 }
 
-pub fn vec_znx_big_add_small_into<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn vec_znx_big_add_small<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -83,7 +83,7 @@ where
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let b_ref = b.to_backend_ref();
-    vec_znx_add_into::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_ref, b_col);
+    vec_znx_add::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_ref, b_col);
 }
 
 pub fn vec_znx_big_add_small_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)

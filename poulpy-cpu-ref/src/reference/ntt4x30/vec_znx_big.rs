@@ -850,7 +850,7 @@ where
 
 /// Add a small (`i64`) polynomial `b` to a big (`i128`) polynomial `a`:
 /// `res[res_col] = a[a_col] + b[b_col]`.
-pub fn ntt4x30_vec_znx_big_add_small_into<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn ntt4x30_vec_znx_big_add_small<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,

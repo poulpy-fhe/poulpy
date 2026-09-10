@@ -170,8 +170,8 @@ where
         },
         BenchOp {
             layer: "hal",
-            name: "vec_znx_big_add_small_into",
-            runner: vec_znx_big::runner_vec_znx_big_add_small_into::<B, M>,
+            name: "vec_znx_big_add_small",
+            runner: vec_znx_big::runner_vec_znx_big_add_small::<B, M>,
         },
         BenchOp {
             layer: "hal",
@@ -314,8 +314,8 @@ where
     [
         BenchOp {
             layer: "hal",
-            name: "vec_znx_add_into",
-            runner: vec_znx::runner_vec_znx_add_into::<B, M>,
+            name: "vec_znx_add",
+            runner: vec_znx::runner_vec_znx_add::<B, M>,
         },
         BenchOp {
             layer: "hal",
@@ -622,8 +622,8 @@ where
         },
         BenchOp {
             layer: "hal",
-            name: "vec_znx_add_into",
-            runner: vec_znx::runner_vec_znx_add_into::<B, M>,
+            name: "vec_znx_add",
+            runner: vec_znx::runner_vec_znx_add::<B, M>,
         },
         BenchOp {
             layer: "hal",

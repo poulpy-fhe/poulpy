@@ -25,7 +25,7 @@ mod ntt3x42_ifma_tests {
         backend_test = crate::NTT3x42Ifma,
         params = TestParams { size: 1<<8, base2k: 50 },
         tests = {
-            test_vec_znx_add_into => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
+            test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
             test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
             test_vec_znx_extract_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_extract_coeff,
             test_vec_znx_lsh_add_coeff_to_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff,
@@ -133,7 +133,7 @@ mod ntt3x42_ifma_tests {
         tests = {
             test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
             test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
-            test_vec_znx_big_add_small_into => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_small_into,
+            test_vec_znx_big_add_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_small,
             test_vec_znx_big_add_small_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_small_assign,
             test_vec_znx_big_sub => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub,
             test_vec_znx_big_sub_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_assign,

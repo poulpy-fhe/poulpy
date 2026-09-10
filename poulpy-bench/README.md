@@ -158,7 +158,7 @@ without running them.
 cargo bench -p poulpy-cpu-ref --bench standard --features enable-ckks -- "NTT4x30Ref/hal"
 
 # One op, across every backend/layer that has it
-cargo bench -p poulpy-cpu-ref --bench standard  --features enable-ckks -- "vec_znx_add_into"
+cargo bench -p poulpy-cpu-ref --bench standard  --features enable-ckks -- "vec_znx_add"
 
 # See what a filter would run, without running it
 cargo bench -p poulpy-cpu-ref --bench standard --features enable-ckks -- --list "core"

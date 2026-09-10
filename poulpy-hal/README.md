@@ -148,7 +148,7 @@ pub trait HalVecZnxDefault<BE: Backend>: Backend {
     where
         BE: ZnxAdd + ZnxCopy + ZnxZero,
     {
-        vec_znx_add_into::<BE>(res, res_col, a, a_col, b, b_col);
+        vec_znx_add::<BE>(res, res_col, a, a_col, b, b_col);
     }
 }
 ```

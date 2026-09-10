@@ -3,7 +3,7 @@
 use std::mem::size_of;
 
 use crate::reference::vec_znx::{
-    vec_znx_add_into, vec_znx_add_normal_ref, vec_znx_add_scalar_assign, vec_znx_automorphism, vec_znx_automorphism_assign,
+    vec_znx_add, vec_znx_add_normal_ref, vec_znx_add_scalar_assign, vec_znx_automorphism, vec_znx_automorphism_assign,
     vec_znx_automorphism_assign_tmp_bytes, vec_znx_copy, vec_znx_extract_coeff, vec_znx_fill_uniform_ref, vec_znx_lsh,
     vec_znx_lsh_add_coeff_to_coeff, vec_znx_lsh_assign, vec_znx_lsh_sub, vec_znx_lsh_sub_coeff_to_coeff, vec_znx_lsh_tmp_bytes,
     vec_znx_mul_xp_minus_one, vec_znx_mul_xp_minus_one_assign, vec_znx_mul_xp_minus_one_assign_tmp_bytes, vec_znx_negate,
@@ -234,7 +234,7 @@ where
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: PartialEq + Eq + Sized + Default + AsRef<[u8]> + Sync,
     {
-        vec_znx_add_into::<BE>(res, res_col, a, a_col, b, b_col);
+        vec_znx_add::<BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_add_assign_default(
