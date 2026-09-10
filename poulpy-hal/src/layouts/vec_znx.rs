@@ -88,25 +88,50 @@ impl VecZnxShape {
     }
 
     /// Index of the `(col, limb)` block in the dense buffer, in blocks of `n_full` scalars.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index overflows `usize`. All shape arithmetic is checked in every
+    /// build: a wrapped offset would land inside the allocation and read the wrong
+    /// coefficients silently.
     pub const fn block_index(self, col: usize, limb: usize) -> usize {
-        (self.limb_offset + limb * self.limb_step) * self.cols + col
+        const MSG: &str = "VecZnxShape::block_index: block index overflows usize";
+        let limb_row = limb
+            .checked_mul(self.limb_step)
+            .expect(MSG)
+            .checked_add(self.limb_offset)
+            .expect(MSG);
+        limb_row.checked_mul(self.cols).expect(MSG).checked_add(col).expect(MSG)
     }
 
     /// Scalar offset of visible coefficient 0 of the `(col, limb)` block.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the offset overflows `usize` (see [`Self::block_index`]).
     pub const fn scalar_offset(self, col: usize, limb: usize) -> usize {
-        self.block_index(col, limb) * self.n_full + self.coeff_offset
+        const MSG: &str = "VecZnxShape::scalar_offset: scalar offset overflows usize";
+        self.block_index(col, limb)
+            .checked_mul(self.n_full)
+            .expect(MSG)
+            .checked_add(self.coeff_offset)
+            .expect(MSG)
     }
 
     /// Restricts the view to coefficients `offset..offset + len` of every visible limb.
     ///
     /// # Panics
     ///
-    /// Panics if `len == 0` or `offset + len > self.n()`.
+    /// Panics if `len == 0`, if `offset + len` overflows, or if `offset + len > self.n()`.
     pub const fn window_coeffs(self, offset: usize, len: usize) -> Self {
         assert!(len >= 1, "window_coeffs: len must be >= 1");
-        assert!(offset + len <= self.n, "window_coeffs: offset + len exceeds visible n");
+        let end = offset.checked_add(len).expect("window_coeffs: offset + len overflows usize");
+        assert!(end <= self.n, "window_coeffs: offset + len exceeds visible n");
         Self {
-            coeff_offset: self.coeff_offset + offset,
+            coeff_offset: self
+                .coeff_offset
+                .checked_add(offset)
+                .expect("window_coeffs: coefficient offset overflows usize"),
             n: len,
             ..self
         }
@@ -116,17 +141,24 @@ impl VecZnxShape {
     ///
     /// # Panics
     ///
-    /// Panics if `step == 0`, `count == 0`, or the last selected limb is outside the view.
+    /// Panics if `step == 0`, `count == 0`, if the last selected limb overflows, or if it
+    /// is outside the view.
     pub const fn window_limbs(self, offset: usize, step: usize, count: usize) -> Self {
         assert!(step >= 1, "window_limbs: step must be >= 1");
         assert!(count >= 1, "window_limbs: count must be >= 1");
-        assert!(
-            offset + (count - 1) * step < self.size,
-            "window_limbs: last limb exceeds visible size"
-        );
+        const LAST: &str = "window_limbs: last limb overflows usize";
+        let last = (count - 1).checked_mul(step).expect(LAST).checked_add(offset).expect(LAST);
+        assert!(last < self.size, "window_limbs: last limb exceeds visible size");
         Self {
-            limb_offset: self.limb_offset + offset * self.limb_step,
-            limb_step: self.limb_step * step,
+            limb_offset: offset
+                .checked_mul(self.limb_step)
+                .expect("window_limbs: limb offset overflows usize")
+                .checked_add(self.limb_offset)
+                .expect("window_limbs: limb offset overflows usize"),
+            limb_step: self
+                .limb_step
+                .checked_mul(step)
+                .expect("window_limbs: limb step overflows usize"),
             size: count,
             ..self
         }
@@ -901,6 +933,26 @@ mod window_shape_tests {
                 }
             }
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "window_coeffs: offset + len overflows usize")]
+    fn window_coeffs_rejects_wrapping_offset() {
+        // offset + len wraps to 1 in release without checked arithmetic and would be accepted.
+        let _ = VecZnxShape::new(8, 1, 2).window_coeffs(usize::MAX, 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "window_limbs: last limb overflows usize")]
+    fn window_limbs_rejects_wrapping_offset() {
+        // (count - 1) * step + offset wraps to 0 < size without checked arithmetic.
+        let _ = VecZnxShape::new(8, 1, 2).window_limbs(usize::MAX, 1, 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "VecZnxShape::scalar_offset: scalar offset overflows usize")]
+    fn scalar_offset_rejects_overflow() {
+        let _ = VecZnxShape::new(usize::MAX, 2, 2).scalar_offset(1, 1);
     }
 
     #[test]
