@@ -481,7 +481,7 @@ unsafe fn fwd_top2<const N: usize>(ptr: *mut u64, root: &[u64], precon: &[u64], 
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTable<P>, data: &mut [u64], lazy_output: bool) {
     let n = table.n;
-    debug_assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
+    assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
     if n < 2 {
         return;
     }
@@ -875,7 +875,7 @@ unsafe fn inv_plane(
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt3x42Ifma>(table: &Ntt3x42IfmaTableInv<P>, data: &mut [u64]) {
     let n = table.n;
-    debug_assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
+    assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
     if n < 2 {
         return;
     }

@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPrepare},
-    layouts::{Backend, HostBytesBackend, Module, ScalarZnx, ScratchArena, SvpPPolOwned},
+    layouts::{Backend, HostBytesBackend, Module, PrepareHint, ScalarZnx, ScratchArena, SvpPPolOwned},
 };
 
 use std::marker::PhantomData;
@@ -67,7 +67,7 @@ where
                 1,
             );
             (0..n << 1).for_each(|i| {
-                let mut res: SvpPPolOwned<BE> = self.svp_ppol_alloc(1);
+                let mut res: SvpPPolOwned<BE> = self.svp_ppol_alloc(1, PrepareHint::Reuse);
                 set_xai_plus_y(self, i, 0, &mut res, &mut buf);
                 x_pow_a.push(res);
             });

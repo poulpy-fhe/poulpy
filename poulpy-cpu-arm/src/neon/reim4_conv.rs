@@ -50,8 +50,8 @@ pub(crate) fn reim4_convolution_1coeff_neon(k: usize, dst: &mut [f64; 8], a: &[f
 
 /// Two-coefficient complex × complex convolution.
 pub(crate) fn reim4_convolution_2coeffs_neon(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
-    debug_assert!(a.len() >= 8 * a_size);
-    debug_assert!(b.len() >= 8 * b_size);
+    assert!(a.len() >= 8 * a_size);
+    assert!(b.len() >= 8 * b_size);
     let k0 = k;
     let k1 = k + 1;
     let bound = a_size + b_size;
@@ -243,7 +243,7 @@ pub(crate) fn reim4_convolution_by_real_const_1coeff_neon(k: usize, dst: &mut [f
 /// Two-coefficient complex × real-scalar convolution.
 pub(crate) fn reim4_convolution_by_real_const_2coeffs_neon(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64]) {
     let b_size = b.len();
-    debug_assert!(a.len() >= 8 * a_size);
+    assert!(a.len() >= 8 * a_size);
     let k0 = k;
     let k1 = k + 1;
     let bound = a_size + b_size;

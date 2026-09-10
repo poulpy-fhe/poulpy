@@ -1,7 +1,7 @@
 use crate::{
     api::{SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolBytesOf, SvpPPolCopyBackend, SvpPrepare},
     layouts::{
-        Backend, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned, VecZnxBackendRef,
+        Backend, Module, PrepareHint, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned, VecZnxBackendRef,
         VecZnxDftBackendMut, VecZnxDftBackendRef,
     },
     oep::HalSvpImpl,
@@ -19,14 +19,14 @@ macro_rules! impl_svp_delegate {
 }
 
 impl<B: Backend> SvpPPolAlloc<B> for Module<B> {
-    fn svp_ppol_alloc(&self, cols: usize) -> SvpPPolOwned<B> {
-        SvpPPolOwned::<B>::alloc(self.n(), cols)
+    fn svp_ppol_alloc(&self, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B> {
+        SvpPPolOwned::<B>::alloc(self.n(), cols, hint)
     }
 }
 
 impl<B: Backend> SvpPPolBytesOf for Module<B> {
-    fn bytes_of_svp_ppol(&self, cols: usize) -> usize {
-        B::bytes_of_svp_ppol(self.n(), cols)
+    fn bytes_of_svp_ppol(&self, cols: usize, hint: PrepareHint) -> usize {
+        B::bytes_of_svp_ppol(self.n(), cols, hint)
     }
 }
 

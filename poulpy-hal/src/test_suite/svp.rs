@@ -14,7 +14,7 @@ use crate::{
         ScratchOwnedAlloc, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolCopyBackend, SvpPrepare,
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
     },
-    layouts::{Backend, FillUniform, HostBytesBackend, Module, ScratchOwned, SvpPPolOwned},
+    layouts::{Backend, FillUniform, HostBytesBackend, Module, PrepareHint, ScratchOwned, SvpPPolOwned},
     source::Source,
 };
 
@@ -75,8 +75,8 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
     let mut scalar = module_host.scalar_znx_alloc(cols);
     scalar.fill_uniform(base2k, &mut source);
 
-    let mut svp_ref: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(cols);
-    let mut svp_test: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols);
+    let mut svp_ref: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(cols, PrepareHint::Reuse);
+    let mut svp_test: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols, PrepareHint::Reuse);
     let scalar_ref_backend = upload_scalar_znx::<BR>(&scalar);
     let scalar_test_backend = upload_scalar_znx::<BT>(&scalar);
 
@@ -205,8 +205,8 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     let mut scalar = module_host.scalar_znx_alloc(cols);
     scalar.fill_uniform(base2k, &mut source);
 
-    let mut svp_ref: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(cols);
-    let mut svp_test: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols);
+    let mut svp_ref: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(cols, PrepareHint::Reuse);
+    let mut svp_test: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols, PrepareHint::Reuse);
     let scalar_ref_backend = upload_scalar_znx::<BR>(&scalar);
     let scalar_test_backend = upload_scalar_znx::<BT>(&scalar);
 
@@ -227,8 +227,8 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
     // Exercise the backend-private prepared representation and its column
     // stride by copying the two factors in reverse order.
-    let mut svp_ref_copy: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(cols);
-    let mut svp_test_copy: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols);
+    let mut svp_ref_copy: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(cols, PrepareHint::Reuse);
+    let mut svp_test_copy: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols, PrepareHint::Reuse);
     for j in 0..cols {
         module_ref.svp_ppol_copy_backend(&mut svp_ref_copy.to_backend_mut(), cols - 1 - j, &svp_ref.to_backend_ref(), j);
         module_test.svp_ppol_copy_backend(
@@ -237,6 +237,19 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
             &svp_test.to_backend_ref(),
             j,
         );
+    }
+
+    // Copying into a destination that names the other representation must be
+    // rejected before any byte moves.
+    {
+        let mut other_hint: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols, PrepareHint::OneShot);
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module_test.svp_ppol_copy_backend(&mut other_hint.to_backend_mut(), 0, &svp_test.to_backend_ref(), 0);
+        }));
+        std::panic::set_hook(hook);
+        assert!(caught.is_err(), "svp_ppol_copy accepted a mismatched PrepareHint");
     }
 
     for a_size in [3] {
@@ -369,8 +382,8 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
     let mut scalar = module_host.scalar_znx_alloc(cols);
     scalar.fill_uniform(base2k, &mut source);
 
-    let mut svp_ref: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(cols);
-    let mut svp_test: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols);
+    let mut svp_ref: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(cols, PrepareHint::Reuse);
+    let mut svp_test: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols, PrepareHint::Reuse);
     let scalar_ref_backend = upload_scalar_znx::<BR>(&scalar);
     let scalar_test_backend = upload_scalar_znx::<BT>(&scalar);
 

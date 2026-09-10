@@ -70,6 +70,18 @@ macro_rules! vec_view_wrapper {
             fn cols(&self) -> usize {
                 self.inner.cols()
             }
+            fn n_full(&self) -> usize {
+                self.inner.n_full()
+            }
+            fn coeff_offset(&self) -> usize {
+                self.inner.coeff_offset()
+            }
+            fn limb_offset(&self) -> usize {
+                self.inner.limb_offset()
+            }
+            fn limb_step(&self) -> usize {
+                self.inner.limb_step()
+            }
         }
     };
 }

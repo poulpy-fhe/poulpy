@@ -69,6 +69,14 @@ pub(crate) fn svp_ppol_copy_backend(
     a: &SvpPPolBackendRef<'_, NTT4x30Avx512>,
     a_col: usize,
 ) {
+    assert_eq!(res.n(), a.n(), "svp_ppol_copy: res.n() {} != a.n() {}", res.n(), a.n());
+    assert_eq!(
+        res.hint(),
+        a.hint(),
+        "svp_ppol_copy: res and a must carry the same PrepareHint ({:?} != {:?})",
+        res.hint(),
+        a.hint()
+    );
     let n = res.n();
     let dst: &mut [u32] = cast_slice_mut(res.data_mut());
     let src: &[u32] = cast_slice(a.data());

@@ -15,7 +15,6 @@ pub fn vec_znx_sub<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
         assert_eq!(b.n(), res.n());
@@ -68,7 +67,6 @@ pub fn vec_znx_sub_assign<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
     }
@@ -93,7 +91,6 @@ pub fn vec_znx_sub_negate_assign<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
     }

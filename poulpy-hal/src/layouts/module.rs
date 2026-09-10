@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ptr::NonNull};
 
-use crate::layouts::{Data, Location, MatZnx, ScalarZnx, VecZnx, checked_product, vec_znx_alloc_zeroed};
+use crate::layouts::{Data, Location, MatZnx, PrepareHint, ScalarZnx, VecZnx, checked_product, vec_znx_alloc_zeroed};
 use crate::{
     GALOISGENERATOR,
     api::{ModuleLogN, ModuleN},
@@ -183,23 +183,23 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     fn bytes_of_vec_znx_big(n: usize, cols: usize, size: usize) -> usize {
         checked_product(&[n, cols, size, Self::size_of_big_word()], "VecZnxBig byte size")
     }
-    /// Byte size of a [`crate::layouts::SvpPPol`] buffer.
-    fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
+    /// Byte size of a [`crate::layouts::SvpPPol`] buffer in the representation `hint` selects.
+    fn bytes_of_svp_ppol(n: usize, cols: usize, _hint: PrepareHint) -> usize {
         checked_product(&[n, cols, Self::size_of_dft_word()], "SvpPPol byte size")
     }
-    /// Byte size of a [`crate::layouts::VmpPMat`] buffer.
-    fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+    /// Byte size of a [`crate::layouts::VmpPMat`] buffer in the representation `hint` selects.
+    fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, _hint: PrepareHint) -> usize {
         checked_product(
             &[n, rows, cols_in, cols_out, size, Self::size_of_dft_word()],
             "VmpPMat byte size",
         )
     }
-    /// Byte size of a [`crate::layouts::CnvPVecL`] buffer.
-    fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
+    /// Byte size of a [`crate::layouts::CnvPVecL`] buffer in the representation `hint` selects.
+    fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize, _hint: PrepareHint) -> usize {
         checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecL byte size")
     }
-    /// Byte size of a [`crate::layouts::CnvPVecR`] buffer.
-    fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
+    /// Byte size of a [`crate::layouts::CnvPVecR`] buffer in the representation `hint` selects.
+    fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize, _hint: PrepareHint) -> usize {
         checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecR byte size")
     }
     /// Deallocates a backend handle.
@@ -385,12 +385,12 @@ impl<BE: Backend> CyclotomicOrder for Module<BE> where Self: ModuleN {}
 ///
 /// Returns `1` when `generator == 0`.
 ///
-/// # Panics (debug)
+/// # Panics
 ///
-/// Debug-asserts that `cyclotomic_order` is a positive power of two.
+/// Asserts that `cyclotomic_order` is a positive power of two.
 #[inline(always)]
 pub fn galois_element(generator: i64, cyclotomic_order: i64) -> i64 {
-    debug_assert!(
+    assert!(
         cyclotomic_order > 0 && (cyclotomic_order as u64).is_power_of_two(),
         "cyclotomic_order must be a power of two, got {cyclotomic_order}"
     );

@@ -16,7 +16,7 @@ mod ntt3x42_ifma_tests {
     };
     use poulpy_hal::{
         backend_test_suite, cross_backend_test_suite,
-        layouts::{Backend, SvpPPolOwned, VecZnxDftOwned, ZnxView, ZnxViewMut, ZnxZero},
+        layouts::{Backend, PrepareHint, SvpPPolOwned, VecZnxDftOwned, ZnxView, ZnxViewMut, ZnxZero},
     };
 
     cross_backend_test_suite! {
@@ -28,22 +28,15 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_add_into => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_into_backend_matches_reference,
             test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
             test_vec_znx_extract_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_extract_coeff_backend,
-            test_vec_znx_normalize_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_coeff_backend,
-            test_vec_znx_normalize_coeff_assign_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_coeff_assign_backend,
-            test_vec_znx_lsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_coeff_backend,
-            test_vec_znx_lsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_into_backend,
             test_vec_znx_lsh_add_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff_backend,
             test_vec_znx_lsh_sub_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_sub_coeff_to_coeff_backend,
             test_vec_znx_rsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff_backend,
             test_vec_znx_rsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_add_coeff_into_backend,
             test_vec_znx_rsh_sub_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_sub_coeff_into_backend,
-            test_vec_znx_add_scalar_into => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_into,
             test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
             test_vec_znx_sub => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub,
             test_vec_znx_sub_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_assign,
             test_vec_znx_sub_negate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_negate_assign,
-            test_vec_znx_sub_scalar => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_scalar,
-            test_vec_znx_sub_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_scalar_assign,
             test_vec_znx_rsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh,
             test_vec_znx_rsh_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_assign,
             test_vec_znx_lsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh,
@@ -58,8 +51,6 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
             test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
             test_vec_znx_normalize_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_assign,
-            test_vec_znx_merge_rings => poulpy_hal::test_suite::vec_znx::test_vec_znx_merge_rings,
-            test_vec_znx_split_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_split_ring,
             test_vec_znx_switch_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring,
             test_vec_znx_copy => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy,
         }
@@ -165,8 +156,32 @@ mod ntt3x42_ifma_tests {
         params = TestParams { size: 1<<12, base2k: 50 },
         tests = {
             test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
-            test_vec_znx_fill_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_normal,
+            test_scalar_znx_secret_sampling => poulpy_hal::test_suite::vec_znx::test_scalar_znx_secret_sampling,
             test_vec_znx_add_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_normal,
+            test_vec_znx_big_add_normal => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_normal,
+        }
+    }
+
+    backend_test_suite! {
+        mod window,
+        backend = crate::NTT3x42Ifma,
+        params = TestParams { size: 1 << 8, base2k: 50 },
+        tests = {
+            test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
+            test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+            test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
+        }
+    }
+
+    #[cfg(feature = "enable-rayon")]
+    backend_test_suite! {
+        mod window_rayon,
+        backend = crate::NTT3x42IfmaRayon,
+        params = TestParams { size: 1 << 8, base2k: 50 },
+        tests = {
+            test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
+            test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+            test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
         }
     }
 
@@ -253,7 +268,7 @@ mod ntt3x42_ifma_tests {
         dft.zero();
         assert!(dft.data[..byte_len].iter().all(|&byte| byte == 0));
 
-        let mut svp = SvpPPolOwned::<crate::NTT3x42Ifma>::alloc(N, COLS);
+        let mut svp = SvpPPolOwned::<crate::NTT3x42Ifma>::alloc(N, COLS, PrepareHint::Reuse);
         let display = format!("{svp}");
         assert!(display.contains("<backend-packed representation:"));
         assert!(

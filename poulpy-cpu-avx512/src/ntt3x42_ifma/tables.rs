@@ -78,7 +78,7 @@ pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma> {
 
 /// Returns the primitive `2n`-th roots of unity for each of the 3 primes.
 fn fill_omegas_ntt3x42_ifma<P: PrimeSetNtt3x42Ifma>(n: usize) -> [u64; 3] {
-    debug_assert!((1..=(1 << 16)).contains(&n), "n must be a power of two in [1, 2^16], got {n}");
+    assert!((1..=(1 << 16)).contains(&n), "n must be a power of two in [1, 2^16], got {n}");
     std::array::from_fn(|k| modq_pow64(P::OMEGA[k], (1i64 << 16) / n as i64, P::Q[k]))
 }
 
@@ -236,7 +236,7 @@ fn build_tail_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64
         for &r in &root[(n / 2)..n] {
             push(r, &mut p);
         }
-        debug_assert_eq!(p - base, stride);
+        assert_eq!(p - base, stride);
     }
     (tail_root, tail_quot)
 }

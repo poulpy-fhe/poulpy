@@ -127,8 +127,8 @@ unsafe fn ifft_bfs_16_neon(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]
 /// Forward 2-way (Cooley–Tukey) butterfly. Mirrors `twiddle_fft_avx2_fma`.
 #[inline]
 unsafe fn twiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]) {
-    debug_assert!(h.is_multiple_of(4));
-    debug_assert!(omg.len() >= 2);
+    assert!(h.is_multiple_of(4));
+    assert!(omg.len() >= 2);
     unsafe {
         let omr: float64x2_t = vdupq_n_f64(omg[0]);
         let omi: float64x2_t = vdupq_n_f64(omg[1]);
@@ -189,8 +189,8 @@ unsafe fn twiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]
 /// Forward 4-way bitwiddle butterfly. Mirrors `bitwiddle_fft_avx2_fma`.
 #[inline]
 unsafe fn bitwiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]) {
-    debug_assert!(h.is_multiple_of(4));
-    debug_assert!(omg.len() >= 4);
+    assert!(h.is_multiple_of(4));
+    assert!(omg.len() >= 4);
     unsafe {
         let mut r0 = re.as_mut_ptr();
         let mut r1 = re.as_mut_ptr().add(h);
@@ -329,8 +329,8 @@ unsafe fn bitwiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f6
 /// Inverse 2-way (Gentleman–Sande) butterfly. Mirrors `inv_twiddle_ifft_avx2_fma`.
 #[inline]
 unsafe fn inv_twiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]) {
-    debug_assert!(h.is_multiple_of(4));
-    debug_assert!(omg.len() >= 2);
+    assert!(h.is_multiple_of(4));
+    assert!(omg.len() >= 2);
     unsafe {
         let omr: float64x2_t = vdupq_n_f64(omg[0]);
         let omi: float64x2_t = vdupq_n_f64(omg[1]);
@@ -392,8 +392,8 @@ unsafe fn inv_twiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &
 /// Inverse 4-way bitwiddle butterfly. Mirrors `inv_bitwiddle_ifft_avx2_fma`.
 #[inline]
 unsafe fn inv_bitwiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]) {
-    debug_assert!(h.is_multiple_of(4));
-    debug_assert!(omg.len() >= 4);
+    assert!(h.is_multiple_of(4));
+    assert!(omg.len() >= 4);
     unsafe {
         let mut r0 = re.as_mut_ptr();
         let mut r1 = re.as_mut_ptr().add(h);
@@ -645,7 +645,7 @@ unsafe fn inv_itwiddle_neon(
 
 #[inline]
 unsafe fn fft16_neon(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
-    debug_assert!(re.len() >= 16 && im.len() >= 16 && omg.len() >= 16);
+    assert!(re.len() >= 16 && im.len() >= 16 && omg.len() >= 16);
     unsafe {
         let r = re.as_mut_ptr();
         let i = im.as_mut_ptr();
@@ -763,7 +763,7 @@ unsafe fn fft16_neon(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
 
 #[inline]
 unsafe fn ifft16_neon(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
-    debug_assert!(re.len() >= 16 && im.len() >= 16 && omg.len() >= 16);
+    assert!(re.len() >= 16 && im.len() >= 16 && omg.len() >= 16);
     unsafe {
         let r = re.as_mut_ptr();
         let i = im.as_mut_ptr();

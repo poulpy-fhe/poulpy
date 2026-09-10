@@ -480,8 +480,8 @@ pub(crate) unsafe fn c_from_b_avx2(nn: usize, res: &mut [u32], a: &[u64]) {
 /// in the x2 q120b/u32 layout expected by BBC kernels.
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn pack_left_1blk_x2_avx2(dst: &mut [u32], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
 
     unsafe {
         let q = _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i);
@@ -512,8 +512,8 @@ pub(crate) unsafe fn pack_left_1blk_x2_avx2(dst: &mut [u32], a: &[u64], row_coun
 /// windows can consume contiguous slices directly.
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn pack_right_1blk_x2_avx2(dst: &mut [u32], a: &[u32], row_count: usize, row_stride: usize, blk: usize) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
 
     unsafe {
         let mut dst_ptr = dst.as_mut_ptr() as *mut __m256i;
@@ -543,9 +543,9 @@ pub(crate) unsafe fn pairwise_pack_left_1blk_x2_avx2(
     row_stride: usize,
     blk: usize,
 ) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
-    debug_assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+    assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
 
     unsafe {
         let q = _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i);
@@ -589,9 +589,9 @@ pub(crate) unsafe fn pairwise_pack_right_1blk_x2_avx2(
     row_stride: usize,
     blk: usize,
 ) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
-    debug_assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+    assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
 
     unsafe {
         let mut dst_ptr = dst.as_mut_ptr() as *mut __m256i;

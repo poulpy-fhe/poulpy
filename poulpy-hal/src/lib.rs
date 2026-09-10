@@ -81,14 +81,13 @@
 //!
 //! ## Compatibility
 //!
-//! - Requires **nightly** Rust (uses `trait_alias` and `associated_type_defaults`).
+//! - Requires **nightly** Rust (uses `trait_alias`).
 //! - All memory allocations are aligned to [`DEFAULTALIGN`] (64 bytes).
 //! - Types matching the API of **spqlios-arithmetic**.
 
 #![allow(non_camel_case_types, non_snake_case, non_upper_case_globals, dead_code, improper_ctypes)]
 #![deny(rustdoc::broken_intra_doc_links)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![feature(associated_type_defaults)]
 #![feature(trait_alias)]
 
 /// Safe, user-facing trait definitions for polynomial arithmetic operations.
@@ -122,9 +121,6 @@ pub mod layouts;
 /// helper defaults provided by a backend crate (for example `poulpy-cpu-ref`). See
 /// [`doc::backend_safety`] for the safety contract.
 pub mod oep;
-
-/// Portable scalar kernels over `[i64]`, shared by every backend.
-pub mod reference;
 
 /// Deterministic pseudorandom number generation based on ChaCha8.
 pub mod source;

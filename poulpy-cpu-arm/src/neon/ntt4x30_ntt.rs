@@ -352,7 +352,7 @@ pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
     if n == 1 {
         return;
     }
-    debug_assert!(data.len() >= 4 * n);
+    assert!(data.len() >= 4 * n);
     unsafe {
         let begin = data.as_mut_ptr();
         let end = begin.add(4 * n) as *const u64;
@@ -419,7 +419,7 @@ pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64
     if n == 1 {
         return;
     }
-    debug_assert!(data.len() >= 4 * n);
+    assert!(data.len() >= 4 * n);
     unsafe {
         let begin = data.as_mut_ptr();
         let end = begin.add(4 * n) as *const u64;

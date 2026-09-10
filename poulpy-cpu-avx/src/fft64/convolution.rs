@@ -74,7 +74,7 @@ pub unsafe fn i64_convolution_by_real_const_2coeffs_avx(
 
     let b_size: usize = b.len();
 
-    debug_assert!(a.len() >= 8 * a_size);
+    assert!(a.len() >= 8 * a_size);
 
     let k0: usize = k;
     let k1: usize = k + 1;

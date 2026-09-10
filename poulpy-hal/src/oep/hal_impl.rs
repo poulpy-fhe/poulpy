@@ -1,11 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
-use crate::{
-    layouts::{
-        Backend, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxBigBackendMut,
-    },
-    source::Source,
+use crate::layouts::{
+    Backend, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
 };
 
 /// Module construction extension point.
@@ -14,27 +10,8 @@ use crate::{
 /// Implementations must return a module handle that is valid for the backend
 /// and ring degree, and uphold the backend safety contract.
 pub unsafe trait HalModuleImpl<BE: Backend>: Backend {
-    /// Backend-specific construction parameters.
-    ///
-    /// Host backends leave this at `()`. A device backend names here whatever
-    /// [`Self::new`] cannot express, a device ordinal above all: with `new`
-    /// alone, a module on a multi-GPU host lands on whatever the driver calls
-    /// the default device, which is not necessarily the one the operator means.
-    type Config: Default = ();
-
     #[allow(clippy::new_ret_no_self)]
     fn new(n: u64) -> Module<BE>;
-
-    /// Constructs a module under an explicit [`Self::Config`].
-    ///
-    /// Defaults to ignoring the configuration, which is correct for any backend
-    /// that leaves `Config = ()`. A backend declaring a real `Config` must
-    /// override this, and should keep `new` equivalent to
-    /// `new_with(n, Config::default())`.
-    #[allow(clippy::new_ret_no_self)]
-    fn new_with(n: u64, _config: Self::Config) -> Module<BE> {
-        Self::new(n)
-    }
 }
 
 /// Coefficient-domain `VecZnx` extension point.
@@ -85,16 +62,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         seed: [u8; 32],
     );
 
-    fn vec_znx_hadamard_product_scalar_znx_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBigBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        b: &ScalarZnxBackendRef<'_, BE>,
-        b_col: usize,
-    );
-
     fn vec_znx_normalize_tmp_bytes_backend(module: &Module<BE>) -> usize;
 
     #[allow(clippy::too_many_arguments)]
@@ -120,29 +87,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_normalize_coeff_assign_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        a: &mut VecZnxBackendMut<'_, BE>,
-        a_col: usize,
-        a_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_normalize_coeff_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_base2k: usize,
-        res_offset: i64,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_base2k: usize,
-        a_col: usize,
-        a_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
     fn vec_znx_add_into_backend(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -159,43 +103,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         res_col: usize,
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
-    );
-
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_add_const_into_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        cnst: &VecZnxBackendRef<'_, BE>,
-        cnst_col: usize,
-        cnst_coeff: usize,
-        res_limb: usize,
-        res_coeff: usize,
-    );
-
-    fn vec_znx_add_const_assign_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        cnst: &VecZnxBackendRef<'_, BE>,
-        cnst_col: usize,
-        cnst_coeff: usize,
-        res_limb: usize,
-        res_coeff: usize,
-    );
-
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_add_scalar_into_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &ScalarZnxBackendRef<'_, BE>,
-        a_col: usize,
-        b: &VecZnxBackendRef<'_, BE>,
-        b_col: usize,
-        b_limb: usize,
     );
 
     fn vec_znx_add_scalar_assign_backend(
@@ -230,27 +137,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
         a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-    );
-
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_sub_scalar_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &ScalarZnxBackendRef<'_, BE>,
-        a_col: usize,
-        b: &VecZnxBackendRef<'_, BE>,
-        b_col: usize,
-        b_limb: usize,
-    );
-
-    fn vec_znx_sub_scalar_assign_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        res_limb: usize,
-        a: &ScalarZnxBackendRef<'_, BE>,
         a_col: usize,
     );
 
@@ -339,18 +225,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_lsh_coeff_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        a_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
     fn vec_znx_lsh_add_into_backend(
         module: &Module<BE>,
         base2k: usize,
@@ -359,18 +233,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         res_col: usize,
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_lsh_add_coeff_into_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        a_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
 
@@ -478,17 +340,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_automorphism_rotate_backend(
-        module: &Module<BE>,
-        p: i64,
-        k: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-    );
-
     fn vec_znx_mul_xp_minus_one_backend(
         module: &Module<BE>,
         k: i64,
@@ -508,28 +359,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_split_ring_tmp_bytes_backend(module: &Module<BE>) -> usize;
-
-    fn vec_znx_split_ring_backend(
-        module: &Module<BE>,
-        res: &mut [VecZnxBackendMut<'_, BE>],
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_merge_rings_tmp_bytes_backend(module: &Module<BE>) -> usize;
-
-    fn vec_znx_merge_rings_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &[VecZnxBackendRef<'_, BE>],
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
     fn vec_znx_switch_ring_backend(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -545,8 +374,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     );
-
-    fn vec_znx_transpose_backend(module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, a: &VecZnxBackendRef<'_, BE>);
 
     fn vec_znx_copy_range_backend(
         module: &Module<BE>,
@@ -576,15 +403,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         k: usize,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
-        seed: [u8; 32],
-    );
-
-    fn vec_znx_fill_normal_backend(
-        module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
         seed: [u8; 32],
     );
 
@@ -619,17 +437,6 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         noise_infos: NoiseInfos,
         seed: [u8; 32],
     );
-
-    fn vec_znx_big_add_normal(
-        module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        source: &mut Source,
-    ) {
-        Self::vec_znx_big_add_normal_backend(module, res_base2k, res, res_col, noise_infos, source.new_seed());
-    }
 
     fn vec_znx_big_add_into(
         module: &Module<BE>,

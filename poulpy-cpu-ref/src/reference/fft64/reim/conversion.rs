@@ -17,7 +17,6 @@
 
 #[inline(always)]
 pub fn reim_from_znx_i64_ref(res: &mut [f64], a: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len())
     }
@@ -29,7 +28,6 @@ pub fn reim_from_znx_i64_ref(res: &mut [f64], a: &[i64]) {
 
 #[inline(always)]
 pub fn reim_from_znx_i64_masked_ref(res: &mut [f64], a: &[i64], mask: i64) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len())
     }
@@ -41,7 +39,6 @@ pub fn reim_from_znx_i64_masked_ref(res: &mut [f64], a: &[i64], mask: i64) {
 
 #[inline(always)]
 pub fn reim_to_znx_i64_ref(res: &mut [i64], divisor: f64, a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len())
     }

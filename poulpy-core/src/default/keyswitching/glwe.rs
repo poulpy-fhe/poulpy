@@ -6,8 +6,8 @@ use poulpy_hal::{
         VmpPMatBytesOf,
     },
     layouts::{
-        Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef,
-        VmpPMatBackendRef, VmpPMatToBackendRef,
+        Backend, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        VecZnxDftToBackendRef, VmpPMatBackendRef, VmpPMatToBackendRef,
     },
 };
 
@@ -101,7 +101,13 @@ where
         if key_infos.stride() == 1 {
             product
         } else {
-            self.bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size) + product
+            // The gathered matrix is allocated with the key's hint (see the take
+            // below); the layout infos do not carry it, so size for either
+            // representation.
+            let dense = self
+                .bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size, PrepareHint::Reuse)
+                .max(self.bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size, PrepareHint::OneShot));
+            dense + product
         }
     }
 
@@ -134,7 +140,8 @@ where
         );
         let key_size: usize = key.size();
         scratch.scope(|scratch_phase| {
-            let (mut dense, mut scratch_1) = scratch_phase.take_vmp_pmat_scratch(self, rows, cols_in, cols_out, key_size);
+            let (mut dense, mut scratch_1) =
+                scratch_phase.take_vmp_pmat_scratch(self, rows, cols_in, cols_out, key_size, key.data.hint());
             self.vmp_extract_selected_rows(&mut dense, &key.data, stride - 1, stride);
             gglwe_product_pmat(
                 self,

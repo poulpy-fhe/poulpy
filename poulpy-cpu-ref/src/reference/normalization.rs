@@ -1,6 +1,6 @@
 //! CPU normalization kernels and optimization hooks shared by CPU backends.
 
-use poulpy_hal::reference::znx::{ZnxExtractDigitAddMul, get_carry_i64, get_carry_i128, get_digit_i64, get_digit_i128};
+use super::znx::{ZnxExtractDigitAddMul, get_carry_i64, get_carry_i128, get_digit_i64, get_digit_i128};
 
 /// CPU extraction hooks used by the shared normalization loops.
 /// Implementations may override the scalar defaults to reduce memory passes.

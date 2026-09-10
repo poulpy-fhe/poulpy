@@ -27,6 +27,10 @@ use crate::layouts::{
 /// [`VecZnxDftApply`](crate::api::VecZnxDftApply) /
 /// [`VecZnxIdftApply`](crate::api::VecZnxIdftApply) to convert
 /// between coefficient and DFT domains.
+///
+/// See [layouts](crate::layouts#value-model) for how this fits the container
+/// value model; its contracts are stated through `idft` (see the
+/// [`api`](crate::api#exactness) module doc).
 #[repr(C)]
 pub struct VecZnxDft<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     pub data: D,
@@ -40,6 +44,8 @@ pub struct VecZnxDft<D: Data, W: DftWord, B: Backend<DftWord = W>> {
 // for non-`Eq` words like `f64` (byte equality is a total equivalence).
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for VecZnxDft<D, W, B> {
     fn eq(&self, other: &Self) -> bool {
+        crate::layouts::assert_dense(self, "VecZnxDft::eq");
+        crate::layouts::assert_dense(other, "VecZnxDft::eq");
         self.shape == other.shape && self.data == other.data
     }
 }
@@ -48,6 +54,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for VecZnxDft<D, W, B> {}
 
 impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VecZnxDft<D, W, B> {
     fn digest_u64(&self) -> u64 {
+        crate::layouts::assert_dense(self, "VecZnxDft::digest_u64");
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
         h.write_usize(self.n());
@@ -81,13 +88,14 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     /// words, which guarantees the buffer is large enough for the big-domain
     /// interpretation.
     pub fn into_big(self) -> VecZnxBig<D, B::BigWord, B> {
+        crate::layouts::assert_dense(&self, "VecZnxDft::into_big");
         let shape = self.shape;
         assert!(
             B::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.size())
                 <= B::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.size()),
             "into_big: big-domain buffer would exceed the DFT-domain allocation"
         );
-        VecZnxBig::<D, B::BigWord, B>::from_data(self.data, shape.n(), shape.cols(), shape.size())
+        VecZnxBig::<D, B::BigWord, B>::from_shape(self.data, shape)
     }
 }
 
@@ -108,6 +116,18 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VecZnxDft<D, W, 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for VecZnxDft<D, W, B> {
     fn cols(&self) -> usize {
         self.shape.cols()
+    }
+    fn n_full(&self) -> usize {
+        self.shape.n_full()
+    }
+    fn coeff_offset(&self) -> usize {
+        self.shape.coeff_offset()
+    }
+    fn limb_offset(&self) -> usize {
+        self.shape.limb_offset()
+    }
+    fn limb_step(&self) -> usize {
+        self.shape.limb_step()
     }
 }
 
@@ -163,6 +183,7 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
     ///
     /// Panics unless `start <= end <= self.size()`.
     pub fn with_limb_range_mut(&mut self, start: usize, end: usize) -> VecZnxDftBackendMut<'_, B> {
+        crate::layouts::assert_dense(self, "VecZnxDft::with_limb_range_mut");
         assert!(start <= end, "DFT limb range start ({start}) exceeds end ({end})");
         assert!(
             end <= self.size(),
@@ -303,6 +324,41 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     }
 }
 
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
+    /// Wraps `data` with an explicit dense shape. Element access is
+    /// bounds-checked against the buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `shape` is a window. The DFT representation is backend-owned
+    /// and packed, so a coefficient or limb offset has no meaning in it:
+    /// `zero` and the transform kernels size their work from the visible
+    /// dimensions and would touch the wrong bytes. Window support on
+    /// `VecZnxDft` arrives with its kernels in a later PR.
+    pub fn from_shape(data: D, shape: VecZnxShape) -> Self {
+        assert!(shape.is_dense(), "VecZnxDft::from_shape: windowed shapes are not supported");
+        Self {
+            data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Re-tags this container with a dense `shape`, keeping the buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `shape` is a window (see [`Self::from_shape`]).
+    pub fn with_shape(self, shape: VecZnxShape) -> Self {
+        assert!(shape.is_dense(), "VecZnxDft::with_shape: windowed shapes are not supported");
+        Self {
+            data: self.data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+}
+
 /// Borrow a backend-owned `VecZnxDft` using the backend's native view type.
 pub trait VecZnxDftToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> VecZnxDftBackendRef<'_, B>;
@@ -422,6 +478,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
         B2: Backend<DftWord = W>,
         B: crate::layouts::VecZnxDftLayoutCompatible<B2>,
     {
+        crate::layouts::assert_dense(&self, "VecZnxDft::into_backend");
         let shape = self.shape;
         assert_eq!(
             B::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.size()),
@@ -458,5 +515,21 @@ mod limb_range_tests {
         assert!(dft.data[..limb_bytes].iter().all(|byte| *byte == 0xA5));
         assert!(dft.data[limb_bytes..3 * limb_bytes].iter().all(|byte| *byte == 0));
         assert!(dft.data[3 * limb_bytes..].iter().all(|byte| *byte == 0xA5));
+    }
+
+    #[test]
+    #[should_panic(expected = "VecZnxDft::from_shape: windowed shapes are not supported")]
+    fn from_shape_rejects_a_coefficient_window() {
+        let shape = VecZnxShape::new(8, 1, 2).window_coeffs(4, 4);
+        let bytes = HostBytesBackend::bytes_of_vec_znx_dft(8, 1, 2);
+        let _ = VecZnxDft::<Vec<u8>, i64, HostBytesBackend>::from_shape(vec![0u8; bytes], shape);
+    }
+
+    #[test]
+    #[should_panic(expected = "VecZnxDft::with_shape: windowed shapes are not supported")]
+    fn with_shape_rejects_a_limb_window() {
+        let dft = VecZnxDft::<Vec<u8>, i64, HostBytesBackend>::alloc(8, 1, 4);
+        let shape = dft.shape().window_limbs(1, 2, 2);
+        let _ = dft.with_shape(shape);
     }
 }

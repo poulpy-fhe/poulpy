@@ -142,9 +142,9 @@ pub(crate) unsafe fn vec_mat_tile2_bbc_canonical_avx2(
     y: &[u32],
 ) {
     unsafe {
-        debug_assert!(res.len() >= 16);
-        debug_assert!(len == 0 || x.len() >= 16 * (len + 1));
-        debug_assert!(y.len() >= 16 * len);
+        assert!(res.len() >= 16);
+        assert!(len == 0 || x.len() >= 16 * (len + 1));
+        assert!(y.len() >= 16 * len);
 
         let mask32 = _mm256_set1_epi64x(u32::MAX as i64);
 
@@ -316,9 +316,9 @@ pub(crate) unsafe fn vec_mat1col_product_blkpair_bbc_pm_avx2(
     y_pair_stride: usize,
 ) {
     unsafe {
-        debug_assert!(res.len() >= 16);
-        debug_assert!(x_pm.len() >= 16 * ell);
-        debug_assert!(y_pm.len() >= y_pair_stride + 4 * ell);
+        assert!(res.len() >= 16);
+        assert!(x_pm.len() >= 16 * ell);
+        assert!(y_pm.len() >= y_pair_stride + 4 * ell);
 
         let mask32 = _mm256_set1_epi64x(u32::MAX as i64);
         let mask_h2 = _mm256_set1_epi64x(((1u64 << meta.h) - 1) as i64);
@@ -390,11 +390,11 @@ pub(crate) unsafe fn vec_mat1col_product_blkpair_bbc_pm_x2_avx2(
     y_pair_stride: usize,
 ) {
     unsafe {
-        debug_assert!(res0.len() >= 16);
-        debug_assert!(res1.len() >= 16);
-        debug_assert!(x0_pm.len() >= 16 * ell);
-        debug_assert!(x1_pm.len() >= 16 * ell);
-        debug_assert!(y_pm.len() >= y_pair_stride + 4 * ell);
+        assert!(res0.len() >= 16);
+        assert!(res1.len() >= 16);
+        assert!(x0_pm.len() >= 16 * ell);
+        assert!(x1_pm.len() >= 16 * ell);
+        assert!(y_pm.len() >= y_pair_stride + 4 * ell);
 
         let mask32 = _mm256_set1_epi64x(u32::MAX as i64);
         let mask_h2 = _mm256_set1_epi64x(((1u64 << meta.h) - 1) as i64);

@@ -3,7 +3,7 @@
 //! API.
 
 use poulpy_hal::layouts::{
-    Backend, CnvPVecLOwned, CnvPVecROwned, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, ScalarZnx,
+    Backend, CnvPVecLOwned, CnvPVecROwned, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, PrepareHint, ScalarZnx,
     ScalarZnxBackendRef, ScalarZnxToBackendRef, SvpPPol, SvpPPolOwned, VecZnx, VecZnxBigBackendMut, VecZnxBigBackendRef,
     VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftOwned,
     VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat, VmpPMatOwned,
@@ -18,7 +18,7 @@ fn random_aligned_host_bytes(len: usize, source: &mut Source) -> Vec<u8> {
 }
 
 pub fn upload_host_vec_znx<BE: Backend<ZnxWord = i64>>(src: &VecZnx<Vec<u8>, i64>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
-    VecZnx::from_data(BE::from_host_bytes(src.data()), src.n(), src.cols(), src.size())
+    VecZnx::from_shape(BE::from_host_bytes(src.data()), src.shape())
 }
 
 pub fn upload_host_scalar_znx<BE: Backend<ZnxWord = i64>>(src: &ScalarZnx<Vec<u8>, i64>) -> ScalarZnx<BE::OwnedBuf, BE::ZnxWord> {
@@ -116,9 +116,9 @@ pub fn random_backend_vec_znx_big<BE: Backend<ZnxWord = i64>>(
 }
 
 pub fn random_backend_svp_ppol<BE: Backend<ZnxWord = i64>>(n: usize, cols: usize, source: &mut Source) -> SvpPPolOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_svp_ppol(n, cols)];
+    let mut bytes = vec![0u8; BE::bytes_of_svp_ppol(n, cols, PrepareHint::Reuse)];
     source.fill_bytes(&mut bytes);
-    SvpPPol::from_data(BE::from_host_bytes(&bytes), n, cols)
+    SvpPPol::from_data(BE::from_host_bytes(&bytes), n, cols, PrepareHint::Reuse)
 }
 
 pub fn random_backend_vmp_pmat<BE: Backend<ZnxWord = i64>>(
@@ -129,9 +129,17 @@ pub fn random_backend_vmp_pmat<BE: Backend<ZnxWord = i64>>(
     size: usize,
     source: &mut Source,
 ) -> VmpPMatOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size)];
+    let mut bytes = vec![0u8; BE::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, PrepareHint::Reuse)];
     source.fill_bytes(&mut bytes);
-    VmpPMat::from_data(BE::from_host_bytes(&bytes), n, rows, cols_in, cols_out, size)
+    VmpPMat::from_data(
+        BE::from_host_bytes(&bytes),
+        n,
+        rows,
+        cols_in,
+        cols_out,
+        size,
+        PrepareHint::Reuse,
+    )
 }
 
 pub fn random_backend_cnv_pvec_left<BE: Backend<ZnxWord = i64>>(
@@ -140,9 +148,9 @@ pub fn random_backend_cnv_pvec_left<BE: Backend<ZnxWord = i64>>(
     size: usize,
     source: &mut Source,
 ) -> CnvPVecLOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_left(n, cols, size)];
+    let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_left(n, cols, size, PrepareHint::Reuse)];
     source.fill_bytes(&mut bytes);
-    CnvPVecLOwned::<BE>::from_bytes(n, cols, size, bytes)
+    CnvPVecLOwned::<BE>::from_bytes(n, cols, size, PrepareHint::Reuse, bytes)
 }
 
 pub fn random_backend_cnv_pvec_right<BE: Backend<ZnxWord = i64>>(
@@ -151,9 +159,9 @@ pub fn random_backend_cnv_pvec_right<BE: Backend<ZnxWord = i64>>(
     size: usize,
     source: &mut Source,
 ) -> CnvPVecROwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_right(n, cols, size)];
+    let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_right(n, cols, size, PrepareHint::Reuse)];
     source.fill_bytes(&mut bytes);
-    CnvPVecROwned::<BE>::from_bytes(n, cols, size, bytes)
+    CnvPVecROwned::<BE>::from_bytes(n, cols, size, PrepareHint::Reuse, bytes)
 }
 
 pub fn scalar_znx_backend_ref<'a, BE: Backend<ZnxWord = i64>>(

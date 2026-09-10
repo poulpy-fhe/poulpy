@@ -1,16 +1,16 @@
 use crate::layouts::{
-    Backend, MatZnxBackendRef, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-    VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatOwned,
+    Backend, MatZnxBackendRef, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+    VecZnxDftToBackendMut, VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatOwned,
 };
 
 /// Allocates a [`VmpPMat`](crate::layouts::VmpPMat).
 pub trait VmpPMatAlloc<B: Backend> {
-    fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> VmpPMatOwned<B>;
+    fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> VmpPMatOwned<B>;
 }
 
 /// Returns the byte size required for a [`VmpPMat`](crate::layouts::VmpPMat).
 pub trait VmpPMatBytesOf {
-    fn bytes_of_vmp_pmat(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
+    fn bytes_of_vmp_pmat(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
 /// Returns scratch bytes required for [`VmpPrepare`].
@@ -133,10 +133,11 @@ pub trait VmpApplyDftToDftAccumulate<B: Backend> {
 /// is a dense prepared matrix over exactly the material a coarsened gadget
 /// decomposition uses.
 ///
-/// The delegate validates the selection before dispatch: matching `n` and both
-/// column counts, `res.size() <= a.size()`, `row_step > 0`, and a last row that
-/// is inside `a` without overflowing. An implementation may index on those
-/// facts without re-checking them.
+/// Every kernel validates the selection first via `assert_extractable`:
+/// matching [`PrepareHint`](crate::layouts::PrepareHint) (the copy moves
+/// representation bytes), matching `n` and both column counts, `res.size() <= a.size()`,
+/// `row_step > 0`, and a last row that is inside `a` without overflowing. Past
+/// that check the kernel may index on those facts without bounds checks.
 pub trait VmpExtractSelectedRows<B: Backend> {
     fn vmp_extract_selected_rows(
         &self,

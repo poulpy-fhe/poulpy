@@ -38,59 +38,59 @@ fn base_module(module: &Module<NTT3x42IfmaRayon>) -> &Module<NTT3x42Ifma> {
 }
 
 fn base_dft_ref<'a>(a: &'a VecZnxDftBackendRef<'_, NTT3x42IfmaRayon>) -> VecZnxDftBackendRef<'a, NTT3x42Ifma> {
-    VecZnxDft::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    VecZnxDft::from_shape(&**a.data(), a.shape())
 }
 
 pub(crate) fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, NTT3x42IfmaRayon>) -> VecZnxDftBackendMut<'a, NTT3x42Ifma> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnxDft::from_data(&mut **a.data_mut(), n, cols, size)
+    let shape = a.shape();
+    VecZnxDft::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_big_mut<'a>(a: &'a mut VecZnxBigBackendMut<'_, NTT3x42IfmaRayon>) -> VecZnxBigBackendMut<'a, NTT3x42Ifma> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnxBig::from_data(&mut **a.data_mut(), n, cols, size)
+    let shape = a.shape();
+    VecZnxBig::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_big_ref<'a>(
     a: &'a poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT3x42IfmaRayon>,
 ) -> poulpy_hal::layouts::VecZnxBigBackendRef<'a, NTT3x42Ifma> {
-    VecZnxBig::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    VecZnxBig::from_shape(&**a.data(), a.shape())
 }
 
 fn base_svp_ref<'a>(a: &'a SvpPPolBackendRef<'_, NTT3x42IfmaRayon>) -> SvpPPolBackendRef<'a, NTT3x42Ifma> {
-    SvpPPol::from_data(&**a.data(), a.n(), a.cols())
+    SvpPPol::from_data(&**a.data(), a.n(), a.cols(), a.hint())
 }
 
 fn base_svp_mut<'a>(a: &'a mut SvpPPolBackendMut<'_, NTT3x42IfmaRayon>) -> SvpPPolBackendMut<'a, NTT3x42Ifma> {
-    let (n, cols) = (a.n(), a.cols());
-    SvpPPol::from_data(&mut **a.data_mut(), n, cols)
+    let (n, cols, hint) = (a.n(), a.cols(), a.hint());
+    SvpPPol::from_data(&mut **a.data_mut(), n, cols, hint)
 }
 
 fn base_vmp_ref<'a>(a: &'a VmpPMatBackendRef<'_, NTT3x42IfmaRayon>) -> VmpPMatBackendRef<'a, NTT3x42Ifma> {
-    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size())
+    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint())
 }
 
 fn base_vmp_mut<'a>(a: &'a mut VmpPMatBackendMut<'_, NTT3x42IfmaRayon>) -> VmpPMatBackendMut<'a, NTT3x42Ifma> {
-    let (n, rows, cols_in, cols_out, size) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size());
-    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size)
+    let (n, rows, cols_in, cols_out, size, hint) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint());
+    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size, hint)
 }
 
 pub(crate) fn base_cnv_l_ref<'a>(a: &'a CnvPVecLBackendRef<'_, NTT3x42IfmaRayon>) -> CnvPVecLBackendRef<'a, NTT3x42Ifma> {
-    CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint())
 }
 
 fn base_cnv_l_mut<'a>(a: &'a mut CnvPVecLBackendMut<'_, NTT3x42IfmaRayon>) -> CnvPVecLBackendMut<'a, NTT3x42Ifma> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    CnvPVecL::from_data(&mut **a.data_mut(), n, cols, size)
+    let (n, cols, size, hint) = (a.n(), a.cols(), a.size(), a.hint());
+    CnvPVecL::from_data(&mut **a.data_mut(), n, cols, size, hint)
 }
 
 pub(crate) fn base_cnv_r_ref<'a>(a: &'a CnvPVecRBackendRef<'_, NTT3x42IfmaRayon>) -> CnvPVecRBackendRef<'a, NTT3x42Ifma> {
-    CnvPVecR::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    CnvPVecR::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint())
 }
 
 fn base_cnv_r_mut<'a>(a: &'a mut CnvPVecRBackendMut<'_, NTT3x42IfmaRayon>) -> CnvPVecRBackendMut<'a, NTT3x42Ifma> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    CnvPVecR::from_data(&mut **a.data_mut(), n, cols, size)
+    let (n, cols, size, hint) = (a.n(), a.cols(), a.size(), a.hint());
+    CnvPVecR::from_data(&mut **a.data_mut(), n, cols, size, hint)
 }
 
 macro_rules! forward_znx {
@@ -344,10 +344,6 @@ unsafe impl HalVecZnxImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
         poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT3x42Ifma, Self>(base2k, k, a, a_col, carry);
     }
-
-    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
-        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
-    }
 }
 
 macro_rules! forward_i128_big {
@@ -517,10 +513,10 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         let (carry, _) = crate::hal_impl::take_host_typed::<Self, i128>(arena, 3 * n);
         let mut a_base = base_dft_mut(a);
         super::vec_znx_dft::idft_compact_in_place_ifma::<NTT3x42IfmaRayonExecutor>(base_module(module), &mut a_base, a_col, tmp);
-        let (a_cols, a_size) = (a.cols(), a.size());
+        let a_shape = a.shape();
         if let Some((add, add_col)) = addend {
             let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, NTT3x42Ifma> =
-                VecZnxBig::from_data(&mut **a.data_mut(), n, a_cols, a_size);
+                VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
             let mut big_ref = &mut big;
             poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, NTT3x42Ifma>(
                 &mut big_ref,
@@ -529,8 +525,7 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
                 add_col,
             );
         }
-        let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT3x42Ifma> =
-            VecZnxBig::from_data(&**a.data(), n, a_cols, a_size);
+        let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT3x42Ifma> = VecZnxBig::from_shape(&**a.data(), a_shape);
         poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par::<NTT3x42Ifma, Self>(
             res, res_base2k, res_k, 0, res_col, &big_ref, a_base2k, a_col, carry,
         );
@@ -545,6 +540,7 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
+        poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         if parallel_limb_tasks(res.size()) {
             let n = res.n();
             let cols = res.cols();

@@ -51,16 +51,16 @@ fn base_module(module: &Module<NTT4x30Avx512Rayon>) -> &Module<NTT4x30Avx512> {
 }
 
 fn base_dft_ref<'a>(a: &'a VecZnxDftBackendRef<'_, NTT4x30Avx512Rayon>) -> VecZnxDftBackendRef<'a, NTT4x30Avx512> {
-    VecZnxDft::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    VecZnxDft::from_shape(&**a.data(), a.shape())
 }
 
 fn base_znx_ref<'a>(a: &'a VecZnxBackendRef<'_, NTT4x30Avx512Rayon>) -> VecZnxBackendRef<'a, NTT4x30Avx512> {
-    VecZnx::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    VecZnx::from_shape(&**a.data(), a.shape())
 }
 
 fn base_znx_mut<'a>(a: &'a mut VecZnxBackendMut<'_, NTT4x30Avx512Rayon>) -> VecZnxBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnx::from_data(&mut **a.data_mut(), n, cols, size)
+    let shape = a.shape();
+    VecZnx::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_scalar_ref<'a>(a: &'a ScalarZnxBackendRef<'_, NTT4x30Avx512Rayon>) -> ScalarZnxBackendRef<'a, NTT4x30Avx512> {
@@ -68,55 +68,55 @@ fn base_scalar_ref<'a>(a: &'a ScalarZnxBackendRef<'_, NTT4x30Avx512Rayon>) -> Sc
 }
 
 fn base_svp_ref<'a>(a: &'a SvpPPolBackendRef<'_, NTT4x30Avx512Rayon>) -> SvpPPolBackendRef<'a, NTT4x30Avx512> {
-    SvpPPol::from_data(&**a.data(), a.n(), a.cols())
+    SvpPPol::from_data(&**a.data(), a.n(), a.cols(), a.hint())
 }
 
 fn base_svp_mut<'a>(a: &'a mut SvpPPolBackendMut<'_, NTT4x30Avx512Rayon>) -> SvpPPolBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols) = (a.n(), a.cols());
-    SvpPPol::from_data(&mut **a.data_mut(), n, cols)
+    let (n, cols, hint) = (a.n(), a.cols(), a.hint());
+    SvpPPol::from_data(&mut **a.data_mut(), n, cols, hint)
 }
 
 pub(crate) fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, NTT4x30Avx512Rayon>) -> VecZnxDftBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnxDft::from_data(&mut **a.data_mut(), n, cols, size)
+    let shape = a.shape();
+    VecZnxDft::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_big_mut<'a>(a: &'a mut VecZnxBigBackendMut<'_, NTT4x30Avx512Rayon>) -> VecZnxBigBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    VecZnxBig::from_data(&mut **a.data_mut(), n, cols, size)
+    let shape = a.shape();
+    VecZnxBig::from_shape(&mut **a.data_mut(), shape)
 }
 
 fn base_big_ref<'a>(
     a: &'a poulpy_hal::layouts::VecZnxBigBackendRef<'_, NTT4x30Avx512Rayon>,
 ) -> poulpy_hal::layouts::VecZnxBigBackendRef<'a, NTT4x30Avx512> {
-    VecZnxBig::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    VecZnxBig::from_shape(&**a.data(), a.shape())
 }
 
 fn base_vmp_ref<'a>(a: &'a VmpPMatBackendRef<'_, NTT4x30Avx512Rayon>) -> VmpPMatBackendRef<'a, NTT4x30Avx512> {
-    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size())
+    VmpPMat::from_data(&**a.data(), a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint())
 }
 
 fn base_vmp_mut<'a>(a: &'a mut VmpPMatBackendMut<'_, NTT4x30Avx512Rayon>) -> VmpPMatBackendMut<'a, NTT4x30Avx512> {
-    let (n, rows, cols_in, cols_out, size) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size());
-    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size)
+    let (n, rows, cols_in, cols_out, size, hint) = (a.n(), a.rows(), a.cols_in(), a.cols_out(), a.size(), a.hint());
+    VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size, hint)
 }
 
 pub(crate) fn base_cnv_l_ref<'a>(a: &'a CnvPVecLBackendRef<'_, NTT4x30Avx512Rayon>) -> CnvPVecLBackendRef<'a, NTT4x30Avx512> {
-    CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint())
 }
 
 fn base_cnv_l_mut<'a>(a: &'a mut CnvPVecLBackendMut<'_, NTT4x30Avx512Rayon>) -> CnvPVecLBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    CnvPVecL::from_data(&mut **a.data_mut(), n, cols, size)
+    let (n, cols, size, hint) = (a.n(), a.cols(), a.size(), a.hint());
+    CnvPVecL::from_data(&mut **a.data_mut(), n, cols, size, hint)
 }
 
 pub(crate) fn base_cnv_r_ref<'a>(a: &'a CnvPVecRBackendRef<'_, NTT4x30Avx512Rayon>) -> CnvPVecRBackendRef<'a, NTT4x30Avx512> {
-    CnvPVecR::from_data(&**a.data(), a.n(), a.cols(), a.size())
+    CnvPVecR::from_data(&**a.data(), a.n(), a.cols(), a.size(), a.hint())
 }
 
 fn base_cnv_r_mut<'a>(a: &'a mut CnvPVecRBackendMut<'_, NTT4x30Avx512Rayon>) -> CnvPVecRBackendMut<'a, NTT4x30Avx512> {
-    let (n, cols, size) = (a.n(), a.cols(), a.size());
-    CnvPVecR::from_data(&mut **a.data_mut(), n, cols, size)
+    let (n, cols, size, hint) = (a.n(), a.cols(), a.size(), a.hint());
+    CnvPVecR::from_data(&mut **a.data_mut(), n, cols, size, hint)
 }
 
 use poulpy_cpu_rayon::parallel_chunk_len;
@@ -548,9 +548,6 @@ unsafe impl HalVecZnxImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
     ) {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
         poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT4x30Avx512, Self>(base2k, k, a, a_col, carry);
-    }
-    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
-        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
 }
 unsafe impl HalModuleImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
@@ -1394,6 +1391,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
+        poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         if !parallel_limb_tasks(res.size()) {
             return <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_dft_apply(
                 base_module(module),

@@ -250,8 +250,8 @@ impl<D: Data, W: ZnxWord> LWE<D, W> {
         let mask_shape = self.mask.shape();
         let mask_data = self.mask.into_data();
         LWE {
-            body: VecZnx::from_data(body_data, body_shape.n(), body_shape.cols(), body_shape.size()),
-            mask: VecZnx::from_data(mask_data, mask_shape.n(), mask_shape.cols(), mask_shape.size()),
+            body: VecZnx::from_shape(body_data, body_shape),
+            mask: VecZnx::from_shape(mask_data, mask_shape),
             base2k: self.base2k,
             k: self.k,
         }

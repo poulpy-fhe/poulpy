@@ -1,7 +1,6 @@
 use crate::reference::znx::{znx_add_assign_ref, znx_copy_ref};
 
 pub fn znx_mul_power_of_two_ref(mut k: i64, res: &mut [i64], a: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
     }
@@ -49,7 +48,6 @@ pub fn znx_mul_power_of_two_assign_ref(mut k: i64, res: &mut [i64]) {
 }
 
 pub fn znx_mul_add_power_of_two_ref(mut k: i64, res: &mut [i64], a: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
     }

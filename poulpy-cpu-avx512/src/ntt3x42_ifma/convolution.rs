@@ -687,8 +687,8 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<E: TaskExecutor>(
     let b0 = col_slice(b_raw, n, b_size, 0);
     let b1 = col_slice(b_raw, n, b_size, 1);
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
+    assert!(prefix.is_empty());
+    assert!(suffix.is_empty());
 
     if E::is_parallel() && n_groups > 1 {
         E::for_each_chunked(n_groups, tmp_u64, task_tmp_len, |local_tmp, group| unsafe {
@@ -771,8 +771,8 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<E: TaskExecutor>(
     }
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
+    assert!(prefix.is_empty());
+    assert!(suffix.is_empty());
 
     let a_col_u64 = col_slice(cast_slice(a.data()), n, a_size, a_col);
     let b_col_u64 = col_slice(cast_slice(b.data()), n, b_size, b_col);
@@ -805,8 +805,8 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma<E: TaskExecutor>(
     }
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
+    assert!(prefix.is_empty());
+    assert!(suffix.is_empty());
 
     let a_col_u64 = col_slice(cast_slice(a.data()), n, a_size, a_col);
     let b_col_u64 = col_slice(cast_slice(b.data()), n, b_size, b_col);
@@ -1112,13 +1112,13 @@ pub(crate) unsafe fn cnv_accumulate_dft_ifma<'a, E: TaskExecutor>(
 
     if E::is_parallel() && n_groups > 1 {
         let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-        debug_assert!(prefix.is_empty());
-        debug_assert!(suffix.is_empty());
+        assert!(prefix.is_empty());
+        assert!(suffix.is_empty());
         E::for_each_chunked(n_groups, tmp_u64, task_tmp_len, run_group);
     } else {
         let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-        debug_assert!(prefix.is_empty());
-        debug_assert!(suffix.is_empty());
+        assert!(prefix.is_empty());
+        assert!(suffix.is_empty());
         let local_tmp = &mut tmp_u64[..task_tmp_len];
         for group in 0..n_groups {
             run_group(local_tmp, group);
@@ -1163,8 +1163,8 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<E: TaskExecutor>(
     }
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
+    assert!(prefix.is_empty());
+    assert!(suffix.is_empty());
 
     let a_u64: &[u64] = cast_slice(a.data());
     let b_u64: &[u64] = cast_slice(b.data());
@@ -1231,6 +1231,7 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     mask: i64,
     tmp: &mut [u8],
 ) {
+    poulpy_hal::layouts::assert_dense(a, "cnv_prepare_left");
     let n = res.n();
     let table = &handle(module).table_ntt;
     let cols = res.cols();
@@ -1264,8 +1265,8 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     }
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
+    assert!(prefix.is_empty());
+    assert!(suffix.is_empty());
     let (limb_b, limb_c) = tmp_u64[..6 * n].split_at_mut(3 * n);
 
     let res_raw: &mut [u64] = cast_slice_mut(res.data_mut());
@@ -1300,6 +1301,7 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
     mask: i64,
     tmp: &mut [u64],
 ) {
+    poulpy_hal::layouts::assert_dense(a, "cnv_prepare_right");
     let n = res.n();
     let table = &handle(module).table_ntt;
     let cols = res.cols();
@@ -1367,6 +1369,7 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
     mask: i64,
     tmp: &mut [u8],
 ) {
+    poulpy_hal::layouts::assert_dense(a, "cnv_prepare_self");
     let n = left.n();
     let table = &handle(module).table_ntt;
     let cols = left.cols();
@@ -1404,8 +1407,8 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
     }
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
+    assert!(prefix.is_empty());
+    assert!(suffix.is_empty());
     let (limb_b, limb_c) = tmp_u64[..6 * n].split_at_mut(3 * n);
 
     let left_raw: &mut [u64] = cast_slice_mut(left.data_mut());
@@ -1483,6 +1486,9 @@ fn cnv_by_const_apply_impl<E: TaskExecutor, const ADD: bool>(
     b_coeff: usize,
     _tmp: &mut [u8],
 ) {
+    poulpy_hal::layouts::assert_dense(res, "cnv_by_const_apply_impl");
+    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply_impl");
+    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply_impl");
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();

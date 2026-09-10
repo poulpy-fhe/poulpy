@@ -224,7 +224,7 @@ impl<P: PrimeSetCrt4> Default for BbcMeta<P> {
 // PERF POLICY: `assert!` guards appear at public function entry where an
 // incorrect slice length would silently access out-of-bounds memory in a
 // release build.  Pure arithmetic inner loops (no slice indexing beyond the
-// entry check) use `debug_assert!` to avoid redundant bounds work per
+// entry check) use `assert!` to avoid redundant bounds work per
 // iteration.
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -458,9 +458,9 @@ pub fn vec_mat2cols_product_x2_bbc_ref<P: PrimeSetCrt4>(meta: &BbcMeta<P>, ell: 
 ///
 /// This is the Rust port of `q120x2_extract_1blk_from_q120b_ref`.
 pub fn extract_1blk_from_q120b_ref(nn: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-    debug_assert!(blk < nn / 2);
-    debug_assert!(dst.len() >= 8);
-    debug_assert!(src.len() >= 4 * nn);
+    assert!(blk < nn / 2);
+    assert!(dst.len() >= 8);
+    assert!(src.len() >= 4 * nn);
 
     dst[..8].copy_from_slice(&src[8 * blk..8 * blk + 8]);
 }
@@ -474,9 +474,9 @@ pub fn extract_1blk_from_q120b_ref(nn: usize, blk: usize, dst: &mut [u64], src: 
 ///
 /// Port of `q120x2_extract_1blk_from_contiguous_q120b_ref`.
 pub fn extract_1blk_from_contiguous_q120b_ref(nn: usize, nrows: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-    debug_assert!(blk < nn / 2);
-    debug_assert!(dst.len() >= 8 * nrows);
-    debug_assert!(src.len() >= 4 * nn * nrows);
+    assert!(blk < nn / 2);
+    assert!(dst.len() >= 8 * nrows);
+    assert!(src.len() >= 4 * nn * nrows);
 
     for row in 0..nrows {
         let src_base = 4 * nn * row;
@@ -490,9 +490,9 @@ pub fn extract_1blk_from_contiguous_q120b_ref(nn: usize, nrows: usize, blk: usiz
 ///
 /// Port of `q120x2b_save_1blk_to_q120b_ref`.
 pub fn save_1blk_to_q120b_ref(nn: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-    debug_assert!(blk < nn / 2);
-    debug_assert!(src.len() >= 8);
-    debug_assert!(dst.len() >= 4 * nn);
+    assert!(blk < nn / 2);
+    assert!(src.len() >= 8);
+    assert!(dst.len() >= 4 * nn);
 
     dst[8 * blk..8 * blk + 8].copy_from_slice(&src[..8]);
 }

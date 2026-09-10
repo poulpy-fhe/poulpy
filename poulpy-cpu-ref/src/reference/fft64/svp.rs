@@ -34,6 +34,7 @@ pub fn svp_apply_dft<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    poulpy_hal::layouts::assert_dense(b, "svp_apply_dft");
     let res_size: usize = res.size();
     let b_size: usize = b.size();
     let min_size: usize = res_size.min(b_size);

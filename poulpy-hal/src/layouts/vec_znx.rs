@@ -16,6 +16,161 @@ use crate::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rand::Rng;
 
+/// Geometry of a vector-shaped container plus an optional window onto it.
+///
+/// The dense buffer holds `cols` columns of limbs of `n_full` coefficients,
+/// limb-major, column-minor: limb `j` of column `i` starts at scalar offset
+/// `(j * cols + i) * n_full`. A window restricts what a view sees:
+/// coefficients `coeff_offset..coeff_offset + n` of limbs
+/// `limb_offset, limb_offset + limb_step, ...` (`size` of them). A freshly
+/// constructed shape is dense (`is_dense()`), and every window is an affine
+/// restriction of the box, so windows compose.
+#[repr(C)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
+pub struct VecZnxShape {
+    n_full: usize,
+    cols: usize,
+    coeff_offset: usize,
+    n: usize,
+    limb_offset: usize,
+    limb_step: usize,
+    size: usize,
+}
+
+impl Default for VecZnxShape {
+    fn default() -> Self {
+        Self::new(0, 0, 0)
+    }
+}
+
+impl VecZnxShape {
+    /// Dense shape: `n` coefficients per limb, `cols` columns, `size` limbs.
+    pub const fn new(n: usize, cols: usize, size: usize) -> Self {
+        Self {
+            n_full: n,
+            cols,
+            coeff_offset: 0,
+            n,
+            limb_offset: 0,
+            limb_step: 1,
+            size,
+        }
+    }
+
+    /// Visible coefficients per limb.
+    pub const fn n(self) -> usize {
+        self.n
+    }
+    pub const fn cols(self) -> usize {
+        self.cols
+    }
+    /// Visible limb count.
+    pub const fn size(self) -> usize {
+        self.size
+    }
+    /// Coefficients per limb in the dense buffer.
+    pub const fn n_full(self) -> usize {
+        self.n_full
+    }
+    pub const fn coeff_offset(self) -> usize {
+        self.coeff_offset
+    }
+    pub const fn limb_offset(self) -> usize {
+        self.limb_offset
+    }
+    pub const fn limb_step(self) -> usize {
+        self.limb_step
+    }
+
+    /// True when the view is a contiguous prefix of the dense buffer.
+    pub const fn is_dense(self) -> bool {
+        self.coeff_offset == 0 && self.n == self.n_full && self.limb_offset == 0 && self.limb_step == 1
+    }
+
+    /// Index of the `(col, limb)` block in the dense buffer, in blocks of `n_full` scalars.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index overflows `usize`. All shape arithmetic is checked in every
+    /// build: a wrapped offset would land inside the allocation and read the wrong
+    /// coefficients silently.
+    pub const fn block_index(self, col: usize, limb: usize) -> usize {
+        const MSG: &str = "VecZnxShape::block_index: block index overflows usize";
+        let limb_row = limb
+            .checked_mul(self.limb_step)
+            .expect(MSG)
+            .checked_add(self.limb_offset)
+            .expect(MSG);
+        limb_row.checked_mul(self.cols).expect(MSG).checked_add(col).expect(MSG)
+    }
+
+    /// Scalar offset of visible coefficient 0 of the `(col, limb)` block.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the offset overflows `usize` (see [`Self::block_index`]).
+    pub const fn scalar_offset(self, col: usize, limb: usize) -> usize {
+        const MSG: &str = "VecZnxShape::scalar_offset: scalar offset overflows usize";
+        self.block_index(col, limb)
+            .checked_mul(self.n_full)
+            .expect(MSG)
+            .checked_add(self.coeff_offset)
+            .expect(MSG)
+    }
+
+    /// Restricts the view to coefficients `offset..offset + len` of every visible limb.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `len == 0`, if `offset + len` overflows, or if `offset + len > self.n()`.
+    pub const fn window_coeffs(self, offset: usize, len: usize) -> Self {
+        assert!(len >= 1, "window_coeffs: len must be >= 1");
+        let end = offset.checked_add(len).expect("window_coeffs: offset + len overflows usize");
+        assert!(end <= self.n, "window_coeffs: offset + len exceeds visible n");
+        Self {
+            coeff_offset: self
+                .coeff_offset
+                .checked_add(offset)
+                .expect("window_coeffs: coefficient offset overflows usize"),
+            n: len,
+            ..self
+        }
+    }
+
+    /// Restricts the view to visible limbs `offset, offset + step, ...` (`count` of them).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `step == 0`, `count == 0`, if the last selected limb overflows, or if it
+    /// is outside the view.
+    pub const fn window_limbs(self, offset: usize, step: usize, count: usize) -> Self {
+        assert!(step >= 1, "window_limbs: step must be >= 1");
+        assert!(count >= 1, "window_limbs: count must be >= 1");
+        const LAST: &str = "window_limbs: last limb overflows usize";
+        let last = (count - 1).checked_mul(step).expect(LAST).checked_add(offset).expect(LAST);
+        assert!(last < self.size, "window_limbs: last limb exceeds visible size");
+        Self {
+            limb_offset: offset
+                .checked_mul(self.limb_step)
+                .expect("window_limbs: limb offset overflows usize")
+                .checked_add(self.limb_offset)
+                .expect("window_limbs: limb offset overflows usize"),
+            limb_step: self
+                .limb_step
+                .checked_mul(step)
+                .expect("window_limbs: limb step overflows usize"),
+            size: count,
+            ..self
+        }
+    }
+
+    /// Narrows the working width. Views can only ever shrink.
+    pub(crate) const fn with_size(self, size: usize) -> Self {
+        assert!(size <= self.size);
+        Self { size, ..self }
+    }
+}
+
 /// A vector of polynomials in `Z[X]/(X^N + 1)` with limb-decomposed
 /// (base-2^k) representation.
 ///
@@ -25,8 +180,7 @@ use rand::Rng;
 /// word is always supplied by the backend via [`Backend::ZnxWord`] and has
 /// no default, so the coefficient domain cannot silently decouple from it.
 ///
-/// **Memory layout:** limb-major, column-minor. Limb `j` of column `i`
-/// starts at scalar offset `N * (j * cols + i)`.
+/// **Memory layout:** see [`VecZnxShape`].
 ///
 /// The type parameter `D` controls ownership: `Vec<u8>` for owned,
 /// `&[u8]` for shared borrows, `&mut [u8]` for mutable borrows.
@@ -37,38 +191,10 @@ use rand::Rng;
 /// is fixed at construction. Operating on a narrower width is done through a
 /// borrowed view (see [`vec_znx_backend_mut_with_size`]), never by mutating the
 /// owner.
-#[repr(C)]
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
-pub struct VecZnxShape {
-    n: usize,
-    cols: usize,
-    size: usize,
-}
-
-impl VecZnxShape {
-    pub const fn new(n: usize, cols: usize, size: usize) -> Self {
-        Self { n, cols, size }
-    }
-
-    pub const fn n(self) -> usize {
-        self.n
-    }
-
-    pub const fn cols(self) -> usize {
-        self.cols
-    }
-
-    pub const fn size(self) -> usize {
-        self.size
-    }
-
-    /// Narrows the working width. Views can only ever shrink.
-    pub(crate) const fn with_size(self, size: usize) -> Self {
-        assert!(size <= self.size);
-        Self { size, ..self }
-    }
-}
-
+///
+/// See [layouts](crate::layouts#value-model) for the container value model
+/// this type implements, and [windows](crate::layouts#windows) for the
+/// semantics of `window_coeffs`/`window_limbs`.
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub struct VecZnx<D: Data, W: ZnxWord> {
@@ -104,6 +230,7 @@ impl<D: Data + Default, W: ZnxWord> Default for VecZnx<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> DigestU64 for VecZnx<D, W> {
     fn digest_u64(&self) -> u64 {
+        crate::layouts::assert_dense(self, "VecZnx::digest_u64");
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
         h.write_usize(self.n());
@@ -116,6 +243,7 @@ impl<D: HostDataRef, W: ZnxWord> DigestU64 for VecZnx<D, W> {
 impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for VecZnx<D, W> {
     type Owned = VecZnx<Vec<u8>, W>;
     fn to_owned_deep(&self) -> Self::Owned {
+        crate::layouts::assert_dense(self, "VecZnx::to_owned_deep");
         VecZnx {
             data: self.data.as_ref().to_vec(),
             shape: self.shape,
@@ -130,12 +258,11 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     where
         BE: Backend<OwnedBuf = D>,
     {
+        crate::layouts::assert_dense(self, "VecZnx::to_host_owned");
         let shape = self.shape();
-        VecZnx::from_data(
+        VecZnx::from_shape(
             crate::layouts::HostBytesBackend::from_bytes(BE::to_host_bytes(&self.data)),
-            shape.n(),
-            shape.cols(),
-            shape.size(),
+            shape,
         )
     }
 
@@ -171,6 +298,18 @@ impl<D: Data, W: ZnxWord> ZnxInfos for VecZnx<D, W> {
 impl<D: Data, W: ZnxWord> VecZnxInfos for VecZnx<D, W> {
     fn cols(&self) -> usize {
         self.shape.cols()
+    }
+    fn n_full(&self) -> usize {
+        self.shape.n_full()
+    }
+    fn coeff_offset(&self) -> usize {
+        self.shape.coeff_offset()
+    }
+    fn limb_offset(&self) -> usize {
+        self.shape.limb_offset()
+    }
+    fn limb_step(&self) -> usize {
+        self.shape.limb_step()
     }
 }
 
@@ -217,6 +356,7 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     }
 
     pub fn into_data(self) -> D {
+        crate::layouts::assert_dense(&self, "VecZnx::into_data");
         self.data
     }
 }
@@ -230,7 +370,15 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> ZnxZero for VecZnx<D, W> {
     fn zero(&mut self) {
-        self.raw_mut().fill(W::zero())
+        if self.is_dense() {
+            self.raw_mut().fill(W::zero());
+            return;
+        }
+        for j in 0..self.size() {
+            for i in 0..self.cols() {
+                self.at_mut(i, j).fill(W::zero());
+            }
+        }
     }
     fn zero_at(&mut self, i: usize, j: usize) {
         self.at_mut(i, j).fill(W::zero());
@@ -292,6 +440,39 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     }
 }
 
+impl<D: Data, W: ZnxWord> VecZnx<D, W> {
+    /// Wraps `data` with an explicit shape, windowed or dense. No validation;
+    /// element access is bounds-checked against the buffer.
+    pub fn from_shape(data: D, shape: VecZnxShape) -> Self {
+        Self {
+            data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Re-tags this container with `shape`, keeping the buffer.
+    pub fn with_shape(self, shape: VecZnxShape) -> Self {
+        Self {
+            data: self.data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// View of coefficients `offset..offset + len` of every visible limb. See [`VecZnxShape::window_coeffs`].
+    pub fn window_coeffs(self, offset: usize, len: usize) -> Self {
+        let shape = self.shape.window_coeffs(offset, len);
+        self.with_shape(shape)
+    }
+
+    /// View of visible limbs `offset, offset + step, ...` (`count` of them). See [`VecZnxShape::window_limbs`].
+    pub fn window_limbs(self, offset: usize, step: usize, count: usize) -> Self {
+        let shape = self.shape.window_limbs(offset, step, count);
+        self.with_shape(shape)
+    }
+}
+
 impl<D: HostDataRef, W: ZnxWord> fmt::Display for VecZnx<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "VecZnx(n={}, cols={}, size={})", self.n(), self.cols(), self.size())?;
@@ -325,6 +506,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for VecZnx<D, W> {
 
 impl<D: HostDataMut, W: ZnxWord> FillUniform for VecZnx<D, W> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
+        crate::layouts::assert_dense(self, "VecZnx::fill_uniform");
         assert!(log_bound != 0, "invalid log_bound, cannot be zero");
         assert!(
             log_bound <= W::BITS,
@@ -373,11 +555,10 @@ impl<B: Backend> VecZnxAsScalarBackendRef<B> for VecZnx<B::OwnedBuf, B::ZnxWord>
     fn as_scalar_znx_backend_ref(&self, col: usize, limb: usize) -> ScalarZnx<B::BufRef<'_>, B::ZnxWord> {
         assert!(limb < self.size(), "size: {limb} >= {}", self.size());
         assert!(col < self.cols(), "cols: {col} >= {}", self.cols());
-        let start: usize = limb
-            .checked_mul(self.cols())
-            .and_then(|x| x.checked_add(col))
-            .and_then(|x| x.checked_mul(self.n()))
-            .and_then(|x| x.checked_mul(B::size_of_znx_word()))
+        let start: usize = self
+            .shape
+            .scalar_offset(col, limb)
+            .checked_mul(B::size_of_znx_word())
             .expect("VecZnx scalar backend view offset overflows usize");
         let len: usize = self
             .n()
@@ -397,11 +578,10 @@ impl<B: Backend> VecZnxAsScalarBackendMut<B> for VecZnx<B::OwnedBuf, B::ZnxWord>
         let n = self.n();
         assert!(limb < self.size(), "size: {limb} >= {}", self.size());
         assert!(col < self.cols(), "cols: {col} >= {}", self.cols());
-        let start: usize = limb
-            .checked_mul(self.cols())
-            .and_then(|x| x.checked_add(col))
-            .and_then(|x| x.checked_mul(n))
-            .and_then(|x| x.checked_mul(B::size_of_znx_word()))
+        let start: usize = self
+            .shape
+            .scalar_offset(col, limb)
+            .checked_mul(B::size_of_znx_word())
             .expect("VecZnx scalar backend view offset overflows usize");
         let len: usize = n
             .checked_mul(B::size_of_znx_word())
@@ -601,6 +781,7 @@ pub fn vec_znx_backend_mut_with_size<'a, B: Backend>(vec: VecZnxBackendMut<'a, B
 
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for VecZnx<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
+        crate::layouts::assert_dense(self, "VecZnx::read_from");
         // Read into temporaries first to avoid leaving self in an inconsistent state on error.
         let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
         let new_cols: usize = reader.read_u64::<LittleEndian>()? as usize;
@@ -637,6 +818,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for VecZnx<D, W> {
 
 impl<D: HostDataRef, W: ZnxWord> WriterTo for VecZnx<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
+        crate::layouts::assert_dense(self, "VecZnx::write_to");
         writer.write_u64::<LittleEndian>(self.n() as u64)?;
         writer.write_u64::<LittleEndian>(self.cols() as u64)?;
         writer.write_u64::<LittleEndian>(self.size() as u64)?;
@@ -657,5 +839,127 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for VecZnx<D, W> {
         writer.write_u64::<LittleEndian>(coeff_bytes as u64)?;
         writer.write_all(&buf[..coeff_bytes])?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod window_shape_tests {
+    use super::VecZnxShape;
+
+    #[test]
+    fn dense_shape_matches_legacy_formula() {
+        let s = VecZnxShape::new(16, 3, 4);
+        assert!(s.is_dense());
+        for limb in 0..4 {
+            for col in 0..3 {
+                assert_eq!(s.scalar_offset(col, limb), (limb * 3 + col) * 16);
+            }
+        }
+    }
+
+    #[test]
+    fn coefficient_window_offsets_and_compose() {
+        let s = VecZnxShape::new(16, 3, 4).window_coeffs(5, 8);
+        assert!(!s.is_dense());
+        assert_eq!(s.n(), 8);
+        assert_eq!(s.n_full(), 16);
+        assert_eq!(s.scalar_offset(1, 2), (2 * 3 + 1) * 16 + 5);
+        let t = s.window_coeffs(2, 3);
+        assert_eq!(t.n(), 3);
+        assert_eq!(t.coeff_offset(), 7);
+    }
+
+    #[test]
+    fn limb_window_offsets_and_compose() {
+        let s = VecZnxShape::new(16, 3, 8).window_limbs(1, 2, 3);
+        assert_eq!(s.size(), 3);
+        assert_eq!(s.scalar_offset(0, 2), ((1 + 2 * 2) * 3) * 16);
+        let t = s.window_limbs(1, 2, 1);
+        assert_eq!(t.limb_offset(), 3);
+        assert_eq!(t.limb_step(), 4);
+        assert_eq!(t.size(), 1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn coefficient_window_out_of_range_panics() {
+        let _ = VecZnxShape::new(16, 1, 1).window_coeffs(10, 8);
+    }
+
+    #[test]
+    #[should_panic]
+    fn limb_window_out_of_range_panics() {
+        let _ = VecZnxShape::new(16, 1, 4).window_limbs(2, 2, 2);
+    }
+
+    use crate::layouts::{VecZnx, ZnxView, ZnxViewMut, ZnxZero};
+
+    fn ramp(n: usize, cols: usize, size: usize) -> VecZnx<Vec<u8>, i64> {
+        let mut v = VecZnx::<Vec<u8>, i64>::alloc(n, cols, size);
+        for j in 0..size {
+            for i in 0..cols {
+                for (k, x) in v.at_mut(i, j).iter_mut().enumerate() {
+                    *x = (j * 1000 + i * 100 + k) as i64;
+                }
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn window_view_reads_the_expected_elements() {
+        let v = ramp(8, 2, 4);
+        let shape = v.shape().window_coeffs(3, 2).window_limbs(1, 2, 2);
+        let w = VecZnx::<&[u8], i64>::from_shape(v.data().as_slice(), shape);
+        assert_eq!(w.at(1, 0), &[1103, 1104]);
+        assert_eq!(w.at(0, 1), &[3003, 3004]);
+    }
+
+    #[test]
+    fn zero_on_window_touches_only_the_window() {
+        let mut v = ramp(8, 2, 4);
+        let before = v.clone();
+        let shape = before.shape().window_coeffs(3, 2).window_limbs(1, 2, 2);
+        {
+            let mut w = VecZnx::<&mut [u8], i64>::from_shape(v.data_mut().as_mut_slice(), shape);
+            w.zero();
+        }
+        for j in 0..4 {
+            for i in 0..2 {
+                for k in 0..8 {
+                    let inside = (j == 1 || j == 3) && (3..5).contains(&k);
+                    let expected = if inside { 0 } else { before.at(i, j)[k] };
+                    assert_eq!(v.at(i, j)[k], expected, "col {i} limb {j} coeff {k}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "window_coeffs: offset + len overflows usize")]
+    fn window_coeffs_rejects_wrapping_offset() {
+        // offset + len wraps to 1 in release without checked arithmetic and would be accepted.
+        let _ = VecZnxShape::new(8, 1, 2).window_coeffs(usize::MAX, 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "window_limbs: last limb overflows usize")]
+    fn window_limbs_rejects_wrapping_offset() {
+        // (count - 1) * step + offset wraps to 0 < size without checked arithmetic.
+        let _ = VecZnxShape::new(8, 1, 2).window_limbs(usize::MAX, 1, 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "VecZnxShape::scalar_offset: scalar offset overflows usize")]
+    fn scalar_offset_rejects_overflow() {
+        let _ = VecZnxShape::new(usize::MAX, 2, 2).scalar_offset(1, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "ZnxView::raw")]
+    fn raw_on_window_panics() {
+        let v = ramp(8, 1, 1);
+        let w = VecZnx::<&[u8], i64>::from_shape(v.data().as_slice(), v.shape().window_coeffs(1, 2));
+        let _ = w.raw();
     }
 }

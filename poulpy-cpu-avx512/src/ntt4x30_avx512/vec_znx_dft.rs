@@ -52,8 +52,8 @@ pub(crate) fn packed_limb_mut(data: &mut [u32], n: usize, cols: usize, col: usiz
 
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn pack_limb_q120(n: usize, dst: &mut [u32], src: &[u64]) {
-    debug_assert!(dst.len() >= 4 * n);
-    debug_assert!(src.len() >= 4 * n);
+    assert!(dst.len() >= 4 * n);
+    assert!(src.len() >= 4 * n);
     unsafe {
         let q = bcast_quad(Q_VEC.as_ptr());
         let mu = bcast_quad(BARRETT_MU.as_ptr());
@@ -68,7 +68,7 @@ pub(crate) unsafe fn pack_limb_q120(n: usize, dst: &mut [u32], src: &[u64]) {
 
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn canonicalize_limb_q120(n: usize, src: &mut [u64]) {
-    debug_assert!(src.len() >= 4 * n);
+    assert!(src.len() >= 4 * n);
     unsafe {
         let q = bcast_quad(Q_VEC.as_ptr());
         let mu = bcast_quad(BARRETT_MU.as_ptr());
@@ -83,8 +83,8 @@ pub(crate) unsafe fn canonicalize_limb_q120(n: usize, src: &mut [u64]) {
 
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn unpack_limb_q120(n: usize, dst: &mut [u64], src: &[u32]) {
-    debug_assert!(dst.len() >= 4 * n);
-    debug_assert!(src.len() >= 4 * n);
+    assert!(dst.len() >= 4 * n);
+    assert!(src.len() >= 4 * n);
     unsafe {
         for pair in 0..n / 2 {
             let x = core::arch::x86_64::_mm256_loadu_si256(src.as_ptr().add(8 * pair) as *const _);
@@ -213,6 +213,7 @@ pub(crate) fn vec_znx_dft_apply(
     a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
     a_col: usize,
 ) {
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     let n = res.n();
     let cols = res.cols();
     let res_size = res.size();
@@ -238,6 +239,7 @@ pub(crate) fn vec_znx_idft_apply(
     a_col: usize,
     tmp: &mut [u64],
 ) {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
     let n = res.n();
     let min_size = res.size().min(a.size());
     let a_cols = a.cols();

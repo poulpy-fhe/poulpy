@@ -8,9 +8,9 @@ use poulpy_hal::{
         VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, Module, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef, scalar_znx_as_vec_znx_backend_mut_from_mut,
-        vec_znx_backend_ref_from_mut,
+        Backend, Module, PrepareHint, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef,
+        scalar_znx_as_vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut,
     },
     source::Source,
 };
@@ -272,7 +272,7 @@ where
         let size: usize = infos.size();
         let cols: usize = (infos.rank() + 1).into();
         assert_eq!(self.n() as u32, infos.n());
-        let lvl_0: usize = self.bytes_of_svp_ppol(1);
+        let lvl_0: usize = self.bytes_of_svp_ppol(1, PrepareHint::Reuse);
         let lvl_1: usize = BE::bytes_of_scalar_znx(self.n(), 1);
         let lvl_2: usize = cols
             * (self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + BE::bytes_of_vec_znx(self.n(), 1, size));
@@ -405,7 +405,7 @@ where
 
         // Generates u according to the underlying secret distribution.
         let scratch = scratch.borrow();
-        let (mut u_dft, mut scratch_1) = scratch.take_svp_ppol_scratch(self, 1);
+        let (mut u_dft, mut scratch_1) = scratch.take_svp_ppol_scratch(self, 1, PrepareHint::Reuse);
 
         {
             let (mut u_backend, scratch_2) = scratch_1.take_scalar_znx_scratch(self.n(), 1);

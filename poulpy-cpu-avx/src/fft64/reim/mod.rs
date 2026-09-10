@@ -78,13 +78,13 @@ global_asm!(
 
 #[inline(always)]
 pub(crate) fn as_arr<const SIZE: usize, R: Float + FloatConst>(x: &[R]) -> &[R; SIZE] {
-    debug_assert!(x.len() >= SIZE);
+    assert!(x.len() >= SIZE);
     unsafe { &*(x.as_ptr() as *const [R; SIZE]) }
 }
 
 #[inline(always)]
 pub(crate) fn as_arr_mut<const SIZE: usize, R: Float + FloatConst>(x: &mut [R]) -> &mut [R; SIZE] {
-    debug_assert!(x.len() >= SIZE);
+    assert!(x.len() >= SIZE);
     unsafe { &mut *(x.as_mut_ptr() as *mut [R; SIZE]) }
 }
 

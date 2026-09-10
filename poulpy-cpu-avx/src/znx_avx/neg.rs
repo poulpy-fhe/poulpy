@@ -3,7 +3,6 @@
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx2")]
 pub fn znx_negate_avx(res: &mut [i64], src: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), src.len())
     }

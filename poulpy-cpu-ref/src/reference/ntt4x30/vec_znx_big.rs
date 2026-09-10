@@ -65,9 +65,9 @@ fn nfc_zero(x: &mut [i128]) {
 #[inline(always)]
 #[allow(dead_code)]
 fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert!(res.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(res.len(), a.len());
+    assert!(res.len() <= carry.len());
+    assert!(lsh < base2k);
 
     if lsh == 0 {
         izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
@@ -128,9 +128,9 @@ impl AssignOp for SubOp {
 
 #[inline(always)]
 fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert!(res.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert_eq!(res.len(), a.len());
+    assert!(res.len() <= carry.len());
+    assert!(lsh < base2k);
 
     if lsh == 0 {
         izip!(res.iter_mut(), a.iter(), carry.iter_mut()).for_each(|(r, &ai, c)| {
@@ -160,8 +160,8 @@ fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64],
 #[inline(always)]
 #[allow(dead_code)]
 fn nfc_middle_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-    debug_assert!(res.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(res.len() <= carry.len());
+    assert!(lsh < base2k);
 
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
@@ -193,8 +193,8 @@ fn nfc_middle_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mu
 #[inline(always)]
 #[allow(dead_code)]
 fn nfc_final_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-    debug_assert!(res.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(res.len() <= carry.len());
+    assert!(lsh < base2k);
 
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
@@ -212,8 +212,8 @@ fn nfc_final_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut
 
 #[inline(always)]
 fn nfc_final_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-    debug_assert!(res.len() <= carry.len());
-    debug_assert!(lsh < base2k);
+    assert!(res.len() <= carry.len());
+    assert!(lsh < base2k);
 
     if lsh == 0 {
         res.iter_mut().zip(carry.iter_mut()).for_each(|(r, c)| {
@@ -1178,8 +1178,10 @@ pub fn ntt4x30_vec_znx_big_normalize<R, A, BE>(
 {
     let (n, res_size) = {
         let res_view = res.to_backend_mut();
+        poulpy_hal::layouts::assert_dense(&res_view, "ntt4x30_vec_znx_big_normalize");
         (res_view.n(), res_view.size())
     };
+    poulpy_hal::layouts::assert_dense(&a.to_backend_ref(), "ntt4x30_vec_znx_big_normalize");
     assert!(res_k <= res_size * res_base2k);
     ntt4x30_vec_znx_big_normalize_range(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry);
 }
@@ -1206,7 +1208,6 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(carry.len() >= 3 * coeff_len);
     }
@@ -1269,7 +1270,6 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(n, a.to_backend_ref().n());
         assert!(res_col < cols);
@@ -1411,7 +1411,7 @@ pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
     let input = a.to_backend_ref();
     let mut output = res.to_backend_mut();
     let output_size = output.size();
-    debug_assert!(carry.len() >= 3 * output.n());
+    assert!(carry.len() >= 3 * output.n());
     for i in 0..output.n() {
         let mut extra = 0i128;
         crate::reference::vec_znx::normalize_exact::<false, _, _>(
@@ -1488,6 +1488,8 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+    poulpy_hal::layouts::assert_dense(&res, "ntt4x30_vec_znx_big_automorphism");
+    poulpy_hal::layouts::assert_dense(&a, "ntt4x30_vec_znx_big_automorphism");
 
     let n = res.n();
     let size = res.size().min(a.size());
@@ -1525,6 +1527,7 @@ where
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
     let mut res = res.to_backend_mut();
+    poulpy_hal::layouts::assert_dense(&res, "ntt4x30_vec_znx_big_automorphism_assign");
     let n = res.n();
     let size = res.size();
     let mask = 2 * n - 1;

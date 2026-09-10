@@ -88,7 +88,7 @@ unsafe fn neg2_i128(lo_a: uint64x2_t, hi_a: int64x2_t) -> (uint64x2_t, int64x2_t
 
 /// `res[i] = a[i].wrapping_add(b[i])` for `n` i128 elements.
 pub(crate) fn vi128_add_neon(n: usize, res: &mut [i128], a: &[i128], b: &[i128]) {
-    debug_assert!(res.len() >= n && a.len() >= n && b.len() >= n);
+    assert!(res.len() >= n && a.len() >= n && b.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -112,7 +112,7 @@ pub(crate) fn vi128_add_neon(n: usize, res: &mut [i128], a: &[i128], b: &[i128])
 
 /// `res[i] = res[i].wrapping_add(a[i])` for `n` i128 elements.
 pub(crate) fn vi128_add_assign_neon(n: usize, res: &mut [i128], a: &[i128]) {
-    debug_assert!(res.len() >= n && a.len() >= n);
+    assert!(res.len() >= n && a.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -134,7 +134,7 @@ pub(crate) fn vi128_add_assign_neon(n: usize, res: &mut [i128], a: &[i128]) {
 
 /// `res[i] = a[i].wrapping_add(b[i] as i128)` for `n` elements (`b` is `i64`).
 pub(crate) fn vi128_add_small_neon(n: usize, res: &mut [i128], a: &[i128], b: &[i64]) {
-    debug_assert!(res.len() >= n && a.len() >= n && b.len() >= n);
+    assert!(res.len() >= n && a.len() >= n && b.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -158,7 +158,7 @@ pub(crate) fn vi128_add_small_neon(n: usize, res: &mut [i128], a: &[i128], b: &[
 
 /// `res[i] = res[i].wrapping_add(a[i] as i128)` for `n` elements (`a` is `i64`).
 pub(crate) fn vi128_add_small_assign_neon(n: usize, res: &mut [i128], a: &[i64]) {
-    debug_assert!(res.len() >= n && a.len() >= n);
+    assert!(res.len() >= n && a.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -180,7 +180,7 @@ pub(crate) fn vi128_add_small_assign_neon(n: usize, res: &mut [i128], a: &[i64])
 
 /// `res[i] = a[i].wrapping_sub(b[i])` for `n` i128 elements.
 pub(crate) fn vi128_sub_neon(n: usize, res: &mut [i128], a: &[i128], b: &[i128]) {
-    debug_assert!(res.len() >= n && a.len() >= n && b.len() >= n);
+    assert!(res.len() >= n && a.len() >= n && b.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -204,7 +204,7 @@ pub(crate) fn vi128_sub_neon(n: usize, res: &mut [i128], a: &[i128], b: &[i128])
 
 /// `res[i] = res[i].wrapping_sub(a[i])` for `n` i128 elements.
 pub(crate) fn vi128_sub_assign_neon(n: usize, res: &mut [i128], a: &[i128]) {
-    debug_assert!(res.len() >= n && a.len() >= n);
+    assert!(res.len() >= n && a.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -226,7 +226,7 @@ pub(crate) fn vi128_sub_assign_neon(n: usize, res: &mut [i128], a: &[i128]) {
 
 /// `res[i] = a[i].wrapping_sub(res[i])` for `n` i128 elements.
 pub(crate) fn vi128_sub_negate_assign_neon(n: usize, res: &mut [i128], a: &[i128]) {
-    debug_assert!(res.len() >= n && a.len() >= n);
+    assert!(res.len() >= n && a.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -248,7 +248,7 @@ pub(crate) fn vi128_sub_negate_assign_neon(n: usize, res: &mut [i128], a: &[i128
 
 /// `res[i] = (a[i] as i128).wrapping_sub(b[i])` for `n` elements (`a` is `i64`).
 pub(crate) fn vi128_sub_small_a_neon(n: usize, res: &mut [i128], a: &[i64], b: &[i128]) {
-    debug_assert!(res.len() >= n && a.len() >= n && b.len() >= n);
+    assert!(res.len() >= n && a.len() >= n && b.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -272,7 +272,7 @@ pub(crate) fn vi128_sub_small_a_neon(n: usize, res: &mut [i128], a: &[i64], b: &
 
 /// `res[i] = a[i].wrapping_sub(b[i] as i128)` for `n` elements (`b` is `i64`).
 pub(crate) fn vi128_sub_small_b_neon(n: usize, res: &mut [i128], a: &[i128], b: &[i64]) {
-    debug_assert!(res.len() >= n && a.len() >= n && b.len() >= n);
+    assert!(res.len() >= n && a.len() >= n && b.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -296,7 +296,7 @@ pub(crate) fn vi128_sub_small_b_neon(n: usize, res: &mut [i128], a: &[i128], b: 
 
 /// `res[i] = res[i].wrapping_sub(a[i] as i128)` for `n` elements (`a` is `i64`).
 pub(crate) fn vi128_sub_small_assign_neon(n: usize, res: &mut [i128], a: &[i64]) {
-    debug_assert!(res.len() >= n && a.len() >= n);
+    assert!(res.len() >= n && a.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -318,7 +318,7 @@ pub(crate) fn vi128_sub_small_assign_neon(n: usize, res: &mut [i128], a: &[i64])
 
 /// `res[i] = (a[i] as i128).wrapping_sub(res[i])` for `n` elements (`a` is `i64`).
 pub(crate) fn vi128_sub_small_negate_assign_neon(n: usize, res: &mut [i128], a: &[i64]) {
-    debug_assert!(res.len() >= n && a.len() >= n);
+    assert!(res.len() >= n && a.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -340,7 +340,7 @@ pub(crate) fn vi128_sub_small_negate_assign_neon(n: usize, res: &mut [i128], a: 
 
 /// `res[i] = a[i].wrapping_neg()` for `n` i128 elements.
 pub(crate) fn vi128_negate_neon(n: usize, res: &mut [i128], a: &[i128]) {
-    debug_assert!(res.len() >= n && a.len() >= n);
+    assert!(res.len() >= n && a.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -361,7 +361,7 @@ pub(crate) fn vi128_negate_neon(n: usize, res: &mut [i128], a: &[i128]) {
 
 /// `res[i] = res[i].wrapping_neg()` for `n` i128 elements.
 pub(crate) fn vi128_negate_assign_neon(n: usize, res: &mut [i128]) {
-    debug_assert!(res.len() >= n);
+    assert!(res.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     unsafe {
@@ -380,7 +380,7 @@ pub(crate) fn vi128_negate_assign_neon(n: usize, res: &mut [i128]) {
 
 /// `res[i] = a[i] as i128` for `n` elements (sign-extend i64 to i128).
 pub(crate) fn vi128_from_small_neon(n: usize, res: &mut [i128], a: &[i64]) {
-    debug_assert!(res.len() >= n && a.len() >= n);
+    assert!(res.len() >= n && a.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();
@@ -400,7 +400,7 @@ pub(crate) fn vi128_from_small_neon(n: usize, res: &mut [i128], a: &[i64]) {
 
 /// `res[i] = -(a[i] as i128)` for `n` elements (sign-extend then negate).
 pub(crate) fn vi128_neg_from_small_neon(n: usize, res: &mut [i128], a: &[i64]) {
-    debug_assert!(res.len() >= n && a.len() >= n);
+    assert!(res.len() >= n && a.len() >= n);
     let chunks = n >> 1;
     let mut rr = res.as_mut_ptr();
     let mut aa = a.as_ptr();

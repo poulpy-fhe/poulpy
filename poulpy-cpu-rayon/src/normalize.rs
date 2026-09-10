@@ -75,6 +75,8 @@ pub fn vec_znx_normalize_par<B, T>(
     B: 'static,
     T: RayonTuning,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_par");
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_normalize_par");
     assert!(res_k <= res.size() * res_base2k);
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
@@ -83,11 +85,11 @@ pub fn vec_znx_normalize_par<B, T>(
     }
 
     let (cols, size) = (res.cols(), res.size());
-    let (a_cols, a_size) = (a.cols(), a.size());
+    let a_shape = a.shape();
     let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
     let a_data: &[u8] = a.data();
     for_each_range(n, tasks, 3, carry, |start, len, task_carry| {
-        let a_view: VecZnxBackendRef<'_, B> = VecZnx::from_data(a_data, n, a_cols, a_size);
+        let a_view: VecZnxBackendRef<'_, B> = VecZnx::from_shape(a_data, a_shape);
         unsafe {
             vec_znx_normalize_range_raw::<B>(
                 res_ptr.get(),
@@ -126,6 +128,7 @@ pub fn vec_znx_normalize_assign_par<B, T>(
     B: 'static,
     T: RayonTuning,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_assign_par");
     assert!(k <= res.size() * base2k);
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
@@ -159,6 +162,8 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
     B: 'static,
     T: RayonTuning,
 {
+    poulpy_hal::layouts::assert_dense(res, "ntt4x30_vec_znx_big_normalize_par");
+    poulpy_hal::layouts::assert_dense(a, "ntt4x30_vec_znx_big_normalize_par");
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
@@ -178,11 +183,11 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
     }
 
     let (cols, size) = (res.cols(), res.size());
-    let (a_cols, a_size) = (a.cols(), a.size());
+    let a_shape = a.shape();
     let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
     let a_data: &[u8] = a.data;
     for_each_range(n, tasks, 3, carry, |start, len, task_carry| {
-        let a_view: VecZnxBigBackendRef<'_, B> = VecZnxBig::from_data(a_data, n, a_cols, a_size);
+        let a_view: VecZnxBigBackendRef<'_, B> = VecZnxBig::from_shape(a_data, a_shape);
         unsafe {
             ntt4x30_vec_znx_big_normalize_range_raw::<_, B>(
                 res_ptr.get(),

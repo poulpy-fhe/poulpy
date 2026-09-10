@@ -15,7 +15,9 @@ use crate::{
         VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
         VecZnxNormalizeAssignBackend,
     },
-    layouts::{DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero},
+    layouts::{
+        DataView, FillUniform, PrepareHint, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero,
+    },
     source::Source,
 };
 
@@ -259,8 +261,8 @@ where
     let a_backend = upload_vec_znx::<BE>(&a);
     let b_backend = upload_vec_znx::<BE>(&b);
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(a_cols, a_size);
-    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(b_cols, b_size);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(a_cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(b_cols, b_size, PrepareHint::Reuse);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -361,8 +363,8 @@ where
     let a_backend = upload_vec_znx::<BE>(&a);
     let b_backend = upload_vec_znx::<BE>(&b);
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size);
-    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
 
     // Two-column accumulators exercised at both columns: covers the
     // column-interleaved `VecZnxDft` indexing of the backend kernels.
@@ -492,8 +494,8 @@ where
     let a_backend = upload_vec_znx::<BE>(&a);
     let b_backend = upload_vec_znx::<BE>(&b);
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size);
-    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
 
     let mut res_fused: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
     let mut res_ref: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
@@ -653,8 +655,8 @@ where
     let a_backend = upload_vec_znx::<BE>(&a);
     let b_backend = upload_vec_znx::<BE>(&b);
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size);
-    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module

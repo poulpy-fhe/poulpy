@@ -114,6 +114,8 @@ pub fn vec_znx_normalize_coeff<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_coeff");
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_normalize_coeff");
     if normalize_needs_exact(a.size(), a_base2k, res.size(), res_base2k, res_offset) {
         normalize_exact::<true, _, _>(
             |j| a.at(a_col, j)[a_coeff] as i128,
@@ -145,7 +147,7 @@ pub fn vec_znx_normalize_coeff_assign<'r, BE>(
     BE: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
-    #[cfg(debug_assertions)]
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_coeff_assign");
     {
         assert!(!carry.is_empty());
         assert!(res_coeff < res.n(), "res_coeff: {res_coeff} >= res.n(): {}", res.n());
@@ -191,7 +193,6 @@ fn vec_znx_normalize_coeff_inter_base2k<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(!carry.is_empty());
         assert_eq!(
@@ -278,7 +279,6 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(carry.len() >= 3);
         assert_eq!(
@@ -455,6 +455,8 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize");
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_normalize");
     assert!(res_k <= res.size() * res_base2k);
     let n = res.n();
     if res_base2k != a_base2k && n > 512 {
@@ -511,7 +513,6 @@ fn vec_znx_normalize_range<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), a.n());
         assert!(coeff_start + coeff_len <= res.n());
@@ -587,7 +588,6 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
         + ZnxNormalizeDigit,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(n, a.n());
         assert!(res_col < cols);
@@ -1051,6 +1051,7 @@ pub fn vec_znx_normalize_assign<'r, BE>(
         + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_assign");
     assert!(res_k <= res.size() * base2k);
     let n = res.n();
     vec_znx_normalize_assign_range::<BE>(base2k, res_k, res, res_col, 0, n, carry)
@@ -1073,7 +1074,6 @@ fn vec_znx_normalize_assign_range<'r, BE>(
         + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(coeff_start + coeff_len <= res.n());
         assert!(carry.len() >= coeff_len);
@@ -1116,7 +1116,6 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(res_col < cols);
         assert!(coeff_start + coeff_len <= n);

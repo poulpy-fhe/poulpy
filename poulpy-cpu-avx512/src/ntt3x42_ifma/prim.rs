@@ -160,8 +160,8 @@ unsafe fn simd_b_from_znx64_masked(n: usize, res: &mut [u64], a: &[i64], mask: i
 #[inline]
 #[target_feature(enable = "avx512f,avx512vl")]
 unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
-    debug_assert!(res.len() >= 3 * n);
-    debug_assert!(a.len() >= n);
+    assert!(res.len() >= 3 * n);
+    assert!(a.len() >= n);
     unsafe {
         let oq_vec = _mm256_loadu_si256(OQ_IFMA.as_ptr() as *const __m256i);
         let i64_max = _mm256_set1_epi64x(i64::MAX);

@@ -155,7 +155,7 @@ impl<D: HostDataRef, W: ZnxWord> MatZnx<D, W> {
     /// Returns the whole element view as a scalar slice.
     ///
     /// A matrix container has no flat `(col, limb)` indexing, so it exposes the
-    /// buffer rather than implementing [`ZnxView`]. Use [`Self::at`] to address
+    /// buffer rather than implementing [`ZnxView`](crate::layouts::ZnxView). Use [`Self::at`] to address
     /// an individual entry.
     pub fn raw(&self) -> &[W] {
         let span: usize = crate::layouts::element_view_span(self);

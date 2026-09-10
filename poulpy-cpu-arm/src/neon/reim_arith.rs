@@ -23,8 +23,8 @@ use poulpy_cpu_ref::reference::fft64::reim::{
 /// bandwidth bound at large `n` and the autovec wins.
 #[allow(dead_code)]
 pub(crate) fn reim_add_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert_eq!(res.len(), b.len());
+    assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), b.len());
     let n = res.len();
     let span = n >> 2;
     unsafe {
@@ -51,7 +51,7 @@ pub(crate) fn reim_add_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
 /// See `reim_add_neon`: kept for tests, dispatched to the ref by `FFT64Neon`.
 #[allow(dead_code)]
 pub(crate) fn reim_add_assign_neon(res: &mut [f64], a: &[f64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let n = res.len();
     let span = n >> 2;
     unsafe {
@@ -74,8 +74,8 @@ pub(crate) fn reim_add_assign_neon(res: &mut [f64], a: &[f64]) {
 
 /// `res[i] = a[i] - b[i]` for all `i`.
 pub(crate) fn reim_sub_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert_eq!(res.len(), b.len());
+    assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), b.len());
     let n = res.len();
     let span = n >> 2;
     unsafe {
@@ -100,7 +100,7 @@ pub(crate) fn reim_sub_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
 
 /// `res[i] = res[i] - a[i]` for all `i`.
 pub(crate) fn reim_sub_assign_neon(res: &mut [f64], a: &[f64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let n = res.len();
     let span = n >> 2;
     unsafe {
@@ -123,7 +123,7 @@ pub(crate) fn reim_sub_assign_neon(res: &mut [f64], a: &[f64]) {
 
 /// `res[i] = a[i] - res[i]` for all `i`.
 pub(crate) fn reim_sub_negate_assign_neon(res: &mut [f64], a: &[f64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let n = res.len();
     let span = n >> 2;
     unsafe {
@@ -146,7 +146,7 @@ pub(crate) fn reim_sub_negate_assign_neon(res: &mut [f64], a: &[f64]) {
 
 /// `res[i] = -a[i]` for all `i`.
 pub(crate) fn reim_negate_neon(res: &mut [f64], a: &[f64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let n = res.len();
     let span = n >> 2;
     unsafe {
@@ -190,8 +190,8 @@ pub(crate) fn reim_negate_assign_neon(res: &mut [f64]) {
 /// Complex multiply: `res = a * b` over `m` complex points (split layout).
 /// `(ar + i·ai) * (br + i·bi) = (ar·br − ai·bi) + i·(ar·bi + ai·br)`.
 pub(crate) fn reim_mul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert_eq!(res.len(), b.len());
+    assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), b.len());
     let m = res.len() >> 1;
     let span = m >> 2;
     let (rr, ri) = res.split_at_mut(m);
@@ -258,7 +258,7 @@ pub(crate) fn reim_mul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
 /// Complex multiply in place: `res *= a`. Mirrors `reim_mul_assign_avx2_fma` at
 /// `fft_vec_avx2_fma.rs:317`.
 pub(crate) fn reim_mul_assign_neon(res: &mut [f64], a: &[f64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let m = res.len() >> 1;
     let span = m >> 2;
     let (rr, ri) = res.split_at_mut(m);
@@ -309,8 +309,8 @@ pub(crate) fn reim_mul_assign_neon(res: &mut [f64], a: &[f64]) {
 /// Complex addmul: `res += a * b`. Mirrors `reim_addmul_avx2_fma` at
 /// `fft_vec_avx2_fma.rs:214`.
 pub(crate) fn reim_addmul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert_eq!(res.len(), b.len());
+    assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), b.len());
     let m = res.len() >> 1;
     let span = m >> 2;
     let (rr, ri) = res.split_at_mut(m);
@@ -366,7 +366,7 @@ pub(crate) fn reim_addmul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
 ///
 /// Caller must ensure `|a[i]| <= 2^50 - 1`; debug builds assert.
 pub(crate) fn reim_from_znx_i64_bnd50_neon(res: &mut [f64], a: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     #[cfg(debug_assertions)]
     {
         const BOUND: i64 = (1i64 << 50) - 1;
@@ -413,7 +413,7 @@ pub(crate) fn reim_from_znx_i64_bnd50_neon(res: &mut [f64], a: &[i64]) {
 
 /// Masked variant: `(a[i] & mask) → f64`. Mirrors `reim_from_znx_i64_masked_bnd50_fma`.
 pub(crate) fn reim_from_znx_i64_masked_bnd50_neon(res: &mut [f64], a: &[i64], mask: i64) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     #[cfg(debug_assertions)]
     {
         const BOUND: i64 = (1i64 << 50) - 1;
@@ -514,7 +514,7 @@ unsafe fn reim_to_znx_chunk(
 /// `f64 → i64` conversion with rounding-divide by `divisor`. Bound: output
 /// must fit in i64.
 pub(crate) fn reim_to_znx_i64_bnd63_neon(res: &mut [i64], divisor: f64, a: &[f64]) {
-    debug_assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), a.len());
     let n = res.len();
     let span = n >> 2;
 

@@ -36,12 +36,6 @@ where
 unsafe impl HalVecZnxImpl<FFT64Avx512> for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
-
-    // TODO: add an AVX-512-accelerated tiled transpose kernel; falls back to
-    // the reference impl for now.
-    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
-        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
-    }
 }
 
 unsafe impl HalModuleImpl<FFT64Avx512> for FFT64Avx512 {
@@ -82,12 +76,6 @@ unsafe impl HalVecZnxDftImpl<FFT64Avx512> for FFT64Avx512 {
 unsafe impl HalVecZnxImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
-
-    // TODO: add an AVX-512-accelerated tiled transpose kernel; falls back to
-    // the reference impl for now.
-    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
-        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
-    }
 }
 
 unsafe impl HalModuleImpl<NTT4x30Avx512> for NTT4x30Avx512 {
@@ -559,10 +547,10 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         let (tmp, arena) = take_host_typed::<Self, u64>(arena, 4 * n);
         let (carry, _) = take_host_typed::<Self, i128>(arena, 3 * n);
         crate::ntt4x30_avx512::vec_znx_dft::idft_compact_in_place(module, a, a_col, tmp);
-        let (a_cols, a_size) = (a.cols(), a.size());
+        let a_shape = a.shape();
         if let Some((add, add_col)) = addend {
             let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self> =
-                poulpy_hal::layouts::VecZnxBig::from_data(&mut **a.data_mut(), n, a_cols, a_size);
+                poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
             let mut big_ref = &mut big;
             poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
                 &mut big_ref,
@@ -572,7 +560,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
             );
         }
         let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self> =
-            poulpy_hal::layouts::VecZnxBig::from_data(&**a.data(), n, a_cols, a_size);
+            poulpy_hal::layouts::VecZnxBig::from_shape(&**a.data(), a_shape);
         let mut res_ref = &mut *res;
         poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
             &mut res_ref,
@@ -765,16 +753,6 @@ mod ifma_impl {
     unsafe impl HalVecZnxImpl<NTT3x42Ifma> for NTT3x42Ifma {
         poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
         poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
-
-        // TODO: add an AVX-512/IFMA-accelerated tiled transpose kernel; falls
-        // back to the reference impl for now.
-        fn vec_znx_transpose_backend(
-            module: &Module<Self>,
-            res: &mut VecZnxBackendMut<'_, Self>,
-            a: &VecZnxBackendRef<'_, Self>,
-        ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
-        }
     }
 
     unsafe impl HalModuleImpl<NTT3x42Ifma> for NTT3x42Ifma {
@@ -1017,10 +995,10 @@ mod ifma_impl {
             crate::ntt3x42_ifma::vec_znx_dft::idft_compact_in_place_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
                 module, a, a_col, tmp,
             );
-            let (a_cols, a_size) = (a.cols(), a.size());
+            let a_shape = a.shape();
             if let Some((add, add_col)) = addend {
                 let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self> =
-                    poulpy_hal::layouts::VecZnxBig::from_data(&mut **a.data_mut(), n, a_cols, a_size);
+                    poulpy_hal::layouts::VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
                 let mut big_ref = &mut big;
                 poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, Self>(
                     &mut big_ref,
@@ -1030,7 +1008,7 @@ mod ifma_impl {
                 );
             }
             let big_ref: poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self> =
-                poulpy_hal::layouts::VecZnxBig::from_data(&**a.data(), n, a_cols, a_size);
+                poulpy_hal::layouts::VecZnxBig::from_shape(&**a.data(), a_shape);
             let mut res_ref = &mut *res;
             poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_normalize::<_, _, Self>(
                 &mut res_ref,

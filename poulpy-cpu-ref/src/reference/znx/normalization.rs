@@ -26,7 +26,6 @@ pub fn get_carry_i128(base2k: usize, x: i128, digit: i128) -> i128 {
 
 #[inline(always)]
 pub fn znx_normalize_first_step_carry_only_ref(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -46,7 +45,6 @@ pub fn znx_normalize_first_step_carry_only_ref(base2k: usize, lsh: usize, x: &[i
 
 #[inline(always)]
 pub fn znx_normalize_first_step_assign_ref(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -76,7 +74,6 @@ pub fn znx_normalize_first_step_ref<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(x.len(), a.len());
         assert!(x.len() <= carry.len());
@@ -109,7 +106,6 @@ pub fn znx_normalize_first_step_ref<const OVERWRITE: bool>(
 
 #[inline(always)]
 pub fn znx_normalize_middle_step_carry_only_ref(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -134,7 +130,6 @@ pub fn znx_normalize_middle_step_carry_only_ref(base2k: usize, lsh: usize, x: &[
 
 #[inline(always)]
 pub fn znx_normalize_middle_step_assign_ref(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -188,7 +183,6 @@ pub fn znx_normalize_middle_step_ref<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(x.len(), a.len());
         assert!(x.len() <= carry.len());
@@ -227,7 +221,6 @@ pub fn znx_normalize_middle_step_ref<const OVERWRITE: bool>(
 
 #[inline(always)]
 pub fn znx_normalize_middle_step_sub_ref(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(x.len(), a.len());
         assert!(x.len() <= carry.len());
@@ -257,7 +250,6 @@ pub fn znx_normalize_middle_step_sub_ref(base2k: usize, lsh: usize, x: &mut [i64
 
 #[inline(always)]
 pub fn znx_normalize_final_step_assign_ref(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -283,7 +275,6 @@ pub fn znx_normalize_final_step_ref<const OVERWRITE: bool>(
     a: &[i64],
     carry: &mut [i64],
 ) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);
@@ -310,7 +301,6 @@ pub fn znx_normalize_final_step_ref<const OVERWRITE: bool>(
 
 #[inline(always)]
 pub fn znx_normalize_final_step_sub_ref(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
         assert!(lsh < base2k);

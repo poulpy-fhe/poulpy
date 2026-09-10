@@ -361,8 +361,8 @@ pub(crate) fn b_to_znx128_neon(nn: usize, res: &mut [i128], a: &[u64]) {
 
 /// Per-row q120b → q120c packing (canonical reduce + zero-pad upper 32 bits).
 pub(crate) fn pack_left_1blk_x2_neon(dst: &mut [u32], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
     unsafe {
         let q = load_const(&Q_VEC);
         let mu = load_const(&BARRETT_MU);
@@ -386,8 +386,8 @@ pub(crate) fn pack_left_1blk_x2_neon(dst: &mut [u32], a: &[u64], row_count: usiz
 
 /// Per-row q120c copy in reversed row order.
 pub(crate) fn pack_right_1blk_x2_neon(dst: &mut [u32], a: &[u32], row_count: usize, row_stride: usize, blk: usize) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
     unsafe {
         let mut dst_ptr = dst.as_mut_ptr();
         let mut a_ptr = a.as_ptr().add(row_stride * row_count.saturating_sub(1) + 16 * blk);
@@ -418,9 +418,9 @@ pub(crate) fn pairwise_pack_left_1blk_x2_neon(
     row_stride: usize,
     blk: usize,
 ) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
-    debug_assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+    assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
     unsafe {
         let q = load_const(&Q_VEC);
         let mu = load_const(&BARRETT_MU);
@@ -454,9 +454,9 @@ pub(crate) fn pairwise_pack_right_1blk_x2_neon(
     row_stride: usize,
     blk: usize,
 ) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
-    debug_assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+    assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
     unsafe {
         let mut dst_ptr = dst.as_mut_ptr();
         let mut a_ptr = a.as_ptr().add(row_stride * row_count.saturating_sub(1) + 16 * blk);

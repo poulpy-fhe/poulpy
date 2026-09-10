@@ -18,7 +18,6 @@ pub fn vec_znx_add_scalar_into<'r, 'a, BE>(
 {
     let min_size: usize = b.size().min(res.size());
 
-    #[cfg(debug_assertions)]
     {
         assert!(b_limb < min_size, "b_limb: {b_limb} > min_size: {min_size}");
     }
@@ -47,7 +46,6 @@ pub fn vec_znx_add_scalar_assign<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(res_limb < res.size());
     }

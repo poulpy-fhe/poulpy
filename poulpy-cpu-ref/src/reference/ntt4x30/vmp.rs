@@ -40,7 +40,7 @@ use crate::{
 };
 
 use crate::reference::ntt4x30::types::Q_SHIFTED;
-use crate::reference::vmp_select::vmp_extract_selected_rows_core;
+use crate::reference::vmp_select::{assert_extractable, vmp_extract_selected_rows_core};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Prepare
@@ -74,12 +74,12 @@ pub fn ntt4x30_vmp_prepare<BE>(
 {
     let n = res.n();
 
-    debug_assert_eq!(a.n(), n);
-    debug_assert_eq!(res.cols_in(), a.cols_in());
-    debug_assert_eq!(res.rows(), a.rows());
-    debug_assert_eq!(res.cols_out(), a.cols_out());
-    debug_assert_eq!(res.size(), a.size());
-    debug_assert!(std::mem::size_of_val(tmp) >= ntt4x30_vmp_prepare_tmp_bytes(n));
+    assert_eq!(a.n(), n);
+    assert_eq!(res.cols_in(), a.cols_in());
+    assert_eq!(res.rows(), a.rows());
+    assert_eq!(res.cols_out(), a.cols_out());
+    assert_eq!(res.size(), a.size());
+    assert!(std::mem::size_of_val(tmp) >= ntt4x30_vmp_prepare_tmp_bytes(n));
 
     let nrows: usize = a.cols_in() * a.rows();
     let ncols: usize = a.cols_out() * a.size();
@@ -140,16 +140,16 @@ pub fn ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size: usize, b_rows: usize, b_co
 /// Save an x2-block (8 u64) into a q120b vector (overwrite mode).
 #[inline(always)]
 fn save_blk_overwrite(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-    debug_assert!(src.len() >= 8);
-    debug_assert!(dst.len() >= 4 * n);
+    assert!(src.len() >= 8);
+    assert!(dst.len() >= 4 * n);
     dst[8 * blk..8 * blk + 8].copy_from_slice(&src[..8]);
 }
 
 /// Save an x2-block (8 u64) into a q120b vector with lazy accumulation.
 #[inline(always)]
 fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-    debug_assert!(src.len() >= 8);
-    debug_assert!(dst.len() >= 4 * n);
+    assert!(src.len() >= 8);
+    assert!(dst.len() >= 4 * n);
     for i in 0..8 {
         let k = i % 4;
         dst[8 * blk + i] = dst[8 * blk + i] % Q_SHIFTED[k] + src[i] % Q_SHIFTED[k];
@@ -160,7 +160,7 @@ fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
 #[inline(always)]
 #[allow(dead_code)]
 fn zero_blk(n: usize, blk: usize, dst: &mut [u64]) {
-    debug_assert!(dst.len() >= 4 * n);
+    assert!(dst.len() >= 4 * n);
     dst[8 * blk..8 * blk + 8].fill(0);
 }
 
@@ -182,8 +182,8 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
 ) where
     BE: NttExtract1BlkContiguous + NttMulBbc1ColX2 + NttMulBbc2ColsX2,
 {
-    debug_assert!(n >= 2);
-    debug_assert!(n.is_power_of_two());
+    assert!(n >= 2);
+    assert!(n.is_power_of_two());
 
     let n_blks = n / 2;
     let a_size = a_u64.len() / (4 * n); // number of input polynomials
@@ -325,8 +325,8 @@ pub fn ntt4x30_vmp_apply_dft_to_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    debug_assert_eq!(res.n(), pmat.n());
-    debug_assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
 
     let n = res.n();
     let nrows = pmat.cols_in() * pmat.rows();
@@ -361,10 +361,7 @@ pub fn ntt4x30_vmp_extract_selected_rows<BE: Backend<ZnxWord = i64>>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    assert_eq!(res.n(), a.n());
-    assert_eq!(res.cols_in(), a.cols_in());
-    assert_eq!(res.cols_out(), a.cols_out());
-    assert!(res.size() <= a.size(), "res.size(): {} > a.size(): {}", res.size(), a.size());
+    assert_extractable(res, a, first_row, row_step);
 
     let (res_ncols, a_ncols) = (res.cols_out() * res.size(), a.cols_out() * a.size());
     let (res_rows, a_rows, cols_in, blocks) = (res.rows(), a.rows(), a.cols_in(), a.n() >> 1);

@@ -19,8 +19,8 @@ unsafe fn mullo_epi64_avx2(a: core::arch::x86_64::__m256i, b: core::arch::x86_64
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn znx_hadamard_product_i64_avx2(res: &mut [i64], a: &[i64], b: &[i64]) {
-    debug_assert_eq!(res.len(), a.len());
-    debug_assert_eq!(res.len(), b.len());
+    assert_eq!(res.len(), a.len());
+    assert_eq!(res.len(), b.len());
 
     use core::arch::x86_64::{__m256i, _mm256_loadu_si256, _mm256_storeu_si256};
 
@@ -55,7 +55,6 @@ pub(crate) unsafe fn znx_hadamard_product_i64_avx2(res: &mut [i64], a: &[i64], b
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe fn znx_mul_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
     }
@@ -86,9 +85,8 @@ pub unsafe fn znx_mul_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
 
         if k > 0 {
             // Left shift by k (variable count).
-            #[cfg(debug_assertions)]
             {
-                debug_assert!(k <= 63);
+                assert!(k <= 63);
             }
             let cnt128: __m128i = _mm_cvtsi32_si128(k as i32);
             for _ in 0..span {
@@ -185,9 +183,8 @@ pub unsafe fn znx_mul_power_of_two_assign_avx(k: i64, res: &mut [i64]) {
 
         if k > 0 {
             // Left shift by k (variable count).
-            #[cfg(debug_assertions)]
             {
-                debug_assert!(k <= 63);
+                assert!(k <= 63);
             }
             let cnt128: __m128i = _mm_cvtsi32_si128(k as i32);
             for _ in 0..span {
@@ -257,7 +254,6 @@ pub unsafe fn znx_mul_power_of_two_assign_avx(k: i64, res: &mut [i64]) {
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 pub unsafe fn znx_mul_add_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
     }
@@ -289,9 +285,8 @@ pub unsafe fn znx_mul_add_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
 
         if k > 0 {
             // Left shift by k (variable count).
-            #[cfg(debug_assertions)]
             {
-                debug_assert!(k <= 63);
+                assert!(k <= 63);
             }
             let cnt128: __m128i = _mm_cvtsi32_si128(k as i32);
             for _ in 0..span {

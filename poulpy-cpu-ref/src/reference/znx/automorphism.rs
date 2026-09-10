@@ -1,5 +1,4 @@
 pub fn znx_automorphism_ref(p: i64, res: &mut [i64], a: &[i64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
     }

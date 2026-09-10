@@ -23,7 +23,7 @@ use poulpy_hal::{
         VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     execution::{for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
-    layouts::{Backend, GaloisElement, ScratchArena, VecZnxDftBackendRef, VecZnxDftToBackendRef},
+    layouts::{Backend, GaloisElement, PrepareHint, ScratchArena, VecZnxDftBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{
@@ -61,7 +61,9 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
         let size = a.size();
         let mut values = BTreeMap::new();
         for &rot in baby_steps {
-            values.entry(rot).or_insert_with(|| module.cnv_pvec_left_alloc(cols, size));
+            values
+                .entry(rot)
+                .or_insert_with(|| module.cnv_pvec_left_alloc(cols, size, PrepareHint::Reuse));
         }
         Self { values }
     }

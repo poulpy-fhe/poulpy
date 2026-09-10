@@ -1,15 +1,16 @@
+use std::f64::consts::SQRT_2;
+
 use super::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_ref};
 use crate::layouts::VecZnxBigToBackendMut;
 use crate::layouts::VecZnxBigToBackendRef;
 
 use crate::{
     api::{
-        ScratchOwnedAlloc, VecZnxBigAddAssign, VecZnxBigAddInto, VecZnxBigAddNormal, VecZnxBigAddNormalBackend,
-        VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend, VecZnxBigAlloc, VecZnxBigAutomorphism,
-        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigFromSmallBackend, VecZnxBigNegate,
-        VecZnxBigNegateAssign, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign,
-        VecZnxBigSubNegateAssign, VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend,
-        VecZnxBigSubSmallNegateAssign,
+        ScratchOwnedAlloc, VecZnxBigAddAssign, VecZnxBigAddInto, VecZnxBigAddNormal, VecZnxBigAddSmallAssign,
+        VecZnxBigAddSmallIntoBackend, VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign,
+        VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigFromSmallBackend, VecZnxBigNegate, VecZnxBigNegateAssign,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
+        VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend, VecZnxBigSubSmallNegateAssign,
     },
     layouts::{
         DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, NoiseInfos, ScratchOwned, VecZnx, VecZnxOwned,
@@ -22,7 +23,16 @@ use crate::layouts::VecZnxBigOwned;
 
 fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
     let active_size = k.div_ceil(base2k);
+    let half = 1i64 << (base2k - 1);
     for col in 0..a.cols() {
+        for limb in 0..active_size.min(a.size()) {
+            assert!(
+                a.at(col, limb).iter().all(|&digit| (-half..half).contains(&digit)),
+                "col {col} limb {limb}: digit outside [-2^{}, 2^{})",
+                base2k - 1,
+                base2k - 1
+            );
+        }
         for limb in active_size..a.size() {
             assert!(a.at(col, limb).iter().all(|&digit| digit == 0));
         }
@@ -117,44 +127,44 @@ where
     download_vec_znx::<BE>(&res_backend)
 }
 
-pub fn test_vec_znx_big_seed_add_normal_matches_source_wrapper<
-    BR: crate::test_suite::TestBackend,
-    BT: crate::test_suite::TestBackend,
->(
-    params: &TestParams,
-    _module_host: &Module<HostBytesBackend>,
-    _module_ref: &Module<BR>,
-    module_test: &Module<BT>,
-) where
-    Module<BT>: VecZnxBigAddNormal<BT>
-        + VecZnxBigAddNormalBackend<BT>
-        + VecZnxBigAlloc<BT>
-        + VecZnxBigNormalize<BT>
-        + VecZnxBigNormalizeTmpBytes,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+pub fn test_vec_znx_big_add_normal<B: crate::test_suite::TestBackend>(_params: &TestParams, module: &Module<B>)
+where
+    Module<B>: VecZnxBigAddNormal<B> + VecZnxBigAlloc<B> + VecZnxBigNormalize<B> + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<B>: ScratchOwnedAlloc<B>,
 {
-    let base2k = params.base2k;
+    let n: usize = module.n();
+    let base2k: usize = 17;
     let size: usize = 5;
     let cols: usize = 2;
-    let col_i: usize = 1;
     let noise_infos = NoiseInfos::new(2 * base2k - 3, 3.2, 6.0 * 3.2).unwrap();
-    let mut scratch = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut source: Source = Source::new([2u8; 32]);
+    let zero: Vec<i64> = vec![0; n];
+    let k_f64: f64 = (1u64 << noise_infos.k as u64) as f64;
+    let mut scratch = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
 
-    let mut seed_source = Source::new([2u8; 32]);
-    let seed = seed_source.new_seed();
-    let mut wrapper_source = Source::new([2u8; 32]);
-
-    let mut wrapper: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, size);
-    let mut backend: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, size);
-    module_test.vec_znx_big_add_normal(base2k, &mut wrapper.to_backend_mut(), col_i, noise_infos, &mut wrapper_source);
-    module_test.vec_znx_big_add_normal_backend(base2k, &mut backend.to_backend_mut(), col_i, noise_infos, seed);
-    let wrapper = normalize_big_to_host(module_test, base2k, &wrapper, &mut scratch);
-    let backend = normalize_big_to_host(module_test, base2k, &backend, &mut scratch);
-    assert_eq!(wrapper, backend);
-
-    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
-    let low_mask = (1i64 << shift) - 1;
-    assert!(wrapper.at(col_i, limb).iter().all(|value| value & low_mask == 0));
+    (0..cols).for_each(|col_i| {
+        let mut a: VecZnxBigOwned<B> = module.vec_znx_big_alloc(cols, size);
+        module.vec_znx_big_add_normal(base2k, &mut a.to_backend_mut(), col_i, noise_infos, &mut source);
+        module.vec_znx_big_add_normal(base2k, &mut a.to_backend_mut(), col_i, noise_infos, &mut source);
+        let a = normalize_big_to_host(module, base2k, &a, &mut scratch);
+        (0..cols).for_each(|col_j| {
+            if col_j != col_i {
+                (0..size).for_each(|limb_i| {
+                    assert_eq!(a.at(col_j, limb_i), zero);
+                })
+            } else {
+                let std: f64 = a.stats(base2k, col_i).std() * k_f64;
+                assert!(
+                    (std - noise_infos.sigma * SQRT_2).abs() < 0.1,
+                    "std={std} ~!= {}",
+                    noise_infos.sigma * SQRT_2
+                );
+                let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
+                let low_mask = (1i64 << shift) - 1;
+                assert!(a.at(col_i, limb).iter().all(|value| value & low_mask == 0));
+            }
+        })
+    });
 }
 
 pub fn test_vec_znx_big_add_into<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(

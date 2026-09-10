@@ -13,7 +13,7 @@ use crate::{
         VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows,
         VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
-    layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned},
+    layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned},
     source::Source,
 };
 
@@ -94,8 +94,10 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     let mat_ref_backend = upload_mat_znx::<BR>(&mat);
                     let mat_test_backend = upload_mat_znx::<BT>(&mat);
 
-                    let mut pmat_ref: VmpPMatOwned<BR> = module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
-                    let mut pmat_test: VmpPMatOwned<BT> = module_test.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
+                    let mut pmat_ref: VmpPMatOwned<BR> =
+                        module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
+                    let mut pmat_test: VmpPMatOwned<BT> =
+                        module_test.vmp_pmat_alloc(rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
 
                     module_ref.vmp_prepare(
                         &mut pmat_ref.to_backend_mut(),
@@ -277,8 +279,10 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let mat_ref_backend = upload_mat_znx::<BR>(&mat);
                     let mat_test_backend = upload_mat_znx::<BT>(&mat);
 
-                    let mut pmat_ref: VmpPMatOwned<BR> = module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
-                    let mut pmat_test: VmpPMatOwned<BT> = module_test.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
+                    let mut pmat_ref: VmpPMatOwned<BR> =
+                        module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
+                    let mut pmat_test: VmpPMatOwned<BT> =
+                        module_test.vmp_pmat_alloc(rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
 
                     module_ref.vmp_prepare(
                         &mut pmat_ref.to_backend_mut(),
@@ -386,7 +390,7 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
         for cols_out in 1..max_cols + 1 {
             let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size);
             mat.fill_uniform(params.base2k, &mut source);
-            let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
+            let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size, PrepareHint::Reuse);
             module.vmp_prepare(
                 &mut pmat.to_backend_mut(),
                 &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&mat)),
@@ -414,14 +418,16 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
                                 }
                             }
                         }
-                        let mut expected: VmpPMatOwned<BE> = module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size);
+                        let mut expected: VmpPMatOwned<BE> =
+                            module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
                         module.vmp_prepare(
                             &mut expected.to_backend_mut(),
                             &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&sel)),
                             &mut scratch.arena(),
                         );
 
-                        let mut got: VmpPMatOwned<BE> = module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size);
+                        let mut got: VmpPMatOwned<BE> =
+                            module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
                         module.vmp_extract_selected_rows(&mut got.to_backend_mut(), &pmat.to_backend_ref(), first, step);
                         // Compared through the backend's host download rather
                         // than `digest_u64`, which needs host-resident buffers.
@@ -436,16 +442,17 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
         }
     }
 
-    let parent: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, max_cols, max_cols, size);
+    let parent: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, max_cols, max_cols, size, PrepareHint::Reuse);
     check_extract_rejects_bad_selections(module, &parent);
 }
 
-/// A selection the kernel must never be handed is rejected in release, by the
-/// delegate, so a backend may index without bounds checks.
+/// A selection that would index out of range is rejected in release by
+/// `assert_extractable` at the top of every kernel, so a backend may index
+/// without bounds checks past that point.
 ///
-/// On a bounds-checked backend the out-of-range cases would also trip a slice
-/// panic; only the zero step reaches the kernel and returns quietly. A backend
-/// indexing raw pointers has neither guard, which is the point of the check.
+/// Without it, a bounds-checked backend would still trip a slice panic on the
+/// out-of-range cases but a zero step would return quietly, and a backend
+/// indexing raw pointers would have neither guard.
 fn check_extract_rejects_bad_selections<BE: crate::test_suite::TestBackend>(module: &Module<BE>, a: &VmpPMatOwned<BE>)
 where
     Module<BE>: VmpPMatAlloc<BE> + VmpExtractSelectedRows<BE>,
@@ -459,7 +466,7 @@ where
         (1, size, 0, 0, "zero step"),
     ];
     for (res_rows, res_size, first, step, what) in cases {
-        let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size);
+        let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
         let hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(|_| {}));
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -468,6 +475,17 @@ where
         std::panic::set_hook(hook);
         assert!(caught.is_err(), "{what} was accepted");
     }
+
+    // A destination naming the other representation must be rejected before any
+    // byte moves, even though every dimension matches.
+    let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size, PrepareHint::OneShot);
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.vmp_extract_selected_rows(&mut res.to_backend_mut(), &a.to_backend_ref(), 0, 1);
+    }));
+    std::panic::set_hook(hook);
+    assert!(caught.is_err(), "mismatched PrepareHint was accepted");
 }
 
 /// `vmp_apply_dft_to_dft` and `vmp_apply_dft_to_dft_accumulate` agree across
@@ -610,8 +628,10 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                                 );
                             }
 
-                            let mut pmat_ref: VmpPMatOwned<BR> = module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
-                            let mut pmat_test: VmpPMatOwned<BT> = module_test.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
+                            let mut pmat_ref: VmpPMatOwned<BR> =
+                                module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
+                            let mut pmat_test: VmpPMatOwned<BT> =
+                                module_test.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
                             module_ref.vmp_prepare(
                                 &mut pmat_ref.to_backend_mut(),
                                 &<MatZnx<BR::OwnedBuf, i64> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),

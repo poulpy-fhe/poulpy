@@ -680,8 +680,8 @@ pub(crate) unsafe fn c_from_b_avx512(nn: usize, res: &mut [u32], a: &[u64]) {
 /// in the x2 q120b/u32 layout expected by BBC kernels.
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn pack_left_1blk_x2_avx512(dst: &mut [u32], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
 
     // Each row reads 2 q120b (16 u64) and writes 16 u32 reduced residues. Both q120b's
     // share the same per-prime constants, so we pair-pack them into one __m512i.
@@ -710,8 +710,8 @@ pub(crate) unsafe fn pack_left_1blk_x2_avx512(dst: &mut [u32], a: &[u64], row_co
 /// windows can consume contiguous slices directly.
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn pack_right_1blk_x2_avx512(dst: &mut [u32], a: &[u32], row_count: usize, row_stride: usize, blk: usize) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
 
     // Pure 16-u32 copy per row in reversed row order. Each row is one 512-bit transfer.
     unsafe {
@@ -740,9 +740,9 @@ pub(crate) unsafe fn pairwise_pack_left_1blk_x2_avx512(
     row_stride: usize,
     blk: usize,
 ) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
-    debug_assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+    assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
 
     // Each row's 2 q120b's are pair-packed into one __m512i; reduce + sum mod Q in 8 lanes.
     unsafe {
@@ -781,9 +781,9 @@ pub(crate) unsafe fn pairwise_pack_right_1blk_x2_avx512(
     row_stride: usize,
     blk: usize,
 ) {
-    debug_assert!(dst.len() >= 16 * row_count);
-    debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
-    debug_assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+    assert!(dst.len() >= 16 * row_count);
+    assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+    assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
 
     // 16-u32 lanewise add per row (q120c element-wise sum, no mod Q reduction needed).
     unsafe {

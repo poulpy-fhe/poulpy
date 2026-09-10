@@ -48,6 +48,7 @@ fn convolution_prepare<R, BE>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     R: ZnxInfos + ZnxViewMut<Scalar = BE::DftWord>,
 {
+    poulpy_hal::layouts::assert_dense(a, "convolution_prepare");
     let cols: usize = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
 
@@ -118,6 +119,7 @@ pub fn convolution_prepare_self<BE>(
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
+    poulpy_hal::layouts::assert_dense(a, "convolution_prepare_self");
     let cols: usize = left.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());
     assert_eq!(right.cols(), cols, "right.cols():{} != left.cols():{cols}", right.cols());
@@ -252,6 +254,9 @@ fn convolution_by_const_apply_impl<BE, const ADD: bool>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(res, "convolution_by_const_apply_impl");
+    poulpy_hal::layouts::assert_dense(a, "convolution_by_const_apply_impl");
+    poulpy_hal::layouts::assert_dense(b, "convolution_by_const_apply_impl");
     let n: usize = res.n();
     assert_eq!(a.n(), n);
 
@@ -481,8 +486,8 @@ pub fn convolution_pairwise_apply_dft<BE>(
 
 pub trait I64Ops {
     fn i64_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
-        debug_assert_eq!(res.len(), a.len());
-        debug_assert_eq!(res.len(), b.len());
+        assert_eq!(res.len(), a.len());
+        assert_eq!(res.len(), b.len());
 
         res.iter_mut()
             .zip(a.iter())
@@ -522,8 +527,8 @@ pub trait I64Ops {
 
 #[inline(always)]
 pub fn i64_extract_1blk_contiguous_ref(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
-    debug_assert!(blk < (n >> 3));
-    debug_assert!(dst.len() >= rows * 8, "dst.len(): {} < rows*8: {}", dst.len(), 8 * rows);
+    assert!(blk < (n >> 3));
+    assert!(dst.len() >= rows * 8, "dst.len(): {} < rows*8: {}", dst.len(), 8 * rows);
 
     let offset: usize = offset + (blk << 3);
 
@@ -538,8 +543,8 @@ pub fn i64_extract_1blk_contiguous_ref(n: usize, offset: usize, rows: usize, blk
 
 #[inline(always)]
 pub fn i64_save_1blk_contiguous_ref(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
-    debug_assert!(blk < (n >> 3));
-    debug_assert!(src.len() >= rows * 8);
+    assert!(blk < (n >> 3));
+    assert!(src.len() >= rows * 8);
 
     let offset: usize = offset + (blk << 3);
 
@@ -582,14 +587,14 @@ pub fn i64_convolution_by_const_1coeff_ref(k: usize, dst: &mut [i64; 8], a: &[i6
 #[allow(dead_code)]
 #[inline(always)]
 pub(crate) fn as_arr_i64<const SIZE: usize>(x: &[i64]) -> &[i64; SIZE] {
-    debug_assert!(x.len() >= SIZE, "x.len():{} < size:{}", x.len(), SIZE);
+    assert!(x.len() >= SIZE, "x.len():{} < size:{}", x.len(), SIZE);
     unsafe { &*(x.as_ptr() as *const [i64; SIZE]) }
 }
 
 #[allow(dead_code)]
 #[inline(always)]
 pub(crate) fn as_arr_i64_mut<const SIZE: usize>(x: &mut [i64]) -> &mut [i64; SIZE] {
-    debug_assert!(x.len() >= SIZE, "x.len():{} < size:{}", x.len(), SIZE);
+    assert!(x.len() >= SIZE, "x.len():{} < size:{}", x.len(), SIZE);
     unsafe { &mut *(x.as_mut_ptr() as *mut [i64; SIZE]) }
 }
 

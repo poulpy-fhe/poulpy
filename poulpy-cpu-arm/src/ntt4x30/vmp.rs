@@ -6,6 +6,7 @@
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use poulpy_cpu_ref::reference::vmp_select::assert_extractable;
 
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, types::Q_SHIFTED, vec_znx_dft::NttModuleHandle,
@@ -52,13 +53,13 @@ pub(crate) fn vmp_prepare_neon_pm(
 ) {
     let n = res.n();
 
-    debug_assert_eq!(a.n(), n);
-    debug_assert_eq!(res.cols_in(), a.cols_in());
-    debug_assert_eq!(res.rows(), a.rows());
-    debug_assert_eq!(res.cols_out(), a.cols_out());
-    debug_assert_eq!(res.size(), a.size());
-    debug_assert!(std::mem::size_of_val(tmp) >= vmp_prepare_tmp_bytes_neon(n));
-    debug_assert!(n.is_multiple_of(4));
+    assert_eq!(a.n(), n);
+    assert_eq!(res.cols_in(), a.cols_in());
+    assert_eq!(res.rows(), a.rows());
+    assert_eq!(res.cols_out(), a.cols_out());
+    assert_eq!(res.size(), a.size());
+    assert!(std::mem::size_of_val(tmp) >= vmp_prepare_tmp_bytes_neon(n));
+    assert!(n.is_multiple_of(4));
 
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
@@ -111,9 +112,9 @@ pub(crate) fn vmp_apply_tmp_bytes_neon(a_size: usize, b_rows: usize, b_cols_in: 
 /// help.
 #[inline]
 fn extract_blk_pair_prime_major_neon(n: usize, row_max: usize, blk_pair: usize, src: &[u64], dst: &mut [u64]) {
-    debug_assert!(n.is_multiple_of(4));
-    debug_assert!(src.len() >= row_max * 4 * n);
-    debug_assert!(dst.len() >= 16 * row_max);
+    assert!(n.is_multiple_of(4));
+    assert!(src.len() >= row_max * 4 * n);
+    assert!(dst.len() >= 16 * row_max);
 
     let plane_stride = 4 * row_max;
     let coeff_base = 16 * blk_pair;
@@ -135,7 +136,7 @@ fn extract_blk_pair_prime_major_neon(n: usize, row_max: usize, blk_pair: usize, 
 /// caller's normalization, so NT stores avoid polluting L1/L2 with output lines.
 #[inline]
 fn save_blk_overwrite(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-    debug_assert!(src.len() >= 8);
+    assert!(src.len() >= 8);
     let off = 8 * blk;
     #[cfg(target_arch = "aarch64")]
     unsafe {
@@ -163,8 +164,8 @@ fn save_blk_overwrite(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
 
 #[inline(always)]
 fn save_blk_add(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-    debug_assert!(src.len() >= 8);
-    debug_assert!(dst.len() >= 8 * (blk + 1));
+    assert!(src.len() >= 8);
+    assert!(dst.len() >= 8 * (blk + 1));
     for i in 0..8 {
         let k = i % 4;
         dst[8 * blk + i] = dst[8 * blk + i] % Q_SHIFTED[k] + src[i] % Q_SHIFTED[k];
@@ -183,9 +184,9 @@ fn vmp_apply_core_neon_pm<const OVERWRITE: bool, E: TaskExecutor>(
     meta: &BbcMeta<Primes30>,
     tmp: &mut [u64],
 ) {
-    debug_assert!(n >= 4);
-    debug_assert!(n.is_power_of_two());
-    debug_assert!(n.is_multiple_of(4));
+    assert!(n >= 4);
+    assert!(n.is_power_of_two());
+    assert!(n.is_multiple_of(4));
 
     let a_size = a_u64.len() / (4 * n);
     let res_size = res_u64.len() / (4 * n);
@@ -349,6 +350,7 @@ pub(crate) fn vmp_extract_selected_rows_neon_pm(
     first_row: usize,
     row_step: usize,
 ) {
+    assert_extractable(res, a, first_row, row_step);
     let n: usize = a.n();
 
     let cols_in: usize = a.cols_in();

@@ -8,7 +8,7 @@ use poulpy_hal::{
         VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        Backend, Module, ScratchOwned, VecZnxDftOwned, VecZnxDftToBackendMut, VmpPMatOwned, VmpPMatToBackendMut,
+        Backend, Module, PrepareHint, ScratchOwned, VecZnxDftOwned, VecZnxDftToBackendMut, VmpPMatOwned, VmpPMatToBackendMut,
         VmpPMatToBackendRef,
     },
     source::Source,
@@ -35,7 +35,8 @@ where
 
     let mat = random_host_mat_znx(module.n(), sweep.rows, sweep.cols_in, sweep.cols_out, sweep.size, &mut source);
     let mat = upload_host_mat_znx::<B>(&mat);
-    let mut pmat: VmpPMatOwned<B> = module.vmp_pmat_alloc(sweep.rows, sweep.cols_in, sweep.cols_out, sweep.size);
+    let mut pmat: VmpPMatOwned<B> =
+        module.vmp_pmat_alloc(sweep.rows, sweep.cols_in, sweep.cols_out, sweep.size, PrepareHint::Reuse);
 
     bencher.iter(|| {
         let mut pmat_backend = pmat.to_backend_mut();

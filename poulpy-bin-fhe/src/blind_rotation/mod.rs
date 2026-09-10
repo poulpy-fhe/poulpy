@@ -43,6 +43,7 @@
 //! reducing serialised size at the cost of decompression during preparation.
 mod algorithms;
 mod encryption;
+pub(crate) mod host_znx;
 mod layouts;
 mod lut;
 mod utils;

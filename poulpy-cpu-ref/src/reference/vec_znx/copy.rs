@@ -9,7 +9,6 @@ where
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), a.n())
     }
@@ -39,7 +38,6 @@ pub fn vec_znx_extract_coeff<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(
             res.n(),
@@ -60,62 +58,6 @@ pub fn vec_znx_extract_coeff<'r, 'a, BE>(
 
     for limb in min_size..res.size() {
         res.at_mut(res_col, limb).fill(0);
-    }
-}
-
-/// Per-limb square transpose: `res.at(c, j)[k] = a.at(k, j)[c]`.
-///
-/// Requires `res.n() == a.cols()` and `res.cols() == a.n()`. Limbs beyond
-/// `min(res.size(), a.size())` are zero-filled on `res`.
-pub fn vec_znx_transpose<'r, 'a, BE>(res: &mut VecZnxBackendMut<'r, BE>, a: &VecZnxBackendRef<'a, BE>)
-where
-    BE: Backend<ZnxWord = i64>,
-    BE::BufMut<'r>: HostDataMut,
-    BE::BufRef<'a>: HostDataRef,
-{
-    assert_eq!(
-        res.n(),
-        a.cols(),
-        "vec_znx_transpose: res.n() ({}) must equal a.cols() ({})",
-        res.n(),
-        a.cols()
-    );
-    assert_eq!(
-        res.cols(),
-        a.n(),
-        "vec_znx_transpose: res.cols() ({}) must equal a.n() ({})",
-        res.cols(),
-        a.n()
-    );
-
-    let n_a = a.n();
-    let cols_a = a.cols();
-    let limb_stride = n_a * cols_a;
-    let min_size = res.size().min(a.size());
-    let res_size = res.size();
-
-    // Layout (limb-major, column-minor): scalar offset of (col=c, limb=j) is
-    // `n * (j * cols + c)`, with `n` consecutive coefficients. Source has
-    // (n_a, cols_a) and destination has (n=cols_a, cols=n_a), so both share
-    // the same per-limb stride `n_a * cols_a`.
-    let src = a.raw();
-    let dst = res.raw_mut();
-
-    for limb in 0..min_size {
-        let base = limb * limb_stride;
-        for c in 0..cols_a {
-            let src_off = base + c * n_a;
-            for k in 0..n_a {
-                // res row k (length cols_a) holds the transposed column.
-                dst[base + k * cols_a + c] = src[src_off + k];
-            }
-        }
-    }
-
-    let tail = res_size * limb_stride;
-    let head = min_size * limb_stride;
-    if head < tail {
-        dst[head..tail].fill(0);
     }
 }
 

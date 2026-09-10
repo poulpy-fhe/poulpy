@@ -221,8 +221,8 @@ impl NttExtract1BlkContiguous for NTT4x30Ref {
 impl NttPackLeft1BlkX2 for NTT4x30Ref {
     #[inline(always)]
     fn ntt_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
-        debug_assert!(dst.len() >= 16 * row_count);
-        debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+        assert!(dst.len() >= 16 * row_count);
+        assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
 
         for row in 0..row_count {
             let row_base = row * row_stride + 8 * blk;
@@ -243,8 +243,8 @@ impl NttPackLeft1BlkX2 for NTT4x30Ref {
 impl NttPackRight1BlkX2 for NTT4x30Ref {
     #[inline(always)]
     fn ntt_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], row_count: usize, row_stride: usize, blk: usize) {
-        debug_assert!(dst.len() >= 16 * row_count);
-        debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+        assert!(dst.len() >= 16 * row_count);
+        assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
 
         for row in 0..row_count {
             let row_base = (row_count - 1 - row) * row_stride + 16 * blk;
@@ -257,9 +257,9 @@ impl NttPackRight1BlkX2 for NTT4x30Ref {
 impl NttPairwisePackLeft1BlkX2 for NTT4x30Ref {
     #[inline(always)]
     fn ntt_pairwise_pack_left_1blk_x2(dst: &mut [u32], a: &[u64], b: &[u64], row_count: usize, row_stride: usize, blk: usize) {
-        debug_assert!(dst.len() >= 16 * row_count);
-        debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
-        debug_assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+        assert!(dst.len() >= 16 * row_count);
+        assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
+        assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
 
         for row in 0..row_count {
             let row_base = row * row_stride + 8 * blk;
@@ -283,9 +283,9 @@ impl NttPairwisePackLeft1BlkX2 for NTT4x30Ref {
 impl NttPairwisePackRight1BlkX2 for NTT4x30Ref {
     #[inline(always)]
     fn ntt_pairwise_pack_right_1blk_x2(dst: &mut [u32], a: &[u32], b: &[u32], row_count: usize, row_stride: usize, blk: usize) {
-        debug_assert!(dst.len() >= 16 * row_count);
-        debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
-        debug_assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+        assert!(dst.len() >= 16 * row_count);
+        assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
+        assert!(b.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
 
         for row in 0..row_count {
             let row_base = (row_count - 1 - row) * row_stride + 16 * blk;

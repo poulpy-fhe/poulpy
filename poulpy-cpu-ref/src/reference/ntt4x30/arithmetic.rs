@@ -35,10 +35,10 @@ use crate::reference::ntt4x30::primes::PrimeSetCrt4;
 /// as a non-negative `u64` (not necessarily in `[0, Q[k])`).
 ///
 /// # Panics
-/// Panics in debug mode if `res.len() < 4 * nn` or `x.len() < nn`.
+/// Panics if `res.len() < 4 * nn` or `x.len() < nn`.
 pub fn b_from_znx64_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &[i64]) {
-    debug_assert!(res.len() >= 4 * nn);
-    debug_assert!(x.len() >= nn);
+    assert!(res.len() >= 4 * nn);
+    assert!(x.len() >= nn);
 
     // OQ[k] = Q[k] - (2^63 mod Q[k])
     // Using i64::MIN as u64 = 2^63.
@@ -62,8 +62,8 @@ pub fn b_from_znx64_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &[i64]) 
 /// Converts a vector of `i64` coefficients into q120b format, applying `mask` to each
 /// coefficient before conversion. Equivalent to `b_from_znx64_ref` on `x[j] & mask`.
 pub fn b_from_znx64_masked_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &[i64], mask: i64) {
-    debug_assert!(res.len() >= 4 * nn);
-    debug_assert!(x.len() >= nn);
+    assert!(res.len() >= 4 * nn);
+    assert!(x.len() >= nn);
 
     // OQ[k] = Q[k] - (2^63 mod Q[k])
     // Using i64::MIN as u64 = 2^63.
@@ -92,10 +92,10 @@ pub fn b_from_znx64_masked_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &
 /// - `res[8*j + 2*k + 1] = (r * 2^32) mod Q[k]`
 ///
 /// # Panics
-/// Panics in debug mode if `res.len() < 8 * nn` or `x.len() < nn`.
+/// Panics if `res.len() < 8 * nn` or `x.len() < nn`.
 pub fn c_from_znx64_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u32], x: &[i64]) {
-    debug_assert!(res.len() >= 8 * nn);
-    debug_assert!(x.len() >= nn);
+    assert!(res.len() >= 8 * nn);
+    assert!(x.len() >= nn);
 
     for j in 0..nn {
         for k in 0..4 {
@@ -115,10 +115,10 @@ pub fn c_from_znx64_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u32], x: &[i64]) 
 /// 3. Map to the symmetric representative in `(-Q/2, Q/2]`.
 ///
 /// # Panics
-/// Panics in debug mode if `res.len() < nn` or `x.len() < 4 * nn`.
+/// Panics if `res.len() < nn` or `x.len() < 4 * nn`.
 pub fn b_to_znx128_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [i128], x: &[u64]) {
-    debug_assert!(res.len() >= nn);
-    debug_assert!(x.len() >= 4 * nn);
+    assert!(res.len() >= nn);
+    assert!(x.len() >= 4 * nn);
 
     let q: [i128; 4] = P::Q.map(|qi| qi as i128);
     let total_q: i128 = q[0] * q[1] * q[2] * q[3];
@@ -149,11 +149,11 @@ pub fn b_to_znx128_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [i128], x: &[u64]) 
 /// in 64 bits provided the inputs satisfy `x[i], y[i] < Q[k] << 33`.
 ///
 /// # Panics
-/// Panics in debug mode if slices are shorter than `4 * nn`.
+/// Panics if slices are shorter than `4 * nn`.
 pub fn add_bbb_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &[u64], y: &[u64]) {
-    debug_assert!(res.len() >= 4 * nn);
-    debug_assert!(x.len() >= 4 * nn);
-    debug_assert!(y.len() >= 4 * nn);
+    assert!(res.len() >= 4 * nn);
+    assert!(x.len() >= 4 * nn);
+    assert!(y.len() >= 4 * nn);
 
     let q_shifted: [u64; 4] = P::Q.map(|qi| (qi as u64) << 33);
 
@@ -173,11 +173,11 @@ pub fn add_bbb_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &[u64], y: &[
 /// ```
 ///
 /// # Panics
-/// Panics in debug mode if slices are shorter than `8 * nn`.
+/// Panics if slices are shorter than `8 * nn`.
 pub fn add_ccc_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u32], x: &[u32], y: &[u32]) {
-    debug_assert!(res.len() >= 8 * nn);
-    debug_assert!(x.len() >= 8 * nn);
-    debug_assert!(y.len() >= 8 * nn);
+    assert!(res.len() >= 8 * nn);
+    assert!(x.len() >= 8 * nn);
+    assert!(y.len() >= 8 * nn);
 
     for j in 0..nn {
         for k in 0..4 {
@@ -198,10 +198,10 @@ pub fn add_ccc_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u32], x: &[u32], y: &[
 /// - `res[8*j + 2*k + 1] = (r * 2^32) mod Q[k]`
 ///
 /// # Panics
-/// Panics in debug mode if slices are shorter than `4 * nn` / `8 * nn`.
+/// Panics if slices are shorter than `4 * nn` / `8 * nn`.
 pub fn c_from_b_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u32], x: &[u64]) {
-    debug_assert!(res.len() >= 8 * nn);
-    debug_assert!(x.len() >= 4 * nn);
+    assert!(res.len() >= 8 * nn);
+    assert!(x.len() >= 4 * nn);
 
     for j in 0..nn {
         for k in 0..4 {

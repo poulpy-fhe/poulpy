@@ -202,7 +202,7 @@ impl<D: Data, W: ZnxWord> GLWE<D, W> {
         let shape = self.data.shape();
         let data = self.data.into_data();
         GLWE {
-            data: VecZnx::from_data(data, shape.n(), shape.cols(), shape.size()),
+            data: VecZnx::from_shape(data, shape),
             base2k: self.base2k,
             k: self.k,
         }

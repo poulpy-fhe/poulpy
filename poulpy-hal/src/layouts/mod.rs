@@ -9,6 +9,30 @@
 //! `Data` models backend-owned storage in the abstract, while
 //! `HostDataRef`/`HostDataMut` capture host-byte-readable buffers for the
 //! portions of the API that still require direct byte access.
+//!
+//! # Value model
+//!
+//! A vector-shaped container is a map `(col, limb, coeff) -> word` on a box
+//! `cols x size x n`. [`VecZnx`](crate::layouts::VecZnx) holds
+//! coefficient-domain words, [`VecZnxBig`](crate::layouts::VecZnxBig) wide
+//! accumulator words, [`VecZnxDft`](crate::layouts::VecZnxDft) backend-defined
+//! transform words. [`ScalarZnx`](crate::layouts::ScalarZnx) is a single-limb
+//! `VecZnx`. Prepared types ([`SvpPPol`](crate::layouts::SvpPPol),
+//! [`VmpPMat`](crate::layouts::VmpPMat), [`CnvPVecL`](crate::layouts::CnvPVecL),
+//! [`CnvPVecR`](crate::layouts::CnvPVecR)) denote `prep(s)` or `prep(M)`:
+//! opaque values fixed only by the equations the apply operations satisfy, in
+//! the representation their [`PrepareHint`](crate::layouts::PrepareHint)
+//! selected at allocation.
+//!
+//! # Windows
+//!
+//! A window is an affine restriction of the box: coefficients
+//! `coeff_offset..coeff_offset + n` of limbs `limb_offset + k * limb_step`.
+//! The value read through a window is the restricted map. Windows are built
+//! with `window_coeffs` and `window_limbs` on [`VecZnx`](crate::layouts::VecZnx)
+//! and [`VecZnxBig`](crate::layouts::VecZnxBig); coefficient-wise operations
+//! accept them, ring operations require `n == n_full == N`. Flat accessors
+//! (`raw`, `as_ptr`) panic on a window.
 
 mod convolution;
 mod crt;
@@ -17,6 +41,7 @@ mod layout_compat;
 mod mat_znx;
 mod module;
 mod plan_cache;
+mod prepare_hint;
 mod scalar_znx;
 mod scratch;
 mod scratch_views;
@@ -36,6 +61,7 @@ pub use layout_compat::*;
 pub use mat_znx::*;
 pub use module::*;
 pub use plan_cache::*;
+pub use prepare_hint::*;
 pub use scalar_znx::*;
 pub use scratch::*;
 pub use scratch_views::*;
@@ -598,20 +624,27 @@ macro_rules! impl_backend_from {
                 <$from as poulpy_hal::layouts::Backend>::bytes_of_vec_znx_big(n, cols, size)
             }
 
-            fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_svp_ppol(n, cols)
+            fn bytes_of_svp_ppol(n: usize, cols: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_svp_ppol(n, cols, hint)
             }
 
-            fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size)
+            fn bytes_of_vmp_pmat(
+                n: usize,
+                rows: usize,
+                cols_in: usize,
+                cols_out: usize,
+                size: usize,
+                hint: poulpy_hal::layouts::PrepareHint,
+            ) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, hint)
             }
 
-            fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_left(n, cols, size)
+            fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_left(n, cols, size, hint)
             }
 
-            fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
-                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_right(n, cols, size)
+            fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize, hint: poulpy_hal::layouts::PrepareHint) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_right(n, cols, size, hint)
             }
         }
 

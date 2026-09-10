@@ -136,7 +136,6 @@ pub fn reim4_vec_mat1col_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64]
         __m256d, _mm256_add_pd, _mm256_fmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd, _mm256_sub_pd,
     };
 
-    #[cfg(debug_assertions)]
     {
         assert!(dst.len() >= 8, "dst must have at least 8 doubles");
         assert!(u.len() >= nrows * 8, "u must be at least nrows * 8 doubles");
@@ -178,7 +177,6 @@ pub fn reim4_vec_mat1col_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64]
 pub fn reim4_vec_mat2cols_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
     use core::arch::x86_64::{__m256d, _mm256_fmadd_pd, _mm256_fmsub_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd};
 
-    #[cfg(debug_assertions)]
     {
         assert!(dst.len() >= 8, "dst must be at least 8 doubles but is {}", dst.len());
         assert!(
@@ -239,7 +237,6 @@ pub fn reim4_vec_mat2cols_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64
 pub fn reim4_vec_mat2cols_2ndcol_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
     use core::arch::x86_64::{__m256d, _mm256_fmadd_pd, _mm256_fmsub_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd};
 
-    #[cfg(debug_assertions)]
     {
         assert_eq!(dst.len(), 16, "dst must have 16 doubles");
         assert!(u.len() >= nrows * 8, "u must be at least nrows * 8 doubles");
@@ -338,8 +335,8 @@ pub unsafe fn reim4_convolution_2coeffs_avx512(
         _mm512_fmadd_pd, _mm512_loadu_pd, _mm512_setzero_pd, _mm512_shuffle_f64x2, _mm512_storeu_pd,
     };
 
-    debug_assert!(a.len() >= 8 * a_size);
-    debug_assert!(b.len() >= 8 * b_size);
+    assert!(a.len() >= 8 * a_size);
+    assert!(b.len() >= 8 * b_size);
 
     let k0: usize = k;
     let k1: usize = k + 1;
@@ -495,7 +492,7 @@ pub unsafe fn reim4_convolution_by_real_const_2coeffs_avx512(k: usize, dst: &mut
 
     let b_size: usize = b.len();
 
-    debug_assert!(a.len() >= 8 * a_size);
+    assert!(a.len() >= 8 * a_size);
 
     let k0: usize = k;
     let k1: usize = k + 1;
@@ -596,11 +593,11 @@ pub unsafe fn reim4_convolution_avx512(
     b: &[f64],
     b_size: usize,
 ) {
-    debug_assert!(a_size > 0);
-    debug_assert!(b_size > 0);
-    debug_assert!(dst.len() >= 8 * dst_size);
-    debug_assert!(a.len() >= 8 * a_size);
-    debug_assert!(b.len() >= 8 * b_size);
+    assert!(a_size > 0);
+    assert!(b_size > 0);
+    assert!(dst.len() >= 8 * dst_size);
+    assert!(a.len() >= 8 * a_size);
+    assert!(b.len() >= 8 * b_size);
 
     unsafe {
         let mut k: usize = 0;
@@ -857,14 +854,14 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
         _mm512_shuffle_f64x2, _mm512_storeu_pd,
     };
 
-    debug_assert!(a_size > 0);
-    debug_assert!(b_size > 0);
-    debug_assert!(m.is_multiple_of(4));
-    debug_assert!(tmp.len() >= 8 * (a_size + 6 + b_size * (1 + PAIRWISE as usize) + 16 * min_size));
-    debug_assert!(a0.len() >= (m / 4) * 8 * a_size);
-    debug_assert!(b0.len() >= (m / 4) * 8 * b_size);
-    debug_assert!(dst_stride >= 2 * m);
-    debug_assert!(dst.len() >= dst_stride * (min_size - 1) + 2 * m);
+    assert!(a_size > 0);
+    assert!(b_size > 0);
+    assert!(m.is_multiple_of(4));
+    assert!(tmp.len() >= 8 * (a_size + 6 + b_size * (1 + PAIRWISE as usize) + 16 * min_size));
+    assert!(a0.len() >= (m / 4) * 8 * a_size);
+    assert!(b0.len() >= (m / 4) * 8 * b_size);
+    assert!(dst_stride >= 2 * m);
+    assert!(dst.len() >= dst_stride * (min_size - 1) + 2 * m);
 
     const GROUP: usize = 16;
 

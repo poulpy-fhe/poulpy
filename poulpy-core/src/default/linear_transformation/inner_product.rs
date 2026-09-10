@@ -10,7 +10,7 @@
 use poulpy_hal::layouts::CnvPVecLToBackendRef;
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
-    layouts::{Backend, CnvDftAccTerm, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut},
+    layouts::{Backend, CnvDftAccTerm, CnvPVecRToBackendRef, PrepareHint, ScratchArena, VecZnxDftBackendMut},
 };
 
 use crate::{
@@ -123,7 +123,10 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     assert_eq!(prod_dft.size(), res_dft_size);
 
     // One reused right-operand slot: the whole RHS streams through it.
-    let (mut diagonal, mut scratch_1) = scratch.borrow().take_cnv_pvec_right_scratch(module, 1, diagonal_size);
+    let (mut diagonal, mut scratch_1) =
+        scratch
+            .borrow()
+            .take_cnv_pvec_right_scratch(module, 1, diagonal_size, PrepareHint::OneShot);
 
     // Baby is the outer loop, so the first baby initializes every output column
     // (overwrite) and the rest accumulate in place; each diagonal is prepared once.

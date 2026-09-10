@@ -8,11 +8,6 @@ pub trait VecZnxDftAlloc<B: Backend> {
     fn vec_znx_dft_alloc(&self, cols: usize, size: usize) -> VecZnxDftOwned<B>;
 }
 
-/// Wraps a byte buffer into a [`VecZnxDft`](crate::layouts::VecZnxDft).
-pub trait VecZnxDftFromBytes<B: Backend> {
-    fn vec_znx_dft_from_bytes(&self, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxDftOwned<B>;
-}
-
 /// Returns the byte size required for a [`VecZnxDft`](crate::layouts::VecZnxDft).
 pub trait VecZnxDftBytesOf {
     fn bytes_of_vec_znx_dft(&self, cols: usize, size: usize) -> usize;

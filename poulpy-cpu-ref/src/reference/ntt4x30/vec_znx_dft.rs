@@ -250,6 +250,7 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
+    poulpy_hal::layouts::assert_dense(a, "ntt4x30_vec_znx_dft_apply");
     let a_size = a.size();
     let res_size = res.size();
 
@@ -308,6 +309,7 @@ pub fn ntt4x30_vec_znx_idft_apply<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
+    poulpy_hal::layouts::assert_dense(res, "ntt4x30_vec_znx_idft_apply");
     let n = res.n();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
@@ -341,6 +343,7 @@ pub fn ntt4x30_vec_znx_idft_apply_tmpa<BE>(
     BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
+    poulpy_hal::layouts::assert_dense(res, "ntt4x30_vec_znx_idft_apply_tmpa");
     let n = res.n();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
@@ -689,7 +692,6 @@ pub fn ntt4x30_vec_znx_dft_copy<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), a.n())
     }
@@ -777,7 +779,6 @@ pub fn ntt4x30_vec_znx_dft_automorphism<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
         assert_eq!(plan.perm.len(), res.n());

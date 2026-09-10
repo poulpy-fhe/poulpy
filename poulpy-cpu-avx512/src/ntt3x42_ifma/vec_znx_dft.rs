@@ -143,8 +143,8 @@ unsafe fn store_symmetric_i128x8(dst: *mut i128, lo: __m512i, hi: __m512i) {
 /// - Caller must ensure AVX512-IFMA and AVX512-VL support.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn simd_b_ntt3x42_ifma_to_znx128(nn: usize, res: &mut [i128], a: &[u64]) {
-    debug_assert!(res.len() >= nn);
-    debug_assert!(a.len() >= 3 * nn);
+    assert!(res.len() >= nn);
+    assert!(a.len() >= 3 * nn);
 
     unsafe {
         let q0 = _mm512_set1_epi64(Q0 as i64);
@@ -607,6 +607,7 @@ pub(crate) fn vec_znx_dft_apply(
     a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
     a_col: usize,
 ) {
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     let a_size = a.size();
     let res_size = res.size();
     let n = res.n();
@@ -883,7 +884,6 @@ pub(crate) fn vec_znx_dft_copy<E: poulpy_hal::execution::TaskExecutor>(
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
     a_col: usize,
 ) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), a.n())
     }
@@ -934,7 +934,6 @@ pub(crate) fn vec_znx_dft_automorphism_add<E: poulpy_hal::execution::TaskExecuto
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
     a_col: usize,
 ) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
         assert_eq!(plan.perm.len(), res.n());
@@ -992,7 +991,6 @@ pub(crate) fn vec_znx_dft_automorphism<E: poulpy_hal::execution::TaskExecutor>(
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
     a_col: usize,
 ) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.n(), res.n());
         assert_eq!(plan.perm.len(), res.n());

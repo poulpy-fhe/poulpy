@@ -20,7 +20,8 @@ pub fn vec_znx_automorphism<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_automorphism");
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_automorphism");
     {
         assert_eq!(a.n(), res.n());
     }
@@ -41,7 +42,7 @@ where
     BE: Backend<ZnxWord = i64> + ZnxAutomorphism + ZnxCopy,
     BE::BufMut<'r>: HostDataMut,
 {
-    #[cfg(debug_assertions)]
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_automorphism_assign");
     {
         assert_eq!(res.n(), tmp.len());
     }

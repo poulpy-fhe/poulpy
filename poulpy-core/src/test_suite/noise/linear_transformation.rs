@@ -12,7 +12,7 @@ use poulpy_hal::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA,
     },
-    layouts::{Backend, GaloisElement, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx},
+    layouts::{Backend, GaloisElement, HostDataMut, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -203,7 +203,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, &ct, &keys, &mut prep_scratch.borrow());
         assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
 
-        let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size());
+        let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size(), PrepareHint::Reuse);
         let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
         module.cnv_prepare_right(
             &mut right_prepared.to_backend_mut(),
@@ -225,7 +225,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                 module.glwe_automorphism(&mut expected, &ct, &key, &mut scratch.borrow());
             }
 
-            let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size());
+            let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size(), PrepareHint::Reuse);
             let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
             module.cnv_prepare_left(
                 &mut expected_prepared.to_backend_mut(),

@@ -20,7 +20,8 @@ pub fn vec_znx_rotate<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_rotate");
+    poulpy_hal::layouts::assert_dense(a, "vec_znx_rotate");
     {
         assert_eq!(res.n(), a.n())
     }
@@ -44,7 +45,7 @@ where
     BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxCopy,
     BE::BufMut<'r>: HostDataMut,
 {
-    #[cfg(debug_assertions)]
+    poulpy_hal::layouts::assert_dense(res, "vec_znx_rotate_assign");
     {
         assert_eq!(res.n(), tmp.len());
     }

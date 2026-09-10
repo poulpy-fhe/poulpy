@@ -17,7 +17,6 @@
 
 #[inline(always)]
 pub fn reim_add_ref(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -30,7 +29,6 @@ pub fn reim_add_ref(res: &mut [f64], a: &[f64], b: &[f64]) {
 
 #[inline(always)]
 pub fn reim_add_assign_ref(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -42,7 +40,6 @@ pub fn reim_add_assign_ref(res: &mut [f64], a: &[f64]) {
 
 #[inline(always)]
 pub fn reim_sub_ref(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -55,7 +52,6 @@ pub fn reim_sub_ref(res: &mut [f64], a: &[f64], b: &[f64]) {
 
 #[inline(always)]
 pub fn reim_sub_assign_ref(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -67,7 +63,6 @@ pub fn reim_sub_assign_ref(res: &mut [f64], a: &[f64]) {
 
 #[inline(always)]
 pub fn reim_sub_negate_assign_ref(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -79,7 +74,6 @@ pub fn reim_sub_negate_assign_ref(res: &mut [f64], a: &[f64]) {
 
 #[inline(always)]
 pub fn reim_negate_ref(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -98,7 +92,6 @@ pub fn reim_negate_assign_ref(res: &mut [f64]) {
 
 #[inline(always)]
 pub fn reim_addmul_ref(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());
@@ -124,7 +117,6 @@ pub fn reim_addmul_ref(res: &mut [f64], a: &[f64], b: &[f64]) {
 
 #[inline(always)]
 pub fn reim_mul_assign_ref(res: &mut [f64], a: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
     }
@@ -148,7 +140,6 @@ pub fn reim_mul_assign_ref(res: &mut [f64], a: &[f64]) {
 
 #[inline(always)]
 pub fn reim_mul_ref(res: &mut [f64], a: &[f64], b: &[f64]) {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(a.len(), res.len());
         assert_eq!(b.len(), res.len());

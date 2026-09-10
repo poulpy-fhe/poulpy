@@ -12,7 +12,7 @@ use poulpy_hal::{
         VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
     },
     layouts::{
-        Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
+        Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
     },
 };
@@ -32,7 +32,7 @@ where
     let a_size = plan.raised_k(base2k).div_ceil(base2k);
     let b_size = (plan.log_delta_work() + base2k).div_ceil(base2k);
     let res_dft_size = a_size + b_size;
-    let preps = 4 * plan.theta() * module.bytes_of_cnv_pvec_right(1, b_size);
+    let preps = 4 * plan.theta() * module.bytes_of_cnv_pvec_right(1, b_size, PrepareHint::Reuse);
     let work = module
         .cnv_prepare_right_tmp_bytes(b_size, b_size)
         .max(module.cnv_accumulate_dft_tmp_bytes(0, res_dft_size, a_size, b_size))
@@ -93,7 +93,7 @@ where
             mask.size() == a_size && pi.size() == b_size,
             "{OP}: inconsistent operand sizes"
         );
-        let (mut b_prep, next) = rest.take_cnv_pvec_right_scratch(module, 1, b_size);
+        let (mut b_prep, next) = rest.take_cnv_pvec_right_scratch(module, 1, b_size, PrepareHint::Reuse);
         rest = next
             .apply_mut(|s| module.cnv_prepare_right(&mut b_prep, GLWEToBackendRef::<BE>::to_backend_ref(pi).data(), b_mask, s));
         preps.push(b_prep);

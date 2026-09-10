@@ -5,8 +5,8 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_hal::{
     api::{ModuleNew, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxDftAlloc},
     layouts::{
-        Backend, Module, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxDftOwned, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef,
+        Backend, Module, PrepareHint, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxDftOwned,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
     source::Source,
 };
@@ -26,7 +26,7 @@ where
 
     let mut source = Source::new([0u8; 32]);
 
-    let mut svp: SvpPPolOwned<B> = module.svp_ppol_alloc(sweep.cols);
+    let mut svp: SvpPPolOwned<B> = module.svp_ppol_alloc(sweep.cols, PrepareHint::Reuse);
     let a = random_host_scalar_znx(module.n(), sweep.cols, &mut source);
     let a = upload_host_scalar_znx::<B>(&a);
 

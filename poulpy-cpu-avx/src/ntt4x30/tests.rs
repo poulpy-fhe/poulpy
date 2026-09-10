@@ -2,7 +2,7 @@ use std::mem::size_of;
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 use poulpy_hal::{
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, PrepareHint},
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
         test_convolution_by_const_add, test_convolution_pairwise,
@@ -20,22 +20,15 @@ cross_backend_test_suite! {
         test_vec_znx_add_into => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_into_backend_matches_reference,
         test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
         test_vec_znx_extract_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_extract_coeff_backend,
-        test_vec_znx_normalize_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_coeff_backend,
-        test_vec_znx_normalize_coeff_assign_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_coeff_assign_backend,
-        test_vec_znx_lsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_coeff_backend,
-        test_vec_znx_lsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_into_backend,
         test_vec_znx_lsh_add_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff_backend,
         test_vec_znx_lsh_sub_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_sub_coeff_to_coeff_backend,
         test_vec_znx_rsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff_backend,
         test_vec_znx_rsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_add_coeff_into_backend,
         test_vec_znx_rsh_sub_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_sub_coeff_into_backend,
-        test_vec_znx_add_scalar_into => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_into,
         test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
         test_vec_znx_sub => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub,
         test_vec_znx_sub_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_assign,
         test_vec_znx_sub_negate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_negate_assign,
-        test_vec_znx_sub_scalar => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_scalar,
-        test_vec_znx_sub_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_scalar_assign,
         test_vec_znx_rsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh,
         test_vec_znx_rsh_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_assign,
         test_vec_znx_lsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh,
@@ -51,7 +44,6 @@ cross_backend_test_suite! {
         test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
         test_vec_znx_normalize_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_assign,
         test_vec_znx_switch_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring,
-        test_vec_znx_split_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_split_ring,
         test_vec_znx_copy => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy,
     }
 }
@@ -60,7 +52,7 @@ cross_backend_test_suite! {
 fn test_vmp_pmat_packed_byte_size() {
     let (n, rows, cols_in, cols_out, size) = (256, 3, 2, 4, 5);
     assert_eq!(
-        <NTT4x30Avx as Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size),
+        <NTT4x30Avx as Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, PrepareHint::Reuse),
         n * rows * cols_in * cols_out * size * 2 * size_of::<u64>()
     );
 }
@@ -70,10 +62,16 @@ fn test_transform_domain_packed_byte_sizes() {
     let (n, cols, size) = (256, 3, 5);
     let packed_bytes = n * cols * size * 4 * size_of::<u32>();
     assert_eq!(<NTT4x30Avx as Backend>::bytes_of_vec_znx_dft(n, cols, size), packed_bytes);
-    assert_eq!(<NTT4x30Avx as Backend>::bytes_of_cnv_pvec_left(n, cols, size), packed_bytes);
-    assert_eq!(<NTT4x30Avx as Backend>::bytes_of_cnv_pvec_right(n, cols, size), packed_bytes);
     assert_eq!(
-        <NTT4x30Avx as Backend>::bytes_of_svp_ppol(n, cols),
+        <NTT4x30Avx as Backend>::bytes_of_cnv_pvec_left(n, cols, size, PrepareHint::Reuse),
+        packed_bytes
+    );
+    assert_eq!(
+        <NTT4x30Avx as Backend>::bytes_of_cnv_pvec_right(n, cols, size, PrepareHint::Reuse),
+        packed_bytes
+    );
+    assert_eq!(
+        <NTT4x30Avx as Backend>::bytes_of_svp_ppol(n, cols, PrepareHint::Reuse),
         n * cols * 4 * size_of::<u32>()
     );
 }
@@ -153,8 +151,32 @@ backend_test_suite! {
     params = TestParams { size: 1<<12, base2k: 50 },
     tests = {
         test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
-        test_vec_znx_fill_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_normal,
+        test_scalar_znx_secret_sampling => poulpy_hal::test_suite::vec_znx::test_scalar_znx_secret_sampling,
         test_vec_znx_add_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_normal,
+        test_vec_znx_big_add_normal => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_normal,
+    }
+}
+
+backend_test_suite! {
+    mod window,
+    backend = crate::NTT4x30Avx,
+    params = TestParams { size: 1 << 8, base2k: 50 },
+    tests = {
+        test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
+        test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
+    }
+}
+
+#[cfg(feature = "enable-rayon")]
+backend_test_suite! {
+    mod window_rayon,
+    backend = crate::NTT4x30AvxRayon,
+    params = TestParams { size: 1 << 8, base2k: 50 },
+    tests = {
+        test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
+        test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
 

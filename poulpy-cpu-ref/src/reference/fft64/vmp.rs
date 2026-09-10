@@ -11,7 +11,7 @@ use crate::{
             reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
             reim4::Reim4BlkMatVec,
         },
-        vmp_select::vmp_extract_selected_rows_core,
+        vmp_select::{assert_extractable, vmp_extract_selected_rows_core},
     },
 };
 use poulpy_hal::execution::TaskExecutor;
@@ -30,7 +30,6 @@ pub fn vmp_prepare<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(mat.n(), pmat.n());
         assert_eq!(
@@ -82,7 +81,6 @@ pub(crate) fn vmp_prepare_core<REIM, E>(
     let m: usize = table.m();
     let n: usize = m << 1;
 
-    #[cfg(debug_assertions)]
     {
         assert!(n >= 8);
         assert_eq!(mat.len(), n * nrows * ncols);
@@ -129,13 +127,13 @@ where
     M: VmpPMatToBackendRef<BE>,
 {
     let a = a.to_backend_ref();
+    poulpy_hal::layouts::assert_dense(&a, "vmp_apply_dft");
     let pmat = pmat.to_backend_ref();
 
     let n: usize = a.n();
     let cols: usize = pmat.cols_in();
     let size: usize = a.size().min(pmat.rows());
 
-    #[cfg(debug_assertions)]
     {
         assert!(tmp_bytes.len() >= vmp_apply_dft_tmp_bytes(n, size, pmat.rows(), cols));
         assert!(a.cols() <= cols);
@@ -182,10 +180,7 @@ pub fn vmp_extract_selected_rows<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    assert_eq!(res.n(), a.n());
-    assert_eq!(res.cols_in(), a.cols_in());
-    assert_eq!(res.cols_out(), a.cols_out());
-    assert!(res.size() <= a.size(), "res.size(): {} > a.size(): {}", res.size(), a.size());
+    assert_extractable(res, a, first_row, row_step);
 
     let (res_ncols, a_ncols) = (res.cols_out() * res.size(), a.cols_out() * a.size());
     let (res_rows, a_rows, cols_in, blocks) = (res.rows(), a.rows(), a.cols_in(), a.n() >> 3);
@@ -246,7 +241,6 @@ pub fn vmp_apply_dft_to_dft_with_kernel<BE, KERNEL, E>(
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    #[cfg(debug_assertions)]
     {
         assert_eq!(res.n(), pmat.n());
         assert_eq!(a.n(), pmat.n());
@@ -365,7 +359,6 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, REIM, E>(
     REIM: ReimArith + Reim4BlkMatVec,
     E: TaskExecutor,
 {
-    #[cfg(debug_assertions)]
     {
         assert!(n >= 8);
         assert!(n.is_power_of_two());
