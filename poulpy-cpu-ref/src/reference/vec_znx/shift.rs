@@ -226,9 +226,7 @@ where
         + ZnxNormalizeFirstStepAssign
         + ZnxNormalizeFinalStepAssign,
 {
-    poulpy_hal::layouts::assert_dense(res, "vec_znx_lsh_assign");
     let n: usize = res.n();
-    let cols: usize = res.cols();
     let size: usize = res.size();
     let (steps, k_rem) = k.div_rem_euclid(base2k);
 
@@ -239,17 +237,15 @@ where
         return;
     }
 
-    // Assign shift of limbs by a k/base2k
+    // Assign shift of limbs by a k/base2k. The limbs are moved one at a time
+    // through `carry`: the normalization below starts with a first step, which
+    // overwrites the carry instead of reading it.
     if steps > 0 {
-        let start: usize = n * res_col;
-        let end: usize = start + n;
-        let slice_size: usize = n * cols;
-        let res_raw: &mut [i64] = res.raw_mut();
-
-        (0..size - steps).for_each(|j| {
-            let (lhs, rhs) = res_raw.split_at_mut(slice_size * (j + steps));
-            BE::znx_copy(&mut lhs[start + j * slice_size..end + j * slice_size], &rhs[start..end]);
-        });
+        let bounce = &mut carry[..n];
+        for j in 0..size - steps {
+            BE::znx_copy(bounce, res.at(res_col, j + steps));
+            BE::znx_copy(res.at_mut(res_col, j), bounce);
+        }
 
         for j in size - steps..size {
             BE::znx_zero(res.at_mut(res_col, j));
@@ -655,13 +651,20 @@ where
         // avoids overflows & produce output that is normalized
         steps += 1;
     }
+    // Shifting past the top limb discards every limb; the rounding carry still
+    // lands in res, as in the out-of-place [`vec_znx_rsh`].
+    steps = steps.min(size);
 
     let (carry, tmp) = tmp[..2 * n].split_at_mut(n);
 
     let lsh: usize = (base2k - k_rem) % base2k;
 
     // All limbs of a that would fall outside of the limbs of res are discarded,
-    // but the carry still need to be computed.
+    // but the carry still need to be computed. With nothing discarded (k == 0)
+    // the incoming carry is zero and the loop below must not read scratch.
+    if steps == 0 {
+        carry.fill(0);
+    }
     for j in 0..steps {
         if j == 0 {
             BE::znx_normalize_first_step_carry_only(base2k, lsh, res.at(res_col, size - j - 1), carry);
@@ -858,6 +861,57 @@ pub fn vec_znx_rsh_sub<'r, 'a, BE>(
             BE::znx_normalize_final_step_assign(base2k, 0, res.at_mut(res_col, res_end - j - 1), carry);
         } else {
             BE::znx_normalize_middle_step_assign(base2k, 0, res.at_mut(res_col, res_end - j - 1), carry);
+        }
+    }
+}
+
+/// `vec_znx_rsh_assign` agrees with the out-of-place [`vec_znx_rsh`] for every
+/// shift, including `k == 0` (nothing is discarded, so there is no incoming
+/// carry to read) and shifts past the top limb, and never depends on what the
+/// scratch buffer happened to hold.
+#[test]
+fn test_rsh_assign_matches_rsh() {
+    use crate::{
+        FFT64Ref,
+        layouts::{VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+    };
+    type Host = VecZnx<Vec<u8>, i64>;
+    let (n, base2k) = (8usize, 12usize);
+    let mut state = 0x1234_5678_9abc_def0u64;
+    for size in [1usize, 2, 4] {
+        let mut input = poulpy_hal::test_suite::alloc_host_vec_znx::<FFT64Ref>(n, 1, size);
+        for j in 0..size {
+            for x in input.at_mut(0, j) {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                *x = (state as i64) >> 40;
+            }
+        }
+        for k in [0, 1, base2k, base2k + 2, size * base2k, size * base2k + 5] {
+            let mut want = poulpy_hal::test_suite::alloc_host_vec_znx::<FFT64Ref>(n, 1, size);
+            vec_znx_rsh::<FFT64Ref, true>(
+                base2k,
+                k,
+                &mut <Host as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut want),
+                0,
+                &<Host as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input),
+                0,
+                &mut vec![0i64; n],
+            );
+            for fill in [0i64, 7] {
+                let mut got = input.clone();
+                vec_znx_rsh_assign::<FFT64Ref>(
+                    base2k,
+                    k,
+                    &mut <Host as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut got),
+                    0,
+                    &mut vec![fill; 2 * n],
+                );
+                for j in 0..size {
+                    assert_eq!(got.at(0, j), want.at(0, j), "size {size} k {k} fill {fill} limb {j}");
+                }
+            }
         }
     }
 }

@@ -215,6 +215,8 @@ backend_test_suite! {
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
+        test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
         test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
@@ -226,6 +228,8 @@ backend_test_suite! {
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
+        test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
         test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
@@ -602,7 +606,7 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
         ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_assign, ntt4x30_vec_znx_big_normalize_range_raw,
         vec_znx_big::{AddOp, SubOp},
     };
-    use poulpy_hal::layouts::{VecZnx, VecZnxBig, ZnxView, ZnxViewMut};
+    use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxShape, ZnxView, ZnxViewMut};
     let mut regression_input = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16], 1, 1, 1);
     regression_input.at_mut(0, 0)[0] = 3;
     let mut regression_output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 24], 1, 1, 3);
@@ -648,9 +652,7 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
                     unsafe {
                         ntt4x30_vec_znx_big_normalize_range_raw::<_, NTT4x30Ref>(
                             ptr,
-                            N,
-                            1,
-                            3,
+                            VecZnxShape::new(N, 1, 3),
                             res_base2k,
                             3 * res_base2k,
                             offset,
@@ -874,7 +876,7 @@ mod canonical_precision_tests {
         },
     };
     use dashu_int::IBig;
-    use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut};
+    use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxShape, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut};
 
     const N: usize = 9;
     const IDFT_BOUND: i128 = (1_073_479_681i128 * 1_071_513_601 * 1_070_727_169 * 1_068_236_801 - 1) / 2;
@@ -941,9 +943,7 @@ mod canonical_precision_tests {
                     unsafe {
                         vec_znx_normalize_range_raw::<FFT64Ref>(
                             ptr,
-                            N,
-                            2,
-                            size,
+                            VecZnxShape::new(N, 2, size),
                             kr,
                             k,
                             offset,
@@ -979,9 +979,7 @@ mod canonical_precision_tests {
                 unsafe {
                     ntt4x30_vec_znx_big_normalize_range_raw::<_, NTT4x30Ref>(
                         ptr,
-                        N,
-                        2,
-                        size,
+                        VecZnxShape::new(N, 2, size),
                         kr,
                         k,
                         offset,
@@ -1004,7 +1002,16 @@ mod canonical_precision_tests {
                 let ptr = input.data_mut().as_mut_ptr().cast::<i64>();
                 for (start, len) in [(0, 2), (2, 3), (5, 4)] {
                     unsafe {
-                        vec_znx_normalize_assign_range_raw::<FFT64Ref>(ptr, N, 2, size, kr, k, 1, start, len, &mut vec![73; len]);
+                        vec_znx_normalize_assign_range_raw::<FFT64Ref>(
+                            ptr,
+                            VecZnxShape::new(N, 2, size),
+                            kr,
+                            k,
+                            1,
+                            start,
+                            len,
+                            &mut vec![73; len],
+                        );
                     }
                 }
             } else {

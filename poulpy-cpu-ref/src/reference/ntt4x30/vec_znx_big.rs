@@ -34,8 +34,8 @@ use rand_distr::{Distribution, Normal};
 
 use crate::{
     layouts::{
-        Backend, HostDataMut, HostDataRef, NoiseInfos, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, NoiseInfos, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxShape,
+        VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
         normalization::I64NormalizeOps,
@@ -1178,10 +1178,8 @@ pub fn ntt4x30_vec_znx_big_normalize<R, A, BE>(
 {
     let (n, res_size) = {
         let res_view = res.to_backend_mut();
-        poulpy_hal::layouts::assert_dense(&res_view, "ntt4x30_vec_znx_big_normalize");
         (res_view.n(), res_view.size())
     };
-    poulpy_hal::layouts::assert_dense(&a.to_backend_ref(), "ntt4x30_vec_znx_big_normalize");
     assert!(res_k <= res_size * res_base2k);
     ntt4x30_vec_znx_big_normalize_range(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry);
 }
@@ -1212,14 +1210,12 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
         assert!(carry.len() >= 3 * coeff_len);
     }
     let mut res = res.to_backend_mut();
-    let (n, cols, size) = (res.n(), res.cols(), res.size());
+    let res_shape = res.shape();
     let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
     unsafe {
         ntt4x30_vec_znx_big_normalize_range_raw::<A, BE>(
             ptr,
-            n,
-            cols,
-            size,
+            res_shape,
             res_base2k,
             res_k,
             res_offset,
@@ -1238,10 +1234,11 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
 ///
 /// # Safety
 ///
-/// `res_ptr` must be non-null, aligned for `i64`, and address at least
-/// `n * cols * size` initialized `i64` values; layout arithmetic must not overflow.
-/// The source must have valid initialized storage, degree `n`, and column `a_col`.
-/// Require `res_col < cols`, `coeff_start <= n`, `coeff_len <= n - coeff_start`,
+/// `res_ptr` must be the base of the dense buffer `res_shape` describes and every
+/// element `res_shape` selects must be initialized; layout arithmetic is checked by
+/// [`VecZnxShape`].
+/// The source must have valid initialized storage, degree `res_shape.n()`, and column `a_col`.
+/// Require `res_col < res_shape.cols()`, `coeff_start + coeff_len <= res_shape.n()`,
 /// and at least `3 * coeff_len` private scratch words in `carry`.
 ///
 /// For every destination limb, the selected coefficient range must be exclusively
@@ -1252,9 +1249,7 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
 #[doc(hidden)]
 pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
     res_ptr: *mut i64,
-    n: usize,
-    cols: usize,
-    size: usize,
+    res_shape: VecZnxShape,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
@@ -1270,6 +1265,7 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
+    let (n, cols, size) = (res_shape.n(), res_shape.cols(), res_shape.size());
     {
         assert_eq!(n, a.to_backend_ref().n());
         assert!(res_col < cols);
@@ -1277,7 +1273,7 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
         assert!(carry.len() >= 3 * coeff_len);
         assert!(res_k <= size * res_base2k);
     }
-    let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
+    let mut res = unsafe { VecZnxRangeMut::new(res_ptr, res_shape, res_col, coeff_start, coeff_len) };
     if res_k == 0 {
         for limb in 0..size {
             res.at_mut(limb).fill(0);
