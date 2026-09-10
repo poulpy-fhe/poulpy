@@ -3,7 +3,7 @@ use crate::default::add::CKKSAddDefault;
 
 use poulpy_core::{GLWEAdd, GLWENormalize, GLWEShift, layouts::GLWE};
 use poulpy_hal::{
-    api::{VecZnxLshAdd, VecZnxLshAddCoeffToCoeff, VecZnxLshTmpBytes, VecZnxRshAdd, VecZnxRshAddCoeff, VecZnxRshTmpBytes},
+    api::{VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRshAdd, VecZnxRshTmpBytes},
     layouts::{Backend, Data, Module, ScratchArena},
 };
 
@@ -21,7 +21,6 @@ ckks_carry_verb_oep! {
     default_trait: CKKSAddDefault,
     glwe_bound: GLWEAdd,
     pt_vec_bounds: [VecZnxLshAdd, VecZnxRshAdd],
-    pt_const_bounds: [VecZnxLshAddCoeffToCoeff, VecZnxRshAddCoeff],
 }
 
 #[macro_export]
