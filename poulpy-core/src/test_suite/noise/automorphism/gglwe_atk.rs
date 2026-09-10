@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism},
     layouts::{Backend, GaloisElement, Module, ScalarZnx, ScratchOwned},
     source::Source,
     test_suite::TestParams,
@@ -28,7 +28,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
     Module<BE>: GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWEAutomorphismKeyAutomorphism<BE>
-        + VecZnxAutomorphismBackend<BE>
+        + VecZnxAutomorphism<BE>
         + GaloisElement
         + GLWESecretPreparedFactory<BE>
         + GGLWENoise<BE>,
@@ -154,7 +154,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::noise::Te
                 let mut sk_auto_backend_as_vec =
                     crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_auto_backend);
                 for i in 0..rank {
-                    module.vec_znx_automorphism_backend(
+                    module.vec_znx_automorphism(
                         module.galois_element_inv(p0 * p1),
                         &mut sk_auto_backend_as_vec,
                         i,
@@ -204,7 +204,7 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::no
     Module<BE>: GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWEAutomorphismKeyAutomorphism<BE>
-        + VecZnxAutomorphismBackend<BE>
+        + VecZnxAutomorphism<BE>
         + GaloisElement
         + GLWESecretPreparedFactory<BE>
         + GGLWENoise<BE>,
@@ -312,7 +312,7 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::no
                 let mut sk_auto_backend_as_vec =
                     crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_auto_backend);
                 for i in 0..rank {
-                    module.vec_znx_automorphism_backend(
+                    module.vec_znx_automorphism(
                         module.galois_element_inv(p0 * p1),
                         &mut sk_auto_backend_as_vec,
                         i,

@@ -12,7 +12,7 @@
 
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{DigestU64, Module, ScalarZnx, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
@@ -44,7 +44,7 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: VecZnxFillUniformSourceBackend<BE>
+    Module<BE>: VecZnxFillUniformSource<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWEEncryptSk<BE>
         + GLWEKeyswitch<BE>
@@ -100,7 +100,7 @@ pub fn test_glwe_keyswitch_ignores_dirty_scratch<BE: crate::test_suite::noise::T
         let mut source_xe: Source = Source::new([0u8; 32]);
         let mut source_xa: Source = Source::new([0u8; 32]);
 
-        module.vec_znx_fill_uniform_source_backend(
+        module.vec_znx_fill_uniform_source(
             pt_in.base2k().into(),
             pt_in.k().as_usize(),
             &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
@@ -186,7 +186,7 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEExternalProduct<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>,
@@ -240,7 +240,7 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::n
         let mut source_xe: Source = Source::new([0u8; 32]);
         let mut source_xa: Source = Source::new([0u8; 32]);
 
-        module.vec_znx_fill_uniform_source_backend(
+        module.vec_znx_fill_uniform_source(
             base2k,
             pt_in.k().as_usize(),
             &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),

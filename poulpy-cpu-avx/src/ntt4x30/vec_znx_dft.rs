@@ -302,7 +302,7 @@ pub(crate) fn idft_compact_in_place(
     }
 }
 
-pub(crate) fn vec_znx_dft_add_into(
+pub(crate) fn vec_znx_dft_add(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,

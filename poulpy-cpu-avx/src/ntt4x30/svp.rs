@@ -83,7 +83,7 @@ pub(crate) fn svp_prepare(
     unsafe { pack_limb_q120(n, &mut data[4 * n * res_col..][..4 * n], &tmp) };
 }
 
-pub(crate) fn svp_ppol_copy_backend(
+pub(crate) fn svp_ppol_copy(
     res: &mut SvpPPolBackendMut<'_, NTT4x30Avx>,
     res_col: usize,
     a: &SvpPPolBackendRef<'_, NTT4x30Avx>,

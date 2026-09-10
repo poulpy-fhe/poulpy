@@ -3,7 +3,7 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
-    api::{ModuleNew, VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend},
+    api::{ModuleNew, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign},
     layouts::{Backend, Module},
     source::Source,
 };
@@ -13,7 +13,7 @@ use crate::hal::params::HalSweepParms;
 
 pub fn runner_vec_znx_sub<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxSubBackend<B> + ModuleNew<B>,
+    Module<B>: VecZnxSub<B> + ModuleNew<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -31,7 +31,7 @@ where
         let b = vec_znx_backend_ref::<B>(&b);
         let mut c = vec_znx_backend_mut::<B>(&mut c);
         for i in 0..sweep.cols {
-            module.vec_znx_sub_backend(&mut c, i, &a, i, &b, i);
+            module.vec_znx_sub(&mut c, i, &a, i, &b, i);
         }
         black_box(());
     });
@@ -39,7 +39,7 @@ where
 
 pub fn runner_vec_znx_sub_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxSubAssignBackend<B> + ModuleNew<B>,
+    Module<B>: VecZnxSubAssign<B> + ModuleNew<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -54,7 +54,7 @@ where
         let a = vec_znx_backend_ref::<B>(&a);
         let mut b = vec_znx_backend_mut::<B>(&mut b);
         for i in 0..sweep.cols {
-            module.vec_znx_sub_assign_backend(&mut b, i, &a, i);
+            module.vec_znx_sub_assign(&mut b, i, &a, i);
         }
         black_box(());
     });
@@ -64,7 +64,7 @@ pub fn runner_vec_znx_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measuremen
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxSubNegateAssignBackend<B> + ModuleNew<B>,
+    Module<B>: VecZnxSubNegateAssign<B> + ModuleNew<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -79,7 +79,7 @@ pub fn runner_vec_znx_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measuremen
         let a = vec_znx_backend_ref::<B>(&a);
         let mut b = vec_znx_backend_mut::<B>(&mut b);
         for i in 0..sweep.cols {
-            module.vec_znx_sub_negate_assign_backend(&mut b, i, &a, i);
+            module.vec_znx_sub_negate_assign(&mut b, i, &a, i);
         }
         black_box(());
     });

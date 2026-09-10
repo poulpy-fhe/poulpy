@@ -7,7 +7,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{
         Backend, HostBackend, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxToBackendMut,
         ZnxView, ZnxViewMut,
@@ -35,7 +35,7 @@ where
         + GGSWNoise<BE>
         + GLWEDecrypt<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssignBackend<BE>,
+        + VecZnxRotateAssign<BE>,
     BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -144,7 +144,7 @@ where
             {
                 let mut scalar_want_backend =
                     <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut scalar_want_vec);
-                module.vec_znx_rotate_assign_backend(-rot, &mut scalar_want_backend, 0, &mut scratch.borrow());
+                module.vec_znx_rotate_assign(-rot, &mut scalar_want_backend, 0, &mut scratch.borrow());
             }
             scalar_want.raw_mut().copy_from_slice(scalar_want_vec.raw());
 

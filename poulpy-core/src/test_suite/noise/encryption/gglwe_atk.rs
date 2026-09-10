@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismBackend, VecZnxFillUniformSourceBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxFillUniformSource},
     layouts::{Backend, GaloisElement, Module, ScalarZnx, ScratchOwned},
     source::Source,
     test_suite::TestParams,
@@ -33,8 +33,8 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::Test
         + GLWESwitchingKeyDecompress
         + crate::layouts::compressed::GLWEDecompress<Backend = BE>
         + GGLWENoise<BE>
-        + VecZnxFillUniformSourceBackend<BE>
-        + VecZnxAutomorphismBackend<BE>,
+        + VecZnxFillUniformSource<BE>
+        + VecZnxAutomorphism<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -95,7 +95,7 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::Test
                 let mut sk_out_backend_as_vec =
                     crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_out_backend);
                 for i in 0..atk.rank().into() {
-                    module.vec_znx_automorphism_backend(
+                    module.vec_znx_automorphism(
                         module.galois_element_inv(p),
                         &mut sk_out_backend_as_vec,
                         i,
@@ -141,8 +141,8 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
         + GLWESwitchingKeyCompressedEncryptSk<BE>
         + GLWEAutomorphismKeyDecompress
         + crate::layouts::compressed::GLWEDecompress<Backend = BE>
-        + VecZnxAutomorphismBackend<BE>
-        + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxAutomorphism<BE>
+        + VecZnxFillUniformSource<BE>
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -205,7 +205,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
                 let mut sk_out_backend_as_vec =
                     crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_out_backend);
                 for i in 0..atk_compressed.rank().into() {
-                    module.vec_znx_automorphism_backend(
+                    module.vec_znx_automorphism(
                         module.galois_element_inv(p),
                         &mut sk_out_backend_as_vec,
                         i,

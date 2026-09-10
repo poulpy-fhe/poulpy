@@ -2,8 +2,7 @@
 
 use poulpy_hal::{
     api::{
-        ModuleN, VecZnxAddScalarAssignBackend, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxNormalizeAssignBackend,
-        VecZnxNormalizeTmpBytes, VecZnxZeroBackend,
+        ModuleN, VecZnxAddScalarAssign, VecZnxCopy, VecZnxDftBytesOf, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero,
     },
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
     source::Source,
@@ -47,12 +46,12 @@ where
         + GLWEEncryptSkInternal<BE>
         + GLWEEncryptSk<BE>
         + GLWEMaskFillDefault<BE>
-        + VecZnxCopyBackend<BE>
+        + VecZnxCopy<BE>
         + VecZnxDftBytesOf
-        + VecZnxNormalizeAssignBackend<BE>
-        + VecZnxAddScalarAssignBackend<BE>
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxAddScalarAssign<BE>
         + VecZnxNormalizeTmpBytes
-        + VecZnxZeroBackend<BE>,
+        + VecZnxZero<BE>,
 {
     fn gglwe_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -137,10 +136,10 @@ where
             for col_j in 0..rank_in {
                 for row_i in 0..dnum {
                     // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
-                    self.vec_znx_zero_backend(&mut tmp_pt.data, 0);
+                    self.vec_znx_zero(&mut tmp_pt.data, 0);
                     {
                         let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                        self.vec_znx_add_scalar_assign_backend(
+                        self.vec_znx_add_scalar_assign(
                             &mut tmp_pt_backend.data,
                             0,
                             (dsize - 1) + row_i * dsize,
@@ -150,7 +149,7 @@ where
                     }
                     scratch_1 = scratch_1.apply_mut(|scratch| {
                         let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                        self.vec_znx_normalize_assign_backend(base2k, tmp_pt_k, &mut tmp_pt_backend.data, 0, scratch)
+                        self.vec_znx_normalize_assign(base2k, tmp_pt_k, &mut tmp_pt_backend.data, 0, scratch)
                     });
 
                     let (seed, _) = source_xa.branch();
@@ -172,7 +171,7 @@ where
                     );
                     let full_ct_ref = full_ct.to_backend_ref();
                     let mut ct = res.at_view_mut(row_i, col_j);
-                    self.vec_znx_copy_backend(&mut ct.data, 0, &full_ct_ref.data, 0);
+                    self.vec_znx_copy(&mut ct.data, 0, &full_ct_ref.data, 0);
                 }
             }
         };

@@ -94,23 +94,23 @@ User-facing backend-native call:
 
 ```rust,ignore
 use poulpy_hal::{
-    api::VecZnxAddIntoBackend,
+    api::VecZnxAdd,
     layouts::{Module, VecZnxBackendMut, VecZnxBackendRef},
 };
 use poulpy_cpu_avx::FFT64Avx;
 
 let module = Module::<FFT64Avx>::new(1 << 12);
-module.vec_znx_add_into_backend(&mut res, 0, &a, 0, &b, 0);
+module.vec_znx_add(&mut res, 0, &a, 0, &b, 0);
 ```
 
 Delegate in `poulpy-hal`:
 
 ```rust
-impl<BE> VecZnxAddIntoBackend<BE> for Module<BE>
+impl<BE> VecZnxAdd<BE> for Module<BE>
 where
     BE: Backend + HalVecZnxImpl<BE>,
 {
-    fn vec_znx_add_into_backend(
+    fn vec_znx_add(
         &self,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -119,7 +119,7 @@ where
         b: &VecZnxBackendRef<'_, BE>,
         b_col: usize,
     ) {
-        BE::vec_znx_add_into_backend(self, res, res_col, a, a_col, b, b_col)
+        BE::vec_znx_add(self, res, res_col, a, a_col, b, b_col)
     }
 }
 ```
@@ -136,7 +136,7 @@ Default in `poulpy-cpu-ref`:
 
 ```rust
 pub trait HalVecZnxDefault<BE: Backend>: Backend {
-    fn vec_znx_add_into_backend_default(
+    fn vec_znx_add_default(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,

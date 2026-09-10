@@ -2,69 +2,65 @@
 #[macro_export]
 macro_rules! hal_impl_vec_znx_without_normalize {
     () => {
-        fn scalar_znx_fill_ternary_hw_backend(
+        fn scalar_znx_fill_ternary_hw(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::ScalarZnxBackendMut<'_, Self>,
             res_col: usize,
             hw: usize,
             seed: [u8; 32],
         ) {
-            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_ternary_hw_backend_default(module, res, res_col, hw, seed)
+            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_ternary_hw_default(module, res, res_col, hw, seed)
         }
 
-        fn scalar_znx_fill_ternary_prob_backend(
+        fn scalar_znx_fill_ternary_prob(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::ScalarZnxBackendMut<'_, Self>,
             res_col: usize,
             prob: f64,
             seed: [u8; 32],
         ) {
-            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_ternary_prob_backend_default(module, res, res_col, prob, seed)
+            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_ternary_prob_default(module, res, res_col, prob, seed)
         }
 
-        fn scalar_znx_fill_binary_hw_backend(
+        fn scalar_znx_fill_binary_hw(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::ScalarZnxBackendMut<'_, Self>,
             res_col: usize,
             hw: usize,
             seed: [u8; 32],
         ) {
-            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_binary_hw_backend_default(module, res, res_col, hw, seed)
+            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_binary_hw_default(module, res, res_col, hw, seed)
         }
 
-        fn scalar_znx_fill_binary_prob_backend(
+        fn scalar_znx_fill_binary_prob(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::ScalarZnxBackendMut<'_, Self>,
             res_col: usize,
             prob: f64,
             seed: [u8; 32],
         ) {
-            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_binary_prob_backend_default(module, res, res_col, prob, seed)
+            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_binary_prob_default(module, res, res_col, prob, seed)
         }
 
-        fn scalar_znx_fill_binary_block_backend(
+        fn scalar_znx_fill_binary_block(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::ScalarZnxBackendMut<'_, Self>,
             res_col: usize,
             block_size: usize,
             seed: [u8; 32],
         ) {
-            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_binary_block_backend_default(module, res, res_col, block_size, seed)
+            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_binary_block_default(module, res, res_col, block_size, seed)
         }
 
-        fn vec_znx_zero_backend(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-            res_col: usize,
-        ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_zero_backend_default(module, res, res_col)
+        fn vec_znx_zero(module: &Module<Self>, res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>, res_col: usize) {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_zero_default(module, res, res_col)
         }
 
-        fn vec_znx_normalize_tmp_bytes_backend(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_tmp_bytes_backend_default(module)
+        fn vec_znx_normalize_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_tmp_bytes_default(module)
         }
 
-        fn vec_znx_add_into_backend(
+        fn vec_znx_add(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_col: usize,
@@ -73,20 +69,20 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             b_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_add_into_backend_default(module, res, res_col, a, a_col, b, b_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_add_default(module, res, res_col, a, a_col, b, b_col)
         }
 
-        fn vec_znx_add_assign_backend(
+        fn vec_znx_add_assign(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_col: usize,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_add_assign_backend_default(module, res, res_col, a, a_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_add_assign_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_extract_coeff_backend(
+        fn vec_znx_extract_coeff(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_col: usize,
@@ -94,10 +90,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             a_col: usize,
             a_coeff: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_extract_coeff_backend_default(module, res, res_col, a, a_col, a_coeff)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_extract_coeff_default(module, res, res_col, a, a_col, a_coeff)
         }
 
-        fn vec_znx_add_scalar_assign_backend(
+        fn vec_znx_add_scalar_assign(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_col: usize,
@@ -105,10 +101,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             a: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_add_scalar_assign_backend_default(module, res, res_col, res_limb, a, a_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_add_scalar_assign_default(module, res, res_col, res_limb, a, a_col)
         }
 
-        fn vec_znx_sub_backend(
+        fn vec_znx_sub(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_col: usize,
@@ -117,48 +113,48 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             b_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_sub_backend_default(module, res, res_col, a, a_col, b, b_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_sub_default(module, res, res_col, a, a_col, b, b_col)
         }
 
-        fn vec_znx_sub_assign_backend(
+        fn vec_znx_sub_assign(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_col: usize,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_sub_assign_backend_default(module, res, res_col, a, a_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_sub_assign_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_sub_negate_assign_backend(
+        fn vec_znx_sub_negate_assign(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_col: usize,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_sub_negate_assign_backend_default(module, res, res_col, a, a_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_sub_negate_assign_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_negate_backend(
+        fn vec_znx_negate(
             module: &Module<Self>,
             res: &mut VecZnxBackendMut<'_, Self>,
             res_col: usize,
             a: &VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_negate_backend_default(module, res, res_col, a, a_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_negate_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_negate_assign_backend(module: &Module<Self>, a: &mut VecZnxBackendMut<'_, Self>, a_col: usize) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_negate_assign_backend_default(module, a, a_col)
+        fn vec_znx_negate_assign(module: &Module<Self>, a: &mut VecZnxBackendMut<'_, Self>, a_col: usize) {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_negate_assign_default(module, a, a_col)
         }
 
-        fn vec_znx_rsh_tmp_bytes_backend(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_tmp_bytes_backend_default(module)
+        fn vec_znx_rsh_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_tmp_bytes_default(module)
         }
 
-        fn vec_znx_rsh_backend(
+        fn vec_znx_rsh(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -169,19 +165,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_backend_default(
-                module,
-                base2k,
-                k,
-                res,
-                res_col,
-                a,
-                a_col,
-                &mut scratch,
-            );
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_default(module, base2k, k, res, res_col, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_rsh_coeff_backend(
+        fn vec_znx_rsh_coeff(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -193,7 +180,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_coeff_backend_default(
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_coeff_default(
                 module,
                 base2k,
                 k,
@@ -206,7 +193,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             );
         }
 
-        fn vec_znx_rsh_add_into_backend(
+        fn vec_znx_rsh_add(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -217,19 +204,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_add_into_backend_default(
-                module,
-                base2k,
-                k,
-                res,
-                res_col,
-                a,
-                a_col,
-                &mut scratch,
-            );
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_add_default(module, base2k, k, res, res_col, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_rsh_add_coeff_into_backend(
+        fn vec_znx_rsh_add_coeff(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -242,7 +220,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_add_coeff_into_backend_default(
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_add_coeff_default(
                 module,
                 base2k,
                 k,
@@ -256,7 +234,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             );
         }
 
-        fn vec_znx_rsh_sub_coeff_into_backend(
+        fn vec_znx_rsh_sub_coeff(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -269,7 +247,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_sub_coeff_into_backend_default(
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_sub_coeff_default(
                 module,
                 base2k,
                 k,
@@ -283,11 +261,11 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             );
         }
 
-        fn vec_znx_lsh_tmp_bytes_backend(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_tmp_bytes_backend_default(module)
+        fn vec_znx_lsh_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_tmp_bytes_default(module)
         }
 
-        fn vec_znx_lsh_backend(
+        fn vec_znx_lsh(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -298,19 +276,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_backend_default(
-                module,
-                base2k,
-                k,
-                res,
-                res_col,
-                a,
-                a_col,
-                &mut scratch,
-            );
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_default(module, base2k, k, res, res_col, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_lsh_add_into_backend(
+        fn vec_znx_lsh_add(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -321,19 +290,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_add_into_backend_default(
-                module,
-                base2k,
-                k,
-                res,
-                res_col,
-                a,
-                a_col,
-                &mut scratch,
-            );
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_add_default(module, base2k, k, res, res_col, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_lsh_add_coeff_to_coeff_backend<'s, 'r, 'a>(
+        fn vec_znx_lsh_add_coeff_to_coeff<'s, 'r, 'a>(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -346,7 +306,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'s, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_add_coeff_to_coeff_backend_default(
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_add_coeff_to_coeff_default(
                 module,
                 base2k,
                 k,
@@ -360,7 +320,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             );
         }
 
-        fn vec_znx_lsh_sub_coeff_to_coeff_backend<'s, 'r, 'a>(
+        fn vec_znx_lsh_sub_coeff_to_coeff<'s, 'r, 'a>(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -373,7 +333,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'s, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_sub_coeff_to_coeff_backend_default(
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_sub_coeff_to_coeff_default(
                 module,
                 base2k,
                 k,
@@ -387,7 +347,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             );
         }
 
-        fn vec_znx_lsh_sub_backend<'s, 'r, 'a>(
+        fn vec_znx_lsh_sub<'s, 'r, 'a>(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -398,19 +358,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_sub_backend_default(
-                module,
-                base2k,
-                k,
-                res,
-                res_col,
-                a,
-                a_col,
-                &mut scratch,
-            );
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_sub_default(module, base2k, k, res, res_col, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_rsh_sub_backend(
+        fn vec_znx_rsh_sub(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -421,19 +372,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_sub_backend_default(
-                module,
-                base2k,
-                k,
-                res,
-                res_col,
-                a,
-                a_col,
-                &mut scratch,
-            );
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_sub_default(module, base2k, k, res, res_col, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_rsh_assign_backend(
+        fn vec_znx_rsh_assign(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -442,10 +384,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_assign_backend_default(module, base2k, k, a, a_col, &mut scratch);
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rsh_assign_default(module, base2k, k, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_lsh_assign_backend(
+        fn vec_znx_lsh_assign(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -454,10 +396,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_assign_backend_default(module, base2k, k, a, a_col, &mut scratch);
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_assign_default(module, base2k, k, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_rotate_backend(
+        fn vec_znx_rotate(
             module: &Module<Self>,
             k: i64,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
@@ -465,14 +407,14 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rotate_backend_default(module, k, res, res_col, a, a_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rotate_default(module, k, res, res_col, a, a_col)
         }
 
-        fn vec_znx_rotate_assign_tmp_bytes_backend(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rotate_assign_tmp_bytes_backend_default(module)
+        fn vec_znx_rotate_assign_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rotate_assign_tmp_bytes_default(module)
         }
 
-        fn vec_znx_rotate_assign_backend(
+        fn vec_znx_rotate_assign(
             module: &Module<Self>,
             k: i64,
             a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
@@ -480,10 +422,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_rotate_assign_backend_default(module, k, a, a_col, &mut scratch);
+            <Self as HalVecZnxDefault<Self>>::vec_znx_rotate_assign_default(module, k, a, a_col, &mut scratch);
         }
 
-        fn vec_znx_automorphism_backend(
+        fn vec_znx_automorphism(
             module: &Module<Self>,
             k: i64,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
@@ -491,14 +433,14 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_backend_default(module, k, res, res_col, a, a_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_default(module, k, res, res_col, a, a_col)
         }
 
-        fn vec_znx_automorphism_assign_tmp_bytes_backend(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_assign_tmp_bytes_backend_default(module)
+        fn vec_znx_automorphism_assign_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_assign_tmp_bytes_default(module)
         }
 
-        fn vec_znx_automorphism_assign_backend(
+        fn vec_znx_automorphism_assign(
             module: &Module<Self>,
             k: i64,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
@@ -506,10 +448,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_assign_backend_default(module, k, res, res_col, &mut scratch);
+            <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_assign_default(module, k, res, res_col, &mut scratch);
         }
 
-        fn vec_znx_mul_xp_minus_one_backend(
+        fn vec_znx_mul_xp_minus_one(
             module: &Module<Self>,
             k: i64,
             res: &mut VecZnxBackendMut<'_, Self>,
@@ -517,14 +459,14 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             a: &VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_mul_xp_minus_one_backend_default(module, k, res, res_col, a, a_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_mul_xp_minus_one_default(module, k, res, res_col, a, a_col)
         }
 
-        fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_backend(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_mul_xp_minus_one_assign_tmp_bytes_backend_default(module)
+        fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module)
         }
 
-        fn vec_znx_mul_xp_minus_one_assign_backend(
+        fn vec_znx_mul_xp_minus_one_assign(
             module: &Module<Self>,
             k: i64,
             res: &mut VecZnxBackendMut<'_, Self>,
@@ -532,36 +474,30 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_mul_xp_minus_one_assign_backend_default(
-                module,
-                k,
-                res,
-                res_col,
-                &mut scratch,
-            );
+            <Self as HalVecZnxDefault<Self>>::vec_znx_mul_xp_minus_one_assign_default(module, k, res, res_col, &mut scratch);
         }
 
-        fn vec_znx_switch_ring_backend(
+        fn vec_znx_switch_ring(
             module: &Module<Self>,
             res: &mut VecZnxBackendMut<'_, Self>,
             res_col: usize,
             a: &VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_switch_ring_backend_default(module, res, res_col, a, a_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_switch_ring_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_copy_backend(
+        fn vec_znx_copy(
             module: &Module<Self>,
             res: &mut VecZnxBackendMut<'_, Self>,
             res_col: usize,
             a: &VecZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_copy_backend_default(module, res, res_col, a, a_col)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_copy_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_copy_range_backend(
+        fn vec_znx_copy_range(
             module: &Module<Self>,
             res: &mut VecZnxBackendMut<'_, Self>,
             res_col: usize,
@@ -573,12 +509,12 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             a_offset: usize,
             len: usize,
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_copy_range_backend_default(
+            <Self as HalVecZnxDefault<Self>>::vec_znx_copy_range_default(
                 module, res, res_col, res_limb, res_offset, a, a_col, a_limb, a_offset, len,
             )
         }
 
-        fn vec_znx_fill_uniform_backend(
+        fn vec_znx_fill_uniform(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -586,10 +522,10 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             res_col: usize,
             seed: [u8; 32],
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_fill_uniform_backend_default(module, base2k, k, res, res_col, seed)
+            <Self as HalVecZnxDefault<Self>>::vec_znx_fill_uniform_default(module, base2k, k, res, res_col, seed)
         }
 
-        fn vec_znx_add_normal_backend(
+        fn vec_znx_add_normal(
             module: &Module<Self>,
             res_base2k: usize,
             res: &mut VecZnxBackendMut<'_, Self>,
@@ -597,14 +533,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
             noise_infos: NoiseInfos,
             seed: [u8; 32],
         ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_add_normal_backend_default(
-                module,
-                res_base2k,
-                res,
-                res_col,
-                noise_infos,
-                seed,
-            )
+            <Self as HalVecZnxDefault<Self>>::vec_znx_add_normal_default(module, res_base2k, res, res_col, noise_infos, seed)
         }
     };
 }
@@ -613,7 +542,7 @@ macro_rules! hal_impl_vec_znx_without_normalize {
 #[macro_export]
 macro_rules! hal_impl_vec_znx_normalize {
     () => {
-        fn vec_znx_normalize_backend(
+        fn vec_znx_normalize(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             res_base2k: usize,
@@ -626,7 +555,7 @@ macro_rules! hal_impl_vec_znx_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_backend_default(
+            <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_default(
                 module,
                 res,
                 res_base2k,
@@ -640,7 +569,7 @@ macro_rules! hal_impl_vec_znx_normalize {
             );
         }
 
-        fn vec_znx_normalize_assign_backend(
+        fn vec_znx_normalize_assign(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -649,7 +578,7 @@ macro_rules! hal_impl_vec_znx_normalize {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_assign_backend_default(module, base2k, k, a, a_col, &mut scratch);
+            <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_assign_default(module, base2k, k, a, a_col, &mut scratch);
         }
     };
 }

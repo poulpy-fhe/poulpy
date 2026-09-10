@@ -10,7 +10,7 @@ use std::{
 
 use crate::reference::{
     fft64::vec_znx_big::{
-        vec_znx_big_add_assign as fft64_vec_znx_big_add_assign, vec_znx_big_add_into as fft64_vec_znx_big_add_into,
+        vec_znx_big_add as fft64_vec_znx_big_add, vec_znx_big_add_assign as fft64_vec_znx_big_add_assign,
         vec_znx_big_add_normal_ref as fft64_vec_znx_big_add_normal_ref,
         vec_znx_big_add_small_assign as fft64_vec_znx_big_add_small_assign,
         vec_znx_big_add_small_into as fft64_vec_znx_big_add_small_into,
@@ -28,7 +28,7 @@ use crate::reference::{
         vec_znx_big_sub_small_b_assign as fft64_vec_znx_big_sub_small_b_assign,
     },
     ntt4x30::vec_znx_big::{
-        I128BigOps, I128NormalizeOps, ntt4x30_vec_znx_big_add_assign, ntt4x30_vec_znx_big_add_into,
+        I128BigOps, I128NormalizeOps, ntt4x30_vec_znx_big_add, ntt4x30_vec_znx_big_add_assign,
         ntt4x30_vec_znx_big_add_normal_ref, ntt4x30_vec_znx_big_add_small_assign, ntt4x30_vec_znx_big_add_small_into,
         ntt4x30_vec_znx_big_automorphism, ntt4x30_vec_znx_big_automorphism_assign,
         ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes, ntt4x30_vec_znx_big_from_small, ntt4x30_vec_znx_big_negate,
@@ -247,7 +247,7 @@ where
         Self::vec_znx_big_add_normal_default(module, res_base2k, res, res_col, noise_infos, &mut source);
     }
 
-    fn vec_znx_big_add_into_default<R, A, C>(
+    fn vec_znx_big_add_default<R, A, C>(
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
@@ -262,7 +262,7 @@ where
         A: VecZnxBigToBackendRef<BE>,
         C: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_add_into::<_, _, _, BE>(res, res_col, a, a_col, b, b_col);
+        fft64_vec_znx_big_add::<_, _, _, BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_add_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -604,7 +604,7 @@ where
         Self::vec_znx_big_add_normal_default(module, res_base2k, res, res_col, noise_infos, &mut source);
     }
 
-    fn vec_znx_big_add_into_default<R, A, C>(
+    fn vec_znx_big_add_default<R, A, C>(
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
@@ -619,7 +619,7 @@ where
         A: VecZnxBigToBackendRef<BE>,
         C: VecZnxBigToBackendRef<BE>,
     {
-        ntt4x30_vec_znx_big_add_into::<_, _, _, BE>(res, res_col, a, a_col, b, b_col);
+        ntt4x30_vec_znx_big_add::<_, _, _, BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_add_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)

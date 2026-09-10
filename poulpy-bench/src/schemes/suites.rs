@@ -17,7 +17,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
+    api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Backend, HostBackend, Module, ScratchOwned},
 };
 
@@ -299,7 +299,7 @@ where
         + GGSWPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssignBackend<BE>
+        + VecZnxRotateAssign<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -395,7 +395,7 @@ where
         + GGSWPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssignBackend<BE>,
+        + VecZnxRotateAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let blind_rotate = [BenchOp {
@@ -460,7 +460,7 @@ where
         + GGSWPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssignBackend<BE>,
+        + VecZnxRotateAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let (blind_rotate_ops, circuit_bootstrapping_ops) = bin_fhe_standard_ops::<BE, BRA, WallTime>();

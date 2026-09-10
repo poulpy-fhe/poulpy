@@ -1,8 +1,7 @@
 use poulpy_hal::{
     api::{
-        ModuleN, SvpApplyDftToDftAssign, VecZnxAddScalarAssignBackend, VecZnxBigAddAssign, VecZnxBigBytesOf,
-        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
+        ModuleN, SvpApplyDftToDftAssign, VecZnxAddScalarAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssign,
     },
     layouts::{
         Backend, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, Stats, ZnxZero,
@@ -47,12 +46,11 @@ impl<D: HostDataRef> GGLWE<D, i64> {
 
 impl<BE: Backend + HostBackend> GGLWENoise<BE> for Module<BE>
 where
-    Module<BE>:
-        VecZnxAddScalarAssignBackend<BE> + VecZnxSubAssignBackend<BE> + GLWENoise<BE> + GLWEDecrypt<BE> + GLWENormalize<BE>,
+    Module<BE>: VecZnxAddScalarAssign<BE> + VecZnxSubAssign<BE> + GLWENoise<BE> + GLWEDecrypt<BE> + GLWENormalize<BE>,
     Module<BE>: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmallBackend<BE>
+        + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
@@ -104,7 +102,7 @@ where
             ScalarZnx::from_data(BE::from_host_bytes(pt_want.data), pt_want.n(), pt_want.cols());
         {
             let mut pt_backend = pt.to_backend_mut();
-            self.vec_znx_add_scalar_assign_backend(
+            self.vec_znx_add_scalar_assign(
                 &mut pt_backend.data,
                 0,
                 (dsize - 1) + res_row * dsize,

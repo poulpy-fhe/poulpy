@@ -1,6 +1,6 @@
 use crate::{
     api::{
-        VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAddScaledAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAddScaledAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign,
         VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
         VecZnxIdftNormalizeConsumeTmpBytes,
@@ -110,8 +110,8 @@ impl_vec_znx_dft_delegate!(
 );
 
 impl_vec_znx_dft_delegate!(
-    VecZnxDftAddInto<B>,
-    fn vec_znx_dft_add_into(
+    VecZnxDftAdd<B>,
+    fn vec_znx_dft_add(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,
         res_col: usize,
@@ -120,7 +120,7 @@ impl_vec_znx_dft_delegate!(
         b: &VecZnxDftBackendRef<'_, B>,
         b_col: usize,
     ) {
-        B::vec_znx_dft_add_into(self, res, res_col, a, a_col, b, b_col);
+        B::vec_znx_dft_add(self, res, res_col, a, a_col, b, b_col);
     }
 );
 

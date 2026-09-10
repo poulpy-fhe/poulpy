@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::VecZnxCopyBackend,
+    api::VecZnxCopy,
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
         WriterTo, vec_znx_alloc_zeroed,
@@ -281,7 +281,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWECompressed<D, W> {
 /// the mask polynomials from the stored PRNG seed.
 pub trait GLWEDecompress
 where
-    Self: GetDegree + GLWEMaskFillDefault<Self::Backend> + VecZnxCopyBackend<Self::Backend>,
+    Self: GetDegree + GLWEMaskFillDefault<Self::Backend> + VecZnxCopy<Self::Backend>,
 {
     type Backend: Backend;
 
@@ -304,7 +304,7 @@ where
 
             assert_eq!(res.glwe_layout(), other.glwe_layout());
 
-            self.vec_znx_copy_backend(&mut res.data, 0, &other.data, 0);
+            self.vec_znx_copy(&mut res.data, 0, &other.data, 0);
         }
         self.fill_glwe_mask_from_seed_default(other.base2k.into(), res, 1, other.rank().as_usize(), other.seed);
 
@@ -314,7 +314,7 @@ where
 
 impl<B: Backend> GLWEDecompress for Module<B>
 where
-    Self: GetDegree + GLWEMaskFillDefault<B> + VecZnxCopyBackend<B>,
+    Self: GetDegree + GLWEMaskFillDefault<B> + VecZnxCopy<B>,
 {
     type Backend = B;
 }

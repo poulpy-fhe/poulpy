@@ -11,7 +11,7 @@ use crate::layouts::VecZnxDftToBackendRef;
 
 use crate::{
     api::{
-        ScratchOwnedAlloc, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolCopyBackend, SvpPrepare,
+        ScratchOwnedAlloc, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolCopy, SvpPrepare,
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
     },
     layouts::{Backend, FillUniform, HostBytesBackend, Module, PrepareHint, ScratchOwned, SvpPPolOwned},
@@ -172,7 +172,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     Module<BR>: SvpPrepare<BR>
         + SvpApplyDftToDft<BR>
         + SvpPPolAlloc<BR>
-        + SvpPPolCopyBackend<BR>
+        + SvpPPolCopy<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxBigNormalize<BR>
@@ -182,7 +182,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     Module<BT>: SvpPrepare<BT>
         + SvpApplyDftToDft<BT>
         + SvpPPolAlloc<BT>
-        + SvpPPolCopyBackend<BT>
+        + SvpPPolCopy<BT>
         + VecZnxDftAlloc<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxBigNormalize<BT>
@@ -230,8 +230,8 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     let mut svp_ref_copy: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(cols, PrepareHint::Reuse);
     let mut svp_test_copy: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols, PrepareHint::Reuse);
     for j in 0..cols {
-        module_ref.svp_ppol_copy_backend(&mut svp_ref_copy.to_backend_mut(), cols - 1 - j, &svp_ref.to_backend_ref(), j);
-        module_test.svp_ppol_copy_backend(
+        module_ref.svp_ppol_copy(&mut svp_ref_copy.to_backend_mut(), cols - 1 - j, &svp_ref.to_backend_ref(), j);
+        module_test.svp_ppol_copy(
             &mut svp_test_copy.to_backend_mut(),
             cols - 1 - j,
             &svp_test.to_backend_ref(),
@@ -246,7 +246,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         let hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(|_| {}));
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            module_test.svp_ppol_copy_backend(&mut other_hint.to_backend_mut(), 0, &svp_test.to_backend_ref(), 0);
+            module_test.svp_ppol_copy(&mut other_hint.to_backend_mut(), 0, &svp_test.to_backend_ref(), 0);
         }));
         std::panic::set_hook(hook);
         assert!(caught.is_err(), "svp_ppol_copy accepted a mismatched PrepareHint");

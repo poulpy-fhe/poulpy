@@ -80,7 +80,7 @@ pub trait HalVecZnxDefault<BE: Backend<ZnxWord = i64>>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    fn scalar_znx_fill_ternary_hw_backend_default(
+    fn scalar_znx_fill_ternary_hw_default(
         _module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -93,7 +93,7 @@ where
         res.fill_ternary_hw(res_col, hw, &mut source);
     }
 
-    fn scalar_znx_fill_ternary_prob_backend_default(
+    fn scalar_znx_fill_ternary_prob_default(
         _module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -106,7 +106,7 @@ where
         res.fill_ternary_prob(res_col, prob, &mut source);
     }
 
-    fn scalar_znx_fill_binary_hw_backend_default(
+    fn scalar_znx_fill_binary_hw_default(
         _module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -119,7 +119,7 @@ where
         res.fill_binary_hw(res_col, hw, &mut source);
     }
 
-    fn scalar_znx_fill_binary_prob_backend_default(
+    fn scalar_znx_fill_binary_prob_default(
         _module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -132,7 +132,7 @@ where
         res.fill_binary_prob(res_col, prob, &mut source);
     }
 
-    fn scalar_znx_fill_binary_block_backend_default(
+    fn scalar_znx_fill_binary_block_default(
         _module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -145,7 +145,7 @@ where
         res.fill_binary_block(res_col, block_size, &mut source);
     }
 
-    fn vec_znx_zero_backend_default(_module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize)
+    fn vec_znx_zero_default(_module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize)
     where
         BE: ZnxZero,
         for<'x> BE::BufMut<'x>: HostDataMut,
@@ -153,12 +153,12 @@ where
         vec_znx_zero::<BE>(res, res_col);
     }
 
-    fn vec_znx_normalize_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
+    fn vec_znx_normalize_tmp_bytes_default(module: &Module<BE>) -> usize {
         vec_znx_normalize_tmp_bytes(module.n())
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_normalize_backend_default(
+    fn vec_znx_normalize_default(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_base2k: usize,
@@ -198,7 +198,7 @@ where
         vec_znx_normalize::<BE>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
-    fn vec_znx_normalize_assign_backend_default(
+    fn vec_znx_normalize_assign_default(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -221,7 +221,7 @@ where
         vec_znx_normalize_assign::<BE>(base2k, k, res, res_col, carry);
     }
 
-    fn vec_znx_add_into_backend_default<'a>(
+    fn vec_znx_add_default<'a>(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -237,7 +237,7 @@ where
         vec_znx_add_into::<BE>(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_add_assign_backend_default(
+    fn vec_znx_add_assign_default(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -259,7 +259,7 @@ where
         }
     }
 
-    fn vec_znx_extract_coeff_backend_default(
+    fn vec_znx_extract_coeff_default(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -273,7 +273,7 @@ where
         vec_znx_extract_coeff::<BE>(res, res_col, a, a_col, a_coeff);
     }
 
-    fn vec_znx_add_scalar_assign_backend_default(
+    fn vec_znx_add_scalar_assign_default(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -288,7 +288,7 @@ where
         vec_znx_add_scalar_assign::<BE>(res, res_col, res_limb, a, a_col);
     }
 
-    fn vec_znx_sub_backend_default<'a>(
+    fn vec_znx_sub_default<'a>(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -304,7 +304,7 @@ where
         vec_znx_sub::<BE>(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_sub_assign_backend_default(
+    fn vec_znx_sub_assign_default(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -318,7 +318,7 @@ where
         vec_znx_sub_assign::<BE>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_sub_negate_assign_backend_default(
+    fn vec_znx_sub_negate_assign_default(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -332,7 +332,7 @@ where
         vec_znx_sub_negate_assign::<BE>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_negate_backend_default(
+    fn vec_znx_negate_default(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -346,7 +346,7 @@ where
         vec_znx_negate::<BE>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_negate_assign_backend_default(_module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize)
+    fn vec_znx_negate_assign_default(_module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize)
     where
         BE: ZnxNegateAssign,
         for<'x> BE::BufMut<'x>: HostDataMut,
@@ -354,12 +354,12 @@ where
         vec_znx_negate_assign::<BE>(res, res_col);
     }
 
-    fn vec_znx_rsh_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
+    fn vec_znx_rsh_tmp_bytes_default(module: &Module<BE>) -> usize {
         vec_znx_rsh_tmp_bytes(module.n())
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_backend_default(
+    fn vec_znx_rsh_default(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -387,7 +387,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_coeff_backend_default(
+    fn vec_znx_rsh_coeff_default(
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -416,7 +416,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_add_into_backend_default(
+    fn vec_znx_rsh_add_default(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -444,7 +444,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_add_coeff_into_backend_default(
+    fn vec_znx_rsh_add_coeff_default(
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -474,7 +474,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_sub_coeff_into_backend_default(
+    fn vec_znx_rsh_sub_coeff_default(
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -502,12 +502,12 @@ where
         vec_znx_rsh_sub_coeff_into::<BE>(base2k, k, res, res_col, a, a_col, a_coeff, res_coeff, carry);
     }
 
-    fn vec_znx_lsh_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
+    fn vec_znx_lsh_tmp_bytes_default(module: &Module<BE>) -> usize {
         vec_znx_lsh_tmp_bytes(module.n())
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_backend_default(
+    fn vec_znx_lsh_default(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -533,7 +533,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_add_into_backend_default(
+    fn vec_znx_lsh_add_default(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -559,7 +559,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_add_coeff_to_coeff_backend_default<'s, 'r, 'a>(
+    fn vec_znx_lsh_add_coeff_to_coeff_default<'s, 'r, 'a>(
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -587,7 +587,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_sub_coeff_to_coeff_backend_default<'s, 'r, 'a>(
+    fn vec_znx_lsh_sub_coeff_to_coeff_default<'s, 'r, 'a>(
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -614,7 +614,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_sub_backend_default<'s, 'r, 'a>(
+    fn vec_znx_lsh_sub_default<'s, 'r, 'a>(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -638,7 +638,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_sub_backend_default(
+    fn vec_znx_rsh_sub_default(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -664,7 +664,7 @@ where
         vec_znx_rsh_sub::<BE>(base2k, k, res, res_col, a, a_col, carry);
     }
 
-    fn vec_znx_rsh_assign_backend_default(
+    fn vec_znx_rsh_assign_default(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -687,7 +687,7 @@ where
         vec_znx_rsh_assign::<BE>(base2k, k, res, res_col, carry);
     }
 
-    fn vec_znx_lsh_assign_backend_default(
+    fn vec_znx_lsh_assign_default(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -703,7 +703,7 @@ where
         vec_znx_lsh_assign::<BE>(base2k, k, res, res_col, carry);
     }
 
-    fn vec_znx_rotate_backend_default(
+    fn vec_znx_rotate_default(
         _module: &Module<BE>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -718,11 +718,11 @@ where
         vec_znx_rotate::<BE>(p, res, res_col, a, a_col);
     }
 
-    fn vec_znx_rotate_assign_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
+    fn vec_znx_rotate_assign_tmp_bytes_default(module: &Module<BE>) -> usize {
         vec_znx_rotate_assign_tmp_bytes(module.n())
     }
 
-    fn vec_znx_rotate_assign_backend_default(
+    fn vec_znx_rotate_assign_default(
         module: &Module<BE>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -740,7 +740,7 @@ where
         vec_znx_rotate_assign::<BE>(p, res, res_col, tmp);
     }
 
-    fn vec_znx_automorphism_backend_default(
+    fn vec_znx_automorphism_default(
         _module: &Module<BE>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -755,11 +755,11 @@ where
         vec_znx_automorphism::<BE>(p, res, res_col, a, a_col);
     }
 
-    fn vec_znx_automorphism_assign_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
+    fn vec_znx_automorphism_assign_tmp_bytes_default(module: &Module<BE>) -> usize {
         vec_znx_automorphism_assign_tmp_bytes(module.n())
     }
 
-    fn vec_znx_automorphism_assign_backend_default(
+    fn vec_znx_automorphism_assign_default(
         module: &Module<BE>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -777,7 +777,7 @@ where
         vec_znx_automorphism_assign::<BE>(p, res, res_col, tmp);
     }
 
-    fn vec_znx_mul_xp_minus_one_backend_default(
+    fn vec_znx_mul_xp_minus_one_default(
         _module: &Module<BE>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -792,11 +792,11 @@ where
         vec_znx_mul_xp_minus_one::<BE>(p, res, res_col, a, a_col);
     }
 
-    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module: &Module<BE>) -> usize {
         vec_znx_mul_xp_minus_one_assign_tmp_bytes(module.n())
     }
 
-    fn vec_znx_mul_xp_minus_one_assign_backend_default(
+    fn vec_znx_mul_xp_minus_one_assign_default(
         module: &Module<BE>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -814,7 +814,7 @@ where
         vec_znx_mul_xp_minus_one_assign::<BE>(p, res, res_col, tmp);
     }
 
-    fn vec_znx_switch_ring_backend_default(
+    fn vec_znx_switch_ring_default(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -828,7 +828,7 @@ where
         vec_znx_switch_ring::<BE>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_copy_backend_default(
+    fn vec_znx_copy_default(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -843,7 +843,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_copy_range_backend_default(
+    fn vec_znx_copy_range_default(
         _module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -862,7 +862,7 @@ where
         crate::reference::vec_znx::vec_znx_copy_range::<BE>(res, res_col, res_limb, res_offset, a, a_col, a_limb, a_offset, len);
     }
 
-    fn vec_znx_fill_uniform_backend_default(
+    fn vec_znx_fill_uniform_default(
         _module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -876,7 +876,7 @@ where
         vec_znx_fill_uniform_ref::<BE>(base2k, k, res, res_col, &mut source);
     }
 
-    fn vec_znx_add_normal_backend_default(
+    fn vec_znx_add_normal_default(
         _module: &Module<BE>,
         res_base2k: usize,
         res: &mut VecZnxBackendMut<'_, BE>,

@@ -4,7 +4,7 @@ use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::{
-    api::{VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshBackend, VecZnxRshTmpBytes},
+    api::{VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshTmpBytes},
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -32,7 +32,7 @@ pub unsafe trait CKKSPlaintextZnxImpl<BE: Backend>: Backend {
 unsafe impl<BE: Backend> CKKSPlaintextZnxImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
-    Module<BE>: CKKSPlaintextDefault<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes + VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
+    Module<BE>: CKKSPlaintextDefault<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes + VecZnxLsh<BE> + VecZnxRsh<BE>,
 {
     fn ckks_extract_pt_tmp_bytes_impl(module: &Module<BE>) -> usize {
         module.ckks_extract_pt_tmp_bytes_default()

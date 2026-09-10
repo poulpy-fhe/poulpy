@@ -83,8 +83,8 @@ pub trait VecZnxIdftNormalizeConsume<B: Backend> {
 }
 
 /// Element-wise addition of two [`VecZnxDft`](crate::layouts::VecZnxDft) vectors.
-pub trait VecZnxDftAddInto<B: Backend> {
-    fn vec_znx_dft_add_into(
+pub trait VecZnxDftAdd<B: Backend> {
+    fn vec_znx_dft_add(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,
         res_col: usize,

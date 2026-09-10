@@ -5,7 +5,7 @@ use poulpy_core::layouts::{BSGSMeta, GLWEInfos, GLWEToBackendMut, GLWEToBackendR
 use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero, GiantStepTensorBounds};
 use poulpy_hal::{
     api::{
-        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxRshCoeffBackend,
+        Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxRshCoeff,
         VecZnxRshTmpBytes,
     },
     layouts::{
@@ -83,7 +83,7 @@ where
         + CKKSCopyOps<BE>
         + GLWEZero<BE>
         + GiantStepTensorBounds<BE>
-        + VecZnxRshCoeffBackend<BE>
+        + VecZnxRshCoeff<BE>
         + VecZnxRshTmpBytes,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
@@ -194,7 +194,7 @@ where
                     } else {
                         {
                             let mut g_bk = g.to_backend_mut();
-                            module.vec_znx_rsh_coeff_backend(
+                            module.vec_znx_rsh_coeff(
                                 kb,
                                 r,
                                 &mut g_bk,
@@ -342,7 +342,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
             + GiantStepTensorBounds<BE>
-            + VecZnxRshCoeffBackend<BE>
+            + VecZnxRshCoeff<BE>
             + VecZnxRshTmpBytes
             + Sized,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
@@ -369,7 +369,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
             + GiantStepTensorBounds<BE>
-            + VecZnxRshCoeffBackend<BE>
+            + VecZnxRshCoeff<BE>
             + VecZnxRshTmpBytes
             + Sized,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
@@ -397,7 +397,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
             + GiantStepTensorBounds<BE>
-            + VecZnxRshCoeffBackend<BE>
+            + VecZnxRshCoeff<BE>
             + VecZnxRshTmpBytes
             + Sized,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
@@ -478,7 +478,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
             + GiantStepTensorBounds<BE>
-            + VecZnxRshCoeffBackend<BE>
+            + VecZnxRshCoeff<BE>
             + VecZnxRshTmpBytes
             + Sized,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,

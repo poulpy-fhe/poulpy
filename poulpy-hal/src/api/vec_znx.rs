@@ -8,13 +8,13 @@ pub trait VecZnxNormalizeTmpBytes {
     fn vec_znx_normalize_tmp_bytes(&self) -> usize;
 }
 
-pub trait VecZnxZeroBackend<B: Backend> {
-    fn vec_znx_zero_backend(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize);
+pub trait VecZnxZero<B: Backend> {
+    fn vec_znx_zero(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize);
 }
 
-pub trait VecZnxCopyRangeBackend<B: Backend> {
+pub trait VecZnxCopyRange<B: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_copy_range_backend(
+    fn vec_znx_copy_range(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
@@ -28,8 +28,8 @@ pub trait VecZnxCopyRangeBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxExtractCoeffBackend<B: Backend> {
-    fn vec_znx_extract_coeff_backend(
+pub trait VecZnxExtractCoeff<B: Backend> {
+    fn vec_znx_extract_coeff(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
@@ -63,8 +63,8 @@ pub trait VecZnxNormalize<B: Backend> {
 }
 
 /// In-place normalization with the input and radix bounds of [`VecZnxNormalize`].
-pub trait VecZnxNormalizeAssignBackend<B: Backend> {
-    fn vec_znx_normalize_assign_backend(
+pub trait VecZnxNormalizeAssign<B: Backend> {
+    fn vec_znx_normalize_assign(
         &self,
         base2k: usize,
         k: usize,
@@ -74,9 +74,9 @@ pub trait VecZnxNormalizeAssignBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxAddIntoBackend<B: Backend> {
+pub trait VecZnxAdd<B: Backend> {
     /// Adds the selected backend-native column of `a` to the selected backend-native column of `b`.
-    fn vec_znx_add_into_backend(
+    fn vec_znx_add(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
@@ -87,18 +87,12 @@ pub trait VecZnxAddIntoBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxAddAssignBackend<B: Backend> {
-    fn vec_znx_add_assign_backend(
-        &self,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-    );
+pub trait VecZnxAddAssign<B: Backend> {
+    fn vec_znx_add_assign(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
-pub trait VecZnxAddScalarAssignBackend<B: Backend> {
-    fn vec_znx_add_scalar_assign_backend(
+pub trait VecZnxAddScalarAssign<B: Backend> {
+    fn vec_znx_add_scalar_assign(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
@@ -108,8 +102,8 @@ pub trait VecZnxAddScalarAssignBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxSubBackend<B: Backend> {
-    fn vec_znx_sub_backend(
+pub trait VecZnxSub<B: Backend> {
+    fn vec_znx_sub(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
@@ -120,8 +114,12 @@ pub trait VecZnxSubBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxSubAssignBackend<B: Backend> {
-    fn vec_znx_sub_assign_backend(
+pub trait VecZnxSubAssign<B: Backend> {
+    fn vec_znx_sub_assign(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+}
+
+pub trait VecZnxSubNegateAssign<B: Backend> {
+    fn vec_znx_sub_negate_assign(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
@@ -130,28 +128,12 @@ pub trait VecZnxSubAssignBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxSubNegateAssignBackend<B: Backend> {
-    fn vec_znx_sub_negate_assign_backend(
-        &self,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-    );
+pub trait VecZnxNegate<B: Backend> {
+    fn vec_znx_negate(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
-pub trait VecZnxNegateBackend<B: Backend> {
-    fn vec_znx_negate_backend(
-        &self,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-    );
-}
-
-pub trait VecZnxNegateAssignBackend<B: Backend> {
-    fn vec_znx_negate_assign_backend(&self, a: &mut VecZnxBackendMut<'_, B>, a_col: usize);
+pub trait VecZnxNegateAssign<B: Backend> {
+    fn vec_znx_negate_assign(&self, a: &mut VecZnxBackendMut<'_, B>, a_col: usize);
 }
 
 /// Returns scratch bytes required for left-shift operations.
@@ -159,10 +141,10 @@ pub trait VecZnxLshTmpBytes {
     fn vec_znx_lsh_tmp_bytes(&self) -> usize;
 }
 
-pub trait VecZnxLshBackend<B: Backend> {
+pub trait VecZnxLsh<B: Backend> {
     /// Left shift by k bits all columns of `a`.
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_backend(
+    fn vec_znx_lsh(
         &self,
         base2k: usize,
         k: usize,
@@ -174,7 +156,7 @@ pub trait VecZnxLshBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxLshAddIntoBackend<B: Backend> {
+pub trait VecZnxLshAdd<B: Backend> {
     /// Adds `a` left-shifted by `k` bits into `res`: `res += a << k`, column-wise.
     ///
     /// Normalization contract: the shifted operand `a` is normalized on the fly
@@ -185,7 +167,7 @@ pub trait VecZnxLshAddIntoBackend<B: Backend> {
     /// require a normalized `res` afterwards must normalize it themselves; this
     /// op alone does not restore the digit contract on `res`.
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_add_into_backend(
+    fn vec_znx_lsh_add(
         &self,
         base2k: usize,
         k: usize,
@@ -197,9 +179,9 @@ pub trait VecZnxLshAddIntoBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxLshAddCoeffToCoeffBackend<B: Backend> {
+pub trait VecZnxLshAddCoeffToCoeff<B: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_add_coeff_to_coeff_backend(
+    fn vec_znx_lsh_add_coeff_to_coeff(
         &self,
         base2k: usize,
         k: usize,
@@ -213,9 +195,9 @@ pub trait VecZnxLshAddCoeffToCoeffBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxLshSubCoeffToCoeffBackend<B: Backend> {
+pub trait VecZnxLshSubCoeffToCoeff<B: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_sub_coeff_to_coeff_backend(
+    fn vec_znx_lsh_sub_coeff_to_coeff(
         &self,
         base2k: usize,
         k: usize,
@@ -234,10 +216,10 @@ pub trait VecZnxRshTmpBytes {
     fn vec_znx_rsh_tmp_bytes(&self) -> usize;
 }
 
-pub trait VecZnxRshBackend<B: Backend> {
+pub trait VecZnxRsh<B: Backend> {
     /// Right shift by k bits all columns of `a`.
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_backend(
+    fn vec_znx_rsh(
         &self,
         base2k: usize,
         k: usize,
@@ -249,9 +231,9 @@ pub trait VecZnxRshBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxRshCoeffBackend<B: Backend> {
+pub trait VecZnxRshCoeff<B: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_coeff_backend(
+    fn vec_znx_rsh_coeff(
         &self,
         base2k: usize,
         k: usize,
@@ -264,7 +246,7 @@ pub trait VecZnxRshCoeffBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxRshAddIntoBackend<B: Backend> {
+pub trait VecZnxRshAdd<B: Backend> {
     /// Adds `a` right-shifted by `k` bits into `res`: `res += a >> k`, column-wise.
     ///
     /// Normalization contract: the shifted operand `a` is normalized on the fly
@@ -275,7 +257,7 @@ pub trait VecZnxRshAddIntoBackend<B: Backend> {
     /// require a normalized `res` afterwards must normalize it themselves; this
     /// op alone does not restore the digit contract on `res`.
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_add_into_backend(
+    fn vec_znx_rsh_add(
         &self,
         base2k: usize,
         k: usize,
@@ -287,9 +269,9 @@ pub trait VecZnxRshAddIntoBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxRshAddCoeffIntoBackend<B: Backend> {
+pub trait VecZnxRshAddCoeff<B: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_add_coeff_into_backend(
+    fn vec_znx_rsh_add_coeff(
         &self,
         base2k: usize,
         k: usize,
@@ -303,9 +285,9 @@ pub trait VecZnxRshAddCoeffIntoBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxRshSubCoeffIntoBackend<B: Backend> {
+pub trait VecZnxRshSubCoeff<B: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_sub_coeff_into_backend(
+    fn vec_znx_rsh_sub_coeff(
         &self,
         base2k: usize,
         k: usize,
@@ -319,10 +301,10 @@ pub trait VecZnxRshSubCoeffIntoBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxLshSubBackend<B: Backend> {
+pub trait VecZnxLshSub<B: Backend> {
     /// Left shift by k bits and subtract from destination.
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_sub_backend(
+    fn vec_znx_lsh_sub(
         &self,
         base2k: usize,
         k: usize,
@@ -334,10 +316,10 @@ pub trait VecZnxLshSubBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxRshSubBackend<B: Backend> {
+pub trait VecZnxRshSub<B: Backend> {
     /// Right shift by k bits and subtract from destination.
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_sub_backend(
+    fn vec_znx_rsh_sub(
         &self,
         base2k: usize,
         k: usize,
@@ -349,9 +331,9 @@ pub trait VecZnxRshSubBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxLshAssignBackend<B: Backend> {
+pub trait VecZnxLshAssign<B: Backend> {
     /// Left shift by k bits all columns of `a`.
-    fn vec_znx_lsh_assign_backend(
+    fn vec_znx_lsh_assign(
         &self,
         base2k: usize,
         k: usize,
@@ -361,9 +343,9 @@ pub trait VecZnxLshAssignBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxRshAssignBackend<B: Backend> {
+pub trait VecZnxRshAssign<B: Backend> {
     /// Right shift by k bits all columns of `a`.
-    fn vec_znx_rsh_assign_backend(
+    fn vec_znx_rsh_assign(
         &self,
         base2k: usize,
         k: usize,
@@ -373,9 +355,9 @@ pub trait VecZnxRshAssignBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxRotateBackend<B: Backend> {
+pub trait VecZnxRotate<B: Backend> {
     /// Multiplies the selected column of `a` by X^k and stores the result in `res_col` of `res`.
-    fn vec_znx_rotate_backend(
+    fn vec_znx_rotate(
         &self,
         p: i64,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -389,20 +371,14 @@ pub trait VecZnxRotateAssignTmpBytes {
     fn vec_znx_rotate_assign_tmp_bytes(&self) -> usize;
 }
 
-pub trait VecZnxRotateAssignBackend<B: Backend> {
+pub trait VecZnxRotateAssign<B: Backend> {
     /// Multiplies the selected column of `a` by X^k.
-    fn vec_znx_rotate_assign_backend(
-        &self,
-        p: i64,
-        a: &mut VecZnxBackendMut<'_, B>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
+    fn vec_znx_rotate_assign(&self, p: i64, a: &mut VecZnxBackendMut<'_, B>, a_col: usize, scratch: &mut ScratchArena<'_, B>);
 }
 
-pub trait VecZnxAutomorphismBackend<B: Backend> {
+pub trait VecZnxAutomorphism<B: Backend> {
     /// Applies the automorphism X^i -> X^ik on the selected column of `a` and stores the result in `res_col` column of `res`.
-    fn vec_znx_automorphism_backend(
+    fn vec_znx_automorphism(
         &self,
         k: i64,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -416,9 +392,9 @@ pub trait VecZnxAutomorphismAssignTmpBytes {
     fn vec_znx_automorphism_assign_tmp_bytes(&self) -> usize;
 }
 
-pub trait VecZnxAutomorphismAssignBackend<B: Backend> {
+pub trait VecZnxAutomorphismAssign<B: Backend> {
     /// Applies the automorphism X^i -> X^ik on the selected column of `a`.
-    fn vec_znx_automorphism_assign_backend(
+    fn vec_znx_automorphism_assign(
         &self,
         k: i64,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -427,9 +403,9 @@ pub trait VecZnxAutomorphismAssignBackend<B: Backend> {
     );
 }
 
-pub trait ScalarZnxAutomorphismBackend<B: Backend> {
+pub trait ScalarZnxAutomorphism<B: Backend> {
     /// Applies the automorphism X^i -> X^ik on the selected column of `a` and stores the result in `res_col` column of `res`.
-    fn scalar_znx_automorphism_backend(
+    fn scalar_znx_automorphism(
         &self,
         k: i64,
         res: &mut ScalarZnxBackendMut<'_, B>,
@@ -440,8 +416,8 @@ pub trait ScalarZnxAutomorphismBackend<B: Backend> {
 }
 
 /// Multiplies the selected column by `(X^p - 1)` in `Z[X]/(X^N + 1)`.
-pub trait VecZnxMulXpMinusOneBackend<B: Backend> {
-    fn vec_znx_mul_xp_minus_one_backend(
+pub trait VecZnxMulXpMinusOne<B: Backend> {
+    fn vec_znx_mul_xp_minus_one(
         &self,
         p: i64,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -455,8 +431,8 @@ pub trait VecZnxMulXpMinusOneAssignTmpBytes {
     fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(&self) -> usize;
 }
 
-pub trait VecZnxMulXpMinusOneAssignBackend<B: Backend> {
-    fn vec_znx_mul_xp_minus_one_assign_backend(
+pub trait VecZnxMulXpMinusOneAssign<B: Backend> {
+    fn vec_znx_mul_xp_minus_one_assign(
         &self,
         p: i64,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -466,22 +442,16 @@ pub trait VecZnxMulXpMinusOneAssignBackend<B: Backend> {
 }
 
 /// Switches ring degree between `a` and `res` by truncation or zero-padding.
-pub trait VecZnxSwitchRingBackend<B: Backend> {
-    fn vec_znx_switch_ring_backend(
-        &self,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-    );
+pub trait VecZnxSwitchRing<B: Backend> {
+    fn vec_znx_switch_ring(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
-pub trait VecZnxCopyBackend<B: Backend> {
-    fn vec_znx_copy_backend(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+pub trait VecZnxCopy<B: Backend> {
+    fn vec_znx_copy(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
-pub trait ScalarZnxFillTernaryHwSourceBackend<B: Backend> {
-    fn scalar_znx_fill_ternary_hw_source_backend(
+pub trait ScalarZnxFillTernaryHwSource<B: Backend> {
+    fn scalar_znx_fill_ternary_hw_source(
         &self,
         res: &mut ScalarZnxBackendMut<'_, B>,
         res_col: usize,
@@ -490,8 +460,8 @@ pub trait ScalarZnxFillTernaryHwSourceBackend<B: Backend> {
     );
 }
 
-pub trait ScalarZnxFillTernaryProbSourceBackend<B: Backend> {
-    fn scalar_znx_fill_ternary_prob_source_backend(
+pub trait ScalarZnxFillTernaryProbSource<B: Backend> {
+    fn scalar_znx_fill_ternary_prob_source(
         &self,
         res: &mut ScalarZnxBackendMut<'_, B>,
         res_col: usize,
@@ -500,8 +470,8 @@ pub trait ScalarZnxFillTernaryProbSourceBackend<B: Backend> {
     );
 }
 
-pub trait ScalarZnxFillBinaryHwSourceBackend<B: Backend> {
-    fn scalar_znx_fill_binary_hw_source_backend(
+pub trait ScalarZnxFillBinaryHwSource<B: Backend> {
+    fn scalar_znx_fill_binary_hw_source(
         &self,
         res: &mut ScalarZnxBackendMut<'_, B>,
         res_col: usize,
@@ -510,8 +480,8 @@ pub trait ScalarZnxFillBinaryHwSourceBackend<B: Backend> {
     );
 }
 
-pub trait ScalarZnxFillBinaryProbSourceBackend<B: Backend> {
-    fn scalar_znx_fill_binary_prob_source_backend(
+pub trait ScalarZnxFillBinaryProbSource<B: Backend> {
+    fn scalar_znx_fill_binary_prob_source(
         &self,
         res: &mut ScalarZnxBackendMut<'_, B>,
         res_col: usize,
@@ -520,8 +490,8 @@ pub trait ScalarZnxFillBinaryProbSourceBackend<B: Backend> {
     );
 }
 
-pub trait ScalarZnxFillBinaryBlockSourceBackend<B: Backend> {
-    fn scalar_znx_fill_binary_block_source_backend(
+pub trait ScalarZnxFillBinaryBlockSource<B: Backend> {
+    fn scalar_znx_fill_binary_block_source(
         &self,
         res: &mut ScalarZnxBackendMut<'_, B>,
         res_col: usize,
@@ -530,11 +500,11 @@ pub trait ScalarZnxFillBinaryBlockSourceBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxFillUniformSourceBackend<B: Backend> {
+pub trait VecZnxFillUniformSource<B: Backend> {
     /// Fills a column with a uniform `k`-bit torus value in base `2^base2k`.
     ///
     /// Unused low bits in the last live limb and limbs above `k` are zeroed.
-    fn vec_znx_fill_uniform_source_backend(
+    fn vec_znx_fill_uniform_source(
         &self,
         base2k: usize,
         k: usize,
@@ -545,9 +515,9 @@ pub trait VecZnxFillUniformSourceBackend<B: Backend> {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub trait VecZnxAddNormalSourceBackend<B: Backend> {
+pub trait VecZnxAddNormalSource<B: Backend> {
     /// Adds a discrete normal vector scaled by 2^{-k} with the provided standard deviation and bounded to \[-bound, bound\].
-    fn vec_znx_add_normal_source_backend(
+    fn vec_znx_add_normal_source(
         &self,
         base2k: usize,
         res: &mut VecZnxBackendMut<'_, B>,

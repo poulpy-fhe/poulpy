@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
 use poulpy_hal::{
-    api::{VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshBackend, VecZnxRshTmpBytes},
+    api::{VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshTmpBytes},
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -15,7 +15,7 @@ use crate::api::CKKSPlaintextVecOps;
 impl<BE: Backend + CKKSPlaintextZnxImpl<BE>> CKKSPlaintextVecOps<BE> for Module<BE>
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
-    Module<BE>: VecZnxLshBackend<BE> + VecZnxLshTmpBytes + VecZnxRshBackend<BE> + VecZnxRshTmpBytes,
+    Module<BE>: VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes,
 {
     fn ckks_extract_pt_tmp_bytes(&self) -> usize {
         BE::ckks_extract_pt_tmp_bytes_impl(self)

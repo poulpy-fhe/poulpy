@@ -76,7 +76,7 @@ pub(crate) fn svp_prepare(
     }
 }
 
-pub(crate) fn svp_ppol_copy_backend(
+pub(crate) fn svp_ppol_copy(
     res: &mut SvpPPolBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
     a: &SvpPPolBackendRef<'_, NTT3x42Ifma>,

@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{Module, ScratchOwned},
     source::Source,
     test_suite::TestParams,
@@ -31,7 +31,7 @@ where
         + GLWEDecrypt<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
-        + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxFillUniformSource<BE>
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -170,7 +170,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
         + GLWESwitchingKeyDecompress
         + crate::layouts::compressed::GLWEDecompress<Backend = BE>
         + GGLWENoise<BE>
-        + VecZnxFillUniformSourceBackend<BE>,
+        + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = module.n();
@@ -313,7 +313,7 @@ where
         + GLWESwitchingKeyDecompress
         + crate::layouts::compressed::GLWEDecompress<Backend = BE>
         + GGLWENoise<BE>
-        + VecZnxFillUniformSourceBackend<BE>,
+        + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = module.n();

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSource, VecZnxIdftApplyTmpA,
     },
     layouts::{Backend, GaloisElement, HostDataMut, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx},
     source::Source,
@@ -78,7 +78,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftAlloc<BE>
         + VecZnxIdftApplyTmpA<BE>
-        + VecZnxFillUniformSourceBackend<BE>,
+        + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n = module.n();
@@ -139,7 +139,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-    module.vec_znx_fill_uniform_source_backend(
+    module.vec_znx_fill_uniform_source(
         in_base2k,
         pt.k().as_usize(),
         &mut vec_znx_backend_mut::<BE>(&mut pt.data),

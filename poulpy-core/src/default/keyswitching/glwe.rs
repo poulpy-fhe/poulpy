@@ -289,7 +289,7 @@ use poulpy_hal::{
     api::{
         VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxIdftApply,
         VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalize,
-        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
     },
     layouts::{VecZnxBigToBackendRef, VecZnxToBackendRef},
 };
@@ -595,7 +595,7 @@ pub fn glwe_keyswitch_assign_default<BE, M, R>(
         + VecZnxDftBytesOf
         + VecZnxIdftApply<BE>
         + VecZnxNormalize<BE>
-        + VecZnxNormalizeAssignBackend<BE>,
+        + VecZnxNormalizeAssign<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
     assert_eq!(

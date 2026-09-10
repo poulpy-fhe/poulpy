@@ -10,10 +10,10 @@
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
-        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
-        VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
-        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
+        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
+        VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
+        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes,
     },
     layouts::{
         Backend, GaloisElement, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -156,9 +156,9 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         + VecZnxBigAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmallBackend<BE>
+        + VecZnxBigFromSmall<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxCopyBackend<BE>
+        + VecZnxCopy<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphism<BE>
@@ -168,7 +168,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
         + GLWEMulPlain<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -364,7 +364,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
 
     let mut res_backend = res.to_backend_mut();
     for col in 0..cols {
-        module.vec_znx_normalize_assign_backend(
+        module.vec_znx_normalize_assign(
             res_base2k.as_usize(),
             res_k,
             &mut res_backend.data,

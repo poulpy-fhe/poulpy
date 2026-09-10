@@ -6,7 +6,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{VecZnxAddScalarAssignBackend, VecZnxNormalizeAssignBackend},
+    api::{VecZnxAddScalarAssign, VecZnxNormalizeAssign},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, VecZnxToBackendMut},
 };
 
@@ -15,11 +15,7 @@ use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::prepared::GGSWPreparedToBackendRef;
 
 impl<T: UnsignedInteger, BE: Backend<ZnxWord = i64>> GGSWBlindRotation<T, BE> for Module<BE> where
-    Self: GLWEBytesOf<BE>
-        + GLWEBlindRotation<BE>
-        + GLWEZero<BE>
-        + VecZnxAddScalarAssignBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>
+    Self: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE>
 {
 }
 
@@ -35,11 +31,7 @@ impl<T: UnsignedInteger, BE: Backend<ZnxWord = i64>> GGSWBlindRotation<T, BE> fo
 ///   the scalar test-vector into each row of a temporary GLWE and then rotating.
 pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend>
 where
-    Self: GLWEBytesOf<BE>
-        + GLWEBlindRotation<BE>
-        + GLWEZero<BE>
-        + VecZnxAddScalarAssignBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>,
+    Self: GLWEBytesOf<BE> + GLWEBlindRotation<BE> + GLWEZero<BE> + VecZnxAddScalarAssign<BE> + VecZnxNormalizeAssign<BE>,
 {
     /// Returns the minimum scratch-space size in bytes required by
     /// [`ggsw_blind_rotation`][Self::ggsw_blind_rotation].
@@ -157,8 +149,8 @@ where
                 {
                     let mut tmp_glwe_inner = tmp_glwe.data_mut();
                     let mut tmp_glwe_data = VecZnxToBackendMut::<BE>::to_backend_mut(&mut tmp_glwe_inner);
-                    self.vec_znx_add_scalar_assign_backend(&mut tmp_glwe_data, col, (dsize - 1) + row * dsize, &test_vector, 0);
-                    self.vec_znx_normalize_assign_backend(base2k, tmp_glwe_k, &mut tmp_glwe_data, col, &mut scratch_1.borrow());
+                    self.vec_znx_add_scalar_assign(&mut tmp_glwe_data, col, (dsize - 1) + row * dsize, &test_vector, 0);
+                    self.vec_znx_normalize_assign(base2k, tmp_glwe_k, &mut tmp_glwe_data, col, &mut scratch_1.borrow());
                 }
 
                 self.glwe_blind_rotation(

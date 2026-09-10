@@ -315,7 +315,7 @@ unsafe impl HalModuleImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
 unsafe impl HalVecZnxImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
 
-    fn vec_znx_normalize_backend(
+    fn vec_znx_normalize(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
@@ -333,7 +333,7 @@ unsafe impl HalVecZnxImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         );
     }
 
-    fn vec_znx_normalize_assign_backend(
+    fn vec_znx_normalize_assign(
         module: &Module<Self>,
         base2k: usize,
         k: usize,
@@ -657,7 +657,7 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         )
     }
 
-    fn vec_znx_dft_add_into(
+    fn vec_znx_dft_add(
         _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -667,7 +667,7 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         b_col: usize,
     ) {
         let mut res = base_dft_mut(res);
-        super::vec_znx_dft::vec_znx_dft_add_into::<NTT3x42IfmaRayonExecutor>(
+        super::vec_znx_dft::vec_znx_dft_add::<NTT3x42IfmaRayonExecutor>(
             &mut res,
             res_col,
             &base_dft_ref(a),
@@ -814,14 +814,14 @@ unsafe impl HalSvpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         <NTT3x42Ifma as HalSvpImpl<NTT3x42Ifma>>::svp_prepare(base_module(module), &mut base_svp_mut(res), res_col, a, a_col)
     }
 
-    fn svp_ppol_copy_backend(
+    fn svp_ppol_copy(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
         res_col: usize,
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT3x42Ifma as HalSvpImpl<NTT3x42Ifma>>::svp_ppol_copy_backend(
+        <NTT3x42Ifma as HalSvpImpl<NTT3x42Ifma>>::svp_ppol_copy(
             base_module(module),
             &mut base_svp_mut(res),
             res_col,

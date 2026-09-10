@@ -3,9 +3,7 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
-    api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
-    },
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScratchOwned},
     source::Source,
 };
@@ -75,7 +73,7 @@ pub fn runner_vec_znx_normalize_assign<B: Backend<ZnxWord = i64>, M: Measurement
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxNormalizeAssignBackend<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
+    Module<B>: VecZnxNormalizeAssign<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -92,7 +90,7 @@ pub fn runner_vec_znx_normalize_assign<B: Backend<ZnxWord = i64>, M: Measurement
     bencher.iter(|| {
         let mut a = vec_znx_backend_mut::<B>(&mut a);
         for i in 0..sweep.cols {
-            module.vec_znx_normalize_assign_backend(base2k, sweep.size * base2k, &mut a, i, &mut scratch.borrow());
+            module.vec_znx_normalize_assign(base2k, sweep.size * base2k, &mut a, i, &mut scratch.borrow());
         }
         black_box(());
     });

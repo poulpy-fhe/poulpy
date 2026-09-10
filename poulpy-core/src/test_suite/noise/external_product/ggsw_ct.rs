@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
@@ -27,7 +27,7 @@ where
         + GGSWExternalProduct<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxRotateAssignBackend<BE>
+        + VecZnxRotateAssign<BE>
         + GGSWNoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -134,7 +134,7 @@ where
 
             {
                 let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
-                module.vec_znx_rotate_assign_backend(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
+                module.vec_znx_rotate_assign(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
             }
 
             let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
@@ -190,7 +190,7 @@ where
         + GGSWExternalProduct<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxRotateAssignBackend<BE>
+        + VecZnxRotateAssign<BE>
         + GGSWNoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -282,7 +282,7 @@ where
 
             {
                 let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
-                module.vec_znx_rotate_assign_backend(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
+                module.vec_znx_rotate_assign(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
             }
 
             let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;

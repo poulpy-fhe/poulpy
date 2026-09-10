@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssignBackend, VecZnxSubAssignBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssign, VecZnxSubAssign},
     layouts::{Module, ScratchOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
@@ -33,8 +33,8 @@ where
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxNormalizeAssignBackend<BE>
-        + VecZnxSubAssignBackend<BE>,
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxSubAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -144,10 +144,10 @@ where
                 );
             let pt_have_data =
                 <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&pt_have.data);
-            module.vec_znx_sub_assign_backend(&mut pt_want_data, 0, &pt_have_data, 0);
+            module.vec_znx_sub_assign(&mut pt_want_data, 0, &pt_have_data, 0);
         }
         let mut pt_noise = upload_glwe_plaintext(module, &pt_want);
-        module.vec_znx_normalize_assign_backend(
+        module.vec_znx_normalize_assign(
             pt_noise.base2k().as_usize(),
             pt_noise.data.size() * pt_noise.base2k().as_usize(),
             &mut vec_znx_backend_mut::<BE>(&mut pt_noise.data),

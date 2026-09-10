@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxCopyBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxCopy},
     layouts::{Module, ScalarZnx, ScalarZnxAsVecZnxBackendMut, ScalarZnxAsVecZnxBackendRef, ScalarZnxToBackendRef, ScratchOwned},
     source::Source,
     test_suite::TestParams,
@@ -27,7 +27,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + GGLWENoise<BE>
-        + VecZnxCopyBackend<BE>,
+        + VecZnxCopy<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -97,7 +97,7 @@ where
                     <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxAsVecZnxBackendRef<BE>>::as_vec_znx_backend(
                         &sk_tensor.data,
                     );
-                module.vec_znx_copy_backend(&mut pt_want_backend, j, &sk_tensor_backend, sk_tensor_col);
+                module.vec_znx_copy(&mut pt_want_backend, j, &sk_tensor_backend, sk_tensor_col);
             }
 
             let ksk: &GGLWE<BE::OwnedBuf, BE::ZnxWord> = key.at(i);
@@ -138,7 +138,7 @@ pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::Te
         + GGLWEDecompress
         + GGLWEToGGSWKeyDecompress
         + crate::layouts::compressed::GLWEDecompress<Backend = BE>
-        + VecZnxCopyBackend<BE>,
+        + VecZnxCopy<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -213,7 +213,7 @@ pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::Te
                     <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxAsVecZnxBackendRef<BE>>::as_vec_znx_backend(
                         &sk_tensor.data,
                     );
-                module.vec_znx_copy_backend(&mut pt_want_backend, j, &sk_tensor_backend, sk_tensor_col);
+                module.vec_znx_copy(&mut pt_want_backend, j, &sk_tensor_backend, sk_tensor_col);
             }
 
             let ksk: &GGLWE<BE::OwnedBuf, BE::ZnxWord> = key.at(i);

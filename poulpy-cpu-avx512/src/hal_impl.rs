@@ -479,14 +479,14 @@ unsafe impl HalSvpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         crate::ntt4x30_avx512::svp::svp_prepare(module, res, res_col, a, a_col);
     }
 
-    fn svp_ppol_copy_backend(
+    fn svp_ppol_copy(
         _module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
         res_col: usize,
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        crate::ntt4x30_avx512::svp::svp_ppol_copy_backend(res, res_col, a, a_col);
+        crate::ntt4x30_avx512::svp::svp_ppol_copy(res, res_col, a, a_col);
     }
 
     fn svp_apply_dft(
@@ -613,7 +613,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         crate::ntt4x30_avx512::vec_znx_dft::vec_znx_idft_apply_tmpa(module, res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_add_into(
+    fn vec_znx_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -623,7 +623,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         b_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_add_into(res, res_col, a, a_col, b, b_col)
+        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_add(res, res_col, a, a_col, b, b_col)
     }
 
     fn vec_znx_dft_add_scaled_assign(
@@ -919,14 +919,14 @@ mod ifma_impl {
             crate::ntt3x42_ifma::svp::svp_prepare(module, res, res_col, a, a_col);
         }
 
-        fn svp_ppol_copy_backend(
+        fn svp_ppol_copy(
             _module: &Module<Self>,
             res: &mut SvpPPolBackendMut<'_, Self>,
             res_col: usize,
             a: &SvpPPolBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            crate::ntt3x42_ifma::svp::svp_ppol_copy_backend(res, res_col, a, a_col);
+            crate::ntt3x42_ifma::svp::svp_ppol_copy(res, res_col, a, a_col);
         }
 
         fn svp_apply_dft(
@@ -1061,7 +1061,7 @@ mod ifma_impl {
             crate::ntt3x42_ifma::vec_znx_dft::vec_znx_idft_apply_tmpa_ifma(module, res, res_col, a, a_col);
         }
 
-        fn vec_znx_dft_add_into(
+        fn vec_znx_dft_add(
             _module: &Module<Self>,
             res: &mut VecZnxDftBackendMut<'_, Self>,
             res_col: usize,
@@ -1070,7 +1070,7 @@ mod ifma_impl {
             b: &VecZnxDftBackendRef<'_, Self>,
             b_col: usize,
         ) {
-            crate::ntt3x42_ifma::vec_znx_dft::vec_znx_dft_add_into::<poulpy_hal::execution::SerialTaskExecutor>(
+            crate::ntt3x42_ifma::vec_znx_dft::vec_znx_dft_add::<poulpy_hal::execution::SerialTaskExecutor>(
                 res, res_col, a, a_col, b, b_col,
             );
         }

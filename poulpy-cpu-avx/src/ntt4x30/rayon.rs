@@ -504,7 +504,7 @@ impl BigWordHadamardProduct for NTT4x30AvxRayon {
 unsafe impl HalVecZnxImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
 
-    fn vec_znx_normalize_backend(
+    fn vec_znx_normalize(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
@@ -522,7 +522,7 @@ unsafe impl HalVecZnxImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         );
     }
 
-    fn vec_znx_normalize_assign_backend(
+    fn vec_znx_normalize_assign(
         module: &Module<Self>,
         base2k: usize,
         k: usize,
@@ -1079,14 +1079,14 @@ unsafe impl HalSvpImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         );
     }
 
-    fn svp_ppol_copy_backend(
+    fn svp_ppol_copy(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
         res_col: usize,
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx as HalSvpImpl<NTT4x30Avx>>::svp_ppol_copy_backend(
+        <NTT4x30Avx as HalSvpImpl<NTT4x30Avx>>::svp_ppol_copy(
             base_module(module),
             &mut base_svp_mut(res),
             res_col,
@@ -1343,7 +1343,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         );
     }
 
-    fn vec_znx_dft_add_into(
+    fn vec_znx_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -1352,7 +1352,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <NTT4x30Avx as HalVecZnxDftImpl<NTT4x30Avx>>::vec_znx_dft_add_into(
+        <NTT4x30Avx as HalVecZnxDftImpl<NTT4x30Avx>>::vec_znx_dft_add(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,

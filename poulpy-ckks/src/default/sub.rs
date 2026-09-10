@@ -4,10 +4,7 @@ use poulpy_core::{
     layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
-    api::{
-        VecZnxLshSubBackend, VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxRshSubBackend,
-        VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes,
-    },
+    api::{VecZnxLshSub, VecZnxLshSubCoeffToCoeff, VecZnxLshTmpBytes, VecZnxRshSub, VecZnxRshSubCoeff, VecZnxRshTmpBytes},
     layouts::{Backend, ScratchArena},
 };
 
@@ -25,6 +22,6 @@ ckks_carry_verb_default! {
     glwe_into: glwe_sub,
     glwe_assign: glwe_sub_assign,
     glwe_lsh_verb: glwe_lsh_sub,
-    pt_vec_bounds: [VecZnxLshSubBackend, VecZnxRshSubBackend],
-    pt_const_bounds: [VecZnxLshSubCoeffToCoeffBackend, VecZnxRshSubCoeffIntoBackend],
+    pt_vec_bounds: [VecZnxLshSub, VecZnxRshSub],
+    pt_const_bounds: [VecZnxLshSubCoeffToCoeff, VecZnxRshSubCoeff],
 }

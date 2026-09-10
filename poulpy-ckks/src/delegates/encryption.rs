@@ -3,7 +3,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk};
 use poulpy_hal::{
-    api::{VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend, VecZnxRshTmpBytes},
+    api::{VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
     layouts::{Backend, HostDataMut, Module, ScratchArena},
     source::Source,
 };
@@ -17,7 +17,7 @@ use crate::{
 impl<BE: Backend + CKKSEncryptionImpl<BE>> CKKSEncryptOps<BE> for Module<BE>
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
-    Self: GLWEEncryptSk<BE> + VecZnxRshAddIntoBackend<BE> + VecZnxRshTmpBytes,
+    Self: GLWEEncryptSk<BE> + VecZnxRshAdd<BE> + VecZnxRshTmpBytes,
 {
     fn ckks_encrypt_sk_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
@@ -53,9 +53,9 @@ impl<BE: Backend + CKKSEncryptionImpl<BE>> CKKSDecryptOps<BE> for Module<BE>
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Self: GLWEDecrypt<BE>
-        + VecZnxLshBackend<BE>
+        + VecZnxLsh<BE>
         + VecZnxLshTmpBytes
-        + VecZnxRshBackend<BE>
+        + VecZnxRsh<BE>
         + VecZnxRshTmpBytes
         + poulpy_core::layouts::ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
     BE::OwnedBuf: HostDataMut,

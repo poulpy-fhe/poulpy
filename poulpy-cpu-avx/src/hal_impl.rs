@@ -419,14 +419,14 @@ unsafe impl HalSvpImpl<NTT4x30Avx> for NTT4x30Avx {
         crate::ntt4x30::svp::svp_prepare(module, res, res_col, a, a_col);
     }
 
-    fn svp_ppol_copy_backend(
+    fn svp_ppol_copy(
         _module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
         res_col: usize,
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        crate::ntt4x30::svp::svp_ppol_copy_backend(res, res_col, a, a_col);
+        crate::ntt4x30::svp::svp_ppol_copy(res, res_col, a, a_col);
     }
 
     fn svp_apply_dft(
@@ -554,7 +554,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx> for NTT4x30Avx {
         crate::ntt4x30::vec_znx_dft::vec_znx_idft_apply_tmpa(module, res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_add_into(
+    fn vec_znx_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -564,7 +564,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx> for NTT4x30Avx {
         b_col: usize,
     ) {
         let _ = module;
-        crate::ntt4x30::vec_znx_dft::vec_znx_dft_add_into(res, res_col, a, a_col, b, b_col)
+        crate::ntt4x30::vec_znx_dft::vec_znx_dft_add(res, res_col, a, a_col, b, b_col)
     }
 
     fn vec_znx_dft_add_scaled_assign(
