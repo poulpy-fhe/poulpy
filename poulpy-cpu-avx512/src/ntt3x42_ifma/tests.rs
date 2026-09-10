@@ -27,13 +27,6 @@ mod ntt3x42_ifma_tests {
         tests = {
             test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
             test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
-            test_vec_znx_extract_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_extract_coeff,
-            test_vec_znx_coeff_ops_match_windows => poulpy_hal::test_suite::vec_znx::test_vec_znx_coeff_ops_match_windows,
-            test_vec_znx_lsh_add_coeff_to_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff,
-            test_vec_znx_lsh_sub_coeff_to_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_sub_coeff_to_coeff,
-            test_vec_znx_rsh_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff,
-            test_vec_znx_rsh_add_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_add_coeff,
-            test_vec_znx_rsh_sub_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_sub_coeff,
             test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
             test_vec_znx_sub => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub,
             test_vec_znx_sub_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_assign,
