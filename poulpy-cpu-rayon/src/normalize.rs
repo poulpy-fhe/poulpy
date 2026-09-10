@@ -26,6 +26,11 @@ pub fn normalize_tasks<B: RayonTuning>(n: usize) -> usize {
 
 /// Runs `run` in parallel over `tasks` coefficient ranges, each with its own
 /// `words`-per-coefficient slice of `carry`.
+///
+/// `n` is the visible degree of the destination, so ranges index a window, not
+/// the buffer. The split path (`tasks >= 2`) is pinned on windows by the
+/// `window_rayon` suites that run at degree `1 << 13` (`poulpy-cpu-avx` NTT4x30,
+/// `poulpy-cpu-avx512` FFT64); suites at `1 << 8` only reach the serial fallback.
 fn for_each_range<T, F>(n: usize, tasks: usize, words: usize, carry: &mut [T], run: F)
 where
     T: Send,

@@ -86,6 +86,11 @@ impl<'a> VecZnxRangeMut<'a> {
     }
 
     pub(crate) fn at_mut(&mut self, limb: usize) -> &mut [i64] {
+        assert!(
+            limb < self.shape.size(),
+            "VecZnxRangeMut::at_mut: limb {limb} >= size {}",
+            self.shape.size()
+        );
         let offset = self.shape.scalar_offset(self.col, limb) + self.start;
         unsafe { std::slice::from_raw_parts_mut(self.ptr.add(offset), self.len) }
     }
@@ -790,6 +795,9 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
         }
         return;
     }
+    // Radix 64 is outside the documented `1..=62` contract; kept so the digit
+    // extraction never shifts by the word width. Reads use the same offset
+    // `at_mut` computes, on the element written below.
     if base2k == 64 {
         for i in 0..coeff_len {
             normalize_exact::<true, _, _>(
