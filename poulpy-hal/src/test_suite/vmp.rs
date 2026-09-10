@@ -10,8 +10,8 @@ use crate::{
     api::{
         ModuleNew, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftAlloc, VecZnxDftApply, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows,
-        VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc,
+        VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned},
     source::Source,
@@ -488,7 +488,7 @@ where
     assert!(caught.is_err(), "mismatched PrepareHint was accepted");
 }
 
-/// `vmp_apply_dft_to_dft` and `vmp_apply_dft_to_dft_accumulate` agree across
+/// `vmp_apply_dft_to_dft` and `vmp_apply_dft_to_dft_add` agree across
 /// backends, including with `res` narrower or wider than the prepared matrix
 /// and with `limb_offset > 0`.
 ///
@@ -498,7 +498,7 @@ where
 /// (`gglwe_product_digit_output_size` in `poulpy-core`); a backend that clamps
 /// the window at `res.size()` loses the top `limb_offset` limbs of every
 /// narrowed pass, which only a comparison against another family can see.
-pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
@@ -507,8 +507,8 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
     Module<BR>: ModuleNew<BR>
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BR>
-        + VmpApplyDftToDftAccumulateTmpBytes
-        + VmpApplyDftToDftAccumulate<BR>
+        + VmpApplyDftToDftAddTmpBytes
+        + VmpApplyDftToDftAdd<BR>
         + VmpPMatAlloc<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxDftAddAssign<BR>
@@ -524,8 +524,8 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
     Module<BT>: ModuleNew<BT>
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BT>
-        + VmpApplyDftToDftAccumulateTmpBytes
-        + VmpApplyDftToDftAccumulate<BT>
+        + VmpApplyDftToDftAddTmpBytes
+        + VmpApplyDftToDftAdd<BT>
         + VmpPMatAlloc<BT>
         + VecZnxDftAlloc<BT>
         + VecZnxDftAddAssign<BT>
@@ -549,16 +549,14 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
     let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
         module_ref
             .vmp_apply_dft_to_dft_tmp_bytes(max_size, max_size, max_size, max_cols, max_cols, max_size)
-            .max(module_ref.vmp_apply_dft_to_dft_accumulate_tmp_bytes(max_size, max_size, max_size, max_cols, max_cols, max_size))
+            .max(module_ref.vmp_apply_dft_to_dft_add_tmp_bytes(max_size, max_size, max_size, max_cols, max_cols, max_size))
             .max(module_ref.vmp_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size))
             .max(module_ref.vec_znx_big_normalize_tmp_bytes()),
     );
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(
         module_test
             .vmp_apply_dft_to_dft_tmp_bytes(max_size, max_size, max_size, max_cols, max_cols, max_size)
-            .max(
-                module_test.vmp_apply_dft_to_dft_accumulate_tmp_bytes(max_size, max_size, max_size, max_cols, max_cols, max_size),
-            )
+            .max(module_test.vmp_apply_dft_to_dft_add_tmp_bytes(max_size, max_size, max_size, max_cols, max_cols, max_size))
             .max(module_test.vmp_prepare_tmp_bytes(max_size, max_cols, max_cols, max_size))
             .max(module_test.vec_znx_big_normalize_tmp_bytes()),
     );
@@ -676,14 +674,14 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
 
                             let mut res_acc_ref = res_init_dft_ref;
                             let mut res_acc_test = res_init_dft_test;
-                            module_ref.vmp_apply_dft_to_dft_accumulate(
+                            module_ref.vmp_apply_dft_to_dft_add(
                                 &mut res_acc_ref.to_backend_mut(),
                                 &a_dft_ref.to_backend_ref(),
                                 &pmat_ref.to_backend_ref(),
                                 limb_offset,
                                 &mut scratch_ref.arena(),
                             );
-                            module_test.vmp_apply_dft_to_dft_accumulate(
+                            module_test.vmp_apply_dft_to_dft_add(
                                 &mut res_acc_test.to_backend_mut(),
                                 &a_dft_test.to_backend_ref(),
                                 &pmat_test.to_backend_ref(),

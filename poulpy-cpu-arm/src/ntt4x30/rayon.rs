@@ -619,7 +619,7 @@ unsafe impl HalVmpImpl<NTT4x30NeonRayon> for NTT4x30NeonRayon {
         }
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
         a_size: usize,
@@ -632,7 +632,7 @@ unsafe impl HalVmpImpl<NTT4x30NeonRayon> for NTT4x30NeonRayon {
             * super::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    fn vmp_apply_dft_to_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
@@ -648,7 +648,7 @@ unsafe impl HalVmpImpl<NTT4x30NeonRayon> for NTT4x30NeonRayon {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         if RayonTaskExecutor::should_serialize_inner() {
-            super::vmp::vmp_apply_dft_to_dft_accumulate_neon::<SerialTaskExecutor>(
+            super::vmp::vmp_apply_dft_to_dft_add_neon::<SerialTaskExecutor>(
                 base_module(module),
                 &mut base_dft_mut(res),
                 &base_dft_ref(a),
@@ -657,7 +657,7 @@ unsafe impl HalVmpImpl<NTT4x30NeonRayon> for NTT4x30NeonRayon {
                 tmp,
             );
         } else {
-            super::vmp::vmp_apply_dft_to_dft_accumulate_neon::<RayonTaskExecutor>(
+            super::vmp::vmp_apply_dft_to_dft_add_neon::<RayonTaskExecutor>(
                 base_module(module),
                 &mut base_dft_mut(res),
                 &base_dft_ref(a),

@@ -1,6 +1,6 @@
 use crate::{
     api::{
-        VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes,
+        VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes,
         VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
     layouts::{
@@ -107,8 +107,8 @@ impl_vmp_delegate!(
 );
 
 impl_vmp_delegate!(
-    VmpApplyDftToDftAccumulateTmpBytes,
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    VmpApplyDftToDftAddTmpBytes,
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         &self,
         res_size: usize,
         a_size: usize,
@@ -117,13 +117,13 @@ impl_vmp_delegate!(
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        B::vmp_apply_dft_to_dft_accumulate_tmp_bytes(self, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
+        B::vmp_apply_dft_to_dft_add_tmp_bytes(self, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
     }
 );
 
 impl_vmp_delegate!(
-    VmpApplyDftToDftAccumulate<B>,
-    fn vmp_apply_dft_to_dft_accumulate(
+    VmpApplyDftToDftAdd<B>,
+    fn vmp_apply_dft_to_dft_add(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,
         a: &VecZnxDftBackendRef<'_, B>,
@@ -131,7 +131,7 @@ impl_vmp_delegate!(
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
-        B::vmp_apply_dft_to_dft_accumulate(self, res, a, b, limb_offset, scratch);
+        B::vmp_apply_dft_to_dft_add(self, res, a, b, limb_offset, scratch);
     }
 );
 

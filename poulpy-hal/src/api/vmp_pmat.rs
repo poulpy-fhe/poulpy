@@ -65,9 +65,9 @@ pub trait VmpApplyDftToDftTmpBytes {
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Returns scratch bytes required for [`VmpApplyDftToDftAccumulate`].
-pub trait VmpApplyDftToDftAccumulateTmpBytes {
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+/// Returns scratch bytes required for [`VmpApplyDftToDftAdd`].
+pub trait VmpApplyDftToDftAddTmpBytes {
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         &self,
         res_size: usize,
         a_size: usize,
@@ -113,9 +113,9 @@ pub trait VmpApplyDftToDft<B: Backend> {
     );
 }
 
-pub trait VmpApplyDftToDftAccumulate<B: Backend> {
+pub trait VmpApplyDftToDftAdd<B: Backend> {
     /// Fused `res += a · pmat`, shifted by `limb_offset` limbs.
-    fn vmp_apply_dft_to_dft_accumulate<'r>(
+    fn vmp_apply_dft_to_dft_add<'r>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, B>,
         a: &VecZnxDftBackendRef<'_, B>,

@@ -1014,7 +1014,7 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         }
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         module: &Module<Self>,
         res_size: usize,
         a_size: usize,
@@ -1024,7 +1024,7 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         b_size: usize,
     ) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::VMP)
-            * <NTT3x42Ifma as HalVmpImpl<NTT3x42Ifma>>::vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+            * <NTT3x42Ifma as HalVmpImpl<NTT3x42Ifma>>::vmp_apply_dft_to_dft_add_tmp_bytes(
                 base_module(module),
                 res_size,
                 a_size,
@@ -1035,7 +1035,7 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
             )
     }
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    fn vmp_apply_dft_to_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
@@ -1051,7 +1051,7 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
-            super::vmp::vmp_apply_dft_to_dft_accumulate_ifma::<SerialTaskExecutor>(
+            super::vmp::vmp_apply_dft_to_dft_add_ifma::<SerialTaskExecutor>(
                 base_module(module),
                 &mut base_dft_mut(res),
                 &base_dft_ref(a),
@@ -1060,7 +1060,7 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
                 tmp,
             )
         } else {
-            super::vmp::vmp_apply_dft_to_dft_accumulate_ifma::<NTT3x42IfmaRayonExecutor>(
+            super::vmp::vmp_apply_dft_to_dft_add_ifma::<NTT3x42IfmaRayonExecutor>(
                 base_module(module),
                 &mut base_dft_mut(res),
                 &base_dft_ref(a),
@@ -1379,7 +1379,7 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         }
     }
 
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_dft_add(
         _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -1398,7 +1398,7 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            super::convolution::cnv_apply_dft_accumulate_ifma::<NTT3x42IfmaRayonExecutor>(
+            super::convolution::cnv_apply_dft_add_ifma::<NTT3x42IfmaRayonExecutor>(
                 &mut base_dft_mut(res),
                 cnv_offset,
                 res_col,
@@ -1411,7 +1411,7 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         }
     }
 
-    fn cnv_accumulate_dft_tmp_bytes(
+    fn cnv_apply_dft_sum_tmp_bytes(
         _module: &Module<Self>,
         _cnv_offset: usize,
         res_size: usize,
@@ -1419,10 +1419,10 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         b_size: usize,
     ) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
-            * super::convolution::cnv_accumulate_dft_ifma_tmp_bytes(res_size, a_size, b_size)
+            * super::convolution::cnv_apply_dft_sum_ifma_tmp_bytes(res_size, a_size, b_size)
     }
 
-    fn cnv_accumulate_dft<'a>(
+    fn cnv_apply_dft_sum<'a>(
         _module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -1443,7 +1443,7 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
             .collect();
         let a_size = base_terms.iter().map(|term| term.a.size()).max().unwrap_or(0);
         let b_size = base_terms.iter().map(|term| term.b.size()).max().unwrap_or(0);
-        let per_worker = super::convolution::cnv_accumulate_dft_ifma_tmp_bytes(res.size(), a_size, b_size);
+        let per_worker = super::convolution::cnv_apply_dft_sum_ifma_tmp_bytes(res.size(), a_size, b_size);
         let bytes = poulpy_cpu_rayon::workers_within(
             <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
             per_worker,
@@ -1451,7 +1451,7 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            super::convolution::cnv_accumulate_dft_ifma::<NTT3x42IfmaRayonExecutor>(
+            super::convolution::cnv_apply_dft_sum_ifma::<NTT3x42IfmaRayonExecutor>(
                 &mut base_dft_mut(res),
                 cnv_offset,
                 res_col,

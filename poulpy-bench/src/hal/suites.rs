@@ -469,8 +469,8 @@ where
         },
         BenchOp {
             layer: "hal",
-            name: "cnv_apply_dft_accumulate",
-            runner: convolution::runner_cnv_apply_dft_accumulate::<B, M>,
+            name: "cnv_apply_dft_add",
+            runner: convolution::runner_cnv_apply_dft_add::<B, M>,
         },
         BenchOp {
             layer: "hal",

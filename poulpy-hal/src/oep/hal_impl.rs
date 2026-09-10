@@ -863,7 +863,7 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
     );
 
     #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         module: &Module<BE>,
         res_size: usize,
         a_size: usize,
@@ -873,7 +873,7 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
         b_size: usize,
     ) -> usize;
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    fn vmp_apply_dft_to_dft_add(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
         a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
@@ -1027,7 +1027,7 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_dft_add(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
@@ -1039,12 +1039,12 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_accumulate_dft`].
+    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_apply_dft_sum`].
     ///
     /// The default sizes the per-term fallback (one `cnv_apply_dft` /
-    /// `cnv_apply_dft_accumulate` scratch). Backends with a fused kernel should
+    /// `cnv_apply_dft_add` scratch). Backends with a fused kernel should
     /// override both methods together.
-    fn cnv_accumulate_dft_tmp_bytes(
+    fn cnv_apply_dft_sum_tmp_bytes(
         module: &Module<BE>,
         cnv_offset: usize,
         res_size: usize,
@@ -1058,10 +1058,10 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
     ///
     /// The default implementation overwrites with the first term
     /// (`cnv_apply_dft`, which also zeroes the limbs past the convolution
-    /// bound) and folds the remaining terms with `cnv_apply_dft_accumulate`.
+    /// bound) and folds the remaining terms with `cnv_apply_dft_add`.
     /// Backends should override it with a fused kernel that keeps the lazy
     /// accumulators live across terms.
-    fn cnv_accumulate_dft<'a>(
+    fn cnv_apply_dft_sum<'a>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
@@ -1081,7 +1081,7 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
                     module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
                 );
             } else {
-                Self::cnv_apply_dft_accumulate(
+                Self::cnv_apply_dft_add(
                     module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
                 );
             }

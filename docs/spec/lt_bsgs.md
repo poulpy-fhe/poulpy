@@ -346,7 +346,7 @@ from poulpy-ckks they are not.
 - **VMP reuse — do not fork.** Both the baby- and giant-step rotations get their gadget
   product from `gglwe_product_dft` applied to a hoisted `a_dft` (DFT computed once with
   `vec_znx_dft_apply`, reused per key). For `dsize == 1` this is a single HAL call,
-  `vmp_apply_dft_to_dft` (a fused `vmp_apply_dft_to_dft_accumulate` also exists); for
+  `vmp_apply_dft_to_dft` (a fused `vmp_apply_dft_to_dft_add` also exists); for
   `dsize > 1` it is the digit-decomposition loop already implemented and tested in
   `gglwe_product_dft_default`
   ([keyswitching/glwe.rs:123](../../poulpy-core/src/default/keyswitching/glwe.rs)) — reuse

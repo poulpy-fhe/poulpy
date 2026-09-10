@@ -1,8 +1,8 @@
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
-        test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
-        test_convolution_by_const_add, test_convolution_pairwise,
+        test_convolution, test_convolution_add, test_convolution_by_const, test_convolution_by_const_add,
+        test_convolution_pairwise, test_convolution_sum,
     },
 };
 
@@ -33,15 +33,15 @@ fn test_convolution_pairwise_fft64_ref() {
 }
 
 #[test]
-fn test_convolution_accumulate_fft64_ref() {
+fn test_convolution_add_fft64_ref() {
     let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
-    test_convolution_accumulate(&module, 17);
+    test_convolution_add(&module, 17);
 }
 
 #[test]
-fn test_convolution_accumulate_fused_fft64_ref() {
+fn test_convolution_sum_fft64_ref() {
     let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
-    test_convolution_accumulate_fused(&module, 17);
+    test_convolution_sum(&module, 17);
 }
 
 #[test]
@@ -64,15 +64,15 @@ fn test_convolution_pairwise_ntt4x30_ref() {
 }
 
 #[test]
-fn test_convolution_accumulate_ntt4x30_ref() {
+fn test_convolution_add_ntt4x30_ref() {
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
-    test_convolution_accumulate(&module, 50);
+    test_convolution_add(&module, 50);
 }
 
 #[test]
-fn test_convolution_accumulate_fused_ntt4x30_ref() {
+fn test_convolution_sum_ntt4x30_ref() {
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
-    test_convolution_accumulate_fused(&module, 50);
+    test_convolution_sum(&module, 50);
 }
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
@@ -190,7 +190,7 @@ cross_backend_test_suite! {
     tests = {
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
         test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
-        test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
+        test_vmp_apply_dft_to_dft_add => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add,
         test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
     }
 }

@@ -341,9 +341,9 @@ where
     }
 }
 
-/// `cnv_apply_dft_accumulate` matches `cnv_apply_dft` followed by a DFT add,
+/// `cnv_apply_dft_add` matches `cnv_apply_dft` followed by a DFT add,
 /// bit-for-bit on the raw prepared data.
-pub fn test_convolution_accumulate<M, BE: crate::test_suite::TestBackend>(module: &M, _base2k: usize)
+pub fn test_convolution_add<M, BE: crate::test_suite::TestBackend>(module: &M, _base2k: usize)
 where
     M: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxDftAlloc<BE> + VecZnxDftAddAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -425,7 +425,7 @@ where
         for a_col in 0..cols {
             for b_col in 0..cols {
                 for cnv_offset in (0..res_size).step_by(3) {
-                    module.cnv_apply_dft_accumulate(
+                    module.cnv_apply_dft_add(
                         cnv_offset,
                         &mut res_acc.to_backend_mut(),
                         res_col,
@@ -458,11 +458,11 @@ where
     }
 }
 
-/// `cnv_accumulate_dft` matches the per-term `cnv_apply_dft` +
-/// `cnv_apply_dft_accumulate` sequence after normalization to the coefficient
+/// `cnv_apply_dft_sum` matches the per-term `cnv_apply_dft` +
+/// `cnv_apply_dft_add` sequence after normalization to the coefficient
 /// domain (the fused path reduces once per output, so the raw q120 lazy
 /// representatives may differ).
-pub fn test_convolution_accumulate_fused<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
+pub fn test_convolution_sum<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
 where
     M: ModuleN
         + Convolution<BE>
@@ -504,7 +504,7 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .cnv_accumulate_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .cnv_apply_dft_sum_tmp_bytes(0, res_size, a_size, b_size)
             .max(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size))
             .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
@@ -544,7 +544,7 @@ where
                     b_col,
                 })
                 .collect();
-            module.cnv_accumulate_dft(
+            module.cnv_apply_dft_sum(
                 cnv_offset,
                 &mut res_fused.to_backend_mut(),
                 res_col,
@@ -566,7 +566,7 @@ where
                     &mut scratch.arena(),
                 );
             } else {
-                module.cnv_apply_dft_accumulate(
+                module.cnv_apply_dft_add(
                     cnv_offset,
                     &mut res_ref.to_backend_mut(),
                     res_col,

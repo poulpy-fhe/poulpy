@@ -175,7 +175,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         );
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
         a_size: usize,
@@ -187,7 +187,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(a_size, b_rows, b_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    fn vmp_apply_dft_to_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
@@ -197,7 +197,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let bytes = crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_accumulate_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_add_avx::<poulpy_hal::execution::SerialTaskExecutor>(
             module,
             res,
             a,
@@ -397,7 +397,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_dft_add(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -410,7 +410,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let _ = scratch;
         unsafe {
-            crate::ntt4x30_avx512::convolution::cnv_apply_dft_accumulate::<SerialTaskExecutor>(
+            crate::ntt4x30_avx512::convolution::cnv_apply_dft_add::<SerialTaskExecutor>(
                 module, cnv_offset, res, res_col, a, a_col, b, b_col,
             )
         };
@@ -854,7 +854,7 @@ mod ifma_impl {
             );
         }
 
-        fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+        fn vmp_apply_dft_to_dft_add_tmp_bytes(
             _module: &Module<Self>,
             _res_size: usize,
             a_size: usize,
@@ -866,7 +866,7 @@ mod ifma_impl {
             crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(a_size, b_rows, b_cols_in)
         }
 
-        fn vmp_apply_dft_to_dft_accumulate(
+        fn vmp_apply_dft_to_dft_add(
             module: &Module<Self>,
             res: &mut VecZnxDftBackendMut<'_, Self>,
             a: &VecZnxDftBackendRef<'_, Self>,
@@ -876,7 +876,7 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-            crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_accumulate_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
+            crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_add_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
                 module,
                 res,
                 a,
@@ -1308,7 +1308,7 @@ mod ifma_impl {
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn cnv_apply_dft_accumulate(
+        fn cnv_apply_dft_add(
             _module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -1322,23 +1322,23 @@ mod ifma_impl {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
-                crate::ntt3x42_ifma::convolution::cnv_apply_dft_accumulate_ifma::<SerialTaskExecutor>(
+                crate::ntt3x42_ifma::convolution::cnv_apply_dft_add_ifma::<SerialTaskExecutor>(
                     res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
                 );
             }
         }
 
-        fn cnv_accumulate_dft_tmp_bytes(
+        fn cnv_apply_dft_sum_tmp_bytes(
             _module: &Module<Self>,
             _cnv_offset: usize,
             res_size: usize,
             a_size: usize,
             b_size: usize,
         ) -> usize {
-            crate::ntt3x42_ifma::convolution::cnv_accumulate_dft_ifma_tmp_bytes(res_size, a_size, b_size)
+            crate::ntt3x42_ifma::convolution::cnv_apply_dft_sum_ifma_tmp_bytes(res_size, a_size, b_size)
         }
 
-        fn cnv_accumulate_dft<'a>(
+        fn cnv_apply_dft_sum<'a>(
             _module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -1350,10 +1350,10 @@ mod ifma_impl {
         {
             let a_size = terms.iter().map(|term| term.a.size()).max().unwrap_or(0);
             let b_size = terms.iter().map(|term| term.b.size()).max().unwrap_or(0);
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_accumulate_dft_ifma_tmp_bytes(res.size(), a_size, b_size);
+            let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_dft_sum_ifma_tmp_bytes(res.size(), a_size, b_size);
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
-                crate::ntt3x42_ifma::convolution::cnv_accumulate_dft_ifma::<SerialTaskExecutor>(
+                crate::ntt3x42_ifma::convolution::cnv_apply_dft_sum_ifma::<SerialTaskExecutor>(
                     res, cnv_offset, res_col, terms, tmp,
                 );
             }

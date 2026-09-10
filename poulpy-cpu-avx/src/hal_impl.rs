@@ -177,7 +177,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx> for NTT4x30Avx {
         );
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
         a_size: usize,
@@ -189,7 +189,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx> for NTT4x30Avx {
         crate::ntt4x30::vmp::vmp_apply_tmp_bytes_avx(a_size, b_rows, b_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    fn vmp_apply_dft_to_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
@@ -199,7 +199,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx> for NTT4x30Avx {
     ) {
         let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_accumulate_avx::<poulpy_hal::execution::SerialTaskExecutor>(
+        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_add_avx::<poulpy_hal::execution::SerialTaskExecutor>(
             module,
             res,
             a,
@@ -337,7 +337,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_dft_add(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -350,7 +350,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
     ) {
         let _ = scratch;
         unsafe {
-            crate::ntt4x30::convolution::cnv_apply_dft_accumulate::<_, SerialTaskExecutor>(
+            crate::ntt4x30::convolution::cnv_apply_dft_add::<_, SerialTaskExecutor>(
                 module, cnv_offset, res, res_col, a, a_col, b, b_col,
             )
         };

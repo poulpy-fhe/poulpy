@@ -2,8 +2,8 @@ use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
-        test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
-        test_convolution_by_const_add, test_convolution_pairwise,
+        test_convolution, test_convolution_add, test_convolution_by_const, test_convolution_by_const_add,
+        test_convolution_pairwise, test_convolution_sum,
     },
 };
 
@@ -110,7 +110,7 @@ cross_backend_test_suite! {
     tests = {
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
         test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
-        test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
+        test_vmp_apply_dft_to_dft_add => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add,
     }
 }
 
@@ -165,8 +165,8 @@ fn test_convolution_direct() {
     test_convolution_by_const(&module, 12);
     test_convolution_by_const_add(&module, 12);
     test_convolution_pairwise(&module, 12);
-    test_convolution_accumulate(&module, 12);
-    test_convolution_accumulate_fused(&module, 12);
+    test_convolution_add(&module, 12);
+    test_convolution_sum(&module, 12);
 }
 
 cross_backend_test_suite! {

@@ -1,9 +1,8 @@
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft,
-        VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows,
-        VmpPMatBytesOf,
+        ModuleN, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft, VmpApplyDftToDftAdd,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatBytesOf,
     },
     layouts::{
         Backend, Module, PrepareHint, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -77,9 +76,9 @@ where
         + ModuleN
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
-        + VmpApplyDftToDftAccumulateTmpBytes
+        + VmpApplyDftToDftAddTmpBytes
         + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyDftToDftAdd<BE>
         + VecZnxDftCopy<BE>
         + VmpExtractSelectedRows<BE>
         + VmpPMatBytesOf,
@@ -198,9 +197,9 @@ where
         + ModuleN
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
-        + VmpApplyDftToDftAccumulateTmpBytes
+        + VmpApplyDftToDftAddTmpBytes
         + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyDftToDftAdd<BE>
         + VecZnxDftCopy<BE>
         + VmpExtractSelectedRows<BE>
         + VmpPMatBytesOf,
@@ -236,13 +235,13 @@ pub fn gglwe_product_digits_strided_tmp_bytes_default<BE: Backend>(
     pmat_size: usize,
 ) -> usize
 where
-    Module<BE>: VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes + VmpApplyDftToDftAccumulateTmpBytes,
+    Module<BE>: VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes + VmpApplyDftToDftAddTmpBytes,
 {
     assert_ne!(dsize, 0);
     let digit_size = a_size.div_ceil(dsize).min(pmat_rows);
     let apply = module.vmp_apply_dft_to_dft_tmp_bytes(res_size, digit_size, pmat_rows, pmat_cols_in, pmat_cols_out, pmat_size);
     let accumulate =
-        module.vmp_apply_dft_to_dft_accumulate_tmp_bytes(res_size, digit_size, pmat_rows, pmat_cols_in, pmat_cols_out, pmat_size);
+        module.vmp_apply_dft_to_dft_add_tmp_bytes(res_size, digit_size, pmat_rows, pmat_cols_in, pmat_cols_out, pmat_size);
     module.bytes_of_vec_znx_dft(a_cols, digit_size) + apply.max(accumulate)
 }
 
@@ -259,7 +258,7 @@ pub fn gglwe_product_digits_strided_default<BE: Backend>(
     pmat: &poulpy_hal::layouts::VmpPMatBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    Module<BE>: VecZnxDftBytesOf + VecZnxDftCopy<BE> + VmpApplyDftToDft<BE> + VmpApplyDftToDftAccumulate<BE>,
+    Module<BE>: VecZnxDftBytesOf + VecZnxDftCopy<BE> + VmpApplyDftToDft<BE> + VmpApplyDftToDftAdd<BE>,
 {
     assert_ne!(dsize, 0);
     let cols = a.cols();
@@ -278,7 +277,7 @@ pub fn gglwe_product_digits_strided_default<BE: Backend>(
         } else {
             let compute_size = gglwe_product_digit_output_size(res.size(), pmat.size(), dsize, di, product_limbs);
             let mut res_view = res.with_size_mut(compute_size);
-            module.vmp_apply_dft_to_dft_accumulate(&mut res_view, &digit.to_backend_ref(), pmat, di, &mut digit_scratch);
+            module.vmp_apply_dft_to_dft_add(&mut res_view, &digit.to_backend_ref(), pmat, di, &mut digit_scratch);
         }
     }
 }

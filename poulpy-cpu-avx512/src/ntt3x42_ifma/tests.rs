@@ -2,8 +2,8 @@ use poulpy_hal::{
     DEFAULTALIGN, is_aligned,
     layouts::{Backend, Module},
     test_suite::convolution::{
-        test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
-        test_convolution_by_const_add, test_convolution_pairwise,
+        test_convolution, test_convolution_add, test_convolution_by_const, test_convolution_by_const_add,
+        test_convolution_pairwise, test_convolution_sum,
     },
 };
 
@@ -121,7 +121,7 @@ mod ntt3x42_ifma_tests {
             test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
             test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
             test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
-        test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
+        test_vmp_apply_dft_to_dft_add => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add,
         }
     }
 
@@ -403,22 +403,22 @@ fn test_glwe_keyswitch_noise_ntt3x42_ifma() {
 }
 
 #[test]
-fn test_convolution_accumulate_ntt3x42_ifma() {
+fn test_convolution_add_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
-    test_convolution_accumulate(&module, 12);
+    test_convolution_add(&module, 12);
 }
 
 #[test]
-fn test_convolution_accumulate_fused_ntt3x42_ifma() {
+fn test_convolution_sum_ntt3x42_ifma() {
     let module = Module::<NTT3x42Ifma>::new(1 << 8);
-    test_convolution_accumulate_fused(&module, 12);
+    test_convolution_sum(&module, 12);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
-fn test_convolution_accumulate_fused_ntt3x42_ifma_rayon() {
+fn test_convolution_sum_ntt3x42_ifma_rayon() {
     let module = Module::<crate::NTT3x42IfmaRayon>::new(1 << 8);
-    test_convolution_accumulate_fused(&module, 12);
+    test_convolution_sum(&module, 12);
 }
 
 #[test]

@@ -676,7 +676,7 @@ unsafe impl HalVmpImpl<$rayon> for $rayon {
         )
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         module: &Module<Self>,
         res_size: usize,
         a_size: usize,
@@ -685,12 +685,12 @@ unsafe impl HalVmpImpl<$rayon> for $rayon {
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_tmp_bytes_default(
+        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_add_tmp_bytes_default(
             module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
         ) + (<$rayon as $crate::__private::poulpy_hal::execution::ScratchWorkers>::VMP - 1) * fft64_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    fn vmp_apply_dft_to_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
@@ -699,7 +699,7 @@ unsafe impl HalVmpImpl<$rayon> for $rayon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         if RayonTaskExecutor::should_serialize_inner() {
-            return <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_with_kernel_default::<$base, SerialTaskExecutor>(
+            return <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_add_with_kernel_default::<$base, SerialTaskExecutor>(
                 module,
                 res,
                 a,
@@ -710,7 +710,7 @@ unsafe impl HalVmpImpl<$rayon> for $rayon {
             );
         }
         let mut scratch = scratch.borrow();
-        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_with_kernel_default::<$base, RayonTaskExecutor>(
+        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_add_with_kernel_default::<$base, RayonTaskExecutor>(
             module,
             res,
             a,

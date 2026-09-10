@@ -4,7 +4,7 @@
 //! compute `Σ_k ũ_{j,k} ⊙ rot(v,k)` and leave the result in `VecZnxDft`.
 //! The first term overwrites each output column via `cnv_apply_dft` (which also
 //! zeroes the limbs past the convolution bound); the remaining terms accumulate
-//! in place with `cnv_apply_dft_accumulate`, so no per-term result is ever
+//! in place with `cnv_apply_dft_add`, so no per-term result is ever
 //! materialized.
 
 use poulpy_hal::layouts::CnvPVecLToBackendRef;
@@ -69,7 +69,7 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
                 }
             })
             .collect();
-        module.cnv_accumulate_dft(cnv_offset_hi, prod_dft, col, &terms, scratch);
+        module.cnv_apply_dft_sum(cnv_offset_hi, prod_dft, col, &terms, scratch);
     }
 }
 
@@ -85,7 +85,7 @@ where
     M: Convolution<BE>,
 {
     let res_dft_size = baby_size + diagonal_size - cnv_offset_hi;
-    module.cnv_accumulate_dft_tmp_bytes(cnv_offset_hi, res_dft_size, baby_size, diagonal_size)
+    module.cnv_apply_dft_sum_tmp_bytes(cnv_offset_hi, res_dft_size, baby_size, diagonal_size)
 }
 
 /// PROD block for one giant step from an *unprepared* matrix: identical to
@@ -154,7 +154,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
                     &mut scratch_1.borrow(),
                 );
             } else {
-                module.cnv_apply_dft_accumulate(
+                module.cnv_apply_dft_add(
                     cnv_offset_hi,
                     prod_dft,
                     col,

@@ -369,7 +369,7 @@ pub fn convolution_apply_dft<BE>(
 /// Accumulating variant of [`convolution_apply_dft`]: `res[res_col] += a (x) b`,
 /// leaving limbs beyond `min(res.size(), a.size() + b.size() - 1)` untouched.
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_apply_dft_accumulate<BE>(
+pub fn convolution_apply_dft_add<BE>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,

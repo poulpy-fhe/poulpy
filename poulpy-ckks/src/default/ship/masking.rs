@@ -35,7 +35,7 @@ where
     let preps = 4 * plan.theta() * module.bytes_of_cnv_pvec_right(1, b_size, PrepareHint::Reuse);
     let work = module
         .cnv_prepare_right_tmp_bytes(b_size, b_size)
-        .max(module.cnv_accumulate_dft_tmp_bytes(0, res_dft_size, a_size, b_size))
+        .max(module.cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size))
         .max(module.bytes_of_vec_znx_big(2, res_dft_size) + module.vec_znx_big_normalize_tmp_bytes());
     module.bytes_of_vec_znx_dft(2, res_dft_size) + preps + work
 }
@@ -112,7 +112,7 @@ where
                     b_col: 0,
                 })
                 .collect();
-            module.cnv_accumulate_dft(cnv_offset_hi, &mut sum_dft_mut, col, &terms, &mut rest.borrow());
+            module.cnv_apply_dft_sum(cnv_offset_hi, &mut sum_dft_mut, col, &terms, &mut rest.borrow());
         }
     }
 

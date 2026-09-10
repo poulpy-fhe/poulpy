@@ -56,7 +56,7 @@ pub(crate) fn cnv_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_siz
     (3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + 3 * 8 * staged) * size_of::<u64>()
 }
 
-pub(crate) fn cnv_accumulate_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub(crate) fn cnv_apply_dft_sum_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let staged = res_size.min(a_size + b_size).div_ceil(TILE) * TILE;
     (3 * 8 * (a_size + 2 * (TILE - 1)) + 3 * 8 * b_size + 6 * 8 * staged) * size_of::<u64>()
 }
@@ -786,7 +786,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<E: TaskExecutor>(
 /// Accumulating variant of [`cnv_apply_dft_ifma`].
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma<E: TaskExecutor>(
+pub(crate) unsafe fn cnv_apply_dft_add_ifma<E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -988,7 +988,7 @@ unsafe fn conv_accumulate_terms_group(
 }
 
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_accumulate_dft_ifma<'a, E: TaskExecutor>(
+pub(crate) unsafe fn cnv_apply_dft_sum_ifma<'a, E: TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,

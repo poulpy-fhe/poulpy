@@ -769,7 +769,7 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma<E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma<E: TaskExecutor>(
+pub(crate) fn vmp_apply_dft_to_dft_add_ifma<E: TaskExecutor>(
     module: &Module<crate::NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
     a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
