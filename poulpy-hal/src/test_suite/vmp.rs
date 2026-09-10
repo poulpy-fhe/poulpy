@@ -446,13 +446,13 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
     check_extract_rejects_bad_selections(module, &parent);
 }
 
-/// A selection the kernel must never be handed is rejected in release, by
+/// A selection that would index out of range is rejected in release by
 /// `assert_extractable` at the top of every kernel, so a backend may index
 /// without bounds checks past that point.
 ///
-/// On a bounds-checked backend the out-of-range cases would also trip a slice
-/// panic; only the zero step reaches the kernel and returns quietly. A backend
-/// indexing raw pointers has neither guard, which is the point of the check.
+/// Without it, a bounds-checked backend would still trip a slice panic on the
+/// out-of-range cases but a zero step would return quietly, and a backend
+/// indexing raw pointers would have neither guard.
 fn check_extract_rejects_bad_selections<BE: crate::test_suite::TestBackend>(module: &Module<BE>, a: &VmpPMatOwned<BE>)
 where
     Module<BE>: VmpPMatAlloc<BE> + VmpExtractSelectedRows<BE>,
