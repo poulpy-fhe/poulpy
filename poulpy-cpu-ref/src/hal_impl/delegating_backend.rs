@@ -1,6 +1,5 @@
 use poulpy_hal::{
-    api::{VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
-    layouts::{Backend, Module, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos},
+    layouts::{Module, VecZnxBackendMut, VecZnxBackendRef},
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 

@@ -145,6 +145,15 @@ mod ntt3x42_ifma_tests {
     }
 
     backend_test_suite! {
+        mod derived,
+        backend = crate::NTT3x42Ifma,
+        params = TestParams { size: 1<<8, base2k: 50 },
+        tests = {
+            test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
+        }
+    }
+
+    backend_test_suite! {
         mod sampling,
         backend = crate::NTT3x42Ifma,
         params = TestParams { size: 1<<12, base2k: 50 },

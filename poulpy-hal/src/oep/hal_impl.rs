@@ -471,7 +471,7 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must uphold the backend safety contract for prepared-domain
 /// layouts, transforms, and arithmetic correctness.
-pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
+pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
     fn vec_znx_dft_apply(
         module: &Module<BE>,
         step: usize,
@@ -615,7 +615,7 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must uphold the backend safety contract for prepared
 /// polynomial layouts and arithmetic correctness.
-pub unsafe trait HalSvpImpl<BE: Backend>: Backend {
+pub unsafe trait HalSvpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
     fn svp_prepare(
         module: &Module<BE>,
         res: &mut crate::layouts::SvpPPolBackendMut<'_, BE>,
@@ -666,7 +666,7 @@ pub unsafe trait HalSvpImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must uphold the backend safety contract for prepared matrix
 /// layouts, scratch usage, and arithmetic correctness.
-pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
+pub unsafe trait HalVmpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
     fn vmp_prepare_tmp_bytes(module: &Module<BE>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
 
     fn vmp_prepare(
@@ -685,7 +685,9 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
         b_cols_in: usize,
         b_cols_out: usize,
         b_size: usize,
-    ) -> usize;
+    ) -> usize {
+        crate::oep::vmp_apply_dft_tmp_bytes_derived::<Self, BE>(module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
+    }
 
     fn vmp_apply_dft<R>(
         module: &Module<BE>,
@@ -694,7 +696,10 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
         b: &crate::layouts::VmpPMatBackendRef<'_, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: crate::layouts::VecZnxDftToBackendMut<BE>;
+        R: crate::layouts::VecZnxDftToBackendMut<BE>,
+    {
+        crate::oep::vmp_apply_dft_derived::<Self, BE, R>(module, res, a, b, scratch)
+    }
 
     #[allow(clippy::too_many_arguments)]
     fn vmp_apply_dft_to_dft_tmp_bytes(
@@ -752,7 +757,7 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must uphold the backend safety contract for prepared matrix
 /// layouts, scratch usage, and arithmetic correctness.
-pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
+pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> + HalVecZnxBigImpl<BE> {
     fn cnv_prepare_left_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
 
     fn cnv_prepare_left(
@@ -923,10 +928,10 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         terms: &[crate::layouts::CnvDftAccTerm<'a, BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: HalVecZnxDftImpl<BE> + 'a,
+        BE: 'a,
     {
         if terms.is_empty() {
-            <BE as HalVecZnxDftImpl<BE>>::vec_znx_dft_zero(module, res, res_col);
+            <Self as HalVecZnxDftImpl<BE>>::vec_znx_dft_zero(module, res, res_col);
             return;
         }
         for (idx, term) in terms.iter().enumerate() {

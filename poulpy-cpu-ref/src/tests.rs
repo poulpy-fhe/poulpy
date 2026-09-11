@@ -181,10 +181,29 @@ cross_backend_test_suite! {
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
+        test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
         test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
         test_vmp_apply_dft_to_dft_add => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add,
         test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
+    }
+}
+
+backend_test_suite! {
+    mod derived_fft64,
+    backend = crate::FFT64Ref,
+    params = TestParams { size: 1<<8, base2k: 12 },
+    tests = {
+        test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
+    }
+}
+
+backend_test_suite! {
+    mod derived_ntt4x30,
+    backend = crate::NTT4x30Ref,
+    params = TestParams { size: 1<<8, base2k: 12 },
+    tests = {
+        test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
     }
 }
 
