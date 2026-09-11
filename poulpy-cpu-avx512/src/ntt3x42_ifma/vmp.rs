@@ -922,6 +922,23 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
     zero_prefix: Option<usize>,
     tmp: &mut [u64],
 ) {
+    if E::is_parallel() && res.n() >= 65536 && dsize > 1 && a.size() >= 24 && (32..=128).contains(&(res.cols() * res.size())) {
+        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<E, true>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp)
+    } else {
+        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<E, false>(res, a, dsize, product_limbs, pmat, zero_prefix, tmp)
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn vmp_apply_dft_to_dft_digits_strided_ifma_impl<E: TaskExecutor, const TILED: bool>(
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+    dsize: usize,
+    product_limbs: usize,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    zero_prefix: Option<usize>,
+    tmp: &mut [u64],
+) {
     let n = res.n();
     let output_size = res.size();
 
@@ -989,6 +1006,17 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
     let task_tmp_len = rhs_count * x_words;
     let res_ptr = SendPtr(res_u64.as_mut_ptr());
     let process_bq = |task_tmp: &mut [u64], bq: usize| {
+        let tiled = TILED;
+        // Accumulate locally, then stream each output cache line only once.
+        let mut output_tile = if tiled { Some([0u64; 16 * 128]) } else { None };
+        let dst_ptr = res_ptr;
+        let res_ptr = SendPtr(if tiled {
+            output_tile.as_mut().unwrap().as_mut_ptr()
+        } else {
+            dst_ptr.get()
+        });
+        let output_stride = if tiled { 16 } else { 2 * n };
+        let save_bq = if tiled { 0 } else { bq };
         let (x0_pm, x1_pm) = task_tmp[..task_tmp_len].split_at_mut(x_words);
         let mut di = 0;
         while di < dsize {
@@ -1022,8 +1050,8 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
                     let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
                     unsafe {
                         let red = madd_reduce_col(x0_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                        let dst = res_ptr.get().add((col_pmat - limb_off0) * 2 * n);
-                        save_planar_digit(dst, bq, &pc, di == 0, red);
+                        let dst = res_ptr.get().add((col_pmat - limb_off0) * output_stride);
+                        save_planar_digit(dst, save_bq, &pc, di == 0, red);
                     }
                 }
 
@@ -1031,10 +1059,10 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
                     let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
                     unsafe {
                         let [red0, red1] = madd_reduce_col_x2(x0_pm, x1_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                        let dst0 = res_ptr.get().add((col_pmat - limb_off0) * 2 * n);
-                        let dst1 = res_ptr.get().add((col_pmat - limb_off1) * 2 * n);
-                        save_planar_digit(dst0, bq, &pc, di == 0, red0);
-                        save_planar_add(dst1, bq, &pc, red1[0], red1[1], red1[2]);
+                        let dst0 = res_ptr.get().add((col_pmat - limb_off0) * output_stride);
+                        let dst1 = res_ptr.get().add((col_pmat - limb_off1) * output_stride);
+                        save_planar_digit(dst0, save_bq, &pc, di == 0, red0);
+                        save_planar_add(dst1, save_bq, &pc, red1[0], red1[1], red1[2]);
                     }
                 }
 
@@ -1042,8 +1070,8 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
                     let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
                     unsafe {
                         let red = madd_reduce_col(x0_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                        let dst = res_ptr.get().add((col_pmat - limb_off0) * 2 * n);
-                        save_planar_digit(dst, bq, &pc, di == 0, red);
+                        let dst = res_ptr.get().add((col_pmat - limb_off0) * output_stride);
+                        save_planar_digit(dst, save_bq, &pc, di == 0, red);
                     }
                 }
 
@@ -1051,8 +1079,8 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
                     let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
                     unsafe {
                         let red = madd_reduce_col(x1_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                        let dst = res_ptr.get().add((col_pmat - limb_off1) * 2 * n);
-                        save_planar_add(dst, bq, &pc, red[0], red[1], red[2]);
+                        let dst = res_ptr.get().add((col_pmat - limb_off1) * output_stride);
+                        save_planar_add(dst, save_bq, &pc, red[0], red[1], red[2]);
                     }
                 }
 
@@ -1077,11 +1105,24 @@ fn vmp_apply_dft_to_dft_digits_strided_ifma_inner<E: TaskExecutor>(
                 let y_off = bq * bq_stride + col_pmat * col_stride_y + row_start * 16;
                 unsafe {
                     let red = madd_reduce_col(x0_pm, row_max, pmat_u64.as_ptr().add(y_off), &pc);
-                    let dst = res_ptr.get().add((col_pmat - limb_off) * 2 * n);
-                    save_planar_digit(dst, bq, &pc, di == 0, red);
+                    let dst = res_ptr.get().add((col_pmat - limb_off) * output_stride);
+                    save_planar_digit(dst, save_bq, &pc, di == 0, red);
                 }
             }
             di += 1;
+        }
+        if tiled {
+            for col in 0..res_flat {
+                unsafe {
+                    let src = output_tile.as_ref().unwrap().as_ptr().add(16 * col);
+                    let dst = dst_ptr.get().add(col * 2 * n + 16 * bq);
+                    _mm512_stream_si512(dst.cast(), _mm512_loadu_si512(src.cast()));
+                    _mm512_stream_si512(dst.add(8).cast(), _mm512_loadu_si512(src.add(8).cast()));
+                }
+            }
+            unsafe {
+                _mm_sfence();
+            }
         }
     };
 
@@ -1176,5 +1217,67 @@ mod tests {
                 }
             }
         }
+    }
+    #[cfg(feature = "enable-rayon")]
+    #[test]
+    fn streamed_digits_match_serial_with_sparse_inputs() {
+        use poulpy_cpu_rayon::RayonTaskExecutor;
+        use poulpy_hal::{api::*, execution::SerialTaskExecutor, layouts::*};
+
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        pool.install(|| {
+            let n = 64;
+            let module = Module::<crate::NTT3x42Ifma>::new(n as u64);
+            let mut input = module.vec_znx_dft_alloc(2, 27);
+            let mut key = module.vmp_pmat_alloc(7, 2, 2, 33, PrepareHint::Reuse);
+            let mut seed = 0x713da891ef42_u64;
+            for data in [input.data.as_mut_slice(), key.data_mut().as_mut()] {
+                for group in cast_slice_mut::<_, u64>(data).chunks_exact_mut(16) {
+                    for lane in 0..8 {
+                        let mut y = [0; 3];
+                        for (value, q) in y.iter_mut().zip(Primes42::Q) {
+                            seed ^= seed << 13;
+                            seed ^= seed >> 7;
+                            seed ^= seed << 17;
+                            *value = seed % q;
+                        }
+                        group[lane] = y[0] | (y[1] & ((1 << 22) - 1)) << 42;
+                        group[8 + lane] = (y[1] >> 22) | y[2] << 20;
+                    }
+                }
+            }
+            for prefix in [0, 1, 26, 27] {
+                input.data[..16 * n * 2 * prefix].fill(0);
+                for dsize in [2, 3, 4, 5] {
+                    for size in [16, 31, 64] {
+                        let mut expected = module.vec_znx_dft_alloc(2, size);
+                        let mut actual = module.vec_znx_dft_alloc(2, size);
+                        let bytes = vmp_apply_digits_strided_tmp_bytes_ifma(2, 27, dsize, 7, 2, 4);
+                        let mut scratch = vec![0; bytes / size_of::<u64>()];
+                        expected.data.fill(0xa5);
+                        actual.data.fill(0xa5);
+                        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<SerialTaskExecutor, false>(
+                            &mut expected.to_backend_mut(),
+                            &input.to_backend_ref(),
+                            dsize,
+                            3,
+                            &key.to_backend_ref(),
+                            None,
+                            &mut scratch,
+                        );
+                        vmp_apply_dft_to_dft_digits_strided_ifma_impl::<RayonTaskExecutor, true>(
+                            &mut actual.to_backend_mut(),
+                            &input.to_backend_ref(),
+                            dsize,
+                            3,
+                            &key.to_backend_ref(),
+                            Some(prefix),
+                            &mut scratch,
+                        );
+                        assert_eq!(actual.data, expected.data, "prefix={prefix}, dsize={dsize}, size={size}");
+                    }
+                }
+            }
+        });
     }
 }
