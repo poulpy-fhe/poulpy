@@ -145,10 +145,8 @@ backend_test_suite! {
     params = TestParams { size: 1<<12, base2k: 50 },
     tests = {
         test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
-        test_vec_znx_add_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_normal,
-        test_vec_znx_big_add_normal => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_normal,
-        test_vec_znx_add_normal_core => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
-        test_vec_znx_big_add_normal_core => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
+        test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
+        test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
     }
 }
 

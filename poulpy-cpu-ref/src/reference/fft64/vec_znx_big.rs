@@ -1,15 +1,10 @@
 use crate::layouts::VecZnxBigBackendMut;
 use crate::layouts::VecZnxBigBackendRef;
-use crate::layouts::VecZnxBigOwned;
-use std::f64::consts::SQRT_2;
-
-use poulpy_hal::api::VecZnxBigAlloc;
 
 use crate::{
-    api::VecZnxBigAddNormal,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
+        VecZnxToBackendRef, ZnxViewMut,
     },
     reference::{
         vec_znx::{
@@ -222,48 +217,6 @@ pub fn vec_znx_big_add_normal_ref<R, B>(
     let limb: usize = k.div_ceil(base2k) - 1;
     let shift: u32 = ((limb + 1) * base2k - k) as u32;
     znx_add_normal_f64_ref(res.at_mut(res_col, limb), sigma, bound, shift, source)
-}
-
-pub fn test_vec_znx_big_add_normal<B>(module: &Module<B>)
-where
-    B: Backend<BigWord = i64, ZnxWord = i64> + 'static,
-    B::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> B::BufMut<'a>: HostDataMut,
-    for<'a> B::BufRef<'a>: HostDataRef,
-    Module<B>: VecZnxBigAddNormal<B>,
-{
-    let n: usize = module.n();
-    let base2k: usize = 17;
-    let noise_infos = NoiseInfos::new(2 * 17, 3.2, 6.0 * 3.2).unwrap();
-    let size: usize = 5;
-    let mut source: Source = Source::new([0u8; 32]);
-    let cols: usize = 2;
-    let zero: Vec<i64> = vec![0; n];
-    let k_f64: f64 = (1u64 << noise_infos.k as u64) as f64;
-    let sqrt2: f64 = SQRT_2;
-    (0..cols).for_each(|col_i| {
-        let mut a: VecZnxBigOwned<B> = module.vec_znx_big_alloc(cols, size);
-        {
-            let mut a_ref = a.to_backend_mut();
-            module.vec_znx_big_add_normal(base2k, &mut a_ref, col_i, noise_infos, &mut source);
-            module.vec_znx_big_add_normal(base2k, &mut a_ref, col_i, noise_infos, &mut source);
-        }
-        (0..cols).for_each(|col_j| {
-            if col_j != col_i {
-                (0..size).for_each(|limb_i| {
-                    assert_eq!(a.at(col_j, limb_i), zero);
-                })
-            } else {
-                let std: f64 = a.stats(base2k, col_i).std() * k_f64;
-                assert!(
-                    (std - noise_infos.sigma * sqrt2).abs() < 0.1,
-                    "std={} ~!= {}",
-                    std,
-                    noise_infos.sigma * sqrt2
-                );
-            }
-        })
-    });
 }
 
 /// R <- A - B

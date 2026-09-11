@@ -11,8 +11,7 @@ use std::{
 use crate::reference::{
     fft64::vec_znx_big::{
         vec_znx_big_add as fft64_vec_znx_big_add, vec_znx_big_add_assign as fft64_vec_znx_big_add_assign,
-        vec_znx_big_add_normal_ref as fft64_vec_znx_big_add_normal_ref, vec_znx_big_add_small as fft64_vec_znx_big_add_small,
-        vec_znx_big_add_small_assign as fft64_vec_znx_big_add_small_assign,
+        vec_znx_big_add_small as fft64_vec_znx_big_add_small, vec_znx_big_add_small_assign as fft64_vec_znx_big_add_small_assign,
         vec_znx_big_automorphism as fft64_vec_znx_big_automorphism,
         vec_znx_big_automorphism_assign as fft64_vec_znx_big_automorphism_assign,
         vec_znx_big_automorphism_assign_tmp_bytes as fft64_vec_znx_big_automorphism_assign_tmp_bytes,
@@ -27,9 +26,8 @@ use crate::reference::{
         vec_znx_big_sub_small_b_assign as fft64_vec_znx_big_sub_small_b_assign,
     },
     ntt4x30::vec_znx_big::{
-        I128BigOps, I128NormalizeOps, ntt4x30_vec_znx_big_add, ntt4x30_vec_znx_big_add_assign,
-        ntt4x30_vec_znx_big_add_normal_ref, ntt4x30_vec_znx_big_add_small, ntt4x30_vec_znx_big_add_small_assign,
-        ntt4x30_vec_znx_big_automorphism, ntt4x30_vec_znx_big_automorphism_assign,
+        I128BigOps, I128NormalizeOps, ntt4x30_vec_znx_big_add, ntt4x30_vec_znx_big_add_assign, ntt4x30_vec_znx_big_add_small,
+        ntt4x30_vec_znx_big_add_small_assign, ntt4x30_vec_znx_big_automorphism, ntt4x30_vec_znx_big_automorphism_assign,
         ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes, ntt4x30_vec_znx_big_from_small, ntt4x30_vec_znx_big_negate,
         ntt4x30_vec_znx_big_negate_assign, ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_add_assign,
         ntt4x30_vec_znx_big_normalize_sub_assign, ntt4x30_vec_znx_big_normalize_tmp_bytes, ntt4x30_vec_znx_big_sub,
@@ -46,10 +44,9 @@ use crate::reference::{
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnx, VecZnxBackendRef,
+        Backend, HostDataMut, HostDataRef, Module, ScalarZnxBackendRef, ScratchArena, VecZnx, VecZnxBackendRef,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut, ZnxView, ZnxViewMut,
     },
-    source::Source,
 };
 
 #[inline]
@@ -215,43 +212,6 @@ where
         for j in min_size..res_size {
             znx_zero_ref(res.at_mut(res_col, j));
         }
-    }
-
-    fn vec_znx_big_add_normal_default<R>(
-        _module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut R,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        source: &mut Source,
-    ) where
-        BE: Backend<BigWord = i64, ZnxWord = i64>,
-        R: VecZnxBigToBackendMut<BE>,
-    {
-        fft64_vec_znx_big_add_normal_ref::<_, BE>(
-            res_base2k,
-            res,
-            res_col,
-            noise_infos.k,
-            noise_infos.sigma,
-            noise_infos.bound,
-            source,
-        );
-    }
-
-    fn vec_znx_big_add_normal_seed_default<R>(
-        module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut R,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        seed: [u8; 32],
-    ) where
-        BE: Backend<BigWord = i64, ZnxWord = i64>,
-        R: VecZnxBigToBackendMut<BE>,
-    {
-        let mut source = Source::new(seed);
-        Self::vec_znx_big_add_normal_default(module, res_base2k, res, res_col, noise_infos, &mut source);
     }
 
     fn vec_znx_big_add_default<R, A, C>(
@@ -580,43 +540,6 @@ where
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
         ntt4x30_vec_znx_big_from_small::<_, _, BE>(res, res_col, &a, a_col);
-    }
-
-    fn vec_znx_big_add_normal_default<R>(
-        _module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut R,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        source: &mut Source,
-    ) where
-        BE: Backend<BigWord = i128, ZnxWord = i64>,
-        R: VecZnxBigToBackendMut<BE>,
-    {
-        ntt4x30_vec_znx_big_add_normal_ref::<_, BE>(
-            res_base2k,
-            res,
-            res_col,
-            noise_infos.k,
-            noise_infos.sigma,
-            noise_infos.bound,
-            source,
-        );
-    }
-
-    fn vec_znx_big_add_normal_seed_default<R>(
-        module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut R,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        seed: [u8; 32],
-    ) where
-        BE: Backend<BigWord = i128, ZnxWord = i64>,
-        R: VecZnxBigToBackendMut<BE>,
-    {
-        let mut source = Source::new(seed);
-        Self::vec_znx_big_add_normal_default(module, res_base2k, res, res_col, noise_infos, &mut source);
     }
 
     fn vec_znx_big_add_default<R, A, C>(

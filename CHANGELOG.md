@@ -15,12 +15,14 @@
 - **Breaking:** remove 30 unused api methods (coefficient shift/normalize variants, `add_const`, `add_scalar_into`, `sub_scalar`, `automorphism_rotate`, `split_ring`, `merge_rings`, `transpose`, `hadamard_product_scalar_znx`, `*_from_bytes` wrappers, `vec_znx_big_alloc_n`, `ModuleNew::new_with`) and the eight seeded `[u8; 32]` sampler twins; the `Source`-based samplers stay. The corresponding `Hal*Impl` OEP methods are removed too, including `HalModuleImpl::Config` and `new_with`.
 - **Breaking:** the secret-key samplers `scalar_znx_fill_ternary_hw_source`, `scalar_znx_fill_ternary_prob_source`, `scalar_znx_fill_binary_hw_source`, `scalar_znx_fill_binary_prob_source` and `scalar_znx_fill_binary_block_source` are removed with their OEP methods, default bodies and conformance tests; every secret `poulpy-core` draws — the long-lived keys and the ephemeral secret of public-key encryption — is sampled in place by the backend through the new `poulpy-core` extension point `SamplingImpl`. Noise sampling (`vec_znx_add_normal_source`, `vec_znx_big_add_normal`) and `vec_znx_fill_uniform_source` stay: a backend samples noise in place from the seed, so encryption never round-trips through the host.
 - **Breaking:** the five `ScalarZnx::fill_*` secret-distribution methods (`fill_ternary_prob`, `fill_ternary_hw`, `fill_binary_prob`, `fill_binary_hw`, `fill_binary_block`) are removed from `layouts`; they move verbatim to the `poulpy_cpu_ref::ScalarZnxFill` trait, implemented for every host-mapped `ScalarZnx`, where they are the host kernels `impl_sampling_host!` dispatches to. The distributions they sample are a scheme concept and no HAL code called them.
+- **Breaking:** noise sampling leaves the HAL: `vec_znx_add_normal_source`, `vec_znx_big_add_normal`, their OEP methods, delegates, default bodies and conformance tests are removed, and `NoiseInfos` moves to `poulpy-core`. The HAL's only sampler is `vec_znx_fill_uniform_source`.
 
 ### `poulpy-core`
 
 - LWE/GLWE conversions and secret-key rearrangements copy through window views (`vec_znx_copy` on `window_coeffs`/`window_limbs`); no public API change.
 - `GLWESecretSampling` / `LWESecretSampling` draw every column of a secret through `SamplingImpl`, one derived seed per column; `poulpy-core` no longer stages secrets on the host and exposes no host buffer type for them. **Breaking:** for a fixed `Source` the sampled secret keys change, and they are now per-backend rather than cross-backend.
 - `poulpy_core::oep::SamplingImpl<BE>` (`scalar_znx_fill_distribution(module, res, col, dist, seed)`, no default body) with the api trait `ScalarZnxFillDistribution` on `Module`: the backend samples a `Distribution` in place from a seed. Public-key encryption draws its ephemeral secret `u` through it, so there is no host round trip and, for a fixed seed, the same stream as before this release. CPU backends take it with `poulpy_cpu_ref::impl_sampling_host!`; `core_backend_test_suite!` gains `scalar_znx_fill_distribution`.
+- `SamplingImpl` gains `vec_znx_add_normal` and `vec_znx_big_add_normal` (seed-based, no default body: a backend samples noise in place, never through the host) with the api traits `VecZnxAddNormal` / `VecZnxBigAddNormal` on `Module`, `NoiseInfos` (moved from `poulpy-hal`), and the statistical conformance tests. Every CPU backend implements them with the existing kernels through the same `poulpy_cpu_ref::impl_sampling_host!`, which takes the `VecZnxBig` word family (`fft64` or `ntt4x30`) as a second argument; the sampled values are bit-identical to before.
 
 ### `poulpy-ckks`
 
@@ -28,6 +30,10 @@
 ### CPU backends
 
 - `poulpy-cpu-ref` gains `ScalarZnxFill`, the host secret-distribution samplers moved from the HAL; `impl_sampling_host!` dispatches to them.
+
+### `poulpy-bin-fhe`
+
+- `NoiseInfos` is imported from `poulpy_core`.
 
 ## [0.8.3] - 2026-09-09
 

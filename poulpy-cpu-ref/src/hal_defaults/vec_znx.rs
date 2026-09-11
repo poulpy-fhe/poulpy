@@ -3,7 +3,7 @@
 use std::mem::size_of;
 
 use crate::reference::vec_znx::{
-    vec_znx_add, vec_znx_add_normal_ref, vec_znx_add_scalar_assign, vec_znx_automorphism, vec_znx_automorphism_assign,
+    vec_znx_add, vec_znx_add_scalar_assign, vec_znx_automorphism, vec_znx_automorphism_assign,
     vec_znx_automorphism_assign_tmp_bytes, vec_znx_copy, vec_znx_fill_uniform_ref, vec_znx_lsh, vec_znx_lsh_assign,
     vec_znx_lsh_sub, vec_znx_lsh_tmp_bytes, vec_znx_mul_xp_minus_one, vec_znx_mul_xp_minus_one_assign,
     vec_znx_mul_xp_minus_one_assign_tmp_bytes, vec_znx_negate, vec_znx_negate_assign, vec_znx_normalize,
@@ -22,8 +22,7 @@ use crate::reference::{fft64::convolution::I64Ops, ntt4x30::I128BigOps};
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
-        Backend, HostDataMut, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
-        ZnxViewMut,
+        Backend, HostDataMut, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut,
     },
     source::Source,
 };
@@ -631,28 +630,6 @@ where
     {
         let mut source = Source::new(seed);
         vec_znx_fill_uniform_ref::<BE>(base2k, k, res, res_col, &mut source);
-    }
-
-    fn vec_znx_add_normal_default(
-        _module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        seed: [u8; 32],
-    ) where
-        for<'x> BE::BufMut<'x>: HostDataMut,
-    {
-        let mut source = Source::new(seed);
-        vec_znx_add_normal_ref::<BE>(
-            res_base2k,
-            res,
-            res_col,
-            noise_infos.k,
-            noise_infos.sigma,
-            noise_infos.bound,
-            &mut source,
-        );
     }
 }
 

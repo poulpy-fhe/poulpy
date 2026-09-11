@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use crate::layouts::{Backend, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef};
+use crate::layouts::{Backend, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef};
 
 /// Module construction extension point.
 ///
@@ -277,15 +277,6 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         res_col: usize,
         seed: [u8; 32],
     );
-
-    fn vec_znx_add_normal(
-        module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        seed: [u8; 32],
-    );
 }
 
 /// Big-coefficient `VecZnxBig` extension point.
@@ -299,15 +290,6 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         res_col: usize,
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
-    );
-
-    fn vec_znx_big_add_normal(
-        module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        seed: [u8; 32],
     );
 
     fn vec_znx_big_add(

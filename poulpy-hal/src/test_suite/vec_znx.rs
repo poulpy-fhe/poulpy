@@ -1,5 +1,3 @@
-use std::f64::consts::SQRT_2;
-
 use super::{
     TestParams, download_scalar_znx, download_vec_znx, scalar_znx_backend_mut, scalar_znx_backend_ref, upload_scalar_znx,
     upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref,
@@ -7,16 +5,14 @@ use super::{
 
 use crate::{
     api::{
-        ModuleNew, ScalarZnxAutomorphism, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddNormalSource,
-        VecZnxAddScalarAssign, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCopy,
-        VecZnxFillUniformSource, VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign,
+        ModuleNew, ScalarZnxAutomorphism, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
+        VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxFillUniformSource,
+        VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign,
         VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign,
         VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAssign,
         VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
     },
-    layouts::{
-        DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, NoiseInfos, ScratchOwned, VecZnx, ZnxView, ZnxViewMut,
-    },
+    layouts::{DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
 };
 
@@ -1366,57 +1362,6 @@ where
     for limb in live_size..size {
         assert_eq!(a.at(0, limb), zero);
     }
-}
-
-pub fn test_vec_znx_add_normal<B: crate::test_suite::TestBackend>(_params: &TestParams, module: &Module<B>)
-where
-    Module<B>: VecZnxAddNormalSource<B>,
-{
-    let n: usize = module.n();
-    let base2k: usize = 17;
-    let size: usize = 5;
-    let noise_infos = NoiseInfos::new(2 * 17 - 3, 3.2, 6.0 * 3.2).unwrap();
-    let mut source_xe: Source = Source::new([0u8; 32]);
-    let cols: usize = 2;
-    let zero: Vec<i64> = vec![0; n];
-    let k_f64: f64 = (1u64 << noise_infos.k as u64) as f64;
-    let sqrt2: f64 = SQRT_2;
-    (0..cols).for_each(|col_i| {
-        let host_init = VecZnx::alloc(module.n(), cols, size);
-        let mut a = upload_vec_znx::<B>(&host_init);
-        module.vec_znx_add_normal_source(
-            base2k,
-            &mut vec_znx_backend_mut::<B>(&mut a),
-            col_i,
-            noise_infos,
-            &mut source_xe,
-        );
-        module.vec_znx_add_normal_source(
-            base2k,
-            &mut vec_znx_backend_mut::<B>(&mut a),
-            col_i,
-            noise_infos,
-            &mut source_xe,
-        );
-        let a = download_vec_znx::<B>(&a);
-        (0..cols).for_each(|col_j| {
-            if col_j != col_i {
-                (0..size).for_each(|limb_i| {
-                    assert_eq!(a.at(col_j, limb_i), zero);
-                })
-            } else {
-                let std: f64 = a.stats(base2k, col_i).std() * k_f64;
-                assert!(
-                    (std - noise_infos.sigma * sqrt2).abs() < 0.1,
-                    "std={std} ~!= {}",
-                    noise_infos.sigma * sqrt2
-                );
-                let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
-                let low_mask = (1i64 << shift) - 1;
-                assert!(a.at(col_i, limb).iter().all(|value| value & low_mask == 0));
-            }
-        })
-    });
 }
 
 pub fn test_vec_znx_lsh<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
