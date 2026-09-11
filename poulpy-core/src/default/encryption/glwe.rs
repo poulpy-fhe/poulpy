@@ -14,13 +14,12 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, GetDistribution,
+    EncryptionInfos, GetDistribution, ScalarZnxFillDistribution,
     dist::Distribution,
     layouts::{
         GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::{GLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
-    scalar_znx_host_zeroed, upload_scalar_znx,
 };
 
 #[doc(hidden)]
@@ -359,7 +358,8 @@ where
         + VecZnxCopy<BE>
         + SvpPPolBytesOf
         + ModuleN
-        + VecZnxDftBytesOf,
+        + VecZnxDftBytesOf
+        + ScalarZnxFillDistribution<BE>,
 {
     #[allow(clippy::too_many_arguments)]
     fn glwe_encrypt_pk_internal<R, K, E>(
@@ -397,24 +397,14 @@ where
 
         {
             let (mut u_backend, scratch_2) = scratch_1.take_scalar_znx_scratch(self.n(), 1);
-            {
-                let mut u_host = scalar_znx_host_zeroed::<BE::ZnxWord>(self.n(), 1);
-                match pk.dist() {
-                    Distribution::NONE => panic!(
-                        "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
-                         Self::generate"
-                    ),
-                    Distribution::ENCAPSULATED(name) => panic!("invalid public key: secret {name} is tagged for encapsulation"),
-                    Distribution::TernaryFixed(hw) => u_host.fill_ternary_hw(0, *hw, source_xu),
-                    Distribution::TernaryProb(prob) => u_host.fill_ternary_prob(0, *prob, source_xu),
-                    Distribution::BinaryFixed(hw) => u_host.fill_binary_hw(0, *hw, source_xu),
-                    Distribution::BinaryProb(prob) => u_host.fill_binary_prob(0, *prob, source_xu),
-                    Distribution::BinaryBlock(block_size) => u_host.fill_binary_block(0, *block_size, source_xu),
-                    Distribution::ZERO => {}
-                }
-                upload_scalar_znx::<BE>(&mut u_backend.to_backend_mut(), &u_host);
+            match pk.dist() {
+                Distribution::NONE => panic!(
+                    "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
+                     Self::generate"
+                ),
+                Distribution::ENCAPSULATED(name) => panic!("invalid public key: secret {name} is tagged for encapsulation"),
+                dist => self.scalar_znx_fill_distribution(&mut u_backend.to_backend_mut(), 0, *dist, source_xu),
             }
-
             self.svp_prepare(&mut u_dft, 0, &u_backend.to_backend_ref(), 0);
             scratch_1 = scratch_2;
         }

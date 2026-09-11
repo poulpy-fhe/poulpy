@@ -1,11 +1,13 @@
-//! Host-side secret-key sampling.
+//! Host-side sampling of long-lived secret keys.
 //!
-//! Secrets are drawn on the host from a [`Source`](poulpy_hal::source::Source)
-//! with the `ScalarZnx::fill_*` methods and uploaded with
-//! [`Backend::copy_host_to_view`]. Gaussian noise is not sampled here: it is
-//! a HAL operation (`vec_znx_add_normal_source`, `vec_znx_big_add_normal`) so
-//! that a backend samples it in place and encryption never round-trips
-//! through the host.
+//! Secret keys are drawn on the host from a [`Source`](poulpy_hal::source::Source)
+//! with the `ScalarZnx::fill_*` methods and uploaded once with
+//! [`Backend::copy_host_to_view`]. Anything sampled during encryption never
+//! takes that path: the ephemeral secret of public-key encryption goes through
+//! [`SamplingImpl`](crate::oep::SamplingImpl) (surfaced as
+//! [`ScalarZnxFillDistribution`](crate::ScalarZnxFillDistribution)) and is
+//! sampled in place by the backend; Gaussian noise is the HAL's
+//! `vec_znx_add_normal` / `vec_znx_big_add_normal`, also in place.
 
 use poulpy_hal::layouts::{Backend, DataView, DataViewMut, HostBytesBackend, ScalarZnx, ScalarZnxBackendMut, ZnxWord};
 
