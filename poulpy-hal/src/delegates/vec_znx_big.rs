@@ -1,17 +1,16 @@
 use crate::{
     api::{
-        VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddNormal, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
-        VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
-        VecZnxBigColWeightedSum, VecZnxBigFromSmall, VecZnxBigInnerSum, VecZnxBigNegate, VecZnxBigNegateAssign,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
-        VecZnxBigSubSmallA, VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxScalarProduct,
+        VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism,
+        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigColWeightedSum,
+        VecZnxBigFromSmall, VecZnxBigInnerSum, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA,
+        VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxScalarProduct,
     },
     layouts::{
-        Backend, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+        Backend, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
         VecZnxBigBackendRef, VecZnxBigOwned,
     },
     oep::HalVecZnxBigImpl,
-    source::Source,
 };
 
 macro_rules! impl_vec_znx_big_delegate {
@@ -53,20 +52,6 @@ impl<B: Backend> VecZnxBigBytesOf for Module<B> {
         B::bytes_of_vec_znx_big(n, cols, size)
     }
 }
-
-impl_vec_znx_big_delegate!(
-    VecZnxBigAddNormal<B>,
-    fn vec_znx_big_add_normal(
-        &self,
-        base2k: usize,
-        res: &mut VecZnxBigBackendMut<'_, B>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        source: &mut Source,
-    ) {
-        B::vec_znx_big_add_normal(self, base2k, res, res_col, noise_infos, source.new_seed());
-    }
-);
 
 impl_vec_znx_big_delegate!(
     VecZnxBigAdd<B>,

@@ -11,24 +11,6 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             <Self as $defaults<Self>>::vec_znx_big_from_small_default(&mut res, res_col, a, a_col)
         }
 
-        fn vec_znx_big_add_normal(
-            module: &Module<Self>,
-            res_base2k: usize,
-            mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
-            res_col: usize,
-            noise_infos: NoiseInfos,
-            seed: [u8; 32],
-        ) {
-            <Self as $defaults<Self>>::vec_znx_big_add_normal_seed_default(
-                module,
-                res_base2k,
-                &mut res,
-                res_col,
-                noise_infos,
-                seed,
-            )
-        }
-
         fn vec_znx_big_add(
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,

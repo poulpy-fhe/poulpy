@@ -313,17 +313,6 @@ macro_rules! hal_impl_vec_znx_without_normalize {
         ) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_fill_uniform_default(module, base2k, k, res, res_col, seed)
         }
-
-        fn vec_znx_add_normal(
-            module: &Module<Self>,
-            res_base2k: usize,
-            res: &mut VecZnxBackendMut<'_, Self>,
-            res_col: usize,
-            noise_infos: NoiseInfos,
-            seed: [u8; 32],
-        ) {
-            <Self as HalVecZnxDefault<Self>>::vec_znx_add_normal_default(module, res_base2k, res, res_col, noise_infos, seed)
-        }
     };
 }
 

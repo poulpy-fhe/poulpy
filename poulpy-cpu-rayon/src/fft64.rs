@@ -132,7 +132,7 @@ use $crate::__private::poulpy_hal::execution::{SerialTaskExecutor, TaskExecutor}
 use $crate::__private::poulpy_hal::{
     api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        DataView, DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnx, VecZnxBackendMut,
+        DataView, DataViewMut, MatZnxBackendRef, Module, ScalarZnxBackendRef, ScratchArena, VecZnx, VecZnxBackendMut,
         VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDft, VecZnxDftBackendMut,
         VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView,
         ZnxViewMut,
@@ -746,24 +746,6 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         a_col: usize,
     ) {
         <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_from_small(&mut base_big_mut(res), res_col, a, a_col)
-    }
-
-    fn vec_znx_big_add_normal(
-        module: &Module<Self>,
-        res_base2k: usize,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        seed: [u8; 32],
-    ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_add_normal(
-            base_module(module),
-            res_base2k,
-            &mut base_big_mut(res),
-            res_col,
-            noise_infos,
-            seed,
-        )
     }
 
     fn vec_znx_big_add(

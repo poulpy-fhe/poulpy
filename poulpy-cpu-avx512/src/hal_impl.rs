@@ -9,7 +9,7 @@ use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     execution::SerialTaskExecutor,
     layouts::{
-        Backend, DataView, DataViewMut, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena,
+        Backend, DataView, DataViewMut, MatZnxBackendRef, MatZnxInfos, Module, ScalarZnxBackendRef, ScratchArena,
         SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
         VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },
@@ -742,7 +742,7 @@ mod ifma_impl {
         api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
         execution::SerialTaskExecutor,
         layouts::{
-            Backend, CnvDftAccTerm, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, SvpPPolBackendMut,
+            Backend, CnvDftAccTerm, MatZnxBackendRef, MatZnxInfos, Module, ScalarZnxBackendRef, SvpPPolBackendMut,
             SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
             VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
         },

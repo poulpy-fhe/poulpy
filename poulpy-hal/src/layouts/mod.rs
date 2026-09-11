@@ -76,7 +76,6 @@ pub use vmp_pmat::*;
 pub use word::*;
 pub use znx_base::*;
 
-use anyhow::Result;
 use std::ptr::NonNull;
 
 use crate::oep::HalModuleImpl;
@@ -662,26 +661,4 @@ macro_rules! impl_backend_from {
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct NoiseInfos {
-    pub k: usize,
-    pub sigma: f64,
-    pub bound: f64,
-}
-
-impl NoiseInfos {
-    pub fn new(k: usize, sigma: f64, bound: f64) -> Result<Self> {
-        anyhow::ensure!(sigma.is_sign_positive(), "sigma must be positive");
-        anyhow::ensure!(sigma >= 1.0, "sigma must be greater or equal to 1");
-        anyhow::ensure!(bound >= sigma, "bound: {bound} must be greater or equal to sigma: {sigma}");
-        Ok(Self { k, sigma, bound })
-    }
-
-    /// Target limb and the number of unused low bits it holds.
-    pub fn target_limb_and_shift(&self, base2k: usize) -> (usize, u32) {
-        let limb: usize = self.k.div_ceil(base2k) - 1;
-        (limb, ((limb + 1) * base2k - self.k) as u32)
-    }
 }

@@ -1,9 +1,6 @@
-use crate::{
-    layouts::{
-        Backend, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-        VecZnxBigBackendRef, VecZnxBigOwned,
-    },
-    source::Source,
+use crate::layouts::{
+    Backend, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxBigBackendRef,
+    VecZnxBigOwned,
 };
 
 /// Converts a coefficient-domain [`VecZnx`](crate::layouts::VecZnx) column
@@ -28,28 +25,6 @@ pub trait VecZnxBigBytesOf {
     fn bytes_of_vec_znx_big(&self, cols: usize, size: usize) -> usize;
 
     fn bytes_of_vec_znx_big_n(&self, n: usize, cols: usize, size: usize) -> usize;
-}
-
-#[allow(clippy::too_many_arguments)]
-/// Add a discrete normal distribution on res.
-///
-/// # Arguments
-/// * `base2k`: base two logarithm of the bivariate representation
-/// * `res`: receiver.
-/// * `res_col`: column of the receiver on which the operation is performed/stored.
-/// * `k`:
-/// * `source`: random coin source.
-/// * `sigma`: standard deviation of the discrete normal distribution.
-/// * `bound`: rejection sampling bound.
-pub trait VecZnxBigAddNormal<B: Backend> {
-    fn vec_znx_big_add_normal(
-        &self,
-        base2k: usize,
-        res: &mut VecZnxBigBackendMut<'_, B>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        source: &mut Source,
-    );
 }
 
 pub trait VecZnxBigAdd<B: Backend> {
