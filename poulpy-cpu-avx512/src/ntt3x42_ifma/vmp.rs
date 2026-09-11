@@ -9,9 +9,9 @@
 
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
-    __m512i, _mm_sfence, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
-    _mm512_or_si512, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512,
-    _mm512_stream_si512,
+    __m512i, _MM_HINT_T0, _mm_prefetch, _mm_sfence, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512,
+    _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_or_si512, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64,
+    _mm512_srli_epi64, _mm512_storeu_si512, _mm512_stream_si512,
 };
 use std::mem::size_of;
 
@@ -34,8 +34,8 @@ use poulpy_hal::{
 };
 
 use super::{
-    kernels::cond_sub_2q_si512,
-    mat_vec_ifma::{PrimeConsts512, reduce_bbc_single_prime_512},
+    kernels::{cond_sub_2q_si512, harvey_modmul_si512},
+    mat_vec_ifma::PrimeConsts512,
     vec_znx_dft::MASK22,
 };
 
@@ -293,6 +293,12 @@ unsafe fn extract_blk_quad_prime_major_strided(
             let digit = logical_row / cols;
             let flat = (limb_base + digit * limb_step) * cols + col;
             let src = a_u64.as_ptr().add(flat * 2 * n + 16 * bq);
+            // Stagger the limb streams to avoid prefetching into the same cache sets.
+            let ahead = 2 + (row & 3);
+            if bq + ahead < n / 8 {
+                _mm_prefetch::<_MM_HINT_T0>(src.add(16 * ahead).cast());
+                _mm_prefetch::<_MM_HINT_T0>(src.add(16 * ahead + 8).cast());
+            }
             let w0 = _mm512_loadu_si512(src as *const __m512i);
             let w1 = _mm512_loadu_si512(src.add(8) as *const __m512i);
             let y = unpack_y(w0, w1, m42, m20);
@@ -301,6 +307,20 @@ unsafe fn extract_blk_quad_prime_major_strided(
             _mm512_storeu_si512(dst.add(plane_stride) as *mut __m512i, y[1]);
             _mm512_storeu_si512(dst.add(2 * plane_stride) as *mut __m512i, y[2]);
         }
+    }
+}
+
+#[target_feature(enable = "avx512ifma,avx512vl")]
+#[inline]
+unsafe fn reduce_vmp(lo: __m512i, hi: __m512i, p: &PrimeConsts512) -> __m512i {
+    unsafe {
+        let mask = _mm512_set1_epi64((1i64 << 42) - 1);
+        let y = _mm512_madd52lo_epu64(_mm512_and_si512(lo, mask), _mm512_srli_epi64::<42>(lo), p.pow42);
+        let z = _mm512_madd52lo_epu64(_mm512_and_si512(y, mask), _mm512_srli_epi64::<42>(y), p.pow42);
+        let hi = harvey_modmul_si512(hi, p.pow52, p.pow52_quot, p.q);
+        // Both terms are below 2q, so the final two subtractions suffice.
+        let sum = _mm512_add_epi64(z, hi);
+        cond_sub_2q_si512(cond_sub_2q_si512(sum, p.q2), p.q)
     }
 }
 
@@ -345,33 +365,9 @@ unsafe fn madd_reduce_col(x_pm: &[u64], row_max: usize, y_base: *const u64, pc: 
         }
 
         [
-            reduce_bbc_single_prime_512(
-                acc_lo0,
-                acc_hi0,
-                pc[0].q,
-                pc[0].q2,
-                pc[0].pow42,
-                pc[0].pow52,
-                pc[0].pow52_quot,
-            ),
-            reduce_bbc_single_prime_512(
-                acc_lo1,
-                acc_hi1,
-                pc[1].q,
-                pc[1].q2,
-                pc[1].pow42,
-                pc[1].pow52,
-                pc[1].pow52_quot,
-            ),
-            reduce_bbc_single_prime_512(
-                acc_lo2,
-                acc_hi2,
-                pc[2].q,
-                pc[2].q2,
-                pc[2].pow42,
-                pc[2].pow52,
-                pc[2].pow52_quot,
-            ),
+            reduce_vmp(acc_lo0, acc_hi0, &pc[0]),
+            reduce_vmp(acc_lo1, acc_hi1, &pc[1]),
+            reduce_vmp(acc_lo2, acc_hi2, &pc[2]),
         ]
     }
 }
@@ -436,17 +432,16 @@ unsafe fn madd_reduce_col_x2(
             hi12 = _mm512_madd52hi_epu64(hi12, a12, y2);
         }
 
-        let reduce = |lo, hi, p: &PrimeConsts512| reduce_bbc_single_prime_512(lo, hi, p.q, p.q2, p.pow42, p.pow52, p.pow52_quot);
         [
             [
-                reduce(lo00, hi00, &pc[0]),
-                reduce(lo01, hi01, &pc[1]),
-                reduce(lo02, hi02, &pc[2]),
+                reduce_vmp(lo00, hi00, &pc[0]),
+                reduce_vmp(lo01, hi01, &pc[1]),
+                reduce_vmp(lo02, hi02, &pc[2]),
             ],
             [
-                reduce(lo10, hi10, &pc[0]),
-                reduce(lo11, hi11, &pc[1]),
-                reduce(lo12, hi12, &pc[2]),
+                reduce_vmp(lo10, hi10, &pc[0]),
+                reduce_vmp(lo11, hi11, &pc[1]),
+                reduce_vmp(lo12, hi12, &pc[2]),
             ],
         ]
     }
@@ -507,33 +502,9 @@ unsafe fn vmp_apply_core_pm_small_rows<const ROWS: usize, const OVERWRITE: bool>
                     acc_hi2 = _mm512_madd52hi_epu64(acc_hi2, x_row[2], y2);
                 }
 
-                let red0 = reduce_bbc_single_prime_512(
-                    acc_lo0,
-                    acc_hi0,
-                    pc[0].q,
-                    pc[0].q2,
-                    pc[0].pow42,
-                    pc[0].pow52,
-                    pc[0].pow52_quot,
-                );
-                let red1 = reduce_bbc_single_prime_512(
-                    acc_lo1,
-                    acc_hi1,
-                    pc[1].q,
-                    pc[1].q2,
-                    pc[1].pow42,
-                    pc[1].pow52,
-                    pc[1].pow52_quot,
-                );
-                let red2 = reduce_bbc_single_prime_512(
-                    acc_lo2,
-                    acc_hi2,
-                    pc[2].q,
-                    pc[2].q2,
-                    pc[2].pow42,
-                    pc[2].pow52,
-                    pc[2].pow52_quot,
-                );
+                let red0 = reduce_vmp(acc_lo0, acc_hi0, &pc[0]);
+                let red1 = reduce_vmp(acc_lo1, acc_hi1, &pc[1]);
+                let red2 = reduce_vmp(acc_lo2, acc_hi2, &pc[2]);
 
                 let dst_base = res_u64.as_mut_ptr().add(col_res * 2 * n);
                 save_planar_result::<OVERWRITE>(dst_base, bq, pc, red0, red1, red2);
@@ -1161,6 +1132,48 @@ pub(crate) fn vmp_extract_selected_rows_ifma(
             for i in 0..res_rows {
                 let (d, s) = (dst_base + i * span, src_base + (first_row + i * row_step) * span);
                 dst[d..d + span].copy_from_slice(&src[s..s + span]);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use poulpy_hal::layouts::PrimeSet;
+
+    #[test]
+    fn vmp_reduction_matches_wide_remainder() {
+        let mut seed = 0x713da891ef42_u64;
+        for (prime, q) in Primes42::Q.into_iter().enumerate() {
+            let edges = [0, 1, q - 1, q, q + 1, (1 << 52) - 1, u64::MAX - 1, u64::MAX];
+            for case in 0..256 {
+                let mut lo = [0u64; 8];
+                let mut hi = [0u64; 8];
+                for lane in 0..8 {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    lo[lane] = if case < 8 { edges[lane] } else { seed };
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    hi[lane] = (if case < 8 { edges[case] } else { seed }) & ((1 << 52) - 1);
+                }
+                let mut actual = [0u64; 8];
+                unsafe {
+                    let p = PrimeConsts512::new(prime);
+                    let r = reduce_vmp(
+                        _mm512_loadu_si512(lo.as_ptr().cast()),
+                        _mm512_loadu_si512(hi.as_ptr().cast()),
+                        &p,
+                    );
+                    _mm512_storeu_si512(actual.as_mut_ptr().cast(), r);
+                }
+                for lane in 0..8 {
+                    let expected = ((lo[lane] as u128 + ((hi[lane] as u128) << 52)) % q as u128) as u64;
+                    assert_eq!(actual[lane], expected, "prime={prime}, case={case}, lane={lane}");
+                }
             }
         }
     }
