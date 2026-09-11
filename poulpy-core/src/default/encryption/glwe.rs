@@ -1,16 +1,14 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScalarZnxFillBinaryBlockSource, ScalarZnxFillBinaryHwSource, ScalarZnxFillBinaryProbSource,
-        ScalarZnxFillTernaryHwSource, ScalarZnxFillTernaryProbSource, ScratchArenaTakeBasic, SvpApplyDftToDft,
-        SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssign, VecZnxAddNormalSource, VecZnxBigAddNormal,
-        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
-        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
+        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssign,
+        VecZnxAddNormalSource, VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy,
+        VecZnxDftApply, VecZnxDftBytesOf, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
     },
     layouts::{
-        Backend, Module, PrepareHint, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef,
-        scalar_znx_as_vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut,
+        Backend, Module, PrepareHint, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ScratchArena, SvpPPolToBackendRef, VecZnx,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef,
+        vec_znx_backend_ref_from_mut,
     },
     source::Source,
 };
@@ -22,6 +20,7 @@ use crate::{
         GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::{GLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
+    scalar_znx_host_zeroed, upload_scalar_znx,
 };
 
 #[doc(hidden)]
@@ -258,12 +257,7 @@ pub trait GLWEEncryptPkDefault<BE: Backend> {
 
 impl<BE: Backend> GLWEEncryptPkDefault<BE> for Module<BE>
 where
-    Self: GLWEEncryptPkInternal<BE>
-        + VecZnxDftBytesOf
-        + SvpPPolBytesOf
-        + VecZnxBigBytesOf
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxZero<BE>,
+    Self: GLWEEncryptPkInternal<BE> + VecZnxDftBytesOf + SvpPPolBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
 {
     fn glwe_encrypt_pk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -363,12 +357,6 @@ where
         + VecZnxBigNormalize<BE>
         + VecZnxAddAssign<BE>
         + VecZnxCopy<BE>
-        + VecZnxZero<BE>
-        + ScalarZnxFillTernaryHwSource<BE>
-        + ScalarZnxFillTernaryProbSource<BE>
-        + ScalarZnxFillBinaryHwSource<BE>
-        + ScalarZnxFillBinaryProbSource<BE>
-        + ScalarZnxFillBinaryBlockSource<BE>
         + SvpPPolBytesOf
         + ModuleN
         + VecZnxDftBytesOf,
@@ -409,27 +397,25 @@ where
 
         {
             let (mut u_backend, scratch_2) = scratch_1.take_scalar_znx_scratch(self.n(), 1);
-            match pk.dist() {
-                Distribution::NONE => panic!(
-                    "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
-                     Self::generate"
-                ),
-                Distribution::ENCAPSULATED(name) => panic!("invalid public key: secret {name} is tagged for encapsulation"),
-                Distribution::TernaryFixed(hw) => self.scalar_znx_fill_ternary_hw_source(&mut u_backend, 0, *hw, source_xu),
-                Distribution::TernaryProb(prob) => self.scalar_znx_fill_ternary_prob_source(&mut u_backend, 0, *prob, source_xu),
-                Distribution::BinaryFixed(hw) => self.scalar_znx_fill_binary_hw_source(&mut u_backend, 0, *hw, source_xu),
-                Distribution::BinaryProb(prob) => self.scalar_znx_fill_binary_prob_source(&mut u_backend, 0, *prob, source_xu),
-                Distribution::BinaryBlock(block_size) => {
-                    self.scalar_znx_fill_binary_block_source(&mut u_backend, 0, *block_size, source_xu)
+            {
+                let mut u_host = scalar_znx_host_zeroed::<BE::ZnxWord>(self.n(), 1);
+                match pk.dist() {
+                    Distribution::NONE => panic!(
+                        "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
+                         Self::generate"
+                    ),
+                    Distribution::ENCAPSULATED(name) => panic!("invalid public key: secret {name} is tagged for encapsulation"),
+                    Distribution::TernaryFixed(hw) => u_host.fill_ternary_hw(0, *hw, source_xu),
+                    Distribution::TernaryProb(prob) => u_host.fill_ternary_prob(0, *prob, source_xu),
+                    Distribution::BinaryFixed(hw) => u_host.fill_binary_hw(0, *hw, source_xu),
+                    Distribution::BinaryProb(prob) => u_host.fill_binary_prob(0, *prob, source_xu),
+                    Distribution::BinaryBlock(block_size) => u_host.fill_binary_block(0, *block_size, source_xu),
+                    Distribution::ZERO => {}
                 }
-                Distribution::ZERO => {
-                    let mut u_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut u_backend);
-                    self.vec_znx_zero(&mut u_vec, 0);
-                }
+                upload_scalar_znx::<BE>(&mut u_backend.to_backend_mut(), &u_host);
             }
 
-            let u_backend_ref = ScalarZnx::from_data(BE::view_ref_mut(&u_backend.data), u_backend.n(), u_backend.cols());
-            self.svp_prepare(&mut u_dft, 0, &u_backend_ref, 0);
+            self.svp_prepare(&mut u_dft, 0, &u_backend.to_backend_ref(), 0);
             scratch_1 = scratch_2;
         }
 
