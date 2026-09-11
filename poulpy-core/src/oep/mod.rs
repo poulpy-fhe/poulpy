@@ -1,7 +1,7 @@
 //! Open extension points for `poulpy-core`.
 //!
 //! The high-level algorithms are exposed through safe traits on
-//! [`poulpy_hal::layouts::Module`], which resolve through two layers:
+//! [`poulpy_hal::layouts::Module`], which resolve through two layers, with one exception:
 //!
 //! - `*Impl` traits (this module), blanket-implemented for every backend whose
 //!   `Module` implements the matching `*Default` traits. They are the seat the
@@ -9,6 +9,11 @@
 //! - `*Default` traits (this module), implemented on `Module<BE>`. **This is the
 //!   override surface.** They are abstract: no HAL supertraits and no default
 //!   method bodies, so an implementor owes exactly the methods of one family.
+//! - [`SamplingImpl`] is the one exception: it has no `*Default` twin and no
+//!   blanket impl. A backend implements it directly (the CPU backends through
+//!   `poulpy_cpu_ref::impl_sampling_host!`), because the ephemeral secret of
+//!   public-key encryption is sampled in place from a seed and a generic default
+//!   body would be a host round trip.
 //!
 //! The `unsafe` marker on `*Impl` traits follows the same convention as the HAL:
 //! implementors are taking responsibility for the core correctness contract of
@@ -82,6 +87,7 @@ mod keyswitching;
 mod linear_transformation;
 mod operations;
 mod polynomial_evaluation;
+mod sampling;
 
 pub use automorphism::*;
 pub use conversion::*;
@@ -92,6 +98,7 @@ pub use keyswitching::*;
 pub use linear_transformation::*;
 pub use operations::*;
 pub use polynomial_evaluation::*;
+pub use sampling::*;
 
 pub use crate::{
     impl_conversion_defaults_full, impl_decryption_defaults_full, impl_encryption_defaults_full,

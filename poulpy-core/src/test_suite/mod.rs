@@ -16,6 +16,7 @@
 pub mod keys;
 pub mod noise;
 pub mod parity;
+pub mod sampling;
 
 #[macro_export]
 macro_rules! core_backend_test_suite {
@@ -33,6 +34,7 @@ macro_rules! core_backend_test_suite {
                 glwe_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_glwe_compressed_encrypt_sk,
                 glwe_encrypt_zero_sk => $crate::test_suite::noise::encryption::test_glwe_encrypt_zero_sk,
                 glwe_encrypt_pk => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk,
+                scalar_znx_fill_distribution => $crate::test_suite::sampling::test_scalar_znx_fill_distribution,
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
                 test_glwe_tensoring => $crate::test_suite::noise::glwe_tensor::test_glwe_tensoring,
                 test_glwe_tensor_square => $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_square,
