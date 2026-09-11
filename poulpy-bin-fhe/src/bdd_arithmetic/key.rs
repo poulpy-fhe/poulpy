@@ -24,8 +24,8 @@ use poulpy_core::{
     },
 };
 
+use poulpy_core::NoiseInfos;
 use poulpy_core::layouts::GLWESecretSampling;
-use poulpy_hal::layouts::NoiseInfos;
 use poulpy_hal::{
     layouts::{
         Backend, CopyFromHost, CopyToHost, Data, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchArena,

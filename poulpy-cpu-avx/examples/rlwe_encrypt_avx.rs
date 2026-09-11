@@ -22,16 +22,18 @@ use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 
 use poulpy_hal::{
     api::{
-        ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxAddNormalSource,
-        VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalizeAssign,
+        ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxBigAddSmallAssign,
+        VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign, VecZnxDftAlloc,
+        VecZnxDftApply, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalizeAssign,
     },
     layouts::{
-        Module, NoiseInfos, PrepareHint, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxBigOwned, VecZnxDftOwned,
+        Module, PrepareHint, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxBigOwned, VecZnxDftOwned,
         VecZnxToBackendMut, VecZnxToBackendRef,
     },
     source::Source,
 };
+
+use poulpy_core::{NoiseInfos, VecZnxAddNormal};
 
 fn main() {
     let n: usize = 16;
@@ -137,7 +139,7 @@ fn main() {
 
     // Add noise to ct[0]
     // ct[0] <- ct[0] + e
-    module.vec_znx_add_normal_source(
+    module.vec_znx_add_normal(
         base2k,
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
         0, // Selects the first column of ct (ct[0])

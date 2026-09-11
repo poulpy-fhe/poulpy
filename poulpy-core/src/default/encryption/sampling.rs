@@ -1,15 +1,41 @@
-//! Host-side sampling of long-lived secret keys.
+//! Host-side sampling of long-lived secret keys, and the Gaussian noise descriptor.
 //!
 //! Secret keys are drawn on the host from a [`Source`](poulpy_hal::source::Source)
 //! with the `ScalarZnx::fill_*` methods and uploaded once with
 //! [`Backend::copy_host_to_view`]. Anything sampled during encryption never
-//! takes that path: the ephemeral secret of public-key encryption goes through
-//! [`SamplingImpl`](crate::oep::SamplingImpl) (surfaced as
-//! [`ScalarZnxFillDistribution`](crate::ScalarZnxFillDistribution)) and is
-//! sampled in place by the backend; Gaussian noise is the HAL's
-//! `vec_znx_add_normal` / `vec_znx_big_add_normal`, also in place.
+//! takes that path: it goes through [`SamplingImpl`](crate::oep::SamplingImpl)
+//! and is sampled in place by the backend — the ephemeral secret of public-key
+//! encryption as [`ScalarZnxFillDistribution`](crate::ScalarZnxFillDistribution),
+//! the Gaussian noise as [`VecZnxAddNormal`](crate::VecZnxAddNormal) and
+//! [`VecZnxBigAddNormal`](crate::VecZnxBigAddNormal), so that encryption never
+//! round-trips through the host. [`NoiseInfos`] is the descriptor the two noise
+//! operations take.
 
+use anyhow::Result;
 use poulpy_hal::layouts::{Backend, DataView, DataViewMut, HostBytesBackend, ScalarZnx, ScalarZnxBackendMut, ZnxWord};
+
+/// Parameters of the discrete Gaussian error added at torus precision `2^-k`.
+#[derive(Clone, Copy, Debug)]
+pub struct NoiseInfos {
+    pub k: usize,
+    pub sigma: f64,
+    pub bound: f64,
+}
+
+impl NoiseInfos {
+    pub fn new(k: usize, sigma: f64, bound: f64) -> Result<Self> {
+        anyhow::ensure!(sigma.is_sign_positive(), "sigma must be positive");
+        anyhow::ensure!(sigma >= 1.0, "sigma must be greater or equal to 1");
+        anyhow::ensure!(bound >= sigma, "bound: {bound} must be greater or equal to sigma: {sigma}");
+        Ok(Self { k, sigma, bound })
+    }
+
+    /// Target limb and the number of unused low bits it holds.
+    pub fn target_limb_and_shift(&self, base2k: usize) -> (usize, u32) {
+        let limb: usize = self.k.div_ceil(base2k) - 1;
+        (limb, ((limb + 1) * base2k - self.k) as u32)
+    }
+}
 
 /// Zeroed host `ScalarZnx` with the word type of the backend it will be uploaded to.
 pub fn scalar_znx_host_zeroed<W: ZnxWord>(n: usize, cols: usize) -> ScalarZnx<Vec<u8>, W> {

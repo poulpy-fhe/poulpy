@@ -2,7 +2,7 @@ use anyhow::Result;
 use itertools::Itertools;
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, Distribution, GGLWEToGGSWKeyEncryptSk, GLWEAutomorphismKeyEncryptSk, GetDistribution,
-    TransferInto,
+    NoiseInfos, TransferInto,
     layouts::{
         GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGSWInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos,
         GLWESecretPreparedFactory, GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef, ModuleCoreAlloc,
@@ -17,8 +17,8 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use poulpy_hal::{
     api::{ModuleN, ScratchOwnedAlloc},
     layouts::{
-        Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, Module, NoiseInfos, ReaderFrom, ScratchArena,
-        ScratchOwned, WriterTo,
+        Backend, CopyFromHost, CopyToHost, Data, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchArena, ScratchOwned,
+        WriterTo,
     },
     source::Source,
 };

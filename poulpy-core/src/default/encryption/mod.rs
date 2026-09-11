@@ -58,7 +58,6 @@ pub use glwe_to_lwe_key::*;
 pub use lwe::*;
 pub use lwe_switching_key::*;
 pub use lwe_to_glwe_key::*;
-use poulpy_hal::layouts::NoiseInfos;
 pub use sampling::*;
 
 use crate::layouts::{GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos, TorusPrecision};

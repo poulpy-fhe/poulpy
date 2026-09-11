@@ -52,9 +52,9 @@ impl_lwe_keyswitch_defaults_full!(FFT64Neon);
 impl_lwe_keyswitch_defaults_full!(NTT4x30Neon);
 
 impl_encryption_defaults_full!(FFT64Neon);
-poulpy_cpu_ref::impl_sampling_host!(FFT64Neon);
+poulpy_cpu_ref::impl_sampling_host!(FFT64Neon, fft64);
 impl_encryption_defaults_full!(NTT4x30Neon);
-poulpy_cpu_ref::impl_sampling_host!(NTT4x30Neon);
+poulpy_cpu_ref::impl_sampling_host!(NTT4x30Neon, ntt4x30);
 
 impl_glwe_external_product_defaults_full!(FFT64Neon);
 impl_glwe_external_product_defaults_full!(NTT4x30Neon);
@@ -84,7 +84,6 @@ mod rayon_defaults {
             impl_ggsw_keyswitch_defaults_full!($backend);
             impl_lwe_keyswitch_defaults_full!($backend);
             impl_encryption_defaults_full!($backend);
-            poulpy_cpu_ref::impl_sampling_host!($backend);
             impl_glwe_external_product_defaults_full!($backend);
             impl_gglwe_external_product_defaults_full!($backend);
             impl_ggsw_external_product_defaults_full!($backend);
@@ -94,4 +93,7 @@ mod rayon_defaults {
 
     impl_core_defaults!(FFT64NeonRayon);
     impl_core_defaults!(NTT4x30NeonRayon);
+
+    poulpy_cpu_ref::impl_sampling_host!(FFT64NeonRayon, fft64);
+    poulpy_cpu_ref::impl_sampling_host!(NTT4x30NeonRayon, ntt4x30);
 }

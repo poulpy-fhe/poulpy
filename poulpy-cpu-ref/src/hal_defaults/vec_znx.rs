@@ -644,7 +644,15 @@ where
         for<'x> BE::BufMut<'x>: HostDataMut,
     {
         let mut source = Source::new(seed);
-        vec_znx_add_normal_ref::<BE>(res_base2k, res, res_col, noise_infos, &mut source);
+        vec_znx_add_normal_ref::<BE>(
+            res_base2k,
+            res,
+            res_col,
+            noise_infos.k,
+            noise_infos.sigma,
+            noise_infos.bound,
+            &mut source,
+        );
     }
 }
 

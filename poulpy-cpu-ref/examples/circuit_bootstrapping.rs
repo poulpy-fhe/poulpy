@@ -1,3 +1,4 @@
+use poulpy_core::NoiseInfos;
 use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
@@ -7,7 +8,6 @@ use poulpy_core::{
         prepared::{GGSWPrepared, GGSWPreparedFactory, GLWESecretPrepared, GLWESecretPreparedFactory},
     },
 };
-use poulpy_hal::layouts::NoiseInfos;
 use std::time::Instant;
 
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;

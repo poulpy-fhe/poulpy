@@ -34,8 +34,8 @@ use rand_distr::{Distribution, Normal};
 
 use crate::{
     layouts::{
-        Backend, HostDataMut, HostDataRef, NoiseInfos, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxShape,
-        VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxShape, VecZnxToBackendMut,
+        VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
         normalization::I64NormalizeOps,
@@ -1555,7 +1555,9 @@ pub fn ntt4x30_vec_znx_big_add_normal_ref<R, BE>(
     base2k: usize,
     res: &mut R,
     res_col: usize,
-    noise_infos: NoiseInfos,
+    k: usize,
+    sigma: f64,
+    bound: f64,
     source: &mut Source,
 ) where
     BE: Backend<BigWord = i128, ZnxWord = i64>,
@@ -1564,18 +1566,19 @@ pub fn ntt4x30_vec_znx_big_add_normal_ref<R, BE>(
 {
     let mut res = res.to_backend_mut();
     assert!(
-        (noise_infos.bound.log2().ceil() as i64) < 64,
+        (bound.log2().ceil() as i64) < 64,
         "invalid bound: ceil(log2(bound))={} > 63",
-        noise_infos.bound.log2().ceil() as i64
+        bound.log2().ceil() as i64
     );
 
-    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
-    let normal: Normal<f64> = Normal::new(0.0, noise_infos.sigma).unwrap();
+    let limb: usize = k.div_ceil(base2k) - 1;
+    let shift: u32 = ((limb + 1) * base2k - k) as u32;
+    let normal: Normal<f64> = Normal::new(0.0, sigma).unwrap();
     let rj: &mut [i128] = res.at_mut(res_col, limb);
 
     rj.iter_mut().for_each(|r| {
         let mut s: f64 = normal.sample(source);
-        while s.abs() > noise_infos.bound {
+        while s.abs() > bound {
             s = normal.sample(source);
         }
         *r = r.wrapping_add((s.round() as i64 as i128) << shift);

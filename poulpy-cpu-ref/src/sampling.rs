@@ -1,15 +1,26 @@
 //! Host implementation of the `poulpy-core` sampling extension point.
 
 /// Implements [`SamplingImpl`](poulpy_core::oep::SamplingImpl) for a CPU
-/// backend with the host `ScalarZnx::fill_*` methods applied straight to the
-/// backend buffer — no host round trip.
+/// backend with the host `ScalarZnx::fill_*` methods and this crate's reference
+/// noise kernels, all applied straight to the backend buffer — no host round
+/// trip.
+///
+/// The second argument selects the `VecZnxBig` word family: `fft64` for
+/// `BigWord = i64`, `ntt4x30` for `BigWord = i128`.
 ///
 /// ```ignore
-/// poulpy_cpu_ref::impl_sampling_host!(FFT64Avx);
+/// poulpy_cpu_ref::impl_sampling_host!(FFT64Avx, fft64);
+/// poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx, ntt4x30);
 /// ```
 #[macro_export]
 macro_rules! impl_sampling_host {
-    ($be:ty) => {
+    ($be:ty, fft64) => {
+        $crate::impl_sampling_host!(@impl $be, $crate::reference::fft64::vec_znx_big::vec_znx_big_add_normal_ref::<_, $be>);
+    };
+    ($be:ty, ntt4x30) => {
+        $crate::impl_sampling_host!(@impl $be, $crate::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_normal_ref::<_, $be>);
+    };
+    (@impl $be:ty, $big_kernel:expr) => {
         unsafe impl ::poulpy_core::oep::SamplingImpl<$be> for $be {
             fn scalar_znx_fill_distribution(
                 _module: &::poulpy_hal::layouts::Module<$be>,
@@ -38,6 +49,46 @@ macro_rules! impl_sampling_host {
                         panic!("scalar_znx_fill_distribution: {dist:?} is not a sampleable distribution")
                     }
                 }
+            }
+
+            fn vec_znx_add_normal(
+                _module: &::poulpy_hal::layouts::Module<$be>,
+                base2k: usize,
+                res: &mut ::poulpy_hal::layouts::VecZnxBackendMut<'_, $be>,
+                res_col: usize,
+                noise: ::poulpy_core::NoiseInfos,
+                seed: [u8; 32],
+            ) {
+                let mut source = ::poulpy_hal::source::Source::new(seed);
+                $crate::reference::vec_znx::vec_znx_add_normal_ref::<$be>(
+                    base2k,
+                    res,
+                    res_col,
+                    noise.k,
+                    noise.sigma,
+                    noise.bound,
+                    &mut source,
+                );
+            }
+
+            fn vec_znx_big_add_normal(
+                _module: &::poulpy_hal::layouts::Module<$be>,
+                base2k: usize,
+                mut res: &mut ::poulpy_hal::layouts::VecZnxBigBackendMut<'_, $be>,
+                res_col: usize,
+                noise: ::poulpy_core::NoiseInfos,
+                seed: [u8; 32],
+            ) {
+                let mut source = ::poulpy_hal::source::Source::new(seed);
+                $big_kernel(
+                    base2k,
+                    &mut res,
+                    res_col,
+                    noise.k,
+                    noise.sigma,
+                    noise.bound,
+                    &mut source,
+                );
             }
         }
     };

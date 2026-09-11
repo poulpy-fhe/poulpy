@@ -1,9 +1,9 @@
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssign,
-        VecZnxAddNormalSource, VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssign,
-        VecZnxNormalizeTmpBytes, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
     },
     layouts::{
         Backend, Module, PrepareHint, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ScratchArena, SvpPPolToBackendRef, VecZnx,
@@ -14,7 +14,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, GetDistribution, ScalarZnxFillDistribution,
+    EncryptionInfos, GetDistribution, ScalarZnxFillDistribution, VecZnxAddNormal, VecZnxBigAddNormal,
     dist::Distribution,
     layouts::{
         GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -488,7 +488,7 @@ where
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
         + VecZnxNormalizeAssign<BE>
-        + VecZnxAddNormalSource<BE>
+        + VecZnxAddNormal<BE>
         + VecZnxNormalize<BE>
         + VecZnxSubAssign<BE>
         + VecZnxSubNegateAssign<BE>
@@ -567,7 +567,7 @@ where
         }
 
         // c[0] += e
-        self.vec_znx_add_normal_source(base2k, &mut c0.to_backend_mut(), 0, noise_infos, source_xe);
+        self.vec_znx_add_normal(base2k, &mut c0.to_backend_mut(), 0, noise_infos, source_xe);
 
         // c[0] += m if col = 0
         if let Some((pt, col)) = &pt

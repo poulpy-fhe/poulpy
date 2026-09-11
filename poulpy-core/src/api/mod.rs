@@ -10,7 +10,8 @@
 //! - `keyswitching` -- LWE/GLWE/GGLWE/GGSW key-switching.
 //! - `noise` -- runtime noise measurement helpers for ciphertexts.
 //! - `operations` -- arithmetic helpers, packing, trace, and tensoring.
-//! - `sampling` -- in-place sampling of secret distributions into a `ScalarZnx` column.
+//! - `sampling` -- in-place sampling of secret distributions into a `ScalarZnx`
+//!   column and of Gaussian noise into a `VecZnx` / `VecZnxBig` column.
 //!
 //! Scheme authors can program against these traits directly. Execution is
 //! dispatched through the [`crate::oep`] backend extension points by blanket

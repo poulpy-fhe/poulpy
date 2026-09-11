@@ -1,14 +1,14 @@
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigInnerSum, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSource, VecZnxScalarProduct,
+        ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigInnerSum, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSource, VecZnxScalarProduct,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef},
     source::Source,
 };
 
 use crate::{
-    EncryptionInfos,
+    EncryptionInfos, VecZnxBigAddNormal,
     layouts::{LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut},
 };
 

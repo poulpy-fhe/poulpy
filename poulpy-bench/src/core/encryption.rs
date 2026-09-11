@@ -1,5 +1,5 @@
 use poulpy_core::{
-    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEEncryptSk,
+    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GGSWEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWEEncryptSk, NoiseInfos,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGSWLayout, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout,
         GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -8,7 +8,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, NoiseInfos, ScratchOwned},
+    layouts::{Backend, Module, ScratchOwned},
     source::Source,
 };
 use std::hint::black_box;
