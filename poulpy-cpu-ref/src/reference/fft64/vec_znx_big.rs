@@ -66,21 +66,6 @@ where
     vec_znx_add_assign::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
 }
 
-pub fn vec_znx_big_add_small<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
-    BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    B: VecZnxToBackendRef<BE>,
-{
-    let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
-    let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    let b_ref = b.to_backend_ref();
-    vec_znx_add::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_ref, b_col);
-}
-
 pub fn vec_znx_big_add_small_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAddAssign,
@@ -261,38 +246,6 @@ where
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     vec_znx_sub_negate_assign::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
-}
-
-/// R <- A - B
-pub fn vec_znx_big_sub_small_a<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
-    BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxToBackendRef<BE>,
-    B: VecZnxBigToBackendRef<BE>,
-{
-    let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
-    let b_vznx = big_as_vec_znx_ref::<BE>(b.to_backend_ref());
-    let a_ref = a.to_backend_ref();
-    vec_znx_sub::<BE>(&mut res_vznx, res_col, &a_ref, a_col, &b_vznx, b_col);
-}
-
-/// R <- A - B
-pub fn vec_znx_big_sub_small_b<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
-    BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    B: VecZnxToBackendRef<BE>,
-{
-    let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
-    let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
-    let b_ref = b.to_backend_ref();
-    vec_znx_sub::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_ref, b_col);
 }
 
 ///  R <- R - A

@@ -34,11 +34,11 @@
 use crate::{
     api::ScratchArenaTakeBasic,
     layouts::{
-        Backend, MatZnxInfos, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
-        scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
+        Backend, MatZnxInfos, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+        VecZnxBigBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef,
+        ZnxInfos, scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
-    oep::{HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 /// Scratch for [`vmp_apply_dft_derived`]: one `VecZnxDft` for the transformed
@@ -385,4 +385,62 @@ pub fn vec_znx_add_scalar_assign_derived<S, BE>(
         &scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a),
         a_col,
     );
+}
+
+/// `res = a + b` with `b` a coefficient-domain operand: promote `b` into the
+/// destination, then fold `a` in place. Scratch-free; the limb windows match
+/// the fused kernel exactly — limbs only `b` reaches keep `b`, limbs only `a`
+/// reaches keep `a` (added to the zero `from_small` left there), limbs neither
+/// reaches are zero.
+#[doc(hidden)]
+pub fn vec_znx_big_add_small_derived<S, BE>(
+    module: &Module<BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBigBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+) where
+    S: HalVecZnxBigImpl<BE>,
+    BE: Backend,
+{
+    <S as HalVecZnxBigImpl<BE>>::vec_znx_big_from_small(res, res_col, b, b_col);
+    <S as HalVecZnxBigImpl<BE>>::vec_znx_big_add_assign(module, res, res_col, a, a_col);
+}
+
+/// `res = a - b` with `a` the coefficient-domain operand.
+#[doc(hidden)]
+pub fn vec_znx_big_sub_small_a_derived<S, BE>(
+    module: &Module<BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBigBackendRef<'_, BE>,
+    b_col: usize,
+) where
+    S: HalVecZnxBigImpl<BE>,
+    BE: Backend,
+{
+    <S as HalVecZnxBigImpl<BE>>::vec_znx_big_from_small(res, res_col, a, a_col);
+    <S as HalVecZnxBigImpl<BE>>::vec_znx_big_sub_assign(module, res, res_col, b, b_col);
+}
+
+/// `res = a - b` with `b` the coefficient-domain operand.
+#[doc(hidden)]
+pub fn vec_znx_big_sub_small_b_derived<S, BE>(
+    module: &Module<BE>,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBigBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+) where
+    S: HalVecZnxBigImpl<BE>,
+    BE: Backend,
+{
+    <S as HalVecZnxBigImpl<BE>>::vec_znx_big_from_small(res, res_col, b, b_col);
+    <S as HalVecZnxBigImpl<BE>>::vec_znx_big_sub_negate_assign(module, res, res_col, a, a_col);
 }

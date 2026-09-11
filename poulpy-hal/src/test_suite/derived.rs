@@ -21,19 +21,20 @@
 use crate::{
     api::{
         MatZnxAlloc, ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
-        VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxDftZero, VecZnxIdftApplyTmpA, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
-        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
-        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpPMatAlloc,
-        VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxAlloc, VecZnxBigAddAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxCopy, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftZero,
+        VecZnxIdftApplyTmpA, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
+        VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes,
+        VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpPMatAlloc, VmpPrepare,
+        VmpPrepareTmpBytes,
     },
     layouts::{
         FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos,
         VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
-    oep::{HalVecZnxImpl, HalVmpImpl, vmp_apply_dft_derived},
+    oep::{HalVecZnxBigImpl, HalVecZnxImpl, HalVmpImpl, vmp_apply_dft_derived},
     source::Source,
     test_suite::{
         TestBackend, TestParams, download_vec_znx, scalar_znx_backend_ref, upload_mat_znx, upload_scalar_znx, upload_vec_znx,
@@ -977,5 +978,261 @@ where
                 "vec_znx_add_scalar_assign: default body != hand-built oracle (res_size {res_size} res_limb {res_limb})"
             );
         }
+    }
+}
+
+/// `vec_znx_big_add_small`: the scratch-free OEP default against an
+/// independent oracle — `from_small(b)` then `add_assign(a)`, written out
+/// through the public api traits (a different call path from the free
+/// function under test, even though it is the same decomposition).
+pub fn test_vec_znx_big_add_small_derived<BE: TestBackend + HalVecZnxBigImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigFromSmall<BE>
+        + VecZnxBigAddAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+
+    // (big operand size, small operand size, res size): res longer than both,
+    // small shorter than big, small longer than big, res shorter than both.
+    for (a_size, b_size, res_size) in [(3usize, 3usize, 3usize), (4, 2, 3), (2, 4, 3), (3, 3, 5), (4, 4, 2)] {
+        let mut a_small = module_host.vec_znx_alloc(1, a_size);
+        a_small.fill_uniform(base2k, &mut source);
+        let mut b = module_host.vec_znx_alloc(1, b_size);
+        b.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a_small);
+        let b_backend = upload_vec_znx::<BE>(&b);
+
+        // `a` as a VecZnxBig, through the basis promotion.
+        let mut a_big = module.vec_znx_big_alloc(1, a_size);
+        module.vec_znx_big_from_small(&mut a_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_backend), 0);
+
+        let mut want_big = module.vec_znx_big_alloc(1, res_size);
+        let mut have_big = module.vec_znx_big_alloc(1, res_size);
+
+        crate::oep::vec_znx_big_add_small_derived::<BE, BE>(
+            module,
+            &mut want_big.to_backend_mut(),
+            0,
+            &a_big.to_backend_ref(),
+            0,
+            &vec_znx_backend_ref::<BE>(&b_backend),
+            0,
+        );
+
+        // Oracle: `from_small(b)` then `add_assign(a)`, through the public api
+        // traits rather than the free function under test.
+        module.vec_znx_big_from_small(&mut have_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&b_backend), 0);
+        module.vec_znx_big_add_assign(&mut have_big.to_backend_mut(), 0, &a_big.to_backend_ref(), 0);
+
+        let want_template = module_host.vec_znx_alloc(1, res_size);
+        let have_template = module_host.vec_znx_alloc(1, res_size);
+        let mut want_backend = upload_vec_znx::<BE>(&want_template);
+        let mut have_backend = upload_vec_znx::<BE>(&have_template);
+        module.vec_znx_big_normalize(
+            &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+            base2k,
+            res_size * base2k,
+            0,
+            0,
+            &want_big.to_backend_ref(),
+            base2k,
+            0,
+            &mut scratch.borrow(),
+        );
+        module.vec_znx_big_normalize(
+            &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+            base2k,
+            res_size * base2k,
+            0,
+            0,
+            &have_big.to_backend_ref(),
+            base2k,
+            0,
+            &mut scratch.borrow(),
+        );
+
+        assert_eq!(
+            download_vec_znx::<BE>(&want_backend),
+            download_vec_znx::<BE>(&have_backend),
+            "vec_znx_big_add_small: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+        );
+    }
+}
+
+/// `vec_znx_big_sub_small_a`: the scratch-free OEP default (`res = a - b`,
+/// `a` the coefficient-domain operand) against an independent oracle —
+/// `from_small(a)` then `sub_assign(b)`, through the public api traits.
+pub fn test_vec_znx_big_sub_small_a_derived<BE: TestBackend + HalVecZnxBigImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigFromSmall<BE>
+        + VecZnxBigSubAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+
+    // (small operand size, big operand size, res size): res longer than both,
+    // small shorter than big, small longer than big, res shorter than both.
+    for (a_size, b_size, res_size) in [(3usize, 3usize, 3usize), (2, 4, 3), (4, 2, 3), (3, 3, 5), (4, 4, 2)] {
+        let mut a_small = module_host.vec_znx_alloc(1, a_size);
+        a_small.fill_uniform(base2k, &mut source);
+        let mut b = module_host.vec_znx_alloc(1, b_size);
+        b.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a_small);
+        let b_backend = upload_vec_znx::<BE>(&b);
+
+        // `b` as a VecZnxBig, through the basis promotion.
+        let mut b_big = module.vec_znx_big_alloc(1, b_size);
+        module.vec_znx_big_from_small(&mut b_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&b_backend), 0);
+
+        let mut want_big = module.vec_znx_big_alloc(1, res_size);
+        let mut have_big = module.vec_znx_big_alloc(1, res_size);
+
+        crate::oep::vec_znx_big_sub_small_a_derived::<BE, BE>(
+            module,
+            &mut want_big.to_backend_mut(),
+            0,
+            &vec_znx_backend_ref::<BE>(&a_backend),
+            0,
+            &b_big.to_backend_ref(),
+            0,
+        );
+
+        // Oracle: `from_small(a)` then `sub_assign(b)`, through the public
+        // api traits rather than the free function under test.
+        module.vec_znx_big_from_small(&mut have_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_backend), 0);
+        module.vec_znx_big_sub_assign(&mut have_big.to_backend_mut(), 0, &b_big.to_backend_ref(), 0);
+
+        let want_template = module_host.vec_znx_alloc(1, res_size);
+        let have_template = module_host.vec_znx_alloc(1, res_size);
+        let mut want_backend = upload_vec_znx::<BE>(&want_template);
+        let mut have_backend = upload_vec_znx::<BE>(&have_template);
+        module.vec_znx_big_normalize(
+            &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+            base2k,
+            res_size * base2k,
+            0,
+            0,
+            &want_big.to_backend_ref(),
+            base2k,
+            0,
+            &mut scratch.borrow(),
+        );
+        module.vec_znx_big_normalize(
+            &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+            base2k,
+            res_size * base2k,
+            0,
+            0,
+            &have_big.to_backend_ref(),
+            base2k,
+            0,
+            &mut scratch.borrow(),
+        );
+
+        assert_eq!(
+            download_vec_znx::<BE>(&want_backend),
+            download_vec_znx::<BE>(&have_backend),
+            "vec_znx_big_sub_small_a: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+        );
+    }
+}
+
+/// `vec_znx_big_sub_small_b`: the scratch-free OEP default (`res = a - b`,
+/// `b` the coefficient-domain operand) against an independent oracle —
+/// `from_small(b)` then `sub_negate_assign(a)`, through the public api traits.
+pub fn test_vec_znx_big_sub_small_b_derived<BE: TestBackend + HalVecZnxBigImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigFromSmall<BE>
+        + VecZnxBigSubNegateAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+
+    // (big operand size, small operand size, res size): res longer than both,
+    // small shorter than big, small longer than big, res shorter than both.
+    for (a_size, b_size, res_size) in [(3usize, 3usize, 3usize), (4, 2, 3), (2, 4, 3), (3, 3, 5), (4, 4, 2)] {
+        let mut a_small = module_host.vec_znx_alloc(1, a_size);
+        a_small.fill_uniform(base2k, &mut source);
+        let mut b = module_host.vec_znx_alloc(1, b_size);
+        b.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a_small);
+        let b_backend = upload_vec_znx::<BE>(&b);
+
+        // `a` as a VecZnxBig, through the basis promotion.
+        let mut a_big = module.vec_znx_big_alloc(1, a_size);
+        module.vec_znx_big_from_small(&mut a_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_backend), 0);
+
+        let mut want_big = module.vec_znx_big_alloc(1, res_size);
+        let mut have_big = module.vec_znx_big_alloc(1, res_size);
+
+        crate::oep::vec_znx_big_sub_small_b_derived::<BE, BE>(
+            module,
+            &mut want_big.to_backend_mut(),
+            0,
+            &a_big.to_backend_ref(),
+            0,
+            &vec_znx_backend_ref::<BE>(&b_backend),
+            0,
+        );
+
+        // Oracle: `from_small(b)` then `sub_negate_assign(a)` (`res = a - res`),
+        // through the public api traits rather than the free function under test.
+        module.vec_znx_big_from_small(&mut have_big.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&b_backend), 0);
+        module.vec_znx_big_sub_negate_assign(&mut have_big.to_backend_mut(), 0, &a_big.to_backend_ref(), 0);
+
+        let want_template = module_host.vec_znx_alloc(1, res_size);
+        let have_template = module_host.vec_znx_alloc(1, res_size);
+        let mut want_backend = upload_vec_znx::<BE>(&want_template);
+        let mut have_backend = upload_vec_znx::<BE>(&have_template);
+        module.vec_znx_big_normalize(
+            &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+            base2k,
+            res_size * base2k,
+            0,
+            0,
+            &want_big.to_backend_ref(),
+            base2k,
+            0,
+            &mut scratch.borrow(),
+        );
+        module.vec_znx_big_normalize(
+            &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+            base2k,
+            res_size * base2k,
+            0,
+            0,
+            &have_big.to_backend_ref(),
+            base2k,
+            0,
+            &mut scratch.borrow(),
+        );
+
+        assert_eq!(
+            download_vec_znx::<BE>(&want_backend),
+            download_vec_znx::<BE>(&have_backend),
+            "vec_znx_big_sub_small_b: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+        );
     }
 }

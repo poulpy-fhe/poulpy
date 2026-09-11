@@ -848,42 +848,6 @@ where
     }
 }
 
-/// Add a small (`i64`) polynomial `b` to a big (`i128`) polynomial `a`:
-/// `res[res_col] = a[a_col] + b[b_col]`.
-pub fn ntt4x30_vec_znx_big_add_small<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
-    BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    B: VecZnxToBackendRef,
-    for<'x> BE::BufMut<'x>: HostDataMut,
-    for<'x> BE::BufRef<'x>: HostDataRef,
-{
-    let mut res = res.to_backend_mut();
-    let a = a.to_backend_ref();
-    let b = b.to_backend_ref();
-
-    let res_size = res.size();
-    let a_size = a.size();
-    let b_size = b.size();
-    let sum_size = a_size.min(b_size).min(res_size);
-    let a_cpy = a_size.min(res_size);
-    let b_cpy = b_size.min(res_size);
-
-    for j in 0..sum_size {
-        BE::i128_add_small(res.at_mut(res_col, j), a.at(a_col, j), b.at(b_col, j));
-    }
-    for j in sum_size..a_cpy {
-        res.at_mut(res_col, j).copy_from_slice(a.at(a_col, j));
-    }
-    for j in a_cpy..b_cpy {
-        BE::i128_from_small(res.at_mut(res_col, j), b.at(b_col, j));
-    }
-    for j in a_cpy.max(b_cpy)..res_size {
-        res.at_mut(res_col, j).fill(0);
-    }
-}
-
 /// In-place: `res[res_col] += a[a_col]` where `a` is a `VecZnx` (i64 limbs).
 pub fn ntt4x30_vec_znx_big_add_small_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
@@ -978,78 +942,6 @@ where
     }
     for j in a.size()..res_size {
         BE::i128_negate_assign(res.at_mut(res_col, j));
-    }
-}
-
-/// `res = a - b` where `a` is `VecZnx` (i64) and `b` is `VecZnxBig` (i128).
-pub fn ntt4x30_vec_znx_big_sub_small_a<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
-    BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxToBackendRef,
-    B: VecZnxBigToBackendRef<BE>,
-    for<'x> BE::BufMut<'x>: HostDataMut,
-    for<'x> BE::BufRef<'x>: HostDataRef,
-{
-    let mut res = res.to_backend_mut();
-    let a = a.to_backend_ref();
-    let b = b.to_backend_ref();
-
-    let res_size = res.size();
-    let a_size = a.size();
-    let b_size = b.size();
-    let sum_size = a_size.min(b_size).min(res_size);
-    let a_cpy = a_size.min(res_size);
-    let b_cpy = b_size.min(res_size);
-
-    for j in 0..sum_size {
-        BE::i128_sub_small_a(res.at_mut(res_col, j), a.at(a_col, j), b.at(b_col, j));
-    }
-    for j in sum_size..a_cpy {
-        BE::i128_from_small(res.at_mut(res_col, j), a.at(a_col, j));
-    }
-    for j in sum_size..b_cpy {
-        if j >= a_cpy {
-            BE::i128_negate(res.at_mut(res_col, j), b.at(b_col, j));
-        }
-    }
-    for j in a_cpy.max(b_cpy)..res_size {
-        res.at_mut(res_col, j).fill(0);
-    }
-}
-
-/// `res = a - b` where `a` is `VecZnxBig` (i128) and `b` is `VecZnx` (i64).
-pub fn ntt4x30_vec_znx_big_sub_small_b<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-where
-    BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
-    R: VecZnxBigToBackendMut<BE>,
-    A: VecZnxBigToBackendRef<BE>,
-    B: VecZnxToBackendRef,
-    for<'x> BE::BufMut<'x>: HostDataMut,
-    for<'x> BE::BufRef<'x>: HostDataRef,
-{
-    let mut res = res.to_backend_mut();
-    let a = a.to_backend_ref();
-    let b = b.to_backend_ref();
-
-    let res_size = res.size();
-    let a_size = a.size();
-    let b_size = b.size();
-    let sum_size = a_size.min(b_size).min(res_size);
-    let a_cpy = a_size.min(res_size);
-    let b_cpy = b_size.min(res_size);
-
-    for j in 0..sum_size {
-        BE::i128_sub_small_b(res.at_mut(res_col, j), a.at(a_col, j), b.at(b_col, j));
-    }
-    for j in sum_size..a_cpy {
-        res.at_mut(res_col, j).copy_from_slice(a.at(a_col, j));
-    }
-    for j in a_cpy..b_cpy {
-        BE::i128_neg_from_small(res.at_mut(res_col, j), b.at(b_col, j));
-    }
-    for j in a_cpy.max(b_cpy)..res_size {
-        res.at_mut(res_col, j).fill(0);
     }
 }
 

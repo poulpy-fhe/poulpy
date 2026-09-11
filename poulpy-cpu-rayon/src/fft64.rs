@@ -735,26 +735,6 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         )
     }
 
-    fn vec_znx_big_add_small(
-        module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
-        a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
-        b_col: usize,
-    ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_add_small(
-            base_module(module),
-            &mut base_big_mut(res),
-            res_col,
-            &base_big_ref(a),
-            a_col,
-            b,
-            b_col,
-        )
-    }
-
     fn vec_znx_big_add_small_assign(
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
@@ -823,26 +803,6 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         )
     }
 
-    fn vec_znx_big_sub_small_a(
-        module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, Self>,
-        a_col: usize,
-        b: &VecZnxBigBackendRef<'_, Self>,
-        b_col: usize,
-    ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_sub_small_a(
-            base_module(module),
-            &mut base_big_mut(res),
-            res_col,
-            a,
-            a_col,
-            &base_big_ref(b),
-            b_col,
-        )
-    }
-
     fn vec_znx_big_sub_small_assign(
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
@@ -856,26 +816,6 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
             res_col,
             a,
             a_col,
-        )
-    }
-
-    fn vec_znx_big_sub_small_b(
-        module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_col: usize,
-        a: &VecZnxBigBackendRef<'_, Self>,
-        a_col: usize,
-        b: &VecZnxBackendRef<'_, Self>,
-        b_col: usize,
-    ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_sub_small_b(
-            base_module(module),
-            &mut base_big_mut(res),
-            res_col,
-            &base_big_ref(a),
-            a_col,
-            b,
-            b_col,
         )
     }
 

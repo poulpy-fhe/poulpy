@@ -346,8 +346,12 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
         b: &VecZnxBackendRef<'_, BE>,
         b_col: usize,
-    );
+    ) {
+        crate::oep::vec_znx_big_add_small_derived::<Self, BE>(module, res, res_col, a, a_col, b, b_col)
+    }
 
+    /// Required, not derived: the composition would need a `VecZnxBig`
+    /// temporary and this form takes no scratch (spec section 4.2).
     fn vec_znx_big_add_small_assign(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
@@ -390,8 +394,12 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
         b: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
         b_col: usize,
-    );
+    ) {
+        crate::oep::vec_znx_big_sub_small_a_derived::<Self, BE>(module, res, res_col, a, a_col, b, b_col)
+    }
 
+    /// Required, not derived: the composition would need a `VecZnxBig`
+    /// temporary and this form takes no scratch (spec section 4.2).
     fn vec_znx_big_sub_small_assign(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
@@ -408,8 +416,12 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
         b: &VecZnxBackendRef<'_, BE>,
         b_col: usize,
-    );
+    ) {
+        crate::oep::vec_znx_big_sub_small_b_derived::<Self, BE>(module, res, res_col, a, a_col, b, b_col)
+    }
 
+    /// Required, not derived: the composition would need a `VecZnxBig`
+    /// temporary and this form takes no scratch (spec section 4.2).
     fn vec_znx_big_sub_small_negate_assign(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,

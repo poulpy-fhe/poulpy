@@ -33,18 +33,6 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             <Self as $defaults<Self>>::vec_znx_big_add_assign_default(module, &mut res, res_col, &a, a_col)
         }
 
-        fn vec_znx_big_add_small(
-            module: &Module<Self>,
-            mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
-            res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
-            a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            b_col: usize,
-        ) {
-            <Self as $defaults<Self>>::vec_znx_big_add_small_into_default(module, &mut res, res_col, &a, a_col, b, b_col)
-        }
-
         fn vec_znx_big_add_small_assign(
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -87,18 +75,6 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             <Self as $defaults<Self>>::vec_znx_big_sub_negate_assign_default(module, &mut res, res_col, &a, a_col)
         }
 
-        fn vec_znx_big_sub_small_a(
-            module: &Module<Self>,
-            mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
-            res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
-            b_col: usize,
-        ) {
-            <Self as $defaults<Self>>::vec_znx_big_sub_small_a_default(module, &mut res, res_col, a, a_col, &b, b_col)
-        }
-
         fn vec_znx_big_sub_small_assign(
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -107,18 +83,6 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             a_col: usize,
         ) {
             <Self as $defaults<Self>>::vec_znx_big_sub_small_assign_default(module, &mut res, res_col, a, a_col)
-        }
-
-        fn vec_znx_big_sub_small_b(
-            module: &Module<Self>,
-            mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
-            res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxBigBackendRef<'_, Self>,
-            a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            b_col: usize,
-        ) {
-            <Self as $defaults<Self>>::vec_znx_big_sub_small_b_default(module, &mut res, res_col, &a, a_col, b, b_col)
         }
 
         fn vec_znx_big_sub_small_negate_assign(

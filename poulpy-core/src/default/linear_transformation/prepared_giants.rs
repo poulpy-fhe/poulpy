@@ -9,7 +9,7 @@
 
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
+        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
         VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
         VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign,
@@ -151,7 +151,6 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         + GGLWEProductDefault<BE>
         + GLWEKeyswitchInternal<BE>
         + VecZnxBigAddAssign<BE>
-        + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
