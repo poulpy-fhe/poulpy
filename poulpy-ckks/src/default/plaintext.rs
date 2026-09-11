@@ -2,11 +2,8 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos};
 use poulpy_hal::{
-    api::{
-        VecZnxLsh, VecZnxLshAdd, VecZnxLshAddCoeffToCoeff, VecZnxLshSub, VecZnxLshSubCoeffToCoeff, VecZnxLshTmpBytes, VecZnxRsh,
-        VecZnxRshAdd, VecZnxRshAddCoeff, VecZnxRshSub, VecZnxRshSubCoeff, VecZnxRshTmpBytes,
-    },
-    layouts::{Backend, ScratchArena},
+    api::{VecZnxLsh, VecZnxLshAdd, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes},
+    layouts::{Backend, ScratchArena, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref},
 };
 
 use crate::GLWEToBackendRef;
@@ -63,7 +60,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshAddCoeff<BE> + VecZnxLshAddCoeffToCoeff<BE>,
+        Self: VecZnxRshAdd<BE> + VecZnxLshAdd<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
     {
@@ -76,21 +73,11 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         let base2k = ct.base2k().as_usize();
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
+        let mut ct_win = vec_znx_backend_mut_from_mut::<BE>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
+        let pt_win = vec_znx_backend_ref_from_ref::<BE>(pt_ref.data()).window_coeffs(coeff_pt, 1);
         match shift {
-            PlaintextShift::Rsh(k) => {
-                self.vec_znx_rsh_add_coeff(base2k, k, ct_ref.data_mut(), 0, pt_ref.data(), 0, coeff_pt, coeff_ct, scratch)
-            }
-            PlaintextShift::Lsh(k) => self.vec_znx_lsh_add_coeff_to_coeff(
-                base2k,
-                k,
-                ct_ref.data_mut(),
-                0,
-                pt_ref.data(),
-                0,
-                coeff_pt,
-                coeff_ct,
-                scratch,
-            ),
+            PlaintextShift::Rsh(k) => self.vec_znx_rsh_add(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
+            PlaintextShift::Lsh(k) => self.vec_znx_lsh_add(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
         }
 
         Ok(())
@@ -105,7 +92,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshSubCoeff<BE> + VecZnxLshSubCoeffToCoeff<BE>,
+        Self: VecZnxRshSub<BE> + VecZnxLshSub<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
     {
@@ -118,21 +105,11 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         let base2k = ct.base2k().as_usize();
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
         let pt_ref = GLWEToBackendRef::to_backend_ref(pt);
+        let mut ct_win = vec_znx_backend_mut_from_mut::<BE>(ct_ref.data_mut()).window_coeffs(coeff_ct, 1);
+        let pt_win = vec_znx_backend_ref_from_ref::<BE>(pt_ref.data()).window_coeffs(coeff_pt, 1);
         match shift {
-            PlaintextShift::Rsh(k) => {
-                self.vec_znx_rsh_sub_coeff(base2k, k, ct_ref.data_mut(), 0, pt_ref.data(), 0, coeff_pt, coeff_ct, scratch)
-            }
-            PlaintextShift::Lsh(k) => self.vec_znx_lsh_sub_coeff_to_coeff(
-                base2k,
-                k,
-                ct_ref.data_mut(),
-                0,
-                pt_ref.data(),
-                0,
-                coeff_pt,
-                coeff_ct,
-                scratch,
-            ),
+            PlaintextShift::Rsh(k) => self.vec_znx_rsh_sub(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
+            PlaintextShift::Lsh(k) => self.vec_znx_lsh_sub(base2k, k, &mut ct_win, 0, &pt_win, 0, scratch),
         }
 
         Ok(())

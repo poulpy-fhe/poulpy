@@ -5,13 +5,16 @@
 use std::{marker::PhantomData, mem::size_of};
 
 use crate::{
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxShape, ZnxView},
     reference::znx::{
         I64NormalizeOps, ZnxAddAssign, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
         ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
         ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxZero,
     },
 };
+
+#[cfg(test)]
+use crate::layouts::ZnxViewMut;
 
 #[cfg(test)]
 fn alloc_host_vec_znx(n: usize, cols: usize, size: usize) -> crate::layouts::VecZnx<Vec<u8>, i64> {
@@ -58,8 +61,7 @@ pub(crate) fn normalize_cross_needs_exact(a_size: usize, a_base2k: usize, res_ba
 
 pub(crate) struct VecZnxRangeMut<'a> {
     ptr: *mut i64,
-    n: usize,
-    cols: usize,
+    shape: VecZnxShape,
     col: usize,
     start: usize,
     len: usize,
@@ -67,11 +69,15 @@ pub(crate) struct VecZnxRangeMut<'a> {
 }
 
 impl<'a> VecZnxRangeMut<'a> {
-    pub(crate) unsafe fn new(ptr: *mut i64, n: usize, cols: usize, col: usize, start: usize, len: usize) -> Self {
+    /// # Safety
+    ///
+    /// `ptr` is the base of the dense buffer `shape` describes, and every element
+    /// `shape` selects in column `col`, coefficients `start..start + len`, is
+    /// exclusively writable for `'a`.
+    pub(crate) unsafe fn new(ptr: *mut i64, shape: VecZnxShape, col: usize, start: usize, len: usize) -> Self {
         Self {
             ptr,
-            n,
-            cols,
+            shape,
             col,
             start,
             len,
@@ -80,349 +86,13 @@ impl<'a> VecZnxRangeMut<'a> {
     }
 
     pub(crate) fn at_mut(&mut self, limb: usize) -> &mut [i64] {
-        let offset = (limb * self.cols + self.col) * self.n + self.start;
+        assert!(
+            limb < self.shape.size(),
+            "VecZnxRangeMut::at_mut: limb {limb} >= size {}",
+            self.shape.size()
+        );
+        let offset = self.shape.scalar_offset(self.col, limb) + self.start;
         unsafe { std::slice::from_raw_parts_mut(self.ptr.add(offset), self.len) }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn vec_znx_normalize_coeff<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
-    res_base2k: usize,
-    res_offset: i64,
-    res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
-    a_base2k: usize,
-    a_col: usize,
-    a_coeff: usize,
-    carry: &mut [i64],
-) where
-    BE: Backend<ZnxWord = i64>
-        + ZnxZero
-        + ZnxCopy
-        + ZnxAddAssign
-        + ZnxMulPowerOfTwoAssign
-        + ZnxNormalizeFirstStepCarryOnly
-        + ZnxNormalizeMiddleStepCarryOnly
-        + ZnxNormalizeMiddleStep
-        + ZnxNormalizeFinalStep
-        + ZnxNormalizeFirstStep
-        + I64NormalizeOps
-        + ZnxNormalizeMiddleStepAssign
-        + ZnxNormalizeFinalStepAssign
-        + ZnxNormalizeDigit,
-    BE::BufMut<'r>: HostDataMut,
-    BE::BufRef<'a>: HostDataRef,
-{
-    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_coeff");
-    poulpy_hal::layouts::assert_dense(a, "vec_znx_normalize_coeff");
-    if normalize_needs_exact(a.size(), a_base2k, res.size(), res_base2k, res_offset) {
-        normalize_exact::<true, _, _>(
-            |j| a.at(a_col, j)[a_coeff] as i128,
-            a.size(),
-            a_base2k,
-            res.size(),
-            res_base2k,
-            res.size() * res_base2k,
-            res_offset,
-            |j, digit| res.at_mut(res_col, j)[0] = digit,
-        );
-        return;
-    }
-    match res_base2k == a_base2k {
-        true => vec_znx_normalize_coeff_inter_base2k::<BE>(res_base2k, res, res_offset, res_col, a, a_col, a_coeff, carry),
-        false => {
-            vec_znx_normalize_coeff_cross_base2k::<BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, a_coeff, carry)
-        }
-    }
-}
-
-pub fn vec_znx_normalize_coeff_assign<'r, BE>(
-    base2k: usize,
-    res: &mut VecZnxBackendMut<'r, BE>,
-    res_col: usize,
-    res_coeff: usize,
-    carry: &mut [i64],
-) where
-    BE: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
-    BE::BufMut<'r>: HostDataMut,
-{
-    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_coeff_assign");
-    {
-        assert!(!carry.is_empty());
-        assert!(res_coeff < res.n(), "res_coeff: {res_coeff} >= res.n(): {}", res.n());
-    }
-
-    let res_size: usize = res.size();
-    let carry = &mut carry[..1];
-
-    if base2k == 64 {
-        return;
-    }
-
-    for j in (0..res_size).rev() {
-        let dst = &mut res.at_mut(res_col, j)[res_coeff..res_coeff + 1];
-        if j == res_size - 1 {
-            BE::znx_normalize_first_step_assign(base2k, 0, dst, carry);
-        } else if j == 0 {
-            BE::znx_normalize_final_step_assign(base2k, 0, dst, carry);
-        } else {
-            BE::znx_normalize_middle_step_assign(base2k, 0, dst, carry);
-        }
-    }
-}
-
-fn vec_znx_normalize_coeff_inter_base2k<'r, 'a, BE>(
-    base2k: usize,
-    res: &mut VecZnxBackendMut<'r, BE>,
-    res_offset: i64,
-    res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
-    a_col: usize,
-    a_coeff: usize,
-    carry: &mut [i64],
-) where
-    BE: Backend<ZnxWord = i64>
-        + ZnxZero
-        + ZnxNormalizeFirstStepCarryOnly
-        + ZnxNormalizeMiddleStepCarryOnly
-        + ZnxNormalizeMiddleStep
-        + ZnxNormalizeFinalStepAssign
-        + ZnxNormalizeMiddleStepAssign
-        + I64NormalizeOps,
-    BE::BufMut<'r>: HostDataMut,
-    BE::BufRef<'a>: HostDataRef,
-{
-    {
-        assert!(!carry.is_empty());
-        assert_eq!(
-            res.n(),
-            1,
-            "vec_znx_normalize_coeff expects a 1-coeff destination, got {}",
-            res.n()
-        );
-        assert!(a_coeff < a.n(), "a_coeff: {a_coeff} >= a.n(): {}", a.n());
-    }
-
-    let res_size: usize = res.size();
-    let a_size: usize = a.size();
-    let carry = &mut carry[..1];
-
-    let mut lsh: i64 = res_offset % base2k as i64;
-    let mut limbs_offset: i64 = res_offset / base2k as i64;
-    if res_offset < 0 && lsh != 0 {
-        lsh = (lsh + base2k as i64) % (base2k as i64);
-        limbs_offset -= 1;
-    }
-    let lsh_pos: usize = lsh as usize;
-
-    let res_end: usize = (-limbs_offset).clamp(0, res_size as i64) as usize;
-    let res_start: usize = (a_size as i64 - limbs_offset).clamp(0, res_size as i64) as usize;
-    let a_end: usize = limbs_offset.clamp(0, a_size as i64) as usize;
-    let a_start: usize = (res_size as i64 + limbs_offset).clamp(0, a_size as i64) as usize;
-    let a_out_range: usize = a_size.saturating_sub(a_start);
-
-    for j in 0..a_out_range {
-        let src = [a.at(a_col, a_size - j - 1)[a_coeff]];
-        if j == 0 {
-            BE::znx_normalize_first_step_carry_only(base2k, lsh_pos, &src, carry);
-        } else {
-            BE::znx_normalize_middle_step_carry_only(base2k, lsh_pos, &src, carry);
-        }
-    }
-
-    if a_out_range == 0 {
-        carry.fill(0);
-    }
-
-    for j in res_start..res_size {
-        res.at_mut(res_col, j).fill(0);
-    }
-
-    let mid_range: usize = a_start.saturating_sub(a_end);
-    for j in 0..mid_range {
-        let src = [a.at(a_col, a_start - j - 1)[a_coeff]];
-        BE::znx_normalize_middle_step::<true>(base2k, lsh_pos, res.at_mut(res_col, res_start - j - 1), &src, carry);
-    }
-
-    for j in (0..res_end).rev() {
-        BE::znx_extract_digit_mul(base2k, 0, res.at_mut(res_col, j), carry);
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
-    res: &mut VecZnxBackendMut<'r, BE>,
-    res_base2k: usize,
-    res_offset: i64,
-    res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
-    a_base2k: usize,
-    a_col: usize,
-    a_coeff: usize,
-    carry: &mut [i64],
-) where
-    BE: Backend<ZnxWord = i64>
-        + ZnxZero
-        + ZnxCopy
-        + ZnxAddAssign
-        + ZnxMulPowerOfTwoAssign
-        + ZnxNormalizeFirstStepCarryOnly
-        + ZnxNormalizeMiddleStepCarryOnly
-        + ZnxNormalizeMiddleStep
-        + ZnxNormalizeFinalStep
-        + ZnxNormalizeFirstStep
-        + I64NormalizeOps
-        + ZnxNormalizeMiddleStepAssign
-        + ZnxNormalizeFinalStepAssign
-        + ZnxNormalizeDigit,
-    BE::BufMut<'r>: HostDataMut,
-    BE::BufRef<'a>: HostDataRef,
-{
-    {
-        assert!(carry.len() >= 3);
-        assert_eq!(
-            res.n(),
-            1,
-            "vec_znx_normalize_coeff expects a 1-coeff destination, got {}",
-            res.n()
-        );
-        assert!(a_coeff < a.n(), "a_coeff: {a_coeff} >= a.n(): {}", a.n());
-    }
-
-    let res_size: usize = res.size();
-    let a_size: usize = a.size();
-
-    let (a_norm, carry) = carry.split_at_mut(1);
-    let (res_carry, a_carry) = carry[..2].split_at_mut(1);
-    res_carry[0] = 0;
-
-    let a_tot_bits: usize = a_size * a_base2k;
-    let res_tot_bits: usize = res_size * res_base2k;
-
-    let mut lsh: i64 = res_offset % a_base2k as i64;
-    let mut limbs_offset: i64 = res_offset / a_base2k as i64;
-    if res_offset < 0 && lsh != 0 {
-        lsh = (lsh + a_base2k as i64) % (a_base2k as i64);
-        limbs_offset -= 1;
-    }
-    let lsh_pos: usize = lsh as usize;
-
-    let res_end_bit: usize = (-limbs_offset * a_base2k as i64).clamp(0, res_tot_bits as i64) as usize;
-    let res_start_bit: usize = (a_tot_bits as i64 - limbs_offset * a_base2k as i64).clamp(0, res_tot_bits as i64) as usize;
-    let a_end_bit: usize = (limbs_offset * a_base2k as i64).clamp(0, a_tot_bits as i64) as usize;
-    let a_start_bit: usize = (res_tot_bits as i64 + limbs_offset * a_base2k as i64).clamp(0, a_tot_bits as i64) as usize;
-
-    let res_end: usize = res_end_bit / res_base2k;
-    let res_start: usize = res_start_bit.div_ceil(res_base2k);
-    let a_end: usize = a_end_bit / a_base2k;
-    let a_start: usize = a_start_bit.div_ceil(a_base2k);
-
-    for j in res_start..res_size {
-        res.at_mut(res_col, j).fill(0);
-    }
-
-    if res_start == 0 {
-        return;
-    }
-
-    let a_out_range: usize = a_size.saturating_sub(a_start);
-    for j in 0..a_out_range {
-        let src = [a.at(a_col, a_size - j - 1)[a_coeff]];
-        if j == 0 {
-            BE::znx_normalize_first_step_carry_only(a_base2k, lsh_pos, &src, a_carry);
-        } else {
-            BE::znx_normalize_middle_step_carry_only(a_base2k, lsh_pos, &src, a_carry);
-        }
-    }
-
-    if a_out_range == 0 {
-        a_carry[0] = 0;
-    }
-
-    let mut res_acc_left: usize = res_base2k;
-    let mut res_limb: usize = res_start - 1;
-    let mut initialized = false;
-    let mid_range: usize = a_start.saturating_sub(a_end);
-
-    'outer: for j in 0..mid_range {
-        let a_limb: usize = a_start - j - 1;
-        let src = [a.at(a_col, a_limb)[a_coeff]];
-        let mut a_take_left: usize = a_base2k;
-
-        BE::znx_normalize_middle_step::<true>(a_base2k, lsh_pos, a_norm, &src, a_carry);
-
-        if j == 0 {
-            if !(a_tot_bits - a_start_bit).is_multiple_of(a_base2k) {
-                let take: usize = (a_tot_bits - a_start_bit) % a_base2k;
-                BE::znx_mul_power_of_two_assign(-(take as i64), a_norm);
-                a_take_left -= take;
-            } else if !(res_tot_bits - res_start_bit).is_multiple_of(res_base2k) {
-                res_acc_left -= (res_tot_bits - res_start_bit) % res_base2k;
-            }
-        }
-
-        'inner: loop {
-            let res_slice = res.at_mut(res_col, res_limb);
-            let a_take: usize = a_base2k.min(a_take_left).min(res_acc_left);
-
-            if a_take != 0 {
-                let scale: usize = res_base2k - res_acc_left;
-                if a_take == res_acc_left {
-                    if initialized {
-                        BE::znx_extract_digit_addmul_normalize::<false>(a_take, scale, res_base2k, res_slice, a_norm, res_carry);
-                    } else {
-                        BE::znx_extract_digit_addmul_normalize::<true>(a_take, scale, res_base2k, res_slice, a_norm, res_carry);
-                    }
-                } else if initialized {
-                    BE::znx_extract_digit_addmul(a_take, scale, res_slice, a_norm);
-                } else {
-                    BE::znx_extract_digit_mul(a_take, scale, res_slice, a_norm);
-                }
-                initialized = true;
-                a_take_left -= a_take;
-                res_acc_left -= a_take;
-            }
-
-            if res_acc_left == 0 || a_limb == 0 {
-                if a_limb == 0 && a_take_left == 0 {
-                    BE::znx_add_assign(a_carry, a_norm);
-                    if res_acc_left != 0 {
-                        let scale: usize = res_base2k - res_acc_left;
-                        BE::znx_extract_digit_addmul(res_acc_left, scale, res_slice, a_carry);
-                    }
-                    if res_acc_left != 0 {
-                        BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
-                    }
-                    BE::znx_add_assign(res_carry, a_carry);
-                    break 'outer;
-                }
-
-                if res_acc_left != 0 {
-                    BE::znx_normalize_middle_step_assign(res_base2k, 0, res_slice, res_carry);
-                }
-
-                if res_limb == 0 {
-                    break 'outer;
-                }
-
-                res_acc_left += res_base2k;
-                res_limb -= 1;
-                initialized = false;
-            }
-
-            if a_take_left == 0 {
-                BE::znx_add_assign(a_carry, a_norm);
-                break 'inner;
-            }
-        }
-    }
-
-    if res_end != 0 {
-        let carry_to_use = if a_start == a_end { a_carry } else { res_carry };
-        for j in (0..res_end).rev() {
-            BE::znx_extract_digit_mul(res_base2k, 0, res.at_mut(res_col, j), carry_to_use);
-        }
     }
 }
 
@@ -455,8 +125,6 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize");
-    poulpy_hal::layouts::assert_dense(a, "vec_znx_normalize");
     assert!(res_k <= res.size() * res_base2k);
     let n = res.n();
     if res_base2k != a_base2k && n > 512 {
@@ -518,14 +186,12 @@ fn vec_znx_normalize_range<'r, 'a, BE>(
         assert!(coeff_start + coeff_len <= res.n());
         assert!(carry.len() >= 3 * coeff_len);
     }
-    let (n, cols, size) = (res.n(), res.cols(), res.size());
+    let res_shape = res.shape();
     let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
     unsafe {
         vec_znx_normalize_range_raw::<BE>(
             ptr,
-            n,
-            cols,
-            size,
+            res_shape,
             res_base2k,
             res_k,
             res_offset,
@@ -544,10 +210,11 @@ fn vec_znx_normalize_range<'r, 'a, BE>(
 ///
 /// # Safety
 ///
-/// `res_ptr` must be non-null, aligned for `i64`, and address at least
-/// `n * cols * size` initialized `i64` values; layout arithmetic must not overflow.
-/// The source must have valid initialized storage, degree `n`, and column `a_col`.
-/// Require `res_col < cols`, `coeff_start <= n`, `coeff_len <= n - coeff_start`,
+/// `res_ptr` must be non-null, aligned for `i64` and the base of the dense buffer
+/// `res_shape` describes; every element `res_shape` selects must be initialized.
+/// Layout arithmetic is checked by [`VecZnxShape`].
+/// The source must have valid initialized storage, degree `res_shape.n()`, and column `a_col`.
+/// Require `res_col < res_shape.cols()`, `coeff_start + coeff_len <= res_shape.n()`,
 /// and at least `3 * coeff_len` private scratch words in `carry`.
 ///
 /// For every destination limb, the selected coefficient range must be exclusively
@@ -558,9 +225,7 @@ fn vec_znx_normalize_range<'r, 'a, BE>(
 #[doc(hidden)]
 pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
     res_ptr: *mut i64,
-    n: usize,
-    cols: usize,
-    size: usize,
+    res_shape: VecZnxShape,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
@@ -588,6 +253,7 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
         + ZnxNormalizeDigit,
     BE::BufRef<'a>: HostDataRef,
 {
+    let (n, cols, size) = (res_shape.n(), res_shape.cols(), res_shape.size());
     {
         assert_eq!(n, a.n());
         assert!(res_col < cols);
@@ -595,7 +261,7 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
         assert!(carry.len() >= 3 * coeff_len);
         assert!(res_k <= size * res_base2k);
     }
-    let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
+    let mut res = unsafe { VecZnxRangeMut::new(res_ptr, res_shape, res_col, coeff_start, coeff_len) };
     if res_k == 0 {
         for limb in 0..size {
             res.at_mut(limb).fill(0);
@@ -1051,7 +717,6 @@ pub fn vec_znx_normalize_assign<'r, BE>(
         + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
-    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_assign");
     assert!(res_k <= res.size() * base2k);
     let n = res.n();
     vec_znx_normalize_assign_range::<BE>(base2k, res_k, res, res_col, 0, n, carry)
@@ -1079,18 +744,19 @@ fn vec_znx_normalize_assign_range<'r, BE>(
         assert!(carry.len() >= coeff_len);
     }
 
-    let (n, cols, size) = (res.n(), res.cols(), res.size());
+    let res_shape = res.shape();
     let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
-    unsafe { vec_znx_normalize_assign_range_raw::<BE>(ptr, n, cols, size, base2k, res_k, res_col, coeff_start, coeff_len, carry) }
+    unsafe { vec_znx_normalize_assign_range_raw::<BE>(ptr, res_shape, base2k, res_k, res_col, coeff_start, coeff_len, carry) }
 }
 
 /// Normalizes one coefficient range in a raw host output.
 ///
 /// # Safety
 ///
-/// `res_ptr` must be non-null, aligned for `i64`, and address at least
-/// `n * cols * size` initialized `i64` values; layout arithmetic must not overflow.
-/// Require `res_col < cols`, `coeff_start <= n`, `coeff_len <= n - coeff_start`,
+/// `res_ptr` must be non-null, aligned for `i64` and the base of the dense buffer
+/// `res_shape` describes; every element `res_shape` selects must be initialized.
+/// Layout arithmetic is checked by [`VecZnxShape`].
+/// Require `res_col < res_shape.cols()`, `coeff_start + coeff_len <= res_shape.n()`,
 /// and at least `coeff_len` private scratch words in `carry`.
 ///
 /// For every limb, the selected coefficient range must be exclusively writable
@@ -1100,9 +766,7 @@ fn vec_znx_normalize_assign_range<'r, BE>(
 #[doc(hidden)]
 pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
     res_ptr: *mut i64,
-    n: usize,
-    cols: usize,
-    size: usize,
+    res_shape: VecZnxShape,
     base2k: usize,
     res_k: usize,
     res_col: usize,
@@ -1116,13 +780,14 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign,
 {
+    let (cols, size) = (res_shape.cols(), res_shape.size());
     {
         assert!(res_col < cols);
-        assert!(coeff_start + coeff_len <= n);
+        assert!(coeff_start + coeff_len <= res_shape.n());
         assert!(carry.len() >= coeff_len);
         assert!(res_k <= size * base2k);
     }
-    let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
+    let mut res = unsafe { VecZnxRangeMut::new(res_ptr, res_shape, res_col, coeff_start, coeff_len) };
     let carry = &mut carry[..coeff_len];
     if res_k == 0 {
         for j in 0..size {
@@ -1130,10 +795,13 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
         }
         return;
     }
+    // Radix 64 is outside the documented `1..=62` contract; kept so the digit
+    // extraction never shifts by the word width. Reads use the same offset
+    // `at_mut` computes, on the element written below.
     if base2k == 64 {
         for i in 0..coeff_len {
             normalize_exact::<true, _, _>(
-                |j| unsafe { *res_ptr.add((j * cols + res_col) * n + coeff_start + i) } as i128,
+                |j| unsafe { *res_ptr.add(res_shape.scalar_offset(res_col, j) + coeff_start + i) } as i128,
                 size,
                 base2k,
                 size,
@@ -2014,7 +1682,7 @@ fn check_normalize_centered(exhaustive: bool) {
 }
 
 #[test]
-fn test_normalize_coeff_and_range_integer() {
+fn test_normalize_window_and_range_integer() {
     use crate::{
         FFT64Ref,
         layouts::{VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
@@ -2083,15 +1751,17 @@ fn test_normalize_coeff_and_range_integer() {
                     }
                     for i in 0..n {
                         let mut single = alloc_host_vec_znx(1, 1, size);
-                        vec_znx_normalize_coeff::<FFT64Ref>(
+                        let a_i =
+                            <VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input).window_coeffs(i, 1);
+                        vec_znx_normalize::<FFT64Ref>(
                             &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut single),
                             res_base2k,
+                            size * res_base2k,
                             offset,
                             0,
-                            &a,
+                            &a_i,
                             a_base2k,
                             1,
-                            i,
                             &mut [53; 3],
                         );
                         // Extreme offsets reduce to zero without enormous oracle allocations.
@@ -2129,11 +1799,12 @@ fn test_normalize_coeff_and_range_integer() {
                 );
                 let mut coeff_assigned = input.clone();
                 for i in 0..n {
-                    vec_znx_normalize_coeff_assign::<FFT64Ref>(
+                    vec_znx_normalize_assign::<FFT64Ref>(
                         a_base2k,
-                        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut coeff_assigned),
+                        size * a_base2k,
+                        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut coeff_assigned)
+                            .window_coeffs(i, 1),
                         1,
-                        i,
                         &mut [91],
                     );
                     let want = normalize_integer_oracle(

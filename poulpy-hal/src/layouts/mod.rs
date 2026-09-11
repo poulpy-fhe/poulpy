@@ -30,8 +30,9 @@
 //! `coeff_offset..coeff_offset + n` of limbs `limb_offset + k * limb_step`.
 //! The value read through a window is the restricted map. Windows are built
 //! with `window_coeffs` and `window_limbs` on [`VecZnx`](crate::layouts::VecZnx)
-//! and [`VecZnxBig`](crate::layouts::VecZnxBig); coefficient-wise operations
-//! accept them, ring operations require `n == n_full == N`. Flat accessors
+//! and [`VecZnxBig`](crate::layouts::VecZnxBig); coefficient-wise operations,
+//! including `normalize` and the shifts, accept them; ring operations and
+//! DFT-domain operations require `n == n_full == N`. Flat accessors
 //! (`raw`, `as_ptr`) panic on a window.
 
 mod convolution;

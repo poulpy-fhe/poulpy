@@ -26,6 +26,11 @@ pub fn normalize_tasks<B: RayonTuning>(n: usize) -> usize {
 
 /// Runs `run` in parallel over `tasks` coefficient ranges, each with its own
 /// `words`-per-coefficient slice of `carry`.
+///
+/// `n` is the visible degree of the destination, so ranges index a window, not
+/// the buffer. The split path (`tasks >= 2`) is pinned on windows by the
+/// `window_rayon` suites that run at degree `1 << 13` (`poulpy-cpu-avx` NTT4x30,
+/// `poulpy-cpu-avx512` FFT64); suites at `1 << 8` only reach the serial fallback.
 fn for_each_range<T, F>(n: usize, tasks: usize, words: usize, carry: &mut [T], run: F)
 where
     T: Send,
@@ -75,8 +80,6 @@ pub fn vec_znx_normalize_par<B, T>(
     B: 'static,
     T: RayonTuning,
 {
-    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_par");
-    poulpy_hal::layouts::assert_dense(a, "vec_znx_normalize_par");
     assert!(res_k <= res.size() * res_base2k);
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
@@ -84,7 +87,7 @@ pub fn vec_znx_normalize_par<B, T>(
         return vec_znx_normalize::<B>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
-    let (cols, size) = (res.cols(), res.size());
+    let res_shape = res.shape();
     let a_shape = a.shape();
     let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
     let a_data: &[u8] = a.data();
@@ -93,9 +96,7 @@ pub fn vec_znx_normalize_par<B, T>(
         unsafe {
             vec_znx_normalize_range_raw::<B>(
                 res_ptr.get(),
-                n,
-                cols,
-                size,
+                res_shape,
                 res_base2k,
                 res_k,
                 res_offset,
@@ -128,7 +129,6 @@ pub fn vec_znx_normalize_assign_par<B, T>(
     B: 'static,
     T: RayonTuning,
 {
-    poulpy_hal::layouts::assert_dense(res, "vec_znx_normalize_assign_par");
     assert!(k <= res.size() * base2k);
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
@@ -136,10 +136,10 @@ pub fn vec_znx_normalize_assign_par<B, T>(
         return vec_znx_normalize_assign::<B>(base2k, k, res, res_col, carry);
     }
 
-    let (cols, size) = (res.cols(), res.size());
+    let res_shape = res.shape();
     let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
     for_each_range(n, tasks, 1, carry, |start, len, task_carry| unsafe {
-        vec_znx_normalize_assign_range_raw::<B>(res_ptr.get(), n, cols, size, base2k, k, res_col, start, len, task_carry)
+        vec_znx_normalize_assign_range_raw::<B>(res_ptr.get(), res_shape, base2k, k, res_col, start, len, task_carry)
     });
 }
 
@@ -162,8 +162,6 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
     B: 'static,
     T: RayonTuning,
 {
-    poulpy_hal::layouts::assert_dense(res, "ntt4x30_vec_znx_big_normalize_par");
-    poulpy_hal::layouts::assert_dense(a, "ntt4x30_vec_znx_big_normalize_par");
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
@@ -182,7 +180,7 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
         );
     }
 
-    let (cols, size) = (res.cols(), res.size());
+    let res_shape = res.shape();
     let a_shape = a.shape();
     let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
     let a_data: &[u8] = a.data;
@@ -191,9 +189,7 @@ pub fn ntt4x30_vec_znx_big_normalize_par<B, T>(
         unsafe {
             ntt4x30_vec_znx_big_normalize_range_raw::<_, B>(
                 res_ptr.get(),
-                n,
-                cols,
-                size,
+                res_shape,
                 res_base2k,
                 res_k,
                 res_offset,

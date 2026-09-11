@@ -2,11 +2,12 @@ use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     api::{
         ScalarZnxAutomorphism, ScalarZnxFillBinaryBlockSource, ScalarZnxFillBinaryHwSource, ScalarZnxFillBinaryProbSource,
-        ScalarZnxFillTernaryHwSource, ScalarZnxFillTernaryProbSource, VecZnxCopyRange, VecZnxZero,
+        ScalarZnxFillTernaryHwSource, ScalarZnxFillTernaryProbSource, VecZnxCopy, VecZnxZero,
     },
     layouts::{
         Backend, Data, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ZnxViewMut,
-        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
+        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut,
+        vec_znx_backend_ref_from_ref,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -442,7 +443,12 @@ impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl<B>> SecretConversion<B> for Modul
                     break;
                 }
                 let take: usize = (target - written).min(n);
-                self.vec_znx_copy_range(&mut res_vz, 0, 0, written, &tmp_vz, j, 0, 0, take);
+                self.vec_znx_copy(
+                    &mut vec_znx_backend_mut_from_mut::<B>(&mut res_vz).window_coeffs(written, take),
+                    0,
+                    &vec_znx_backend_ref_from_ref::<B>(&tmp_vz).window_coeffs(0, take),
+                    j,
+                );
                 written += take;
             }
         }

@@ -5,12 +5,22 @@
 ### `poulpy-hal`
 
 - **Breaking:** the vestigial `_backend` and `_into` suffixes are dropped from every api trait and method, the matching OEP methods and the `poulpy-cpu-ref` default bodies: `vec_znx_add_into_backend` is `vec_znx_add`, `VecZnxAddIntoBackend` is `VecZnxAdd`, `vec_znx_rotate_backend_default` is `vec_znx_rotate_default`. The accumulation class uses one suffix: `vmp_apply_dft_to_dft_accumulate` is `vmp_apply_dft_to_dft_add`, `cnv_apply_dft_accumulate` is `cnv_apply_dft_add`; the multi-term `cnv_accumulate_dft`, which overwrites its output, is `cnv_apply_dft_sum`. Purely lexical; bench ids follow. The rename table is generated from the api and OEP sources by the script in the PR description.
+- **Breaking:** the single-coefficient and sub-range operations `vec_znx_copy_range`, `vec_znx_extract_coeff`, `vec_znx_rsh_coeff`, `vec_znx_rsh_add_coeff`, `vec_znx_rsh_sub_coeff`, `vec_znx_lsh_add_coeff_to_coeff` and `vec_znx_lsh_sub_coeff_to_coeff` are removed with their OEP methods; `copy`, `rsh`, `rsh_add`, `rsh_sub`, `lsh_add` and `lsh_sub` on `window_coeffs` / `window_limbs` views replace them bit for bit. `vec_znx_normalize`, `vec_znx_normalize_assign`, `vec_znx_big_normalize` and every shift accept window views on every backend, including the Rayon variants; the window parity tests pin them.
+- Fix `vec_znx_rsh_assign` reading an uninitialized carry at `k == 0` (the result depended on scratch contents) and underflowing when the shift exceeded the limb count; it now matches `vec_znx_rsh` on every input, pinned by a differential unit test.
 - **Breaking:** prepared types (`SvpPPol`, `VmpPMat`, `CnvPVecL`, `CnvPVecR`) carry a `PrepareHint` chosen at allocation; `bytes_of_*`, `*_alloc`, `take_*_scratch` and `from_data` take it, including the `Backend` trait methods `Backend::bytes_of_svp_ppol`, `bytes_of_vmp_pmat`, `bytes_of_cnv_pvec_left` and `bytes_of_cnv_pvec_right` (not only their api-level counterparts). `SvpPPol::shape()` now returns `SvpPPolShape` rather than the dimensions directly. Prepared-to-prepared copies (`svp_ppol_copy`, `vmp_extract_selected_rows`) require both operands to carry the same hint and assert it. In-tree backends have one representation and ignore it otherwise.
-- Add window views on `VecZnx` and `VecZnxBig` (`window_coeffs`, `window_limbs`, `from_shape`, `with_shape`). `zero`, `copy`, `add`, `sub`, `negate` and `big_from_small` accept windows; other operations and the flat accessors `raw`/`as_ptr` reject them with a panic until they are made window-aware; `VecZnxDft::from_shape` and `with_shape` accept only dense shapes.
+- Add window views on `VecZnx` and `VecZnxBig` (`window_coeffs`, `window_limbs`, `from_shape`, `with_shape`). `zero`, `copy`, `add`, `sub`, `negate`, `big_from_small`, `normalize` and the shifts accept windows; ring operations, transforms and the flat accessors `raw`/`as_ptr` reject them with a panic; `VecZnxDft::from_shape` and `with_shape` accept only dense shapes.
 - **Breaking:** ring operations and transforms (`rotate`, `automorphism`, `mul_xp_minus_one`, `switch_ring`, `dft`, `idft`, prepares, coefficient-input products) reject window views with a panic in the backend kernels; only coefficient-wise operations accept them.
 - Document the value model, limb rule, mutation classes and exactness classes in the `api` and `layouts` module docs.
 - **Breaking:** `poulpy_hal::reference` moved to `poulpy_cpu_ref::reference::znx`.
 - **Breaking:** remove 30 unused api methods (coefficient shift/normalize variants, `add_const`, `add_scalar_into`, `sub_scalar`, `automorphism_rotate`, `split_ring`, `merge_rings`, `transpose`, `hadamard_product_scalar_znx`, `*_from_bytes` wrappers, `vec_znx_big_alloc_n`, `ModuleNew::new_with`) and the eight seeded `[u8; 32]` sampler twins; the `Source`-based samplers stay. The corresponding `Hal*Impl` OEP methods are removed too, including `HalModuleImpl::Config` and `new_with`.
+
+### `poulpy-core`
+
+- LWE/GLWE conversions and secret-key rearrangements copy through window views (`vec_znx_copy` on `window_coeffs`/`window_limbs`); no public API change.
+
+### `poulpy-ckks`
+
+- `ckks_add_pt_const` / `ckks_sub_pt_const` and the polynomial-evaluation constant shift use the shift operations on window views; the `pt_const_bounds` field of the carry-verb macros is gone.
 
 ## [0.8.3] - 2026-09-09
 

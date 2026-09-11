@@ -26,7 +26,6 @@ macro_rules! ckks_carry_verb_oep {
         default_trait: $Default:ident,
         glwe_bound: $GLWEVerb:ident,
         pt_vec_bounds: [$($PtVecBound:ident),+ $(,)?],
-        pt_const_bounds: [$($PtConstBound:ident),+ $(,)?],
     ) => {
         ::paste::paste! {
             #[doc = concat!("Backend override seam for the CKKS ", $doc_verb, " family.")]
@@ -212,7 +211,6 @@ macro_rules! ckks_carry_verb_oep {
                     + GLWENormalize<BE>
                     + GLWEShift<BE>
                     $(+ $PtVecBound<BE>)+
-                    $(+ $PtConstBound<BE>)+
                     + VecZnxLshTmpBytes
                     + VecZnxRshTmpBytes,
             {

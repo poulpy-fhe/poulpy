@@ -12,33 +12,6 @@ pub trait VecZnxZero<B: Backend> {
     fn vec_znx_zero(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize);
 }
 
-pub trait VecZnxCopyRange<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_copy_range(
-        &self,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        res_limb: usize,
-        res_offset: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-        a_limb: usize,
-        a_offset: usize,
-        len: usize,
-    );
-}
-
-pub trait VecZnxExtractCoeff<B: Backend> {
-    fn vec_znx_extract_coeff(
-        &self,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-        a_coeff: usize,
-    );
-}
-
 /// Converts a column to centered digits, rounding once at the destination precision.
 ///
 /// For i64 backends, each input limb coefficient must lie in `[-2^62, 2^62]`,
@@ -179,38 +152,6 @@ pub trait VecZnxLshAdd<B: Backend> {
     );
 }
 
-pub trait VecZnxLshAddCoeffToCoeff<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_add_coeff_to_coeff(
-        &self,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-        a_coeff: usize,
-        res_coeff: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-pub trait VecZnxLshSubCoeffToCoeff<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_sub_coeff_to_coeff(
-        &self,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-        a_coeff: usize,
-        res_coeff: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
 /// Returns scratch bytes required for right-shift operations.
 pub trait VecZnxRshTmpBytes {
     fn vec_znx_rsh_tmp_bytes(&self) -> usize;
@@ -227,21 +168,6 @@ pub trait VecZnxRsh<B: Backend> {
         res_col: usize,
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-pub trait VecZnxRshCoeff<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_coeff(
-        &self,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-        a_coeff: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
 }
@@ -265,38 +191,6 @@ pub trait VecZnxRshAdd<B: Backend> {
         res_col: usize,
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-pub trait VecZnxRshAddCoeff<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_add_coeff(
-        &self,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-        a_coeff: usize,
-        res_coeff: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-pub trait VecZnxRshSubCoeff<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_rsh_sub_coeff(
-        &self,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, B>,
-        a_col: usize,
-        a_coeff: usize,
-        res_coeff: usize,
         scratch: &mut ScratchArena<'_, B>,
     );
 }

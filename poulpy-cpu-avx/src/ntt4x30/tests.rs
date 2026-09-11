@@ -19,12 +19,6 @@ cross_backend_test_suite! {
     tests = {
         test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
         test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
-        test_vec_znx_extract_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_extract_coeff,
-        test_vec_znx_lsh_add_coeff_to_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff,
-        test_vec_znx_lsh_sub_coeff_to_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_sub_coeff_to_coeff,
-        test_vec_znx_rsh_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff,
-        test_vec_znx_rsh_add_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_add_coeff,
-        test_vec_znx_rsh_sub_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_sub_coeff,
         test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
         test_vec_znx_sub => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub,
         test_vec_znx_sub_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_assign,
@@ -164,6 +158,8 @@ backend_test_suite! {
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
+        test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
         test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
@@ -172,10 +168,13 @@ backend_test_suite! {
 backend_test_suite! {
     mod window_rayon,
     backend = crate::NTT4x30AvxRayon,
-    params = TestParams { size: 1 << 8, base2k: 50 },
+    // Above NORMALIZE_MIN_TASK so the windowed normalize path is split across tasks.
+    params = TestParams { size: 1 << 13, base2k: 50 },
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
+        test_vec_znx_window_normalize_ops => poulpy_hal::test_suite::window::test_vec_znx_window_normalize_ops,
+        test_vec_znx_big_window_normalize => poulpy_hal::test_suite::window::test_vec_znx_big_window_normalize,
         test_vec_znx_window_rejected_by_ring_ops => poulpy_hal::test_suite::window::test_vec_znx_window_rejected_by_ring_ops,
     }
 }
