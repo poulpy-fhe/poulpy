@@ -156,12 +156,12 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// CoeffsToSlots stages, and general LUTs additionally share the power basis
     /// of each transformed half, so `n` LUTs cost one bootstrap
     /// plus `n` polynomial evaluations. `ct_outs` and `luts` must have the same
-    /// length, every LUT must have the same message ratio, and every output
+    /// length, every LUT must have the same message modulus, and every output
     /// must share one rank-1 layout.
     ///
-    /// Each LUT derives its required message ratio from its table length rounded
-    /// up to a power of two. Different lengths with the same padded length can
-    /// share a batch. The slot kind of `ct_in` selects the pipeline:
+    /// Inputs contain integer messages. Configure the plan with
+    /// [`BootstrappingPlan::with_functional_bootstrap`](crate::layouts::BootstrappingPlan::with_functional_bootstrap).
+    /// The slot kind of `ct_in` selects the pipeline:
     /// [`SlotsKind::Real`] slots skip the imaginary branch entirely.
     ///
     /// [`SlotsKind::Real`]: crate::SlotsKind::Real

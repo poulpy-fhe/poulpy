@@ -652,6 +652,10 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
+        ckks_ensure!(
+            ctx.functional_message_modulus().is_none(),
+            "ckks_bootstrap requires an identity bootstrapping context"
+        );
         // All pipeline intermediates are rank-1 working ciphertexts carved from
         // scratch (accounted for by `ckks_bootstrap_tmp_bytes`); reject
         // higher-rank inputs up front.
@@ -865,8 +869,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         );
         let log_msg_ratio = luts[0].log_msg_ratio();
         ckks_ensure!(
-            luts.iter().all(|lut| lut.log_msg_ratio() == log_msg_ratio),
-            "functional bootstrap LUTs must have the same message ratio"
+            luts.iter().all(|lut| lut.message_modulus() == luts[0].message_modulus()),
+            "functional bootstrap LUTs must have the same message modulus"
         );
         if luts.iter().any(EncodedLut::requires_eval_mod) {
             ensure_unit_circle_exp_context(ctx)?;
@@ -885,14 +889,17 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             "bootstrapping key encapsulation does not match the compiled recipe"
         );
         ensure_functional_message_ratio(ct_in, ctx.slots_to_coeffs().consumed_bits(), log_msg_ratio)?;
+        ckks_ensure!(
+            ctx.functional_message_modulus().unwrap_or(1usize << log_msg_ratio) == luts[0].message_modulus(),
+            "functional bootstrap context must be configured for message modulus {}",
+            luts[0].message_modulus()
+        );
         let output_contracts = ct_outs
             .iter()
             .zip(luts)
             .map(|(ct_out, lut)| functional_output_contract(ct_in, ctx, lut, ct_out.k().as_usize()))
             .collect::<Result<Vec<_>>>()?;
 
-        // A shared power basis pays for itself only across several general LUTs; a
-        // single LUT, or any batch containing a binary one, evaluates per LUT.
         let shared = luts.len() > 1 && luts.iter().all(|lut| lut.general_series().is_some());
         let boot_layout = GLWELayout {
             n: out_n,
