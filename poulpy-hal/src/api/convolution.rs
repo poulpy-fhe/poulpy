@@ -174,7 +174,7 @@ pub trait Convolution<BE: Backend> {
     /// are left untouched. Scratch requirement is
     /// [`cnv_apply_dft_tmp_bytes`](Convolution::cnv_apply_dft_tmp_bytes).
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_dft_add(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -186,10 +186,10 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_accumulate_dft`](Convolution::cnv_accumulate_dft).
+    /// Returns scratch bytes required for [`cnv_apply_dft_sum`](Convolution::cnv_apply_dft_sum).
     ///
     /// `a_size` and `b_size` are upper bounds over the sizes of the term operands.
-    fn cnv_accumulate_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
+    fn cnv_apply_dft_sum_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
     /// Evaluates a sum of bivariate convolutions: `res[res_col] = Σ_t a_t ⊛ b_t`,
     /// scaled by `2^{cnv_offset * Base2K}`, overwriting `res[res_col]`.
@@ -199,8 +199,8 @@ pub trait Convolution<BE: Backend> {
     /// `terms` slice the output column is zeroed. Backends may fuse the
     /// accumulation (one lazy reduction per output limb, destination written
     /// once), so the result is congruent to — but not necessarily bit-identical
-    /// with — a sequence of [`Convolution::cnv_apply_dft_accumulate`] calls.
-    fn cnv_accumulate_dft<'a>(
+    /// with — a sequence of [`Convolution::cnv_apply_dft_add`] calls.
+    fn cnv_apply_dft_sum<'a>(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,

@@ -431,7 +431,7 @@ pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft_accumulate<BE, E: TaskExecutor>(
+pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -450,12 +450,12 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate<BE, E: TaskExecutor>(
 }
 
 #[cfg(feature = "enable-rayon")]
-pub(crate) fn cnv_accumulate_dft_avx_tmp_bytes(_res_size: usize) -> usize {
+pub(crate) fn cnv_apply_dft_sum_avx_tmp_bytes(_res_size: usize) -> usize {
     0
 }
 
 #[cfg(feature = "enable-rayon")]
-pub(crate) unsafe fn cnv_accumulate_dft_avx<BE, E: TaskExecutor>(
+pub(crate) unsafe fn cnv_apply_dft_sum_avx<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,

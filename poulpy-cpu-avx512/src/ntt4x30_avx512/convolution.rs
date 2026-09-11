@@ -431,7 +431,7 @@ pub(crate) unsafe fn cnv_apply_dft<E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft_accumulate<E: TaskExecutor>(
+pub(crate) unsafe fn cnv_apply_dft_add<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,

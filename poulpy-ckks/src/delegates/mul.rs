@@ -5,7 +5,7 @@ use poulpy_core::{
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, ModuleCoreAlloc, TorusPrecision},
 };
 use poulpy_hal::{
-    api::{ModuleN, VecZnxCopyBackend},
+    api::{ModuleN, VecZnxCopy},
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -42,7 +42,7 @@ where
         + GLWETensoring<BE>
         + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + VecZnxCopyBackend<BE>,
+        + VecZnxCopy<BE>,
 {
     fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where

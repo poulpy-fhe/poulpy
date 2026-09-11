@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend, VecZnxRotateAssignBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource, VecZnxRotateAssign},
     layouts::{Module, ScalarZnx, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
@@ -26,11 +26,11 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEExternalProduct<BE>
         + GLWEEncryptSk<BE>
         + GLWENoise<BE>
-        + VecZnxRotateAssignBackend<BE>
+        + VecZnxRotateAssign<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -86,7 +86,7 @@ where
             let mut source_xa: Source = Source::new([0u8; 32]);
 
             // Random input plaintext
-            module.vec_znx_fill_uniform_source_backend(
+            module.vec_znx_fill_uniform_source(
                 in_base2k,
                 pt_in.k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
@@ -143,7 +143,7 @@ where
                 &mut scratch.borrow(),
             );
 
-            module.vec_znx_rotate_assign_backend(
+            module.vec_znx_rotate_assign(
                 k as i64,
                 &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
                 0,
@@ -191,11 +191,11 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEExternalProduct<BE>
         + GLWEEncryptSk<BE>
         + GLWENoise<BE>
-        + VecZnxRotateAssignBackend<BE>
+        + VecZnxRotateAssign<BE>
         + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -238,7 +238,7 @@ where
             let mut source_xa: Source = Source::new([0u8; 32]);
 
             // Random input plaintext
-            module.vec_znx_fill_uniform_source_backend(
+            module.vec_znx_fill_uniform_source(
                 out_base2k,
                 pt_want.k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
@@ -290,7 +290,7 @@ where
 
             module.glwe_external_product_assign(&mut glwe_out, &ct_ggsw_prepared.to_backend_ref(), &mut scratch.borrow());
 
-            module.vec_znx_rotate_assign_backend(
+            module.vec_znx_rotate_assign(
                 k as i64,
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
                 0,

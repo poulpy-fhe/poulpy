@@ -312,7 +312,7 @@ pub(crate) fn vmp_apply_dft_to_dft_neon<E: TaskExecutor>(
     );
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_neon<E: TaskExecutor>(
+pub(crate) fn vmp_apply_dft_to_dft_add_neon<E: TaskExecutor>(
     module: &Module<NTT4x30Neon>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Neon>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Neon>,

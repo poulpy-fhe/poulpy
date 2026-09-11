@@ -10,10 +10,9 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxAddScalarAssignBackend, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend,
-        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallABackend, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeBasic, VecZnxAddScalarAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigBytesOf,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallA, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxDftZero, VecZnxIdftApply, VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, VecZnxBigViewMut, vec_znx_backend_ref_from_mut,
@@ -250,7 +249,7 @@ where
         + Cmux<BE>
         + GLWECopy<BE>
         + GLWEZero<BE>
-        + VecZnxAddScalarAssignBackend<BE>
+        + VecZnxAddScalarAssign<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + Sync,
     BE: 'static,
@@ -284,7 +283,7 @@ where
 
 impl<BE: Backend<ZnxWord = i64>> BddTrivialOne<BE, BE::Location> for Module<BE>
 where
-    Self: GLWEZero<BE> + VecZnxAddScalarAssignBackend<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+    Self: GLWEZero<BE> + VecZnxAddScalarAssign<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
 {
     type Prepared = ScalarZnx<BE::OwnedBuf, i64>;
 
@@ -427,7 +426,7 @@ fn glwe_set_trivial_one_with_scalar<BE, R, M>(module: &M, res: &mut R, one: &Sca
 where
     BE: Backend<ZnxWord = i64>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    M: GLWEZero<BE> + VecZnxAddScalarAssignBackend<BE>,
+    M: GLWEZero<BE> + VecZnxAddScalarAssign<BE>,
 {
     module.glwe_zero(res);
     let limbs = 2usize.div_ceil(res.base2k().as_usize());
@@ -435,7 +434,7 @@ where
     let scalar = <ScalarZnx<BE::OwnedBuf, i64> as ScalarZnxToBackendRef<BE>>::to_backend_ref(one);
     let mut res = res.to_backend_mut();
     for limb in 0..limbs {
-        module.vec_znx_add_scalar_assign_backend(res.data_mut(), 0, limb, &scalar, 0);
+        module.vec_znx_add_scalar_assign(res.data_mut(), 0, limb, &scalar, 0);
     }
 }
 
@@ -474,11 +473,11 @@ impl<BE: Backend<ZnxWord = i64>> Cswap<BE> for Module<BE> where
         + GLWESub<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>
-        + VecZnxBigAddSmallIntoBackend<BE>
+        + VecZnxBigAddSmall<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxBigSubSmallABackend<BE>
+        + VecZnxBigSubSmallA<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
@@ -511,11 +510,11 @@ where
         + GLWESub<BE>
         + GLWECopy<BE>
         + GLWENormalize<BE>
-        + VecZnxBigAddSmallIntoBackend<BE>
+        + VecZnxBigAddSmall<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxBigSubSmallABackend<BE>
+        + VecZnxBigSubSmallA<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
@@ -632,7 +631,7 @@ where
             let mut res_a_backend = res_a.to_backend_mut();
 
             for j in 0..cols {
-                self.vec_znx_big_add_small_into_backend(
+                self.vec_znx_big_add_small(
                     &mut res_big_tmp,
                     0,
                     &res_big_ref,
@@ -656,7 +655,7 @@ where
 
             let mut res_b_backend = res_b.to_backend_mut();
             for j in 0..cols {
-                self.vec_znx_big_sub_small_a_backend(
+                self.vec_znx_big_sub_small_a(
                     &mut res_big_tmp,
                     0,
                     &vec_znx_backend_ref_from_mut::<BE>(b_prev.data()),
@@ -716,7 +715,7 @@ where
             let mut res_a_backend = res_a.to_backend_mut();
 
             for j in 0..cols {
-                self.vec_znx_big_add_small_into_backend(
+                self.vec_znx_big_add_small(
                     &mut res_big_tmp,
                     0,
                     &res_big_ref,
@@ -740,7 +739,7 @@ where
 
             let mut res_b_backend = res_b.to_backend_mut();
             for j in 0..cols {
-                self.vec_znx_big_sub_small_a_backend(
+                self.vec_znx_big_sub_small_a(
                     &mut res_big_tmp,
                     0,
                     &vec_znx_backend_ref_from_mut::<BE>(tmp_b.data()),

@@ -4,8 +4,8 @@ use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
-        VecZnxAutomorphismBackend,
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxAutomorphismAssign,
+        VecZnxAutomorphismAssignTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned},
     source::Source,
@@ -16,7 +16,7 @@ use crate::hal::params::HalSweepParms;
 
 pub fn runner_vec_znx_automorphism<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxAutomorphismBackend<B> + ModuleNew<B>,
+    Module<B>: VecZnxAutomorphism<B> + ModuleNew<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -31,7 +31,7 @@ where
         let a = vec_znx_backend_ref::<B>(&a);
         let mut res = vec_znx_backend_mut::<B>(&mut res);
         for i in 0..sweep.cols {
-            module.vec_znx_automorphism_backend(-7, &mut res, i, &a, i);
+            module.vec_znx_automorphism(-7, &mut res, i, &a, i);
         }
         black_box(());
     });
@@ -41,7 +41,7 @@ pub fn runner_vec_znx_automorphism_assign<B: Backend<ZnxWord = i64>, M: Measurem
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxAutomorphismAssignBackend<B> + ModuleNew<B> + VecZnxAutomorphismAssignTmpBytes,
+    Module<B>: VecZnxAutomorphismAssign<B> + ModuleNew<B> + VecZnxAutomorphismAssignTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -56,7 +56,7 @@ pub fn runner_vec_znx_automorphism_assign<B: Backend<ZnxWord = i64>, M: Measurem
     bencher.iter(|| {
         let mut res = vec_znx_backend_mut::<B>(&mut res);
         for i in 0..sweep.cols {
-            module.vec_znx_automorphism_assign_backend(-7, &mut res, i, &mut scratch.borrow());
+            module.vec_znx_automorphism_assign(-7, &mut res, i, &mut scratch.borrow());
         }
         black_box(());
     });

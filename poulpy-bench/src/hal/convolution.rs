@@ -109,7 +109,7 @@ where
     });
 }
 
-pub fn runner_cnv_apply_dft_accumulate<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
+pub fn runner_cnv_apply_dft_add<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
@@ -147,7 +147,7 @@ where
 
     bencher.iter(|| {
         let mut c_dft_backend = c_dft.to_backend_mut();
-        module.cnv_apply_dft_accumulate(
+        module.cnv_apply_dft_add(
             0,
             &mut c_dft_backend,
             0,

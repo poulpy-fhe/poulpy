@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ModuleN, VecZnxAutomorphismBackend, VecZnxCopyRangeBackend, VecZnxZeroBackend},
+    api::{ModuleN, VecZnxAutomorphism, VecZnxCopyRange, VecZnxZero},
     layouts::{
         Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
         scalar_znx_as_vec_znx_backend_ref_from_ref,
@@ -38,11 +38,7 @@ pub trait LWESwitchingKeyEncryptDefault<BE: Backend> {
 
 impl<BE: Backend> LWESwitchingKeyEncryptDefault<BE> for Module<BE>
 where
-    Self: ModuleN
-        + GLWESwitchingKeyEncryptSk<BE>
-        + VecZnxAutomorphismBackend<BE>
-        + VecZnxCopyRangeBackend<BE>
-        + VecZnxZeroBackend<BE>,
+    Self: ModuleN + GLWESwitchingKeyEncryptSk<BE> + VecZnxAutomorphism<BE> + VecZnxCopyRange<BE> + VecZnxZero<BE>,
 {
     fn lwe_switching_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -100,8 +96,8 @@ where
         {
             let mut sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_src.data_mut());
             let sk_lwe_out_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_lwe_out.data());
-            self.vec_znx_zero_backend(&mut sk_glwe_src_backend, 0);
-            self.vec_znx_copy_range_backend(
+            self.vec_znx_zero(&mut sk_glwe_src_backend, 0);
+            self.vec_znx_copy_range(
                 &mut sk_glwe_src_backend,
                 0,
                 0,
@@ -116,7 +112,7 @@ where
         {
             let sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_glwe_src.data());
             let mut sk_glwe_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_out.data_mut());
-            self.vec_znx_automorphism_backend(-1, &mut sk_glwe_out_backend, 0, &sk_glwe_src_backend, 0);
+            self.vec_znx_automorphism(-1, &mut sk_glwe_out_backend, 0, &sk_glwe_src_backend, 0);
         }
 
         sk_glwe_src.dist = sk_lwe_in.dist;
@@ -124,8 +120,8 @@ where
         {
             let mut sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_src.data_mut());
             let sk_lwe_in_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_lwe_in.data());
-            self.vec_znx_zero_backend(&mut sk_glwe_src_backend, 0);
-            self.vec_znx_copy_range_backend(
+            self.vec_znx_zero(&mut sk_glwe_src_backend, 0);
+            self.vec_znx_copy_range(
                 &mut sk_glwe_src_backend,
                 0,
                 0,
@@ -140,7 +136,7 @@ where
         {
             let sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_glwe_src.data());
             let mut sk_glwe_in_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_in.data_mut());
-            self.vec_znx_automorphism_backend(-1, &mut sk_glwe_in_backend, 0, &sk_glwe_src_backend, 0);
+            self.vec_znx_automorphism(-1, &mut sk_glwe_in_backend, 0, &sk_glwe_src_backend, 0);
         }
 
         self.glwe_switching_key_encrypt_sk(

@@ -1,8 +1,8 @@
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
-        test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
-        test_convolution_by_const_add, test_convolution_pairwise,
+        test_convolution, test_convolution_add, test_convolution_by_const, test_convolution_by_const_add,
+        test_convolution_pairwise, test_convolution_sum,
     },
 };
 
@@ -33,15 +33,15 @@ fn test_convolution_pairwise_fft64_ref() {
 }
 
 #[test]
-fn test_convolution_accumulate_fft64_ref() {
+fn test_convolution_add_fft64_ref() {
     let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
-    test_convolution_accumulate(&module, 17);
+    test_convolution_add(&module, 17);
 }
 
 #[test]
-fn test_convolution_accumulate_fused_fft64_ref() {
+fn test_convolution_sum_fft64_ref() {
     let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
-    test_convolution_accumulate_fused(&module, 17);
+    test_convolution_sum(&module, 17);
 }
 
 #[test]
@@ -64,15 +64,15 @@ fn test_convolution_pairwise_ntt4x30_ref() {
 }
 
 #[test]
-fn test_convolution_accumulate_ntt4x30_ref() {
+fn test_convolution_add_ntt4x30_ref() {
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
-    test_convolution_accumulate(&module, 50);
+    test_convolution_add(&module, 50);
 }
 
 #[test]
-fn test_convolution_accumulate_fused_ntt4x30_ref() {
+fn test_convolution_sum_ntt4x30_ref() {
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
-    test_convolution_accumulate_fused(&module, 50);
+    test_convolution_sum(&module, 50);
 }
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
@@ -83,16 +83,16 @@ cross_backend_test_suite! {
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
-        test_vec_znx_zero_backend_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_zero_backend_matches_wrapper,
-        test_vec_znx_add_into_backend_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_into_backend_matches_reference,
+        test_vec_znx_zero_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_zero_matches_wrapper,
+        test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
         test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
-        test_vec_znx_add_assign_backend_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign_backend_matches_wrapper,
-        test_vec_znx_extract_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_extract_coeff_backend,
-        test_vec_znx_lsh_add_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff_backend,
-        test_vec_znx_lsh_sub_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_sub_coeff_to_coeff_backend,
-        test_vec_znx_rsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff_backend,
-        test_vec_znx_rsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_add_coeff_into_backend,
-        test_vec_znx_rsh_sub_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_sub_coeff_into_backend,
+        test_vec_znx_add_assign_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign_matches_wrapper,
+        test_vec_znx_extract_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_extract_coeff,
+        test_vec_znx_lsh_add_coeff_to_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff,
+        test_vec_znx_lsh_sub_coeff_to_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_sub_coeff_to_coeff,
+        test_vec_znx_rsh_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff,
+        test_vec_znx_rsh_add_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_add_coeff,
+        test_vec_znx_rsh_sub_coeff => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_sub_coeff,
         test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
         test_vec_znx_sub => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub,
         test_vec_znx_sub_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub_assign,
@@ -102,9 +102,9 @@ cross_backend_test_suite! {
         test_vec_znx_lsh => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh,
         test_vec_znx_lsh_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_assign,
         test_vec_znx_negate => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate,
-        test_vec_znx_negate_backend_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_backend_matches_wrapper,
+        test_vec_znx_negate_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_matches_wrapper,
         test_vec_znx_negate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_assign,
-        test_vec_znx_negate_assign_backend_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_assign_backend_matches_wrapper,
+        test_vec_znx_negate_assign_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_negate_assign_matches_wrapper,
         test_vec_znx_rotate => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate,
         test_vec_znx_rotate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate_assign,
         test_vec_znx_automorphism => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism,
@@ -115,10 +115,10 @@ cross_backend_test_suite! {
         test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
         test_vec_znx_normalize_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_assign,
         test_vec_znx_switch_ring => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring,
-        test_vec_znx_switch_ring_backend_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring_backend_matches_wrapper,
+        test_vec_znx_switch_ring_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_switch_ring_matches_wrapper,
         test_vec_znx_copy => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy,
-        test_vec_znx_copy_backend_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy_backend_matches_wrapper,
-        test_vec_znx_copy_range_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy_range_backend,
+        test_vec_znx_copy_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy_matches_wrapper,
+        test_vec_znx_copy_range => poulpy_hal::test_suite::vec_znx::test_vec_znx_copy_range,
     }
 }
 cross_backend_test_suite! {
@@ -137,9 +137,9 @@ cross_backend_test_suite! {
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
-        test_vec_znx_big_add_into => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_into,
+        test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
         test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
-        test_vec_znx_big_add_small_into => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_small_into,
+        test_vec_znx_big_add_small => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_small,
         test_vec_znx_big_add_small_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_small_assign,
         test_vec_znx_big_sub => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub,
         test_vec_znx_big_sub_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_sub_assign,
@@ -161,7 +161,7 @@ cross_backend_test_suite! {
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
-        test_vec_znx_dft_add_into => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_into,
+        test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
         test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
         test_vec_znx_dft_sub => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub,
         test_vec_znx_dft_sub_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_assign,
@@ -190,7 +190,7 @@ cross_backend_test_suite! {
     tests = {
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
         test_vmp_extract_selected_rows => poulpy_hal::test_suite::vmp::test_vmp_extract_selected_rows,
-        test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
+        test_vmp_apply_dft_to_dft_add => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_add,
         test_word_compat_prepare_hint_sizes => poulpy_hal::test_suite::word_compat::test_word_compat_prepare_hint_sizes,
     }
 }
@@ -246,7 +246,7 @@ poulpy_core::core_backend_test_suite!(
 
 #[test]
 fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
-    use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshTmpBytes};
+    use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRsh, VecZnxRshAssign, VecZnxRshTmpBytes};
     use poulpy_hal::layouts::{FillUniform, HostBytesBackend, ScratchOwned, VecZnx};
     use poulpy_hal::source::Source;
     use poulpy_hal::test_suite::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
@@ -268,7 +268,7 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
             a.fill_uniform(base2k, &mut source);
             let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
             let mut want_be = upload_vec_znx::<NTT4x30Ref>(&module_host.vec_znx_alloc(1, size));
-            module.vec_znx_rsh_backend(
+            module.vec_znx_rsh(
                 base2k,
                 k,
                 &mut vec_znx_backend_mut::<NTT4x30Ref>(&mut want_be),
@@ -278,7 +278,7 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
                 &mut scratch.borrow(),
             );
             let mut got_be = upload_vec_znx::<NTT4x30Ref>(&a);
-            module.vec_znx_rsh_assign_backend(
+            module.vec_znx_rsh_assign(
                 base2k,
                 k,
                 &mut vec_znx_backend_mut::<NTT4x30Ref>(&mut got_be),
@@ -351,13 +351,13 @@ where
     BE: poulpy_hal::test_suite::TestBackend,
     BE::OwnedBuf: poulpy_hal::layouts::HostDataRef,
     Module<BE>: poulpy_hal::api::VecZnxBigAlloc<BE>
-        + poulpy_hal::api::VecZnxBigFromSmallBackend<BE>
+        + poulpy_hal::api::VecZnxBigFromSmall<BE>
         + poulpy_hal::api::VecZnxBigNormalize<BE>
         + poulpy_hal::api::VecZnxBigNormalizeTmpBytes,
     poulpy_hal::layouts::ScratchOwned<BE>: poulpy_hal::api::ScratchOwnedAlloc<BE>,
 {
     use poulpy_hal::{
-        api::{ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes},
+        api::{ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes},
         layouts::{
             FillUniform, HostBytesBackend, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
             VecZnxToBackendMut, VecZnxToBackendRef, ZnxView,
@@ -377,7 +377,7 @@ where
                         a.fill_uniform(63, &mut source);
                         let uploaded = upload_vec_znx::<BE>(&a);
                         let mut big = module.vec_znx_big_alloc(1, a_size);
-                        module.vec_znx_big_from_small_backend(
+                        module.vec_znx_big_from_small(
                             &mut big.to_backend_mut(),
                             0,
                             &<VecZnx<BE::OwnedBuf, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(&uploaded),

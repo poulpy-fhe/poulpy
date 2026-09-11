@@ -6,8 +6,8 @@ use crate::layouts::VecZnxDftToBackendRef;
 
 use crate::{
     api::{
-        ScratchOwnedAlloc, VecZnxAutomorphismBackend, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
+        ScratchOwnedAlloc, VecZnxAutomorphism, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismPlan, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply,
         VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
@@ -123,20 +123,20 @@ where
     normalize_big_to_host(module, base2k, &big, scratch)
 }
 
-pub fn test_vec_znx_dft_add_into<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_add<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxDftAddInto<BR>
+    Module<BR>: VecZnxDftAdd<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxDftApply<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxIdftApplyTmpA<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxDftAddInto<BT>
+    Module<BT>: VecZnxDftAdd<BT>
         + VecZnxDftAlloc<BT>
         + VecZnxDftApply<BT>
         + VecZnxBigAlloc<BT>
@@ -172,7 +172,7 @@ pub fn test_vec_znx_dft_add_into<BR: crate::test_suite::TestBackend, BT: crate::
                 let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &res_init, 1, 0);
 
                 for i in 0..cols {
-                    module_ref.vec_znx_dft_add_into(
+                    module_ref.vec_znx_dft_add(
                         &mut res_dft_ref.to_backend_mut(),
                         i,
                         &a_dft_ref.to_backend_ref(),
@@ -180,7 +180,7 @@ pub fn test_vec_znx_dft_add_into<BR: crate::test_suite::TestBackend, BT: crate::
                         &b_dft_ref.to_backend_ref(),
                         i,
                     );
-                    module_test.vec_znx_dft_add_into(
+                    module_test.vec_znx_dft_add(
                         &mut res_dft_test.to_backend_mut(),
                         i,
                         &a_dft_test.to_backend_ref(),
@@ -668,7 +668,7 @@ fn contract_check_one_backend<BE>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxAutomorphismBackend<BE>,
+        + VecZnxAutomorphism<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source = Source::new([0u8; 32]);
@@ -694,7 +694,7 @@ fn contract_check_one_backend<BE>(
             let res_coeff_backend_host = module_host.vec_znx_alloc(cols, size);
             let mut res_coeff_backend = upload_vec_znx::<BE>(&res_coeff_backend_host);
             for j in 0..cols {
-                module.vec_znx_automorphism_backend(
+                module.vec_znx_automorphism(
                     p,
                     &mut vec_znx_backend_mut::<BE>(&mut res_coeff_backend),
                     j,
@@ -728,7 +728,7 @@ pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: cra
         + VecZnxIdftApplyTmpA<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxAutomorphismBackend<BR>,
+        + VecZnxAutomorphism<BR>,
     Module<BT>: VecZnxDftAlloc<BT>
         + VecZnxDftApply<BT>
         + VecZnxDftAutomorphism<BT>
@@ -736,7 +736,7 @@ pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: cra
         + VecZnxIdftApplyTmpA<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxAutomorphismBackend<BT>,
+        + VecZnxAutomorphism<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {

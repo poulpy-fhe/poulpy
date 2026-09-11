@@ -150,7 +150,7 @@ where
         fft64_vmp_apply_dft_to_dft_with_kernel::<BE, KERNEL, E>(res, a, b, limb_offset, tmp);
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes_default(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes_default(
         module: &Module<BE>,
         res_size: usize,
         a_size: usize,
@@ -167,7 +167,7 @@ where
     }
 
     #[inline(always)]
-    fn vmp_apply_dft_to_dft_accumulate_default(
+    fn vmp_apply_dft_to_dft_add_default(
         module: &Module<BE>,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         a: &VecZnxDftBackendRef<'_, BE>,
@@ -181,20 +181,12 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
-        Self::vmp_apply_dft_to_dft_accumulate_with_kernel_default::<BE, BE::TaskExecutor>(
-            module,
-            res,
-            a,
-            b,
-            limb_offset,
-            1,
-            scratch,
-        );
+        Self::vmp_apply_dft_to_dft_add_with_kernel_default::<BE, BE::TaskExecutor>(module, res, a, b, limb_offset, 1, scratch);
     }
 
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
-    fn vmp_apply_dft_to_dft_accumulate_with_kernel_default<KERNEL, E>(
+    fn vmp_apply_dft_to_dft_add_with_kernel_default<KERNEL, E>(
         module: &Module<BE>,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         a: &VecZnxDftBackendRef<'_, BE>,
@@ -323,7 +315,7 @@ where
         ntt4x30_vmp_apply_dft_to_dft::<BE>(module, res, a, b, limb_offset, tmp);
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes_default(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes_default(
         module: &Module<BE>,
         res_size: usize,
         a_size: usize,
@@ -341,7 +333,7 @@ where
         module.bytes_of_vec_znx_dft(b_cols_out, res_size) + ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_default(
+    fn vmp_apply_dft_to_dft_add_default(
         module: &Module<BE>,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         a: &VecZnxDftBackendRef<'_, BE>,

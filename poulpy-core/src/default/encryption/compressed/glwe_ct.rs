@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::VecZnxCopyBackend,
+    api::VecZnxCopy,
     layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
@@ -39,7 +39,7 @@ pub trait GLWECompressedEncryptSkDefault<BE: Backend> {
 
 impl<BE: Backend> GLWECompressedEncryptSkDefault<BE> for Module<BE>
 where
-    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFillDefault<BE> + VecZnxCopyBackend<BE>,
+    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + GLWEMaskFillDefault<BE> + VecZnxCopy<BE>,
 {
     fn glwe_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -95,7 +95,7 @@ where
                 &mut scratch_1,
             );
             let full_ct_ref = full_ct.to_backend_ref();
-            self.vec_znx_copy_backend(&mut res_backend.data, 0, &full_ct_ref.data, 0);
+            self.vec_znx_copy(&mut res_backend.data, 0, &full_ct_ref.data, 0);
         }
     }
 }

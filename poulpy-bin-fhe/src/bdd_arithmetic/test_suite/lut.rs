@@ -3,7 +3,7 @@ use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank
 use crate::blind_rotation::host_znx::{znx_rotate, znx_switch_ring};
 use poulpy_hal::{
     api::{
-        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxRotateAssignBackend,
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotateAssign,
         VecZnxRotateAssignTmpBytes,
     },
     layouts::{
@@ -266,11 +266,11 @@ fn max_bit_size(vec: &[i64]) -> u32 {
 
 impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> LookupTableFactory for Module<BE>
 where
-    Self: VecZnxRotateAssignBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>
+    Self: VecZnxRotateAssign<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxRotateAssignTmpBytes
-        + VecZnxRotateAssignBackend<BE>
+        + VecZnxRotateAssign<BE>
         + VecZnxRotateAssignTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -351,7 +351,7 @@ where
 
         for a in res.data.iter_mut() {
             let mut a_data = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(a.data_mut());
-            self.vec_znx_normalize_assign_backend(
+            self.vec_znx_normalize_assign(
                 res.base2k.into(),
                 res.k.as_usize(),
                 &mut a_data,
@@ -382,13 +382,13 @@ where
         (0..extension_factor - k_lo).for_each(|i| {
             let mut data: poulpy_hal::layouts::VecZnxBackendMut<'_, BE> =
                 <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(res.data[i].data_mut());
-            self.vec_znx_rotate_assign_backend(k_hi as i64, &mut data, 0, &mut scratch.borrow());
+            self.vec_znx_rotate_assign(k_hi as i64, &mut data, 0, &mut scratch.borrow());
         });
 
         (extension_factor - k_lo..extension_factor).for_each(|i| {
             let mut data: poulpy_hal::layouts::VecZnxBackendMut<'_, BE> =
                 <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(res.data[i].data_mut());
-            self.vec_znx_rotate_assign_backend(k_hi as i64 + 1, &mut data, 0, &mut scratch.borrow());
+            self.vec_znx_rotate_assign(k_hi as i64 + 1, &mut data, 0, &mut scratch.borrow());
         });
 
         res.data.rotate_right(k_lo);

@@ -4,7 +4,7 @@ use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAlloc,
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc,
         VecZnxDftApply, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA,
         VecZnxIdftApplyTmpBytes,
     },
@@ -18,9 +18,9 @@ use crate::hal::helpers::{
 };
 use crate::hal::params::HalSweepParms;
 
-pub fn runner_vec_znx_dft_add_into<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_dft_add<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxDftAddInto<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: VecZnxDftAdd<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -35,7 +35,7 @@ where
         let rhs = vec_znx_dft_backend_ref::<B>(&rhs);
         let mut c = vec_znx_dft_backend_mut::<B>(&mut c);
         for i in 0..sweep.cols {
-            module.vec_znx_dft_add_into(&mut c, i, &a, i, &rhs, i);
+            module.vec_znx_dft_add(&mut c, i, &a, i, &rhs, i);
         }
         black_box(());
     });

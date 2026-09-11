@@ -527,7 +527,7 @@ impl BigWordHadamardProduct for $rayon {
 unsafe impl HalVecZnxImpl<$rayon> for $rayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
 
-    fn vec_znx_normalize_backend(
+    fn vec_znx_normalize(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
@@ -545,7 +545,7 @@ unsafe impl HalVecZnxImpl<$rayon> for $rayon {
         );
     }
 
-    fn vec_znx_normalize_assign_backend(
+    fn vec_znx_normalize_assign(
         module: &Module<Self>,
         base2k: usize,
         k: usize,
@@ -676,7 +676,7 @@ unsafe impl HalVmpImpl<$rayon> for $rayon {
         )
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         module: &Module<Self>,
         res_size: usize,
         a_size: usize,
@@ -685,12 +685,12 @@ unsafe impl HalVmpImpl<$rayon> for $rayon {
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_tmp_bytes_default(
+        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_add_tmp_bytes_default(
             module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
         ) + (<$rayon as $crate::__private::poulpy_hal::execution::ScratchWorkers>::VMP - 1) * fft64_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    fn vmp_apply_dft_to_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
@@ -699,7 +699,7 @@ unsafe impl HalVmpImpl<$rayon> for $rayon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         if RayonTaskExecutor::should_serialize_inner() {
-            return <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_with_kernel_default::<$base, SerialTaskExecutor>(
+            return <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_add_with_kernel_default::<$base, SerialTaskExecutor>(
                 module,
                 res,
                 a,
@@ -710,7 +710,7 @@ unsafe impl HalVmpImpl<$rayon> for $rayon {
             );
         }
         let mut scratch = scratch.borrow();
-        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_accumulate_with_kernel_default::<$base, RayonTaskExecutor>(
+        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_add_with_kernel_default::<$base, RayonTaskExecutor>(
             module,
             res,
             a,
@@ -739,16 +739,16 @@ unsafe impl HalConvolutionImpl<$rayon> for $rayon {
     poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
-    fn vec_znx_big_from_small_backend(
+    fn vec_znx_big_from_small(
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_from_small_backend(&mut base_big_mut(res), res_col, a, a_col)
+        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_from_small(&mut base_big_mut(res), res_col, a, a_col)
     }
 
-    fn vec_znx_big_add_normal_backend(
+    fn vec_znx_big_add_normal(
         module: &Module<Self>,
         res_base2k: usize,
         res: &mut VecZnxBigBackendMut<'_, Self>,
@@ -756,7 +756,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         noise_infos: NoiseInfos,
         seed: [u8; 32],
     ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_add_normal_backend(
+        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_add_normal(
             base_module(module),
             res_base2k,
             &mut base_big_mut(res),
@@ -766,7 +766,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         )
     }
 
-    fn vec_znx_big_add_into(
+    fn vec_znx_big_add(
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -775,7 +775,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         b: &VecZnxBigBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_add_into(
+        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_add(
             base_module(module),
             &mut base_big_mut(res),
             res_col,
@@ -802,7 +802,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         )
     }
 
-    fn vec_znx_big_add_small_into_backend(
+    fn vec_znx_big_add_small(
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -811,7 +811,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_add_small_into_backend(
+        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_add_small(
             base_module(module),
             &mut base_big_mut(res),
             res_col,
@@ -890,7 +890,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         )
     }
 
-    fn vec_znx_big_sub_small_a_backend(
+    fn vec_znx_big_sub_small_a(
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -899,7 +899,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         b: &VecZnxBigBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_sub_small_a_backend(
+        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_sub_small_a(
             base_module(module),
             &mut base_big_mut(res),
             res_col,
@@ -926,7 +926,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         )
     }
 
-    fn vec_znx_big_sub_small_b_backend(
+    fn vec_znx_big_sub_small_b(
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -935,7 +935,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_sub_small_b_backend(
+        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_sub_small_b(
             base_module(module),
             &mut base_big_mut(res),
             res_col,
@@ -962,7 +962,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         )
     }
 
-    fn vec_znx_big_inner_sum_backend(
+    fn vec_znx_big_inner_sum(
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
@@ -970,7 +970,7 @@ unsafe impl HalVecZnxBigImpl<$rayon> for $rayon {
         a: &VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_inner_sum_backend(
+        <$base as HalVecZnxBigImpl<$base>>::vec_znx_big_inner_sum(
             base_module(module),
             &mut base_big_mut(res),
             res_col,
@@ -1285,7 +1285,7 @@ unsafe impl HalVecZnxDftImpl<$rayon> for $rayon {
             .for_each(|group| <$base as ZnxZero>::znx_zero(&mut group[n * res_col..][..n]));
     }
 
-    fn vec_znx_dft_add_into(
+    fn vec_znx_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -1294,7 +1294,7 @@ unsafe impl HalVecZnxDftImpl<$rayon> for $rayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <$base as HalVecZnxDftImpl<$base>>::vec_znx_dft_add_into(
+        <$base as HalVecZnxDftImpl<$base>>::vec_znx_dft_add(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,

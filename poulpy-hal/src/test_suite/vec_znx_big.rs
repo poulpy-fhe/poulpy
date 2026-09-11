@@ -6,11 +6,11 @@ use crate::layouts::VecZnxBigToBackendRef;
 
 use crate::{
     api::{
-        ScratchOwnedAlloc, VecZnxBigAddAssign, VecZnxBigAddInto, VecZnxBigAddNormal, VecZnxBigAddSmallAssign,
-        VecZnxBigAddSmallIntoBackend, VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign,
-        VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigFromSmallBackend, VecZnxBigNegate, VecZnxBigNegateAssign,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
-        VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend, VecZnxBigSubSmallNegateAssign,
+        ScratchOwnedAlloc, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddNormal, VecZnxBigAddSmall, VecZnxBigAddSmallAssign,
+        VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes,
+        VecZnxBigFromSmall, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub,
+        VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallAssign, VecZnxBigSubSmallB,
+        VecZnxBigSubSmallNegateAssign,
     },
     layouts::{
         DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, NoiseInfos, ScratchOwned, VecZnx, VecZnxOwned,
@@ -47,14 +47,14 @@ fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) 
 fn big_from_small_host<BE>(module: &Module<BE>, host: &VecZnx<impl crate::layouts::HostDataRef, i64>) -> VecZnxBigOwned<BE>
 where
     BE: crate::test_suite::TestBackend,
-    Module<BE>: VecZnxBigAlloc<BE> + VecZnxBigFromSmallBackend<BE>,
+    Module<BE>: VecZnxBigAlloc<BE> + VecZnxBigFromSmall<BE>,
 {
     let cols = host.cols();
     let size = host.size();
     let uploaded = upload_vec_znx::<BE>(host);
     let mut res = module.vec_znx_big_alloc(cols, size);
     for j in 0..cols {
-        module.vec_znx_big_from_small_backend(&mut res.to_backend_mut(), j, &vec_znx_backend_ref::<BE>(&uploaded), j);
+        module.vec_znx_big_from_small(&mut res.to_backend_mut(), j, &vec_znx_backend_ref::<BE>(&uploaded), j);
     }
     res
 }
@@ -167,22 +167,16 @@ where
     });
 }
 
-pub fn test_vec_znx_big_add_into<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_big_add<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxBigAddInto<BR>
-        + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
-        + VecZnxBigNormalize<BR>
-        + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxBigAddInto<BT>
-        + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
-        + VecZnxBigNormalize<BT>
-        + VecZnxBigNormalizeTmpBytes,
+    Module<BR>:
+        VecZnxBigAdd<BR> + VecZnxBigAlloc<BR> + VecZnxBigFromSmall<BR> + VecZnxBigNormalize<BR> + VecZnxBigNormalizeTmpBytes,
+    Module<BT>:
+        VecZnxBigAdd<BT> + VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
@@ -221,7 +215,7 @@ pub fn test_vec_znx_big_add_into<BR: crate::test_suite::TestBackend, BT: crate::
 
                 // Reference
                 for i in 0..cols {
-                    module_ref.vec_znx_big_add_into(
+                    module_ref.vec_znx_big_add(
                         &mut res_big_ref.to_backend_mut(),
                         i,
                         &a_ref.to_backend_ref(),
@@ -229,7 +223,7 @@ pub fn test_vec_znx_big_add_into<BR: crate::test_suite::TestBackend, BT: crate::
                         &b_ref.to_backend_ref(),
                         i,
                     );
-                    module_test.vec_znx_big_add_into(
+                    module_test.vec_znx_big_add(
                         &mut res_big_test.to_backend_mut(),
                         i,
                         &a_test.to_backend_ref(),
@@ -256,12 +250,12 @@ pub fn test_vec_znx_big_add_assign<BR: crate::test_suite::TestBackend, BT: crate
 ) where
     Module<BR>: VecZnxBigAddAssign<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigAddAssign<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
@@ -303,22 +297,16 @@ pub fn test_vec_znx_big_add_assign<BR: crate::test_suite::TestBackend, BT: crate
     }
 }
 
-pub fn test_vec_znx_big_add_small_into<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_big_add_small<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxBigAddSmallIntoBackend<BR>
-        + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
-        + VecZnxBigNormalize<BR>
-        + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxBigAddSmallIntoBackend<BT>
-        + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
-        + VecZnxBigNormalize<BT>
-        + VecZnxBigNormalizeTmpBytes,
+    Module<BR>:
+        VecZnxBigAddSmall<BR> + VecZnxBigAlloc<BR> + VecZnxBigFromSmall<BR> + VecZnxBigNormalize<BR> + VecZnxBigNormalizeTmpBytes,
+    Module<BT>:
+        VecZnxBigAddSmall<BT> + VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
@@ -351,7 +339,7 @@ pub fn test_vec_znx_big_add_small_into<BR: crate::test_suite::TestBackend, BT: c
 
                 // Reference
                 for i in 0..cols {
-                    module_ref.vec_znx_big_add_small_into_backend(
+                    module_ref.vec_znx_big_add_small(
                         &mut res_big_ref.to_backend_mut(),
                         i,
                         &a_ref.to_backend_ref(),
@@ -359,7 +347,7 @@ pub fn test_vec_znx_big_add_small_into<BR: crate::test_suite::TestBackend, BT: c
                         &vec_znx_backend_ref::<BR>(&b_ref),
                         i,
                     );
-                    module_test.vec_znx_big_add_small_into_backend(
+                    module_test.vec_znx_big_add_small(
                         &mut res_big_test.to_backend_mut(),
                         i,
                         &a_test.to_backend_ref(),
@@ -387,12 +375,12 @@ pub fn test_vec_znx_big_add_small_assign<BR: crate::test_suite::TestBackend, BT:
 ) where
     Module<BR>: VecZnxBigAddSmallAssign<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigAddSmallAssign<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
@@ -455,12 +443,12 @@ pub fn test_vec_znx_big_automorphism<BR: crate::test_suite::TestBackend, BT: cra
 ) where
     Module<BR>: VecZnxBigAutomorphism<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigAutomorphism<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
@@ -510,13 +498,13 @@ pub fn test_vec_znx_big_automorphism_assign<BR: crate::test_suite::TestBackend, 
 ) where
     Module<BR>: VecZnxBigAutomorphismAssign<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigAutomorphismAssign<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
@@ -563,16 +551,10 @@ pub fn test_vec_znx_big_negate<BR: crate::test_suite::TestBackend, BT: crate::te
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxBigNegate<BR>
-        + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
-        + VecZnxBigNormalize<BR>
-        + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxBigNegate<BT>
-        + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
-        + VecZnxBigNormalize<BT>
-        + VecZnxBigNormalizeTmpBytes,
+    Module<BR>:
+        VecZnxBigNegate<BR> + VecZnxBigAlloc<BR> + VecZnxBigFromSmall<BR> + VecZnxBigNormalize<BR> + VecZnxBigNormalizeTmpBytes,
+    Module<BT>:
+        VecZnxBigNegate<BT> + VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
@@ -618,13 +600,13 @@ pub fn test_vec_znx_big_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
 ) where
     Module<BR>: VecZnxBigNegateAssign<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigNegateAssign<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
@@ -666,12 +648,12 @@ pub fn test_vec_znx_big_normalize<BR: crate::test_suite::TestBackend, BT: crate:
     module_test: &Module<BT>,
 ) where
     Module<BR>: VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
@@ -764,16 +746,10 @@ pub fn test_vec_znx_big_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxBigSub<BR>
-        + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
-        + VecZnxBigNormalize<BR>
-        + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxBigSub<BT>
-        + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
-        + VecZnxBigNormalize<BT>
-        + VecZnxBigNormalizeTmpBytes,
+    Module<BR>:
+        VecZnxBigSub<BR> + VecZnxBigAlloc<BR> + VecZnxBigFromSmall<BR> + VecZnxBigNormalize<BR> + VecZnxBigNormalizeTmpBytes,
+    Module<BT>:
+        VecZnxBigSub<BT> + VecZnxBigAlloc<BT> + VecZnxBigFromSmall<BT> + VecZnxBigNormalize<BT> + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
@@ -841,12 +817,12 @@ pub fn test_vec_znx_big_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
 ) where
     Module<BR>: VecZnxBigSubAssign<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigSubAssign<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
@@ -896,12 +872,12 @@ pub fn test_vec_znx_big_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
 ) where
     Module<BR>: VecZnxBigSubNegateAssign<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigSubNegateAssign<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
@@ -949,14 +925,14 @@ pub fn test_vec_znx_big_sub_small_a<BR: crate::test_suite::TestBackend, BT: crat
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxBigSubSmallABackend<BR>
+    Module<BR>: VecZnxBigSubSmallA<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxBigSubSmallABackend<BT>
+    Module<BT>: VecZnxBigSubSmallA<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
@@ -990,7 +966,7 @@ pub fn test_vec_znx_big_sub_small_a<BR: crate::test_suite::TestBackend, BT: crat
 
                 // Reference
                 for i in 0..cols {
-                    module_ref.vec_znx_big_sub_small_a_backend(
+                    module_ref.vec_znx_big_sub_small_a(
                         &mut res_big_ref.to_backend_mut(),
                         i,
                         &vec_znx_backend_ref::<BR>(&b_ref),
@@ -998,7 +974,7 @@ pub fn test_vec_znx_big_sub_small_a<BR: crate::test_suite::TestBackend, BT: crat
                         &a_ref.to_backend_ref(),
                         i,
                     );
-                    module_test.vec_znx_big_sub_small_a_backend(
+                    module_test.vec_znx_big_sub_small_a(
                         &mut res_big_test.to_backend_mut(),
                         i,
                         &vec_znx_backend_ref::<BT>(&b_test),
@@ -1023,14 +999,14 @@ pub fn test_vec_znx_big_sub_small_b<BR: crate::test_suite::TestBackend, BT: crat
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxBigSubSmallBBackend<BR>
+    Module<BR>: VecZnxBigSubSmallB<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
-    Module<BT>: VecZnxBigSubSmallBBackend<BT>
+    Module<BT>: VecZnxBigSubSmallB<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
@@ -1064,7 +1040,7 @@ pub fn test_vec_znx_big_sub_small_b<BR: crate::test_suite::TestBackend, BT: crat
 
                 // Reference
                 for i in 0..cols {
-                    module_ref.vec_znx_big_sub_small_b_backend(
+                    module_ref.vec_znx_big_sub_small_b(
                         &mut res_big_ref.to_backend_mut(),
                         i,
                         &a_ref.to_backend_ref(),
@@ -1072,7 +1048,7 @@ pub fn test_vec_znx_big_sub_small_b<BR: crate::test_suite::TestBackend, BT: crat
                         &vec_znx_backend_ref::<BR>(&b_ref),
                         i,
                     );
-                    module_test.vec_znx_big_sub_small_b_backend(
+                    module_test.vec_znx_big_sub_small_b(
                         &mut res_big_test.to_backend_mut(),
                         i,
                         &a_test.to_backend_ref(),
@@ -1099,12 +1075,12 @@ pub fn test_vec_znx_big_sub_small_a_assign<BR: crate::test_suite::TestBackend, B
 ) where
     Module<BR>: VecZnxBigSubSmallAssign<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigSubSmallAssign<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
@@ -1167,12 +1143,12 @@ pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, B
 ) where
     Module<BR>: VecZnxBigSubSmallNegateAssign<BR>
         + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmallBackend<BR>
+        + VecZnxBigFromSmall<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: VecZnxBigSubSmallNegateAssign<BT>
         + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmallBackend<BT>
+        + VecZnxBigFromSmall<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,

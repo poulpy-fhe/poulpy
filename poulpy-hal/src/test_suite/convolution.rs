@@ -11,9 +11,9 @@ use rand::Rng;
 
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAddIntoBackend, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
-        VecZnxNormalizeAssignBackend,
+        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxBigAlloc, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
+        VecZnxNormalizeAssign,
     },
     layouts::{
         DataView, FillUniform, PrepareHint, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero,
@@ -30,7 +30,7 @@ where
         + Convolution<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxBigAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
@@ -233,7 +233,7 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxBigAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
@@ -341,9 +341,9 @@ where
     }
 }
 
-/// `cnv_apply_dft_accumulate` matches `cnv_apply_dft` followed by a DFT add,
+/// `cnv_apply_dft_add` matches `cnv_apply_dft` followed by a DFT add,
 /// bit-for-bit on the raw prepared data.
-pub fn test_convolution_accumulate<M, BE: crate::test_suite::TestBackend>(module: &M, _base2k: usize)
+pub fn test_convolution_add<M, BE: crate::test_suite::TestBackend>(module: &M, _base2k: usize)
 where
     M: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxDftAlloc<BE> + VecZnxDftAddAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -425,7 +425,7 @@ where
         for a_col in 0..cols {
             for b_col in 0..cols {
                 for cnv_offset in (0..res_size).step_by(3) {
-                    module.cnv_apply_dft_accumulate(
+                    module.cnv_apply_dft_add(
                         cnv_offset,
                         &mut res_acc.to_backend_mut(),
                         res_col,
@@ -458,11 +458,11 @@ where
     }
 }
 
-/// `cnv_accumulate_dft` matches the per-term `cnv_apply_dft` +
-/// `cnv_apply_dft_accumulate` sequence after normalization to the coefficient
+/// `cnv_apply_dft_sum` matches the per-term `cnv_apply_dft` +
+/// `cnv_apply_dft_add` sequence after normalization to the coefficient
 /// domain (the fused path reduces once per output, so the raw q120 lazy
 /// representatives may differ).
-pub fn test_convolution_accumulate_fused<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
+pub fn test_convolution_sum<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
 where
     M: ModuleN
         + Convolution<BE>
@@ -504,7 +504,7 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .cnv_accumulate_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .cnv_apply_dft_sum_tmp_bytes(0, res_size, a_size, b_size)
             .max(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size))
             .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
@@ -544,7 +544,7 @@ where
                     b_col,
                 })
                 .collect();
-            module.cnv_accumulate_dft(
+            module.cnv_apply_dft_sum(
                 cnv_offset,
                 &mut res_fused.to_backend_mut(),
                 res_col,
@@ -566,7 +566,7 @@ where
                     &mut scratch.arena(),
                 );
             } else {
-                module.cnv_apply_dft_accumulate(
+                module.cnv_apply_dft_add(
                     cnv_offset,
                     &mut res_ref.to_backend_mut(),
                     res_col,
@@ -624,10 +624,10 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxAddIntoBackend<BE>
-        + VecZnxCopyBackend<BE>,
+        + VecZnxAdd<BE>
+        + VecZnxCopy<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -719,7 +719,7 @@ where
                 let mut tmp_a_backend = upload_vec_znx::<BE>(&tmp_a);
                 let mut tmp_b_backend = upload_vec_znx::<BE>(&tmp_b);
                 if col_i != col_j {
-                    module.vec_znx_add_into_backend(
+                    module.vec_znx_add(
                         &mut vec_znx_backend_mut::<BE>(&mut tmp_a_backend),
                         0,
                         &vec_znx_backend_ref::<BE>(&a_backend),
@@ -727,7 +727,7 @@ where
                         &vec_znx_backend_ref::<BE>(&a_backend),
                         col_j,
                     );
-                    module.vec_znx_add_into_backend(
+                    module.vec_znx_add(
                         &mut vec_znx_backend_mut::<BE>(&mut tmp_b_backend),
                         0,
                         &vec_znx_backend_ref::<BE>(&b_backend),
@@ -736,13 +736,13 @@ where
                         col_j,
                     );
                 } else {
-                    module.vec_znx_copy_backend(
+                    module.vec_znx_copy(
                         &mut vec_znx_backend_mut::<BE>(&mut tmp_a_backend),
                         0,
                         &vec_znx_backend_ref::<BE>(&a_backend),
                         col_i,
                     );
-                    module.vec_znx_copy_backend(
+                    module.vec_znx_copy(
                         &mut vec_znx_backend_mut::<BE>(&mut tmp_b_backend),
                         0,
                         &vec_znx_backend_ref::<BE>(&b_backend),
@@ -785,7 +785,7 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     b_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: VecZnxNormalizeAssignBackend<BE>,
+    M: VecZnxNormalizeAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     for j in 0..res.size() {
@@ -815,7 +815,7 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     }
 
     let mut res_backend = upload_vec_znx::<BE>(res);
-    module.vec_znx_normalize_assign_backend(
+    module.vec_znx_normalize_assign(
         base2k,
         res_backend.size() * base2k,
         &mut vec_znx_backend_mut::<BE>(&mut res_backend),
@@ -834,7 +834,7 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
     b: &VecZnxOwned<BE::ZnxWord>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: VecZnxNormalizeAssignBackend<BE>,
+    M: VecZnxNormalizeAssign<BE>,
 {
     let cols = res.cols();
 
@@ -878,7 +878,7 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
 
     let mut res_backend = upload_vec_znx::<BE>(res);
     for i in 0..cols {
-        module.vec_znx_normalize_assign_backend(
+        module.vec_znx_normalize_assign(
             base2k,
             res_backend.size() * base2k,
             &mut vec_znx_backend_mut::<BE>(&mut res_backend),

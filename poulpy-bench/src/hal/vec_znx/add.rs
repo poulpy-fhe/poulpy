@@ -3,16 +3,16 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
-    api::{ModuleNew, VecZnxAddAssignBackend, VecZnxAddIntoBackend, VecZnxAlloc},
+    api::{ModuleNew, VecZnxAdd, VecZnxAddAssign, VecZnxAlloc},
     layouts::{Backend, Module},
 };
 
 use crate::hal::helpers::{random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 use crate::hal::params::HalSweepParms;
 
-pub fn runner_vec_znx_add_into<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_add<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxAddIntoBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
+    Module<B>: VecZnxAdd<B> + ModuleNew<B> + VecZnxAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -29,7 +29,7 @@ where
         let b = vec_znx_backend_ref::<B>(&b);
         let mut c = vec_znx_backend_mut::<B>(&mut c);
         for i in 0..sweep.cols {
-            module.vec_znx_add_into_backend(&mut c, i, &a, i, &b, i);
+            module.vec_znx_add(&mut c, i, &a, i, &b, i);
         }
         black_box(());
     });
@@ -37,7 +37,7 @@ where
 
 pub fn runner_vec_znx_add_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxAddAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
+    Module<B>: VecZnxAddAssign<B> + ModuleNew<B> + VecZnxAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -51,7 +51,7 @@ where
         let a = vec_znx_backend_ref::<B>(&a);
         let mut b = vec_znx_backend_mut::<B>(&mut b);
         for i in 0..sweep.cols {
-            module.vec_znx_add_assign_backend(&mut b, i, &a, i);
+            module.vec_znx_add_assign(&mut b, i, &a, i);
         }
         black_box(());
     });

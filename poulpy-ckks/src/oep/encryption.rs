@@ -10,10 +10,7 @@ use poulpy_core::{
     oep::{DecryptionDefault, EncryptionDefault},
 };
 use poulpy_hal::{
-    api::{
-        VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend,
-        VecZnxRshTmpBytes,
-    },
+    api::{VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena},
     oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
     source::Source,
@@ -76,12 +73,12 @@ where
         + EncryptionDefault<BE>
         + DecryptionDefault<BE>
         + poulpy_core::GLWENormalize<BE>
-        + VecZnxLshAddIntoBackend<BE>
-        + VecZnxRshAddIntoBackend<BE>
+        + VecZnxLshAdd<BE>
+        + VecZnxRshAdd<BE>
         + VecZnxRshTmpBytes
-        + VecZnxLshBackend<BE>
+        + VecZnxLsh<BE>
         + VecZnxLshTmpBytes
-        + VecZnxRshBackend<BE>,
+        + VecZnxRsh<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
 {

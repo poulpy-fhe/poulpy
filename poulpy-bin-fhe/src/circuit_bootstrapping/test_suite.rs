@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use poulpy_hal::{
-    api::{ModuleN, ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
+    api::{ModuleN, ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, ScalarZnx, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
 };
@@ -50,7 +50,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + ScalarZnxAlloc<BE>
-        + VecZnxRotateAssignBackend<BE>
+        + VecZnxRotateAssign<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -258,7 +258,7 @@ pub fn test_circuit_bootstrapping_to_constant<
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + ScalarZnxAlloc<BE>
-        + VecZnxRotateAssignBackend<BE>
+        + VecZnxRotateAssign<BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,

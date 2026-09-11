@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-pub fn vec_znx_dft_add_into<BE>(
+pub fn vec_znx_dft_add<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,

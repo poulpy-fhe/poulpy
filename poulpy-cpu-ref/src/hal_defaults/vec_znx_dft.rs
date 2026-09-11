@@ -11,8 +11,8 @@ use crate::reference::{
             vec_znx_big_normalize as fft64_default_vec_znx_big_normalize,
         },
         vec_znx_dft::{
-            Fft64AutomorphismPlan, build_fft64_automorphism_plan, vec_znx_dft_add_assign as fft64_vec_znx_dft_add_assign,
-            vec_znx_dft_add_into as fft64_vec_znx_dft_add_into,
+            Fft64AutomorphismPlan, build_fft64_automorphism_plan, vec_znx_dft_add as fft64_vec_znx_dft_add,
+            vec_znx_dft_add_assign as fft64_vec_znx_dft_add_assign,
             vec_znx_dft_add_scaled_assign as fft64_vec_znx_dft_add_scaled_assign, vec_znx_dft_apply as fft64_vec_znx_dft_apply,
             vec_znx_dft_automorphism as fft64_vec_znx_dft_automorphism,
             vec_znx_dft_automorphism_add as fft64_vec_znx_dft_automorphism_add, vec_znx_dft_copy as fft64_vec_znx_dft_copy,
@@ -33,8 +33,8 @@ use crate::reference::{
         },
         vec_znx_dft::{
             NttAutomorphismPlan, NttModuleHandle, build_ntt4x30_automorphism_plan,
+            ntt4x30_vec_znx_dft_add as ntt4x30_default_vec_znx_dft_add,
             ntt4x30_vec_znx_dft_add_assign as ntt4x30_default_vec_znx_dft_add_assign,
-            ntt4x30_vec_znx_dft_add_into as ntt4x30_default_vec_znx_dft_add_into,
             ntt4x30_vec_znx_dft_add_scaled_assign as ntt4x30_default_vec_znx_dft_add_scaled_assign,
             ntt4x30_vec_znx_dft_apply as ntt4x30_default_vec_znx_dft_apply,
             ntt4x30_vec_znx_dft_automorphism as ntt4x30_default_vec_znx_dft_automorphism,
@@ -219,7 +219,7 @@ where
         );
     }
 
-    fn vec_znx_dft_add_into_default(
+    fn vec_znx_dft_add_default(
         _module: &Module<BE>,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
@@ -232,7 +232,7 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
-        fft64_vec_znx_dft_add_into::<BE>(res, res_col, a, a_col, b, b_col);
+        fft64_vec_znx_dft_add::<BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_dft_add_scaled_assign_default(
@@ -505,7 +505,7 @@ where
         );
     }
 
-    fn vec_znx_dft_add_into_default(
+    fn vec_znx_dft_add_default(
         _module: &Module<BE>,
         res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
@@ -518,7 +518,7 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt4x30_default_vec_znx_dft_add_into::<BE>(res, res_col, a, a_col, b, b_col);
+        ntt4x30_default_vec_znx_dft_add::<BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_dft_add_scaled_assign_default(

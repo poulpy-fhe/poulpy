@@ -423,7 +423,7 @@ pub(crate) fn vmp_apply_dft_to_dft_avx<E: TaskExecutor>(
     }
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_avx<E: TaskExecutor>(
+pub(crate) fn vmp_apply_dft_to_dft_add_avx<E: TaskExecutor>(
     module: &Module<NTT4x30Avx>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,

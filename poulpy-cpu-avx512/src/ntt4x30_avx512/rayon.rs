@@ -520,7 +520,7 @@ impl BigWordHadamardProduct for NTT4x30Avx512Rayon {
 unsafe impl HalVecZnxImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
 
-    fn vec_znx_normalize_backend(
+    fn vec_znx_normalize(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
@@ -538,7 +538,7 @@ unsafe impl HalVecZnxImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         );
     }
 
-    fn vec_znx_normalize_assign_backend(
+    fn vec_znx_normalize_assign(
         module: &Module<Self>,
         base2k: usize,
         k: usize,
@@ -659,7 +659,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         }
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
         a_size: usize,
@@ -672,7 +672,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
             * super::vmp::vmp_apply_tmp_bytes_avx(a_size, b_rows, b_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    fn vmp_apply_dft_to_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
@@ -688,7 +688,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         if RayonTaskExecutor::should_serialize_inner() {
-            super::vmp::vmp_apply_dft_to_dft_accumulate_avx::<SerialTaskExecutor>(
+            super::vmp::vmp_apply_dft_to_dft_add_avx::<SerialTaskExecutor>(
                 base_module(module),
                 &mut base_dft_mut(res),
                 &base_dft_ref(a),
@@ -697,7 +697,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
                 tmp,
             );
         } else {
-            super::vmp::vmp_apply_dft_to_dft_accumulate_avx::<RayonTaskExecutor>(
+            super::vmp::vmp_apply_dft_to_dft_add_avx::<RayonTaskExecutor>(
                 base_module(module),
                 &mut base_dft_mut(res),
                 &base_dft_ref(a),
@@ -1112,7 +1112,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_dft_add(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -1124,7 +1124,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         unsafe {
-            super::convolution::cnv_apply_dft_accumulate::<RayonTaskExecutor>(
+            super::convolution::cnv_apply_dft_add::<RayonTaskExecutor>(
                 base_module(module),
                 cnv_offset,
                 &mut base_dft_mut(res),
@@ -1256,14 +1256,14 @@ unsafe impl HalSvpImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         );
     }
 
-    fn svp_ppol_copy_backend(
+    fn svp_ppol_copy(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
         res_col: usize,
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx512 as HalSvpImpl<NTT4x30Avx512>>::svp_ppol_copy_backend(
+        <NTT4x30Avx512 as HalSvpImpl<NTT4x30Avx512>>::svp_ppol_copy(
             base_module(module),
             &mut base_svp_mut(res),
             res_col,
@@ -1520,7 +1520,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         );
     }
 
-    fn vec_znx_dft_add_into(
+    fn vec_znx_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -1529,7 +1529,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_dft_add_into(
+        <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_dft_add(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,

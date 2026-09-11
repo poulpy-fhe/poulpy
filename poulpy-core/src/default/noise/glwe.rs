@@ -1,8 +1,8 @@
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
-        ModuleN, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmallBackend, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
+        ModuleN, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssign,
     },
     layouts::{Backend, HostBackend, HostDataMut, Module, ScratchArena, Stats},
 };
@@ -30,11 +30,11 @@ where
         + GLWENoise<BE>
         + GLWEDecrypt<BE>
         + GLWENormalize<BE>
-        + VecZnxSubAssignBackend<BE>
+        + VecZnxSubAssign<BE>
         + ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmallBackend<BE>
+        + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
@@ -58,7 +58,7 @@ where
     }
     {
         let mut pt_have_backend = pt_have.to_backend_mut();
-        module.vec_znx_sub_assign_backend(&mut pt_have_backend.data, 0, &pt_want_backend.data, 0);
+        module.vec_znx_sub_assign(&mut pt_have_backend.data, 0, &pt_want_backend.data, 0);
     }
     let pt_base2k = pt_have.base2k();
     module.glwe_normalize_assign(&mut pt_have, &mut scratch_1);
@@ -69,11 +69,11 @@ impl<BE: Backend + HostBackend> GLWENoise<BE> for Module<BE>
 where
     Module<BE>: GLWEDecrypt<BE>
         + GLWENormalize<BE>
-        + VecZnxSubAssignBackend<BE>
+        + VecZnxSubAssign<BE>
         + ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmallBackend<BE>
+        + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>

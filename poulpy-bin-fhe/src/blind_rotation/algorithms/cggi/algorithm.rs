@@ -5,8 +5,8 @@ use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign,
-        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotateBackend, VecZnxZeroBackend, VmpApplyDftToDft,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign,
+        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotate, VecZnxZero, VmpApplyDftToDft,
         VmpApplyDftToDftTmpBytes,
     },
     layouts::{
@@ -36,7 +36,7 @@ where
         + VecZnxIdftApplyTmpBytes
         + GLWEExternalProduct<BE>
         + ModuleN
-        + VecZnxRotateBackend<BE>
+        + VecZnxRotate<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
         + VmpApplyDftToDft<BE>
@@ -51,8 +51,8 @@ where
         + GLWECopy<BE>
         + GLWEZero<BE>
         + GLWENormalize<BE>
-        + VecZnxCopyBackend<BE>
-        + VecZnxZeroBackend<BE>
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>
         + Sync,
     BE: HalVecZnxImpl<BE>,
 {
@@ -153,7 +153,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     M: VecZnxDftBytesOf
         + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + VecZnxRotateBackend<BE>
+        + VecZnxRotate<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
         + VmpApplyDftToDft<BE>
@@ -166,8 +166,8 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
         + GLWECopy<BE>
         + GLWEZero<BE>
         + VecZnxBigBytesOf
-        + VecZnxCopyBackend<BE>
-        + VecZnxZeroBackend<BE>,
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>,
 {
     let n_glwe: usize = brk.n_glwe().into();
     let extension_factor: usize = lut.extension_factor();
@@ -185,7 +185,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
 
     for acc_i in &mut acc {
         for col in 0..cols {
-            module.vec_znx_zero_backend(acc_i, col);
+            module.vec_znx_zero(acc_i, col);
         }
     }
 
@@ -214,14 +214,14 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
             <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
                 lut.data[j].data(),
             );
-        module.vec_znx_rotate_backend(b_hi as i64 + 1, &mut acc[i], 0, &lut_ref, 0);
+        module.vec_znx_rotate(b_hi as i64 + 1, &mut acc[i], 0, &lut_ref, 0);
     }
     for (i, j) in (b_lo..extension_factor).zip(0..extension_factor - b_lo) {
         let lut_ref: poulpy_hal::layouts::VecZnxBackendRef<'_, BE> =
             <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(
                 lut.data[j].data(),
             );
-        module.vec_znx_rotate_backend(b_hi as i64, &mut acc[i], 0, &lut_ref, 0);
+        module.vec_znx_rotate(b_hi as i64, &mut acc[i], 0, &lut_ref, 0);
     }
 
     let block_size: usize = brk.block_size();
@@ -351,7 +351,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     let mut res_mut = res.to_backend_mut();
     let acc_ref = vec_znx_backend_ref_from_mut::<BE>(&acc[0]);
     for i in 0..cols {
-        module.vec_znx_copy_backend(res_mut.data_mut(), i, &acc_ref, i);
+        module.vec_znx_copy(res_mut.data_mut(), i, &acc_ref, i);
     }
 }
 
@@ -368,7 +368,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     M: VecZnxDftBytesOf
         + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + VecZnxRotateBackend<BE>
+        + VecZnxRotate<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
         + VmpApplyDftToDft<BE>
@@ -406,7 +406,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
         <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(lut.data[0].data());
     {
         let mut out_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
-        module.vec_znx_rotate_backend(b, out_backend.data_mut(), 0, &lut_ref, 0);
+        module.vec_znx_rotate(b, out_backend.data_mut(), 0, &lut_ref, 0);
     }
 
     let block_size: usize = brk.block_size();
@@ -587,7 +587,7 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
 ) where
     R: GLWEToBackendMut<BE> + GLWEInfos,
     L: LWEToBackendRef<BE> + LWEInfos,
-    M: VecZnxRotateBackend<BE>
+    M: VecZnxRotate<BE>
         + GLWEExternalProduct<BE>
         + GLWEMulXpMinusOne<BE>
         + GLWEAdd<BE>
@@ -638,7 +638,7 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
         <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(lut.data[0].data());
     {
         let mut out_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut out_tmp);
-        module.vec_znx_rotate_backend(b, out_backend.data_mut(), 0, &lut_ref, 0);
+        module.vec_znx_rotate(b, out_backend.data_mut(), 0, &lut_ref, 0);
     }
 
     // ACC + [sum DFT(X^ai -1) * (DFT(ACC) x BRKi)]

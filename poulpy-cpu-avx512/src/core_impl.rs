@@ -21,8 +21,8 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
-        VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, PrepareHint,
@@ -264,9 +264,9 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopyBackend<BE>
-        + VecZnxSubAssignBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxCopy<BE>
+        + VecZnxSubAssign<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     AP: CnvPVecLToBackendRef<BE>,
@@ -330,11 +330,11 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     {
         let mut pairwise = pairwise.to_backend_mut();
         let res_ref = res.to_backend_ref();
-        module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 0);
-        module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 2);
+        module.vec_znx_sub_assign(&mut pairwise, 0, res_ref.data(), 0);
+        module.vec_znx_sub_assign(&mut pairwise, 0, res_ref.data(), 2);
     }
-    module.vec_znx_normalize_assign_backend(res_base2k, res_k, &mut pairwise.to_backend_mut(), 0, &mut norm_scratch);
-    module.vec_znx_copy_backend(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
+    module.vec_znx_normalize_assign(res_base2k, res_k, &mut pairwise.to_backend_mut(), 0, &mut norm_scratch);
+    module.vec_znx_copy(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
 }
 
 fn rank_one_tensor_apply<BE, R, A, B>(
@@ -354,9 +354,9 @@ fn rank_one_tensor_apply<BE, R, A, B>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopyBackend<BE>
-        + VecZnxSubAssignBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxCopy<BE>
+        + VecZnxSubAssign<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -418,9 +418,9 @@ fn rank_one_tensor_square<BE, R, A>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopyBackend<BE>
-        + VecZnxSubAssignBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxCopy<BE>
+        + VecZnxSubAssign<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,

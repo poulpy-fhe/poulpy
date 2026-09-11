@@ -20,8 +20,8 @@ use std::time::Instant;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddIntoBackend,
-        VecZnxAlloc, VecZnxBigAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VmpApplyDftToDft,
+        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAdd, VecZnxAlloc,
+        VecZnxBigAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VmpApplyDftToDft,
         VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     execution::ScratchWorkers,
@@ -267,7 +267,7 @@ where
         + VmpPrepare<BE>
         + VmpPrepareTmpBytes
         + VecZnxDftApply<BE>
-        + VecZnxAddIntoBackend<BE>
+        + VecZnxAdd<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + Convolution<BE>
@@ -454,7 +454,7 @@ fn run_probe<BE>(
     scratch: &mut ScratchOwned<BE>,
 ) where
     BE: Backend<ZnxWord = i64, OwnedBuf: poulpy_hal::layouts::HostDataMut> + 'static,
-    Module<BE>: VecZnxAddIntoBackend<BE> + VecZnxIdftApply<BE> + Convolution<BE> + VmpApplyDftToDft<BE>,
+    Module<BE>: VecZnxAdd<BE> + VecZnxIdftApply<BE> + Convolution<BE> + VmpApplyDftToDft<BE>,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     match probe {
@@ -476,7 +476,7 @@ fn run_probe<BE>(
             &mut scratch.borrow(),
         ),
         2 => module.vec_znx_idft_apply(&mut big.to_backend_mut(), 0, &a.to_backend_ref(), 0, &mut scratch.borrow()),
-        _ => module.vec_znx_add_into_backend(
+        _ => module.vec_znx_add(
             &mut VecZnxToBackendMut::<BE>::to_backend_mut(sum),
             0,
             &VecZnxToBackendRef::<BE>::to_backend_ref(small),

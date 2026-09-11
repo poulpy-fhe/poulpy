@@ -19,8 +19,8 @@ use std::collections::BTreeMap;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssign, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     execution::{for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
     layouts::{Backend, GaloisElement, PrepareHint, ScratchArena, VecZnxDftBackendRef, VecZnxDftToBackendRef},
@@ -90,7 +90,7 @@ where
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftNormalizeConsumeTmpBytes,
@@ -131,7 +131,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
         + ModuleN
         + GaloisElement
         + GGLWEProductDefault<BE>
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
         + VecZnxIdftNormalizeConsume<BE>,
@@ -163,7 +163,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
             );
         }
         for col in 0..cols {
-            module.vec_znx_automorphism_assign_backend(key_p, &mut baby_ref.data, col, &mut scratch_1.borrow());
+            module.vec_znx_automorphism_assign(key_p, &mut baby_ref.data, col, &mut scratch_1.borrow());
         }
     }
 }
@@ -191,7 +191,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
         + ModuleN
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>

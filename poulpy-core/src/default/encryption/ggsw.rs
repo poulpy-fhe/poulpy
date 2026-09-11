@@ -1,8 +1,5 @@
 use poulpy_hal::{
-    api::{
-        ModuleN, VecZnxAddScalarAssignBackend, VecZnxDftBytesOf, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
-        VecZnxZeroBackend,
-    },
+    api::{ModuleN, VecZnxAddScalarAssign, VecZnxDftBytesOf, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxZero},
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
 };
@@ -46,10 +43,10 @@ where
         + GLWEEncryptSk<BE>
         + GLWEMaskFillDefault<BE>
         + VecZnxDftBytesOf
-        + VecZnxNormalizeAssignBackend<BE>
-        + VecZnxAddScalarAssignBackend<BE>
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxAddScalarAssign<BE>
         + VecZnxNormalizeTmpBytes
-        + VecZnxZeroBackend<BE>,
+        + VecZnxZero<BE>,
 {
     fn ggsw_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -95,11 +92,11 @@ where
         let tmp_pt_k = tmp_pt.k().as_usize();
 
         for row_i in 0..res.dnum().into() {
-            self.vec_znx_zero_backend(&mut tmp_pt.data, 0);
+            self.vec_znx_zero(&mut tmp_pt.data, 0);
             // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
             {
                 let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                self.vec_znx_add_scalar_assign_backend(
+                self.vec_znx_add_scalar_assign(
                     &mut tmp_pt_backend.data,
                     0,
                     (dsize - 1) + row_i * dsize,
@@ -108,7 +105,7 @@ where
                 );
             }
 
-            self.vec_znx_normalize_assign_backend(base2k, tmp_pt_k, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
+            self.vec_znx_normalize_assign(base2k, tmp_pt_k, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
             for col_j in 0..rank + 1 {
                 let mut ct = res.at_view_mut(row_i, col_j);
                 self.fill_glwe_mask_from_source_default(base2k, &mut ct, 1, rank, source_xa);

@@ -1,11 +1,11 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwSourceBackend, ScalarZnxFillBinaryProbSourceBackend,
-        ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend, ScratchArenaTakeBasic, SvpApplyDftToDft,
-        SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssignBackend, VecZnxAddNormalSourceBackend,
-        VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssignBackend,
-        VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
+        ModuleN, ScalarZnxFillBinaryBlockSource, ScalarZnxFillBinaryHwSource, ScalarZnxFillBinaryProbSource,
+        ScalarZnxFillTernaryHwSource, ScalarZnxFillTernaryProbSource, ScratchArenaTakeBasic, SvpApplyDftToDft,
+        SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssign, VecZnxAddNormalSource, VecZnxBigAddNormal,
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
     },
     layouts::{
         Backend, Module, PrepareHint, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut,
@@ -43,7 +43,7 @@ pub trait GLWEMaskFillDefault<BE: Backend> {
 
 impl<BE: Backend> GLWEMaskFillDefault<BE> for Module<BE>
 where
-    Self: VecZnxFillUniformSourceBackend<BE>,
+    Self: VecZnxFillUniformSource<BE>,
 {
     fn fill_glwe_mask_from_source_default<R>(
         &self,
@@ -63,7 +63,7 @@ where
         );
         let k = res.k().as_usize();
         for col in res_col..res_col + rank {
-            self.vec_znx_fill_uniform_source_backend(base2k, k, &mut res.data, col, source_xa);
+            self.vec_znx_fill_uniform_source(base2k, k, &mut res.data, col, source_xa);
         }
     }
 
@@ -263,7 +263,7 @@ where
         + SvpPPolBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxZeroBackend<BE>,
+        + VecZnxZero<BE>,
 {
     fn glwe_encrypt_pk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -361,14 +361,14 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxAddAssignBackend<BE>
-        + VecZnxCopyBackend<BE>
-        + VecZnxZeroBackend<BE>
-        + ScalarZnxFillTernaryHwSourceBackend<BE>
-        + ScalarZnxFillTernaryProbSourceBackend<BE>
-        + ScalarZnxFillBinaryHwSourceBackend<BE>
-        + ScalarZnxFillBinaryProbSourceBackend<BE>
-        + ScalarZnxFillBinaryBlockSourceBackend<BE>
+        + VecZnxAddAssign<BE>
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>
+        + ScalarZnxFillTernaryHwSource<BE>
+        + ScalarZnxFillTernaryProbSource<BE>
+        + ScalarZnxFillBinaryHwSource<BE>
+        + ScalarZnxFillBinaryProbSource<BE>
+        + ScalarZnxFillBinaryBlockSource<BE>
         + SvpPPolBytesOf
         + ModuleN
         + VecZnxDftBytesOf,
@@ -415,22 +415,16 @@ where
                      Self::generate"
                 ),
                 Distribution::ENCAPSULATED(name) => panic!("invalid public key: secret {name} is tagged for encapsulation"),
-                Distribution::TernaryFixed(hw) => {
-                    self.scalar_znx_fill_ternary_hw_source_backend(&mut u_backend, 0, *hw, source_xu)
-                }
-                Distribution::TernaryProb(prob) => {
-                    self.scalar_znx_fill_ternary_prob_source_backend(&mut u_backend, 0, *prob, source_xu)
-                }
-                Distribution::BinaryFixed(hw) => self.scalar_znx_fill_binary_hw_source_backend(&mut u_backend, 0, *hw, source_xu),
-                Distribution::BinaryProb(prob) => {
-                    self.scalar_znx_fill_binary_prob_source_backend(&mut u_backend, 0, *prob, source_xu)
-                }
+                Distribution::TernaryFixed(hw) => self.scalar_znx_fill_ternary_hw_source(&mut u_backend, 0, *hw, source_xu),
+                Distribution::TernaryProb(prob) => self.scalar_znx_fill_ternary_prob_source(&mut u_backend, 0, *prob, source_xu),
+                Distribution::BinaryFixed(hw) => self.scalar_znx_fill_binary_hw_source(&mut u_backend, 0, *hw, source_xu),
+                Distribution::BinaryProb(prob) => self.scalar_znx_fill_binary_prob_source(&mut u_backend, 0, *prob, source_xu),
                 Distribution::BinaryBlock(block_size) => {
-                    self.scalar_znx_fill_binary_block_source_backend(&mut u_backend, 0, *block_size, source_xu)
+                    self.scalar_znx_fill_binary_block_source(&mut u_backend, 0, *block_size, source_xu)
                 }
                 Distribution::ZERO => {
                     let mut u_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut u_backend);
-                    self.vec_znx_zero_backend(&mut u_vec, 0);
+                    self.vec_znx_zero(&mut u_vec, 0);
                 }
             }
 
@@ -476,11 +470,11 @@ where
                     && *col == i
                 {
                     let mut ci_mut = ci.to_backend_mut();
-                    self.vec_znx_add_assign_backend(&mut ci_mut, 0, &pt.data, 0);
+                    self.vec_znx_add_assign(&mut ci_mut, 0, &pt.data, 0);
                 }
 
                 let ci_ref = ci.to_backend_ref();
-                self.vec_znx_copy_backend(&mut res.data, i, &ci_ref, 0);
+                self.vec_znx_copy(&mut res.data, i, &ci_ref, 0);
             }
         }
     }
@@ -513,15 +507,15 @@ where
         + SvpApplyDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxNormalizeTmpBytes
-        + VecZnxFillUniformSourceBackend<BE>
-        + VecZnxAddAssignBackend<BE>
-        + VecZnxCopyBackend<BE>
-        + VecZnxZeroBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>
-        + VecZnxAddNormalSourceBackend<BE>
+        + VecZnxFillUniformSource<BE>
+        + VecZnxAddAssign<BE>
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxAddNormalSource<BE>
         + VecZnxNormalize<BE>
-        + VecZnxSubAssignBackend<BE>
-        + VecZnxSubNegateAssignBackend<BE>
+        + VecZnxSubAssign<BE>
+        + VecZnxSubNegateAssign<BE>
         + VecZnxBigNormalizeTmpBytes,
 {
     fn glwe_encrypt_sk_internal<'pt, S, E>(
@@ -556,28 +550,22 @@ where
         let (mut c0, scratch_1) = scratch_local.take_vec_znx_scratch(self.n(), 1, size);
         let (mut ci, scratch_2) = scratch_1.take_vec_znx_scratch(self.n(), 1, size);
         let mut scratch_2 = scratch_2;
-        self.vec_znx_zero_backend(&mut c0, 0);
+        self.vec_znx_zero(&mut c0, 0);
 
         for i in 1..res.cols() {
             if let Some((pt, col)) = pt.as_ref() {
                 if i == *col {
-                    self.vec_znx_copy_backend(&mut ci, 0, &pt.data, 0);
+                    self.vec_znx_copy(&mut ci, 0, &pt.data, 0);
                     let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
-                    self.vec_znx_sub_negate_assign_backend(&mut ci, 0, &ct_ref, i);
-                    self.vec_znx_normalize_assign_backend(
-                        base2k,
-                        size * base2k,
-                        &mut ci.to_backend_mut(),
-                        0,
-                        &mut scratch_2.borrow(),
-                    );
+                    self.vec_znx_sub_negate_assign(&mut ci, 0, &ct_ref, i);
+                    self.vec_znx_normalize_assign(base2k, size * base2k, &mut ci.to_backend_mut(), 0, &mut scratch_2.borrow());
                 } else {
                     let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
-                    self.vec_znx_copy_backend(&mut ci, 0, &ct_ref, i);
+                    self.vec_znx_copy(&mut ci, 0, &ct_ref, i);
                 }
             } else {
                 let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
-                self.vec_znx_copy_backend(&mut ci, 0, &ct_ref, i);
+                self.vec_znx_copy(&mut ci, 0, &ct_ref, i);
             }
 
             {
@@ -599,19 +587,19 @@ where
                 );
             }
 
-            self.vec_znx_sub_assign_backend(&mut c0, 0, &ci.to_backend_ref(), 0);
+            self.vec_znx_sub_assign(&mut c0, 0, &ci.to_backend_ref(), 0);
         }
 
         // c[0] += e
-        self.vec_znx_add_normal_source_backend(base2k, &mut c0.to_backend_mut(), 0, noise_infos, source_xe);
+        self.vec_znx_add_normal_source(base2k, &mut c0.to_backend_mut(), 0, noise_infos, source_xe);
 
         // c[0] += m if col = 0
         if let Some((pt, col)) = &pt
             && *col == 0
         {
-            self.vec_znx_add_assign_backend(&mut c0.to_backend_mut(), 0, &pt.data, 0);
-            self.vec_znx_normalize_assign_backend(base2k, size * base2k, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
+            self.vec_znx_add_assign(&mut c0.to_backend_mut(), 0, &pt.data, 0);
+            self.vec_znx_normalize_assign(base2k, size * base2k, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
         }
-        self.vec_znx_copy_backend(res, 0, &c0.to_backend_ref(), 0);
+        self.vec_znx_copy(res, 0, &c0.to_backend_ref(), 0);
     }
 }

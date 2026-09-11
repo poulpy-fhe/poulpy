@@ -333,7 +333,7 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
 /// via the backend `ntt_add_assign` kernel (bit-identical to apply + DFT add).
 /// Limbs `>= min_size` are left untouched.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_apply_dft_accumulate<BE>(
+pub fn ntt4x30_cnv_apply_dft_add<BE>(
     module: &(impl NttModuleHandle + Sync),
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -363,8 +363,8 @@ pub fn ntt4x30_cnv_apply_dft_accumulate<BE>(
     );
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_accumulate_dft`]: the group staging.
-pub fn ntt4x30_cnv_accumulate_dft_tmp_bytes(res_size: usize, _a_size: usize, _b_size: usize) -> usize {
+/// Scratch bytes required by [`ntt4x30_cnv_apply_dft_sum`]: the group staging.
+pub fn ntt4x30_cnv_apply_dft_sum_tmp_bytes(res_size: usize, _a_size: usize, _b_size: usize) -> usize {
     8 * CNV_ACC_GROUP * res_size * size_of::<u64>()
 }
 
@@ -417,8 +417,8 @@ pub fn cnv_accumulate_schedule(cnv_offset: usize, res_size: usize, term_sizes: &
 /// All terms of one output limb are summed in the lazy q120 accumulators and
 /// reduced once, and the destination column is written exactly once through the
 /// staged group flush — the result is congruent to, but not bit-identical with,
-/// a sequence of [`ntt4x30_cnv_apply_dft_accumulate`] calls.
-pub fn ntt4x30_cnv_accumulate_dft<BE>(
+/// a sequence of [`ntt4x30_cnv_apply_dft_add`] calls.
+pub fn ntt4x30_cnv_apply_dft_sum<BE>(
     module: &impl NttModuleHandle,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,

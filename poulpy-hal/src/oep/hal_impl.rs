@@ -20,9 +20,9 @@ pub unsafe trait HalModuleImpl<BE: Backend>: Backend {
 /// Implementations must uphold the backend safety contract for layout access,
 /// aliasing, scratch usage, and arithmetic correctness.
 pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
-    fn vec_znx_zero_backend(module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize);
+    fn vec_znx_zero(module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize);
 
-    fn scalar_znx_fill_ternary_hw_backend(
+    fn scalar_znx_fill_ternary_hw(
         module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -30,7 +30,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         seed: [u8; 32],
     );
 
-    fn scalar_znx_fill_ternary_prob_backend(
+    fn scalar_znx_fill_ternary_prob(
         module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -38,7 +38,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         seed: [u8; 32],
     );
 
-    fn scalar_znx_fill_binary_hw_backend(
+    fn scalar_znx_fill_binary_hw(
         module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -46,7 +46,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         seed: [u8; 32],
     );
 
-    fn scalar_znx_fill_binary_prob_backend(
+    fn scalar_znx_fill_binary_prob(
         module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -54,7 +54,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         seed: [u8; 32],
     );
 
-    fn scalar_znx_fill_binary_block_backend(
+    fn scalar_znx_fill_binary_block(
         module: &Module<BE>,
         res: &mut ScalarZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -62,10 +62,10 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         seed: [u8; 32],
     );
 
-    fn vec_znx_normalize_tmp_bytes_backend(module: &Module<BE>) -> usize;
+    fn vec_znx_normalize_tmp_bytes(module: &Module<BE>) -> usize;
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_normalize_backend(
+    fn vec_znx_normalize(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_base2k: usize,
@@ -78,7 +78,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_normalize_assign_backend(
+    fn vec_znx_normalize_assign(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -87,7 +87,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_add_into_backend(
+    fn vec_znx_add(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -97,7 +97,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         b_col: usize,
     );
 
-    fn vec_znx_add_assign_backend(
+    fn vec_znx_add_assign(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -105,7 +105,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_add_scalar_assign_backend(
+    fn vec_znx_add_scalar_assign(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -114,7 +114,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_sub_backend(
+    fn vec_znx_sub(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -124,7 +124,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         b_col: usize,
     );
 
-    fn vec_znx_sub_assign_backend(
+    fn vec_znx_sub_assign(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -132,7 +132,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_sub_negate_assign_backend(
+    fn vec_znx_sub_negate_assign(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -140,7 +140,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_negate_backend(
+    fn vec_znx_negate(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -148,34 +148,11 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_negate_assign_backend(module: &Module<BE>, a: &mut VecZnxBackendMut<'_, BE>, a_col: usize);
+    fn vec_znx_negate_assign(module: &Module<BE>, a: &mut VecZnxBackendMut<'_, BE>, a_col: usize);
 
-    fn vec_znx_rsh_tmp_bytes_backend(module: &Module<BE>) -> usize;
+    fn vec_znx_rsh_tmp_bytes(module: &Module<BE>) -> usize;
 
-    fn vec_znx_rsh_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_rsh_coeff_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        a_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_rsh_add_into_backend(
+    fn vec_znx_rsh(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -186,7 +163,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_rsh_add_coeff_into_backend(
+    fn vec_znx_rsh_coeff(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -195,11 +172,21 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
         a_coeff: usize,
-        res_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_rsh_sub_coeff_into_backend(
+    fn vec_znx_rsh_add(
+        module: &Module<BE>,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    fn vec_znx_rsh_add_coeff(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -212,31 +199,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_lsh_tmp_bytes_backend(module: &Module<BE>) -> usize;
-
-    fn vec_znx_lsh_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_lsh_add_into_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_lsh_add_coeff_to_coeff_backend(
+    fn vec_znx_rsh_sub_coeff(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -249,7 +212,31 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_lsh_sub_coeff_to_coeff_backend(
+    fn vec_znx_lsh_tmp_bytes(module: &Module<BE>) -> usize;
+
+    fn vec_znx_lsh(
+        module: &Module<BE>,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    fn vec_znx_lsh_add(
+        module: &Module<BE>,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    fn vec_znx_lsh_add_coeff_to_coeff(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -262,7 +249,20 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_lsh_sub_backend(
+    fn vec_znx_lsh_sub_coeff_to_coeff(
+        module: &Module<BE>,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        a_coeff: usize,
+        res_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    fn vec_znx_lsh_sub(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -273,7 +273,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_rsh_sub_backend(
+    fn vec_znx_rsh_sub(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -284,7 +284,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_rsh_assign_backend(
+    fn vec_znx_rsh_assign(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -293,7 +293,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_lsh_assign_backend(
+    fn vec_znx_lsh_assign(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -302,7 +302,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_rotate_backend(
+    fn vec_znx_rotate(
         module: &Module<BE>,
         k: i64,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -311,9 +311,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_rotate_assign_tmp_bytes_backend(module: &Module<BE>) -> usize;
+    fn vec_znx_rotate_assign_tmp_bytes(module: &Module<BE>) -> usize;
 
-    fn vec_znx_rotate_assign_backend(
+    fn vec_znx_rotate_assign(
         module: &Module<BE>,
         k: i64,
         a: &mut VecZnxBackendMut<'_, BE>,
@@ -321,7 +321,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_automorphism_backend(
+    fn vec_znx_automorphism(
         module: &Module<BE>,
         k: i64,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -330,28 +330,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_automorphism_assign_tmp_bytes_backend(module: &Module<BE>) -> usize;
+    fn vec_znx_automorphism_assign_tmp_bytes(module: &Module<BE>) -> usize;
 
-    fn vec_znx_automorphism_assign_backend(
-        module: &Module<BE>,
-        k: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_mul_xp_minus_one_backend(
-        module: &Module<BE>,
-        k: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-    );
-
-    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_backend(module: &Module<BE>) -> usize;
-
-    fn vec_znx_mul_xp_minus_one_assign_backend(
+    fn vec_znx_automorphism_assign(
         module: &Module<BE>,
         k: i64,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -359,7 +340,26 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_switch_ring_backend(
+    fn vec_znx_mul_xp_minus_one(
+        module: &Module<BE>,
+        k: i64,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+    );
+
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &Module<BE>) -> usize;
+
+    fn vec_znx_mul_xp_minus_one_assign(
+        module: &Module<BE>,
+        k: i64,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    fn vec_znx_switch_ring(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -367,7 +367,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_copy_backend(
+    fn vec_znx_copy(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -375,7 +375,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_copy_range_backend(
+    fn vec_znx_copy_range(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -388,7 +388,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         len: usize,
     );
 
-    fn vec_znx_extract_coeff_backend(
+    fn vec_znx_extract_coeff(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
@@ -397,7 +397,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_coeff: usize,
     );
 
-    fn vec_znx_fill_uniform_backend(
+    fn vec_znx_fill_uniform(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
@@ -406,7 +406,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         seed: [u8; 32],
     );
 
-    fn vec_znx_add_normal_backend(
+    fn vec_znx_add_normal(
         module: &Module<BE>,
         res_base2k: usize,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -422,14 +422,14 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
 /// Implementations must uphold the backend safety contract for backend-native
 /// accumulator layouts and arithmetic correctness.
 pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
-    fn vec_znx_big_from_small_backend(
+    fn vec_znx_big_from_small(
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     );
 
-    fn vec_znx_big_add_normal_backend(
+    fn vec_znx_big_add_normal(
         module: &Module<BE>,
         res_base2k: usize,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
@@ -438,7 +438,7 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         seed: [u8; 32],
     );
 
-    fn vec_znx_big_add_into(
+    fn vec_znx_big_add(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
@@ -456,7 +456,7 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_big_add_small_into_backend(
+    fn vec_znx_big_add_small(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
@@ -500,7 +500,7 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_big_sub_small_a_backend(
+    fn vec_znx_big_sub_small_a(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
@@ -518,7 +518,7 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_big_sub_small_b_backend(
+    fn vec_znx_big_sub_small_b(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
@@ -536,7 +536,7 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn vec_znx_big_inner_sum_backend(
+    fn vec_znx_big_inner_sum(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
@@ -664,7 +664,7 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_dft_add_into(
+    fn vec_znx_dft_add(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
@@ -770,7 +770,7 @@ pub unsafe trait HalSvpImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
-    fn svp_ppol_copy_backend(
+    fn svp_ppol_copy(
         module: &Module<BE>,
         res: &mut crate::layouts::SvpPPolBackendMut<'_, BE>,
         res_col: usize,
@@ -863,7 +863,7 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
     );
 
     #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         module: &Module<BE>,
         res_size: usize,
         a_size: usize,
@@ -873,7 +873,7 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
         b_size: usize,
     ) -> usize;
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    fn vmp_apply_dft_to_dft_add(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
         a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
@@ -1027,7 +1027,7 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_dft_add(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
@@ -1039,12 +1039,12 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_accumulate_dft`].
+    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_apply_dft_sum`].
     ///
     /// The default sizes the per-term fallback (one `cnv_apply_dft` /
-    /// `cnv_apply_dft_accumulate` scratch). Backends with a fused kernel should
+    /// `cnv_apply_dft_add` scratch). Backends with a fused kernel should
     /// override both methods together.
-    fn cnv_accumulate_dft_tmp_bytes(
+    fn cnv_apply_dft_sum_tmp_bytes(
         module: &Module<BE>,
         cnv_offset: usize,
         res_size: usize,
@@ -1058,10 +1058,10 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
     ///
     /// The default implementation overwrites with the first term
     /// (`cnv_apply_dft`, which also zeroes the limbs past the convolution
-    /// bound) and folds the remaining terms with `cnv_apply_dft_accumulate`.
+    /// bound) and folds the remaining terms with `cnv_apply_dft_add`.
     /// Backends should override it with a fused kernel that keeps the lazy
     /// accumulators live across terms.
-    fn cnv_accumulate_dft<'a>(
+    fn cnv_apply_dft_sum<'a>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
@@ -1081,7 +1081,7 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
                     module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
                 );
             } else {
-                Self::cnv_apply_dft_accumulate(
+                Self::cnv_apply_dft_add(
                     module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
                 );
             }

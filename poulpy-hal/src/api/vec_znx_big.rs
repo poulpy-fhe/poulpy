@@ -8,8 +8,8 @@ use crate::{
 
 /// Converts a coefficient-domain [`VecZnx`](crate::layouts::VecZnx) column
 /// into a [`VecZnxBig`](crate::layouts::VecZnxBig) column.
-pub trait VecZnxBigFromSmallBackend<B: Backend> {
-    fn vec_znx_big_from_small_backend(
+pub trait VecZnxBigFromSmall<B: Backend> {
+    fn vec_znx_big_from_small(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -52,9 +52,9 @@ pub trait VecZnxBigAddNormal<B: Backend> {
     );
 }
 
-pub trait VecZnxBigAddInto<B: Backend> {
+pub trait VecZnxBigAdd<B: Backend> {
     /// Adds `a` to `b` and stores the result on `c`.
-    fn vec_znx_big_add_into(
+    fn vec_znx_big_add(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -76,9 +76,9 @@ pub trait VecZnxBigAddAssign<B: Backend> {
     );
 }
 
-pub trait VecZnxBigAddSmallIntoBackend<B: Backend> {
+pub trait VecZnxBigAddSmall<B: Backend> {
     /// Adds `a` to `b` and stores the result on `c`.
-    fn vec_znx_big_add_small_into_backend(
+    fn vec_znx_big_add_small(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -135,9 +135,9 @@ pub trait VecZnxBigSubNegateAssign<B: Backend> {
     );
 }
 
-pub trait VecZnxBigSubSmallABackend<B: Backend> {
+pub trait VecZnxBigSubSmallA<B: Backend> {
     /// Subtracts `b` from `a` and stores the result on `c`.
-    fn vec_znx_big_sub_small_a_backend(
+    fn vec_znx_big_sub_small_a(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -159,9 +159,9 @@ pub trait VecZnxBigSubSmallAssign<B: Backend> {
     );
 }
 
-pub trait VecZnxBigSubSmallBBackend<B: Backend> {
+pub trait VecZnxBigSubSmallB<B: Backend> {
     /// Subtracts `b` from `a` and stores the result on `c`.
-    fn vec_znx_big_sub_small_b_backend(
+    fn vec_znx_big_sub_small_b(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -185,8 +185,8 @@ pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
 
 /// Sums coefficients from a selected [`VecZnxBig`](crate::layouts::VecZnxBig)
 /// column and stores each limb's result in one destination coefficient.
-pub trait VecZnxBigInnerSumBackend<B: Backend> {
-    fn vec_znx_big_inner_sum_backend(
+pub trait VecZnxBigInnerSum<B: Backend> {
+    fn vec_znx_big_inner_sum(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -215,7 +215,7 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
 
 /// Computes the element-wise (Hadamard) product `res[k] = a[k] * b[k]` for all `k`
 /// and stores each product as a [`BigWord`](Backend::BigWord) value in `res`.
-/// Use [`VecZnxBigInnerSumBackend`] afterwards to reduce to a single scalar.
+/// Use [`VecZnxBigInnerSum`] afterwards to reduce to a single scalar.
 pub trait VecZnxScalarProduct<B: Backend> {
     fn vec_znx_scalar_product(
         &self,

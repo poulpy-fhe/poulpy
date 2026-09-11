@@ -17,7 +17,7 @@
 //!
 //! # Functions
 //!
-//! - **Element-wise arithmetic**: [`ntt4x30_vec_znx_big_add_into`], [`ntt4x30_vec_znx_big_sub`],
+//! - **Element-wise arithmetic**: [`ntt4x30_vec_znx_big_add`], [`ntt4x30_vec_znx_big_sub`],
 //!   [`ntt4x30_vec_znx_big_negate`] and their inplace / mixed-precision variants.
 //! - **Copy from small**: [`ntt4x30_vec_znx_big_from_small`] — sign-extend `i64` → `i128`.
 //! - **Normalization**: [`ntt4x30_vec_znx_big_normalize`] — extract base-2k digits from
@@ -787,7 +787,7 @@ pub fn ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(n: usize) -> usize {
 ///
 /// Limbs present in both `a` and `b` are summed; limbs present in only one are copied;
 /// extra res limbs beyond both are zeroed.
-pub fn ntt4x30_vec_znx_big_add_into<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn ntt4x30_vec_znx_big_add<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -850,7 +850,7 @@ where
 
 /// Add a small (`i64`) polynomial `b` to a big (`i128`) polynomial `a`:
 /// `res[res_col] = a[a_col] + b[b_col]`.
-pub fn ntt4x30_vec_znx_big_add_small_into<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn ntt4x30_vec_znx_big_add_small<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,

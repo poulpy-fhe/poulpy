@@ -22,14 +22,8 @@ pub trait SvpPrepare<B: Backend> {
 ///
 /// Copies representation bytes, so `res` and `a` must share the degree and the
 /// [`PrepareHint`](crate::layouts::PrepareHint); every kernel asserts both.
-pub trait SvpPPolCopyBackend<B: Backend> {
-    fn svp_ppol_copy_backend(
-        &self,
-        res: &mut SvpPPolBackendMut<'_, B>,
-        res_col: usize,
-        a: &SvpPPolBackendRef<'_, B>,
-        a_col: usize,
-    );
+pub trait SvpPPolCopy<B: Backend> {
+    fn svp_ppol_copy(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &SvpPPolBackendRef<'_, B>, a_col: usize);
 }
 
 /// Apply a scalar-vector product between `a[a_col]` and `b[b_col]` and stores the result on `res[res_col]`.

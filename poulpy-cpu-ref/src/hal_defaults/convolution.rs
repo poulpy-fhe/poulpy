@@ -5,7 +5,7 @@ use std::mem::size_of;
 use crate::reference::{
     fft64::{
         convolution::{
-            I64Ops, convolution_apply_dft, convolution_apply_dft_accumulate, convolution_apply_dft_tmp_bytes,
+            I64Ops, convolution_apply_dft, convolution_apply_dft_add, convolution_apply_dft_tmp_bytes,
             convolution_by_const_apply, convolution_by_const_apply_add, convolution_by_const_apply_tmp_bytes,
             convolution_pairwise_apply_dft, convolution_pairwise_apply_dft_tmp_bytes, convolution_prepare_left,
             convolution_prepare_right, convolution_prepare_self,
@@ -17,8 +17,8 @@ use crate::reference::{
     ntt4x30::{
         NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
         convolution::{
-            CNV_ACC_GROUP, ntt4x30_cnv_accumulate_dft, ntt4x30_cnv_accumulate_dft_tmp_bytes, ntt4x30_cnv_apply_dft,
-            ntt4x30_cnv_apply_dft_accumulate, ntt4x30_cnv_apply_dft_tmp_bytes, ntt4x30_cnv_by_const_apply,
+            CNV_ACC_GROUP, ntt4x30_cnv_apply_dft, ntt4x30_cnv_apply_dft_add, ntt4x30_cnv_apply_dft_sum,
+            ntt4x30_cnv_apply_dft_sum_tmp_bytes, ntt4x30_cnv_apply_dft_tmp_bytes, ntt4x30_cnv_by_const_apply,
             ntt4x30_cnv_by_const_apply_add, ntt4x30_cnv_by_const_apply_tmp_bytes, ntt4x30_cnv_pairwise_apply_dft,
             ntt4x30_cnv_pairwise_apply_dft_tmp_bytes, ntt4x30_cnv_prepare_left, ntt4x30_cnv_prepare_left_tmp_bytes,
             ntt4x30_cnv_prepare_right, ntt4x30_cnv_prepare_right_tmp_bytes, ntt4x30_cnv_prepare_self,
@@ -225,7 +225,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate_default<R>(
+    fn cnv_apply_dft_add_default<R>(
         _module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
@@ -246,7 +246,7 @@ where
         let per_worker = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
         let bytes = reim4_block_workers_within::<BE>(_module, per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<BE, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        convolution_apply_dft_accumulate::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        convolution_apply_dft_add::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
@@ -535,7 +535,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate_default<R>(
+    fn cnv_apply_dft_add_default<R>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
@@ -557,10 +557,10 @@ where
         let per_worker = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
         let bytes = cnv_group_workers_within::<BE>(module, per_worker, scratch.available()) * per_worker;
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_apply_dft_accumulate::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        ntt4x30_cnv_apply_dft_add::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
-    fn cnv_accumulate_dft_tmp_bytes_default(
+    fn cnv_apply_dft_sum_tmp_bytes_default(
         _module: &Module<BE>,
         _cnv_offset: usize,
         res_size: usize,
@@ -570,10 +570,10 @@ where
     where
         BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        ntt4x30_cnv_accumulate_dft_tmp_bytes(res_size, a_size, b_size)
+        ntt4x30_cnv_apply_dft_sum_tmp_bytes(res_size, a_size, b_size)
     }
 
-    fn cnv_accumulate_dft_default<'a, R>(
+    fn cnv_apply_dft_sum_default<'a, R>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
@@ -589,9 +589,9 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt4x30_cnv_accumulate_dft_tmp_bytes(res_ref.size(), 0, 0);
+        let bytes = ntt4x30_cnv_apply_dft_sum_tmp_bytes(res_ref.size(), 0, 0);
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_accumulate_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, terms, tmp);
+        ntt4x30_cnv_apply_dft_sum::<BE>(module, cnv_offset, &mut res_ref, res_col, terms, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(

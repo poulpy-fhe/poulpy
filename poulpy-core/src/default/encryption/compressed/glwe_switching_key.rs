@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, VecZnxSwitchRingBackend},
+    api::{ModuleN, ScratchArenaTakeBasic, VecZnxSwitchRing},
     layouts::{
         Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
@@ -38,7 +38,7 @@ pub trait GLWESwitchingKeyCompressedEncryptSkDefault<BE: Backend> {
 
 impl<BE: Backend> GLWESwitchingKeyCompressedEncryptSkDefault<BE> for Module<BE>
 where
-    Self: ModuleN + GGLWECompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE> + VecZnxSwitchRingBackend<BE>,
+    Self: ModuleN + GGLWECompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE> + VecZnxSwitchRing<BE>,
 {
     fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -85,7 +85,7 @@ where
         let sk_in_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_in.data());
         for i in 0..sk_in.rank().into() {
             let mut sk_in_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_in_lifted);
-            self.vec_znx_switch_ring_backend(&mut sk_in_lifted_backend_vec, i, &sk_in_backend_vec, i);
+            self.vec_znx_switch_ring(&mut sk_in_lifted_backend_vec, i, &sk_in_backend_vec, i);
         }
 
         let (mut sk_out_lifted, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), sk_out_ref.rank());
@@ -93,7 +93,7 @@ where
         let sk_out_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_out_ref.data());
         for i in 0..sk_out_ref.rank().into() {
             let mut sk_out_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_out_lifted.data_mut());
-            self.vec_znx_switch_ring_backend(&mut sk_out_lifted_backend_vec, i, &sk_out_backend_vec, i);
+            self.vec_znx_switch_ring(&mut sk_out_lifted_backend_vec, i, &sk_out_backend_vec, i);
         }
 
         let (mut sk_out_prepared, scratch_3) = scratch_2.take_glwe_secret_prepared_scratch(self, sk_out_ref.rank());

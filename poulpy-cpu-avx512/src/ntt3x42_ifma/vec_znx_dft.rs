@@ -697,7 +697,7 @@ pub(crate) fn vec_znx_idft_apply(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// DFT-domain add: `res[res_col] = a[a_col] + b[b_col]`.
-pub(crate) fn vec_znx_dft_add_into<E: poulpy_hal::execution::TaskExecutor>(
+pub(crate) fn vec_znx_dft_add<E: poulpy_hal::execution::TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,

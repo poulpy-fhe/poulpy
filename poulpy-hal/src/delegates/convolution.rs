@@ -153,7 +153,7 @@ impl_convolution_delegate!(
     ) {
         <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_lazy(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     },
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_dft_add(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -164,12 +164,12 @@ impl_convolution_delegate!(
         b_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_accumulate(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_add(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     },
-    fn cnv_accumulate_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
+    fn cnv_apply_dft_sum_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
+        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_sum_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
     },
-    fn cnv_accumulate_dft<'a>(
+    fn cnv_apply_dft_sum<'a>(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -179,7 +179,7 @@ impl_convolution_delegate!(
     ) where
         BE: 'a,
     {
-        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft(self, cnv_offset, res, res_col, terms, scratch)
+        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_sum(self, cnv_offset, res, res_col, terms, scratch)
     },
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_pairwise_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)

@@ -134,7 +134,7 @@ macro_rules! hal_impl_convolution {
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn cnv_apply_dft_accumulate(
+        fn cnv_apply_dft_add(
             module: &Module<Self>,
             cnv_offset: usize,
             mut res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
@@ -146,7 +146,7 @@ macro_rules! hal_impl_convolution {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults<Self>>::cnv_apply_dft_accumulate_default(
+            <Self as $defaults<Self>>::cnv_apply_dft_add_default(
                 module,
                 cnv_offset,
                 &mut res,

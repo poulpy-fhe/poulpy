@@ -4,8 +4,8 @@ use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
-        VecZnxDftZero, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxDftZero, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes,
+        VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         Backend, FillUniform, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendRef, Module, PrepareHint,
@@ -40,9 +40,9 @@ where
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
         + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyDftToDftAdd<BE>
         + VmpApplyDftToDftTmpBytes
-        + VmpApplyDftToDftAccumulateTmpBytes
+        + VmpApplyDftToDftAddTmpBytes
         + VmpPMatAlloc<BE>
         + VmpPrepare<BE>
         + VmpPrepareTmpBytes,

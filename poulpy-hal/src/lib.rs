@@ -42,7 +42,7 @@
 //!
 //! The crate is organized into a four-layer stack:
 //!
-//! 1. **[`api`]** -- Safe, user-facing trait definitions (e.g. [`api::VecZnxAddIntoBackend`],
+//! 1. **[`api`]** -- Safe, user-facing trait definitions (e.g. [`api::VecZnxAdd`],
 //!    [`api::VmpApplyDftToDft`]). Scheme authors program against these.
 //! 2. **[`oep`]** -- Unsafe extension-point layer of per-family backend traits.
 //!    Backend crates implement only the families they own and may reuse helper

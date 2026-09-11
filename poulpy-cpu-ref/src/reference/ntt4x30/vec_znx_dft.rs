@@ -479,7 +479,7 @@ unsafe fn compact_all_blocks_scalar(n: usize, n_blocks: usize, u64_ptr: *mut u64
 /// DFT-domain add: `res[res_col] = a[a_col] + b[b_col]`.
 ///
 /// Uses lazy q120b addition; out-of-range limbs are copied or zeroed.
-pub fn ntt4x30_vec_znx_dft_add_into<BE>(
+pub fn ntt4x30_vec_znx_dft_add<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,

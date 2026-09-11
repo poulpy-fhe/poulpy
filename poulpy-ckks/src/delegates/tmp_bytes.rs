@@ -11,10 +11,7 @@ use poulpy_core::{
     layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
 };
 use poulpy_hal::{
-    api::{
-        CnvPVecBytesOf, ModuleN, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend,
-        VecZnxRshSubBackend, VecZnxRshTmpBytes,
-    },
+    api::{CnvPVecBytesOf, ModuleN, VecZnxLsh, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshSub, VecZnxRshTmpBytes},
     layouts::{Backend, Module},
 };
 
@@ -45,11 +42,11 @@ where
         + GLWETensorKeyEncryptSk<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + CnvPVecBytesOf
-        + VecZnxLshBackend<BE>
+        + VecZnxLsh<BE>
         + VecZnxLshTmpBytes
-        + VecZnxRshBackend<BE>
-        + VecZnxRshAddIntoBackend<BE>
-        + VecZnxRshSubBackend<BE>
+        + VecZnxRsh<BE>
+        + VecZnxRshAdd<BE>
+        + VecZnxRshSub<BE>
         + VecZnxRshTmpBytes
         + poulpy_hal::api::Convolution<BE>
         + poulpy_hal::api::VecZnxBigNormalizeTmpBytes,

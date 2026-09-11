@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ModuleN, VecZnxAutomorphismBackend, VecZnxCopyRangeBackend, VecZnxZeroBackend},
+    api::{ModuleN, VecZnxAutomorphism, VecZnxCopyRange, VecZnxZero},
     layouts::{
         Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
         scalar_znx_as_vec_znx_backend_ref_from_ref,
@@ -43,9 +43,9 @@ where
     Self: ModuleN
         + GGLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxAutomorphismBackend<BE>
-        + VecZnxCopyRangeBackend<BE>
-        + VecZnxZeroBackend<BE>,
+        + VecZnxAutomorphism<BE>
+        + VecZnxCopyRange<BE>
+        + VecZnxZero<BE>,
 {
     fn lwe_to_glwe_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -100,8 +100,8 @@ where
         {
             let mut sk_lwe_as_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_lwe_as_glwe_src.data_mut());
             let sk_lwe_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_lwe.data());
-            self.vec_znx_zero_backend(&mut sk_lwe_as_glwe_src_backend, 0);
-            self.vec_znx_copy_range_backend(
+            self.vec_znx_zero(&mut sk_lwe_as_glwe_src_backend, 0);
+            self.vec_znx_copy_range(
                 &mut sk_lwe_as_glwe_src_backend,
                 0,
                 0,
@@ -116,7 +116,7 @@ where
         {
             let sk_lwe_as_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_lwe_as_glwe_src.data());
             let mut sk_lwe_as_glwe_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_lwe_as_glwe.data_mut());
-            self.vec_znx_automorphism_backend(-1, &mut sk_lwe_as_glwe_backend, 0, &sk_lwe_as_glwe_src_backend, 0);
+            self.vec_znx_automorphism(-1, &mut sk_lwe_as_glwe_backend, 0, &sk_lwe_as_glwe_src_backend, 0);
         }
 
         let (mut enc_scratch, _scratch_3) = scratch_2.split_at(self.gglwe_encrypt_sk_tmp_bytes(res));

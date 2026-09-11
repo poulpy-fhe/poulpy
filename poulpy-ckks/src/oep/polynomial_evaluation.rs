@@ -133,7 +133,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
 unsafe impl<BE: Backend> CKKSPolynomialEvaluationImpl<BE> for BE
 where
     Module<BE>: GiantStepTensorBounds<BE>
-        + poulpy_hal::api::VecZnxRshCoeffBackend<BE>
+        + poulpy_hal::api::VecZnxRshCoeff<BE>
         + poulpy_hal::api::VecZnxRshTmpBytes
         + CKKSAddOps<BE>
         + CKKSCopyOps<BE>

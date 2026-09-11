@@ -11,9 +11,9 @@ use crate::layouts::GetTensorKey;
 use anyhow::{Result, ensure};
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ModuleN, VecZnxAddAssignBackend, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNegateBackend,
-        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend,
+        CnvPVecBytesOf, Convolution, ModuleN, VecZnxAddAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNegate, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxSubAssign,
     },
     layouts::{Backend, Module, ScratchArena},
 };
@@ -37,12 +37,12 @@ pub trait GiantStepTensorBounds<BE: Backend>:
     + VecZnxIdftApplyTmpA<BE>
     + VecZnxBigNormalize<BE>
     + Convolution<BE>
-    + VecZnxSubAssignBackend<BE>
-    + VecZnxAddAssignBackend<BE>
+    + VecZnxSubAssign<BE>
+    + VecZnxAddAssign<BE>
     + VecZnxBigNormalizeTmpBytes
-    + VecZnxCopyBackend<BE>
-    + VecZnxNegateBackend<BE>
-    + VecZnxNormalizeAssignBackend<BE>
+    + VecZnxCopy<BE>
+    + VecZnxNegate<BE>
+    + VecZnxNormalizeAssign<BE>
     + VecZnxNormalizeTmpBytes
 {
 }
@@ -56,12 +56,12 @@ impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + Convolution<BE>
-        + VecZnxSubAssignBackend<BE>
-        + VecZnxAddAssignBackend<BE>
+        + VecZnxSubAssign<BE>
+        + VecZnxAddAssign<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopyBackend<BE>
-        + VecZnxNegateBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxCopy<BE>
+        + VecZnxNegate<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
 {
 }

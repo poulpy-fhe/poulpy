@@ -504,7 +504,7 @@ impl BigWordHadamardProduct for NTT4x30AvxRayon {
 unsafe impl HalVecZnxImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
 
-    fn vec_znx_normalize_backend(
+    fn vec_znx_normalize(
         module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
@@ -522,7 +522,7 @@ unsafe impl HalVecZnxImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         );
     }
 
-    fn vec_znx_normalize_assign_backend(
+    fn vec_znx_normalize_assign(
         module: &Module<Self>,
         base2k: usize,
         k: usize,
@@ -643,7 +643,7 @@ unsafe impl HalVmpImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         }
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
         a_size: usize,
@@ -656,7 +656,7 @@ unsafe impl HalVmpImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
             * super::vmp::vmp_apply_tmp_bytes_avx(a_size, b_rows, b_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    fn vmp_apply_dft_to_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
@@ -672,7 +672,7 @@ unsafe impl HalVmpImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         if RayonTaskExecutor::should_serialize_inner() {
-            super::vmp::vmp_apply_dft_to_dft_accumulate_avx::<SerialTaskExecutor>(
+            super::vmp::vmp_apply_dft_to_dft_add_avx::<SerialTaskExecutor>(
                 base_module(module),
                 &mut base_dft_mut(res),
                 &base_dft_ref(a),
@@ -681,7 +681,7 @@ unsafe impl HalVmpImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
                 tmp,
             );
         } else {
-            super::vmp::vmp_apply_dft_to_dft_accumulate_avx::<RayonTaskExecutor>(
+            super::vmp::vmp_apply_dft_to_dft_add_avx::<RayonTaskExecutor>(
                 base_module(module),
                 &mut base_dft_mut(res),
                 &base_dft_ref(a),
@@ -932,7 +932,7 @@ unsafe impl HalConvolutionImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_dft_add(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -944,13 +944,11 @@ unsafe impl HalConvolutionImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         unsafe {
-            super::convolution::cnv_apply_dft_accumulate::<_, RayonTaskExecutor>(
-                module, cnv_offset, res, res_col, a, a_col, b, b_col,
-            )
+            super::convolution::cnv_apply_dft_add::<_, RayonTaskExecutor>(module, cnv_offset, res, res_col, a, a_col, b, b_col)
         };
     }
 
-    fn cnv_accumulate_dft_tmp_bytes(
+    fn cnv_apply_dft_sum_tmp_bytes(
         _module: &Module<Self>,
         _cnv_offset: usize,
         res_size: usize,
@@ -958,10 +956,10 @@ unsafe impl HalConvolutionImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         _b_size: usize,
     ) -> usize {
         poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::APPLY)
-            * super::convolution::cnv_accumulate_dft_avx_tmp_bytes(res_size)
+            * super::convolution::cnv_apply_dft_sum_avx_tmp_bytes(res_size)
     }
 
-    fn cnv_accumulate_dft<'a>(
+    fn cnv_apply_dft_sum<'a>(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -971,7 +969,7 @@ unsafe impl HalConvolutionImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
     ) where
         Self: HalVecZnxDftImpl<Self> + 'a,
     {
-        let per_worker = super::convolution::cnv_accumulate_dft_avx_tmp_bytes(res.size());
+        let per_worker = super::convolution::cnv_apply_dft_sum_avx_tmp_bytes(res.size());
         let bytes = poulpy_cpu_rayon::workers_within(
             <Self as poulpy_hal::execution::ScratchWorkers>::APPLY,
             per_worker,
@@ -979,7 +977,7 @@ unsafe impl HalConvolutionImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            super::convolution::cnv_accumulate_dft_avx::<_, RayonTaskExecutor>(module, cnv_offset, res, res_col, terms, tmp)
+            super::convolution::cnv_apply_dft_sum_avx::<_, RayonTaskExecutor>(module, cnv_offset, res, res_col, terms, tmp)
         };
     }
 
@@ -1079,14 +1077,14 @@ unsafe impl HalSvpImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         );
     }
 
-    fn svp_ppol_copy_backend(
+    fn svp_ppol_copy(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
         res_col: usize,
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx as HalSvpImpl<NTT4x30Avx>>::svp_ppol_copy_backend(
+        <NTT4x30Avx as HalSvpImpl<NTT4x30Avx>>::svp_ppol_copy(
             base_module(module),
             &mut base_svp_mut(res),
             res_col,
@@ -1343,7 +1341,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         );
     }
 
-    fn vec_znx_dft_add_into(
+    fn vec_znx_dft_add(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -1352,7 +1350,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <NTT4x30Avx as HalVecZnxDftImpl<NTT4x30Avx>>::vec_znx_dft_add_into(
+        <NTT4x30Avx as HalVecZnxDftImpl<NTT4x30Avx>>::vec_znx_dft_add(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,

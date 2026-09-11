@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigInnerSumBackend, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSourceBackend, VecZnxScalarProduct,
+        ScratchArenaTakeBasic, VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigInnerSum, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign, VecZnxFillUniformSource, VecZnxScalarProduct,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef},
     source::Source,
@@ -25,7 +25,7 @@ pub trait LWEFillMaskDefault<BE: Backend> {
 
 impl<BE: Backend> LWEFillMaskDefault<BE> for Module<BE>
 where
-    Self: VecZnxFillUniformSourceBackend<BE>,
+    Self: VecZnxFillUniformSource<BE>,
 {
     fn fill_lwe_mask_from_source_default<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
@@ -33,7 +33,7 @@ where
     {
         let mut res = res.to_backend_mut();
         assert_eq!(res.mask.cols(), 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
-        self.vec_znx_fill_uniform_source_backend(base2k, res.k().as_usize(), &mut res.mask, 0, source_xa);
+        self.vec_znx_fill_uniform_source(base2k, res.k().as_usize(), &mut res.mask, 0, source_xa);
     }
 
     fn fill_lwe_mask_from_seed_default<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
@@ -73,7 +73,7 @@ where
         + LWEFillMaskDefault<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigBytesOf
-        + VecZnxBigInnerSumBackend<BE>
+        + VecZnxBigInnerSum<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxScalarProduct<BE>
@@ -136,7 +136,7 @@ where
 
         // tmp_scalar[limb][0] = sum_k tmp_hadamard[limb][k] = <mask, sk>
         let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch_n(1, 1, res_size);
-        self.vec_znx_big_inner_sum_backend(&mut tmp_scalar, 0, 0, &tmp_hadamard.to_backend_ref(), 0);
+        self.vec_znx_big_inner_sum(&mut tmp_scalar, 0, 0, &tmp_hadamard.to_backend_ref(), 0);
 
         // tmp_scalar = m - <mask, sk>
         self.vec_znx_big_sub_small_negate_assign(&mut tmp_scalar, 0, &pt.data, 0);

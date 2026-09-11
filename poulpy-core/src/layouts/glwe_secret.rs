@@ -1,9 +1,8 @@
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     api::{
-        ScalarZnxAutomorphismBackend, ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwSourceBackend,
-        ScalarZnxFillBinaryProbSourceBackend, ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend,
-        VecZnxCopyRangeBackend, VecZnxZeroBackend,
+        ScalarZnxAutomorphism, ScalarZnxFillBinaryBlockSource, ScalarZnxFillBinaryHwSource, ScalarZnxFillBinaryProbSource,
+        ScalarZnxFillTernaryHwSource, ScalarZnxFillTernaryProbSource, VecZnxCopyRange, VecZnxZero,
     },
     layouts::{
         Backend, Data, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ZnxViewMut,
@@ -227,12 +226,12 @@ pub trait GLWESecretSampling<BE: Backend> {
 
 impl<BE: Backend> GLWESecretSampling<BE> for Module<BE>
 where
-    Self: ScalarZnxFillTernaryProbSourceBackend<BE>
-        + ScalarZnxFillTernaryHwSourceBackend<BE>
-        + ScalarZnxFillBinaryProbSourceBackend<BE>
-        + ScalarZnxFillBinaryHwSourceBackend<BE>
-        + ScalarZnxFillBinaryBlockSourceBackend<BE>
-        + VecZnxZeroBackend<BE>,
+    Self: ScalarZnxFillTernaryProbSource<BE>
+        + ScalarZnxFillTernaryHwSource<BE>
+        + ScalarZnxFillBinaryProbSource<BE>
+        + ScalarZnxFillBinaryHwSource<BE>
+        + ScalarZnxFillBinaryBlockSource<BE>
+        + VecZnxZero<BE>,
 {
     fn glwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
     where
@@ -242,7 +241,7 @@ where
         {
             let mut sk_backend = sk.to_backend_mut();
             for i in 0..rank {
-                self.scalar_znx_fill_ternary_prob_source_backend(&mut sk_backend.data, i, prob, source);
+                self.scalar_znx_fill_ternary_prob_source(&mut sk_backend.data, i, prob, source);
             }
         }
         *sk.dist_mut() = Distribution::TernaryProb(prob);
@@ -256,7 +255,7 @@ where
         {
             let mut sk_backend = sk.to_backend_mut();
             for i in 0..rank {
-                self.scalar_znx_fill_ternary_hw_source_backend(&mut sk_backend.data, i, hw, source);
+                self.scalar_znx_fill_ternary_hw_source(&mut sk_backend.data, i, hw, source);
             }
         }
         *sk.dist_mut() = Distribution::TernaryFixed(hw);
@@ -270,7 +269,7 @@ where
         {
             let mut sk_backend = sk.to_backend_mut();
             for i in 0..rank {
-                self.scalar_znx_fill_binary_prob_source_backend(&mut sk_backend.data, i, prob, source);
+                self.scalar_znx_fill_binary_prob_source(&mut sk_backend.data, i, prob, source);
             }
         }
         *sk.dist_mut() = Distribution::BinaryProb(prob);
@@ -284,7 +283,7 @@ where
         {
             let mut sk_backend = sk.to_backend_mut();
             for i in 0..rank {
-                self.scalar_znx_fill_binary_hw_source_backend(&mut sk_backend.data, i, hw, source);
+                self.scalar_znx_fill_binary_hw_source(&mut sk_backend.data, i, hw, source);
             }
         }
         *sk.dist_mut() = Distribution::BinaryFixed(hw);
@@ -298,7 +297,7 @@ where
         {
             let mut sk_backend = sk.to_backend_mut();
             for i in 0..rank {
-                self.scalar_znx_fill_binary_block_source_backend(&mut sk_backend.data, i, block_size, source);
+                self.scalar_znx_fill_binary_block_source(&mut sk_backend.data, i, block_size, source);
             }
         }
         *sk.dist_mut() = Distribution::BinaryBlock(block_size);
@@ -313,7 +312,7 @@ where
             let mut sk_backend = sk.to_backend_mut();
             let mut sk_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_backend.data);
             for i in 0..rank {
-                self.vec_znx_zero_backend(&mut sk_vec, i);
+                self.vec_znx_zero(&mut sk_vec, i);
             }
         }
         *sk.dist_mut() = Distribution::ZERO;
@@ -383,7 +382,7 @@ pub trait SecretConversion<B: Backend> {
         S: GLWESecretToBackendRef<B>;
 }
 
-// Coefficient-word fence: `scalar_znx_automorphism_backend` is delegated by
+// Coefficient-word fence: `scalar_znx_automorphism` is delegated by
 // poulpy-hal for i64 backends only.
 impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
     fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf, B::ZnxWord>
@@ -396,7 +395,7 @@ impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl<B>> SecretConversion<B> for Modul
         res.dist = src.dist;
         {
             let mut res_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut res);
-            self.scalar_znx_automorphism_backend(-1, res_ref.data_mut(), 0, src.data(), 0);
+            self.scalar_znx_automorphism(-1, res_ref.data_mut(), 0, src.data(), 0);
         }
         res
     }
@@ -425,7 +424,7 @@ impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl<B>> SecretConversion<B> for Modul
         {
             let mut tmp_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut tmp);
             for j in 0..rank {
-                self.scalar_znx_automorphism_backend(-1, tmp_ref.data_mut(), j, src.data(), j);
+                self.scalar_znx_automorphism(-1, tmp_ref.data_mut(), j, src.data(), j);
             }
         }
 
@@ -443,7 +442,7 @@ impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl<B>> SecretConversion<B> for Modul
                     break;
                 }
                 let take: usize = (target - written).min(n);
-                self.vec_znx_copy_range_backend(&mut res_vz, 0, 0, written, &tmp_vz, j, 0, 0, take);
+                self.vec_znx_copy_range(&mut res_vz, 0, 0, written, &tmp_vz, j, 0, 0, take);
                 written += take;
             }
         }

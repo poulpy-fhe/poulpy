@@ -8,7 +8,7 @@ use poulpy_core::{
     layouts::{GGLWEInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, TorusPrecision},
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, VecZnxCopyBackend},
+    api::{CnvPVecAlloc, VecZnxCopy},
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -163,7 +163,7 @@ where
         + GiantStepTensorBounds<BE>
         + CnvPVecAlloc<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + VecZnxCopyBackend<BE>,
+        + VecZnxCopy<BE>,
 {
     fn ckks_mul_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos, B: GLWEInfos, T: GGLWEInfos>(
         module: &Module<BE>,

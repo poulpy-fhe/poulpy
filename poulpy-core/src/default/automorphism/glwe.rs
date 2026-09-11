@@ -13,8 +13,8 @@
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
-        VecZnxBigAddSmallAssign, VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigSubSmallAssign,
+        ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAddSmallAssign,
+        VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigSubSmallAssign,
         VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply,
     },
     layouts::{Backend, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
@@ -68,7 +68,7 @@ pub fn glwe_automorphism_default<BE, M, R, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
+    M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssign<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
@@ -85,7 +85,7 @@ pub fn glwe_automorphism_default<BE, M, R, A>(
     let cols = res.rank().as_usize() + 1;
     let mut res_ref = res.to_backend_mut();
     for i in 0..cols {
-        module.vec_znx_automorphism_assign_backend(p, &mut res_ref.data, i, &mut scratch.borrow());
+        module.vec_znx_automorphism_assign(p, &mut res_ref.data, i, &mut scratch.borrow());
     }
 }
 
@@ -96,7 +96,7 @@ pub fn glwe_automorphism_assign_default<BE, M, R>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
+    M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssign<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
 {
     let p = key.p();
@@ -113,7 +113,7 @@ pub fn glwe_automorphism_assign_default<BE, M, R>(
     let cols = res.rank().as_usize() + 1;
     let mut res_ref = res.to_backend_mut();
     for i in 0..cols {
-        module.vec_znx_automorphism_assign_backend(p, &mut res_ref.data, i, &mut scratch.borrow());
+        module.vec_znx_automorphism_assign(p, &mut res_ref.data, i, &mut scratch.borrow());
     }
 }
 

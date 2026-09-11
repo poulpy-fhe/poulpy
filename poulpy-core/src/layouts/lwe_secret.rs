@@ -1,8 +1,8 @@
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     api::{
-        ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwSourceBackend, ScalarZnxFillBinaryProbSourceBackend,
-        ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend, VecZnxZeroBackend,
+        ScalarZnxFillBinaryBlockSource, ScalarZnxFillBinaryHwSource, ScalarZnxFillBinaryProbSource, ScalarZnxFillTernaryHwSource,
+        ScalarZnxFillTernaryProbSource, VecZnxZero,
     },
     layouts::{
         Backend, Data, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ZnxView,
@@ -151,12 +151,12 @@ pub trait LWESecretSampling<BE: Backend> {
 
 impl<BE: Backend> LWESecretSampling<BE> for Module<BE>
 where
-    Self: ScalarZnxFillTernaryProbSourceBackend<BE>
-        + ScalarZnxFillTernaryHwSourceBackend<BE>
-        + ScalarZnxFillBinaryProbSourceBackend<BE>
-        + ScalarZnxFillBinaryHwSourceBackend<BE>
-        + ScalarZnxFillBinaryBlockSourceBackend<BE>
-        + VecZnxZeroBackend<BE>,
+    Self: ScalarZnxFillTernaryProbSource<BE>
+        + ScalarZnxFillTernaryHwSource<BE>
+        + ScalarZnxFillBinaryProbSource<BE>
+        + ScalarZnxFillBinaryHwSource<BE>
+        + ScalarZnxFillBinaryBlockSource<BE>
+        + VecZnxZero<BE>,
 {
     fn lwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
     where
@@ -164,7 +164,7 @@ where
     {
         {
             let mut sk_backend = sk.to_backend_mut();
-            self.scalar_znx_fill_ternary_prob_source_backend(&mut sk_backend.data, 0, prob, source);
+            self.scalar_znx_fill_ternary_prob_source(&mut sk_backend.data, 0, prob, source);
         }
         *sk.dist_mut() = Distribution::TernaryProb(prob);
     }
@@ -175,7 +175,7 @@ where
     {
         {
             let mut sk_backend = sk.to_backend_mut();
-            self.scalar_znx_fill_ternary_hw_source_backend(&mut sk_backend.data, 0, hw, source);
+            self.scalar_znx_fill_ternary_hw_source(&mut sk_backend.data, 0, hw, source);
         }
         *sk.dist_mut() = Distribution::TernaryFixed(hw);
     }
@@ -186,7 +186,7 @@ where
     {
         {
             let mut sk_backend = sk.to_backend_mut();
-            self.scalar_znx_fill_binary_prob_source_backend(&mut sk_backend.data, 0, prob, source);
+            self.scalar_znx_fill_binary_prob_source(&mut sk_backend.data, 0, prob, source);
         }
         *sk.dist_mut() = Distribution::BinaryProb(prob);
     }
@@ -197,7 +197,7 @@ where
     {
         {
             let mut sk_backend = sk.to_backend_mut();
-            self.scalar_znx_fill_binary_hw_source_backend(&mut sk_backend.data, 0, hw, source);
+            self.scalar_znx_fill_binary_hw_source(&mut sk_backend.data, 0, hw, source);
         }
         *sk.dist_mut() = Distribution::BinaryFixed(hw);
     }
@@ -208,7 +208,7 @@ where
     {
         {
             let mut sk_backend = sk.to_backend_mut();
-            self.scalar_znx_fill_binary_block_source_backend(&mut sk_backend.data, 0, block_size, source);
+            self.scalar_znx_fill_binary_block_source(&mut sk_backend.data, 0, block_size, source);
         }
         *sk.dist_mut() = Distribution::BinaryBlock(block_size);
     }
@@ -220,7 +220,7 @@ where
         {
             let mut sk_backend = sk.to_backend_mut();
             let mut sk_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_backend.data);
-            self.vec_znx_zero_backend(&mut sk_vec, 0);
+            self.vec_znx_zero(&mut sk_vec, 0);
         }
         *sk.dist_mut() = Distribution::ZERO;
     }

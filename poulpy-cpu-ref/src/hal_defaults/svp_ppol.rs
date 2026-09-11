@@ -47,7 +47,7 @@ where
         fft64_svp_prepare::<BE>(module.get_fft_table(), &mut res_ref, res_col, a, a_col);
     }
 
-    fn svp_ppol_copy_backend_default(
+    fn svp_ppol_copy_default(
         _module: &Module<BE>,
         res: &mut SvpPPolBackendMut<'_, BE>,
         res_col: usize,
@@ -141,7 +141,7 @@ where
         ntt4x30_svp_prepare::<BE>(module, &mut res_ref, res_col, a, a_col);
     }
 
-    fn svp_ppol_copy_backend_default(
+    fn svp_ppol_copy_default(
         _module: &Module<BE>,
         res: &mut SvpPPolBackendMut<'_, BE>,
         res_col: usize,

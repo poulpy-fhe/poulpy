@@ -2,7 +2,7 @@ use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
 use poulpy_hal::{
-    api::VecZnxCopyBackend,
+    api::VecZnxCopy,
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
         WriterTo, vec_znx_alloc_zeroed, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
@@ -130,7 +130,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for LWECompressed<D, W> {
 
 pub trait LWEDecompress
 where
-    Self: LWEFillMaskDefault<Self::Backend> + VecZnxCopyBackend<Self::Backend>,
+    Self: LWEFillMaskDefault<Self::Backend> + VecZnxCopy<Self::Backend>,
 {
     type Backend: Backend;
 
@@ -145,7 +145,7 @@ where
             let mut res = res.to_backend_mut();
             assert_eq!(res.base2k(), other.base2k(), "decompress_lwe: base2k mismatch");
             assert_eq!(res.size(), other.size(), "decompress_lwe: limb count mismatch");
-            self.vec_znx_copy_backend(&mut res.body, 0, &other.data, 0);
+            self.vec_znx_copy(&mut res.body, 0, &other.data, 0);
         }
         self.fill_lwe_mask_from_seed_default(other.base2k().into(), res, other.seed);
         res.set_base2k(other.base2k());
@@ -154,7 +154,7 @@ where
 
 impl<B: Backend> LWEDecompress for Module<B>
 where
-    Self: LWEFillMaskDefault<B> + VecZnxCopyBackend<B>,
+    Self: LWEFillMaskDefault<B> + VecZnxCopy<B>,
 {
     type Backend = B;
 }
