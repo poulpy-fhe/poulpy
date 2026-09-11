@@ -197,12 +197,23 @@ backend_test_suite! {
     }
 }
 
-// The core noise seam is only implemented for `NTT4x30Ref` under `enable-core`.
+// Gated on `enable-core`, like `core_impl`, which implements the noise seam for both reference backends.
 #[cfg(feature = "enable-core")]
 backend_test_suite! {
     mod sampling_core,
     backend = crate::NTT4x30Ref,
     params = TestParams { size: 1<<12, base2k: 12 },
+    tests = {
+        test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
+        test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
+    }
+}
+
+#[cfg(feature = "enable-core")]
+backend_test_suite! {
+    mod sampling_core_fft64,
+    backend = crate::FFT64Ref,
+    params = TestParams { size: 1<<12, base2k: 17 },
     tests = {
         test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
         test_vec_znx_big_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_big_add_normal,
