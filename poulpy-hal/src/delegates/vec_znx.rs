@@ -164,15 +164,15 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxRshTmpBytes,
-    fn vec_znx_rsh_tmp_bytes(&self) -> usize {
-        B::vec_znx_rsh_tmp_bytes(self)
+    fn vec_znx_rsh_tmp_bytes(&self, res_size: usize) -> usize {
+        B::vec_znx_rsh_tmp_bytes(self, res_size)
     }
 );
 
 impl_vec_znx_delegate!(
     VecZnxLshTmpBytes,
-    fn vec_znx_lsh_tmp_bytes(&self) -> usize {
-        B::vec_znx_lsh_tmp_bytes(self)
+    fn vec_znx_lsh_tmp_bytes(&self, res_size: usize) -> usize {
+        B::vec_znx_lsh_tmp_bytes(self, res_size)
     }
 );
 
@@ -394,8 +394,8 @@ impl_vec_znx_delegate!(
 
 impl_vec_znx_delegate!(
     VecZnxMulXpMinusOneAssignTmpBytes,
-    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(&self) -> usize {
-        B::vec_znx_mul_xp_minus_one_assign_tmp_bytes(self)
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(&self, size: usize) -> usize {
+        B::vec_znx_mul_xp_minus_one_assign_tmp_bytes(self, size)
     }
 );
 

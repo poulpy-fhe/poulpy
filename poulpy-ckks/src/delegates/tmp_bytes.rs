@@ -62,21 +62,21 @@ where
         // per-pair `ct×ct` multiply and `ct+ct` add bound the scratch.
         let polynomial_giant_steps_tmp_bytes = self
             .ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos)
-            .max(self.ckks_add_tmp_bytes());
+            .max(self.ckks_add_tmp_bytes(ct_infos.max_size()));
 
         self.ckks_encrypt_sk_tmp_bytes(ct_infos)
             .max(self.ckks_decrypt_tmp_bytes(ct_infos))
-            .max(self.ckks_add_tmp_bytes())
-            .max(self.ckks_add_pt_vec_tmp_bytes())
-            .max(self.ckks_add_pt_const_tmp_bytes())
-            .max(self.ckks_sub_tmp_bytes())
-            .max(self.ckks_sub_pt_vec_tmp_bytes())
-            .max(self.ckks_sub_pt_const_tmp_bytes())
-            .max(self.ckks_neg_tmp_bytes())
-            .max(self.ckks_mul_pow2_tmp_bytes())
-            .max(self.ckks_div_pow2_tmp_bytes())
-            .max(self.ckks_mul_i_tmp_bytes())
-            .max(self.ckks_div_i_tmp_bytes())
+            .max(self.ckks_add_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_add_pt_vec_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_add_pt_const_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_sub_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_sub_pt_vec_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_sub_pt_const_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_neg_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_mul_pow2_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_div_pow2_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_mul_i_tmp_bytes(ct_infos.max_size()))
+            .max(self.ckks_div_i_tmp_bytes(ct_infos.max_size()))
             .max(self.ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_mul_add_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))

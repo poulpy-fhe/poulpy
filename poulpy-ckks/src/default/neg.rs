@@ -8,11 +8,11 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
 
 pub trait CKKSNegDefault<BE: Backend> {
-    fn ckks_neg_tmp_bytes_default(&self) -> usize
+    fn ckks_neg_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Self: GLWEShift<BE>,
     {
-        self.glwe_shift_tmp_bytes()
+        self.glwe_shift_tmp_bytes(res_size)
     }
 
     fn ckks_neg_into_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

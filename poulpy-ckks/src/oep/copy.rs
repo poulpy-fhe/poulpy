@@ -12,7 +12,7 @@ use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSCopyImpl<BE: Backend>: Backend {
-    fn ckks_copy_tmp_bytes_impl(module: &Module<BE>) -> usize;
+    fn ckks_copy_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize;
 
     fn ckks_copy_impl<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
@@ -25,8 +25,8 @@ where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: crate::default::copy::CKKSCopyDefault<BE> + GLWECopy<BE> + GLWEShift<BE>,
 {
-    fn ckks_copy_tmp_bytes_impl(module: &Module<BE>) -> usize {
-        module.ckks_copy_tmp_bytes_default()
+    fn ckks_copy_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
+        module.ckks_copy_tmp_bytes_default(res_size)
     }
 
     fn ckks_copy_impl<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

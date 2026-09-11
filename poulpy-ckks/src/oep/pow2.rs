@@ -12,7 +12,7 @@ use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSPow2Impl<BE: Backend>: Backend {
-    fn ckks_mul_pow2_tmp_bytes_impl(module: &Module<BE>) -> usize;
+    fn ckks_mul_pow2_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize;
     fn ckks_mul_pow2_into_impl<Dst, Src>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -31,7 +31,7 @@ pub unsafe trait CKKSPow2Impl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
-    fn ckks_div_pow2_tmp_bytes_impl(module: &Module<BE>) -> usize;
+    fn ckks_div_pow2_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize;
     fn ckks_div_pow2_into_impl<Dst, Src>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -52,8 +52,8 @@ where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: crate::default::pow2::CKKSPow2Default<BE> + GLWECopy<BE> + GLWEShift<BE>,
 {
-    fn ckks_mul_pow2_tmp_bytes_impl(module: &Module<BE>) -> usize {
-        module.ckks_mul_pow2_tmp_bytes_default()
+    fn ckks_mul_pow2_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
+        module.ckks_mul_pow2_tmp_bytes_default(res_size)
     }
 
     fn ckks_mul_pow2_into_impl<Dst, Src>(
@@ -82,8 +82,8 @@ where
         module.ckks_mul_pow2_assign_default(dst, bits, scratch)
     }
 
-    fn ckks_div_pow2_tmp_bytes_impl(module: &Module<BE>) -> usize {
-        module.ckks_div_pow2_tmp_bytes_default()
+    fn ckks_div_pow2_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
+        module.ckks_div_pow2_tmp_bytes_default(res_size)
     }
 
     fn ckks_div_pow2_into_impl<Dst, Src>(

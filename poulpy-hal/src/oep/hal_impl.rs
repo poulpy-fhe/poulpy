@@ -70,7 +70,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         res_limb: usize,
         a: &ScalarZnxBackendRef<'_, BE>,
         a_col: usize,
-    );
+    ) {
+        crate::oep::vec_znx_add_scalar_assign_derived::<Self, BE>(module, res, res_col, res_limb, a, a_col)
+    }
 
     fn vec_znx_sub(
         module: &Module<BE>,
@@ -108,7 +110,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
 
     fn vec_znx_negate_assign(module: &Module<BE>, a: &mut VecZnxBackendMut<'_, BE>, a_col: usize);
 
-    fn vec_znx_rsh_tmp_bytes(module: &Module<BE>) -> usize;
+    fn vec_znx_rsh_tmp_bytes(module: &Module<BE>, res_size: usize) -> usize {
+        crate::oep::vec_znx_rsh_tmp_bytes_derived::<Self, BE>(module, res_size)
+    }
 
     fn vec_znx_rsh(
         module: &Module<BE>,
@@ -119,7 +123,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vec_znx_rsh_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
     fn vec_znx_rsh_add(
         module: &Module<BE>,
@@ -130,9 +136,13 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vec_znx_rsh_add_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
-    fn vec_znx_lsh_tmp_bytes(module: &Module<BE>) -> usize;
+    fn vec_znx_lsh_tmp_bytes(module: &Module<BE>, res_size: usize) -> usize {
+        crate::oep::vec_znx_lsh_tmp_bytes_derived::<Self, BE>(module, res_size)
+    }
 
     fn vec_znx_lsh(
         module: &Module<BE>,
@@ -143,7 +153,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vec_znx_lsh_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
     fn vec_znx_lsh_add(
         module: &Module<BE>,
@@ -154,7 +166,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vec_znx_lsh_add_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
     fn vec_znx_lsh_sub(
         module: &Module<BE>,
@@ -165,7 +179,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vec_znx_lsh_sub_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
     fn vec_znx_rsh_sub(
         module: &Module<BE>,
@@ -176,7 +192,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vec_znx_rsh_sub_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
     fn vec_znx_rsh_assign(
         module: &Module<BE>,
@@ -185,7 +203,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &mut VecZnxBackendMut<'_, BE>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vec_znx_rsh_assign_derived::<Self, BE>(module, base2k, k, a, a_col, scratch)
+    }
 
     fn vec_znx_lsh_assign(
         module: &Module<BE>,
@@ -194,7 +214,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &mut VecZnxBackendMut<'_, BE>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vec_znx_lsh_assign_derived::<Self, BE>(module, base2k, k, a, a_col, scratch)
+    }
 
     fn vec_znx_rotate(
         module: &Module<BE>,
@@ -241,9 +263,13 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         res_col: usize,
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
-    );
+    ) {
+        crate::oep::vec_znx_mul_xp_minus_one_derived::<Self, BE>(module, k, res, res_col, a, a_col)
+    }
 
-    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &Module<BE>) -> usize;
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &Module<BE>, size: usize) -> usize {
+        crate::oep::vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived::<Self, BE>(module, size)
+    }
 
     fn vec_znx_mul_xp_minus_one_assign(
         module: &Module<BE>,
@@ -251,7 +277,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vec_znx_mul_xp_minus_one_assign_derived::<Self, BE>(module, k, res, res_col, scratch)
+    }
 
     fn vec_znx_switch_ring(
         module: &Module<BE>,

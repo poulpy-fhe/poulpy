@@ -19,7 +19,7 @@ use crate::{CKKSInfos, SetCKKSInfos};
 /// log_budget_out = src.log_budget
 /// ```
 pub trait CKKSPlaintextVecOps<BE: Backend> {
-    fn ckks_extract_pt_tmp_bytes(&self) -> usize;
+    fn ckks_extract_pt_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Extracts the ZNX plaintext polynomial from `src` into `dst`.
     fn ckks_extract_pt<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

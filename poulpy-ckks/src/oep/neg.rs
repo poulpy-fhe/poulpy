@@ -12,7 +12,7 @@ use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSNegImpl<BE: Backend>: Backend {
-    fn ckks_neg_tmp_bytes_impl(module: &Module<BE>) -> usize;
+    fn ckks_neg_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize;
 
     fn ckks_neg_into_impl<Dst, Src>(
         module: &Module<BE>,
@@ -34,8 +34,8 @@ where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: crate::default::neg::CKKSNegDefault<BE> + GLWENegate<BE> + GLWEShift<BE>,
 {
-    fn ckks_neg_tmp_bytes_impl(module: &Module<BE>) -> usize {
-        module.ckks_neg_tmp_bytes_default()
+    fn ckks_neg_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
+        module.ckks_neg_tmp_bytes_default(res_size)
     }
 
     fn ckks_neg_into_impl<Dst, Src>(

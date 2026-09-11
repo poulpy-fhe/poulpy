@@ -58,7 +58,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// **Capacity consumed**: `bits` bits (plus `offset` for undersized destinations).
 /// Errors with `InsufficientHomomorphicCapacity` if `bits (+ offset) > src.log_budget`.
 pub trait CKKSPow2Ops<BE: Backend> {
-    fn ckks_mul_pow2_tmp_bytes(&self) -> usize;
+    fn ckks_mul_pow2_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = src * 2^bits`.
     ///
@@ -80,7 +80,7 @@ pub trait CKKSPow2Ops<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
-    fn ckks_div_pow2_tmp_bytes(&self) -> usize;
+    fn ckks_div_pow2_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = src / 2^bits`.
     ///

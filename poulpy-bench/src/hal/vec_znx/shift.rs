@@ -25,7 +25,7 @@ where
 
     let mut source = poulpy_hal::source::Source::new([0u8; 32]);
 
-    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_lsh_tmp_bytes());
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_lsh_tmp_bytes(sweep.size));
 
     let b = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let mut b = upload_host_vec_znx::<B>(&b);
@@ -50,7 +50,7 @@ where
 
     let mut source = poulpy_hal::source::Source::new([0u8; 32]);
 
-    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_lsh_tmp_bytes());
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_lsh_tmp_bytes(sweep.size));
 
     let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<B>(&a);
@@ -77,7 +77,7 @@ where
 
     let mut source = poulpy_hal::source::Source::new([0u8; 32]);
 
-    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes());
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(sweep.size));
 
     let b = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let mut b = upload_host_vec_znx::<B>(&b);
@@ -102,7 +102,7 @@ where
 
     let mut source = poulpy_hal::source::Source::new([0u8; 32]);
 
-    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes());
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(sweep.size));
 
     let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<B>(&a);

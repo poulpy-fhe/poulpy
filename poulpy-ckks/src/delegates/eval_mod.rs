@@ -96,7 +96,7 @@ where
         let hoisted_right = self.bytes_of_cnv_pvec_right(cols, work.max_size(), PrepareHint::Reuse);
         let bsgs_giant = self
             .ckks_mul_tmp_bytes(&work, &work, &work, tsk)
-            .max(self.ckks_add_tmp_bytes())
+            .max(self.ckks_add_tmp_bytes(work.max_size()))
             + 3 * compact_work
             + hoisted_right;
         let square_scope = (self.ckks_square_tmp_bytes(&work, &work, tsk) + compact_work).max(
@@ -132,9 +132,9 @@ where
 
         usize::from(needs_work_copy) * compact_work
             + self
-                .ckks_copy_tmp_bytes()
-                .max(self.ckks_add_pt_const_tmp_bytes())
-                .max(self.ckks_sub_pt_const_tmp_bytes())
+                .ckks_copy_tmp_bytes(work.max_size())
+                .max(self.ckks_add_pt_const_tmp_bytes(work.max_size()))
+                .max(self.ckks_sub_pt_const_tmp_bytes(work.max_size()))
                 .max(bsgs_giant)
                 .max(square_scope)
                 .max(fused_baby)

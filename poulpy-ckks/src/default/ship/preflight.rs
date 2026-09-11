@@ -4,7 +4,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
     default::keyswitching::glwe::GGLWEProductDefault,
-    layouts::{GLWELayout, Rank},
+    layouts::{GLWELayout, LWEInfos, Rank},
 };
 
 use crate::{CKKSLayout, CKKSMeta};
@@ -91,7 +91,7 @@ where
         base2k.into(),
         params.complex(),
     )?);
-    bytes = bytes.max(module.ckks_add_pt_vec_tmp_bytes());
+    bytes = bytes.max(module.ckks_add_pt_vec_tmp_bytes(raised.size()));
     bytes = bytes.max(ship_masking_tmp_bytes(module, plan, base2k));
     for ik in keys.index_keys() {
         for group in ik.mux_keys() {
@@ -102,8 +102,8 @@ where
     }
     bytes = bytes.max(module.ckks_mul_tmp_bytes(&raised, &raised, &raised, keys.tensor_key()));
     bytes = bytes.max(module.ckks_conjugate_tmp_bytes(&raised, keys.conjugation_key()));
-    bytes = bytes.max(module.ckks_add_tmp_bytes());
-    bytes = bytes.max(module.ckks_sub_tmp_bytes());
-    bytes = bytes.max(module.ckks_mul_i_tmp_bytes());
+    bytes = bytes.max(module.ckks_add_tmp_bytes(raised.size()));
+    bytes = bytes.max(module.ckks_sub_tmp_bytes(raised.size()));
+    bytes = bytes.max(module.ckks_mul_i_tmp_bytes(raised.size()));
     Ok(bytes)
 }

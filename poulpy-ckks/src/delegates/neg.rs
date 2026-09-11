@@ -13,8 +13,8 @@ impl<BE: Backend + CKKSNegImpl<BE>> CKKSNegOps<BE> for Module<BE>
 where
     Module<BE>: GLWENegate<BE> + GLWEShift<BE>,
 {
-    fn ckks_neg_tmp_bytes(&self) -> usize {
-        BE::ckks_neg_tmp_bytes_impl(self)
+    fn ckks_neg_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_neg_tmp_bytes_impl(self, res_size)
     }
 
     fn ckks_neg_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

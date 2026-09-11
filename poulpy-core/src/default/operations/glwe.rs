@@ -1781,7 +1781,7 @@ where
 
 #[doc(hidden)]
 pub trait GLWEShiftDefault<BE: Backend> {
-    fn glwe_shift_tmp_bytes_default(&self) -> usize;
+    fn glwe_shift_tmp_bytes_default(&self, res_size: usize) -> usize;
 
     fn glwe_rsh_default<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -1818,9 +1818,8 @@ where
         + VecZnxLshAssign<BE>
         + VecZnxLsh<BE>,
 {
-    fn glwe_shift_tmp_bytes_default(&self) -> usize {
-        let lvl_0: usize = self.vec_znx_rsh_tmp_bytes().max(self.vec_znx_lsh_tmp_bytes());
-        lvl_0
+    fn glwe_shift_tmp_bytes_default(&self, res_size: usize) -> usize {
+        self.vec_znx_rsh_tmp_bytes(res_size).max(self.vec_znx_lsh_tmp_bytes(res_size))
     }
 
     fn glwe_rsh_default<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
@@ -1829,10 +1828,10 @@ where
     {
         let res = &mut res.to_backend_mut();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self),
+            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self)
+            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
         );
         let base2k: usize = res.base2k().into();
         for i in 0..res.rank().as_usize() + 1 {
@@ -1848,10 +1847,10 @@ where
         let res = &mut res.to_backend_mut();
 
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self),
+            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self)
+            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         let base2k: usize = res.base2k().into();
@@ -1869,10 +1868,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self),
+            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self)
+            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1895,10 +1894,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self),
+            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self)
+            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1921,10 +1920,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self),
+            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self)
+            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);

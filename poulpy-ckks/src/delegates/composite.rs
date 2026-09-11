@@ -69,8 +69,8 @@ impl<BE: Backend> CKKSAddManyOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE>,
 {
-    fn ckks_add_many_tmp_bytes(&self) -> usize {
-        self.ckks_add_tmp_bytes()
+    fn ckks_add_many_tmp_bytes(&self, res_size: usize) -> usize {
+        self.ckks_add_tmp_bytes(res_size)
     }
 
     fn ckks_add_many<Dst, Src>(&self, dst: &mut Dst, inputs: &[&Src], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -108,7 +108,10 @@ where
         B: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        self.glwe_bytes_of_from_infos(res) + self.ckks_mul_tmp_bytes(res, a, b, tsk).max(self.ckks_add_tmp_bytes())
+        self.glwe_bytes_of_from_infos(res)
+            + self
+                .ckks_mul_tmp_bytes(res, a, b, tsk)
+                .max(self.ckks_add_tmp_bytes(res.size()))
     }
 
     fn ckks_mul_add_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -117,7 +120,10 @@ where
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_vec_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
+        self.glwe_bytes_of_from_infos(res)
+            + self
+                .ckks_mul_pt_vec_tmp_bytes(res, a, b)
+                .max(self.ckks_add_tmp_bytes(res.size()))
     }
 
     fn ckks_mul_add_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -126,7 +132,10 @@ where
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
+        self.glwe_bytes_of_from_infos(res)
+            + self
+                .ckks_mul_pt_const_tmp_bytes(res, a, b)
+                .max(self.ckks_add_tmp_bytes(res.size()))
     }
 
     fn ckks_mul_add_ct_into<Dst, A, B, H>(
@@ -241,7 +250,7 @@ where
         P: CKKSInfos,
     {
         self.ckks_mul_pt_const_tmp_bytes(res, a, affine_const)
-            .max(self.ckks_add_pt_const_tmp_bytes())
+            .max(self.ckks_add_pt_const_tmp_bytes(res.size()))
     }
 
     fn ckks_affine_pt_const_into<Dst, A, P>(
@@ -285,7 +294,7 @@ where
         S: CKKSInfos,
     {
         self.ckks_mul_pt_vec_tmp_bytes(res, a, scale)
-            .max(self.ckks_add_pt_vec_tmp_bytes())
+            .max(self.ckks_add_pt_vec_tmp_bytes(res.size()))
     }
 
     fn ckks_affine_pt_vec_into<Dst, A, S, P>(
@@ -336,7 +345,10 @@ where
         B: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        self.glwe_bytes_of_from_infos(res) + self.ckks_mul_tmp_bytes(res, a, b, tsk).max(self.ckks_sub_tmp_bytes())
+        self.glwe_bytes_of_from_infos(res)
+            + self
+                .ckks_mul_tmp_bytes(res, a, b, tsk)
+                .max(self.ckks_sub_tmp_bytes(res.size()))
     }
 
     fn ckks_mul_sub_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -345,7 +357,10 @@ where
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_vec_tmp_bytes(res, a, b).max(self.ckks_sub_tmp_bytes())
+        self.glwe_bytes_of_from_infos(res)
+            + self
+                .ckks_mul_pt_vec_tmp_bytes(res, a, b)
+                .max(self.ckks_sub_tmp_bytes(res.size()))
     }
 
     fn ckks_mul_sub_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -354,7 +369,10 @@ where
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_sub_tmp_bytes())
+        self.glwe_bytes_of_from_infos(res)
+            + self
+                .ckks_mul_pt_const_tmp_bytes(res, a, b)
+                .max(self.ckks_sub_tmp_bytes(res.size()))
     }
 
     fn ckks_mul_sub_ct_into<Dst, A, B, H>(
@@ -477,7 +495,7 @@ where
             return mul_scratch.max(self.glwe_normalize_tmp_bytes());
         }
         let ct_bytes: usize = self.glwe_bytes_of_from_infos(res);
-        let fallback: usize = ct_bytes + mul_scratch.max(self.ckks_add_tmp_bytes());
+        let fallback: usize = ct_bytes + mul_scratch.max(self.ckks_add_tmp_bytes(res.size()));
         let tensor_layout = GLWELayout {
             n: res.n(),
             base2k: res.base2k(),
@@ -498,7 +516,10 @@ where
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_vec_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
+        self.glwe_bytes_of_from_infos(res)
+            + self
+                .ckks_mul_pt_vec_tmp_bytes(res, a, b)
+                .max(self.ckks_add_tmp_bytes(res.size()))
     }
 
     fn ckks_dot_product_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
@@ -507,7 +528,10 @@ where
         A: CKKSCtBounds,
         P: CKKSInfos,
     {
-        self.glwe_bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
+        self.glwe_bytes_of_from_infos(res)
+            + self
+                .ckks_mul_pt_const_tmp_bytes(res, a, b)
+                .max(self.ckks_add_tmp_bytes(res.size()))
     }
 
     fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, H>(

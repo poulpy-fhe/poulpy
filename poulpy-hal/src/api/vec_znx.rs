@@ -109,9 +109,13 @@ pub trait VecZnxNegateAssign<B: Backend> {
     fn vec_znx_negate_assign(&self, a: &mut VecZnxBackendMut<'_, B>, a_col: usize);
 }
 
-/// Returns scratch bytes required for left-shift operations.
+/// Returns scratch bytes required for the left-shift family:
+/// [`VecZnxLsh::vec_znx_lsh`], [`VecZnxLshAdd::vec_znx_lsh_add`],
+/// [`VecZnxLshSub::vec_znx_lsh_sub`] and
+/// [`VecZnxLshAssign::vec_znx_lsh_assign`], on a destination of `res_size`
+/// limbs.
 pub trait VecZnxLshTmpBytes {
-    fn vec_znx_lsh_tmp_bytes(&self) -> usize;
+    fn vec_znx_lsh_tmp_bytes(&self, res_size: usize) -> usize;
 }
 
 pub trait VecZnxLsh<B: Backend> {
@@ -152,9 +156,13 @@ pub trait VecZnxLshAdd<B: Backend> {
     );
 }
 
-/// Returns scratch bytes required for right-shift operations.
+/// Returns scratch bytes required for the right-shift family:
+/// [`VecZnxRsh::vec_znx_rsh`], [`VecZnxRshAdd::vec_znx_rsh_add`],
+/// [`VecZnxRshSub::vec_znx_rsh_sub`] and
+/// [`VecZnxRshAssign::vec_znx_rsh_assign`], on a destination of `res_size`
+/// limbs.
 pub trait VecZnxRshTmpBytes {
-    fn vec_znx_rsh_tmp_bytes(&self) -> usize;
+    fn vec_znx_rsh_tmp_bytes(&self, res_size: usize) -> usize;
 }
 
 pub trait VecZnxRsh<B: Backend> {
@@ -321,8 +329,11 @@ pub trait VecZnxMulXpMinusOne<B: Backend> {
     );
 }
 
+/// Returns scratch bytes required for
+/// [`VecZnxMulXpMinusOneAssign::vec_znx_mul_xp_minus_one_assign`] on a
+/// destination of `size` limbs.
 pub trait VecZnxMulXpMinusOneAssignTmpBytes {
-    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(&self) -> usize;
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(&self, size: usize) -> usize;
 }
 
 pub trait VecZnxMulXpMinusOneAssign<B: Backend> {

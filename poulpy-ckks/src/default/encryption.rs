@@ -21,8 +21,8 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshAdd<BE> + VecZnxRshTmpBytes,
     {
         self.glwe_encrypt_sk_tmp_bytes(ct_infos)
-            .max(self.vec_znx_lsh_tmp_bytes())
-            .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.vec_znx_lsh_tmp_bytes(ct_infos.size()))
+            .max(self.vec_znx_rsh_tmp_bytes(ct_infos.size()))
             .max(self.glwe_normalize_tmp_bytes())
     }
 
@@ -69,7 +69,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         self.glwe_plaintext_bytes_of_from_infos(ct_infos)
             + self
                 .glwe_decrypt_tmp_bytes(ct_infos)
-                .max(self.ckks_extract_pt_tmp_bytes_default())
+                .max(self.ckks_extract_pt_tmp_bytes_default(ct_infos.size()))
     }
 
     fn ckks_decrypt_default<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

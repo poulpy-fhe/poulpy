@@ -457,8 +457,8 @@ where
     let base = VecZnxShape::new(n, cols, size);
     let tmp_bytes = module
         .vec_znx_normalize_tmp_bytes()
-        .max(module.vec_znx_lsh_tmp_bytes())
-        .max(module.vec_znx_rsh_tmp_bytes());
+        .max(module.vec_znx_lsh_tmp_bytes(size))
+        .max(module.vec_znx_rsh_tmp_bytes(size));
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(tmp_bytes);
 
     for w in windows(n, size) {

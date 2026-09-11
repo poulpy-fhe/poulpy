@@ -20,18 +20,24 @@
 
 use crate::{
     api::{
-        MatZnxAlloc, ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyDft,
-        VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        MatZnxAlloc, ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
+        VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAlloc, VecZnxDftApply,
+        VecZnxDftZero, VecZnxIdftApplyTmpA, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
+        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpPMatAlloc,
+        VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos,
-        VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, vec_znx_backend_mut, vec_znx_backend_ref,
+        VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
-    oep::{HalVmpImpl, vmp_apply_dft_derived},
+    oep::{HalVecZnxImpl, HalVmpImpl, vmp_apply_dft_derived},
     source::Source,
-    test_suite::{TestBackend, TestParams, download_vec_znx, upload_mat_znx, upload_vec_znx},
+    test_suite::{
+        TestBackend, TestParams, download_vec_znx, scalar_znx_backend_ref, upload_mat_znx, upload_scalar_znx, upload_vec_znx,
+    },
 };
 
 /// `vmp_apply_dft`: the derived free function's decomposition versus an
@@ -155,5 +161,821 @@ where
             want, have,
             "vmp_apply_dft: derived decomposition != hand-built oracle (col {col})"
         );
+    }
+}
+
+/// `vec_znx_lsh`: the OEP default body against the definition it is derived
+/// from, written out — `normalize(res_base2k = base2k, res_k = res_size *
+/// base2k, res_offset = +k)`. Both sides are canonical, so this is bit for
+/// bit. The arena is sized by `vec_znx_lsh_tmp_bytes(res_size)` alone, so a
+/// default that under-reports its scratch panics here.
+pub fn test_vec_znx_lsh_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxNormalize<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for a_size in [1usize, 2, 4] {
+        let mut a = module_host.vec_znx_alloc(1, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a);
+
+        for res_size in [1usize, 2, 4] {
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_lsh_tmp_bytes(res_size));
+
+            for k in 0..=(res_size * base2k) {
+                let mut res = module_host.vec_znx_alloc(1, res_size);
+                res.fill_uniform(base2k, &mut source);
+                let mut have_backend = upload_vec_znx::<BE>(&res);
+                let mut want_backend = upload_vec_znx::<BE>(&res);
+
+                module.vec_znx_lsh(
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                // Oracle: the spec definition of `lsh`, spelled out.
+                module.vec_znx_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                    base2k,
+                    res_size * base2k,
+                    k as i64,
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    base2k,
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                assert_eq!(
+                    download_vec_znx::<BE>(&want_backend),
+                    download_vec_znx::<BE>(&have_backend),
+                    "vec_znx_lsh: default body != normalize(offset) (a_size {a_size} res_size {res_size} k {k})"
+                );
+            }
+        }
+    }
+}
+
+/// `vec_znx_rsh`: the OEP default body against the definition it is derived
+/// from, written out — `normalize(res_base2k = base2k, res_k = res_size *
+/// base2k, res_offset = -k)`. Both sides are canonical, so this is bit for
+/// bit. The arena is sized by `vec_znx_rsh_tmp_bytes(res_size)` alone, so a
+/// default that under-reports its scratch panics here.
+pub fn test_vec_znx_rsh_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxRsh<BE> + VecZnxRshTmpBytes + VecZnxNormalize<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for a_size in [1usize, 2, 4] {
+        let mut a = module_host.vec_znx_alloc(1, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a);
+
+        for res_size in [1usize, 2, 4] {
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(res_size));
+
+            for k in 0..=(res_size * base2k) {
+                let mut res = module_host.vec_znx_alloc(1, res_size);
+                res.fill_uniform(base2k, &mut source);
+                let mut have_backend = upload_vec_znx::<BE>(&res);
+                let mut want_backend = upload_vec_znx::<BE>(&res);
+
+                module.vec_znx_rsh(
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                // Oracle: the spec definition of `rsh`, spelled out.
+                module.vec_znx_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                    base2k,
+                    res_size * base2k,
+                    -(k as i64),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    base2k,
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                assert_eq!(
+                    download_vec_znx::<BE>(&want_backend),
+                    download_vec_znx::<BE>(&have_backend),
+                    "vec_znx_rsh: default body != normalize(offset) (a_size {a_size} res_size {res_size} k {k})"
+                );
+            }
+        }
+    }
+
+    // Exactly one out-of-domain case: shifting further right than the
+    // destination's own precision must annihilate the value.
+    {
+        let res_size: usize = 2;
+        let k: usize = res_size * base2k + 3;
+        let mut a = module_host.vec_znx_alloc(1, 2);
+        a.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a);
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(res_size));
+        let mut res = module_host.vec_znx_alloc(1, res_size);
+        res.fill_uniform(base2k, &mut source);
+        let mut have_backend = upload_vec_znx::<BE>(&res);
+        module.vec_znx_rsh(
+            base2k,
+            k,
+            &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+            0,
+            &vec_znx_backend_ref::<BE>(&a_backend),
+            0,
+            &mut scratch.borrow(),
+        );
+        let have = download_vec_znx::<BE>(&have_backend);
+        for limb in 0..res_size {
+            assert!(
+                have.at(0, limb).iter().all(|&c| c == 0),
+                "vec_znx_rsh: shifting past the destination precision must give zero (res_size {res_size} k {k})"
+            );
+        }
+    }
+}
+
+/// `vec_znx_lsh_add`: the OEP default body against a two-step oracle built on
+/// the api — `tmp = lsh(a, k)` into a fresh buffer, then `res + (a << k)` with the
+/// three-operand `vec_znx_add`. The two spread the same value over different
+/// non-canonical digits, so the comparison is on canonical forms. The arena is
+/// sized by the family's `vec_znx_lsh_tmp_bytes(res_size)`.
+pub fn test_vec_znx_lsh_add_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxLshAdd<BE>
+        + VecZnxLsh<BE>
+        + VecZnxAdd<BE>
+        + VecZnxLshTmpBytes
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for a_size in [1usize, 2, 4] {
+        let mut a = module_host.vec_znx_alloc(1, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a);
+
+        for res_size in [1usize, 2, 4] {
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                module
+                    .vec_znx_lsh_tmp_bytes(res_size)
+                    .max(module.vec_znx_normalize_tmp_bytes()),
+            );
+
+            for k in 0..=(res_size * base2k) {
+                let mut res = module_host.vec_znx_alloc(1, res_size);
+                res.fill_uniform(base2k, &mut source);
+                let orig_backend = upload_vec_znx::<BE>(&res);
+                let mut have_backend = upload_vec_znx::<BE>(&res);
+                let mut want_backend = upload_vec_znx::<BE>(&res);
+
+                module.vec_znx_lsh_add(
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                // Oracle: shift into a fresh buffer, then combine on the api.
+                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+                module.vec_znx_lsh(
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<BE>(&mut tmp_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+                module.vec_znx_add(
+                    &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&orig_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&tmp_backend),
+                    0,
+                );
+
+                for backend in [&mut want_backend, &mut have_backend] {
+                    module.vec_znx_normalize_assign(
+                        base2k,
+                        res_size * base2k,
+                        &mut vec_znx_backend_mut::<BE>(backend),
+                        0,
+                        &mut scratch.borrow(),
+                    );
+                }
+
+                assert_eq!(
+                    download_vec_znx::<BE>(&want_backend),
+                    download_vec_znx::<BE>(&have_backend),
+                    "vec_znx_lsh_add: default body != api oracle (a_size {a_size} res_size {res_size} k {k})"
+                );
+            }
+        }
+    }
+}
+
+/// `vec_znx_lsh_sub`: the OEP default body against a two-step oracle built on
+/// the api — `tmp = lsh(a, k)` into a fresh buffer, then `res - (a << k)` with the
+/// three-operand `vec_znx_sub`. The two spread the same value over different
+/// non-canonical digits, so the comparison is on canonical forms. The arena is
+/// sized by the family's `vec_znx_lsh_tmp_bytes(res_size)`.
+pub fn test_vec_znx_lsh_sub_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxLshSub<BE>
+        + VecZnxLsh<BE>
+        + VecZnxSub<BE>
+        + VecZnxLshTmpBytes
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for a_size in [1usize, 2, 4] {
+        let mut a = module_host.vec_znx_alloc(1, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a);
+
+        for res_size in [1usize, 2, 4] {
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                module
+                    .vec_znx_lsh_tmp_bytes(res_size)
+                    .max(module.vec_znx_normalize_tmp_bytes()),
+            );
+
+            for k in 0..=(res_size * base2k) {
+                let mut res = module_host.vec_znx_alloc(1, res_size);
+                res.fill_uniform(base2k, &mut source);
+                let orig_backend = upload_vec_znx::<BE>(&res);
+                let mut have_backend = upload_vec_znx::<BE>(&res);
+                let mut want_backend = upload_vec_znx::<BE>(&res);
+
+                module.vec_znx_lsh_sub(
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                // Oracle: shift into a fresh buffer, then combine on the api.
+                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+                module.vec_znx_lsh(
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<BE>(&mut tmp_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+                module.vec_znx_sub(
+                    &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&orig_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&tmp_backend),
+                    0,
+                );
+
+                for backend in [&mut want_backend, &mut have_backend] {
+                    module.vec_znx_normalize_assign(
+                        base2k,
+                        res_size * base2k,
+                        &mut vec_znx_backend_mut::<BE>(backend),
+                        0,
+                        &mut scratch.borrow(),
+                    );
+                }
+
+                assert_eq!(
+                    download_vec_znx::<BE>(&want_backend),
+                    download_vec_znx::<BE>(&have_backend),
+                    "vec_znx_lsh_sub: default body != api oracle (a_size {a_size} res_size {res_size} k {k})"
+                );
+            }
+        }
+    }
+}
+
+/// `vec_znx_rsh_add`: the OEP default body against a two-step oracle built on
+/// the api — `tmp = rsh(a, k)` into a fresh buffer, then `res + (a >> k)` with the
+/// three-operand `vec_znx_add`. The two spread the same value over different
+/// non-canonical digits, so the comparison is on canonical forms. The arena is
+/// sized by the family's `vec_znx_rsh_tmp_bytes(res_size)`.
+pub fn test_vec_znx_rsh_add_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxRshAdd<BE>
+        + VecZnxRsh<BE>
+        + VecZnxAdd<BE>
+        + VecZnxRshTmpBytes
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for a_size in [1usize, 2, 4] {
+        let mut a = module_host.vec_znx_alloc(1, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a);
+
+        for res_size in [1usize, 2, 4] {
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                module
+                    .vec_znx_rsh_tmp_bytes(res_size)
+                    .max(module.vec_znx_normalize_tmp_bytes()),
+            );
+
+            for k in 0..=(res_size * base2k) {
+                let mut res = module_host.vec_znx_alloc(1, res_size);
+                res.fill_uniform(base2k, &mut source);
+                let orig_backend = upload_vec_znx::<BE>(&res);
+                let mut have_backend = upload_vec_znx::<BE>(&res);
+                let mut want_backend = upload_vec_znx::<BE>(&res);
+
+                module.vec_znx_rsh_add(
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                // Oracle: shift into a fresh buffer, then combine on the api.
+                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+                module.vec_znx_rsh(
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<BE>(&mut tmp_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+                module.vec_znx_add(
+                    &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&orig_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&tmp_backend),
+                    0,
+                );
+
+                for backend in [&mut want_backend, &mut have_backend] {
+                    module.vec_znx_normalize_assign(
+                        base2k,
+                        res_size * base2k,
+                        &mut vec_znx_backend_mut::<BE>(backend),
+                        0,
+                        &mut scratch.borrow(),
+                    );
+                }
+
+                assert_eq!(
+                    download_vec_znx::<BE>(&want_backend),
+                    download_vec_znx::<BE>(&have_backend),
+                    "vec_znx_rsh_add: default body != api oracle (a_size {a_size} res_size {res_size} k {k})"
+                );
+            }
+        }
+    }
+}
+
+/// `vec_znx_rsh_sub`: the OEP default body against a two-step oracle built on
+/// the api — `tmp = rsh(a, k)` into a fresh buffer, then `res - (a >> k)` with the
+/// three-operand `vec_znx_sub`. The two spread the same value over different
+/// non-canonical digits, so the comparison is on canonical forms. The arena is
+/// sized by the family's `vec_znx_rsh_tmp_bytes(res_size)`.
+pub fn test_vec_znx_rsh_sub_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxRshSub<BE>
+        + VecZnxRsh<BE>
+        + VecZnxSub<BE>
+        + VecZnxRshTmpBytes
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for a_size in [1usize, 2, 4] {
+        let mut a = module_host.vec_znx_alloc(1, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a);
+
+        for res_size in [1usize, 2, 4] {
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                module
+                    .vec_znx_rsh_tmp_bytes(res_size)
+                    .max(module.vec_znx_normalize_tmp_bytes()),
+            );
+
+            for k in 0..=(res_size * base2k) {
+                let mut res = module_host.vec_znx_alloc(1, res_size);
+                res.fill_uniform(base2k, &mut source);
+                let orig_backend = upload_vec_znx::<BE>(&res);
+                let mut have_backend = upload_vec_znx::<BE>(&res);
+                let mut want_backend = upload_vec_znx::<BE>(&res);
+
+                module.vec_znx_rsh_sub(
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                // Oracle: shift into a fresh buffer, then combine on the api.
+                let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+                module.vec_znx_rsh(
+                    base2k,
+                    k,
+                    &mut vec_znx_backend_mut::<BE>(&mut tmp_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+                module.vec_znx_sub(
+                    &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&orig_backend),
+                    0,
+                    &vec_znx_backend_ref::<BE>(&tmp_backend),
+                    0,
+                );
+
+                for backend in [&mut want_backend, &mut have_backend] {
+                    module.vec_znx_normalize_assign(
+                        base2k,
+                        res_size * base2k,
+                        &mut vec_znx_backend_mut::<BE>(backend),
+                        0,
+                        &mut scratch.borrow(),
+                    );
+                }
+
+                assert_eq!(
+                    download_vec_znx::<BE>(&want_backend),
+                    download_vec_znx::<BE>(&have_backend),
+                    "vec_znx_rsh_sub: default body != api oracle (a_size {a_size} res_size {res_size} k {k})"
+                );
+            }
+        }
+    }
+}
+
+/// `vec_znx_lsh_assign`: the OEP default body against a two-step oracle built on
+/// the api — `tmp = lsh(a, k)` into a fresh buffer, then `vec_znx_copy` back.
+/// Compared on canonical forms; the arena is sized by
+/// `vec_znx_lsh_tmp_bytes(res_size)`.
+pub fn test_vec_znx_lsh_assign_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxLshAssign<BE>
+        + VecZnxLsh<BE>
+        + VecZnxCopy<BE>
+        + VecZnxLshTmpBytes
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for res_size in [1usize, 2, 4] {
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .vec_znx_lsh_tmp_bytes(res_size)
+                .max(module.vec_znx_normalize_tmp_bytes()),
+        );
+
+        for k in 0..=(res_size * base2k) {
+            let mut res = module_host.vec_znx_alloc(1, res_size);
+            res.fill_uniform(base2k, &mut source);
+            let orig_backend = upload_vec_znx::<BE>(&res);
+            let mut have_backend = upload_vec_znx::<BE>(&res);
+            let mut want_backend = upload_vec_znx::<BE>(&res);
+
+            module.vec_znx_lsh_assign(
+                base2k,
+                k,
+                &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                0,
+                &mut scratch.borrow(),
+            );
+
+            // Oracle: shift into a fresh buffer, then copy back.
+            let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+            module.vec_znx_lsh(
+                base2k,
+                k,
+                &mut vec_znx_backend_mut::<BE>(&mut tmp_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&orig_backend),
+                0,
+                &mut scratch.borrow(),
+            );
+            module.vec_znx_copy(
+                &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&tmp_backend),
+                0,
+            );
+
+            for backend in [&mut want_backend, &mut have_backend] {
+                module.vec_znx_normalize_assign(
+                    base2k,
+                    res_size * base2k,
+                    &mut vec_znx_backend_mut::<BE>(backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+            }
+
+            assert_eq!(
+                download_vec_znx::<BE>(&want_backend),
+                download_vec_znx::<BE>(&have_backend),
+                "vec_znx_lsh_assign: default body != api oracle (res_size {res_size} k {k})"
+            );
+        }
+    }
+}
+
+/// `vec_znx_rsh_assign`: the OEP default body against a two-step oracle built on
+/// the api — `tmp = rsh(a, k)` into a fresh buffer, then `vec_znx_copy` back.
+/// Compared on canonical forms; the arena is sized by
+/// `vec_znx_rsh_tmp_bytes(res_size)`.
+pub fn test_vec_znx_rsh_assign_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxRshAssign<BE>
+        + VecZnxRsh<BE>
+        + VecZnxCopy<BE>
+        + VecZnxRshTmpBytes
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for res_size in [1usize, 2, 4] {
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .vec_znx_rsh_tmp_bytes(res_size)
+                .max(module.vec_znx_normalize_tmp_bytes()),
+        );
+
+        for k in 0..=(res_size * base2k) {
+            let mut res = module_host.vec_znx_alloc(1, res_size);
+            res.fill_uniform(base2k, &mut source);
+            let orig_backend = upload_vec_znx::<BE>(&res);
+            let mut have_backend = upload_vec_znx::<BE>(&res);
+            let mut want_backend = upload_vec_znx::<BE>(&res);
+
+            module.vec_znx_rsh_assign(
+                base2k,
+                k,
+                &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                0,
+                &mut scratch.borrow(),
+            );
+
+            // Oracle: shift into a fresh buffer, then copy back.
+            let mut tmp_backend = upload_vec_znx::<BE>(&module_host.vec_znx_alloc(1, res_size));
+            module.vec_znx_rsh(
+                base2k,
+                k,
+                &mut vec_znx_backend_mut::<BE>(&mut tmp_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&orig_backend),
+                0,
+                &mut scratch.borrow(),
+            );
+            module.vec_znx_copy(
+                &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&tmp_backend),
+                0,
+            );
+
+            for backend in [&mut want_backend, &mut have_backend] {
+                module.vec_znx_normalize_assign(
+                    base2k,
+                    res_size * base2k,
+                    &mut vec_znx_backend_mut::<BE>(backend),
+                    0,
+                    &mut scratch.borrow(),
+                );
+            }
+
+            assert_eq!(
+                download_vec_znx::<BE>(&want_backend),
+                download_vec_znx::<BE>(&have_backend),
+                "vec_znx_rsh_assign: default body != api oracle (res_size {res_size} k {k})"
+            );
+        }
+    }
+}
+
+/// `vec_znx_mul_xp_minus_one`: the OEP default body versus an oracle
+/// hand-built from the public api traits (`rotate` then `sub_assign`).
+pub fn test_vec_znx_mul_xp_minus_one_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxMulXpMinusOne<BE> + VecZnxRotate<BE> + VecZnxSubAssign<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for size in [1usize, 2, 4] {
+        let mut a = module_host.vec_znx_alloc(1, size);
+        a.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a);
+
+        for p in [1i64, 5, -3, module.n() as i64] {
+            let mut res = module_host.vec_znx_alloc(1, size);
+            res.fill_uniform(base2k, &mut source);
+            let mut want_backend = upload_vec_znx::<BE>(&res);
+            let mut have_backend = upload_vec_znx::<BE>(&res);
+
+            crate::oep::vec_znx_mul_xp_minus_one_derived::<BE, BE>(
+                module,
+                p,
+                &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&a_backend),
+                0,
+            );
+
+            // Oracle: the same decomposition, through the public api traits.
+            module.vec_znx_rotate(
+                p,
+                &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&a_backend),
+                0,
+            );
+            module.vec_znx_sub_assign(
+                &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&a_backend),
+                0,
+            );
+
+            assert_eq!(
+                download_vec_znx::<BE>(&want_backend),
+                download_vec_znx::<BE>(&have_backend),
+                "vec_znx_mul_xp_minus_one: default body != hand-built oracle (size {size} p {p})"
+            );
+        }
+    }
+}
+
+/// `vec_znx_mul_xp_minus_one_assign`: the per-limb OEP default body versus the
+/// whole-vector `vec_znx_mul_xp_minus_one` on the same input — an independent
+/// decomposition of the same map, so the comparison is bit for bit.
+pub fn test_vec_znx_mul_xp_minus_one_assign_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxMulXpMinusOne<BE> + VecZnxMulXpMinusOneAssign<BE> + VecZnxMulXpMinusOneAssignTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for size in [1usize, 2, 4] {
+        // Sized by the op's own `_tmp_bytes(size)` alone, so a default body
+        // that under-reports its scratch panics here.
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes(size));
+
+        for p in [1i64, 5, -3, module.n() as i64] {
+            let mut a = module_host.vec_znx_alloc(1, size);
+            a.fill_uniform(base2k, &mut source);
+            let a_backend = upload_vec_znx::<BE>(&a);
+
+            let mut want_backend = upload_vec_znx::<BE>(&a);
+            crate::oep::vec_znx_mul_xp_minus_one_assign_derived::<BE, BE>(
+                module,
+                p,
+                &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                0,
+                &mut scratch.borrow(),
+            );
+
+            // Oracle: the out-of-place op, which is a different decomposition
+            // (whole-vector rotate then subtract) of the same map.
+            let mut have_backend = upload_vec_znx::<BE>(&a);
+            module.vec_znx_mul_xp_minus_one(
+                p,
+                &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&a_backend),
+                0,
+            );
+
+            assert_eq!(
+                download_vec_znx::<BE>(&want_backend),
+                download_vec_znx::<BE>(&have_backend),
+                "vec_znx_mul_xp_minus_one_assign: default body != out-of-place form (size {size} p {p})"
+            );
+        }
+    }
+}
+
+/// `vec_znx_add_scalar_assign`: the OEP default body (an `add_assign` on the
+/// one-limb window) versus a whole-vector `add_assign` against a `VecZnx` that
+/// carries the scalar in limb `res_limb` — an independent oracle, bit for bit.
+pub fn test_vec_znx_add_scalar_assign_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxAddScalarAssign<BE> + VecZnxAddAssign<BE>,
+{
+    let base2k: usize = params.base2k;
+    let n: usize = module.n();
+    let mut source: Source = Source::new([0u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(n as u64);
+
+    let mut scalar = module_host.scalar_znx_alloc(1);
+    scalar.fill_uniform(base2k, &mut source);
+    let scalar_backend = upload_scalar_znx::<BE>(&scalar);
+
+    for res_size in [1usize, 2, 4] {
+        for res_limb in 0..res_size {
+            let mut res = module_host.vec_znx_alloc(1, res_size);
+            res.fill_uniform(base2k, &mut source);
+            let mut want_backend = upload_vec_znx::<BE>(&res);
+            let mut have_backend = upload_vec_znx::<BE>(&res);
+
+            crate::oep::vec_znx_add_scalar_assign_derived::<BE, BE>(
+                module,
+                &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+                0,
+                res_limb,
+                &scalar_znx_backend_ref::<BE>(&scalar_backend),
+                0,
+            );
+
+            // Oracle: the scalar lifted into a full-width `VecZnx` whose only
+            // non-zero limb is `res_limb`, added with the plain `add_assign`.
+            let mut lifted = module_host.vec_znx_alloc(1, res_size);
+            lifted.at_mut(0, res_limb).copy_from_slice(scalar.at(0, 0));
+            let lifted_backend = upload_vec_znx::<BE>(&lifted);
+            module.vec_znx_add_assign(
+                &mut vec_znx_backend_mut::<BE>(&mut have_backend),
+                0,
+                &vec_znx_backend_ref::<BE>(&lifted_backend),
+                0,
+            );
+
+            assert_eq!(
+                download_vec_znx::<BE>(&want_backend),
+                download_vec_znx::<BE>(&have_backend),
+                "vec_znx_add_scalar_assign: default body != hand-built oracle (res_size {res_size} res_limb {res_limb})"
+            );
+        }
     }
 }

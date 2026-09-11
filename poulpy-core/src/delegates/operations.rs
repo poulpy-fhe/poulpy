@@ -320,8 +320,8 @@ impl_operations_delegate!(
     GLWEShift<BE>,
     GLWEShiftImpl<BE>,
     GLWEShiftDefault<BE>,
-    fn glwe_shift_tmp_bytes(&self) -> usize {
-        BE::glwe_shift_tmp_bytes(self)
+    fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::glwe_shift_tmp_bytes(self, res_size)
     },
     fn glwe_rsh<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where

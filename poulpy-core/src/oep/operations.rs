@@ -274,7 +274,7 @@ pub unsafe trait GLWEMulXpMinusOneImpl<BE: Backend>: Backend {
 /// Implementations must respect the polynomial/ciphertext layout and scratch requirements, and may
 /// not read or write beyond the backend-owned regions described by the inputs.
 pub unsafe trait GLWEShiftImpl<BE: Backend>: Backend {
-    fn glwe_shift_tmp_bytes(module: &Module<BE>) -> usize;
+    fn glwe_shift_tmp_bytes(module: &Module<BE>, res_size: usize) -> usize;
 
     fn glwe_rsh<R>(module: &Module<BE>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -700,8 +700,8 @@ unsafe impl<BE: Backend> GLWEShiftImpl<BE> for BE
 where
     Module<BE>: GLWEShiftDefault<BE>,
 {
-    fn glwe_shift_tmp_bytes(module: &Module<BE>) -> usize {
-        module.glwe_shift_tmp_bytes_default()
+    fn glwe_shift_tmp_bytes(module: &Module<BE>, res_size: usize) -> usize {
+        module.glwe_shift_tmp_bytes_default(res_size)
     }
 
     fn glwe_rsh<R>(module: &Module<BE>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)

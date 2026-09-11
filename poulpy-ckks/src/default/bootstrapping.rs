@@ -77,11 +77,11 @@ impl<BE: Backend> Deref for BootstrappingDefault<'_, BE> {
 }
 
 impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
-    pub(crate) fn ckks_mod_up_tmp_bytes_default(&self) -> usize
+    pub(crate) fn ckks_mod_up_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Module<BE>: GLWEShift<BE>,
     {
-        self.glwe_shift_tmp_bytes()
+        self.glwe_shift_tmp_bytes(res_size)
     }
 
     /// Scratch upper bound for [`Self::ckks_bootstrap_default`].
@@ -1016,7 +1016,7 @@ where
 {
     module
         .glwe_keyswitch_tmp_bytes(src_infos, src_infos, dense_to_sparse_infos)
-        .max(module.glwe_shift_tmp_bytes())
+        .max(module.glwe_shift_tmp_bytes(dst_infos.size().max(src_infos.size())))
         .max(module.glwe_keyswitch_tmp_bytes(dst_infos, dst_infos, sparse_to_dense_infos))
 }
 

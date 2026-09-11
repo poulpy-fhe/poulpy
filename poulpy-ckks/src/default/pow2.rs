@@ -8,18 +8,18 @@ use crate::GLWEToBackendRef;
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub};
 
 pub trait CKKSPow2Default<BE: Backend> {
-    fn ckks_mul_pow2_tmp_bytes_default(&self) -> usize
+    fn ckks_mul_pow2_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Self: GLWEShift<BE>,
     {
-        self.glwe_shift_tmp_bytes()
+        self.glwe_shift_tmp_bytes(res_size)
     }
 
-    fn ckks_div_pow2_tmp_bytes_default(&self) -> usize
+    fn ckks_div_pow2_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Self: GLWEShift<BE>,
     {
-        self.glwe_shift_tmp_bytes()
+        self.glwe_shift_tmp_bytes(res_size)
     }
 
     fn ckks_mul_pow2_into_default<Dst, Src>(
