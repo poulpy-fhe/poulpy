@@ -2,56 +2,6 @@
 #[macro_export]
 macro_rules! hal_impl_vec_znx_without_normalize {
     () => {
-        fn scalar_znx_fill_ternary_hw(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::ScalarZnxBackendMut<'_, Self>,
-            res_col: usize,
-            hw: usize,
-            seed: [u8; 32],
-        ) {
-            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_ternary_hw_default(module, res, res_col, hw, seed)
-        }
-
-        fn scalar_znx_fill_ternary_prob(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::ScalarZnxBackendMut<'_, Self>,
-            res_col: usize,
-            prob: f64,
-            seed: [u8; 32],
-        ) {
-            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_ternary_prob_default(module, res, res_col, prob, seed)
-        }
-
-        fn scalar_znx_fill_binary_hw(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::ScalarZnxBackendMut<'_, Self>,
-            res_col: usize,
-            hw: usize,
-            seed: [u8; 32],
-        ) {
-            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_binary_hw_default(module, res, res_col, hw, seed)
-        }
-
-        fn scalar_znx_fill_binary_prob(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::ScalarZnxBackendMut<'_, Self>,
-            res_col: usize,
-            prob: f64,
-            seed: [u8; 32],
-        ) {
-            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_binary_prob_default(module, res, res_col, prob, seed)
-        }
-
-        fn scalar_znx_fill_binary_block(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::ScalarZnxBackendMut<'_, Self>,
-            res_col: usize,
-            block_size: usize,
-            seed: [u8; 32],
-        ) {
-            <Self as HalVecZnxDefault<Self>>::scalar_znx_fill_binary_block_default(module, res, res_col, block_size, seed)
-        }
-
         fn vec_znx_zero(module: &Module<Self>, res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>, res_col: usize) {
             <Self as HalVecZnxDefault<Self>>::vec_znx_zero_default(module, res, res_col)
         }

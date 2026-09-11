@@ -1,8 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use crate::layouts::{
-    Backend, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-};
+use crate::layouts::{Backend, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef};
 
 /// Module construction extension point.
 ///
@@ -21,46 +19,6 @@ pub unsafe trait HalModuleImpl<BE: Backend>: Backend {
 /// aliasing, scratch usage, and arithmetic correctness.
 pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
     fn vec_znx_zero(module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize);
-
-    fn scalar_znx_fill_ternary_hw(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        hw: usize,
-        seed: [u8; 32],
-    );
-
-    fn scalar_znx_fill_ternary_prob(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        prob: f64,
-        seed: [u8; 32],
-    );
-
-    fn scalar_znx_fill_binary_hw(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        hw: usize,
-        seed: [u8; 32],
-    );
-
-    fn scalar_znx_fill_binary_prob(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        prob: f64,
-        seed: [u8; 32],
-    );
-
-    fn scalar_znx_fill_binary_block(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        block_size: usize,
-        seed: [u8; 32],
-    );
 
     fn vec_znx_normalize_tmp_bytes(module: &Module<BE>) -> usize;
 

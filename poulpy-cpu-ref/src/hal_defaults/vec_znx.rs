@@ -22,8 +22,8 @@ use crate::reference::{fft64::convolution::I64Ops, ntt4x30::I128BigOps};
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
-        Backend, HostDataMut, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut,
-        VecZnxBackendRef, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, ZnxView,
+        ZnxViewMut,
     },
     source::Source,
 };
@@ -79,71 +79,6 @@ pub trait HalVecZnxDefault<BE: Backend<ZnxWord = i64>>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    fn scalar_znx_fill_ternary_hw_default(
-        _module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        hw: usize,
-        seed: [u8; 32],
-    ) where
-        for<'x> BE::BufMut<'x>: HostDataMut,
-    {
-        let mut source = Source::new(seed);
-        res.fill_ternary_hw(res_col, hw, &mut source);
-    }
-
-    fn scalar_znx_fill_ternary_prob_default(
-        _module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        prob: f64,
-        seed: [u8; 32],
-    ) where
-        for<'x> BE::BufMut<'x>: HostDataMut,
-    {
-        let mut source = Source::new(seed);
-        res.fill_ternary_prob(res_col, prob, &mut source);
-    }
-
-    fn scalar_znx_fill_binary_hw_default(
-        _module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        hw: usize,
-        seed: [u8; 32],
-    ) where
-        for<'x> BE::BufMut<'x>: HostDataMut,
-    {
-        let mut source = Source::new(seed);
-        res.fill_binary_hw(res_col, hw, &mut source);
-    }
-
-    fn scalar_znx_fill_binary_prob_default(
-        _module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        prob: f64,
-        seed: [u8; 32],
-    ) where
-        for<'x> BE::BufMut<'x>: HostDataMut,
-    {
-        let mut source = Source::new(seed);
-        res.fill_binary_prob(res_col, prob, &mut source);
-    }
-
-    fn scalar_znx_fill_binary_block_default(
-        _module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        block_size: usize,
-        seed: [u8; 32],
-    ) where
-        for<'x> BE::BufMut<'x>: HostDataMut,
-    {
-        let mut source = Source::new(seed);
-        res.fill_binary_block(res_col, block_size, &mut source);
-    }
-
     fn vec_znx_zero_default(_module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize)
     where
         BE: ZnxZero,

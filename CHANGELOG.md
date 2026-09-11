@@ -13,10 +13,12 @@
 - Document the value model, limb rule, mutation classes and exactness classes in the `api` and `layouts` module docs.
 - **Breaking:** `poulpy_hal::reference` moved to `poulpy_cpu_ref::reference::znx`.
 - **Breaking:** remove 30 unused api methods (coefficient shift/normalize variants, `add_const`, `add_scalar_into`, `sub_scalar`, `automorphism_rotate`, `split_ring`, `merge_rings`, `transpose`, `hadamard_product_scalar_znx`, `*_from_bytes` wrappers, `vec_znx_big_alloc_n`, `ModuleNew::new_with`) and the eight seeded `[u8; 32]` sampler twins; the `Source`-based samplers stay. The corresponding `Hal*Impl` OEP methods are removed too, including `HalModuleImpl::Config` and `new_with`.
+- **Breaking:** the secret-key samplers `scalar_znx_fill_ternary_hw_source`, `scalar_znx_fill_ternary_prob_source`, `scalar_znx_fill_binary_hw_source`, `scalar_znx_fill_binary_prob_source` and `scalar_znx_fill_binary_block_source` are removed with their OEP methods, default bodies and conformance tests; `poulpy-core` samples secrets on the host with the `ScalarZnx::fill_*` methods (which stay in `layouts` and gain unit tests) and uploads them with `Backend::copy_host_to_view`. Noise sampling (`vec_znx_add_normal_source`, `vec_znx_big_add_normal`) and `vec_znx_fill_uniform_source` stay: a backend samples noise in place from the seed, so encryption never round-trips through the host.
 
 ### `poulpy-core`
 
 - LWE/GLWE conversions and secret-key rearrangements copy through window views (`vec_znx_copy` on `window_coeffs`/`window_limbs`); no public API change.
+- `GLWESecretSampling` / `LWESecretSampling` and the public-key ephemeral secret sample on the host and upload (`scalar_znx_host_zeroed`, `upload_scalar_znx`). **Breaking:** for a fixed seed the sampled secrets change, because the HAL path derived a fresh seed per call while the host path draws from the `Source` directly.
 
 ### `poulpy-ckks`
 

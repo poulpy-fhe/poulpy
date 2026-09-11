@@ -486,3 +486,60 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for ScalarZnx<D, W> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fresh(n: usize, cols: usize) -> ScalarZnx<Vec<u8>, i64> {
+        ScalarZnx::from_data(
+            crate::layouts::HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<Vec<u8>, i64>::bytes_of(n, cols)),
+            n,
+            cols,
+        )
+    }
+
+    #[test]
+    fn host_fills_respect_value_sets_weights_and_columns() {
+        let (n, cols, col) = (1usize << 10, 2usize, 1usize);
+        let mut source = Source::new([3u8; 32]);
+
+        let mut s = fresh(n, cols);
+        s.fill_binary_hw(col, 37, &mut source);
+        assert!(s.at(col, 0).iter().all(|&x| x == 0 || x == 1));
+        assert_eq!(s.at(col, 0).iter().filter(|&&x| x == 1).count(), 37);
+        assert!(s.at(0, 0).iter().all(|&x| x == 0), "other column untouched");
+
+        let mut s = fresh(n, cols);
+        s.fill_ternary_hw(col, 41, &mut source);
+        assert!(s.at(col, 0).iter().all(|&x| (-1..=1).contains(&x)));
+        assert_eq!(s.at(col, 0).iter().filter(|&&x| x != 0).count(), 41);
+
+        let mut s = fresh(n, cols);
+        s.fill_ternary_prob(col, 0.5, &mut source);
+        assert!(s.at(col, 0).iter().all(|&x| (-1..=1).contains(&x)));
+        assert!(s.at(col, 0).iter().any(|&x| x != 0));
+
+        let mut s = fresh(n, cols);
+        s.fill_binary_prob(col, 0.5, &mut source);
+        assert!(s.at(col, 0).iter().all(|&x| x == 0 || x == 1));
+
+        let mut s = fresh(n, cols);
+        s.fill_binary_block(col, 8, &mut source);
+        assert!(s.at(col, 0).iter().all(|&x| x == 0 || x == 1));
+        assert!(
+            s.at(col, 0)
+                .chunks(8)
+                .all(|block| block.iter().filter(|&&x| x == 1).count() <= 1)
+        );
+    }
+
+    #[test]
+    fn host_fills_are_deterministic_in_the_source() {
+        let mut a = fresh(256, 1);
+        let mut b = fresh(256, 1);
+        a.fill_ternary_hw(0, 17, &mut Source::new([9u8; 32]));
+        b.fill_ternary_hw(0, 17, &mut Source::new([9u8; 32]));
+        assert_eq!(a.at(0, 0), b.at(0, 0));
+    }
+}
