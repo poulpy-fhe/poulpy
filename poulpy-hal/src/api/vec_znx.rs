@@ -344,56 +344,6 @@ pub trait VecZnxCopy<B: Backend> {
     fn vec_znx_copy(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
-pub trait ScalarZnxFillTernaryHwSource<B: Backend> {
-    fn scalar_znx_fill_ternary_hw_source(
-        &self,
-        res: &mut ScalarZnxBackendMut<'_, B>,
-        res_col: usize,
-        hw: usize,
-        source: &mut Source,
-    );
-}
-
-pub trait ScalarZnxFillTernaryProbSource<B: Backend> {
-    fn scalar_znx_fill_ternary_prob_source(
-        &self,
-        res: &mut ScalarZnxBackendMut<'_, B>,
-        res_col: usize,
-        prob: f64,
-        source: &mut Source,
-    );
-}
-
-pub trait ScalarZnxFillBinaryHwSource<B: Backend> {
-    fn scalar_znx_fill_binary_hw_source(
-        &self,
-        res: &mut ScalarZnxBackendMut<'_, B>,
-        res_col: usize,
-        hw: usize,
-        source: &mut Source,
-    );
-}
-
-pub trait ScalarZnxFillBinaryProbSource<B: Backend> {
-    fn scalar_znx_fill_binary_prob_source(
-        &self,
-        res: &mut ScalarZnxBackendMut<'_, B>,
-        res_col: usize,
-        prob: f64,
-        source: &mut Source,
-    );
-}
-
-pub trait ScalarZnxFillBinaryBlockSource<B: Backend> {
-    fn scalar_znx_fill_binary_block_source(
-        &self,
-        res: &mut ScalarZnxBackendMut<'_, B>,
-        res_col: usize,
-        block_size: usize,
-        source: &mut Source,
-    );
-}
-
 pub trait VecZnxFillUniformSource<B: Backend> {
     /// Fills a column with a uniform `k`-bit torus value in base `2^base2k`.
     ///

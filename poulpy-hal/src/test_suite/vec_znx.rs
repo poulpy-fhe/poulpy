@@ -7,18 +7,15 @@ use super::{
 
 use crate::{
     api::{
-        ModuleNew, ScalarZnxAutomorphism, ScalarZnxFillBinaryBlockSource, ScalarZnxFillBinaryHwSource,
-        ScalarZnxFillBinaryProbSource, ScalarZnxFillTernaryHwSource, ScalarZnxFillTernaryProbSource, ScratchOwnedAlloc,
-        VecZnxAdd, VecZnxAddAssign, VecZnxAddNormalSource, VecZnxAddScalarAssign, VecZnxAutomorphism, VecZnxAutomorphismAssign,
-        VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxFillUniformSource, VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes,
-        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign,
-        VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign,
-        VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign,
-        VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
+        ModuleNew, ScalarZnxAutomorphism, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddNormalSource,
+        VecZnxAddScalarAssign, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCopy,
+        VecZnxFillUniformSource, VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign,
+        VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAssign,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
     },
     layouts::{
-        DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendMut,
-        ScratchOwned, VecZnx, ZnxView, ZnxViewMut,
+        DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, NoiseInfos, ScratchOwned, VecZnx, ZnxView, ZnxViewMut,
     },
     source::Source,
 };
@@ -1369,106 +1366,6 @@ where
     for limb in live_size..size {
         assert_eq!(a.at(0, limb), zero);
     }
-}
-
-pub fn test_scalar_znx_binary_hw_has_exact_weight<B: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<B>)
-where
-    Module<B>: ScalarZnxFillBinaryHwSource<B>,
-{
-    let n = params.size;
-    let hw = n / 8;
-    let host_init = ScalarZnx::alloc(n, 1);
-    let mut sampled = upload_scalar_znx::<B>(&host_init);
-
-    module.scalar_znx_fill_binary_hw_source(
-        &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(&mut sampled),
-        0,
-        hw,
-        &mut Source::new([0u8; 32]),
-    );
-
-    let sampled = download_scalar_znx::<B>(&sampled);
-    let coefficients = sampled.at(0, 0);
-
-    assert!(coefficients.iter().all(|&x| x == 0 || x == 1));
-    assert_eq!(coefficients.iter().filter(|&&x| x == 1).count(), hw);
-}
-
-pub fn test_scalar_znx_secret_sampling<B: crate::test_suite::TestBackend>(_params: &TestParams, module: &Module<B>)
-where
-    Module<B>: ScalarZnxFillTernaryHwSource<B>
-        + ScalarZnxFillTernaryProbSource<B>
-        + ScalarZnxFillBinaryProbSource<B>
-        + ScalarZnxFillBinaryBlockSource<B>,
-{
-    let n: usize = module.n();
-    let cols: usize = 2;
-    let col_i: usize = 1;
-
-    fn check<B, F>(module: &Module<B>, seed_bytes: [u8; 32], cols: usize, col_i: usize, mut fill: F) -> Vec<i64>
-    where
-        B: crate::test_suite::TestBackend,
-        F: FnMut(&mut ScalarZnx<B::OwnedBuf, B::ZnxWord>, &mut Source),
-    {
-        let mut source = Source::new(seed_bytes);
-        let host_init = ScalarZnx::alloc(module.n(), cols);
-        let mut sampled = upload_scalar_znx::<B>(&host_init);
-        fill(&mut sampled, &mut source);
-        download_scalar_znx::<B>(&sampled).at(col_i, 0).to_vec()
-    }
-
-    // Ternary, exact hamming weight: hw non-zero entries in {-1, 1}, the rest zero.
-    let hw = n / 8;
-    let coefficients = check::<B, _>(module, [2u8; 32], cols, col_i, move |res, source| {
-        module.scalar_znx_fill_ternary_hw_source(
-            &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(res),
-            col_i,
-            hw,
-            source,
-        )
-    });
-    assert!(coefficients.iter().all(|&x| x == -1 || x == 0 || x == 1));
-    assert_eq!(coefficients.iter().filter(|&&x| x != 0).count(), hw);
-
-    // Ternary, probabilistic: value set is {-1, 0, 1}.
-    let coefficients = check::<B, _>(module, [3u8; 32], cols, col_i, move |res, source| {
-        module.scalar_znx_fill_ternary_prob_source(
-            &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(res),
-            col_i,
-            0.5,
-            source,
-        )
-    });
-    assert!(coefficients.iter().all(|&x| x == -1 || x == 0 || x == 1));
-
-    // Binary, probabilistic: value set is {0, 1}.
-    let coefficients = check::<B, _>(module, [5u8; 32], cols, col_i, move |res, source| {
-        module.scalar_znx_fill_binary_prob_source(
-            &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(res),
-            col_i,
-            0.5,
-            source,
-        )
-    });
-    assert!(coefficients.iter().all(|&x| x == 0 || x == 1));
-
-    // Binary, block-sparse: value set is {0, 1} and each block of `block_size`
-    // holds at most one 1.
-    let block_size = 8;
-    let coefficients = check::<B, _>(module, [6u8; 32], cols, col_i, move |res, source| {
-        module.scalar_znx_fill_binary_block_source(
-            &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(res),
-            col_i,
-            block_size,
-            source,
-        )
-    });
-    assert!(coefficients.iter().all(|&x| x == 0 || x == 1));
-    assert!(
-        coefficients
-            .chunks(block_size)
-            .all(|block| block.iter().filter(|&&x| x == 1).count() <= 1)
-    );
 }
 
 pub fn test_vec_znx_add_normal<B: crate::test_suite::TestBackend>(_params: &TestParams, module: &Module<B>)
