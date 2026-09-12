@@ -113,10 +113,7 @@ use $crate::__private::poulpy_cpu_ref::{
             module::FFTModuleHandle,
             reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
             reim4::{Reim4BlkMatVec, Reim4Convolution},
-            vmp::{
-                vmp_apply_dft_to_dft_tmp_bytes as fft64_vmp_apply_dft_to_dft_tmp_bytes, vmp_prepare as fft64_vmp_prepare,
-                vmp_prepare_tmp_bytes as fft64_vmp_prepare_tmp_bytes,
-            },
+            vmp::{vmp_prepare as fft64_vmp_prepare, vmp_prepare_tmp_bytes as fft64_vmp_prepare_tmp_bytes},
         },
         znx::{
             ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
@@ -135,7 +132,10 @@ use $crate::__private::poulpy_hal::{
         VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDft, VecZnxDftBackendMut,
         VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl,
+        vmp_apply_dft_to_dft_add_tmp_bytes_derived,
+    },
 };
 
 use $crate::{RayonTaskExecutor, SendPtr};
@@ -636,9 +636,12 @@ unsafe impl HalVmpImpl<$rayon> for $rayon {
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        <Self as FFT64VmpDefault<Self>>::vmp_apply_dft_to_dft_add_tmp_bytes_default(
+        // `vmp_apply_dft_to_dft_tmp_bytes` below is this backend's own
+        // override, already scaled by `ScratchWorkers::VMP`; this reproduces
+        // the deleted `_add_tmp_bytes_default` total (`D + VMP * T`) exactly.
+        vmp_apply_dft_to_dft_add_tmp_bytes_derived::<Self, Self>(
             module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
-        ) + (<$rayon as $crate::__private::poulpy_hal::execution::ScratchWorkers>::VMP - 1) * fft64_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
+        )
     }
 
     fn vmp_apply_dft_to_dft_add(

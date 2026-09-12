@@ -27,8 +27,8 @@ use crate::{
         VecZnxDftZero, VecZnxIdftApplyTmpA, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
         VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
-        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpPMatAlloc,
-        VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned, SvpPPolOwned,
@@ -36,7 +36,10 @@ use crate::{
         VecZnxDftToBackendRef, VecZnxInfos, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut,
         vec_znx_backend_mut, vec_znx_backend_ref,
     },
-    oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, vmp_apply_dft_derived},
+    oep::{
+        HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, vmp_apply_dft_derived,
+        vmp_apply_dft_to_dft_add_derived, vmp_apply_dft_to_dft_add_tmp_bytes_derived,
+    },
     source::Source,
     test_suite::{
         TestBackend, TestParams, download_vec_znx, scalar_znx_backend_ref, upload_mat_znx, upload_scalar_znx, upload_vec_znx,
@@ -164,6 +167,199 @@ where
             want, have,
             "vmp_apply_dft: derived decomposition != hand-built oracle (col {col})"
         );
+    }
+}
+
+/// `vmp_apply_dft_to_dft_add`: the derived free function's decomposition
+/// versus an explicit two-step oracle (`vmp_apply_dft_to_dft` into a fresh
+/// accumulator, then `vec_znx_dft_add_assign` per column), and versus the
+/// backend's own `module.vmp_apply_dft_to_dft_add` dispatch — the inherited
+/// default on backends with no fused override, the fused kernel on backends
+/// that have one. All three are compared bit for bit after
+/// `vec_znx_idft_apply_tmpa` + `vec_znx_big_normalize`, the same comparison
+/// `test_vmp_apply_dft_to_dft_add` in `test_suite/vmp.rs` uses for
+/// DFT-domain results. The scratch for the derived call is sized only by
+/// `vmp_apply_dft_to_dft_add_tmp_bytes_derived`, so a decomposition that
+/// under-reports its own scratch panics here.
+pub fn test_vmp_apply_dft_to_dft_add_derived<BE: TestBackend + HalVmpImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + VmpPMatAlloc<BE>
+        + VmpPrepare<BE>
+        + VmpPrepareTmpBytes
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftTmpBytes
+        + VmpApplyDftToDftAdd<BE>
+        + VmpApplyDftToDftAddTmpBytes
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    // `cols_out >= 2` and, for two of the three (res_size, a_size) pairs,
+    // `res_size != a_size` — the two cases the deleted hand-written bodies
+    // handled identically (they always staged a `res.size()`-limb, not
+    // `a.size()`-limb, accumulator).
+    let (cols_in, cols_out, mat_size): (usize, usize, usize) = (2usize, 2usize, 4usize);
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+
+    for (res_size, a_size) in [(4usize, 4usize), (3, 4), (4, 3)] {
+        let rows: usize = a_size;
+
+        let mut a = module_host.vec_znx_alloc(cols_in, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, mat_size);
+        mat.fill_uniform(base2k, &mut source);
+        let mut res_init = module_host.vec_znx_alloc(cols_out, res_size);
+        res_init.fill_uniform(base2k, &mut source);
+
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module
+                .vmp_prepare_tmp_bytes(rows, cols_in, cols_out, mat_size)
+                .max(module.vmp_apply_dft_to_dft_tmp_bytes(res_size, a_size, rows, cols_in, cols_out, mat_size))
+                .max(module.vmp_apply_dft_to_dft_add_tmp_bytes(res_size, a_size, rows, cols_in, cols_out, mat_size))
+                .max(module.vec_znx_big_normalize_tmp_bytes()),
+        );
+
+        let mat_backend = upload_mat_znx::<BE>(&mat);
+        let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
+        module.vmp_prepare(
+            &mut pmat.to_backend_mut(),
+            &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat_backend),
+            &mut scratch.borrow(),
+        );
+        let pmat_ref = pmat.to_backend_ref();
+
+        let a_backend = upload_vec_znx::<BE>(&a);
+        let a_ref = vec_znx_backend_ref::<BE>(&a_backend);
+        let mut a_dft = module.vec_znx_dft_alloc(cols_in, a_size);
+        for j in 0..cols_in {
+            module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), j, &a_ref, j);
+        }
+        let a_dft_ref = a_dft.to_backend_ref();
+
+        let res_init_backend = upload_vec_znx::<BE>(&res_init);
+        let res_init_ref = vec_znx_backend_ref::<BE>(&res_init_backend);
+
+        for limb_offset in [0usize, 1usize] {
+            // Three independent copies of the same initial accumulator, one
+            // per path, so each can be mutated without disturbing the others.
+            let mut res_oracle = module.vec_znx_dft_alloc(cols_out, res_size);
+            let mut res_derived = module.vec_znx_dft_alloc(cols_out, res_size);
+            let mut res_module = module.vec_znx_dft_alloc(cols_out, res_size);
+            for j in 0..cols_out {
+                module.vec_znx_dft_apply(1, 0, &mut res_oracle.to_backend_mut(), j, &res_init_ref, j);
+                module.vec_znx_dft_apply(1, 0, &mut res_derived.to_backend_mut(), j, &res_init_ref, j);
+                module.vec_znx_dft_apply(1, 0, &mut res_module.to_backend_mut(), j, &res_init_ref, j);
+            }
+
+            // Oracle: the spec definition of `vmp_apply_dft_to_dft_add`,
+            // spelled out through the public api traits — a fresh product,
+            // then folded in column by column.
+            let mut fresh = module.vec_znx_dft_alloc(cols_out, res_size);
+            module.vmp_apply_dft_to_dft(
+                &mut fresh.to_backend_mut(),
+                &a_dft_ref,
+                &pmat_ref,
+                limb_offset,
+                &mut scratch.borrow(),
+            );
+            for j in 0..cols_out {
+                module.vec_znx_dft_add_assign(&mut res_oracle.to_backend_mut(), j, &fresh.to_backend_ref(), j);
+            }
+
+            // The derived free function, dispatched directly (bypassing the
+            // OEP method entirely) with an arena sized only by its own
+            // `_tmp_bytes_derived` sibling.
+            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                vmp_apply_dft_to_dft_add_tmp_bytes_derived::<BE, BE>(module, res_size, a_size, rows, cols_in, cols_out, mat_size),
+            );
+            vmp_apply_dft_to_dft_add_derived::<BE, BE>(
+                module,
+                &mut res_derived.to_backend_mut(),
+                &a_dft_ref,
+                &pmat_ref,
+                limb_offset,
+                &mut derived_scratch.borrow(),
+            );
+
+            // The backend's own dispatch through the OEP method: the
+            // inherited default on backends with no fused override, the
+            // fused kernel on backends that have one.
+            module.vmp_apply_dft_to_dft_add(
+                &mut res_module.to_backend_mut(),
+                &a_dft_ref,
+                &pmat_ref,
+                limb_offset,
+                &mut scratch.borrow(),
+            );
+
+            let mut big = module.vec_znx_big_alloc(1, res_size);
+            for j in 0..cols_out {
+                let want_template = module_host.vec_znx_alloc(1, res_size);
+                let mut oracle_backend = upload_vec_znx::<BE>(&want_template);
+                let mut derived_backend = upload_vec_znx::<BE>(&want_template);
+                let mut module_backend = upload_vec_znx::<BE>(&want_template);
+
+                module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res_oracle.to_backend_mut(), j);
+                module.vec_znx_big_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut oracle_backend),
+                    base2k,
+                    res_size * base2k,
+                    0,
+                    0,
+                    &big.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch.borrow(),
+                );
+                module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res_derived.to_backend_mut(), j);
+                module.vec_znx_big_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut derived_backend),
+                    base2k,
+                    res_size * base2k,
+                    0,
+                    0,
+                    &big.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch.borrow(),
+                );
+                module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res_module.to_backend_mut(), j);
+                module.vec_znx_big_normalize(
+                    &mut vec_znx_backend_mut::<BE>(&mut module_backend),
+                    base2k,
+                    res_size * base2k,
+                    0,
+                    0,
+                    &big.to_backend_ref(),
+                    base2k,
+                    0,
+                    &mut scratch.borrow(),
+                );
+
+                let want = download_vec_znx::<BE>(&oracle_backend);
+                let have_derived = download_vec_znx::<BE>(&derived_backend);
+                let have_module = download_vec_znx::<BE>(&module_backend);
+
+                assert_eq!(
+                    want, have_derived,
+                    "vmp_apply_dft_to_dft_add: derived decomposition != two-step oracle (res_size {res_size} a_size {a_size} limb_offset {limb_offset} col {j})"
+                );
+                assert_eq!(
+                    want, have_module,
+                    "vmp_apply_dft_to_dft_add: module dispatch != two-step oracle (res_size {res_size} a_size {a_size} limb_offset {limb_offset} col {j})"
+                );
+            }
+        }
     }
 }
 

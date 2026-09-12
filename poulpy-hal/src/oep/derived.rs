@@ -103,6 +103,56 @@ pub fn vmp_apply_dft_derived<S, BE, R>(
     <S as HalVmpImpl<BE>>::vmp_apply_dft_to_dft(module, &mut res_ref, &a_dft.to_backend_ref(), b, 0, &mut scratch);
 }
 
+/// Scratch for [`vmp_apply_dft_to_dft_add_derived`]: a full-width staging
+/// accumulator plus the product's own scratch.
+#[doc(hidden)]
+pub fn vmp_apply_dft_to_dft_add_tmp_bytes_derived<S, BE>(
+    module: &Module<BE>,
+    res_size: usize,
+    a_size: usize,
+    b_rows: usize,
+    b_cols_in: usize,
+    b_cols_out: usize,
+    b_size: usize,
+) -> usize
+where
+    S: HalVmpImpl<BE>,
+    BE: Backend,
+{
+    BE::bytes_of_vec_znx_dft(module.n(), b_cols_out, res_size)
+        + <S as HalVmpImpl<BE>>::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
+}
+
+/// `res += a * pmat` in the DFT domain: apply the product into a full-width
+/// staging accumulator sized to `res`, then fold it into `res` column by
+/// column. The staging accumulator spans exactly `res.size()` limbs, so it
+/// accumulates over the same `limb_offset..limb_offset + res.size()` window
+/// of `b` that `vmp_apply_dft_to_dft` itself reads.
+#[doc(hidden)]
+pub fn vmp_apply_dft_to_dft_add_derived<S, BE>(
+    module: &Module<BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    b: &VmpPMatBackendRef<'_, BE>,
+    limb_offset: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    S: HalVmpImpl<BE>,
+    BE: Backend,
+{
+    let cols_out: usize = VecZnxInfos::cols(res);
+    let res_size: usize = ZnxInfos::size(res);
+    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, cols_out, res_size);
+    for col in 0..cols_out {
+        <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_zero(module, &mut tmp, col);
+    }
+    <S as HalVmpImpl<BE>>::vmp_apply_dft_to_dft(module, &mut tmp, a, b, limb_offset, &mut scratch);
+    let tmp_ref = tmp.to_backend_ref();
+    for col in 0..cols_out {
+        <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_add_assign(module, res, col, &tmp_ref, col);
+    }
+}
+
 /// Scratch for the whole left-shift family (ruling R1): `vec_znx_lsh`,
 /// `vec_znx_lsh_add`, `vec_znx_lsh_sub` and `vec_znx_lsh_assign`. The largest
 /// of the four default bodies takes one `res_size`-limb `VecZnx` plus the

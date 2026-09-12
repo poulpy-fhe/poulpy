@@ -797,7 +797,11 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         b_cols_in: usize,
         b_cols_out: usize,
         b_size: usize,
-    ) -> usize;
+    ) -> usize {
+        crate::oep::vmp_apply_dft_to_dft_add_tmp_bytes_derived::<Self, BE>(
+            module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
+        )
+    }
 
     fn vmp_apply_dft_to_dft_add(
         module: &Module<BE>,
@@ -806,7 +810,9 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         b: &crate::layouts::VmpPMatBackendRef<'_, BE>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vmp_apply_dft_to_dft_add_derived::<Self, BE>(module, res, a, b, limb_offset, scratch)
+    }
 
     fn vmp_extract_selected_rows(
         module: &Module<BE>,
