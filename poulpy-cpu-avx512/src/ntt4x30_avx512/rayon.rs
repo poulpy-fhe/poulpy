@@ -904,6 +904,16 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         }
     }
 
+    fn cnv_by_const_apply_add_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        <Self as HalConvolutionImpl<Self>>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply_add(
         _module: &Module<Self>,
@@ -968,104 +978,14 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         };
     }
 
-    fn cnv_prepare_left_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-        let _ = (_res_size, _a_size);
-        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * super::convolution::cnv_prepare_tmp_bytes(module.n())
-    }
-
-    fn cnv_prepare_left_lazy(
+    fn cnv_apply_dft_add_tmp_bytes(
         module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
-        let bytes = poulpy_cpu_rayon::workers_within(
-            res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
-            per_worker,
-            scratch.available(),
-        ) * per_worker;
-        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::convolution::cnv_prepare_left::<RayonTaskExecutor>(
-            base_module(module),
-            &mut base_cnv_l_mut(res),
-            &base_znx_ref(a),
-            mask,
-            tmp,
-        );
-    }
-
-    fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-        let _ = (_res_size, _a_size);
-        poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE)
-            * super::convolution::cnv_prepare_tmp_bytes(module.n())
-    }
-
-    fn cnv_prepare_right_lazy(
-        module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
-        let bytes = poulpy_cpu_rayon::workers_within(
-            res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
-            per_worker,
-            scratch.available(),
-        ) * per_worker;
-        let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::convolution::cnv_prepare_right::<RayonTaskExecutor>(
-            base_module(module),
-            &mut base_cnv_r_mut(res),
-            &base_znx_ref(a),
-            mask,
-            tmp,
-        );
-    }
-
-    fn cnv_apply_dft_lazy_tmp_bytes(
-        _module: &Module<Self>,
-        _cnv_offset: usize,
-        _res_size: usize,
+        cnv_offset: usize,
+        res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <NTT4x30Avx512 as HalConvolutionImpl<NTT4x30Avx512>>::cnv_apply_dft_lazy_tmp_bytes(
-            base_module(_module),
-            _cnv_offset,
-            _res_size,
-            a_size,
-            b_size,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_lazy(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        res_col: usize,
-        a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
-        a_col: usize,
-        b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
-        b_col: usize,
-        _scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        unsafe {
-            super::convolution::cnv_apply_dft::<RayonTaskExecutor>(
-                base_module(module),
-                cnv_offset,
-                &mut base_dft_mut(res),
-                res_col,
-                &base_cnv_l_ref(a),
-                a_col,
-                &base_cnv_r_ref(b),
-                b_col,
-            )
-        };
+        <Self as HalConvolutionImpl<Self>>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -250,6 +250,16 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         );
     }
 
+    fn cnv_by_const_apply_add_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        <Self as HalConvolutionImpl<Self>>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply_add(
         module: &Module<Self>,
@@ -289,66 +299,14 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         };
     }
 
-    fn cnv_prepare_left_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-        crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n())
-    }
-
-    fn cnv_prepare_left_lazy(
+    fn cnv_apply_dft_add_tmp_bytes(
         module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
-        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_left::<SerialTaskExecutor>(module, res, a, mask, tmp);
-    }
-
-    fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-        crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n())
-    }
-
-    fn cnv_prepare_right_lazy(
-        module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
-        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_right::<SerialTaskExecutor>(module, res, a, mask, tmp);
-    }
-
-    fn cnv_apply_dft_lazy_tmp_bytes(
-        _module: &Module<Self>,
-        _cnv_offset: usize,
-        _res_size: usize,
+        cnv_offset: usize,
+        res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        crate::ntt4x30_avx512::convolution::cnv_apply_dft_tmp_bytes(0, a_size, b_size)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_lazy(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        res_col: usize,
-        a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
-        a_col: usize,
-        b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
-        b_col: usize,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        let _ = scratch;
-        unsafe {
-            crate::ntt4x30_avx512::convolution::cnv_apply_dft::<SerialTaskExecutor>(
-                module, cnv_offset, res, res_col, a, a_col, b, b_col,
-            )
-        };
+        <Self as HalConvolutionImpl<Self>>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1203,6 +1161,16 @@ mod ifma_impl {
             );
         }
 
+        fn cnv_by_const_apply_add_tmp_bytes(
+            module: &Module<Self>,
+            cnv_offset: usize,
+            res_size: usize,
+            a_size: usize,
+            b_size: usize,
+        ) -> usize {
+            <Self as HalConvolutionImpl<Self>>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+        }
+
         #[allow(clippy::too_many_arguments)]
         fn cnv_by_const_apply_add(
             _module: &Module<Self>,
@@ -1242,6 +1210,16 @@ mod ifma_impl {
                     res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
                 );
             }
+        }
+
+        fn cnv_apply_dft_add_tmp_bytes(
+            module: &Module<Self>,
+            cnv_offset: usize,
+            res_size: usize,
+            a_size: usize,
+            b_size: usize,
+        ) -> usize {
+            <Self as HalConvolutionImpl<Self>>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]

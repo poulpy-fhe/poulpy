@@ -20,25 +20,29 @@
 
 use crate::{
     api::{
-        MatZnxAlloc, ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPrepare, VecZnxAdd,
-        VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
-        VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
-        VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan,
-        VecZnxDftZero, VecZnxIdftApplyTmpA, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
-        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize,
+        CnvPVecAlloc, Convolution, MatZnxAlloc, ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc,
+        SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
+        VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubAssign,
+        VecZnxBigSubNegateAssign, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftAutomorphismPlan, VecZnxDftZero, VecZnxIdftApplyTmpA, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub,
+        VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize,
         VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
         VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
         VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
+        CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut, CnvPVecRToBackendRef,
         FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned, SvpPPolOwned,
         SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, VecZnxInfos, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut,
         vec_znx_backend_mut, vec_znx_backend_ref,
     },
     oep::{
-        HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, vmp_apply_dft_derived,
-        vmp_apply_dft_to_dft_add_derived, vmp_apply_dft_to_dft_add_tmp_bytes_derived,
+        HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, cnv_apply_dft_add_derived,
+        cnv_apply_dft_add_tmp_bytes_derived, cnv_by_const_apply_add_derived, cnv_by_const_apply_add_tmp_bytes_derived,
+        cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived, cnv_prepare_self_derived,
+        cnv_prepare_self_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
+        vmp_apply_dft_to_dft_add_tmp_bytes_derived,
     },
     source::Source,
     test_suite::{
@@ -1747,4 +1751,558 @@ where
             "svp_apply_dft: default body != independent oracle (res_size {res_size} b_size {b_size})"
         );
     }
+}
+
+/// `cnv_apply_dft_add`: the derived free function's decomposition versus an
+/// explicit two-step oracle (`cnv_apply_dft` into a fresh `VecZnxDft`, then
+/// `vec_znx_dft_add_assign`), and versus the backend's own
+/// `module.cnv_apply_dft_add` — the inherited default on backends with no
+/// fused override, the fused kernel on backends that have one. DFT-domain
+/// results are compared after `vec_znx_idft_apply_tmpa` +
+/// `vec_znx_big_normalize`, as the rest of this suite states DFT-domain
+/// equality. The arena for the derived call is sized only by
+/// `cnv_apply_dft_add_tmp_bytes_derived`, so a decomposition that
+/// under-reports its own scratch panics here.
+pub fn test_cnv_apply_dft_add_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + Convolution<BE>
+        + CnvPVecAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let cols: usize = 2;
+    let a_size: usize = 15;
+    let b_size: usize = 15;
+    let res_size: usize = a_size + b_size;
+
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let (a_prep, b_prep, mut scratch) = prepare_convolution_operands::<BE>(module, &module_host, cols, a_size, b_size, 17);
+
+    let mut res_oracle = module.vec_znx_dft_alloc(cols, res_size);
+    let mut res_derived = module.vec_znx_dft_alloc(cols, res_size);
+    let mut res_module = module.vec_znx_dft_alloc(cols, res_size);
+    let mut fresh = module.vec_znx_dft_alloc(1, res_size);
+    let mut big = module.vec_znx_big_alloc(1, res_size);
+
+    // Written at column 1 too: covers the column-interleaved `VecZnxDft` indexing.
+    for res_col in 0..cols {
+        for cnv_offset in [0usize, 1usize] {
+            // Identical deterministic initial accumulator content for all three paths.
+            for res in [&mut res_oracle, &mut res_derived, &mut res_module] {
+                module.cnv_apply_dft(
+                    0,
+                    &mut res.to_backend_mut(),
+                    res_col,
+                    &a_prep.to_backend_ref(),
+                    0,
+                    &b_prep.to_backend_ref(),
+                    0,
+                    &mut scratch.borrow(),
+                );
+            }
+
+            // Oracle: the spec definition, spelled out through the api traits.
+            module.cnv_apply_dft(
+                cnv_offset,
+                &mut fresh.to_backend_mut(),
+                0,
+                &a_prep.to_backend_ref(),
+                1,
+                &b_prep.to_backend_ref(),
+                0,
+                &mut scratch.borrow(),
+            );
+            module.vec_znx_dft_add_assign(&mut res_oracle.to_backend_mut(), res_col, &fresh.to_backend_ref(), 0);
+
+            // The derived free function, with an arena sized only by its own sibling.
+            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_apply_dft_add_tmp_bytes_derived::<BE, BE>(
+                module, cnv_offset, res_size, a_size, b_size,
+            ));
+            cnv_apply_dft_add_derived::<BE, BE>(
+                module,
+                cnv_offset,
+                &mut res_derived.to_backend_mut(),
+                res_col,
+                &a_prep.to_backend_ref(),
+                1,
+                &b_prep.to_backend_ref(),
+                0,
+                &mut derived_scratch.borrow(),
+            );
+
+            // The backend's own dispatch through the OEP method.
+            module.cnv_apply_dft_add(
+                cnv_offset,
+                &mut res_module.to_backend_mut(),
+                res_col,
+                &a_prep.to_backend_ref(),
+                1,
+                &b_prep.to_backend_ref(),
+                0,
+                &mut scratch.borrow(),
+            );
+
+            let want = normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
+            let have_derived = normalize_dft_column::<BE>(
+                module,
+                &module_host,
+                base2k,
+                &mut big,
+                &mut res_derived,
+                res_col,
+                &mut scratch,
+            );
+            let have_module =
+                normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_module, res_col, &mut scratch);
+            assert_eq!(
+                want, have_derived,
+                "cnv_apply_dft_add: derived decomposition != two-step oracle (res_col {res_col} cnv_offset {cnv_offset})"
+            );
+            assert_eq!(
+                want, have_module,
+                "cnv_apply_dft_add: module dispatch != two-step oracle (res_col {res_col} cnv_offset {cnv_offset})"
+            );
+        }
+    }
+}
+
+/// `cnv_pairwise_apply_dft`: the derived free function versus an oracle that
+/// writes out the expansion — one `cnv_apply_dft` when `i == j`, and the four
+/// cross terms as `cnv_apply_dft` + three `cnv_apply_dft_add` otherwise — and
+/// versus the backend's own `module.cnv_pairwise_apply_dft`.
+pub fn test_cnv_pairwise_apply_dft_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + Convolution<BE>
+        + CnvPVecAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let cols: usize = 2;
+    let a_size: usize = 15;
+    let b_size: usize = 15;
+    let res_size: usize = a_size + b_size;
+    let res_col: usize = 1;
+
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let (a_prep, b_prep, mut scratch) = prepare_convolution_operands::<BE>(module, &module_host, cols, a_size, b_size, 17);
+
+    let mut res_oracle = module.vec_znx_dft_alloc(2, res_size);
+    let mut res_derived = module.vec_znx_dft_alloc(2, res_size);
+    let mut res_module = module.vec_znx_dft_alloc(2, res_size);
+    let mut big = module.vec_znx_big_alloc(1, res_size);
+
+    for (i, j) in [(0usize, 0usize), (0, 1), (1, 0)] {
+        for cnv_offset in [0usize, 1usize] {
+            // Oracle: the expansion written out through the api traits.
+            module.cnv_apply_dft(
+                cnv_offset,
+                &mut res_oracle.to_backend_mut(),
+                res_col,
+                &a_prep.to_backend_ref(),
+                i,
+                &b_prep.to_backend_ref(),
+                i,
+                &mut scratch.borrow(),
+            );
+            if i != j {
+                for (a_col, b_col) in [(i, j), (j, i), (j, j)] {
+                    module.cnv_apply_dft_add(
+                        cnv_offset,
+                        &mut res_oracle.to_backend_mut(),
+                        res_col,
+                        &a_prep.to_backend_ref(),
+                        a_col,
+                        &b_prep.to_backend_ref(),
+                        b_col,
+                        &mut scratch.borrow(),
+                    );
+                }
+            }
+
+            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_pairwise_apply_dft_tmp_bytes_derived::<BE, BE>(
+                module, cnv_offset, res_size, a_size, b_size,
+            ));
+            cnv_pairwise_apply_dft_derived::<BE, BE>(
+                module,
+                cnv_offset,
+                &mut res_derived.to_backend_mut(),
+                res_col,
+                &a_prep.to_backend_ref(),
+                &b_prep.to_backend_ref(),
+                i,
+                j,
+                &mut derived_scratch.borrow(),
+            );
+
+            module.cnv_pairwise_apply_dft(
+                cnv_offset,
+                &mut res_module.to_backend_mut(),
+                res_col,
+                &a_prep.to_backend_ref(),
+                &b_prep.to_backend_ref(),
+                i,
+                j,
+                &mut scratch.borrow(),
+            );
+
+            let want = normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
+            let have_derived = normalize_dft_column::<BE>(
+                module,
+                &module_host,
+                base2k,
+                &mut big,
+                &mut res_derived,
+                res_col,
+                &mut scratch,
+            );
+            let have_module =
+                normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_module, res_col, &mut scratch);
+            assert_eq!(
+                want, have_derived,
+                "cnv_pairwise_apply_dft: derived decomposition != expanded oracle (i {i} j {j} cnv_offset {cnv_offset})"
+            );
+            assert_eq!(
+                want, have_module,
+                "cnv_pairwise_apply_dft: module dispatch != expanded oracle (i {i} j {j} cnv_offset {cnv_offset})"
+            );
+        }
+    }
+}
+
+/// `cnv_prepare_self`: the derived free function versus separate
+/// `cnv_prepare_left` / `cnv_prepare_right` calls, and versus the backend's
+/// own `module.cnv_prepare_self`. The prepared bytes are opaque (spec
+/// decision 4), so equality is stated on an observable: the same
+/// `cnv_apply_dft` is run against each of the three prepared pairs and the
+/// normalized products are compared.
+pub fn test_cnv_prepare_self_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + Convolution<BE>
+        + CnvPVecAlloc<BE>
+        + VecZnxAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let cols: usize = 2;
+    let a_size: usize = 15;
+    let res_size: usize = a_size + a_size;
+    let res_col: usize = 1;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let mut a = module_host.vec_znx_alloc(cols, a_size);
+    a.fill_uniform(17, &mut source);
+    let a_backend = upload_vec_znx::<BE>(&a);
+    let a_ref = vec_znx_backend_ref::<BE>(&a_backend);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_prepare_left_tmp_bytes(a_size, a_size)
+            .max(module.cnv_prepare_right_tmp_bytes(a_size, a_size))
+            .max(module.cnv_prepare_self_tmp_bytes(a_size, a_size))
+            .max(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, a_size))
+            .max(module.vec_znx_big_normalize_tmp_bytes()),
+    );
+
+    // Oracle: the two prepares, driven separately.
+    let mut left_oracle: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut right_oracle: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
+    module.cnv_prepare_left(&mut left_oracle.to_backend_mut(), &a_ref, !0i64, &mut scratch.borrow());
+    module.cnv_prepare_right(&mut right_oracle.to_backend_mut(), &a_ref, !0i64, &mut scratch.borrow());
+
+    // The derived free function, with an arena sized only by its own sibling.
+    let mut left_derived: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut right_derived: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut derived_scratch: ScratchOwned<BE> =
+        ScratchOwned::alloc(cnv_prepare_self_tmp_bytes_derived::<BE, BE>(module, a_size, a_size));
+    cnv_prepare_self_derived::<BE, BE>(
+        module,
+        &mut left_derived.to_backend_mut(),
+        &mut right_derived.to_backend_mut(),
+        &a_ref,
+        !0i64,
+        &mut derived_scratch.borrow(),
+    );
+
+    // The backend's own dispatch through the OEP method.
+    let mut left_module: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut right_module: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
+    module.cnv_prepare_self(
+        &mut left_module.to_backend_mut(),
+        &mut right_module.to_backend_mut(),
+        &a_ref,
+        !0i64,
+        &mut scratch.borrow(),
+    );
+
+    let mut res_dft = module.vec_znx_dft_alloc(2, res_size);
+    let mut big = module.vec_znx_big_alloc(1, res_size);
+    let mut product =
+        |left: &CnvPVecLOwned<BE>, right: &CnvPVecROwned<BE>, col: usize, cnv_offset: usize, scratch: &mut ScratchOwned<BE>| {
+            module.cnv_apply_dft(
+                cnv_offset,
+                &mut res_dft.to_backend_mut(),
+                res_col,
+                &left.to_backend_ref(),
+                col,
+                &right.to_backend_ref(),
+                col,
+                &mut scratch.borrow(),
+            );
+            normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_dft, res_col, scratch)
+        };
+
+    for col in 0..cols {
+        for cnv_offset in [0usize, 1usize] {
+            let want = product(&left_oracle, &right_oracle, col, cnv_offset, &mut scratch);
+            let have_derived = product(&left_derived, &right_derived, col, cnv_offset, &mut scratch);
+            let have_module = product(&left_module, &right_module, col, cnv_offset, &mut scratch);
+            assert_eq!(
+                want, have_derived,
+                "cnv_prepare_self: derived decomposition != separate prepares (col {col} cnv_offset {cnv_offset})"
+            );
+            assert_eq!(
+                want, have_module,
+                "cnv_prepare_self: module dispatch != separate prepares (col {col} cnv_offset {cnv_offset})"
+            );
+        }
+    }
+}
+
+/// `cnv_by_const_apply_add`: the derived free function versus an explicit
+/// two-step oracle (`cnv_by_const_apply` into a fresh `VecZnxBig`, then
+/// `vec_znx_big_add_assign`), and versus the backend's own
+/// `module.cnv_by_const_apply_add`. The result never enters the DFT domain,
+/// so the comparison is on the `vec_znx_big_normalize` output alone.
+pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + Convolution<BE>
+        + VecZnxAlloc<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigAddAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let a_cols: usize = 2;
+    let a_size: usize = 15;
+    let b_size: usize = 3;
+    let res_size: usize = a_size + b_size;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let mut a = module_host.vec_znx_alloc(a_cols, a_size);
+    a.fill_uniform(17, &mut source);
+    let mut b = module_host.vec_znx_alloc(1, b_size);
+    b.fill_uniform(base2k, &mut source);
+    let a_backend = upload_vec_znx::<BE>(&a);
+    let b_backend = upload_vec_znx::<BE>(&b);
+    let a_ref = vec_znx_backend_ref::<BE>(&a_backend);
+    let b_ref = vec_znx_backend_ref::<BE>(&b_backend);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_by_const_apply_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_by_const_apply_add_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.vec_znx_big_normalize_tmp_bytes()),
+    );
+
+    let mut acc_oracle = module.vec_znx_big_alloc(1, res_size);
+    let mut acc_derived = module.vec_znx_big_alloc(1, res_size);
+    let mut acc_module = module.vec_znx_big_alloc(1, res_size);
+    let mut fresh = module.vec_znx_big_alloc(1, res_size);
+
+    for cnv_offset in [0usize, 1usize] {
+        // Identical deterministic initial accumulator content for all three paths.
+        for acc in [&mut acc_oracle, &mut acc_derived, &mut acc_module] {
+            module.cnv_by_const_apply(
+                0,
+                &mut acc.to_backend_mut(),
+                0,
+                &a_ref,
+                0,
+                &b_ref,
+                0,
+                0,
+                &mut scratch.borrow(),
+            );
+        }
+
+        module.cnv_by_const_apply(
+            cnv_offset,
+            &mut fresh.to_backend_mut(),
+            0,
+            &a_ref,
+            1,
+            &b_ref,
+            0,
+            1,
+            &mut scratch.borrow(),
+        );
+        module.vec_znx_big_add_assign(&mut acc_oracle.to_backend_mut(), 0, &fresh.to_backend_ref(), 0);
+
+        let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_by_const_apply_add_tmp_bytes_derived::<BE, BE>(
+            module, cnv_offset, res_size, a_size, b_size,
+        ));
+        cnv_by_const_apply_add_derived::<BE, BE>(
+            module,
+            cnv_offset,
+            &mut acc_derived.to_backend_mut(),
+            0,
+            &a_ref,
+            1,
+            &b_ref,
+            0,
+            1,
+            &mut derived_scratch.borrow(),
+        );
+
+        module.cnv_by_const_apply_add(
+            cnv_offset,
+            &mut acc_module.to_backend_mut(),
+            0,
+            &a_ref,
+            1,
+            &b_ref,
+            0,
+            1,
+            &mut scratch.borrow(),
+        );
+
+        let normalize = |big: &crate::layouts::VecZnxBigOwned<BE>, scratch: &mut ScratchOwned<BE>| {
+            let template = module_host.vec_znx_alloc(1, res_size);
+            let mut backend = upload_vec_znx::<BE>(&template);
+            module.vec_znx_big_normalize(
+                &mut vec_znx_backend_mut::<BE>(&mut backend),
+                base2k,
+                res_size * base2k,
+                0,
+                0,
+                &big.to_backend_ref(),
+                base2k,
+                0,
+                &mut scratch.borrow(),
+            );
+            download_vec_znx::<BE>(&backend)
+        };
+        let want = normalize(&acc_oracle, &mut scratch);
+        let have_derived = normalize(&acc_derived, &mut scratch);
+        let have_module = normalize(&acc_module, &mut scratch);
+        assert_eq!(
+            want, have_derived,
+            "cnv_by_const_apply_add: derived decomposition != two-step oracle (cnv_offset {cnv_offset})"
+        );
+        assert_eq!(
+            want, have_module,
+            "cnv_by_const_apply_add: module dispatch != two-step oracle (cnv_offset {cnv_offset})"
+        );
+    }
+}
+
+/// Uniform `a`/`b` operands, prepared as left and right convolution factors,
+/// plus an arena covering every `_tmp_bytes` the convolution parity tests use
+/// on the module-dispatch side.
+#[allow(clippy::type_complexity)]
+fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl<BE>>(
+    module: &Module<BE>,
+    module_host: &Module<HostBytesBackend>,
+    cols: usize,
+    a_size: usize,
+    b_size: usize,
+    fill_base2k: usize,
+) -> (CnvPVecLOwned<BE>, CnvPVecROwned<BE>, ScratchOwned<BE>)
+where
+    Module<BE>: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxAlloc<BE> + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let res_size: usize = a_size + b_size;
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let mut a = module_host.vec_znx_alloc(cols, a_size);
+    let mut b = module_host.vec_znx_alloc(cols, b_size);
+    a.fill_uniform(fill_base2k, &mut source);
+    b.fill_uniform(fill_base2k, &mut source);
+    let a_backend = upload_vec_znx::<BE>(&a);
+    let b_backend = upload_vec_znx::<BE>(&b);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_pairwise_apply_dft_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_prepare_left_tmp_bytes(a_size, a_size))
+            .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size))
+            .max(module.vec_znx_big_normalize_tmp_bytes()),
+    );
+
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
+    module.cnv_prepare_left(
+        &mut a_prep.to_backend_mut(),
+        &vec_znx_backend_ref::<BE>(&a_backend),
+        !0i64,
+        &mut scratch.borrow(),
+    );
+    module.cnv_prepare_right(
+        &mut b_prep.to_backend_mut(),
+        &vec_znx_backend_ref::<BE>(&b_backend),
+        !0i64,
+        &mut scratch.borrow(),
+    );
+
+    (a_prep, b_prep, scratch)
+}
+
+/// One DFT column, brought back to the coefficient domain and normalized at
+/// `base2k`: the comparison form this suite uses for DFT-domain results.
+fn normalize_dft_column<BE: TestBackend>(
+    module: &Module<BE>,
+    module_host: &Module<HostBytesBackend>,
+    base2k: usize,
+    big: &mut crate::layouts::VecZnxBigOwned<BE>,
+    res: &mut crate::layouts::VecZnxDftOwned<BE>,
+    res_col: usize,
+    scratch: &mut ScratchOwned<BE>,
+) -> crate::layouts::VecZnxOwned<i64>
+where
+    Module<BE>: ModuleN + VecZnxAlloc<BE> + VecZnxIdftApplyTmpA<BE> + VecZnxBigNormalize<BE>,
+    ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
+{
+    let size: usize = ZnxInfos::size(big);
+    let template = module_host.vec_znx_alloc(1, size);
+    let mut backend = upload_vec_znx::<BE>(&template);
+    module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res.to_backend_mut(), res_col);
+    module.vec_znx_big_normalize(
+        &mut vec_znx_backend_mut::<BE>(&mut backend),
+        base2k,
+        size * base2k,
+        0,
+        0,
+        &big.to_backend_ref(),
+        base2k,
+        0,
+        &mut scratch.borrow(),
+    );
+    download_vec_znx::<BE>(&backend)
 }

@@ -78,6 +78,9 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// Returns scratch bytes required for [`cnv_by_const_apply_add`](Convolution::cnv_by_const_apply_add).
+    fn cnv_by_const_apply_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
+
     /// `res[res_col] +=` the [`Convolution::cnv_by_const_apply`] result; limbs
     /// the convolution would zero-fill are left untouched.
     #[allow(clippy::too_many_arguments)]
@@ -136,43 +139,14 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Lazy-canonicalization convolution used by `glwe_mul_plain`; bit-identical to
-    /// the eager `cnv_prepare_left/right` + `cnv_apply_dft`.
-    fn cnv_prepare_left_lazy_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
-    fn cnv_prepare_left_lazy(
-        &self,
-        res: &mut CnvPVecLBackendMut<'_, BE>,
-        a: &VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-    fn cnv_prepare_right_lazy_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
-    fn cnv_prepare_right_lazy(
-        &self,
-        res: &mut CnvPVecRBackendMut<'_, BE>,
-        a: &VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-    fn cnv_apply_dft_lazy_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
-    #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_lazy(
-        &self,
-        cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &CnvPVecLBackendRef<'_, BE>,
-        a_col: usize,
-        b: &CnvPVecRBackendRef<'_, BE>,
-        b_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+    /// Returns scratch bytes required for [`cnv_apply_dft_add`](Convolution::cnv_apply_dft_add).
+    fn cnv_apply_dft_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
     /// Accumulating variant of [`cnv_apply_dft`](Convolution::cnv_apply_dft):
     /// `res[res_col] += a[a_col] (x) b[b_col]`, bit-identical to `cnv_apply_dft`
     /// followed by a DFT-domain add. Limbs `>= min(res.size(), a.size() + b.size())`
     /// are left untouched. Scratch requirement is
-    /// [`cnv_apply_dft_tmp_bytes`](Convolution::cnv_apply_dft_tmp_bytes).
+    /// [`cnv_apply_dft_add_tmp_bytes`](Convolution::cnv_apply_dft_add_tmp_bytes).
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_add(
         &self,

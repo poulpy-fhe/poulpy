@@ -861,6 +861,10 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         b_size: usize,
     ) -> usize;
 
+    /// Required, not derived: this is an exact big-domain product of `a` with
+    /// one coefficient column of `b`. The spec's DFT decomposition would route
+    /// it through an approximate transform on FFT64 (spec section 4.3, PR4
+    /// deviation).
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
         module: &Module<BE>,
@@ -874,6 +878,17 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
+
+    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_by_const_apply_add`].
+    fn cnv_by_const_apply_add_tmp_bytes(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        crate::oep::cnv_by_const_apply_add_tmp_bytes_derived::<Self, BE>(module, cnv_offset, res_size, a_size, b_size)
+    }
 
     /// `res[res_col] +=` the [`Self::cnv_by_const_apply`] result; limbs the
     /// convolution would zero-fill are left untouched.
@@ -889,7 +904,11 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         b_col: usize,
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::cnv_by_const_apply_add_derived::<Self, BE>(
+            module, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch,
+        )
+    }
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft(
@@ -904,58 +923,15 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    // Lazy convolution used by glwe_mul_plain; defaults delegate to the eager path.
-    fn cnv_prepare_left_lazy_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
-        Self::cnv_prepare_left_tmp_bytes(module, res_size, a_size)
-    }
-
-    fn cnv_prepare_left_lazy(
-        module: &Module<BE>,
-        res: &mut crate::layouts::CnvPVecLBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        Self::cnv_prepare_left(module, res, a, mask, scratch);
-    }
-
-    fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
-        Self::cnv_prepare_right_tmp_bytes(module, res_size, a_size)
-    }
-
-    fn cnv_prepare_right_lazy(
-        module: &Module<BE>,
-        res: &mut crate::layouts::CnvPVecRBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        Self::cnv_prepare_right(module, res, a, mask, scratch);
-    }
-
-    fn cnv_apply_dft_lazy_tmp_bytes(
+    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_apply_dft_add`].
+    fn cnv_apply_dft_add_tmp_bytes(
         module: &Module<BE>,
         cnv_offset: usize,
         res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_lazy(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
-        a_col: usize,
-        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
-        b_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        Self::cnv_apply_dft(module, cnv_offset, res, res_col, a, a_col, b, b_col, scratch);
+        crate::oep::cnv_apply_dft_add_tmp_bytes_derived::<Self, BE>(module, cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -969,7 +945,9 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::cnv_apply_dft_add_derived::<Self, BE>(module, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+    }
 
     /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_apply_dft_sum`].
     ///
@@ -983,7 +961,9 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size).max(Self::cnv_apply_dft_add_tmp_bytes(
+            module, cnv_offset, res_size, a_size, b_size,
+        ))
     }
 
     /// Computes `res[res_col] = Σ_t a_t ⊛ b_t` (overwriting).
@@ -1026,7 +1006,9 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         res_size: usize,
         a_size: usize,
         b_size: usize,
-    ) -> usize;
+    ) -> usize {
+        crate::oep::cnv_pairwise_apply_dft_tmp_bytes_derived::<Self, BE>(module, cnv_offset, res_size, a_size, b_size)
+    }
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_pairwise_apply_dft(
@@ -1039,9 +1021,13 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         i: usize,
         j: usize,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::cnv_pairwise_apply_dft_derived::<Self, BE>(module, cnv_offset, res, res_col, a, b, i, j, scratch)
+    }
 
-    fn cnv_prepare_self_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
+    fn cnv_prepare_self_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
+        crate::oep::cnv_prepare_self_tmp_bytes_derived::<Self, BE>(module, res_size, a_size)
+    }
 
     fn cnv_prepare_self(
         module: &Module<BE>,
@@ -1050,5 +1036,7 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         a: &crate::layouts::VecZnxBackendRef<'_, BE>,
         mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::cnv_prepare_self_derived::<Self, BE>(module, left, right, a, mask, scratch)
+    }
 }

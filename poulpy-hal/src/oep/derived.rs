@@ -34,12 +34,13 @@
 use crate::{
     api::ScratchArenaTakeBasic,
     layouts::{
-        Backend, MatZnxInfos, Module, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
+        Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxInfos, Module,
+        ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+        VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
         scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
-    oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 /// Scratch for [`vmp_apply_dft_derived`]: one `VecZnxDft` for the transformed
@@ -609,4 +610,163 @@ pub fn svp_apply_dft_derived<S, BE>(
     let (mut b_dft, _) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, 1, b_size);
     <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
     <S as HalSvpImpl<BE>>::svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft.to_backend_ref(), 0);
+}
+
+/// Scratch for [`cnv_prepare_self_derived`]: the larger of the two prepares.
+#[doc(hidden)]
+pub fn cnv_prepare_self_tmp_bytes_derived<S, BE>(module: &Module<BE>, res_size: usize, a_size: usize) -> usize
+where
+    S: HalConvolutionImpl<BE>,
+    BE: Backend,
+{
+    <S as HalConvolutionImpl<BE>>::cnv_prepare_left_tmp_bytes(module, res_size, a_size).max(
+        <S as HalConvolutionImpl<BE>>::cnv_prepare_right_tmp_bytes(module, res_size, a_size),
+    )
+}
+
+/// Prepares one operand as both a left and a right convolution factor.
+#[doc(hidden)]
+pub fn cnv_prepare_self_derived<S, BE>(
+    module: &Module<BE>,
+    left: &mut CnvPVecLBackendMut<'_, BE>,
+    right: &mut CnvPVecRBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
+    mask: i64,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    S: HalConvolutionImpl<BE>,
+    BE: Backend,
+{
+    <S as HalConvolutionImpl<BE>>::cnv_prepare_left(module, left, a, mask, scratch);
+    <S as HalConvolutionImpl<BE>>::cnv_prepare_right(module, right, a, mask, scratch);
+}
+
+/// Scratch for [`cnv_apply_dft_add_derived`]: one `res_size`-limb `VecZnxDft`
+/// plus the convolution's own scratch.
+#[doc(hidden)]
+pub fn cnv_apply_dft_add_tmp_bytes_derived<S, BE>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res_size: usize,
+    a_size: usize,
+    b_size: usize,
+) -> usize
+where
+    S: HalConvolutionImpl<BE>,
+    BE: Backend,
+{
+    BE::bytes_of_vec_znx_dft(module.n(), 1, res_size)
+        + <S as HalConvolutionImpl<BE>>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+}
+
+/// `res += a (x) b`. The staging temporary spans exactly `res.size()` limbs and
+/// `cnv_apply_dft` zero-fills the limbs past the convolution bound, so those
+/// limbs of `res` receive zero and keep their previous value, as the contract
+/// requires.
+#[doc(hidden)]
+pub fn cnv_apply_dft_add_derived<S, BE>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    a_col: usize,
+    b: &CnvPVecRBackendRef<'_, BE>,
+    b_col: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    S: HalConvolutionImpl<BE>,
+    BE: Backend,
+{
+    let res_size: usize = ZnxInfos::size(res);
+    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, 1, res_size);
+    <S as HalConvolutionImpl<BE>>::cnv_apply_dft(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, &mut scratch);
+    <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
+}
+
+/// Scratch for [`cnv_by_const_apply_add_derived`]: one `res_size`-limb
+/// `VecZnxBig` plus the product's own scratch.
+#[doc(hidden)]
+pub fn cnv_by_const_apply_add_tmp_bytes_derived<S, BE>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res_size: usize,
+    a_size: usize,
+    b_size: usize,
+) -> usize
+where
+    S: HalConvolutionImpl<BE>,
+    BE: Backend,
+{
+    BE::bytes_of_vec_znx_big(module.n(), 1, res_size)
+        + <S as HalConvolutionImpl<BE>>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+}
+
+/// `res += a (x) b[b_coeff]`, with the same untouched-limb contract as
+/// [`cnv_apply_dft_add_derived`].
+#[doc(hidden)]
+pub fn cnv_by_const_apply_add_derived<S, BE>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    b_coeff: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    S: HalConvolutionImpl<BE>,
+    BE: Backend,
+{
+    let res_size: usize = ZnxInfos::size(res);
+    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_big_scratch(scratch.borrow(), module, 1, res_size);
+    <S as HalConvolutionImpl<BE>>::cnv_by_const_apply(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, b_coeff, &mut scratch);
+    <S as HalVecZnxBigImpl<BE>>::vec_znx_big_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
+}
+
+/// Scratch for [`cnv_pairwise_apply_dft_derived`]: the larger of the one
+/// overwriting and the three accumulating products it chains.
+#[doc(hidden)]
+pub fn cnv_pairwise_apply_dft_tmp_bytes_derived<S, BE>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res_size: usize,
+    a_size: usize,
+    b_size: usize,
+) -> usize
+where
+    S: HalConvolutionImpl<BE>,
+    BE: Backend,
+{
+    <S as HalConvolutionImpl<BE>>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size).max(
+        <S as HalConvolutionImpl<BE>>::cnv_apply_dft_add_tmp_bytes(module, cnv_offset, res_size, a_size, b_size),
+    )
+}
+
+/// `res = (a[i] + a[j]) (x) (b[i] + b[j])`, expanded in the DFT domain where
+/// the prepared operands are linear; `i == j` degenerates to one product.
+#[doc(hidden)]
+pub fn cnv_pairwise_apply_dft_derived<S, BE>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE>,
+    i: usize,
+    j: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    S: HalConvolutionImpl<BE>,
+    BE: Backend,
+{
+    <S as HalConvolutionImpl<BE>>::cnv_apply_dft(module, cnv_offset, res, res_col, a, i, b, i, scratch);
+    if i == j {
+        return;
+    }
+    <S as HalConvolutionImpl<BE>>::cnv_apply_dft_add(module, cnv_offset, res, res_col, a, i, b, j, scratch);
+    <S as HalConvolutionImpl<BE>>::cnv_apply_dft_add(module, cnv_offset, res, res_col, a, j, b, i, scratch);
+    <S as HalConvolutionImpl<BE>>::cnv_apply_dft_add(module, cnv_offset, res, res_col, a, j, b, j, scratch);
 }

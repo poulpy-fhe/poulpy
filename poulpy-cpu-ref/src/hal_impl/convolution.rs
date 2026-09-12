@@ -79,6 +79,16 @@ macro_rules! hal_impl_convolution {
             );
         }
 
+        fn cnv_by_const_apply_add_tmp_bytes(
+            module: &Module<Self>,
+            cnv_offset: usize,
+            res_size: usize,
+            a_size: usize,
+            b_size: usize,
+        ) -> usize {
+            <Self as $defaults<Self>>::cnv_by_const_apply_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
+        }
+
         #[allow(clippy::too_many_arguments)]
         fn cnv_by_const_apply_add(
             module: &Module<Self>,
@@ -131,6 +141,16 @@ macro_rules! hal_impl_convolution {
                 b_col,
                 &mut scratch,
             );
+        }
+
+        fn cnv_apply_dft_add_tmp_bytes(
+            module: &Module<Self>,
+            cnv_offset: usize,
+            res_size: usize,
+            a_size: usize,
+            b_size: usize,
+        ) -> usize {
+            <Self as $defaults<Self>>::cnv_apply_dft_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]
