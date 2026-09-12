@@ -675,6 +675,11 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_automorphism(plan, res, res_col, a, a_col)
     }
 
+    fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        0
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn vec_znx_dft_automorphism_add_with_plan(
         module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
@@ -682,7 +687,9 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
+        let _ = scratch;
         let _ = module;
         crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_automorphism_add::<SerialTaskExecutor>(plan, res, res_col, a, a_col)
     }
@@ -1088,6 +1095,11 @@ mod ifma_impl {
             );
         }
 
+        fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+            0
+        }
+
+        #[allow(clippy::too_many_arguments)]
         fn vec_znx_dft_automorphism_add_with_plan(
             _module: &Module<Self>,
             plan: &Self::AutomorphismPlan,
@@ -1095,7 +1107,9 @@ mod ifma_impl {
             res_col: usize,
             a: &VecZnxDftBackendRef<'_, Self>,
             a_col: usize,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
+            let _ = scratch;
             crate::ntt3x42_ifma::vec_znx_dft::vec_znx_dft_automorphism_add::<poulpy_hal::execution::SerialTaskExecutor>(
                 plan, res, res_col, a, a_col,
             );

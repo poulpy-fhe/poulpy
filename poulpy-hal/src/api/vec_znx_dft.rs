@@ -190,6 +190,12 @@ pub trait VecZnxDftAutomorphismPlan<B: Backend> {
     fn vec_znx_dft_automorphism_plan(&self, p: i64) -> Self::Plan;
 }
 
+/// Returns scratch bytes required by
+/// [`VecZnxDftAutomorphism::vec_znx_dft_automorphism_add_with_plan`].
+pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
+    fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
+}
+
 /// Applies a precomputed DFT-domain automorphism plan to `a`, writing the
 /// result into `res` (out-of-place).
 pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
@@ -211,6 +217,7 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, B>,
         a_col: usize,
+        scratch: &mut ScratchArena<'_, B>,
     );
 
     /// Convenience: build the plan and apply in one call. Prefer

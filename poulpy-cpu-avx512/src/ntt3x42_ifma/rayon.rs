@@ -782,6 +782,11 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         super::vec_znx_dft::vec_znx_dft_automorphism::<NTT3x42IfmaRayonExecutor>(plan, &mut res, res_col, &base_dft_ref(a), a_col)
     }
 
+    fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        0
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn vec_znx_dft_automorphism_add_with_plan(
         _module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
@@ -789,7 +794,9 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
+        let _ = scratch;
         let mut res = base_dft_mut(res);
         super::vec_znx_dft::vec_znx_dft_automorphism_add::<NTT3x42IfmaRayonExecutor>(
             plan,

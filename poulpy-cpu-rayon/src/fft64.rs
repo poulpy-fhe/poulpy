@@ -1305,6 +1305,15 @@ unsafe impl HalVecZnxDftImpl<$rayon> for $rayon {
         $dft_automorphism(module, plan, res, res_col, a, a_col);
     }
 
+    fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(
+        _module: &Module<Self>,
+        _res_size: usize,
+        _a_size: usize,
+    ) -> usize {
+        0
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn vec_znx_dft_automorphism_add_with_plan(
         _module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
@@ -1312,7 +1321,9 @@ unsafe impl HalVecZnxDftImpl<$rayon> for $rayon {
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
+        let _ = scratch;
         if $crate::RayonTaskExecutor::should_serialize_inner() {
             $crate::__private::poulpy_cpu_ref::reference::fft64::vec_znx_dft::vec_znx_dft_automorphism_add::<
                 $base,

@@ -533,6 +533,9 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// Required, not derived: the composition is `vec_znx_idft_apply(res, a)`,
+    /// which needs `vec_znx_idft_apply_tmp_bytes` scratch this signature does
+    /// not carry (spec section 4.3, PR4 deviation).
     fn vec_znx_idft_apply_tmpa(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
@@ -541,7 +544,9 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
         a_col: usize,
     );
 
-    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
+    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
+        crate::oep::vec_znx_idft_normalize_consume_tmp_bytes_derived::<Self, BE>(module, res_size, a_size)
+    }
 
     /// `res[res_col] = normalize(idft(a[a_col]) + addend)`, clobbering `a[a_col]`.
     #[allow(clippy::too_many_arguments)]
@@ -556,7 +561,11 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
         a_base2k: usize,
         addend: Option<(&crate::layouts::VecZnxBackendRef<'_, BE>, usize)>,
         scratch: &mut ScratchArena<'_, BE>,
-    );
+    ) {
+        crate::oep::vec_znx_idft_normalize_consume_derived::<Self, BE>(
+            module, res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch,
+        )
+    }
 
     fn vec_znx_dft_add(
         module: &Module<BE>,
@@ -638,8 +647,13 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
         a_col: usize,
     );
 
+    fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
+        crate::oep::vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived::<Self, BE>(module, res_size, a_size)
+    }
+
     /// `res[res_col] += automorphism(a[a_col])` over `min(res.size(), a.size())` limbs;
     /// res limbs beyond that are left untouched.
+    #[allow(clippy::too_many_arguments)]
     fn vec_znx_dft_automorphism_add_with_plan(
         module: &Module<BE>,
         plan: &Self::AutomorphismPlan,
@@ -647,7 +661,10 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
         res_col: usize,
         a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
-    );
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        crate::oep::vec_znx_dft_automorphism_add_with_plan_derived::<Self, BE>(module, plan, res, res_col, a, a_col, scratch)
+    }
 }
 
 /// Scalar-vector product family extension point.

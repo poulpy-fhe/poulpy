@@ -13,9 +13,10 @@ use poulpy_hal::{
     api::{
         CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssign, VecZnxBigAddAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
-        VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
+        VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, GaloisElement, PrepareHint, ScratchArena},
 };
@@ -55,6 +56,7 @@ where
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes
@@ -259,6 +261,7 @@ where
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes

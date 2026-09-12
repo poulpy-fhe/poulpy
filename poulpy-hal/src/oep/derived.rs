@@ -35,8 +35,9 @@ use crate::{
     api::ScratchArenaTakeBasic,
     layouts::{
         Backend, MatZnxInfos, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-        VecZnxBigBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef,
-        ZnxInfos, scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
+        VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
+        scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
     oep::{HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
@@ -443,4 +444,87 @@ pub fn vec_znx_big_sub_small_b_derived<S, BE>(
 {
     <S as HalVecZnxBigImpl<BE>>::vec_znx_big_from_small(res, res_col, b, b_col);
     <S as HalVecZnxBigImpl<BE>>::vec_znx_big_sub_negate_assign(module, res, res_col, a, a_col);
+}
+
+/// Scratch for [`vec_znx_idft_normalize_consume_derived`]: the `VecZnxBig` the
+/// inverse transform lands in, plus the big normalization's own carry.
+#[doc(hidden)]
+pub fn vec_znx_idft_normalize_consume_tmp_bytes_derived<S, BE>(module: &Module<BE>, _res_size: usize, a_size: usize) -> usize
+where
+    S: HalVecZnxDftImpl<BE>,
+    BE: Backend,
+{
+    BE::bytes_of_vec_znx_big(module.n(), 1, a_size) + <S as HalVecZnxBigImpl<BE>>::vec_znx_big_normalize_tmp_bytes(module)
+}
+
+/// `res = normalize(idft(a) + addend)`, clobbering `a`.
+#[doc(hidden)]
+pub fn vec_znx_idft_normalize_consume_derived<S, BE>(
+    module: &Module<BE>,
+    res: &mut VecZnxBackendMut<'_, BE>,
+    res_base2k: usize,
+    res_k: usize,
+    res_col: usize,
+    a: &mut VecZnxDftBackendMut<'_, BE>,
+    a_col: usize,
+    a_base2k: usize,
+    addend: Option<(&VecZnxBackendRef<'_, BE>, usize)>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    S: HalVecZnxDftImpl<BE>,
+    BE: Backend,
+{
+    let a_size: usize = ZnxInfos::size(a);
+    let (mut big, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_big_scratch(scratch.borrow(), module, 1, a_size);
+    <S as HalVecZnxDftImpl<BE>>::vec_znx_idft_apply_tmpa(module, &mut big, 0, a, a_col);
+    if let Some((add, add_col)) = addend {
+        <S as HalVecZnxBigImpl<BE>>::vec_znx_big_add_small_assign(module, &mut big, 0, add, add_col);
+    }
+    <S as HalVecZnxBigImpl<BE>>::vec_znx_big_normalize(
+        module,
+        res,
+        res_base2k,
+        res_k,
+        0,
+        res_col,
+        &big.to_backend_ref(),
+        a_base2k,
+        0,
+        &mut scratch,
+    );
+}
+
+/// Scratch for [`vec_znx_dft_automorphism_add_with_plan_derived`]: the limbs
+/// the accumulation touches, as one `VecZnxDft`.
+#[doc(hidden)]
+pub fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived<S, BE>(
+    module: &Module<BE>,
+    res_size: usize,
+    a_size: usize,
+) -> usize
+where
+    S: HalVecZnxDftImpl<BE>,
+    BE: Backend,
+{
+    BE::bytes_of_vec_znx_dft(module.n(), 1, res_size.min(a_size))
+}
+
+/// `res += automorphism(a)` over `min(res.size(), a.size())` limbs.
+#[doc(hidden)]
+pub fn vec_znx_dft_automorphism_add_with_plan_derived<S, BE>(
+    module: &Module<BE>,
+    plan: &<S as HalVecZnxDftImpl<BE>>::AutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    a_col: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    S: HalVecZnxDftImpl<BE>,
+    BE: Backend,
+{
+    let size: usize = ZnxInfos::size(res).min(ZnxInfos::size(a));
+    let (mut tmp, _) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, 1, size);
+    <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_automorphism_with_plan(module, plan, &mut tmp, 0, a, a_col);
+    <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }

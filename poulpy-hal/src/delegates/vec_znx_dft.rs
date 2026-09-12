@@ -1,9 +1,9 @@
 use crate::{
     api::{
         VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAddScaledAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
-        VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign,
-        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
-        VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftSub,
+        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
@@ -247,7 +247,17 @@ where
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, B>,
         a_col: usize,
+        scratch: &mut ScratchArena<'_, B>,
     ) {
-        B::vec_znx_dft_automorphism_add_with_plan(self, plan, res, res_col, a, a_col);
+        B::vec_znx_dft_automorphism_add_with_plan(self, plan, res, res_col, a, a_col, scratch);
+    }
+}
+
+impl<B> VecZnxDftAutomorphismAddWithPlanTmpBytes for Module<B>
+where
+    B: Backend + HalVecZnxDftImpl<B>,
+{
+    fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
+        B::vec_znx_dft_automorphism_add_with_plan_tmp_bytes(self, res_size, a_size)
     }
 }

@@ -8,7 +8,7 @@ use rayon::prelude::*;
 use poulpy_cpu_ref::{
     hal_defaults::{
         BigWordHadamardProduct, HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault,
-        NTT4x30VecZnxBigDefault, NTT4x30VecZnxDftDefault, NTT4x30VmpDefault,
+        NTT4x30VecZnxBigDefault, NTT4x30VmpDefault,
     },
     reference::{
         ntt4x30::{
@@ -683,27 +683,6 @@ unsafe impl HalSvpImpl<NTT4x30NeonRayon> for NTT4x30NeonRayon {
     poulpy_cpu_ref::hal_impl_svp!(NTT4x30SvpDefault);
 }
 unsafe impl HalVecZnxDftImpl<NTT4x30NeonRayon> for NTT4x30NeonRayon {
-    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <Self as NTT4x30VecZnxDftDefault<Self>>::vec_znx_idft_normalize_consume_tmp_bytes_default(module, res_size, a_size)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_idft_normalize_consume(
-        module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-        res_base2k: usize,
-        res_k: usize,
-        res_col: usize,
-        a: &mut VecZnxDftBackendMut<'_, Self>,
-        a_col: usize,
-        a_base2k: usize,
-        addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        <Self as NTT4x30VecZnxDftDefault<Self>>::vec_znx_idft_normalize_consume_default(
-            module, res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch,
-        )
-    }
     fn vec_znx_dft_apply(
         module: &Module<Self>,
         step: usize,
@@ -989,6 +968,11 @@ unsafe impl HalVecZnxDftImpl<NTT4x30NeonRayon> for NTT4x30NeonRayon {
         );
     }
 
+    fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        0
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn vec_znx_dft_automorphism_add_with_plan(
         _module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
@@ -996,7 +980,9 @@ unsafe impl HalVecZnxDftImpl<NTT4x30NeonRayon> for NTT4x30NeonRayon {
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
+        let _ = scratch;
         if RayonTaskExecutor::should_serialize_inner() {
             poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, SerialTaskExecutor>(
                 plan, res, res_col, a, a_col,
