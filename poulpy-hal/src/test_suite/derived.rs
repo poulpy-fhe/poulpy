@@ -20,21 +20,23 @@
 
 use crate::{
     api::{
-        MatZnxAlloc, ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
-        VecZnxAlloc, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc,
-        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftZero, VecZnxIdftApplyTmpA, VecZnxLsh,
-        VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign,
-        VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
-        VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft,
-        VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        MatZnxAlloc, ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, SvpPrepare, VecZnxAdd,
+        VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAlloc, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
+        VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
+        VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan,
+        VecZnxDftZero, VecZnxIdftApplyTmpA, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes,
+        VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNormalize,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpPMatAlloc,
+        VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos,
-        VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
+        FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned, SvpPPolOwned,
+        SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VecZnxInfos, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut,
+        vec_znx_backend_mut, vec_znx_backend_ref,
     },
-    oep::{HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, vmp_apply_dft_derived},
+    oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, vmp_apply_dft_derived},
     source::Source,
     test_suite::{
         TestBackend, TestParams, download_vec_znx, scalar_znx_backend_ref, upload_mat_znx, upload_scalar_znx, upload_vec_znx,
@@ -1442,5 +1444,111 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
                  a_size {a_size})"
             );
         }
+    }
+}
+
+/// `svp_apply_dft`: the OEP default body against an independent oracle —
+/// `vec_znx_dft_apply` into a fresh `VecZnxDft`, then `svp_apply_dft_to_dft`
+/// — through the public api traits. DFT-domain results are compared after
+/// `idft` and `big_normalize`. The arena is sized by the op's own
+/// `_tmp_bytes` alone.
+pub fn test_svp_apply_dft_derived<BE: TestBackend + HalSvpImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + VecZnxAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + SvpPPolAlloc<BE>
+        + SvpPrepare<BE>
+        + SvpApplyDftToDft<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([2u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+
+    let mut scalar = module_host.scalar_znx_alloc(1);
+    scalar.fill_uniform(base2k, &mut source);
+    let scalar_backend = upload_scalar_znx::<BE>(&scalar);
+
+    let mut svp: SvpPPolOwned<BE> = module.svp_ppol_alloc(1, PrepareHint::Reuse);
+    module.svp_prepare(
+        &mut svp.to_backend_mut(),
+        0,
+        &scalar_znx_backend_ref::<BE>(&scalar_backend),
+        0,
+    );
+
+    for (res_size, b_size) in [(3usize, 3usize), (2, 4), (4, 2)] {
+        let mut b = module_host.vec_znx_alloc(1, b_size);
+        b.fill_uniform(base2k, &mut source);
+        let b_backend = upload_vec_znx::<BE>(&b);
+
+        let mut scratch: ScratchOwned<BE> =
+            ScratchOwned::alloc(crate::oep::svp_apply_dft_tmp_bytes_derived::<BE, BE>(module, b_size));
+
+        let mut have_dft = module.vec_znx_dft_alloc(1, res_size);
+        let mut want_dft = module.vec_znx_dft_alloc(1, res_size);
+
+        crate::oep::svp_apply_dft_derived::<BE, BE>(
+            module,
+            &mut have_dft.to_backend_mut(),
+            0,
+            &svp.to_backend_ref(),
+            0,
+            &vec_znx_backend_ref::<BE>(&b_backend),
+            0,
+            &mut scratch.borrow(),
+        );
+
+        // Oracle: transform b into a fresh VecZnxDft, then svp_apply_dft_to_dft,
+        // through the public api traits.
+        let mut b_dft = module.vec_znx_dft_alloc(1, b_size);
+        module.vec_znx_dft_apply(
+            1,
+            0,
+            &mut b_dft.to_backend_mut(),
+            0,
+            &vec_znx_backend_ref::<BE>(&b_backend),
+            0,
+        );
+        module.svp_apply_dft_to_dft(
+            &mut want_dft.to_backend_mut(),
+            0,
+            &svp.to_backend_ref(),
+            0,
+            &b_dft.to_backend_ref(),
+            0,
+        );
+
+        let res_template = module_host.vec_znx_alloc(1, res_size);
+        let mut have_backend = upload_vec_znx::<BE>(&res_template);
+        let mut want_backend = upload_vec_znx::<BE>(&res_template);
+        let mut big = module.vec_znx_big_alloc(1, res_size);
+        for (dft, out) in [(&mut have_dft, &mut have_backend), (&mut want_dft, &mut want_backend)] {
+            module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), 0);
+            module.vec_znx_big_normalize(
+                &mut vec_znx_backend_mut::<BE>(out),
+                base2k,
+                res_size * base2k,
+                0,
+                0,
+                &big.to_backend_ref(),
+                base2k,
+                0,
+                &mut oracle_scratch.borrow(),
+            );
+        }
+
+        assert_eq!(
+            download_vec_znx::<BE>(&want_backend),
+            download_vec_znx::<BE>(&have_backend),
+            "svp_apply_dft: default body != independent oracle (res_size {res_size} b_size {b_size})"
+        );
     }
 }

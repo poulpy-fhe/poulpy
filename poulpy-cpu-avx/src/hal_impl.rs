@@ -384,6 +384,11 @@ unsafe impl HalSvpImpl<NTT4x30Avx> for NTT4x30Avx {
         crate::ntt4x30::svp::svp_ppol_copy(res, res_col, a, a_col);
     }
 
+    fn svp_apply_dft_tmp_bytes(_module: &Module<Self>, _b_size: usize) -> usize {
+        0
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn svp_apply_dft(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -392,7 +397,9 @@ unsafe impl HalSvpImpl<NTT4x30Avx> for NTT4x30Avx {
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
+        let _ = scratch;
         crate::ntt4x30::svp::svp_apply_dft(module, res, res_col, a, a_col, b, b_col);
     }
 

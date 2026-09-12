@@ -1,9 +1,9 @@
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft, SvpApplyDftToDft,
-        SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAlloc, VecZnxAutomorphism,
-        VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall,
-        VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign,
+        CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft, SvpApplyDftTmpBytes,
+        SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAlloc,
+        VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAdd, VecZnxBigAddAssign,
+        VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign,
         VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA,
         VecZnxBigSubSmallB, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub, VecZnxDftSubAssign,
@@ -250,8 +250,10 @@ where
         + VecZnxDftAlloc<B>
         + SvpPrepare<B>
         + SvpApplyDft<B>
+        + SvpApplyDftTmpBytes
         + SvpApplyDftToDft<B>
         + SvpApplyDftToDftAssign<B>,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     [
         BenchOp {
@@ -716,6 +718,7 @@ where
         + SvpPPolAlloc<B>
         + SvpPrepare<B>
         + SvpApplyDft<B>
+        + SvpApplyDftTmpBytes
         + SvpApplyDftToDft<B>
         + SvpApplyDftToDftAssign<B>
         + VmpPMatAlloc<B>
@@ -812,6 +815,7 @@ where
         + SvpPPolAlloc<B>
         + SvpPrepare<B>
         + SvpApplyDft<B>
+        + SvpApplyDftTmpBytes
         + SvpApplyDftToDft<B>
         + SvpApplyDftToDftAssign<B>
         + VmpPMatAlloc<B>

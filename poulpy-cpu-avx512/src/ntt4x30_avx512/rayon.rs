@@ -1229,6 +1229,11 @@ unsafe impl HalSvpImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         );
     }
 
+    fn svp_apply_dft_tmp_bytes(_module: &Module<Self>, _b_size: usize) -> usize {
+        0
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn svp_apply_dft(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -1237,7 +1242,9 @@ unsafe impl HalSvpImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         a_col: usize,
         b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
+        let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
         <NTT4x30Avx512 as HalSvpImpl<NTT4x30Avx512>>::svp_apply_dft(
             base_module(module),
             &mut base_dft_mut(res),
@@ -1246,6 +1253,7 @@ unsafe impl HalSvpImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
             a_col,
             &base_znx_ref(b),
             b_col,
+            &mut base_scratch,
         );
     }
 

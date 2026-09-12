@@ -1,6 +1,6 @@
 use crate::layouts::{
-    Backend, PrepareHint, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned, VecZnxBackendRef,
-    VecZnxDftBackendMut, VecZnxDftBackendRef,
+    Backend, PrepareHint, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned,
+    VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
 };
 
 /// Allocates as [crate::layouts::SvpPPol].
@@ -26,8 +26,14 @@ pub trait SvpPPolCopy<B: Backend> {
     fn svp_ppol_copy(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &SvpPPolBackendRef<'_, B>, a_col: usize);
 }
 
+/// Returns scratch bytes required by [`SvpApplyDft::svp_apply_dft`].
+pub trait SvpApplyDftTmpBytes {
+    fn svp_apply_dft_tmp_bytes(&self, b_size: usize) -> usize;
+}
+
 /// Apply a scalar-vector product between `a[a_col]` and `b[b_col]` and stores the result on `res[res_col]`.
 pub trait SvpApplyDft<B: Backend> {
+    #[allow(clippy::too_many_arguments)]
     fn svp_apply_dft(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,
@@ -36,6 +42,7 @@ pub trait SvpApplyDft<B: Backend> {
         a_col: usize,
         b: &VecZnxBackendRef<'_, B>,
         b_col: usize,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }
 

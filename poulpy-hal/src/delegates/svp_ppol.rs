@@ -1,8 +1,11 @@
 use crate::{
-    api::{SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolBytesOf, SvpPPolCopy, SvpPrepare},
+    api::{
+        SvpApplyDft, SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolBytesOf, SvpPPolCopy,
+        SvpPrepare,
+    },
     layouts::{
-        Backend, Module, PrepareHint, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned, VecZnxBackendRef,
-        VecZnxDftBackendMut, VecZnxDftBackendRef,
+        Backend, Module, PrepareHint, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned,
+        VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
     },
     oep::HalSvpImpl,
 };
@@ -54,10 +57,20 @@ impl_svp_delegate!(
         a_col: usize,
         b: &VecZnxBackendRef<'_, B>,
         b_col: usize,
+        scratch: &mut ScratchArena<'_, B>,
     ) {
-        B::svp_apply_dft(self, res, res_col, a, a_col, b, b_col);
+        B::svp_apply_dft(self, res, res_col, a, a_col, b, b_col, scratch);
     }
 );
+
+impl<B> SvpApplyDftTmpBytes for Module<B>
+where
+    B: Backend<ZnxWord = i64> + HalSvpImpl<B>,
+{
+    fn svp_apply_dft_tmp_bytes(&self, b_size: usize) -> usize {
+        B::svp_apply_dft_tmp_bytes(self, b_size)
+    }
+}
 
 impl_svp_delegate!(
     SvpApplyDftToDft<B>,

@@ -46,6 +46,7 @@ cross_backend_test_suite! {
     backend_test = crate::NTT4x30Avx512Rayon,
     params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
+        test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
         test_svp_apply_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign,
     }

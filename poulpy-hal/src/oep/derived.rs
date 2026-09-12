@@ -34,12 +34,12 @@
 use crate::{
     api::ScratchArenaTakeBasic,
     layouts::{
-        Backend, MatZnxInfos, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-        VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
+        Backend, MatZnxInfos, Module, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef,
+        VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
         scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
     },
-    oep::{HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 /// Scratch for [`vmp_apply_dft_derived`]: one `VecZnxDft` for the transformed
@@ -527,4 +527,36 @@ pub fn vec_znx_dft_automorphism_add_with_plan_derived<S, BE>(
     let (mut tmp, _) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, 1, size);
     <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_automorphism_with_plan(module, plan, &mut tmp, 0, a, a_col);
     <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
+}
+
+/// Scratch for [`svp_apply_dft_derived`]: the transformed right operand.
+#[doc(hidden)]
+pub fn svp_apply_dft_tmp_bytes_derived<S, BE>(module: &Module<BE>, b_size: usize) -> usize
+where
+    S: HalSvpImpl<BE>,
+    BE: Backend,
+{
+    BE::bytes_of_vec_znx_dft(module.n(), 1, b_size)
+}
+
+/// `res = ppol * dft(b)`: transform `b`, then apply in the DFT domain.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn svp_apply_dft_derived<S, BE>(
+    module: &Module<BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &SvpPPolBackendRef<'_, BE>,
+    a_col: usize,
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    S: HalSvpImpl<BE>,
+    BE: Backend,
+{
+    let b_size: usize = ZnxInfos::size(b);
+    let (mut b_dft, _) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, 1, b_size);
+    <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
+    <S as HalSvpImpl<BE>>::svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft.to_backend_ref(), 0);
 }

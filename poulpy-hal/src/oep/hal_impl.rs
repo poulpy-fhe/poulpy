@@ -689,6 +689,11 @@ pub unsafe trait HalSvpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         a_col: usize,
     );
 
+    fn svp_apply_dft_tmp_bytes(module: &Module<BE>, b_size: usize) -> usize {
+        crate::oep::svp_apply_dft_tmp_bytes_derived::<Self, BE>(module, b_size)
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn svp_apply_dft(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
@@ -697,7 +702,10 @@ pub unsafe trait HalSvpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         a_col: usize,
         b: &crate::layouts::VecZnxBackendRef<'_, BE>,
         b_col: usize,
-    );
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        crate::oep::svp_apply_dft_derived::<Self, BE>(module, res, res_col, a, a_col, b, b_col, scratch)
+    }
 
     fn svp_apply_dft_to_dft(
         module: &Module<BE>,
@@ -709,6 +717,8 @@ pub unsafe trait HalSvpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         b_col: usize,
     );
 
+    /// Required, not derived: the composition `res = ppol * res` needs a
+    /// `VecZnxDft` temporary and this form takes no scratch (spec section 4.2).
     fn svp_apply_dft_to_dft_assign(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
