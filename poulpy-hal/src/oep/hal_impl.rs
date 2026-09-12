@@ -577,15 +577,6 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
         b_col: usize,
     );
 
-    fn vec_znx_dft_add_scaled_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
-        a_col: usize,
-        a_scale: i64,
-    );
-
     fn vec_znx_dft_add_assign(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,

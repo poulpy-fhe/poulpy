@@ -675,24 +675,6 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         )
     }
 
-    fn vec_znx_dft_add_scaled_assign(
-        _module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        a_col: usize,
-        a_scale: i64,
-    ) {
-        let mut res = base_dft_mut(res);
-        super::vec_znx_dft::vec_znx_dft_add_scaled_assign::<NTT3x42IfmaRayonExecutor>(
-            &mut res,
-            res_col,
-            &base_dft_ref(a),
-            a_col,
-            a_scale,
-        )
-    }
-
     fn vec_znx_dft_add_assign(
         _module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,

@@ -8,8 +8,7 @@ use crate::reference::{
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
         vec_znx_dft::{
             Fft64AutomorphismPlan, build_fft64_automorphism_plan, vec_znx_dft_add as fft64_vec_znx_dft_add,
-            vec_znx_dft_add_assign as fft64_vec_znx_dft_add_assign,
-            vec_znx_dft_add_scaled_assign as fft64_vec_znx_dft_add_scaled_assign, vec_znx_dft_apply as fft64_vec_znx_dft_apply,
+            vec_znx_dft_add_assign as fft64_vec_znx_dft_add_assign, vec_znx_dft_apply as fft64_vec_znx_dft_apply,
             vec_znx_dft_automorphism as fft64_vec_znx_dft_automorphism,
             vec_znx_dft_automorphism_add as fft64_vec_znx_dft_automorphism_add, vec_znx_dft_copy as fft64_vec_znx_dft_copy,
             vec_znx_dft_sub as fft64_vec_znx_dft_sub, vec_znx_dft_sub_assign as fft64_vec_znx_dft_sub_assign,
@@ -27,7 +26,6 @@ use crate::reference::{
             NttAutomorphismPlan, NttModuleHandle, build_ntt4x30_automorphism_plan,
             ntt4x30_vec_znx_dft_add as ntt4x30_default_vec_znx_dft_add,
             ntt4x30_vec_znx_dft_add_assign as ntt4x30_default_vec_znx_dft_add_assign,
-            ntt4x30_vec_znx_dft_add_scaled_assign as ntt4x30_default_vec_znx_dft_add_scaled_assign,
             ntt4x30_vec_znx_dft_apply as ntt4x30_default_vec_znx_dft_apply,
             ntt4x30_vec_znx_dft_automorphism as ntt4x30_default_vec_znx_dft_automorphism,
             ntt4x30_vec_znx_dft_automorphism_add as ntt4x30_default_vec_znx_dft_automorphism_add,
@@ -152,21 +150,6 @@ where
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         fft64_vec_znx_dft_add::<BE>(res, res_col, a, a_col, b, b_col);
-    }
-
-    fn vec_znx_dft_add_scaled_assign_default(
-        _module: &Module<BE>,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxDftBackendRef<'_, BE>,
-        a_col: usize,
-        a_scale: i64,
-    ) where
-        BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
-        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
-    {
-        fft64_vec_znx_dft_add_scaled_assign::<BE>(res, res_col, a, a_col, a_scale);
     }
 
     fn vec_znx_dft_add_assign_default(
@@ -380,21 +363,6 @@ where
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         ntt4x30_default_vec_znx_dft_add::<BE>(res, res_col, a, a_col, b, b_col);
-    }
-
-    fn vec_znx_dft_add_scaled_assign_default(
-        _module: &Module<BE>,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxDftBackendRef<'_, BE>,
-        a_col: usize,
-        a_scale: i64,
-    ) where
-        BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign,
-        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
-    {
-        ntt4x30_default_vec_znx_dft_add_scaled_assign::<BE>(res, res_col, a, a_col, a_scale);
     }
 
     fn vec_znx_dft_add_assign_default(

@@ -94,17 +94,6 @@ macro_rules! __hal_impl_vec_znx_dft_common {
             <Self as $defaults<Self>>::vec_znx_dft_add_default(module, res, res_col, a, a_col, b, b_col)
         }
 
-        fn vec_znx_dft_add_scaled_assign(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
-            res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
-            a_col: usize,
-            a_scale: i64,
-        ) {
-            <Self as $defaults<Self>>::vec_znx_dft_add_scaled_assign_default(module, res, res_col, a, a_col, a_scale)
-        }
-
         fn vec_znx_dft_add_assign(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,

@@ -546,18 +546,6 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_add(res, res_col, a, a_col, b, b_col)
     }
 
-    fn vec_znx_dft_add_scaled_assign(
-        module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        res_col: usize,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        a_col: usize,
-        a_scale: i64,
-    ) {
-        let _ = module;
-        crate::ntt4x30_avx512::vec_znx_dft::vec_znx_dft_add_scaled_assign(res, res_col, a, a_col, a_scale)
-    }
-
     fn vec_znx_dft_add_assign(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -960,19 +948,6 @@ mod ifma_impl {
         ) {
             crate::ntt3x42_ifma::vec_znx_dft::vec_znx_dft_add::<poulpy_hal::execution::SerialTaskExecutor>(
                 res, res_col, a, a_col, b, b_col,
-            );
-        }
-
-        fn vec_znx_dft_add_scaled_assign(
-            _module: &Module<Self>,
-            res: &mut VecZnxDftBackendMut<'_, Self>,
-            res_col: usize,
-            a: &VecZnxDftBackendRef<'_, Self>,
-            a_col: usize,
-            a_scale: i64,
-        ) {
-            crate::ntt3x42_ifma::vec_znx_dft::vec_znx_dft_add_scaled_assign::<poulpy_hal::execution::SerialTaskExecutor>(
-                res, res_col, a, a_col, a_scale,
             );
         }
 

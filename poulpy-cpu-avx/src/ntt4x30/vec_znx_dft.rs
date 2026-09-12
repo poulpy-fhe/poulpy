@@ -367,37 +367,6 @@ pub(crate) fn vec_znx_dft_add_assign(
     }
 }
 
-pub(crate) fn vec_znx_dft_add_scaled_assign(
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
-    res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,
-    a_col: usize,
-    scale: i64,
-) {
-    let (res_shift, a_shift, size) = if scale > 0 {
-        let shift = (scale as usize).min(a.size());
-        (0, shift, a.size().min(res.size()).saturating_sub(shift))
-    } else if scale < 0 {
-        let shift = (scale.unsigned_abs() as usize).min(res.size());
-        (shift, 0, a.size().min(res.size().saturating_sub(shift)))
-    } else {
-        (0, 0, a.size().min(res.size()))
-    };
-    let n = res.n();
-    let (rc, ac) = (res.cols(), a.cols());
-    let rp: &mut [u32] = cast_slice_mut(res.data_mut());
-    let ap: &[u32] = cast_slice(a.data());
-    for limb in 0..size {
-        unsafe {
-            packed_add_assign(
-                n,
-                packed_limb_mut(rp, n, rc, res_col, limb + res_shift),
-                packed_limb(ap, n, ac, a_col, limb + a_shift),
-            )
-        };
-    }
-}
-
 pub(crate) fn vec_znx_dft_sub(
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
     res_col: usize,
