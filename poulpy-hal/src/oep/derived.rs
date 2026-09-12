@@ -129,6 +129,12 @@ where
 /// column. The staging accumulator spans exactly `res.size()` limbs, so it
 /// accumulates over the same `limb_offset..limb_offset + res.size()` window
 /// of `b` that `vmp_apply_dft_to_dft` itself reads.
+///
+/// The `vec_znx_dft_zero` loop over the accumulator is load-bearing, not
+/// hygiene: `vmp_apply_dft_to_dft` writes only the limbs the product reaches
+/// and may leave every limb past `min(b.size(), res.size() + limb_offset)`
+/// untouched, so an unzeroed accumulator would fold scratch garbage into
+/// `res` there.
 #[doc(hidden)]
 pub fn vmp_apply_dft_to_dft_add_derived<S, BE>(
     module: &Module<BE>,
@@ -440,10 +446,14 @@ pub fn vec_znx_add_scalar_assign_derived<S, BE>(
 }
 
 /// `res = a + b` with `b` a coefficient-domain operand: promote `b` into the
-/// destination, then fold `a` in place. Scratch-free; the limb windows match
-/// the fused kernel exactly — limbs only `b` reaches keep `b`, limbs only `a`
-/// reaches keep `a` (added to the zero `from_small` left there), limbs neither
-/// reaches are zero.
+/// destination, then fold `a` in place. Scratch-free.
+///
+/// Window contract, over the whole of `res`: limbs only `b` reaches keep `b`,
+/// limbs only `a` reaches keep `a` (added to the zero `vec_znx_big_from_small`
+/// left there), limbs neither reaches are zero.
+///
+/// `res` must not alias `a` or `b`: the body writes `res` before reading them.
+/// The backend view types enforce this.
 #[doc(hidden)]
 pub fn vec_znx_big_add_small_derived<S, BE>(
     module: &Module<BE>,
@@ -461,7 +471,15 @@ pub fn vec_znx_big_add_small_derived<S, BE>(
     <S as HalVecZnxBigImpl<BE>>::vec_znx_big_add_assign(module, res, res_col, a, a_col);
 }
 
-/// `res = a - b` with `a` the coefficient-domain operand.
+/// `res = a - b` with `a` the coefficient-domain operand: promote `a` into the
+/// destination, then subtract `b` in place. Scratch-free.
+///
+/// Window contract, over the whole of `res`: limbs only `a` reaches keep `a`,
+/// limbs only `b` reaches keep `-b` (subtracted from the zero
+/// `vec_znx_big_from_small` left there), limbs neither reaches are zero.
+///
+/// `res` must not alias `a` or `b`: the body writes `res` before reading them.
+/// The backend view types enforce this.
 #[doc(hidden)]
 pub fn vec_znx_big_sub_small_a_derived<S, BE>(
     module: &Module<BE>,
@@ -479,7 +497,15 @@ pub fn vec_znx_big_sub_small_a_derived<S, BE>(
     <S as HalVecZnxBigImpl<BE>>::vec_znx_big_sub_assign(module, res, res_col, b, b_col);
 }
 
-/// `res = a - b` with `b` the coefficient-domain operand.
+/// `res = a - b` with `b` the coefficient-domain operand: promote `b` into the
+/// destination, then negate it against `a` in place. Scratch-free.
+///
+/// Window contract, over the whole of `res`: limbs only `a` reaches keep `a`,
+/// limbs only `b` reaches keep `-b` (the negation applied to the `b` that
+/// `vec_znx_big_from_small` left there), limbs neither reaches are zero.
+///
+/// `res` must not alias `a` or `b`: the body writes `res` before reading them.
+/// The backend view types enforce this.
 #[doc(hidden)]
 pub fn vec_znx_big_sub_small_b_derived<S, BE>(
     module: &Module<BE>,

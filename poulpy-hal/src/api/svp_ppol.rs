@@ -33,6 +33,13 @@ pub trait SvpApplyDftTmpBytes {
 
 /// Apply a scalar-vector product between `a[a_col]` and `b[b_col]` and stores the result on `res[res_col]`.
 pub trait SvpApplyDft<B: Backend> {
+    /// `res[res_col] = a[a_col] * dft(b[b_col])`. Limbs of `res` beyond
+    /// `min(res.size(), b.size())` are zeroed.
+    ///
+    /// `scratch` must hold at least
+    /// [`svp_apply_dft_tmp_bytes`](SvpApplyDftTmpBytes::svp_apply_dft_tmp_bytes)
+    /// on `b.size()`: the derived body carves one `b.size()`-limb, one-column
+    /// `VecZnxDft` for the transformed right operand.
     #[allow(clippy::too_many_arguments)]
     fn svp_apply_dft(
         &self,

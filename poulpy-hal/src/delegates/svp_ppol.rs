@@ -63,14 +63,12 @@ impl_svp_delegate!(
     }
 );
 
-impl<B> SvpApplyDftTmpBytes for Module<B>
-where
-    B: Backend<ZnxWord = i64> + HalSvpImpl<B>,
-{
+impl_svp_delegate!(
+    SvpApplyDftTmpBytes,
     fn svp_apply_dft_tmp_bytes(&self, b_size: usize) -> usize {
         B::svp_apply_dft_tmp_bytes(self, b_size)
     }
-}
+);
 
 impl_svp_delegate!(
     SvpApplyDftToDft<B>,

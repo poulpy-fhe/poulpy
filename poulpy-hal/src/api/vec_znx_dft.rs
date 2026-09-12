@@ -194,7 +194,14 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
         a_col: usize,
     );
 
-    /// `res[res_col] += automorphism(a[a_col])` over `min(res.size(), a.size())` limbs.
+    /// `res[res_col] += automorphism(a[a_col])` over `min(res.size(), a.size())` limbs;
+    /// res limbs beyond that are left untouched.
+    ///
+    /// `scratch` must hold at least
+    /// [`vec_znx_dft_automorphism_add_with_plan_tmp_bytes`](VecZnxDftAutomorphismAddWithPlanTmpBytes::vec_znx_dft_automorphism_add_with_plan_tmp_bytes)
+    /// on the same sizes: the derived body carves one
+    /// `min(res.size(), a.size())`-limb, one-column `VecZnxDft` for the
+    /// rotated operand.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_dft_automorphism_add_with_plan(
         &self,

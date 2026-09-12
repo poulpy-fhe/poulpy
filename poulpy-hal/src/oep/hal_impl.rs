@@ -338,6 +338,9 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
+    /// Default body: [`crate::oep::vec_znx_big_add_small_derived`]. Over the
+    /// whole of `res`, limbs only `b` reaches keep `b`, limbs only `a` reaches
+    /// keep `a`, limbs beyond both operands are zero.
     fn vec_znx_big_add_small(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
@@ -386,6 +389,10 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
+    /// Default body: [`crate::oep::vec_znx_big_sub_small_a_derived`]. Over the
+    /// whole of `res`, limbs only `a` reaches keep `a`, limbs beyond
+    /// `a.size()` that `b` reaches keep `-b`, limbs beyond both operands are
+    /// zero.
     fn vec_znx_big_sub_small_a(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
@@ -408,6 +415,10 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
+    /// Default body: [`crate::oep::vec_znx_big_sub_small_b_derived`]. Over the
+    /// whole of `res`, limbs only `a` reaches keep `a`, limbs beyond
+    /// `a.size()` that `b` reaches keep `-b`, limbs beyond both operands are
+    /// zero.
     fn vec_znx_big_sub_small_b(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
@@ -644,6 +655,11 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
 
     /// `res[res_col] += automorphism(a[a_col])` over `min(res.size(), a.size())` limbs;
     /// res limbs beyond that are left untouched.
+    ///
+    /// `scratch` must hold at least
+    /// [`Self::vec_znx_dft_automorphism_add_with_plan_tmp_bytes`] on the same
+    /// sizes: the default body carves one `min(res.size(), a.size())`-limb,
+    /// one-column `VecZnxDft` for the rotated operand.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_dft_automorphism_add_with_plan(
         module: &Module<BE>,
@@ -684,6 +700,12 @@ pub unsafe trait HalSvpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         crate::oep::svp_apply_dft_tmp_bytes_derived::<Self, BE>(module, b_size)
     }
 
+    /// `res[res_col] = a[a_col] * dft(b[b_col])`. Limbs of `res` beyond
+    /// `min(res.size(), b.size())` are zeroed.
+    ///
+    /// `scratch` must hold at least [`Self::svp_apply_dft_tmp_bytes`] on
+    /// `b.size()`: the default body carves one `b.size()`-limb, one-column
+    /// `VecZnxDft` for the transformed right operand.
     #[allow(clippy::too_many_arguments)]
     fn svp_apply_dft(
         module: &Module<BE>,
@@ -708,8 +730,8 @@ pub unsafe trait HalSvpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         b_col: usize,
     );
 
-    /// Required, not derived: the composition `res = ppol * res` needs a
-    /// `VecZnxDft` temporary and this form takes no scratch (spec section 4.2).
+    /// Required, not derived: a default body would need a `VecZnxDft` temporary
+    /// the scratch-free signature does not carry (spec section 4.2).
     fn svp_apply_dft_to_dft_assign(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,

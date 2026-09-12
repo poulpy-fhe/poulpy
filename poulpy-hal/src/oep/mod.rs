@@ -9,7 +9,7 @@
 //! # Derived operations and the implementation order
 //!
 //! Operations classified *derived* or *variant* carry a default body composed
-//! from the basis methods of the same backend (see [`derived`]); a backend
+//! from the basis methods of the same backend (see [`crate::oep::derived`]); a backend
 //! implements the basis and inherits the rest, then overrides where a fused
 //! kernel is worth it — overriding a body and its `_tmp_bytes` together.
 //!

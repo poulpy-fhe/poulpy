@@ -127,7 +127,7 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .cnv_apply_dft_tmp_bytes(0, c_size, sweep.size, sweep.size)
+            .cnv_apply_dft_add_tmp_bytes(0, c_size, sweep.size, sweep.size)
             .max(module.cnv_prepare_left_tmp_bytes(c_size, sweep.size))
             .max(module.cnv_prepare_right_tmp_bytes(c_size, sweep.size)),
     );

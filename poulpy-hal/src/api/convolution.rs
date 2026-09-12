@@ -64,6 +64,10 @@ pub trait Convolution<BE: Backend> {
     ///     Y [b0]
     /// ```
     /// This method is intended to be used for multiplications by constants that are greater than the base2k.
+    ///
+    /// Required of every backend, never derived: it is an exact big-domain
+    /// product of `a` with one coefficient column of `b`, and the DFT
+    /// decomposition would route it through an approximate transform on FFT64.
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
         &self,
@@ -82,7 +86,10 @@ pub trait Convolution<BE: Backend> {
     fn cnv_by_const_apply_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
     /// `res[res_col] +=` the [`Convolution::cnv_by_const_apply`] result; limbs
-    /// the convolution would zero-fill are left untouched.
+    /// the convolution would zero-fill are left untouched. Scratch requirement
+    /// is
+    /// [`cnv_by_const_apply_add_tmp_bytes`](Convolution::cnv_by_const_apply_add_tmp_bytes),
+    /// not [`cnv_by_const_apply_tmp_bytes`](Convolution::cnv_by_const_apply_tmp_bytes).
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply_add(
         &self,

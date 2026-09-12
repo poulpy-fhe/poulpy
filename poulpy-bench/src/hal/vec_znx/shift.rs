@@ -2,7 +2,6 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
-// use poulpy_cpu_ref::reference::vec_znx::{vec_znx_lsh_tmp_bytes, vec_znx_rsh_tmp_bytes};
 use poulpy_hal::{
     api::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxRsh,

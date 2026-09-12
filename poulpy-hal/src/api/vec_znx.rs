@@ -119,7 +119,17 @@ pub trait VecZnxLshTmpBytes {
 }
 
 pub trait VecZnxLsh<B: Backend> {
-    /// Left shift by k bits all columns of `a`.
+    /// `res[res_col] = a[a_col] * 2^k`, both operands at the same radix: the
+    /// operation is exactly `vec_znx_normalize` with `res_base2k = a_base2k =
+    /// base2k`, `res_k = res.size() * base2k` and `offset = +k`.
+    ///
+    /// A destination shorter than the source is not a truncation: the limbs of
+    /// the shifted value that `res` cannot hold are rounded into its last limb
+    /// jointly, as the normalization does.
+    ///
+    /// Scratch is the family's
+    /// [`vec_znx_lsh_tmp_bytes`](VecZnxLshTmpBytes::vec_znx_lsh_tmp_bytes) on
+    /// `res.size()`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_lsh(
         &self,
@@ -166,7 +176,19 @@ pub trait VecZnxRshTmpBytes {
 }
 
 pub trait VecZnxRsh<B: Backend> {
-    /// Right shift by k bits all columns of `a`.
+    /// `res[res_col] = a[a_col] / 2^k`, both operands at the same radix: the
+    /// operation is exactly `vec_znx_normalize` with `res_base2k = a_base2k =
+    /// base2k`, `res_k = res.size() * base2k` and `offset = -k`.
+    ///
+    /// A destination shorter than the source is not a truncation: the limbs of
+    /// the shifted value that `res` cannot hold are rounded into its last limb
+    /// jointly, as the normalization does. A `k` beyond `res.size() * base2k`
+    /// has shifted every bit past the destination's last limb, so `res` is
+    /// zero.
+    ///
+    /// Scratch is the family's
+    /// [`vec_znx_rsh_tmp_bytes`](VecZnxRshTmpBytes::vec_znx_rsh_tmp_bytes) on
+    /// `res.size()`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_rsh(
         &self,

@@ -239,11 +239,9 @@ where
     }
 }
 
-impl<B> VecZnxDftAutomorphismAddWithPlanTmpBytes for Module<B>
-where
-    B: Backend + HalVecZnxDftImpl<B>,
-{
+impl_vec_znx_dft_delegate!(
+    VecZnxDftAutomorphismAddWithPlanTmpBytes,
     fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
         B::vec_znx_dft_automorphism_add_with_plan_tmp_bytes(self, res_size, a_size)
     }
-}
+);

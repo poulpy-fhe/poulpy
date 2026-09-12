@@ -69,7 +69,10 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         self.glwe_plaintext_bytes_of_from_infos(ct_infos)
             + self
                 .glwe_decrypt_tmp_bytes(ct_infos)
-                .max(self.ckks_extract_pt_tmp_bytes_default(ct_infos.size()))
+                // `ckks_extract_pt` shifts into the destination plaintext, not
+                // into the ciphertext: size it by the destination's allocated
+                // limb width, which this signature bounds by the ciphertext's.
+                .max(self.ckks_extract_pt_tmp_bytes_default(ct_infos.max_size()))
     }
 
     fn ckks_decrypt_default<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
