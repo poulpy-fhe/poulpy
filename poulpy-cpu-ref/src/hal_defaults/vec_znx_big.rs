@@ -228,7 +228,15 @@ where
         BE: Backend<BigWord = i64, ZnxWord = i64>,
         R: VecZnxBigToBackendMut<BE>,
     {
-        fft64_vec_znx_big_add_normal_ref::<_, BE>(res_base2k, res, res_col, noise_infos, source);
+        fft64_vec_znx_big_add_normal_ref::<_, BE>(
+            res_base2k,
+            res,
+            res_col,
+            noise_infos.k,
+            noise_infos.sigma,
+            noise_infos.bound,
+            source,
+        );
     }
 
     fn vec_znx_big_add_normal_seed_default<R>(
@@ -585,7 +593,15 @@ where
         BE: Backend<BigWord = i128, ZnxWord = i64>,
         R: VecZnxBigToBackendMut<BE>,
     {
-        ntt4x30_vec_znx_big_add_normal_ref::<_, BE>(res_base2k, res, res_col, noise_infos, source);
+        ntt4x30_vec_znx_big_add_normal_ref::<_, BE>(
+            res_base2k,
+            res,
+            res_col,
+            noise_infos.k,
+            noise_infos.sigma,
+            noise_infos.bound,
+            source,
+        );
     }
 
     fn vec_znx_big_add_normal_seed_default<R>(

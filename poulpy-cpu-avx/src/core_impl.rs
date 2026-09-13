@@ -97,9 +97,9 @@ impl_lwe_keyswitch_defaults_full!(FFT64Avx);
 impl_lwe_keyswitch_defaults_full!(NTT4x30Avx);
 
 impl_encryption_defaults_full!(FFT64Avx);
-poulpy_cpu_ref::impl_sampling_host!(FFT64Avx);
+poulpy_cpu_ref::impl_sampling_host!(FFT64Avx, fft64);
 impl_encryption_defaults_full!(NTT4x30Avx);
-poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx);
+poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx, ntt4x30);
 
 impl_glwe_external_product_defaults_full!(FFT64Avx);
 impl_glwe_external_product_defaults_full!(NTT4x30Avx);
@@ -127,7 +127,7 @@ mod rayon_defaults {
     impl_ggsw_keyswitch_defaults_full!(FFT64AvxRayon);
     impl_lwe_keyswitch_defaults_full!(FFT64AvxRayon);
     impl_encryption_defaults_full!(FFT64AvxRayon);
-    poulpy_cpu_ref::impl_sampling_host!(FFT64AvxRayon);
+    poulpy_cpu_ref::impl_sampling_host!(FFT64AvxRayon, fft64);
     impl_glwe_external_product_defaults_full!(FFT64AvxRayon);
     impl_gglwe_external_product_defaults_full!(FFT64AvxRayon);
     impl_ggsw_external_product_defaults_full!(FFT64AvxRayon);
@@ -145,7 +145,7 @@ mod rayon_defaults {
     impl_ggsw_keyswitch_defaults_full!(NTT4x30AvxRayon);
     impl_lwe_keyswitch_defaults_full!(NTT4x30AvxRayon);
     impl_encryption_defaults_full!(NTT4x30AvxRayon);
-    poulpy_cpu_ref::impl_sampling_host!(NTT4x30AvxRayon);
+    poulpy_cpu_ref::impl_sampling_host!(NTT4x30AvxRayon, ntt4x30);
     impl_glwe_external_product_defaults_full!(NTT4x30AvxRayon);
     impl_gglwe_external_product_defaults_full!(NTT4x30AvxRayon);
     impl_ggsw_external_product_defaults_full!(NTT4x30AvxRayon);

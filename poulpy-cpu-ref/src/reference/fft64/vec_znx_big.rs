@@ -199,21 +199,29 @@ pub fn vec_znx_big_normalize<R, A, BE>(
     );
 }
 
-pub fn vec_znx_big_add_normal_ref<R, B>(base2k: usize, res: &mut R, res_col: usize, noise_infos: NoiseInfos, source: &mut Source)
-where
+pub fn vec_znx_big_add_normal_ref<R, B>(
+    base2k: usize,
+    res: &mut R,
+    res_col: usize,
+    k: usize,
+    sigma: f64,
+    bound: f64,
+    source: &mut Source,
+) where
     B: Backend<BigWord = i64, ZnxWord = i64>,
     for<'a> B::BufMut<'a>: HostDataMut,
     R: VecZnxBigToBackendMut<B>,
 {
     let mut res = res.to_backend_mut();
     assert!(
-        (noise_infos.bound.log2().ceil() as i64) < 64,
+        (bound.log2().ceil() as i64) < 64,
         "invalid bound: ceil(log2(bound))={} > 63",
-        (noise_infos.bound.log2().ceil() as i64)
+        (bound.log2().ceil() as i64)
     );
 
-    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
-    znx_add_normal_f64_ref(res.at_mut(res_col, limb), noise_infos.sigma, noise_infos.bound, shift, source)
+    let limb: usize = k.div_ceil(base2k) - 1;
+    let shift: u32 = ((limb + 1) * base2k - k) as u32;
+    znx_add_normal_f64_ref(res.at_mut(res_col, limb), sigma, bound, shift, source)
 }
 
 pub fn test_vec_znx_big_add_normal<B>(module: &Module<B>)
