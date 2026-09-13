@@ -1,7 +1,7 @@
 //! Host implementation of the `poulpy-core` sampling extension point.
 
 /// Implements [`SamplingImpl`](poulpy_core::oep::SamplingImpl) for a CPU
-/// backend with the host `ScalarZnx::fill_*` methods applied straight to the
+/// backend with this crate's host [`ScalarZnxFill`](crate::ScalarZnxFill) methods applied straight to the
 /// backend buffer — no host round trip.
 ///
 /// ```ignore
@@ -19,6 +19,7 @@ macro_rules! impl_sampling_host {
                 seed: [u8; 32],
             ) {
                 use ::poulpy_hal::layouts::{ZnxViewMut, ZnxWord};
+                use $crate::ScalarZnxFill;
                 let mut source = ::poulpy_hal::source::Source::new(seed);
                 match dist {
                     ::poulpy_core::Distribution::TernaryFixed(hw) => res.fill_ternary_hw(res_col, hw, &mut source),

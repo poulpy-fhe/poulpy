@@ -7,6 +7,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::{GGLWEToGGSWKeyPreparedToBackendRef, GLWEAutomorphismKeyPreparedToBackendRef};
+use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     EncryptionLayout, GGLWEToGGSWKeyEncryptSk, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
@@ -21,6 +22,7 @@ use crate::{
         upload_scalar_znx,
     },
 };
+use poulpy_hal::test_suite::scalar_znx_backend_mut;
 
 pub fn test_ggsw_automorphism<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -142,7 +144,12 @@ where
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
-            pt_scalar.fill_ternary_hw(0, n, &mut source_xs);
+            module.scalar_znx_fill_distribution(
+                &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+                0,
+                Distribution::TernaryFixed(n),
+                &mut source_xs,
+            );
             let mut pt_scalar_backend = upload_scalar_znx::<BE>(&pt_scalar);
             let mut ct_in = upload_ggsw(module, &ct_in_template);
 
@@ -325,7 +332,12 @@ where
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
-            pt_scalar.fill_ternary_hw(0, n, &mut source_xs);
+            module.scalar_znx_fill_distribution(
+                &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+                0,
+                Distribution::TernaryFixed(n),
+                &mut source_xs,
+            );
             let mut pt_scalar_backend = upload_scalar_znx::<BE>(&pt_scalar);
             let mut ct = upload_ggsw(module, &ct_template);
 

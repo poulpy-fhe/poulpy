@@ -7,6 +7,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef};
+use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     EncryptionLayout, GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
@@ -18,6 +19,7 @@ use crate::{
     },
     noise::GGLWENoiseModel,
 };
+use poulpy_hal::test_suite::scalar_znx_backend_mut;
 
 #[allow(clippy::too_many_arguments)]
 pub fn test_ggsw_keyswitch<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
@@ -140,7 +142,12 @@ where
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
-            pt_scalar.fill_ternary_hw(0, n, &mut source_xs);
+            module.scalar_znx_fill_distribution(
+                &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+                0,
+                Distribution::TernaryFixed(n),
+                &mut source_xs,
+            );
 
             module.ggsw_encrypt_sk(
                 &mut ggsw_in,
@@ -318,7 +325,12 @@ where
                 &mut crate::test_suite::noise::scratch_host_arena(&mut scratch),
             );
 
-            pt_scalar.fill_ternary_hw(0, n, &mut source_xs);
+            module.scalar_znx_fill_distribution(
+                &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+                0,
+                Distribution::TernaryFixed(n),
+                &mut source_xs,
+            );
 
             module.ggsw_encrypt_sk(
                 &mut ggsw_out,

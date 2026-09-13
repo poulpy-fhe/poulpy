@@ -42,7 +42,6 @@ pub mod glwe_to_lwe_key;
 pub mod lwe;
 pub mod lwe_switching_key;
 pub mod lwe_to_glwe_key;
-pub mod sampling;
 
 pub use crate::api::{EncryptionInfos, GGSWEncryptSk, GLWEEncryptSk, GLWEMaskFill, LWEFillMask};
 pub use compressed::*;
@@ -59,7 +58,6 @@ pub use lwe::*;
 pub use lwe_switching_key::*;
 pub use lwe_to_glwe_key::*;
 use poulpy_hal::layouts::NoiseInfos;
-pub use sampling::*;
 
 use crate::layouts::{GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos, TorusPrecision};
 use anyhow::Result;

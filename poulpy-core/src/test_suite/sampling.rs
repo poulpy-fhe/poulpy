@@ -1,12 +1,12 @@
 //! Checks for the [`SamplingImpl`](crate::oep::SamplingImpl) seam.
 
 use poulpy_hal::{
-    layouts::{Backend, Module, ZnxView, ZnxViewMut, ZnxWord},
+    layouts::{Backend, HostBytesBackend, Module, ScalarZnx, ZnxView, ZnxViewMut, ZnxWord},
     source::Source,
     test_suite::{TestBackend, TestParams, download_scalar_znx, scalar_znx_backend_mut, upload_scalar_znx},
 };
 
-use crate::{Distribution, ScalarZnxFillDistribution, scalar_znx_host_zeroed};
+use crate::{Distribution, ScalarZnxFillDistribution};
 
 const COLS: usize = 2;
 const SENTINEL: i64 = 7;
@@ -21,7 +21,11 @@ fn fill_and_download<BE: TestBackend>(
 where
     Module<BE>: ScalarZnxFillDistribution<BE>,
 {
-    let mut host = scalar_znx_host_zeroed::<BE::ZnxWord>(module.n(), COLS);
+    let mut host: ScalarZnx<Vec<u8>, BE::ZnxWord> = ScalarZnx::from_data(
+        HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<Vec<u8>, BE::ZnxWord>::bytes_of(module.n(), COLS)),
+        module.n(),
+        COLS,
+    );
     for col in 0..COLS {
         host.at_mut(col, 0).fill(<BE::ZnxWord as ZnxWord>::from_i64(SENTINEL));
     }

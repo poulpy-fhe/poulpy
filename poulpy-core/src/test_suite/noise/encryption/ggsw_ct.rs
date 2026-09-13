@@ -6,6 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::GLWESecretSampling;
+use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     EncryptionLayout, GGSWCompressedEncryptSk, GGSWEncryptSk, GGSWNoise,
     encryption::DEFAULT_SIGMA_XE,
@@ -14,6 +15,7 @@ use crate::{
         ModuleCoreCompressedAlloc, compressed::GGSWCompressed, prepared::GLWESecretPrepared,
     },
 };
+use poulpy_hal::test_suite::scalar_znx_backend_mut;
 
 pub fn test_ggsw_encrypt_sk<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -49,7 +51,12 @@ where
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
-            pt_scalar.fill_ternary_hw(0, n, &mut source_xs);
+            module.scalar_znx_fill_distribution(
+                &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+                0,
+                Distribution::TernaryFixed(n),
+                &mut source_xs,
+            );
 
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module)
@@ -136,7 +143,12 @@ where
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
 
-            pt_scalar.fill_ternary_hw(0, n, &mut source_xs);
+            module.scalar_znx_fill_distribution(
+                &mut scalar_znx_backend_mut::<BE>(&mut pt_scalar),
+                0,
+                Distribution::TernaryFixed(n),
+                &mut source_xs,
+            );
 
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module)
