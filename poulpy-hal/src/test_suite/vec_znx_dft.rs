@@ -9,10 +9,13 @@ use crate::{
         ScratchOwnedAlloc, VecZnxAutomorphism, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftAutomorphismPlan, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign,
-        VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
-        VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
-    layouts::{FillUniform, HostBytesBackend, Module, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef},
+    layouts::{
+        FillUniform, HostBytesBackend, Module, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef,
+        ZnxView, ZnxViewMut,
+    },
     source::Source,
 };
 
@@ -254,7 +257,7 @@ pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend, BT: crate
     }
 }
 
-pub fn test_vec_znx_copy<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
     module_ref: &Module<BR>,
@@ -1003,4 +1006,145 @@ pub fn test_vec_znx_idft_normalize_consume<BR: crate::test_suite::TestBackend, B
 
     idft_normalize_consume_check_one_backend::<BR>(base2k, module_host, module_ref, cols);
     idft_normalize_consume_check_one_backend::<BT>(base2k, module_host, module_test, cols);
+}
+
+/// Pins the limb selection of `vec_znx_dft_apply`: limb `j` of the result is
+/// limb `offset + j * step` of the input, and every limb whose source falls
+/// past the input is zero. Checked against a host oracle and across backends.
+pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: VecZnxDftAlloc<BR>
+        + VecZnxDftApply<BR>
+        + VecZnxBigAlloc<BR>
+        + VecZnxIdftApplyTmpA<BR>
+        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalizeTmpBytes,
+    Module<BT>: VecZnxDftAlloc<BT>
+        + VecZnxDftApply<BT>
+        + VecZnxBigAlloc<BT>
+        + VecZnxIdftApplyTmpA<BT>
+        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+{
+    let base2k: usize = params.base2k;
+    assert_eq!(module_ref.n(), module_test.n());
+
+    let cols: usize = 2;
+    let mut source: Source = Source::new([0u8; 32]);
+    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+
+    for a_size in [1, 2, 5, 8] {
+        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let a_ref = upload_vec_znx::<BR>(&a);
+        let a_test = upload_vec_znx::<BT>(&a);
+
+        for res_size in [1, 2, 5, 8] {
+            for [step, offset] in [[1, 0], [1, 1], [1, 3], [2, 0], [2, 1], [3, 2]] {
+                let mut res_ref = module_ref.vec_znx_dft_alloc(cols, res_size);
+                let mut res_test = module_test.vec_znx_dft_alloc(cols, res_size);
+
+                for j in 0..cols {
+                    module_ref.vec_znx_dft_apply(
+                        step,
+                        offset,
+                        &mut res_ref.to_backend_mut(),
+                        j,
+                        &vec_znx_backend_ref::<BR>(&a_ref),
+                        j,
+                    );
+                    module_test.vec_znx_dft_apply(
+                        step,
+                        offset,
+                        &mut res_test.to_backend_mut(),
+                        j,
+                        &vec_znx_backend_ref::<BT>(&a_test),
+                        j,
+                    );
+                }
+
+                let got_ref = idft_tmpa_to_host(module_ref, base2k, &mut res_ref, &mut scratch_ref);
+                let got_test = idft_tmpa_to_host(module_test, base2k, &mut res_test, &mut scratch_test);
+                assert_eq!(got_ref, got_test, "step {step} offset {offset}");
+
+                let mut want = module_host.vec_znx_alloc(cols, res_size);
+                for j in 0..cols {
+                    for limb in 0..res_size {
+                        let src: usize = offset + limb * step;
+                        if src < a_size {
+                            want.at_mut(j, limb).copy_from_slice(a.at(j, src));
+                        } else {
+                            want.at_mut(j, limb).fill(0);
+                        }
+                    }
+                }
+                assert_eq!(got_ref, want, "step {step} offset {offset}");
+            }
+        }
+    }
+}
+
+/// Pins `vec_znx_dft_zero`: the column reads back as zero through the inverse
+/// transform, and the other columns are untouched.
+pub fn test_vec_znx_dft_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: VecZnxDftAlloc<BR>
+        + VecZnxDftApply<BR>
+        + VecZnxDftZero<BR>
+        + VecZnxBigAlloc<BR>
+        + VecZnxIdftApplyTmpA<BR>
+        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalizeTmpBytes,
+    Module<BT>: VecZnxDftAlloc<BT>
+        + VecZnxDftApply<BT>
+        + VecZnxDftZero<BT>
+        + VecZnxBigAlloc<BT>
+        + VecZnxIdftApplyTmpA<BT>
+        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+{
+    let base2k: usize = params.base2k;
+    assert_eq!(module_ref.n(), module_test.n());
+
+    let cols: usize = 2;
+    let mut source: Source = Source::new([0u8; 32]);
+    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+
+    for size in [1, 2, 5] {
+        let mut a = module_host.vec_znx_alloc(cols, size);
+        a.fill_uniform(base2k, &mut source);
+
+        let mut dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, 1, 0);
+        let mut dft_test = dft_of_uploaded_vec_znx(module_test, &a, 1, 0);
+
+        module_ref.vec_znx_dft_zero(&mut dft_ref.to_backend_mut(), 0);
+        module_test.vec_znx_dft_zero(&mut dft_test.to_backend_mut(), 0);
+
+        let got_ref = idft_tmpa_to_host(module_ref, base2k, &mut dft_ref, &mut scratch_ref);
+        let got_test = idft_tmpa_to_host(module_test, base2k, &mut dft_test, &mut scratch_test);
+        assert_eq!(got_ref, got_test);
+
+        let mut want = module_host.vec_znx_alloc(cols, size);
+        for limb in 0..size {
+            want.at_mut(0, limb).fill(0);
+            for j in 1..cols {
+                want.at_mut(j, limb).copy_from_slice(a.at(j, limb));
+            }
+        }
+        assert_eq!(got_ref, want);
+    }
 }
