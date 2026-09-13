@@ -4,9 +4,11 @@ use std::mem::size_of;
 
 use crate::reference::vec_znx::{
     vec_znx_add, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_automorphism_assign_tmp_bytes, vec_znx_copy,
-    vec_znx_fill_uniform_ref, vec_znx_negate, vec_znx_negate_assign, vec_znx_normalize, vec_znx_normalize_assign,
-    vec_znx_normalize_tmp_bytes, vec_znx_rotate, vec_znx_rotate_assign, vec_znx_rotate_assign_tmp_bytes, vec_znx_sub,
-    vec_znx_sub_assign, vec_znx_sub_negate_assign, vec_znx_switch_ring, vec_znx_zero,
+    vec_znx_fill_uniform_ref, vec_znx_lsh_assign, vec_znx_lsh_assign_carry_bytes, vec_znx_mul_xp_minus_one_assign,
+    vec_znx_mul_xp_minus_one_assign_tmp_bytes, vec_znx_negate, vec_znx_negate_assign, vec_znx_normalize,
+    vec_znx_normalize_assign, vec_znx_normalize_tmp_bytes, vec_znx_rotate, vec_znx_rotate_assign,
+    vec_znx_rotate_assign_tmp_bytes, vec_znx_sub, vec_znx_sub_assign, vec_znx_sub_negate_assign, vec_znx_switch_ring,
+    vec_znx_zero,
 };
 use crate::reference::znx::{
     I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
@@ -252,6 +254,27 @@ where
         vec_znx_negate_assign::<BE>(res, res_col);
     }
 
+    /// CPU override of [`poulpy_hal::oep::vec_znx_lsh_assign_derived`]: the
+    /// fused in-place kernel, bit-exact with the default.
+    fn vec_znx_lsh_assign_default(
+        module: &Module<BE>,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: ZnxZero + ZnxCopy + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+    {
+        let (carry, _) = take_host_typed::<BE, i64>(
+            scratch.borrow(),
+            vec_znx_lsh_assign_carry_bytes(module.n()) / size_of::<i64>(),
+        );
+        vec_znx_lsh_assign::<BE>(base2k, k, res, res_col, carry);
+    }
+
     fn vec_znx_rotate_default(
         _module: &Module<BE>,
         p: i64,
@@ -324,6 +347,32 @@ where
             vec_znx_automorphism_assign_tmp_bytes(module.n()) / size_of::<i64>(),
         );
         vec_znx_automorphism_assign::<BE>(p, res, res_col, tmp);
+    }
+
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module: &Module<BE>) -> usize {
+        vec_znx_mul_xp_minus_one_assign_tmp_bytes(module.n())
+    }
+
+    /// CPU override of [`poulpy_hal::oep::vec_znx_mul_xp_minus_one_assign_derived`]:
+    /// a per-limb rotate through the one-limb temporary that
+    /// [`Self::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default`] reports,
+    /// bit-exact with the default.
+    fn vec_znx_mul_xp_minus_one_assign_default(
+        module: &Module<BE>,
+        p: i64,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: ZnxRotate + ZnxNegate + ZnxSubNegateAssign,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+    {
+        let (tmp, _) = take_host_typed::<BE, i64>(
+            scratch.borrow(),
+            vec_znx_mul_xp_minus_one_assign_tmp_bytes(module.n()) / size_of::<i64>(),
+        );
+        vec_znx_mul_xp_minus_one_assign::<BE>(p, res, res_col, tmp);
     }
 
     fn vec_znx_switch_ring_default(

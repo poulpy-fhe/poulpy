@@ -11,7 +11,7 @@ use std::{
 use crate::reference::{
     fft64::vec_znx_big::{
         vec_znx_big_add as fft64_vec_znx_big_add, vec_znx_big_add_assign as fft64_vec_znx_big_add_assign,
-        vec_znx_big_add_small_assign as fft64_vec_znx_big_add_small_assign,
+        vec_znx_big_add_small as fft64_vec_znx_big_add_small, vec_znx_big_add_small_assign as fft64_vec_znx_big_add_small_assign,
         vec_znx_big_automorphism as fft64_vec_znx_big_automorphism,
         vec_znx_big_automorphism_assign as fft64_vec_znx_big_automorphism_assign,
         vec_znx_big_automorphism_assign_tmp_bytes as fft64_vec_znx_big_automorphism_assign_tmp_bytes,
@@ -20,17 +20,19 @@ use crate::reference::{
         vec_znx_big_normalize_tmp_bytes as fft64_vec_znx_big_normalize_tmp_bytes, vec_znx_big_sub as fft64_vec_znx_big_sub,
         vec_znx_big_sub_assign as fft64_vec_znx_big_sub_assign,
         vec_znx_big_sub_negate_assign as fft64_vec_znx_big_sub_negate_assign,
+        vec_znx_big_sub_small_a as fft64_vec_znx_big_sub_small_a,
         vec_znx_big_sub_small_a_assign as fft64_vec_znx_big_sub_small_a_assign,
+        vec_znx_big_sub_small_b as fft64_vec_znx_big_sub_small_b,
         vec_znx_big_sub_small_b_assign as fft64_vec_znx_big_sub_small_b_assign,
     },
     ntt4x30::vec_znx_big::{
-        I128BigOps, I128NormalizeOps, ntt4x30_vec_znx_big_add, ntt4x30_vec_znx_big_add_assign,
+        I128BigOps, I128NormalizeOps, ntt4x30_vec_znx_big_add, ntt4x30_vec_znx_big_add_assign, ntt4x30_vec_znx_big_add_small,
         ntt4x30_vec_znx_big_add_small_assign, ntt4x30_vec_znx_big_automorphism, ntt4x30_vec_znx_big_automorphism_assign,
         ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes, ntt4x30_vec_znx_big_from_small, ntt4x30_vec_znx_big_negate,
         ntt4x30_vec_znx_big_negate_assign, ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_add_assign,
         ntt4x30_vec_znx_big_normalize_sub_assign, ntt4x30_vec_znx_big_normalize_tmp_bytes, ntt4x30_vec_znx_big_sub,
-        ntt4x30_vec_znx_big_sub_assign, ntt4x30_vec_znx_big_sub_negate_assign, ntt4x30_vec_znx_big_sub_small_assign,
-        ntt4x30_vec_znx_big_sub_small_negate_assign,
+        ntt4x30_vec_znx_big_sub_assign, ntt4x30_vec_znx_big_sub_negate_assign, ntt4x30_vec_znx_big_sub_small_a,
+        ntt4x30_vec_znx_big_sub_small_assign, ntt4x30_vec_znx_big_sub_small_b, ntt4x30_vec_znx_big_sub_small_negate_assign,
     },
     znx::{
         I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
@@ -239,6 +241,25 @@ where
         fft64_vec_znx_big_add_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_add_small_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `add_assign`.
+    fn vec_znx_big_add_small_default<R, A>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        a: &A,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+    ) where
+        BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
+        R: VecZnxBigToBackendMut<BE>,
+        A: VecZnxBigToBackendRef<BE>,
+    {
+        fft64_vec_znx_big_add_small::<_, _, _, BE>(res, res_col, a, a_col, &b, b_col);
+    }
+
     fn vec_znx_big_add_small_assign_default<R>(
         _module: &Module<BE>,
         res: &mut R,
@@ -288,6 +309,25 @@ where
         fft64_vec_znx_big_sub_negate_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_a_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `sub_assign`.
+    fn vec_znx_big_sub_small_a_default<R, C>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &C,
+        b_col: usize,
+    ) where
+        BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
+        R: VecZnxBigToBackendMut<BE>,
+        C: VecZnxBigToBackendRef<BE>,
+    {
+        fft64_vec_znx_big_sub_small_a::<_, _, _, BE>(res, res_col, &a, a_col, b, b_col);
+    }
+
     fn vec_znx_big_sub_small_assign_default<R>(
         _module: &Module<BE>,
         res: &mut R,
@@ -300,6 +340,25 @@ where
         R: VecZnxBigToBackendMut<BE>,
     {
         fft64_vec_znx_big_sub_small_a_assign::<_, _, BE>(res, res_col, &a, a_col);
+    }
+
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_b_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `sub_negate_assign`.
+    fn vec_znx_big_sub_small_b_default<R, A>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        a: &A,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+    ) where
+        BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
+        R: VecZnxBigToBackendMut<BE>,
+        A: VecZnxBigToBackendRef<BE>,
+    {
+        fft64_vec_znx_big_sub_small_b::<_, _, _, BE>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_sub_small_negate_assign_default<R>(
@@ -516,6 +575,26 @@ where
         ntt4x30_vec_znx_big_add_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_add_small_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `add_assign`.
+    fn vec_znx_big_add_small_default<R, A>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        a: &A,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+    ) where
+        BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
+        R: VecZnxBigToBackendMut<BE>,
+        A: VecZnxBigToBackendRef<BE>,
+    {
+        let b = vec_znx_backend_ref_as_host_ref::<BE>(b);
+        ntt4x30_vec_znx_big_add_small::<_, _, _, BE>(res, res_col, a, a_col, &b, b_col);
+    }
+
     fn vec_znx_big_add_small_assign_default<R>(
         _module: &Module<BE>,
         res: &mut R,
@@ -566,6 +645,26 @@ where
         ntt4x30_vec_znx_big_sub_negate_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_a_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `sub_assign`.
+    fn vec_znx_big_sub_small_a_default<R, C>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &C,
+        b_col: usize,
+    ) where
+        BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
+        R: VecZnxBigToBackendMut<BE>,
+        C: VecZnxBigToBackendRef<BE>,
+    {
+        let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
+        ntt4x30_vec_znx_big_sub_small_a::<_, _, _, BE>(res, res_col, &a, a_col, b, b_col);
+    }
+
     fn vec_znx_big_sub_small_assign_default<R>(
         _module: &Module<BE>,
         res: &mut R,
@@ -579,6 +678,26 @@ where
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
         ntt4x30_vec_znx_big_sub_small_assign::<_, _, BE>(res, res_col, &a, a_col);
+    }
+
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_b_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `sub_negate_assign`.
+    fn vec_znx_big_sub_small_b_default<R, A>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        a: &A,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+    ) where
+        BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
+        R: VecZnxBigToBackendMut<BE>,
+        A: VecZnxBigToBackendRef<BE>,
+    {
+        let b = vec_znx_backend_ref_as_host_ref::<BE>(b);
+        ntt4x30_vec_znx_big_sub_small_b::<_, _, _, BE>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_sub_small_negate_assign_default<R>(

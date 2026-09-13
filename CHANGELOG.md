@@ -43,7 +43,7 @@
 
 ### CPU backends
 
-- `poulpy-cpu-ref`: `hal_defaults` loses every composite that now has an OEP default body, and the `hal_impl_*!` macros shrink to the basis plus the fused kernels a backend still overrides; the reference shift, `mul_xp_minus_one`, `add_scalar` and small-operand `VecZnxBig` kernels are deleted.
+- `poulpy-cpu-ref`: `hal_defaults` loses every composite that now has an OEP default body, and the `hal_impl_*!` macros shrink to the basis plus the fused kernels a backend still overrides; the reference `lsh`, `rsh`, `lsh_add`/`lsh_sub`/`rsh_add`/`rsh_sub`, `rsh_assign`, out-of-place `mul_xp_minus_one` and `add_scalar` kernels are deleted. `lsh_assign`, `mul_xp_minus_one_assign`, `big_add_small`, `big_sub_small_a` and `big_sub_small_b` keep their fused kernels as explicit backend overrides (bit-exact with the OEP defaults, pinned by `test_suite::derived`) because the default bodies measured 23% to 88% slower on the AVX-512 backends, and `vec_znx_mul_xp_minus_one_assign_tmp_bytes` returns the one-limb temporary on CPU.
 - `poulpy-cpu-ref` gains `ScalarZnxFill`, the host secret-distribution samplers moved from the HAL; `impl_sampling_host!` dispatches to them.
 - `poulpy-cpu-arm`: the hand-expanded `HalConvolutionImpl<NTT4x30Neon>` block and the `NTT4x30NeonRayon` `idft_normalize_consume` override collapse to the shared macro / inherited default (the Rayon variant now runs the parallel `normalize` and `idft`); no CI lane builds `poulpy-cpu-arm` with `enable-rayon`.
 
