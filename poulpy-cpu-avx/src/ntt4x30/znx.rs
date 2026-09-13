@@ -7,20 +7,18 @@
 use poulpy_cpu_ref::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
     ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
-    ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
-    ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
-    ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref,
-    znx_rotate, znx_zero_ref,
+    ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
+    ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign,
+    ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref, znx_rotate, znx_zero_ref,
 };
 
 use crate::znx_avx::{
     znx_add_assign_avx, znx_add_avx, znx_automorphism_avx, znx_automorphism_rotate_avx, znx_extract_digit_addmul_avx,
     znx_mul_add_power_of_two_avx, znx_mul_power_of_two_assign_avx, znx_mul_power_of_two_avx, znx_negate_assign_avx,
     znx_negate_avx, znx_normalize_digit_avx, znx_normalize_final_step_assign_avx, znx_normalize_final_step_avx,
-    znx_normalize_final_step_sub_avx, znx_normalize_first_step_assign_avx, znx_normalize_first_step_avx,
-    znx_normalize_first_step_carry_only_avx, znx_normalize_middle_step_assign_avx, znx_normalize_middle_step_avx,
-    znx_normalize_middle_step_carry_only_avx, znx_normalize_middle_step_sub_avx, znx_sub_assign_avx, znx_sub_avx,
-    znx_sub_negate_assign_avx, znx_switch_ring_avx,
+    znx_normalize_first_step_assign_avx, znx_normalize_first_step_avx, znx_normalize_first_step_carry_only_avx,
+    znx_normalize_middle_step_assign_avx, znx_normalize_middle_step_avx, znx_normalize_middle_step_carry_only_avx,
+    znx_sub_assign_avx, znx_sub_avx, znx_sub_negate_assign_avx, znx_switch_ring_avx,
 };
 
 use super::NTT4x30Avx;
@@ -155,20 +153,6 @@ impl ZnxNormalizeFinalStep for NTT4x30Avx {
     #[inline(always)]
     fn znx_normalize_final_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         unsafe { znx_normalize_final_step_avx::<OVERWRITE>(base2k, lsh, x, a, carry) }
-    }
-}
-
-impl ZnxNormalizeMiddleStepSub for NTT4x30Avx {
-    #[inline(always)]
-    fn znx_normalize_middle_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        unsafe { znx_normalize_middle_step_sub_avx(base2k, lsh, x, a, carry) }
-    }
-}
-
-impl ZnxNormalizeFinalStepSub for NTT4x30Avx {
-    #[inline(always)]
-    fn znx_normalize_final_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        unsafe { znx_normalize_final_step_sub_avx(base2k, lsh, x, a, carry) }
     }
 }
 
