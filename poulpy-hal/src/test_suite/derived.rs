@@ -7,8 +7,8 @@
 //! derived function's own output on the same inputs. `test_vmp_apply_dft` in
 //! `test_suite/vmp.rs` is the correctness oracle for `vmp_apply_dft` itself
 //! (checked bit-for-bit against a second backend there); this test instead
-//! pins the *shape* of the default body's decomposition — the column
-//! alignment and call order — independently of any backend override. Where a
+//! pins the *shape* of the default body's decomposition, the column
+//! alignment and call order, independently of any backend override. Where a
 //! backend does keep an override (ruling R10: `vec_znx_lsh_assign`,
 //! `vec_znx_mul_xp_minus_one_assign` and the three small-operand `VecZnxBig`
 //! products), the test additionally drives the op through `Module`, so the
@@ -18,7 +18,7 @@
 //! how the rest of this suite states DFT-domain equality (spec decision 4).
 //!
 //! Where the two sides are allowed to distribute the same value over
-//! different non-canonical digits — the accumulating shifts — the comparison
+//! different non-canonical digits, the accumulating shifts, the comparison
 //! is on canonical forms, as in PR2's `rsh_sub` proof.
 
 use crate::{
@@ -181,7 +181,7 @@ where
 /// `vmp_apply_dft_to_dft_add`: the derived free function's decomposition
 /// versus an explicit two-step oracle (`vmp_apply_dft_to_dft` into a fresh
 /// accumulator, then `vec_znx_dft_add_assign` per column), and versus the
-/// backend's own `module.vmp_apply_dft_to_dft_add` dispatch — the inherited
+/// backend's own `module.vmp_apply_dft_to_dft_add` dispatch, the inherited
 /// default on backends with no fused override, the fused kernel on backends
 /// that have one. All three are compared bit for bit after
 /// `vec_znx_idft_apply_tmpa` + `vec_znx_big_normalize`, the same comparison
@@ -210,7 +210,7 @@ where
 {
     let base2k: usize = params.base2k;
     // `cols_out >= 2`, `cols_in != cols_out` on the second shape, and, for two
-    // of the three (res_size, a_size) pairs, `res_size != a_size` — the cases
+    // of the three (res_size, a_size) pairs, `res_size != a_size`, the cases
     // the deleted hand-written bodies handled identically (they always staged a
     // `res.size()`-limb, not `a.size()`-limb, accumulator).
     let mat_size: usize = 4;
@@ -272,7 +272,7 @@ where
             }
 
             // Oracle: the spec definition of `vmp_apply_dft_to_dft_add`,
-            // spelled out through the public api traits — a fresh product,
+            // spelled out through the public api traits, a fresh product,
             // then folded in column by column.
             let mut fresh = module.vec_znx_dft_alloc(cols_out, res_size);
             module.vmp_apply_dft_to_dft(
@@ -374,7 +374,7 @@ where
 }
 
 /// `vec_znx_lsh`: the OEP default body against the definition it is derived
-/// from, written out — `normalize(res_base2k = base2k, res_k = res_size *
+/// from, written out, `normalize(res_base2k = base2k, res_k = res_size *
 /// base2k, res_offset = +k)`. Both sides are canonical, so this is bit for
 /// bit. The arena is sized by `vec_znx_lsh_tmp_bytes(res_size)` alone, so a
 /// default that under-reports its scratch panics here.
@@ -435,7 +435,7 @@ where
 }
 
 /// `vec_znx_rsh`: the OEP default body against the definition it is derived
-/// from, written out — `normalize(res_base2k = base2k, res_k = res_size *
+/// from, written out, `normalize(res_base2k = base2k, res_k = res_size *
 /// base2k, res_offset = -k)`. Both sides are canonical, so this is bit for
 /// bit. The arena is sized by `vec_znx_rsh_tmp_bytes(res_size)` alone, so a
 /// default that under-reports its scratch panics here.
@@ -526,7 +526,7 @@ where
 }
 
 /// `vec_znx_lsh_add`: the OEP default body against a two-step oracle built on
-/// the api — `tmp = lsh(a, k)` into a fresh buffer, then `res + (a << k)` with the
+/// the api, `tmp = lsh(a, k)` into a fresh buffer, then `res + (a << k)` with the
 /// three-operand `vec_znx_add`. The two spread the same value over different
 /// non-canonical digits, so the comparison is on canonical forms. The arena is
 /// sized by the family's `vec_znx_lsh_tmp_bytes(res_size)`.
@@ -614,7 +614,7 @@ where
 }
 
 /// `vec_znx_lsh_sub`: the OEP default body against a two-step oracle built on
-/// the api — `tmp = lsh(a, k)` into a fresh buffer, then `res - (a << k)` with the
+/// the api, `tmp = lsh(a, k)` into a fresh buffer, then `res - (a << k)` with the
 /// three-operand `vec_znx_sub`. The two spread the same value over different
 /// non-canonical digits, so the comparison is on canonical forms. The arena is
 /// sized by the family's `vec_znx_lsh_tmp_bytes(res_size)`.
@@ -702,7 +702,7 @@ where
 }
 
 /// `vec_znx_rsh_add`: the OEP default body against a two-step oracle built on
-/// the api — `tmp = rsh(a, k)` into a fresh buffer, then `res + (a >> k)` with the
+/// the api, `tmp = rsh(a, k)` into a fresh buffer, then `res + (a >> k)` with the
 /// three-operand `vec_znx_add`. The two spread the same value over different
 /// non-canonical digits, so the comparison is on canonical forms. The arena is
 /// sized by the family's `vec_znx_rsh_tmp_bytes(res_size)`.
@@ -790,7 +790,7 @@ where
 }
 
 /// `vec_znx_rsh_sub`: the OEP default body against a two-step oracle built on
-/// the api — `tmp = rsh(a, k)` into a fresh buffer, then `res - (a >> k)` with the
+/// the api, `tmp = rsh(a, k)` into a fresh buffer, then `res - (a >> k)` with the
 /// three-operand `vec_znx_sub`. The two spread the same value over different
 /// non-canonical digits, so the comparison is on canonical forms. The arena is
 /// sized by the family's `vec_znx_rsh_tmp_bytes(res_size)`.
@@ -879,7 +879,7 @@ where
 
 /// `vec_znx_lsh_assign`: the OEP default body *and* whatever `module` actually
 /// dispatches to (a backend override, where there is one) against a two-step
-/// oracle built on the api — `tmp = lsh(a, k)` into a fresh buffer, then
+/// oracle built on the api, `tmp = lsh(a, k)` into a fresh buffer, then
 /// `vec_znx_copy` back. The default body is compared on canonical forms, the
 /// dispatched op bit for bit: at equal sizes the shift truncates nothing, so an
 /// override has no freedom left. `k` runs past `res_size * base2k`, where both
@@ -975,7 +975,7 @@ where
 }
 
 /// `vec_znx_rsh_assign`: the OEP default body against a two-step oracle built on
-/// the api — `tmp = rsh(a, k)` into a fresh buffer, then `vec_znx_copy` back.
+/// the api, `tmp = rsh(a, k)` into a fresh buffer, then `vec_znx_copy` back.
 /// Compared on canonical forms; the arena is sized by
 /// `vec_znx_rsh_tmp_bytes(res_size)`.
 pub fn test_vec_znx_rsh_assign_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
@@ -1105,8 +1105,8 @@ where
     }
 }
 
-/// `vec_znx_mul_xp_minus_one_assign`: the OEP default body — a rotate into a
-/// whole `res.size()`-limb `VecZnx` temporary, then a copy back — and whatever
+/// `vec_znx_mul_xp_minus_one_assign`: the OEP default body, a rotate into a
+/// whole `res.size()`-limb `VecZnx` temporary, then a copy back, and whatever
 /// `module` actually dispatches to (a backend override, where there is one),
 /// both versus the out-of-place `vec_znx_mul_xp_minus_one` on the same input,
 /// an independent decomposition of the same map, so both comparisons are bit
@@ -1181,7 +1181,7 @@ where
 
 /// `vec_znx_add_scalar_assign`: the OEP default body (an `add_assign` on the
 /// one-limb window) versus a whole-vector `add_assign` against a `VecZnx` that
-/// carries the scalar in limb `res_limb` — an independent oracle, bit for bit.
+/// carries the scalar in limb `res_limb`, an independent oracle, bit for bit.
 pub fn test_vec_znx_add_scalar_assign_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxAddScalarAssign<BE> + VecZnxAddAssign<BE>,
@@ -1233,7 +1233,7 @@ where
 }
 
 /// `vec_znx_big_add_small`: the scratch-free OEP default against an
-/// independent oracle — `from_small(b)` then `add_assign(a)`, written out
+/// independent oracle, `from_small(b)` then `add_assign(a)`, written out
 /// through the public api traits (a different call path from the free
 /// function under test, even though it is the same decomposition).
 /// The same oracle also pins whatever `module` dispatches to, which is a
@@ -1373,7 +1373,7 @@ where
 }
 
 /// `vec_znx_big_sub_small_a`: the scratch-free OEP default (`res = a - b`,
-/// `a` the coefficient-domain operand) against an independent oracle —
+/// `a` the coefficient-domain operand) against an independent oracle,
 /// `from_small(a)` then `sub_assign(b)`, through the public api traits.
 /// The same oracle also pins whatever `module` dispatches to, which is a
 /// fused backend override under ruling R10.
@@ -1512,7 +1512,7 @@ where
 }
 
 /// `vec_znx_big_sub_small_b`: the scratch-free OEP default (`res = a - b`,
-/// `b` the coefficient-domain operand) against an independent oracle —
+/// `b` the coefficient-domain operand) against an independent oracle,
 /// `from_small(b)` then `sub_negate_assign(a)`, through the public api traits.
 /// The same oracle also pins whatever `module` dispatches to, which is a
 /// fused backend override under ruling R10.
@@ -1651,8 +1651,8 @@ where
 }
 
 /// `vec_znx_idft_normalize_consume`: the OEP default body against an
-/// independent oracle — `idft_apply_tmpa` into a `VecZnxBig`, the optional
-/// `big_add_small_assign`, then `big_normalize` — driven through the public
+/// independent oracle, `idft_apply_tmpa` into a `VecZnxBig`, the optional
+/// `big_add_small_assign`, then `big_normalize`, driven through the public
 /// api traits. The op clobbers its input, so each side transforms its own
 /// copy of the same host operand. Both arenas are sized by their own side's
 /// `_tmp_bytes` alone, so a default that under-reports its scratch panics.
@@ -1748,8 +1748,8 @@ pub fn test_vec_znx_idft_normalize_consume_derived<BE: TestBackend + HalVecZnxDf
 }
 
 /// `vec_znx_dft_automorphism_add_with_plan`: the OEP default body against an
-/// independent oracle — `automorphism_with_plan` into a `min(res, a)`-limb
-/// temporary, then `vec_znx_dft_add_assign` — through the public api traits.
+/// independent oracle, `automorphism_with_plan` into a `min(res, a)`-limb
+/// temporary, then `vec_znx_dft_add_assign`, through the public api traits.
 /// DFT-domain results are compared after `idft` and `big_normalize`. The
 /// arena is sized by the op's own `_tmp_bytes` alone.
 pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + HalVecZnxDftImpl<BE>>(
@@ -1871,9 +1871,9 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
     }
 }
 
-/// `svp_apply_dft`: the OEP default body against an independent oracle —
-/// `vec_znx_dft_apply` into a fresh `VecZnxDft`, then `svp_apply_dft_to_dft`
-/// — through the public api traits. DFT-domain results are compared after
+/// `svp_apply_dft`: the OEP default body against an independent oracle,
+/// `vec_znx_dft_apply` into a fresh `VecZnxDft`, then `svp_apply_dft_to_dft`,
+/// through the public api traits. DFT-domain results are compared after
 /// `idft` and `big_normalize`. The arena is sized by the op's own
 /// `_tmp_bytes` alone.
 pub fn test_svp_apply_dft_derived<BE: TestBackend + HalSvpImpl<BE>>(params: &TestParams, module: &Module<BE>)
@@ -2005,7 +2005,7 @@ where
 /// `cnv_apply_dft_add`: the derived free function's decomposition versus an
 /// explicit two-step oracle (`cnv_apply_dft` into a fresh `VecZnxDft`, then
 /// `vec_znx_dft_add_assign`), and versus the backend's own
-/// `module.cnv_apply_dft_add` — the inherited default on backends with no
+/// `module.cnv_apply_dft_add`, the inherited default on backends with no
 /// fused override, the fused kernel on backends that have one. DFT-domain
 /// results are compared after `vec_znx_idft_apply_tmpa` +
 /// `vec_znx_big_normalize`, as the rest of this suite states DFT-domain
@@ -2125,7 +2125,7 @@ where
 /// `cnv_apply_dft_sum`: the derived free function's decomposition versus an
 /// explicit oracle (the first term through `cnv_apply_dft`, every further
 /// term through `cnv_apply_dft_add`), and versus the backend's own
-/// `module.cnv_apply_dft_sum` — the inherited default on backends with no
+/// `module.cnv_apply_dft_sum`, the inherited default on backends with no
 /// fused override, the fused kernel on backends that have one. One-, two- and
 /// three-term sums are swept, so the first-term overwrite and the folding of
 /// the rest are both covered. DFT-domain results are compared after
@@ -2255,8 +2255,8 @@ where
 }
 
 /// `cnv_pairwise_apply_dft`: the derived free function versus an oracle that
-/// writes out the expansion — one `cnv_apply_dft` when `i == j`, and the four
-/// cross terms as `cnv_apply_dft` + three `cnv_apply_dft_add` otherwise — and
+/// writes out the expansion, one `cnv_apply_dft` when `i == j`, and the four
+/// cross terms as `cnv_apply_dft` + three `cnv_apply_dft_add` otherwise, and
 /// versus the backend's own `module.cnv_pairwise_apply_dft`.
 pub fn test_cnv_pairwise_apply_dft_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
 where

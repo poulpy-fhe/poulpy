@@ -11,10 +11,10 @@
 //! Operations classified *derived* or *variant* carry a default body composed
 //! from the basis methods of the same backend (see [`crate::oep::derived`]); a backend
 //! implements the basis and inherits the rest, then overrides where a fused
-//! kernel is worth it — overriding a body and its `_tmp_bytes` together.
+//! kernel is worth it, overriding a body and its `_tmp_bytes` together.
 //!
 //! The exception is a `_tmp_bytes` that sizes a whole family rather than one
-//! body — `HalVecZnxImpl::vec_znx_lsh_tmp_bytes` and
+//! body, `HalVecZnxImpl::vec_znx_lsh_tmp_bytes` and
 //! `HalVecZnxImpl::vec_znx_rsh_tmp_bytes`, which must cover the temporary
 //! every `_add` / `_sub` / `_assign` body of their family carves. There it is
 //! correct to leave the family `_tmp_bytes` on its default while overriding

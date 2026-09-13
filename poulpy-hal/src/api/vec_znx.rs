@@ -146,7 +146,7 @@ pub trait VecZnxLsh<B: Backend> {
 pub trait VecZnxLshAdd<B: Backend> {
     /// `res[res_col] += a[a_col] * 2^k`, both operands at the same radix: the
     /// addend is exactly [`vec_znx_lsh`](VecZnxLsh::vec_znx_lsh) on a
-    /// `res.size()`-limb destination — the shift followed by a normalize at
+    /// `res.size()`-limb destination, the shift followed by a normalize at
     /// `base2k`.
     ///
     /// An addend shorter than the source is not a truncation: the limbs of the
@@ -216,7 +216,7 @@ pub trait VecZnxRsh<B: Backend> {
 pub trait VecZnxRshAdd<B: Backend> {
     /// `res[res_col] += a[a_col] / 2^k`, both operands at the same radix: the
     /// addend is exactly [`vec_znx_rsh`](VecZnxRsh::vec_znx_rsh) on a
-    /// `res.size()`-limb destination — the shift followed by a normalize at
+    /// `res.size()`-limb destination, the shift followed by a normalize at
     /// `base2k`.
     ///
     /// An addend shorter than the source is not a truncation: the limbs of the
@@ -252,7 +252,7 @@ pub trait VecZnxRshAdd<B: Backend> {
 pub trait VecZnxLshSub<B: Backend> {
     /// `res[res_col] -= a[a_col] * 2^k`, both operands at the same radix: the
     /// subtrahend is exactly [`vec_znx_lsh`](VecZnxLsh::vec_znx_lsh) on a
-    /// `res.size()`-limb destination — the shift followed by a normalize at
+    /// `res.size()`-limb destination, the shift followed by a normalize at
     /// `base2k`.
     ///
     /// A subtrahend shorter than the source is not a truncation: the limbs of
@@ -283,7 +283,7 @@ pub trait VecZnxLshSub<B: Backend> {
 pub trait VecZnxRshSub<B: Backend> {
     /// `res[res_col] -= a[a_col] / 2^k`, both operands at the same radix: the
     /// subtrahend is exactly [`vec_znx_rsh`](VecZnxRsh::vec_znx_rsh) on a
-    /// `res.size()`-limb destination — the shift followed by a normalize at
+    /// `res.size()`-limb destination, the shift followed by a normalize at
     /// `base2k`.
     ///
     /// A subtrahend shorter than the source is not a truncation: the limbs of
@@ -316,7 +316,7 @@ pub trait VecZnxRshSub<B: Backend> {
 pub trait VecZnxLshAssign<B: Backend> {
     /// `a[a_col] *= 2^k`, in place on the one selected column: the operation
     /// is exactly [`vec_znx_lsh`](VecZnxLsh::vec_znx_lsh) with `a` as both
-    /// source and destination — the shift followed by a normalize at `base2k`
+    /// source and destination, the shift followed by a normalize at `base2k`
     /// over `a.size()` limbs. The other columns of `a` are untouched.
     ///
     /// Scratch is the family's
@@ -335,7 +335,7 @@ pub trait VecZnxLshAssign<B: Backend> {
 pub trait VecZnxRshAssign<B: Backend> {
     /// `a[a_col] /= 2^k`, in place on the one selected column: the operation
     /// is exactly [`vec_znx_rsh`](VecZnxRsh::vec_znx_rsh) with `a` as both
-    /// source and destination — the shift followed by a normalize at `base2k`
+    /// source and destination, the shift followed by a normalize at `base2k`
     /// over `a.size()` limbs. A `k` beyond `a.size() * base2k` has shifted
     /// every bit past the last limb, so the column is zeroed. The other
     /// columns of `a` are untouched.

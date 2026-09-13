@@ -2,8 +2,8 @@
 //!
 //! The OEP default shifts into a full-width `VecZnx` temporary and copies back;
 //! the kernel below moves the limbs in place through a single carry buffer, one
-//! memory pass instead of two. It is bit-exact with the default — the parity
-//! test in `poulpy_hal::test_suite::derived` pins that — and the rest of the
+//! memory pass instead of two. It is bit-exact with the default; the parity
+//! test in `poulpy_hal::test_suite::derived` pins that, and the rest of the
 //! shift family (`lsh`, `lsh_add`, `lsh_sub`, `rsh*`) stays on its default.
 
 use std::mem::size_of;

@@ -164,7 +164,7 @@ pub fn vmp_apply_dft_to_dft_add_derived<S, BE>(
 /// `vec_znx_lsh_add`, `vec_znx_lsh_sub` and `vec_znx_lsh_assign`. The largest
 /// of the four default bodies takes one `res_size`-limb `VecZnx` plus the
 /// normalization carry the shift itself is; the plain `vec_znx_lsh` default
-/// needs only the carry, so this over-reports for it — never under-reports.
+/// needs only the carry, so this over-reports for it, never under-reports.
 #[doc(hidden)]
 pub fn vec_znx_lsh_tmp_bytes_derived<S, BE>(module: &Module<BE>, res_size: usize) -> usize
 where
@@ -453,7 +453,7 @@ pub fn vec_znx_add_scalar_assign_derived<S, BE>(
 /// left there), limbs neither reaches are zero.
 ///
 /// Caller precondition: `res` must not alias `a` or `b`. The body writes `res`
-/// before reading them, and nothing checks it — the backend view types do not
+/// before reading them, and nothing checks it: the backend view types do not
 /// enforce it (`vec_znx_big_backend_ref_from_mut` hands out a shared view of a
 /// mutable one). This is new relative to the fused kernels PR4 deleted, which
 /// read both operands per limb before writing and so tolerated aliasing.
@@ -482,7 +482,7 @@ pub fn vec_znx_big_add_small_derived<S, BE>(
 /// `vec_znx_big_from_small` left there), limbs neither reaches are zero.
 ///
 /// Caller precondition: `res` must not alias `a` or `b`. The body writes `res`
-/// before reading them, and nothing checks it — the backend view types do not
+/// before reading them, and nothing checks it: the backend view types do not
 /// enforce it (`vec_znx_big_backend_ref_from_mut` hands out a shared view of a
 /// mutable one). This is new relative to the fused kernels PR4 deleted, which
 /// read both operands per limb before writing and so tolerated aliasing.
@@ -511,7 +511,7 @@ pub fn vec_znx_big_sub_small_a_derived<S, BE>(
 /// `vec_znx_big_from_small` left there), limbs neither reaches are zero.
 ///
 /// Caller precondition: `res` must not alias `a` or `b`. The body writes `res`
-/// before reading them, and nothing checks it — the backend view types do not
+/// before reading them, and nothing checks it: the backend view types do not
 /// enforce it (`vec_znx_big_backend_ref_from_mut` hands out a shared view of a
 /// mutable one). This is new relative to the fused kernels PR4 deleted, which
 /// read both operands per limb before writing and so tolerated aliasing.

@@ -113,9 +113,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
 
     fn vec_znx_negate_assign(module: &Module<BE>, a: &mut VecZnxBackendMut<'_, BE>, a_col: usize);
 
-    /// Returns scratch bytes for the whole right-shift family — [`Self::vec_znx_rsh`],
+    /// Returns scratch bytes for the whole right-shift family, [`Self::vec_znx_rsh`],
     /// [`Self::vec_znx_rsh_add`], [`Self::vec_znx_rsh_sub`] and
-    /// [`Self::vec_znx_rsh_assign`] — on a destination of `res_size` limbs.
+    /// [`Self::vec_znx_rsh_assign`], on a destination of `res_size` limbs.
     /// Default body: `vec_znx_rsh_tmp_bytes_derived`.
     ///
     /// Family rule: the value must cover the `res_size`-limb temporary the `_add`
@@ -159,16 +159,16 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         crate::oep::vec_znx_rsh_add_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
     }
 
-    /// Returns scratch bytes for the whole left-shift family — [`Self::vec_znx_lsh`],
+    /// Returns scratch bytes for the whole left-shift family, [`Self::vec_znx_lsh`],
     /// [`Self::vec_znx_lsh_add`], [`Self::vec_znx_lsh_sub`] and
-    /// [`Self::vec_znx_lsh_assign`] — on a destination of `res_size` limbs.
+    /// [`Self::vec_znx_lsh_assign`], on a destination of `res_size` limbs.
     /// Default body: `vec_znx_lsh_tmp_bytes_derived`.
     ///
     /// Family rule: the value must cover the `res_size`-limb temporary the `_add`
     /// / `_sub` / `_assign` default bodies carve, not only the carry
     /// `vec_znx_lsh` itself needs. A backend that overrides some but not all
     /// bodies of the family must therefore either leave this on the default or
-    /// return a value large enough for the ones it did not override —
+    /// return a value large enough for the ones it did not override.
     /// `poulpy-cpu-ref` does exactly that: it overrides `vec_znx_lsh_assign` and
     /// leaves this `_tmp_bytes` on the default.
     fn vec_znx_lsh_tmp_bytes(module: &Module<BE>, res_size: usize) -> usize {
