@@ -30,7 +30,7 @@ use crate::oep::{
     GGLWEProductDigitsStridedImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
     GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
     GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
-    LWEKeyswitchImpl,
+    LWEKeyswitchImpl, SamplingImpl,
 };
 use crate::{
     api::TransferInto,
@@ -75,6 +75,7 @@ pub trait TestBackend:
     + DecryptionImpl<Self>
     + ConversionImpl<Self>
     + AutomorphismImpl<Self>
+    + SamplingImpl<Self>
 where
     Self: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
     for<'a> Self::BufRef<'a>: HostDataRef,
@@ -110,7 +111,8 @@ where
         + GGSWRotateImpl<BE>
         + DecryptionImpl<BE>
         + ConversionImpl<BE>
-        + AutomorphismImpl<BE>,
+        + AutomorphismImpl<BE>
+        + SamplingImpl<BE>,
     BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,

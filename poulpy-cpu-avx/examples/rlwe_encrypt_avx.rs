@@ -1,4 +1,5 @@
 use itertools::izip;
+use poulpy_cpu_ref::ScalarZnxFill;
 use poulpy_cpu_ref::layouts::SvpPPolToBackendMut;
 use poulpy_cpu_ref::layouts::SvpPPolToBackendRef;
 use poulpy_cpu_ref::layouts::VecZnxBigToBackendMut;

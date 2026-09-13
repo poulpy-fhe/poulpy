@@ -41,7 +41,9 @@ impl_lwe_keyswitch_defaults_full!(FFT64Ref);
 impl_lwe_keyswitch_defaults_full!(NTT4x30Ref);
 
 impl_encryption_defaults_full!(FFT64Ref);
+crate::impl_sampling_host!(FFT64Ref);
 impl_encryption_defaults_full!(NTT4x30Ref);
+crate::impl_sampling_host!(NTT4x30Ref);
 
 impl_glwe_external_product_defaults_full!(FFT64Ref);
 impl_glwe_external_product_defaults_full!(NTT4x30Ref);

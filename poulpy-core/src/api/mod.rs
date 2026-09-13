@@ -10,6 +10,7 @@
 //! - `keyswitching` -- LWE/GLWE/GGLWE/GGSW key-switching.
 //! - `noise` -- runtime noise measurement helpers for ciphertexts.
 //! - `operations` -- arithmetic helpers, packing, trace, and tensoring.
+//! - `sampling` -- in-place sampling of secret distributions into a `ScalarZnx` column.
 //!
 //! Scheme authors can program against these traits directly. Execution is
 //! dispatched through the [`crate::oep`] backend extension points by blanket
@@ -26,6 +27,7 @@ mod linear_transformations;
 mod noise;
 mod operations;
 mod polynomial_evaluation;
+mod sampling;
 mod transfer;
 
 pub use automorphism::*;
@@ -39,4 +41,5 @@ pub use linear_transformations::*;
 pub use noise::*;
 pub use operations::*;
 pub use polynomial_evaluation::*;
+pub use sampling::*;
 pub use transfer::*;
