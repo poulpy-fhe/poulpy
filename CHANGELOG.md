@@ -13,7 +13,7 @@
 - Document the value model, limb rule, mutation classes and exactness classes in the `api` and `layouts` module docs.
 - **Breaking:** `poulpy_hal::reference` moved to `poulpy_cpu_ref::reference::znx`.
 - **Breaking:** remove 30 unused api methods (coefficient shift/normalize variants, `add_const`, `add_scalar_into`, `sub_scalar`, `automorphism_rotate`, `split_ring`, `merge_rings`, `transpose`, `hadamard_product_scalar_znx`, `*_from_bytes` wrappers, `vec_znx_big_alloc_n`, `ModuleNew::new_with`) and the eight seeded `[u8; 32]` sampler twins; the `Source`-based samplers stay. The corresponding `Hal*Impl` OEP methods are removed too, including `HalModuleImpl::Config` and `new_with`.
-- **Breaking:** the secret-key samplers `scalar_znx_fill_ternary_hw_source`, `scalar_znx_fill_ternary_prob_source`, `scalar_znx_fill_binary_hw_source`, `scalar_znx_fill_binary_prob_source` and `scalar_znx_fill_binary_block_source` are removed with their OEP methods, default bodies and conformance tests; every secret `poulpy-core` draws — the long-lived keys and the ephemeral secret of public-key encryption — is sampled in place by the backend through the new `poulpy-core` extension point `SamplingImpl`. Noise sampling (`vec_znx_add_normal_source`, `vec_znx_big_add_normal`) and `vec_znx_fill_uniform_source` stay: a backend samples noise in place from the seed, so encryption never round-trips through the host.
+- **Breaking:** the secret-key samplers `scalar_znx_fill_ternary_hw_source`, `scalar_znx_fill_ternary_prob_source`, `scalar_znx_fill_binary_hw_source`, `scalar_znx_fill_binary_prob_source` and `scalar_znx_fill_binary_block_source` are removed with their OEP methods, default bodies and conformance tests; every secret `poulpy-core` draws, the long-lived keys and the ephemeral secret of public-key encryption, is sampled in place by the backend through the new `poulpy-core` extension point `SamplingImpl`. Noise sampling (`vec_znx_add_normal_source`, `vec_znx_big_add_normal`) and `vec_znx_fill_uniform_source` stay: a backend samples noise in place from the seed, so encryption never round-trips through the host.
 - **Breaking:** the five `ScalarZnx::fill_*` secret-distribution methods (`fill_ternary_prob`, `fill_ternary_hw`, `fill_binary_prob`, `fill_binary_hw`, `fill_binary_block`) are removed from `layouts`; they move verbatim to the `poulpy_cpu_ref::ScalarZnxFill` trait, implemented for every host-mapped `ScalarZnx`, where they are the host kernels `impl_sampling_host!` dispatches to. The distributions they sample are a scheme concept and no HAL code called them.
 - **Breaking:** noise sampling leaves the HAL: `vec_znx_add_normal_source`, `vec_znx_big_add_normal`, their OEP methods, delegates, default bodies and conformance tests are removed, and `NoiseInfos` moves to `poulpy-core`. The HAL's only sampler is `vec_znx_fill_uniform_source`.
 
@@ -27,13 +27,14 @@
 ### `poulpy-ckks`
 
 - `ckks_add_pt_const` / `ckks_sub_pt_const` and the polynomial-evaluation constant shift use the shift operations on window views; the `pt_const_bounds` field of the carry-verb macros is gone.
-### CPU backends
-
-- `poulpy-cpu-ref` gains `ScalarZnxFill`, the host secret-distribution samplers moved from the HAL; `impl_sampling_host!` dispatches to them.
 
 ### `poulpy-bin-fhe`
 
 - `NoiseInfos` is imported from `poulpy_core`.
+
+### CPU backends
+
+- `poulpy-cpu-ref` gains `ScalarZnxFill`, the host secret-distribution samplers moved from the HAL; `impl_sampling_host!` dispatches to them.
 
 ## [0.8.3] - 2026-09-09
 
