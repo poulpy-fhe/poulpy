@@ -144,7 +144,18 @@ pub trait VecZnxLsh<B: Backend> {
 }
 
 pub trait VecZnxLshAdd<B: Backend> {
-    /// Adds `a` left-shifted by `k` bits into `res`: `res += a << k`, column-wise.
+    /// `res[res_col] += a[a_col] * 2^k`, both operands at the same radix: the
+    /// addend is exactly [`vec_znx_lsh`](VecZnxLsh::vec_znx_lsh) on a
+    /// `res.size()`-limb destination — the shift followed by a normalize at
+    /// `base2k`.
+    ///
+    /// An addend shorter than the source is not a truncation: the limbs of the
+    /// shifted value that `res.size()` cannot hold are rounded into the last
+    /// one jointly, as the normalization does.
+    ///
+    /// Scratch is the family's
+    /// [`vec_znx_lsh_tmp_bytes`](VecZnxLshTmpBytes::vec_znx_lsh_tmp_bytes) on
+    /// `res.size()`.
     ///
     /// Normalization contract: the shifted operand `a` is normalized on the fly
     /// (its own inter-limb carries are propagated), so the addend is in the
@@ -203,7 +214,20 @@ pub trait VecZnxRsh<B: Backend> {
 }
 
 pub trait VecZnxRshAdd<B: Backend> {
-    /// Adds `a` right-shifted by `k` bits into `res`: `res += a >> k`, column-wise.
+    /// `res[res_col] += a[a_col] / 2^k`, both operands at the same radix: the
+    /// addend is exactly [`vec_znx_rsh`](VecZnxRsh::vec_znx_rsh) on a
+    /// `res.size()`-limb destination — the shift followed by a normalize at
+    /// `base2k`.
+    ///
+    /// An addend shorter than the source is not a truncation: the limbs of the
+    /// shifted value that `res.size()` cannot hold are rounded into the last
+    /// one jointly, as the normalization does. A `k` beyond
+    /// `res.size() * base2k` has shifted every bit past the last limb, so
+    /// nothing is added.
+    ///
+    /// Scratch is the family's
+    /// [`vec_znx_rsh_tmp_bytes`](VecZnxRshTmpBytes::vec_znx_rsh_tmp_bytes) on
+    /// `res.size()`.
     ///
     /// Normalization contract: the shifted operand `a` is normalized on the fly
     /// (its own inter-limb carries are propagated), so the addend is in the
@@ -226,7 +250,23 @@ pub trait VecZnxRshAdd<B: Backend> {
 }
 
 pub trait VecZnxLshSub<B: Backend> {
-    /// Left shift by k bits and subtract from destination.
+    /// `res[res_col] -= a[a_col] * 2^k`, both operands at the same radix: the
+    /// subtrahend is exactly [`vec_znx_lsh`](VecZnxLsh::vec_znx_lsh) on a
+    /// `res.size()`-limb destination — the shift followed by a normalize at
+    /// `base2k`.
+    ///
+    /// A subtrahend shorter than the source is not a truncation: the limbs of
+    /// the shifted value that `res.size()` cannot hold are rounded into the
+    /// last one jointly, as the normalization does.
+    ///
+    /// Scratch is the family's
+    /// [`vec_znx_lsh_tmp_bytes`](VecZnxLshTmpBytes::vec_znx_lsh_tmp_bytes) on
+    /// `res.size()`.
+    ///
+    /// Normalization contract: as for
+    /// [`vec_znx_lsh_add`](VecZnxLshAdd::vec_znx_lsh_add), the subtraction into
+    /// `res` is **not** re-normalized; callers that need a normalized `res`
+    /// afterwards must normalize it themselves.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_lsh_sub(
         &self,
@@ -241,7 +281,25 @@ pub trait VecZnxLshSub<B: Backend> {
 }
 
 pub trait VecZnxRshSub<B: Backend> {
-    /// Right shift by k bits and subtract from destination.
+    /// `res[res_col] -= a[a_col] / 2^k`, both operands at the same radix: the
+    /// subtrahend is exactly [`vec_znx_rsh`](VecZnxRsh::vec_znx_rsh) on a
+    /// `res.size()`-limb destination — the shift followed by a normalize at
+    /// `base2k`.
+    ///
+    /// A subtrahend shorter than the source is not a truncation: the limbs of
+    /// the shifted value that `res.size()` cannot hold are rounded into the
+    /// last one jointly, as the normalization does. A `k` beyond
+    /// `res.size() * base2k` has shifted every bit past the last limb, so
+    /// nothing is subtracted.
+    ///
+    /// Scratch is the family's
+    /// [`vec_znx_rsh_tmp_bytes`](VecZnxRshTmpBytes::vec_znx_rsh_tmp_bytes) on
+    /// `res.size()`.
+    ///
+    /// Normalization contract: as for
+    /// [`vec_znx_rsh_add`](VecZnxRshAdd::vec_znx_rsh_add), the subtraction into
+    /// `res` is **not** re-normalized; callers that need a normalized `res`
+    /// afterwards must normalize it themselves.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_rsh_sub(
         &self,
@@ -256,7 +314,14 @@ pub trait VecZnxRshSub<B: Backend> {
 }
 
 pub trait VecZnxLshAssign<B: Backend> {
-    /// Left shift by k bits all columns of `a`.
+    /// `a[a_col] *= 2^k`, in place on the one selected column: the operation
+    /// is exactly [`vec_znx_lsh`](VecZnxLsh::vec_znx_lsh) with `a` as both
+    /// source and destination — the shift followed by a normalize at `base2k`
+    /// over `a.size()` limbs. The other columns of `a` are untouched.
+    ///
+    /// Scratch is the family's
+    /// [`vec_znx_lsh_tmp_bytes`](VecZnxLshTmpBytes::vec_znx_lsh_tmp_bytes) on
+    /// `a.size()`.
     fn vec_znx_lsh_assign(
         &self,
         base2k: usize,
@@ -268,7 +333,16 @@ pub trait VecZnxLshAssign<B: Backend> {
 }
 
 pub trait VecZnxRshAssign<B: Backend> {
-    /// Right shift by k bits all columns of `a`.
+    /// `a[a_col] /= 2^k`, in place on the one selected column: the operation
+    /// is exactly [`vec_znx_rsh`](VecZnxRsh::vec_znx_rsh) with `a` as both
+    /// source and destination — the shift followed by a normalize at `base2k`
+    /// over `a.size()` limbs. A `k` beyond `a.size() * base2k` has shifted
+    /// every bit past the last limb, so the column is zeroed. The other
+    /// columns of `a` are untouched.
+    ///
+    /// Scratch is the family's
+    /// [`vec_znx_rsh_tmp_bytes`](VecZnxRshTmpBytes::vec_znx_rsh_tmp_bytes) on
+    /// `a.size()`.
     fn vec_znx_rsh_assign(
         &self,
         base2k: usize,

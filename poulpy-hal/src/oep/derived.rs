@@ -452,8 +452,11 @@ pub fn vec_znx_add_scalar_assign_derived<S, BE>(
 /// limbs only `a` reaches keep `a` (added to the zero `vec_znx_big_from_small`
 /// left there), limbs neither reaches are zero.
 ///
-/// `res` must not alias `a` or `b`: the body writes `res` before reading them.
-/// The backend view types enforce this.
+/// Caller precondition: `res` must not alias `a` or `b`. The body writes `res`
+/// before reading them, and nothing checks it — the backend view types do not
+/// enforce it (`vec_znx_big_backend_ref_from_mut` hands out a shared view of a
+/// mutable one). This is new relative to the fused kernels PR4 deleted, which
+/// read both operands per limb before writing and so tolerated aliasing.
 #[doc(hidden)]
 pub fn vec_znx_big_add_small_derived<S, BE>(
     module: &Module<BE>,
@@ -478,8 +481,11 @@ pub fn vec_znx_big_add_small_derived<S, BE>(
 /// limbs only `b` reaches keep `-b` (subtracted from the zero
 /// `vec_znx_big_from_small` left there), limbs neither reaches are zero.
 ///
-/// `res` must not alias `a` or `b`: the body writes `res` before reading them.
-/// The backend view types enforce this.
+/// Caller precondition: `res` must not alias `a` or `b`. The body writes `res`
+/// before reading them, and nothing checks it — the backend view types do not
+/// enforce it (`vec_znx_big_backend_ref_from_mut` hands out a shared view of a
+/// mutable one). This is new relative to the fused kernels PR4 deleted, which
+/// read both operands per limb before writing and so tolerated aliasing.
 #[doc(hidden)]
 pub fn vec_znx_big_sub_small_a_derived<S, BE>(
     module: &Module<BE>,
@@ -504,8 +510,11 @@ pub fn vec_znx_big_sub_small_a_derived<S, BE>(
 /// limbs only `b` reaches keep `-b` (the negation applied to the `b` that
 /// `vec_znx_big_from_small` left there), limbs neither reaches are zero.
 ///
-/// `res` must not alias `a` or `b`: the body writes `res` before reading them.
-/// The backend view types enforce this.
+/// Caller precondition: `res` must not alias `a` or `b`. The body writes `res`
+/// before reading them, and nothing checks it — the backend view types do not
+/// enforce it (`vec_znx_big_backend_ref_from_mut` hands out a shared view of a
+/// mutable one). This is new relative to the fused kernels PR4 deleted, which
+/// read both operands per limb before writing and so tolerated aliasing.
 #[doc(hidden)]
 pub fn vec_znx_big_sub_small_b_derived<S, BE>(
     module: &Module<BE>,
@@ -618,7 +627,6 @@ where
 
 /// `res = ppol * dft(b)`: transform `b`, then apply in the DFT domain.
 #[doc(hidden)]
-#[allow(clippy::too_many_arguments)]
 pub fn svp_apply_dft_derived<S, BE>(
     module: &Module<BE>,
     res: &mut VecZnxDftBackendMut<'_, BE>,

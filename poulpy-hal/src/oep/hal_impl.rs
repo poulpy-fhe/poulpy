@@ -63,6 +63,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
+    /// `res[res_col][res_limb] += a[a_col]`, the scalar seen as a one-limb
+    /// `VecZnx`. Default body: `vec_znx_add_scalar_assign_derived`, an
+    /// `add_assign` on the one-limb window of `res`.
     fn vec_znx_add_scalar_assign(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -110,10 +113,23 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
 
     fn vec_znx_negate_assign(module: &Module<BE>, a: &mut VecZnxBackendMut<'_, BE>, a_col: usize);
 
+    /// Returns scratch bytes for the whole right-shift family — [`Self::vec_znx_rsh`],
+    /// [`Self::vec_znx_rsh_add`], [`Self::vec_znx_rsh_sub`] and
+    /// [`Self::vec_znx_rsh_assign`] — on a destination of `res_size` limbs.
+    /// Default body: `vec_znx_rsh_tmp_bytes_derived`.
+    ///
+    /// Family rule: the value must cover the `res_size`-limb temporary the `_add`
+    /// / `_sub` / `_assign` default bodies carve, not only the carry
+    /// `vec_znx_rsh` itself needs. A backend that overrides some but not all
+    /// bodies of the family must therefore either leave this on the default or
+    /// return a value large enough for the ones it did not override.
     fn vec_znx_rsh_tmp_bytes(module: &Module<BE>, res_size: usize) -> usize {
         crate::oep::vec_znx_rsh_tmp_bytes_derived::<Self, BE>(module, res_size)
     }
 
+    /// `res[res_col] = a[a_col] / 2^k` at the same radix. Default body:
+    /// `vec_znx_rsh_derived`, a `vec_znx_normalize` with `offset = -k`; it uses
+    /// only the normalization carry out of [`Self::vec_znx_rsh_tmp_bytes`].
     fn vec_znx_rsh(
         module: &Module<BE>,
         base2k: usize,
@@ -127,6 +143,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         crate::oep::vec_znx_rsh_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
     }
 
+    /// `res[res_col] += a[a_col] / 2^k`. Default body: `vec_znx_rsh_add_derived`,
+    /// a `vec_znx_rsh` into a `res.size()`-limb temporary carved out of
+    /// [`Self::vec_znx_rsh_tmp_bytes`], then `vec_znx_add_assign`.
     fn vec_znx_rsh_add(
         module: &Module<BE>,
         base2k: usize,
@@ -140,10 +159,25 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         crate::oep::vec_znx_rsh_add_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
     }
 
+    /// Returns scratch bytes for the whole left-shift family — [`Self::vec_znx_lsh`],
+    /// [`Self::vec_znx_lsh_add`], [`Self::vec_znx_lsh_sub`] and
+    /// [`Self::vec_znx_lsh_assign`] — on a destination of `res_size` limbs.
+    /// Default body: `vec_znx_lsh_tmp_bytes_derived`.
+    ///
+    /// Family rule: the value must cover the `res_size`-limb temporary the `_add`
+    /// / `_sub` / `_assign` default bodies carve, not only the carry
+    /// `vec_znx_lsh` itself needs. A backend that overrides some but not all
+    /// bodies of the family must therefore either leave this on the default or
+    /// return a value large enough for the ones it did not override —
+    /// `poulpy-cpu-ref` does exactly that: it overrides `vec_znx_lsh_assign` and
+    /// leaves this `_tmp_bytes` on the default.
     fn vec_znx_lsh_tmp_bytes(module: &Module<BE>, res_size: usize) -> usize {
         crate::oep::vec_znx_lsh_tmp_bytes_derived::<Self, BE>(module, res_size)
     }
 
+    /// `res[res_col] = a[a_col] * 2^k` at the same radix. Default body:
+    /// `vec_znx_lsh_derived`, a `vec_znx_normalize` with `offset = +k`; it uses
+    /// only the normalization carry out of [`Self::vec_znx_lsh_tmp_bytes`].
     fn vec_znx_lsh(
         module: &Module<BE>,
         base2k: usize,
@@ -157,6 +191,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         crate::oep::vec_znx_lsh_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
     }
 
+    /// `res[res_col] += a[a_col] * 2^k`. Default body: `vec_znx_lsh_add_derived`,
+    /// a `vec_znx_lsh` into a `res.size()`-limb temporary carved out of
+    /// [`Self::vec_znx_lsh_tmp_bytes`], then `vec_znx_add_assign`.
     fn vec_znx_lsh_add(
         module: &Module<BE>,
         base2k: usize,
@@ -170,6 +207,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         crate::oep::vec_znx_lsh_add_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
     }
 
+    /// `res[res_col] -= a[a_col] * 2^k`. Default body: `vec_znx_lsh_sub_derived`,
+    /// a `vec_znx_lsh` into a `res.size()`-limb temporary carved out of
+    /// [`Self::vec_znx_lsh_tmp_bytes`], then `vec_znx_sub_assign`.
     fn vec_znx_lsh_sub(
         module: &Module<BE>,
         base2k: usize,
@@ -183,6 +223,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         crate::oep::vec_znx_lsh_sub_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
     }
 
+    /// `res[res_col] -= a[a_col] / 2^k`. Default body: `vec_znx_rsh_sub_derived`,
+    /// a `vec_znx_rsh` into a `res.size()`-limb temporary carved out of
+    /// [`Self::vec_znx_rsh_tmp_bytes`], then `vec_znx_sub_assign`.
     fn vec_znx_rsh_sub(
         module: &Module<BE>,
         base2k: usize,
@@ -196,6 +239,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         crate::oep::vec_znx_rsh_sub_derived::<Self, BE>(module, base2k, k, res, res_col, a, a_col, scratch)
     }
 
+    /// `a[a_col] /= 2^k`, in place on the one selected column. Default body:
+    /// `vec_znx_rsh_assign_derived`, a `vec_znx_rsh` into an `a.size()`-limb
+    /// temporary carved out of [`Self::vec_znx_rsh_tmp_bytes`], then a copy back.
     fn vec_znx_rsh_assign(
         module: &Module<BE>,
         base2k: usize,
@@ -207,6 +253,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         crate::oep::vec_znx_rsh_assign_derived::<Self, BE>(module, base2k, k, a, a_col, scratch)
     }
 
+    /// `a[a_col] *= 2^k`, in place on the one selected column. Default body:
+    /// `vec_znx_lsh_assign_derived`, a `vec_znx_lsh` into an `a.size()`-limb
+    /// temporary carved out of [`Self::vec_znx_lsh_tmp_bytes`], then a copy back.
     fn vec_znx_lsh_assign(
         module: &Module<BE>,
         base2k: usize,
@@ -256,6 +305,9 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// `res[res_col] = (X^k - 1) * a[a_col]`. Default body:
+    /// `vec_znx_mul_xp_minus_one_derived`, a `vec_znx_rotate` then a
+    /// `vec_znx_sub_assign` of the unrotated value. Takes no scratch.
     fn vec_znx_mul_xp_minus_one(
         module: &Module<BE>,
         k: i64,
@@ -267,10 +319,18 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         crate::oep::vec_znx_mul_xp_minus_one_derived::<Self, BE>(module, k, res, res_col, a, a_col)
     }
 
+    /// Returns scratch bytes required for
+    /// [`Self::vec_znx_mul_xp_minus_one_assign`] on a `size`-limb operand.
+    /// Default body: `vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived`, one
+    /// `size`-limb `VecZnx` for the rotated copy.
     fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &Module<BE>, size: usize) -> usize {
         crate::oep::vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived::<Self, BE>(module, size)
     }
 
+    /// `res[res_col] = (X^k - 1) * res[res_col]`. Default body:
+    /// `vec_znx_mul_xp_minus_one_assign_derived`, which carves the full-width
+    /// rotated copy out of [`Self::vec_znx_mul_xp_minus_one_assign_tmp_bytes`]
+    /// and copies it back.
     fn vec_znx_mul_xp_minus_one_assign(
         module: &Module<BE>,
         k: i64,
@@ -555,6 +615,11 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
         a_col: usize,
     );
 
+    /// Returns scratch bytes required for
+    /// [`Self::vec_znx_idft_normalize_consume`]. Default body:
+    /// `vec_znx_idft_normalize_consume_tmp_bytes_derived`, the `a_size`-limb
+    /// `VecZnxBig` the inverse transform lands in plus the big normalization's
+    /// own carry.
     fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
         crate::oep::vec_znx_idft_normalize_consume_tmp_bytes_derived::<Self, BE>(module, res_size, a_size)
     }
@@ -649,6 +714,10 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
         a_col: usize,
     );
 
+    /// Returns scratch bytes required for
+    /// [`Self::vec_znx_dft_automorphism_add_with_plan`]. Default body:
+    /// `vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived`, one
+    /// `min(res_size, a_size)`-limb `VecZnxDft` for the rotated operand.
     fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
         crate::oep::vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived::<Self, BE>(module, res_size, a_size)
     }
@@ -696,6 +765,9 @@ pub unsafe trait HalSvpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         a_col: usize,
     );
 
+    /// Returns scratch bytes required for [`Self::svp_apply_dft`]. Default body:
+    /// `svp_apply_dft_tmp_bytes_derived`, one `b_size`-limb `VecZnxDft` for the
+    /// transformed right operand.
     fn svp_apply_dft_tmp_bytes(module: &Module<BE>, b_size: usize) -> usize {
         crate::oep::svp_apply_dft_tmp_bytes_derived::<Self, BE>(module, b_size)
     }
@@ -756,6 +828,10 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// Returns scratch bytes required for [`Self::vmp_apply_dft`]. Default body:
+    /// `vmp_apply_dft_tmp_bytes_derived`, one `min(a_size, b_rows)`-limb
+    /// `VecZnxDft` for the transformed input plus whatever
+    /// [`Self::vmp_apply_dft_to_dft`] needs.
     #[allow(clippy::too_many_arguments)]
     fn vmp_apply_dft_tmp_bytes(
         module: &Module<BE>,
@@ -769,6 +845,9 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         crate::oep::vmp_apply_dft_tmp_bytes_derived::<Self, BE>(module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
     }
 
+    /// `res = dft(a) * pmat`. Default body: `vmp_apply_dft_derived`, which carves
+    /// the transformed input out of [`Self::vmp_apply_dft_tmp_bytes`], aligns
+    /// `a`'s columns with `pmat.cols_in()`, then applies in the DFT domain.
     fn vmp_apply_dft<R>(
         module: &Module<BE>,
         res: &mut R,
@@ -801,6 +880,9 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// Returns scratch bytes required for [`Self::vmp_apply_dft_to_dft_add`].
+    /// Default body: `vmp_apply_dft_to_dft_add_tmp_bytes_derived`, a full-width
+    /// `res_size`-limb staging accumulator plus the product's own scratch.
     #[allow(clippy::too_many_arguments)]
     fn vmp_apply_dft_to_dft_add_tmp_bytes(
         module: &Module<BE>,
@@ -816,6 +898,10 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE> {
         )
     }
 
+    /// `res += a * pmat` in the DFT domain. Default body:
+    /// `vmp_apply_dft_to_dft_add_derived`, which carves the zeroed staging
+    /// accumulator out of [`Self::vmp_apply_dft_to_dft_add_tmp_bytes`] and folds
+    /// it into `res` column by column.
     fn vmp_apply_dft_to_dft_add(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
@@ -947,6 +1033,9 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         crate::oep::cnv_apply_dft_add_tmp_bytes_derived::<Self, BE>(module, cnv_offset, res_size, a_size, b_size)
     }
 
+    /// `res[res_col] += a (x) b`. Default body: `cnv_apply_dft_add_derived`,
+    /// which carves a `res.size()`-limb staging `VecZnxDft` out of
+    /// [`Self::cnv_apply_dft_add_tmp_bytes`] and adds it into `res`.
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_add(
         module: &Module<BE>,
@@ -997,6 +1086,9 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         crate::oep::cnv_apply_dft_sum_derived::<Self, BE>(module, cnv_offset, res, res_col, terms, scratch)
     }
 
+    /// Returns scratch bytes required for [`Self::cnv_pairwise_apply_dft`].
+    /// Default body: `cnv_pairwise_apply_dft_tmp_bytes_derived`, the larger of
+    /// the one overwriting and the three accumulating products it chains.
     fn cnv_pairwise_apply_dft_tmp_bytes(
         module: &Module<BE>,
         cnv_offset: usize,
@@ -1007,6 +1099,10 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         crate::oep::cnv_pairwise_apply_dft_tmp_bytes_derived::<Self, BE>(module, cnv_offset, res_size, a_size, b_size)
     }
 
+    /// `res[res_col] = (a[i] + a[j]) (x) (b[i] + b[j])`, expanded in the DFT
+    /// domain where the prepared operands are linear. Default body:
+    /// `cnv_pairwise_apply_dft_derived`; scratch is
+    /// [`Self::cnv_pairwise_apply_dft_tmp_bytes`].
     #[allow(clippy::too_many_arguments)]
     fn cnv_pairwise_apply_dft(
         module: &Module<BE>,
@@ -1022,10 +1118,16 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         crate::oep::cnv_pairwise_apply_dft_derived::<Self, BE>(module, cnv_offset, res, res_col, a, b, i, j, scratch)
     }
 
+    /// Returns scratch bytes required for [`Self::cnv_prepare_self`]. Default
+    /// body: `cnv_prepare_self_tmp_bytes_derived`, the larger of the two
+    /// prepares.
     fn cnv_prepare_self_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
         crate::oep::cnv_prepare_self_tmp_bytes_derived::<Self, BE>(module, res_size, a_size)
     }
 
+    /// Prepares `a` as both a left and a right convolution factor. Default body:
+    /// `cnv_prepare_self_derived`, one [`Self::cnv_prepare_left`] then one
+    /// [`Self::cnv_prepare_right`].
     fn cnv_prepare_self(
         module: &Module<BE>,
         left: &mut crate::layouts::CnvPVecLBackendMut<'_, BE>,

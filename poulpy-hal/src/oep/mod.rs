@@ -13,6 +13,15 @@
 //! implements the basis and inherits the rest, then overrides where a fused
 //! kernel is worth it — overriding a body and its `_tmp_bytes` together.
 //!
+//! The exception is a `_tmp_bytes` that sizes a whole family rather than one
+//! body — `HalVecZnxImpl::vec_znx_lsh_tmp_bytes` and
+//! `HalVecZnxImpl::vec_znx_rsh_tmp_bytes`, which must cover the temporary
+//! every `_add` / `_sub` / `_assign` body of their family carves. There it is
+//! correct to leave the family `_tmp_bytes` on its default while overriding
+//! individual bodies, as `poulpy-cpu-ref` does for `vec_znx_lsh_assign`; a
+//! backend that does override such a `_tmp_bytes` must still return a value
+//! large enough for the bodies of the family it left on the default.
+//!
 //! Those bodies cross family boundaries, so the family traits form a
 //! composition graph, expressed as supertraits:
 //!
