@@ -326,12 +326,13 @@ unsafe impl HalVecZnxImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         module: &Module<Self>,
         base2k: usize,
         k: usize,
+        a_offset: i64,
         a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
-        poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT3x42Ifma, Self>(base2k, k, a, a_col, carry);
+        poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT3x42Ifma, Self>(base2k, k, a_offset, a, a_col, carry);
     }
 }
 

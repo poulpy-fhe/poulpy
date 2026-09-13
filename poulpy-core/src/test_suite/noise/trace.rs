@@ -150,6 +150,7 @@ where
         module.vec_znx_normalize_assign(
             pt_noise.base2k().as_usize(),
             pt_noise.data.size() * pt_noise.base2k().as_usize(),
+            0,
             &mut vec_znx_backend_mut::<BE>(&mut pt_noise.data),
             0,
             &mut scratch.borrow(),

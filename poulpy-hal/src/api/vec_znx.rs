@@ -41,6 +41,7 @@ pub trait VecZnxNormalizeAssign<B: Backend> {
         &self,
         base2k: usize,
         k: usize,
+        a_offset: i64,
         a: &mut VecZnxBackendMut<'_, B>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,

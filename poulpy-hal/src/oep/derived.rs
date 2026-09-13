@@ -356,19 +356,8 @@ pub fn vec_znx_rsh_assign_derived<S, BE>(
     S: HalVecZnxImpl<BE>,
     BE: Backend,
 {
-    let size: usize = ZnxInfos::size(a);
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, size);
-    <S as HalVecZnxImpl<BE>>::vec_znx_rsh(
-        module,
-        base2k,
-        k,
-        &mut tmp,
-        0,
-        &vec_znx_backend_ref_from_mut::<BE>(a),
-        a_col,
-        &mut scratch,
-    );
-    <S as HalVecZnxImpl<BE>>::vec_znx_copy(module, a, a_col, &tmp.to_backend_ref(), 0);
+    let res_k: usize = ZnxInfos::size(a) * base2k;
+    <S as HalVecZnxImpl<BE>>::vec_znx_normalize_assign(module, base2k, res_k, -(k as i64), a, a_col, scratch);
 }
 
 /// `res = (X^p - 1) * a`: rotate, then subtract the unrotated value.

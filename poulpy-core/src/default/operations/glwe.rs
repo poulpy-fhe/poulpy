@@ -32,7 +32,7 @@ where
     // `VecZnx` has one column per triangular tensor term rather than `rank + 1`.
     let cols = res.data.cols();
     for col in 0..cols {
-        module.vec_znx_normalize_assign(base2k, k, &mut res.data, col, &mut scratch.borrow());
+        module.vec_znx_normalize_assign(base2k, k, 0, &mut res.data, col, &mut scratch.borrow());
     }
 }
 
@@ -2015,7 +2015,7 @@ where
         let res_k = res.k().as_usize();
         for i in 0..res.rank().as_usize() + 1 {
             let mut scratch_iter = scratch.borrow();
-            self.vec_znx_normalize_assign(res_base2k, res_k, &mut res.data, i, &mut scratch_iter);
+            self.vec_znx_normalize_assign(res_base2k, res_k, 0, &mut res.data, i, &mut scratch_iter);
         }
     }
 }

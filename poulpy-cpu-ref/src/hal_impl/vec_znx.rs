@@ -225,12 +225,21 @@ macro_rules! hal_impl_vec_znx_normalize {
             module: &Module<Self>,
             base2k: usize,
             k: usize,
+            a_offset: i64,
             a: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
             a_col: usize,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_assign_default(module, base2k, k, a, a_col, &mut scratch);
+            <Self as HalVecZnxDefault<Self>>::vec_znx_normalize_assign_default(
+                module,
+                base2k,
+                k,
+                a_offset,
+                a,
+                a_col,
+                &mut scratch,
+            );
         }
     };
 }

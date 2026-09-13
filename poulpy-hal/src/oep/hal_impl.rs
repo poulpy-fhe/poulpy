@@ -40,6 +40,7 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         module: &Module<BE>,
         base2k: usize,
         k: usize,
+        a_offset: i64,
         a: &mut VecZnxBackendMut<'_, BE>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,

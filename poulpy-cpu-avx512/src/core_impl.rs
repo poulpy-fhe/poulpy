@@ -333,7 +333,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         module.vec_znx_sub_assign(&mut pairwise, 0, res_ref.data(), 0);
         module.vec_znx_sub_assign(&mut pairwise, 0, res_ref.data(), 2);
     }
-    module.vec_znx_normalize_assign(res_base2k, res_k, &mut pairwise.to_backend_mut(), 0, &mut norm_scratch);
+    module.vec_znx_normalize_assign(res_base2k, res_k, 0, &mut pairwise.to_backend_mut(), 0, &mut norm_scratch);
     module.vec_znx_copy(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
 }
 

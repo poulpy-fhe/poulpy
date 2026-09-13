@@ -257,6 +257,7 @@ where
             module.vec_znx_normalize_assign(
                 pt_tmp.base2k().as_usize(),
                 pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
+                0,
                 &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
@@ -278,6 +279,7 @@ where
             module.vec_znx_normalize_assign(
                 pt_tmp.base2k().as_usize(),
                 pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
+                0,
                 &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
@@ -425,6 +427,7 @@ where
             module.vec_znx_normalize_assign(
                 pt_tmp.base2k().as_usize(),
                 pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
+                0,
                 &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
@@ -551,6 +554,7 @@ where
             module.vec_znx_normalize_assign(
                 pt_tmp.base2k().as_usize(),
                 pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
+                0,
                 &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),
@@ -685,6 +689,7 @@ where
             module.vec_znx_normalize_assign(
                 pt_tmp.base2k().as_usize(),
                 pt_tmp.data.size() * pt_tmp.base2k().as_usize(),
+                0,
                 &mut vec_znx_backend_mut::<BE>(&mut pt_tmp.data),
                 0,
                 &mut scratch.borrow(),

@@ -111,6 +111,7 @@ fn main() {
     module.vec_znx_normalize_assign(
         base2k,
         msg_size * base2k,
+        0,
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut m),
         0,
         &mut scratch.borrow(),

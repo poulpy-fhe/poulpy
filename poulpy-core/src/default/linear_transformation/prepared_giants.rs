@@ -366,6 +366,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         module.vec_znx_normalize_assign(
             res_base2k.as_usize(),
             res_k,
+            0,
             &mut res_backend.data,
             col,
             &mut scratch_phase.borrow(),

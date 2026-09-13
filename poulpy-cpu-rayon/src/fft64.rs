@@ -545,12 +545,13 @@ unsafe impl HalVecZnxImpl<$rayon> for $rayon {
         module: &Module<Self>,
         base2k: usize,
         k: usize,
+        a_offset: i64,
         a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
-        $crate::normalize::vec_znx_normalize_assign_par::<$base, $rayon>(base2k, k, a, a_col, carry);
+        $crate::normalize::vec_znx_normalize_assign_par::<$base, $rayon>(base2k, k, a_offset, a, a_col, carry);
     }
 }
 unsafe impl HalModuleImpl<$rayon> for $rayon {

@@ -69,11 +69,12 @@ impl_vec_znx_delegate!(
         &self,
         base2k: usize,
         k: usize,
+        a_offset: i64,
         a: &mut VecZnxBackendMut<'_, B>,
         a_col: usize,
         scratch: &mut ScratchArena<'_, B>,
     ) {
-        B::vec_znx_normalize_assign(self, base2k, k, a, a_col, scratch);
+        B::vec_znx_normalize_assign(self, base2k, k, a_offset, a, a_col, scratch);
     }
 );
 

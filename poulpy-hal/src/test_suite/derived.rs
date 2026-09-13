@@ -597,6 +597,7 @@ where
                     module.vec_znx_normalize_assign(
                         base2k,
                         res_size * base2k,
+                        0,
                         &mut vec_znx_backend_mut::<BE>(backend),
                         0,
                         &mut scratch.borrow(),
@@ -685,6 +686,7 @@ where
                     module.vec_znx_normalize_assign(
                         base2k,
                         res_size * base2k,
+                        0,
                         &mut vec_znx_backend_mut::<BE>(backend),
                         0,
                         &mut scratch.borrow(),
@@ -773,6 +775,7 @@ where
                     module.vec_znx_normalize_assign(
                         base2k,
                         res_size * base2k,
+                        0,
                         &mut vec_znx_backend_mut::<BE>(backend),
                         0,
                         &mut scratch.borrow(),
@@ -861,6 +864,7 @@ where
                     module.vec_znx_normalize_assign(
                         base2k,
                         res_size * base2k,
+                        0,
                         &mut vec_znx_backend_mut::<BE>(backend),
                         0,
                         &mut scratch.borrow(),
@@ -959,6 +963,7 @@ where
                 module.vec_znx_normalize_assign(
                     base2k,
                     res_size * base2k,
+                    0,
                     &mut vec_znx_backend_mut::<BE>(backend),
                     0,
                     &mut scratch.borrow(),
@@ -1036,6 +1041,7 @@ where
                 module.vec_znx_normalize_assign(
                     base2k,
                     res_size * base2k,
+                    0,
                     &mut vec_znx_backend_mut::<BE>(backend),
                     0,
                     &mut scratch.borrow(),

@@ -669,6 +669,7 @@ fn test_normalize_exact_canonical_precision() {
             vec_znx_normalize_assign::<FFT64Ref>(
                 res_base2k,
                 res_k,
+                0,
                 &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small),
                 0,
                 &mut [0],
@@ -1085,6 +1086,7 @@ mod canonical_precision_tests {
                             VecZnxShape::new(N, 2, size),
                             kr,
                             k,
+                            0,
                             1,
                             start,
                             len,
@@ -1096,6 +1098,7 @@ mod canonical_precision_tests {
                 vec_znx_normalize_assign::<FFT64Ref>(
                     kr,
                     k,
+                    0,
                     &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut input),
                     1,
                     &mut [73; N],

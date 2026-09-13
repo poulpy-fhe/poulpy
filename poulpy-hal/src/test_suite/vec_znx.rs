@@ -1140,6 +1140,7 @@ pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: cra
             module_ref.vec_znx_normalize_assign(
                 base2k,
                 res_k,
+                0,
                 &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
                 i,
                 &mut scratch_ref.arena(),
@@ -1147,6 +1148,7 @@ pub fn test_vec_znx_normalize_assign<BR: crate::test_suite::TestBackend, BT: cra
             module_test.vec_znx_normalize_assign(
                 base2k,
                 res_k,
+                0,
                 &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
                 i,
                 &mut scratch_test.arena(),
