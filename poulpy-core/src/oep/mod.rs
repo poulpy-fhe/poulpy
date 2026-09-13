@@ -10,10 +10,12 @@
 //!   override surface.** They are abstract: no HAL supertraits and no default
 //!   method bodies, so an implementor owes exactly the methods of one family.
 //! - [`SamplingImpl`] is the one exception: it has no `*Default` twin and no
-//!   blanket impl. A backend implements it directly (the CPU backends through
-//!   `poulpy_cpu_ref::impl_sampling_host!`), because the ephemeral secret of
-//!   public-key encryption is sampled in place from a seed and a generic default
-//!   body would be a host round trip.
+//!   blanket impl, because `poulpy-core` has no reference body to offer. Every
+//!   other family's reference body composes HAL operations; drawing from a
+//!   distribution is not such a composition, and a backend's buffers are opaque
+//!   to generic code, so only the backend can produce the values. A backend
+//!   implements it directly, the CPU backends through
+//!   `poulpy_cpu_ref::impl_sampling_host!`.
 //!
 //! The `unsafe` marker on `*Impl` traits follows the same convention as the HAL:
 //! implementors are taking responsibility for the core correctness contract of

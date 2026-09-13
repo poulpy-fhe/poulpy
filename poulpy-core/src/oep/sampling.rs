@@ -6,7 +6,7 @@ use crate::Distribution;
 ///
 /// `scalar_znx_fill_distribution` overwrites column `res_col` of `res` with a
 /// sample of `dist`, drawn by the backend from its own stream seeded with
-/// `seed`. The distributions are those of the host `ScalarZnx::fill_*` methods:
+/// `seed`. The distributions are those of the `ScalarZnx::fill_*` methods:
 /// `TernaryFixed(h)` is `fill_ternary_hw`, `TernaryProb(p)` is
 /// `fill_ternary_prob`, `BinaryFixed(h)` is `fill_binary_hw`, `BinaryProb(p)`
 /// is `fill_binary_prob`, `BinaryBlock(b)` is `fill_binary_block`, and `ZERO`
@@ -17,12 +17,13 @@ use crate::Distribution;
 /// [`Source::new_seed`](poulpy_hal::source::Source::new_seed), so for a fixed
 /// seed the output is per-backend, not cross-backend.
 ///
-/// There is **no default body**: the ephemeral secret of public-key encryption
-/// is sampled on every call, in place, in backend memory. A host default would
-/// sample on the host and upload, which is the round trip this seam exists to
-/// forbid. Long-lived secret keys are the one place `poulpy-core` still samples
-/// on the host ([`GLWESecretSampling`] / [`LWESecretSampling`]): once per key,
-/// into an owned buffer.
+/// There is **no default body**: `poulpy-core` has no reference body to offer
+/// here. Every other family's reference body composes HAL operations; drawing
+/// from a [`Distribution`] is not such a composition, and a backend's buffers
+/// are opaque to generic code, so only the backend can produce the values.
+/// Long-lived secret keys are the one place `poulpy-core` still samples on the
+/// host ([`GLWESecretSampling`] / [`LWESecretSampling`]): once per key, into an
+/// owned buffer.
 ///
 /// # Safety
 /// Implementations must write only within column `res_col` of `res` and must
