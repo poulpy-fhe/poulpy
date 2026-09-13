@@ -4,8 +4,8 @@ use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxRsh,
-        VecZnxRshAssign, VecZnxRshTmpBytes,
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub,
+        VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned},
 };
@@ -112,6 +112,118 @@ where
         let mut res = vec_znx_backend_mut::<B>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_rsh(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
+        }
+        black_box(());
+    });
+}
+
+pub fn runner_vec_znx_lsh_add<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+where
+    Module<B>: VecZnxLshAdd<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxLshTmpBytes,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+{
+    let module: Module<B> = Module::<B>::new(sweep.n as u64);
+
+    let base2k: usize = 50;
+
+    let mut source = poulpy_hal::source::Source::new([0u8; 32]);
+
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_lsh_tmp_bytes(sweep.size));
+
+    let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let a = upload_host_vec_znx::<B>(&a);
+    let res = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let mut res = upload_host_vec_znx::<B>(&res);
+
+    bencher.iter(|| {
+        let a = vec_znx_backend_ref::<B>(&a);
+        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        for i in 0..sweep.cols {
+            module.vec_znx_lsh_add(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
+        }
+        black_box(());
+    });
+}
+
+pub fn runner_vec_znx_lsh_sub<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+where
+    Module<B>: VecZnxLshSub<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxLshTmpBytes,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+{
+    let module: Module<B> = Module::<B>::new(sweep.n as u64);
+
+    let base2k: usize = 50;
+
+    let mut source = poulpy_hal::source::Source::new([0u8; 32]);
+
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_lsh_tmp_bytes(sweep.size));
+
+    let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let a = upload_host_vec_znx::<B>(&a);
+    let res = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let mut res = upload_host_vec_znx::<B>(&res);
+
+    bencher.iter(|| {
+        let a = vec_znx_backend_ref::<B>(&a);
+        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        for i in 0..sweep.cols {
+            module.vec_znx_lsh_sub(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
+        }
+        black_box(());
+    });
+}
+
+pub fn runner_vec_znx_rsh_add<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+where
+    Module<B>: VecZnxRshAdd<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+{
+    let module: Module<B> = Module::<B>::new(sweep.n as u64);
+
+    let base2k: usize = 50;
+
+    let mut source = poulpy_hal::source::Source::new([0u8; 32]);
+
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(sweep.size));
+
+    let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let a = upload_host_vec_znx::<B>(&a);
+    let res = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let mut res = upload_host_vec_znx::<B>(&res);
+
+    bencher.iter(|| {
+        let a = vec_znx_backend_ref::<B>(&a);
+        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        for i in 0..sweep.cols {
+            module.vec_znx_rsh_add(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
+        }
+        black_box(());
+    });
+}
+
+pub fn runner_vec_znx_rsh_sub<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+where
+    Module<B>: VecZnxRshSub<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+{
+    let module: Module<B> = Module::<B>::new(sweep.n as u64);
+
+    let base2k: usize = 50;
+
+    let mut source = poulpy_hal::source::Source::new([0u8; 32]);
+
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes(sweep.size));
+
+    let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let a = upload_host_vec_znx::<B>(&a);
+    let res = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let mut res = upload_host_vec_znx::<B>(&res);
+
+    bencher.iter(|| {
+        let a = vec_znx_backend_ref::<B>(&a);
+        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        for i in 0..sweep.cols {
+            module.vec_znx_rsh_sub(base2k, base2k - 1, &mut res, i, &a, i, &mut scratch.borrow());
         }
         black_box(());
     });

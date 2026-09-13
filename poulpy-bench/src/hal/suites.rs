@@ -1,18 +1,19 @@
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft, SvpApplyDftTmpBytes,
-        SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxAdd, VecZnxAddAssign, VecZnxAlloc,
-        VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAdd, VecZnxBigAddAssign,
-        VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign,
-        VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA,
-        VecZnxBigSubSmallB, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub, VecZnxDftSubAssign,
-        VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxLsh, VecZnxLshAssign,
+        CnvPVecAlloc, Convolution, ModuleNew, ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft,
+        SvpApplyDftTmpBytes, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxAdd, VecZnxAddAssign,
+        VecZnxAddScalarAssign, VecZnxAlloc, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes,
+        VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism,
+        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
+        VecZnxBigSubSmallA, VecZnxBigSubSmallB, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub,
+        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub,
         VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate,
         VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign,
-        VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign,
-        VecZnxSubNegateAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc,
-        VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub,
+        VecZnxSubAssign, VecZnxSubNegateAssign, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAdd,
+        VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned},
 };
@@ -69,9 +70,11 @@ where
 
 // ── vec_znx_dft ──────────────────────────────────────────────────────────────
 
-pub fn vec_znx_dft_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 8]
+pub fn vec_znx_dft_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 9]
 where
-    Module<B>: ModuleNew<B>
+    Module<B>: VecZnxIdftNormalizeConsume<B>
+        + VecZnxIdftNormalizeConsumeTmpBytes
+        + ModuleNew<B>
         + VecZnxDftAlloc<B>
         + VecZnxBigAlloc<B>
         + VecZnxDftAdd<B>
@@ -79,6 +82,8 @@ where
         + VecZnxDftApply<B>
         + VecZnxIdftApply<B>
         + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftNormalizeConsume<B>
+        + VecZnxIdftNormalizeConsumeTmpBytes
         + VecZnxIdftApplyTmpA<B>
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
@@ -110,6 +115,11 @@ where
             layer: "hal",
             name: "vec_znx_idft_apply_tmpa",
             runner: vec_znx_dft::runner_vec_znx_idft_apply_tmpa::<B, M>,
+        },
+        BenchOp {
+            layer: "hal",
+            name: "vec_znx_idft_normalize_consume",
+            runner: vec_znx_dft::runner_vec_znx_idft_normalize_consume::<B, M>,
         },
         BenchOp {
             layer: "hal",
@@ -281,12 +291,18 @@ where
 
 // ── vec_znx ──────────────────────────────────────────────────────────────────
 
-pub fn vec_znx_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 19]
+pub fn vec_znx_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 24]
 where
     Module<B>: ModuleNew<B>
         + VecZnxAlloc<B>
         + VecZnxAdd<B>
         + VecZnxAddAssign<B>
+        + VecZnxAddScalarAssign<B>
+        + ScalarZnxAlloc<B>
+        + VecZnxLshAdd<B>
+        + VecZnxLshSub<B>
+        + VecZnxRshAdd<B>
+        + VecZnxRshSub<B>
         + VecZnxAutomorphism<B>
         + VecZnxAutomorphismAssign<B>
         + VecZnxAutomorphismAssignTmpBytes
@@ -396,6 +412,31 @@ where
         },
         BenchOp {
             layer: "hal",
+            name: "vec_znx_lsh_add",
+            runner: vec_znx::runner_vec_znx_lsh_add::<B, M>,
+        },
+        BenchOp {
+            layer: "hal",
+            name: "vec_znx_lsh_sub",
+            runner: vec_znx::runner_vec_znx_lsh_sub::<B, M>,
+        },
+        BenchOp {
+            layer: "hal",
+            name: "vec_znx_rsh_add",
+            runner: vec_znx::runner_vec_znx_rsh_add::<B, M>,
+        },
+        BenchOp {
+            layer: "hal",
+            name: "vec_znx_rsh_sub",
+            runner: vec_znx::runner_vec_znx_rsh_sub::<B, M>,
+        },
+        BenchOp {
+            layer: "hal",
+            name: "vec_znx_add_scalar_assign",
+            runner: vec_znx::runner_vec_znx_add_scalar_assign::<B, M>,
+        },
+        BenchOp {
+            layer: "hal",
             name: "vec_znx_sub",
             runner: vec_znx::runner_vec_znx_sub::<B, M>,
         },
@@ -414,9 +455,11 @@ where
 
 // ── vmp ──────────────────────────────────────────────────────────────────────
 
-pub fn vmp_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, VmpSweepParms>; 3]
+pub fn vmp_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, VmpSweepParms>; 4]
 where
-    Module<B>: ModuleNew<B>
+    Module<B>: VmpApplyDftToDftAdd<B>
+        + VmpApplyDftToDftAddTmpBytes
+        + ModuleNew<B>
         + VmpPMatAlloc<B>
         + VmpPrepare<B>
         + VmpPrepareTmpBytes
@@ -443,12 +486,17 @@ where
             name: "vmp_apply_dft_to_dft",
             runner: vmp::runner_vmp_apply_dft_to_dft::<B, M>,
         },
+        BenchOp {
+            layer: "hal",
+            name: "vmp_apply_dft_to_dft_add",
+            runner: vmp::runner_vmp_apply_dft_to_dft_add::<B, M>,
+        },
     ]
 }
 
 // ── convolution ──────────────────────────────────────────────────────────────
 
-pub fn convolution_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, CnvSweepParms>; 6]
+pub fn convolution_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, CnvSweepParms>; 8]
 where
     Module<B>: ModuleNew<B> + Convolution<B> + CnvPVecAlloc<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -484,6 +532,16 @@ where
             name: "cnv_by_const_apply",
             runner: convolution::runner_cnv_by_const_apply::<B, M>,
         },
+        BenchOp {
+            layer: "hal",
+            name: "cnv_by_const_apply_add",
+            runner: convolution::runner_cnv_by_const_apply_add::<B, M>,
+        },
+        BenchOp {
+            layer: "hal",
+            name: "cnv_prepare_self",
+            runner: convolution::runner_cnv_prepare_self::<B, M>,
+        },
     ]
 }
 
@@ -516,6 +574,12 @@ where
         + VecZnxAlloc<B>
         + VecZnxAdd<B>
         + VecZnxAddAssign<B>
+        + VecZnxAddScalarAssign<B>
+        + ScalarZnxAlloc<B>
+        + VecZnxLshAdd<B>
+        + VecZnxLshSub<B>
+        + VecZnxRshAdd<B>
+        + VecZnxRshSub<B>
         + VecZnxAutomorphism<B>
         + VecZnxAutomorphismAssign<B>
         + VecZnxAutomorphismAssignTmpBytes
@@ -546,6 +610,8 @@ where
         + VecZnxDftApply<B>
         + VecZnxIdftApply<B>
         + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftNormalizeConsume<B>
+        + VecZnxIdftNormalizeConsumeTmpBytes
         + VecZnxIdftApplyTmpA<B>
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
@@ -590,6 +656,8 @@ where
         + VecZnxDftAlloc<B>
         + VecZnxIdftApply<B>
         + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftNormalizeConsume<B>
+        + VecZnxIdftNormalizeConsumeTmpBytes
         + VecZnxBigAlloc<B>
         + SvpApplyDftToDft<B>
         + SvpPPolAlloc<B>
@@ -695,6 +763,8 @@ where
         + VecZnxDftApply<B>
         + VecZnxIdftApply<B>
         + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftNormalizeConsume<B>
+        + VecZnxIdftNormalizeConsumeTmpBytes
         + VecZnxIdftApplyTmpA<B>
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
@@ -728,8 +798,16 @@ where
         + VmpApplyDftTmpBytes
         + VmpApplyDftToDft<B>
         + VmpApplyDftToDftTmpBytes
+        + VmpApplyDftToDftAdd<B>
+        + VmpApplyDftToDftAddTmpBytes
         + Convolution<B>
-        + CnvPVecAlloc<B>,
+        + CnvPVecAlloc<B>
+        + VecZnxAddScalarAssign<B>
+        + ScalarZnxAlloc<B>
+        + VecZnxLshAdd<B>
+        + VecZnxLshSub<B>
+        + VecZnxRshAdd<B>
+        + VecZnxRshSub<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -792,6 +870,8 @@ where
         + VecZnxDftApply<B>
         + VecZnxIdftApply<B>
         + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftNormalizeConsume<B>
+        + VecZnxIdftNormalizeConsumeTmpBytes
         + VecZnxIdftApplyTmpA<B>
         + VecZnxDftSub<B>
         + VecZnxDftSubAssign<B>
@@ -825,8 +905,16 @@ where
         + VmpApplyDftTmpBytes
         + VmpApplyDftToDft<B>
         + VmpApplyDftToDftTmpBytes
+        + VmpApplyDftToDftAdd<B>
+        + VmpApplyDftToDftAddTmpBytes
         + Convolution<B>
-        + CnvPVecAlloc<B>,
+        + CnvPVecAlloc<B>
+        + VecZnxAddScalarAssign<B>
+        + ScalarZnxAlloc<B>
+        + VecZnxLshAdd<B>
+        + VecZnxLshSub<B>
+        + VecZnxRshAdd<B>
+        + VecZnxRshSub<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -868,8 +956,8 @@ pub mod standard {
     use super::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, VecZnxAdd, VecZnxAlloc, VecZnxBigAdd,
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
-        VmpPMatAlloc, standard_ops,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalize,
+        VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, standard_ops,
     };
     use crate::{
         bench_ops, bin_fhe_n,
@@ -886,6 +974,8 @@ pub mod standard {
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
             + VecZnxIdftApplyTmpBytes
+            + VecZnxIdftNormalizeConsume<B>
+            + VecZnxIdftNormalizeConsumeTmpBytes
             + VecZnxBigAlloc<B>
             + SvpApplyDftToDft<B>
             + SvpPPolAlloc<B>
@@ -927,6 +1017,8 @@ pub mod standard {
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
             + VecZnxIdftApplyTmpBytes
+            + VecZnxIdftNormalizeConsume<B>
+            + VecZnxIdftNormalizeConsumeTmpBytes
             + VecZnxBigAlloc<B>
             + SvpApplyDftToDft<B>
             + SvpPPolAlloc<B>
@@ -970,8 +1062,8 @@ pub mod light {
     use super::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, VecZnxAdd, VecZnxAlloc, VecZnxBigAdd,
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
-        VmpPMatAlloc, standard_ops,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalize,
+        VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, standard_ops,
     };
     use crate::{
         bench_ops, bin_fhe_n,
@@ -988,6 +1080,8 @@ pub mod light {
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
             + VecZnxIdftApplyTmpBytes
+            + VecZnxIdftNormalizeConsume<B>
+            + VecZnxIdftNormalizeConsumeTmpBytes
             + VecZnxBigAlloc<B>
             + SvpApplyDftToDft<B>
             + SvpPPolAlloc<B>
@@ -1029,6 +1123,8 @@ pub mod light {
             + VecZnxDftAlloc<B>
             + VecZnxIdftApply<B>
             + VecZnxIdftApplyTmpBytes
+            + VecZnxIdftNormalizeConsume<B>
+            + VecZnxIdftNormalizeConsumeTmpBytes
             + VecZnxBigAlloc<B>
             + SvpApplyDftToDft<B>
             + SvpPPolAlloc<B>

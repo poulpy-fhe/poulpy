@@ -4,17 +4,17 @@ use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc,
-        VecZnxDftApply, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA,
-        VecZnxIdftApplyTmpBytes,
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxDftAdd, VecZnxDftAddAssign,
+        VecZnxDftAlloc, VecZnxDftApply, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply,
+        VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned, VecZnxBigOwned, VecZnxDftOwned},
     source::Source,
 };
 
 use crate::hal::helpers::{
-    random_backend_vec_znx_dft, random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_ref, vec_znx_big_backend_mut,
-    vec_znx_dft_backend_mut, vec_znx_dft_backend_ref,
+    random_backend_vec_znx_dft, random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref,
+    vec_znx_big_backend_mut, vec_znx_dft_backend_mut, vec_znx_dft_backend_ref,
 };
 use crate::hal::params::HalSweepParms;
 
@@ -197,6 +197,46 @@ pub fn runner_vec_znx_dft_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measur
         let mut c = vec_znx_dft_backend_mut::<B>(&mut c);
         for i in 0..sweep.cols {
             module.vec_znx_dft_sub_negate_assign(&mut c, i, &a, i);
+        }
+        black_box(());
+    });
+}
+
+pub fn runner_vec_znx_idft_normalize_consume<B: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    sweep: &HalSweepParms,
+) where
+    Module<B>:
+        ModuleNew<B> + VecZnxDftAlloc<B> + VecZnxAlloc<B> + VecZnxIdftNormalizeConsume<B> + VecZnxIdftNormalizeConsumeTmpBytes,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+{
+    let module: Module<B> = Module::<B>::new(sweep.n as u64);
+
+    let base2k: usize = 50;
+
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let mut scratch: ScratchOwned<B> =
+        ScratchOwned::alloc(module.vec_znx_idft_normalize_consume_tmp_bytes(sweep.size, sweep.size));
+
+    let mut a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
+    let mut res = module.vec_znx_alloc(sweep.cols, sweep.size);
+
+    bencher.iter(|| {
+        let mut a = vec_znx_dft_backend_mut::<B>(&mut a);
+        let mut res = vec_znx_backend_mut::<B>(&mut res);
+        for i in 0..sweep.cols {
+            module.vec_znx_idft_normalize_consume(
+                &mut res,
+                base2k,
+                base2k * sweep.size,
+                i,
+                &mut a,
+                i,
+                base2k,
+                None,
+                &mut scratch.borrow(),
+            );
         }
         black_box(());
     });
