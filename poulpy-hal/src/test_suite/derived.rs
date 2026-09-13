@@ -35,18 +35,18 @@ use crate::{
         VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut, CnvPVecRToBackendRef,
-        FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint, ScratchOwned, SvpPPolOwned,
-        SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VecZnxInfos, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut,
-        vec_znx_backend_mut, vec_znx_backend_ref,
+        CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
+        CnvPVecRToBackendRef, FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint,
+        ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView,
+        ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
     oep::{
         HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, cnv_apply_dft_add_derived,
-        cnv_apply_dft_add_tmp_bytes_derived, cnv_by_const_apply_add_derived, cnv_by_const_apply_add_tmp_bytes_derived,
-        cnv_pairwise_apply_dft_derived, cnv_pairwise_apply_dft_tmp_bytes_derived, cnv_prepare_self_derived,
-        cnv_prepare_self_tmp_bytes_derived, vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived,
-        vmp_apply_dft_to_dft_add_tmp_bytes_derived,
+        cnv_apply_dft_add_tmp_bytes_derived, cnv_apply_dft_sum_derived, cnv_apply_dft_sum_tmp_bytes_derived,
+        cnv_by_const_apply_add_derived, cnv_by_const_apply_add_tmp_bytes_derived, cnv_pairwise_apply_dft_derived,
+        cnv_pairwise_apply_dft_tmp_bytes_derived, cnv_prepare_self_derived, cnv_prepare_self_tmp_bytes_derived,
+        vmp_apply_dft_derived, vmp_apply_dft_to_dft_add_derived, vmp_apply_dft_to_dft_add_tmp_bytes_derived,
     },
     source::Source,
     test_suite::{
@@ -2117,6 +2117,138 @@ where
             assert_eq!(
                 want, have_module,
                 "cnv_apply_dft_add: module dispatch != two-step oracle (res_col {res_col} cnv_offset {cnv_offset})"
+            );
+        }
+    }
+}
+
+/// `cnv_apply_dft_sum`: the derived free function's decomposition versus an
+/// explicit oracle (the first term through `cnv_apply_dft`, every further
+/// term through `cnv_apply_dft_add`), and versus the backend's own
+/// `module.cnv_apply_dft_sum` — the inherited default on backends with no
+/// fused override, the fused kernel on backends that have one. One-, two- and
+/// three-term sums are swept, so the first-term overwrite and the folding of
+/// the rest are both covered. DFT-domain results are compared after
+/// `vec_znx_idft_apply_tmpa` + `vec_znx_big_normalize`, as the rest of this
+/// suite states DFT-domain equality. The arena for the derived call is sized
+/// only by `cnv_apply_dft_sum_tmp_bytes_derived`, so a decomposition that
+/// under-reports its own scratch panics here.
+pub fn test_cnv_apply_dft_sum_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + Convolution<BE>
+        + CnvPVecAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let cols: usize = 2;
+    let a_size: usize = 15;
+    let b_size: usize = 15;
+    let res_size: usize = a_size + b_size;
+    // Written at column 1: covers the column-interleaved `VecZnxDft` indexing.
+    let res_col: usize = 1;
+
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let (a_prep, b_prep, mut scratch) = prepare_convolution_operands::<BE>(module, &module_host, cols, a_size, b_size, 17);
+
+    let mut res_oracle = module.vec_znx_dft_alloc(2, res_size);
+    let mut res_derived = module.vec_znx_dft_alloc(2, res_size);
+    let mut res_module = module.vec_znx_dft_alloc(2, res_size);
+    let mut big = module.vec_znx_big_alloc(1, res_size);
+
+    // Terms mixing operand columns, like one BSGS giant step; the sweep takes
+    // the first one, two and three of them.
+    let term_cols: [(usize, usize); 3] = [(0, 0), (1, 1), (0, 1)];
+
+    for n_terms in 1..=term_cols.len() {
+        for cnv_offset in [0usize, 1usize] {
+            // Oracle: the spec definition, spelled out through the api traits.
+            for (idx, &(a_col, b_col)) in term_cols[..n_terms].iter().enumerate() {
+                if idx == 0 {
+                    module.cnv_apply_dft(
+                        cnv_offset,
+                        &mut res_oracle.to_backend_mut(),
+                        res_col,
+                        &a_prep.to_backend_ref(),
+                        a_col,
+                        &b_prep.to_backend_ref(),
+                        b_col,
+                        &mut scratch.borrow(),
+                    );
+                } else {
+                    module.cnv_apply_dft_add(
+                        cnv_offset,
+                        &mut res_oracle.to_backend_mut(),
+                        res_col,
+                        &a_prep.to_backend_ref(),
+                        a_col,
+                        &b_prep.to_backend_ref(),
+                        b_col,
+                        &mut scratch.borrow(),
+                    );
+                }
+            }
+
+            let terms: Vec<CnvDftAccTerm<'_, BE>> = term_cols[..n_terms]
+                .iter()
+                .map(|&(a_col, b_col)| CnvDftAccTerm {
+                    a: a_prep.to_backend_ref(),
+                    a_col,
+                    b: b_prep.to_backend_ref(),
+                    b_col,
+                })
+                .collect();
+
+            // The derived free function, with an arena sized only by its own sibling.
+            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_apply_dft_sum_tmp_bytes_derived::<BE, BE>(
+                module, cnv_offset, res_size, a_size, b_size,
+            ));
+            cnv_apply_dft_sum_derived::<BE, BE>(
+                module,
+                cnv_offset,
+                &mut res_derived.to_backend_mut(),
+                res_col,
+                &terms,
+                &mut derived_scratch.borrow(),
+            );
+
+            // The backend's own dispatch through the OEP method, with an arena
+            // sized only by the api `_tmp_bytes` (a fused override may need
+            // more than the shared convolution arena carries).
+            let mut module_scratch: ScratchOwned<BE> =
+                ScratchOwned::alloc(module.cnv_apply_dft_sum_tmp_bytes(cnv_offset, res_size, a_size, b_size));
+            module.cnv_apply_dft_sum(
+                cnv_offset,
+                &mut res_module.to_backend_mut(),
+                res_col,
+                &terms,
+                &mut module_scratch.borrow(),
+            );
+
+            let want = normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
+            let have_derived = normalize_dft_column::<BE>(
+                module,
+                &module_host,
+                base2k,
+                &mut big,
+                &mut res_derived,
+                res_col,
+                &mut scratch,
+            );
+            let have_module =
+                normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_module, res_col, &mut scratch);
+            assert_eq!(
+                want, have_derived,
+                "cnv_apply_dft_sum: derived decomposition != per-term oracle (n_terms {n_terms} cnv_offset {cnv_offset})"
+            );
+            assert_eq!(
+                want, have_module,
+                "cnv_apply_dft_sum: module dispatch != per-term oracle (n_terms {n_terms} cnv_offset {cnv_offset})"
             );
         }
     }

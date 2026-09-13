@@ -34,8 +34,8 @@
 use crate::{
     api::ScratchArenaTakeBasic,
     layouts::{
-        Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxInfos, Module,
-        ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+        Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, MatZnxInfos,
+        Module, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
         VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, VecZnxInfos, VecZnxToBackendRef, VmpPMatBackendRef, ZnxInfos,
         scalar_znx_as_vec_znx_backend_ref_from_ref, vec_znx_backend_ref_from_mut, vec_znx_reborrow_backend_mut,
@@ -708,6 +708,58 @@ pub fn cnv_apply_dft_add_derived<S, BE>(
     let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, 1, res_size);
     <S as HalConvolutionImpl<BE>>::cnv_apply_dft(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, &mut scratch);
     <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
+}
+
+/// Scratch for [`cnv_apply_dft_sum_derived`]: the larger of the one
+/// overwriting and the accumulating product the per-term fallback chains.
+#[doc(hidden)]
+pub fn cnv_apply_dft_sum_tmp_bytes_derived<S, BE>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res_size: usize,
+    a_size: usize,
+    b_size: usize,
+) -> usize
+where
+    S: HalConvolutionImpl<BE>,
+    BE: Backend,
+{
+    <S as HalConvolutionImpl<BE>>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size).max(
+        <S as HalConvolutionImpl<BE>>::cnv_apply_dft_add_tmp_bytes(module, cnv_offset, res_size, a_size, b_size),
+    )
+}
+
+/// `res[res_col] = Σ_t a_t (x) b_t` (overwriting): the first term overwrites
+/// with `cnv_apply_dft`, which also zeroes the limbs past the convolution
+/// bound, and the remaining terms fold in with `cnv_apply_dft_add`. An empty
+/// `terms` slice zeroes the destination column.
+#[doc(hidden)]
+pub fn cnv_apply_dft_sum_derived<'a, S, BE>(
+    module: &Module<BE>,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    terms: &[CnvDftAccTerm<'a, BE>],
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    S: HalConvolutionImpl<BE>,
+    BE: Backend + 'a,
+{
+    if terms.is_empty() {
+        <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_zero(module, res, res_col);
+        return;
+    }
+    for (idx, term) in terms.iter().enumerate() {
+        if idx == 0 {
+            <S as HalConvolutionImpl<BE>>::cnv_apply_dft(
+                module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
+            );
+        } else {
+            <S as HalConvolutionImpl<BE>>::cnv_apply_dft_add(
+                module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
+            );
+        }
+    }
 }
 
 /// Scratch for [`cnv_by_const_apply_add_derived`]: one `res_size`-limb

@@ -974,9 +974,7 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size).max(Self::cnv_apply_dft_add_tmp_bytes(
-            module, cnv_offset, res_size, a_size, b_size,
-        ))
+        crate::oep::cnv_apply_dft_sum_tmp_bytes_derived::<Self, BE>(module, cnv_offset, res_size, a_size, b_size)
     }
 
     /// Computes `res[res_col] = Σ_t a_t ⊛ b_t` (overwriting).
@@ -996,21 +994,7 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend + HalVecZnxDftImpl<BE>
     ) where
         BE: 'a,
     {
-        if terms.is_empty() {
-            <Self as HalVecZnxDftImpl<BE>>::vec_znx_dft_zero(module, res, res_col);
-            return;
-        }
-        for (idx, term) in terms.iter().enumerate() {
-            if idx == 0 {
-                Self::cnv_apply_dft(
-                    module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
-                );
-            } else {
-                Self::cnv_apply_dft_add(
-                    module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
-                );
-            }
-        }
+        crate::oep::cnv_apply_dft_sum_derived::<Self, BE>(module, cnv_offset, res, res_col, terms, scratch)
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(
