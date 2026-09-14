@@ -121,6 +121,13 @@
 //! sparse operands (<https://github.com/poulpy-fhe/poulpy/issues/266>), so a
 //! mixed-degree call is rejected until then.
 //!
+//! The coefficient-wise operations are outside that rule: `vec_znx_big_inner_sum`,
+//! `vec_znx_big_col_weighted_sum` and `vec_znx_scalar_product` act on
+//! coefficients, not on `R_N`. Their operands take any degree, each contract's
+//! `domain` line gives the relations between them, and the module's degree
+//! does not enter. LWE encryption drives them on buffers of the LWE dimension
+//! and reduces to degree one.
+//!
 //! # Preconditions
 //!
 //! Shape and parameter preconditions are checked by the backend kernels with

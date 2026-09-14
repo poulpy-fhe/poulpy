@@ -320,7 +320,7 @@ pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
 /// op         vec_znx_big_inner_sum(res, res_col, res_coeff, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// domain     res, a: dense VecZnxBig; res_coeff < res.n(); res.size() <= a.size()
+/// domain     res, a: dense VecZnxBig of any degree, the module's does not enter; res_coeff < res.n(); res.size() <= a.size()
 /// ensures    for every limb of res, coefficient res_coeff of res[res_col] is the wrapping sum of all n coefficients of that limb of a[a_col]; every other coefficient of res is untouched. This is the trace-like reduction the LWE path uses, not a ring operation
 /// exact      exact modulo the big word, which wraps
 /// test       test_vec_znx_big_inner_sum
@@ -344,7 +344,7 @@ pub trait VecZnxBigInnerSum<B: Backend> {
 /// op         vec_znx_big_col_weighted_sum(res, res_col, a, weights, weights_col, cols, coeffs)
 /// class      basis
 /// mutation   out-of-place
-/// domain     res: a dense VecZnxBig; a: a dense VecZnx; weights: a ScalarZnx with cols <= weights.n() and weights_col < weights.cols(); coeffs <= min(a.n(), res.n()); res.size() <= a.size()
+/// domain     res: a dense VecZnxBig; a: a dense VecZnx; both of any degree, the module's does not enter; weights: a ScalarZnx with cols <= weights.n() and weights_col < weights.cols(); coeffs <= min(a.n(), res.n()); res.size() <= a.size()
 /// ensures    res[res_col][limb][k] = sum over col < cols of a[col][limb][k] * weights[weights_col][0][col], for every k < coeffs and every limb of res; the coefficients from coeffs on are zero. Coefficient-wise, not a ring product
 /// exact      exact modulo the big word, which wraps
 /// test       test_vec_znx_big_col_weighted_sum
@@ -370,7 +370,7 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
 /// op         vec_znx_scalar_product(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
-/// domain     res: a dense VecZnxBig with res.n() >= a.n() and res.size() <= a.size(); a: a dense VecZnx; b: a ScalarZnx of a's degree
+/// domain     res: a dense VecZnxBig with res.n() >= a.n() and res.size() <= a.size(); a: a dense VecZnx of any degree, the module's does not enter; b: a ScalarZnx of a's degree
 /// ensures    res[res_col][limb][k] = a[a_col][limb][k] * b[b_col][0][k] for every k < a.n() and every limb of res, the coefficient-wise Hadamard product widened to big words. Follow with vec_znx_big_inner_sum to reduce it to one coefficient
 /// exact      exact modulo the big word, which wraps
 /// test       test_vec_znx_scalar_product
