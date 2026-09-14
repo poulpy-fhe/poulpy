@@ -1,4 +1,4 @@
-use super::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+use super::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 use crate::layouts::CnvPVecLToBackendMut;
 use crate::layouts::CnvPVecLToBackendRef;
 use crate::layouts::CnvPVecRToBackendMut;
@@ -918,4 +918,90 @@ fn negacyclic_convolution_naive(res: &mut [i64], a: &[i64], b: &[i64]) {
             res[i + j - n] -= ai * b[j];
         }
     }
+}
+
+/// The prepare kernels take their column count from the operand they write
+/// and read `a` by it, so `a.cols()` must equal it; `cnv_prepare_self` writes
+/// `right` with `left`'s shape, so the pair must agree in columns and size.
+/// Every backend must reject a mismatch rather than index past an operand.
+pub fn test_convolution_prepare_shape_rejected<BE: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module: &crate::layouts::Module<BE>,
+) where
+    crate::layouts::Module<BE>: CnvPVecAlloc<BE> + Convolution<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let (cols, size) = (2usize, 2usize);
+    let mut source = Source::new([5u8; 32]);
+    let mut a = VecZnxOwned::<i64>::alloc(params.size, cols, size);
+    a.fill_uniform(params.base2k, &mut source);
+    let a_be = upload_vec_znx::<BE>(&a);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_prepare_left_tmp_bytes(size, size)
+            .max(module.cnv_prepare_right_tmp_bytes(size, size))
+            .max(module.cnv_prepare_self_tmp_bytes(size, size)),
+    );
+
+    let mut narrow_left = module.cnv_pvec_left_alloc(cols - 1, size, PrepareHint::Reuse);
+    let left_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_left(
+            &mut narrow_left.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&a_be),
+            !0i64,
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        left_panicked,
+        "cnv_prepare_left accepted res.cols() != a.cols() instead of panicking"
+    );
+
+    let mut narrow_right = module.cnv_pvec_right_alloc(cols - 1, size, PrepareHint::Reuse);
+    let right_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_right(
+            &mut narrow_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&a_be),
+            !0i64,
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        right_panicked,
+        "cnv_prepare_right accepted res.cols() != a.cols() instead of panicking"
+    );
+
+    let mut left = module.cnv_pvec_left_alloc(cols, size, PrepareHint::Reuse);
+    let mut short_right = module.cnv_pvec_right_alloc(cols, size - 1, PrepareHint::Reuse);
+    let size_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_self(
+            &mut left.to_backend_mut(),
+            &mut short_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&a_be),
+            !0i64,
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        size_panicked,
+        "cnv_prepare_self accepted right.size() != left.size() instead of panicking"
+    );
+
+    let cols_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_self(
+            &mut left.to_backend_mut(),
+            &mut narrow_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&a_be),
+            !0i64,
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        cols_panicked,
+        "cnv_prepare_self accepted right.cols() != left.cols() instead of panicking"
+    );
 }

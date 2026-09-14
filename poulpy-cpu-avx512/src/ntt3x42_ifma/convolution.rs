@@ -1235,6 +1235,7 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     let n = res.n();
     let table = &handle(module).table_ntt;
     let cols = res.cols();
+    assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     let res_size = res.size();
     let min_size = res_size.min(a.size());
 
@@ -1305,6 +1306,7 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
     let n = res.n();
     let table = &handle(module).table_ntt;
     let cols = res.cols();
+    assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     let res_size = res.size();
     let min_size = res_size.min(a.size());
 
@@ -1373,7 +1375,15 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
     let n = left.n();
     let table = &handle(module).table_ntt;
     let cols = left.cols();
+    assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());
+    assert_eq!(right.cols(), cols, "right.cols():{} != left.cols():{cols}", right.cols());
     let res_size = left.size();
+    assert_eq!(
+        right.size(),
+        res_size,
+        "right.size():{} != left.size():{res_size}",
+        right.size()
+    );
     let min_size = res_size.min(a.size());
 
     let task_count = cols * res_size;
