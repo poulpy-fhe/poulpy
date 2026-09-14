@@ -1768,7 +1768,7 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
         + VecZnxDftApply<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftAutomorphism<BE>
-        + VecZnxDftAutomorphismPlan<BE, Plan = <BE as HalVecZnxDftImpl<BE>>::AutomorphismPlan>
+        + VecZnxDftAutomorphismPlan<BE, Plan = BE::AutomorphismPlan>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
@@ -1889,7 +1889,7 @@ where
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphism<BE>
-        + VecZnxDftAutomorphismPlan<BE, Plan = <BE as HalVecZnxDftImpl<BE>>::AutomorphismPlan>
+        + VecZnxDftAutomorphismPlan<BE, Plan = BE::AutomorphismPlan>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>

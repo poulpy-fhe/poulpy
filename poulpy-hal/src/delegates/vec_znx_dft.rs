@@ -204,7 +204,7 @@ impl<B> VecZnxDftAutomorphismPlan<B> for Module<B>
 where
     B: Backend + HalVecZnxDftImpl<B>,
 {
-    type Plan = <B as HalVecZnxDftImpl<B>>::AutomorphismPlan;
+    type Plan = B::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_plan(&self, p: i64) -> Self::Plan {
         B::vec_znx_dft_automorphism_plan(self, p)
