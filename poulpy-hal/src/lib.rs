@@ -45,8 +45,9 @@
 //! 1. **[`api`]** -- Safe, user-facing trait definitions (e.g. [`api::VecZnxAdd`],
 //!    [`api::VmpApplyDftToDft`]). Scheme authors program against these.
 //! 2. **[`oep`]** -- Unsafe extension-point layer of per-family backend traits.
-//!    Backend crates implement only the families they own and may reuse helper
-//!    macros or defaults where convenient.
+//!    Basis methods are required; derived operations carry default bodies
+//!    (the free functions of [`oep::derived`]) a backend may override one
+//!    method at a time. The module docs give the implementation order.
 //! 3. **[`delegates`]** -- Blanket `impl` glue that connects each [`api`] trait to
 //!    the corresponding backend family method on [`layouts::Module`].
 //! 4. **Reference implementations** live in the `poulpy-cpu-ref` crate, which provides
