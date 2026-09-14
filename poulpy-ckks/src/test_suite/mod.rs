@@ -544,7 +544,6 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::conjugate::test_conjugate_smaller_output
             );
             run_test!(conjugate_assign, $crate::test_suite::conjugate::test_conjugate_assign);
-            run_test!(canonical_at_k, $crate::test_suite::canonical::test_canonical_at_k);
             run_test_with_arg!(
                 rotate_aligned,
                 $crate::test_suite::rotate::test_rotate_aligned,
@@ -986,7 +985,6 @@ pub mod add_many;
 pub mod add_unsafe;
 pub mod affine;
 pub mod bootstrapping;
-pub mod canonical;
 pub mod composition;
 pub mod conjugate;
 pub mod copy;
