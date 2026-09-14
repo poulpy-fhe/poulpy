@@ -429,6 +429,47 @@ where
     Ok(())
 }
 
+/// Relabels `ct` at `k`, and when that lowers `k` normalizes at the new `k`,
+/// so the bits the relabel leaves below it are rounded away instead of kept.
+/// Raising `k` leaves canonical data canonical. Every relabel that follows a
+/// write goes through here or [`ckks_set_log_delta_normalized`], so no
+/// operation returns data below the `k` it reports.
+pub(crate) fn ckks_set_k_normalized<BE, M, R>(
+    module: &M,
+    ct: &mut R,
+    k: TorusPrecision,
+    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: poulpy_core::GLWENormalize<BE> + ?Sized,
+    R: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+{
+    let lowered = k.as_usize() < ct.k().as_usize();
+    ct.set_k(k);
+    if lowered {
+        module.glwe_normalize_assign(ct, scratch);
+    }
+}
+
+/// [`SetCKKSInfos::set_log_delta`] with the normalization
+/// [`ckks_set_k_normalized`] applies when the relabel lowers `k`.
+pub(crate) fn ckks_set_log_delta_normalized<BE, M, R>(
+    module: &M,
+    ct: &mut R,
+    log_delta: usize,
+    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: poulpy_core::GLWENormalize<BE> + ?Sized,
+    R: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+{
+    let k = ct.log_budget() + log_delta;
+    let mut meta = ct.meta();
+    meta.log_delta = log_delta;
+    ct.set_meta(meta);
+    ckks_set_k_normalized(module, ct, k.into(), scratch);
+}
+
 #[cfg(test)]
 mod slots_kind_tests {
     use super::SlotsKind::{self, Complex, Real};

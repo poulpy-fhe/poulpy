@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::GLWENormalize;
 use poulpy_core::{
     GLWEBytesOf, GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
@@ -41,7 +42,8 @@ where
         + CKKSAllOpsTmpBytes<BE>
         + CKKSMulOps<BE>
         + CKKSAffineOps<BE>
-        + CKKSPolynomialEvaluationOps<BE>,
+        + CKKSPolynomialEvaluationOps<BE>
+        + GLWENormalize<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {

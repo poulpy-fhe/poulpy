@@ -30,6 +30,7 @@
 //! cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping_e2e -- --nocapture
 
 use crate::api::CKKSEncodingOps;
+use crate::ckks_set_log_delta_normalized;
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
 use std::time::Instant;
@@ -489,7 +490,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     assert_eq!(log_budget_check, k_boot - plan.consumed_bits() - ct_out.log_delta());
     assert_eq!(ct_out.log_budget(), log_budget_check);
 
-    ct_out.set_log_delta(log_delta);
+    ckks_set_log_delta_normalized(&module, &mut ct_out, log_delta, &mut scratch.borrow());
     assert_same_bootstrap::<BE>(&ct_out, &ct_bs);
     let (re_out, im_out) = decrypt(&module, &encoder, &ct_out, &sk, &mut scratch.borrow());
 
@@ -857,7 +858,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         .unwrap();
     println!("[evalround] slots_to_coeffs: {:?}", now.elapsed());
 
-    ct_out.set_log_delta(log_delta);
+    ckks_set_log_delta_normalized(&module, &mut ct_out, log_delta, &mut scratch.borrow());
     assert_same_bootstrap::<BE>(&ct_out, &ct_bs);
     let (re_out, im_out) = decrypt(&module, &encoder, &ct_out, &sk, &mut scratch.borrow());
 
