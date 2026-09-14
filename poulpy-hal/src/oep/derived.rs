@@ -160,6 +160,24 @@ pub fn vmp_apply_dft_to_dft_add_derived<S, BE>(
     }
 }
 
+/// The shift `k` as a normalization offset. `bound` is a width past which the
+/// shift has moved every bit of any source the normalization accepts out of
+/// the destination, so a `k` at or past it yields the same zero as `bound`
+/// itself and the clamp changes no result; it keeps the cast from wrapping for
+/// `k >= 2^63`, which would reverse the shift's direction. For a left shift
+/// the bound is the source width: every term is then an integer. For a right
+/// shift it is the destination width plus [`RSH_DIGIT_BITS`]: a digit is at
+/// most 63 bits, so the whole source then sits below half a unit of the
+/// destination's last limb.
+#[inline]
+fn shift_offset(k: usize, bound: usize) -> i64 {
+    k.min(bound) as i64
+}
+
+/// Bits a right shift adds to the destination width before it is sure to have
+/// zeroed any accepted source; see [`shift_offset`].
+const RSH_DIGIT_BITS: usize = 64;
+
 /// Scratch for the whole left-shift family (ruling R1): `vec_znx_lsh`,
 /// `vec_znx_lsh_add`, `vec_znx_lsh_sub` and `vec_znx_lsh_assign`. The largest
 /// of the four default bodies takes one `res_size`-limb `VecZnx` plus the
@@ -190,7 +208,8 @@ pub fn vec_znx_lsh_derived<S, BE>(
     BE: Backend,
 {
     let res_k: usize = ZnxInfos::size(res) * base2k;
-    <S as HalVecZnxImpl<BE>>::vec_znx_normalize(module, res, base2k, res_k, k as i64, res_col, a, base2k, a_col, scratch);
+    let offset: i64 = shift_offset(k, ZnxInfos::size(a) * base2k);
+    <S as HalVecZnxImpl<BE>>::vec_znx_normalize(module, res, base2k, res_k, offset, res_col, a, base2k, a_col, scratch);
 }
 
 /// Scratch for the whole right-shift family (ruling R1): `vec_znx_rsh`,
@@ -220,7 +239,8 @@ pub fn vec_znx_rsh_derived<S, BE>(
     BE: Backend,
 {
     let res_k: usize = ZnxInfos::size(res) * base2k;
-    <S as HalVecZnxImpl<BE>>::vec_znx_normalize(module, res, base2k, res_k, -(k as i64), res_col, a, base2k, a_col, scratch);
+    let offset: i64 = -shift_offset(k, res_k + RSH_DIGIT_BITS);
+    <S as HalVecZnxImpl<BE>>::vec_znx_normalize(module, res, base2k, res_k, offset, res_col, a, base2k, a_col, scratch);
 }
 
 /// `res += a * 2^k`. Sized by [`vec_znx_lsh_tmp_bytes_derived`].
@@ -357,7 +377,8 @@ pub fn vec_znx_rsh_assign_derived<S, BE>(
     BE: Backend,
 {
     let res_k: usize = ZnxInfos::size(a) * base2k;
-    <S as HalVecZnxImpl<BE>>::vec_znx_normalize_assign(module, base2k, res_k, -(k as i64), a, a_col, scratch);
+    let offset: i64 = -shift_offset(k, res_k + RSH_DIGIT_BITS);
+    <S as HalVecZnxImpl<BE>>::vec_znx_normalize_assign(module, base2k, res_k, offset, a, a_col, scratch);
 }
 
 /// `res = (X^p - 1) * a`: rotate, then subtract the unrotated value.

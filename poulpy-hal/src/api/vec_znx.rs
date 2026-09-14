@@ -127,6 +127,8 @@ pub trait VecZnxLsh<B: Backend> {
     /// A destination shorter than the source is not a truncation: the limbs of
     /// the shifted value that `res` cannot hold are rounded into its last limb
     /// jointly, as the normalization does.
+    /// A `k` beyond `a.size() * base2k` has shifted every bit of `a` past the
+    /// integer part, so `res` is zeroed whatever its own width.
     ///
     /// Scratch is the family's
     /// [`vec_znx_lsh_tmp_bytes`](VecZnxLshTmpBytes::vec_znx_lsh_tmp_bytes) on

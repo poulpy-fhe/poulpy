@@ -1394,7 +1394,13 @@ pub fn test_vec_znx_lsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            for k in 0..res_size * base2k {
+            for k in (0..res_size * base2k).chain([
+                res_size * base2k,
+                res_size * base2k + 1,
+                a_size * base2k,
+                a_size * base2k + 1,
+                usize::MAX,
+            ]) {
                 let mut res_ref = module_host.vec_znx_alloc(cols, res_size);
                 let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
@@ -1431,6 +1437,14 @@ pub fn test_vec_znx_lsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
                     download_vec_znx::<BR>(&res_ref_backend),
                     download_vec_znx::<BT>(&res_test_backend)
                 );
+                // A left shift by the source width has moved every bit of `a`
+                // above the integer part, whatever the destination width.
+                if k >= a_size * base2k {
+                    assert!(
+                        download_vec_znx::<BR>(&res_ref_backend).raw().iter().all(|&x| x == 0),
+                        "k = {k} past the source width must zero the destination"
+                    );
+                }
             }
         }
     }
@@ -1457,7 +1471,7 @@ pub fn test_vec_znx_lsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_lsh_tmp_bytes(4));
 
     for res_size in [1, 2, 3, 4] {
-        for k in 0..base2k * res_size {
+        for k in (0..res_size * base2k).chain([res_size * base2k, res_size * base2k + 1, usize::MAX]) {
             let mut res_ref = module_host.vec_znx_alloc(cols, res_size);
             let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
@@ -1487,6 +1501,12 @@ pub fn test_vec_znx_lsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
                 download_vec_znx::<BR>(&res_ref_backend),
                 download_vec_znx::<BT>(&res_test_backend)
             );
+            if k >= res_size * base2k {
+                assert!(
+                    download_vec_znx::<BR>(&res_ref_backend).raw().iter().all(|&x| x == 0),
+                    "k = {k} past the width must zero the destination"
+                );
+            }
         }
     }
 }
@@ -1519,7 +1539,7 @@ pub fn test_vec_znx_rsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            for k in 0..res_size * base2k {
+            for k in (0..res_size * base2k).chain([res_size * base2k, res_size * base2k + 1, usize::MAX]) {
                 let mut res_ref = module_host.vec_znx_alloc(cols, res_size);
                 let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
@@ -1556,6 +1576,14 @@ pub fn test_vec_znx_rsh<BR: crate::test_suite::TestBackend, BT: crate::test_suit
                     download_vec_znx::<BR>(&res_ref_backend),
                     download_vec_znx::<BT>(&res_test_backend)
                 );
+                // At exactly the width a source just past half a unit of the last
+                // limb still rounds to one, so zero is only promised past it.
+                if k > res_size * base2k {
+                    assert!(
+                        download_vec_znx::<BR>(&res_ref_backend).raw().iter().all(|&x| x == 0),
+                        "k = {k} past the width must zero the destination"
+                    );
+                }
             }
         }
     }
@@ -1582,7 +1610,7 @@ pub fn test_vec_znx_rsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
     let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.vec_znx_rsh_tmp_bytes(4));
 
     for res_size in [1, 2, 3, 4] {
-        for k in 0..base2k * res_size {
+        for k in (0..res_size * base2k).chain([res_size * base2k, res_size * base2k + 1, usize::MAX]) {
             let mut res_ref = module_host.vec_znx_alloc(cols, res_size);
             let mut res_test = module_host.vec_znx_alloc(cols, res_size);
 
@@ -1612,6 +1640,14 @@ pub fn test_vec_znx_rsh_assign<BR: crate::test_suite::TestBackend, BT: crate::te
                 download_vec_znx::<BR>(&res_ref_backend),
                 download_vec_znx::<BT>(&res_test_backend)
             );
+            // At exactly the width a source just past half a unit of the last
+            // limb still rounds to one, so zero is only promised past it.
+            if k > res_size * base2k {
+                assert!(
+                    download_vec_znx::<BR>(&res_ref_backend).raw().iter().all(|&x| x == 0),
+                    "k = {k} past the width must zero the destination"
+                );
+            }
         }
     }
 }
