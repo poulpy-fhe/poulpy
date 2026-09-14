@@ -58,6 +58,34 @@
 
 - HAL runners for every derived operation that lacked one: the shift `_add` / `_sub` forms, `vec_znx_add_scalar_assign`, `vec_znx_idft_normalize_consume`, `vmp_apply_dft_to_dft_add`, `cnv_prepare_self` and `cnv_by_const_apply_add`. `NTT3x42Ifma` gains a HAL sweep, having had none. HAL bench ids follow the api rename.
 
+### Performance
+
+Measured against `main` before this cleanup (`d56615f9`) on the AVX-512 host (Threadripper PRO 7965WX, one pinned core, `RAYON_NUM_THREADS=1`), degree 4096, `base2k = 52`, rank 1; criterion median over four pinned rounds (two concurrent on separate L3 domains with the cores swapped, two serial on one core in both orders), 2 s warm-up and 5 s measurement. The spec's linear-transformation workload has no `poulpy-bench` runner and is not measured.
+
+| op | backend | base (ns) | patch (ns) | delta |
+|---|---|---|---|---|
+| `ckks_add_pt_const_into` | NTT4x30Avx512 | 3,386 | 3,531 | +4.3% |
+| `ckks_mul_pt_const_into` | NTT4x30Avx512 | 35,013 | 48,077 | +37.3% |
+| `ckks_sub_pt_const_into` | NTT4x30Avx512 | 3,386 | 3,530 | +4.2% |
+| `glwe_external_product` | FFT64Avx512 | 60,120 | 61,567 | +2.4% |
+| `glwe_external_product` | NTT4x30Avx512 | 620,644 | 622,267 | +0.3% |
+| `glwe_external_product_assign` | FFT64Avx512 | 59,489 | 61,067 | +2.7% |
+| `glwe_external_product_assign` | NTT4x30Avx512 | 616,557 | 623,362 | +1.1% |
+| `glwe_keyswitch` | FFT64Avx512 | 62,449 | 64,313 | +3.0% |
+| `glwe_keyswitch` | NTT4x30Avx512 | 676,101 | 682,594 | +1.0% |
+| `glwe_mul_plain` | FFT64Avx512 | 110,192 | 100,855 | -8.5% |
+| `glwe_mul_plain` | NTT4x30Avx512 | 891,478 | 899,836 | +0.9% |
+| `glwe_mul_plain_assign` | FFT64Avx512 | 108,388 | 100,269 | -7.5% |
+| `glwe_mul_plain_assign` | NTT4x30Avx512 | 893,992 | 907,466 | +1.5% |
+| `glwe_tensor_apply` | FFT64Avx512 | 129,766 | 117,548 | -9.4% |
+| `glwe_tensor_apply` | NTT4x30Avx512 | 855,258 | 861,772 | +0.8% |
+| `glwe_tensor_relinearize` | FFT64Avx512 | 50,641 | 51,812 | +2.3% |
+| `glwe_tensor_relinearize` | NTT4x30Avx512 | 566,416 | 544,649 | -3.8% |
+| `glwe_tensor_square_apply` | FFT64Avx512 | 106,743 | 102,126 | -4.3% |
+| `glwe_tensor_square_apply` | NTT4x30Avx512 | 743,888 | 745,752 | +0.3% |
+
+`ckks_mul_pt_const_into` on NTT4x30Avx512 is 37% slower. Its `cnv_by_const_apply` kernel, 702 to about 1,150 microseconds on the HAL row at `4096x8`, calls `at()` on both operands for every coefficient of its inner loop, and `ZnxView::at_ptr` has addressed through `VecZnxShape` since the window support landed (#265); hoisting the limb slices out of the coefficient loop is the follow-up. `glwe_mul_plain`, `glwe_mul_plain_assign` and `glwe_tensor_apply` on FFT64Avx512 are 7 to 9% faster. Every other row is within 5%.
+
 ## [0.8.3] - 2026-09-09
 
 Adds opt-in Rayon parallelism to every accelerated CPU family behind a backend-selected task executor, packs NTT4x30 transform words into `u32` pairs on AVX2/AVX-512, fuses paired gadget digits in strided key switching, and resolves evaluation keys per precision, including reading a prepared key at a coarser digit size. Normalization takes an explicit target precision, fixing cross-base and partial-limb noise. CKKS gains `LogN=16` bootstrapping presets, non-power-of-two LUTs, an even Han–Ki EvalMod and a native NTT ModUp; bin-FHE runs on device backends.
