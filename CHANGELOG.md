@@ -42,11 +42,13 @@
 - `poulpy_core::oep::SamplingImpl<BE>` (`scalar_znx_fill_distribution(module, res, col, dist, seed)`, no default body) with the api trait `ScalarZnxFillDistribution` on `Module`: the backend samples a `Distribution` in place from a seed. Public-key encryption draws its ephemeral secret `u` through it, so there is no host round trip and, for a fixed seed, the same stream as before this release. CPU backends take it with `poulpy_cpu_ref::impl_sampling_host!`; `core_backend_test_suite!` gains `scalar_znx_fill_distribution`.
 - `SamplingImpl` gains `vec_znx_add_normal` and `vec_znx_big_add_normal` (seed-based, no default body: a backend samples noise in place, never through the host) with the api traits `VecZnxAddNormal` / `VecZnxBigAddNormal` on `Module`, `NoiseInfos` (moved from `poulpy-hal`), and the statistical conformance tests. Every CPU backend implements them with the existing kernels through the same `poulpy_cpu_ref::impl_sampling_host!`, which takes the `VecZnxBig` word family (`fft64` or `ntt4x30`) as a second argument; the sampled values are bit-identical to before.
 - `glwe_shift_tmp_bytes` takes the destination size, cascading from the HAL shift sizing change; `glwe_lazy_giant_automorphism_from_dft_tmp_bytes` folds in `vec_znx_dft_automorphism_add_with_plan_tmp_bytes`; the GLWE `mul_plain` / `mul_plain_assign` path calls the eager convolution prepare/apply forms.
+- **Breaking:** the OEP traits of `poulpy_core::oep` lose their backend type parameter, as the HAL ones did: `XImpl<BE>` implemented as `impl<BE: Backend> XImpl<BE> for BE` becomes `XImpl` implemented for `BE`, with `Module<Self>` in every signature; bounds read `BE: XImpl`. Every impl instantiated the parameter with `Self`.
 
 ### `poulpy-ckks`
 
 - `ckks_add_pt_const` / `ckks_sub_pt_const` and the polynomial-evaluation constant shift use the shift operations on window views; the `pt_const_bounds` field of the carry-verb macros is gone.
 - `ckks_extract_pt_tmp_bytes`, the `carry_verb` tmp-bytes helpers, `ckks_add_many_tmp_bytes` and the `ckks_{copy,neg,mul_pow2,div_pow2,mul_i,div_i,mod_up}_tmp_bytes` families take the destination size, the same cascade as `poulpy-core`; `eval_baby_linear_combination_tmp_bytes` folds in `cnv_by_const_apply_add_tmp_bytes`.
+- **Breaking:** the OEP traits of `poulpy_ckks::oep` lose their backend type parameter, as the HAL and core ones did; `CKKSEncodingImpl<F>` and `DFTMatrixImpl<F>` keep their scalar parameter only. The `ckks_carry_verb_oep!` template declares `$Impl: Backend` and implements it for `BE`.
 
 ### `poulpy-bin-fhe`
 
