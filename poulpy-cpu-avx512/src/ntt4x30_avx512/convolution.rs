@@ -238,7 +238,6 @@ fn prepare<E: TaskExecutor>(
     left: Option<&mut CnvPVecLBackendMut<'_, NTT4x30Avx512>>,
     right: Option<&mut CnvPVecRBackendMut<'_, NTT4x30Avx512>>,
     a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
-    mask: i64,
     tmp: &mut [u64],
 ) {
     poulpy_hal::layouts::assert_dense(a, "prepare");
@@ -267,11 +266,7 @@ fn prepare<E: TaskExecutor>(
             let mut dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             if limb < min_size {
-                if limb + 1 == min_size {
-                    NTT4x30Avx512::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
-                } else {
-                    NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
-                }
+                NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
                 NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), tmp);
                 if let Some(dst) = dst_l.as_deref_mut() {
                     unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
@@ -300,11 +295,7 @@ fn prepare<E: TaskExecutor>(
         let mut dst_l = left.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         for limb in 0..min_size {
-            if limb + 1 == min_size {
-                NTT4x30Avx512::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
-            } else {
-                NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
-            }
+            NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
             NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), tmp);
             if let Some(dst) = dst_l.as_deref_mut() {
                 unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
@@ -332,20 +323,18 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     res: &mut CnvPVecLBackendMut<'_, NTT4x30Avx512>,
     a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
-    mask: i64,
     tmp: &mut [u64],
 ) {
-    prepare::<E>(module, Some(res), None, a, mask, tmp);
+    prepare::<E>(module, Some(res), None, a, tmp);
 }
 
 pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
     module: &Module<NTT4x30Avx512>,
     res: &mut CnvPVecRBackendMut<'_, NTT4x30Avx512>,
     a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
-    mask: i64,
     tmp: &mut [u64],
 ) {
-    prepare::<E>(module, None, Some(res), a, mask, tmp);
+    prepare::<E>(module, None, Some(res), a, tmp);
 }
 
 pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
@@ -353,10 +342,9 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
     left: &mut CnvPVecLBackendMut<'_, NTT4x30Avx512>,
     right: &mut CnvPVecRBackendMut<'_, NTT4x30Avx512>,
     a: &VecZnxBackendRef<'_, NTT4x30Avx512>,
-    mask: i64,
     tmp: &mut [u64],
 ) {
-    prepare::<E>(module, Some(left), Some(right), a, mask, tmp);
+    prepare::<E>(module, Some(left), Some(right), a, tmp);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {

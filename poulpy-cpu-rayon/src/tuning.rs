@@ -327,7 +327,6 @@ where
         &mut left.to_backend_mut(),
         &mut right.to_backend_mut(),
         &VecZnxToBackendRef::<BE>::to_backend_ref(&small),
-        !0i64,
         &mut scratch.borrow(),
     );
 

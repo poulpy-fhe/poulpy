@@ -289,9 +289,8 @@ where
 
         let a_k = a.k().as_usize();
         // `b` is the plaintext: an integer polynomial consumed at its declared
-        // `encoded_k()` — every encoded limb carries data, so masking at the
-        // effective `k` would zero the last limb's low bits and lose precision
-        // in the convolution.
+        // `encoded_k()`, the width every one of its encoded limbs carries data
+        // across, rather than at the effective `k`.
         let b_k = b.encoded_k().as_usize();
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(b.base2k().as_usize(), ab_base2k);
@@ -304,13 +303,11 @@ where
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size(), PrepareHint::OneShot);
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, b.size(), PrepareHint::OneShot);
 
-        let a_mask = msb_mask_bottom_limb(ab_base2k, a_k);
-        let b_mask = msb_mask_bottom_limb(ab_base2k, b_k);
         let a_backend = a.to_backend_ref();
         let b_backend = b.to_backend_ref();
 
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_left(&mut a_prep, &a_backend.data, a_mask, scratch));
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut b_prep, &b_backend.data, b_mask, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_left(&mut a_prep, &a_backend.data, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut b_prep, &b_backend.data, scratch));
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
@@ -381,15 +378,13 @@ where
         let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, res.size(), PrepareHint::OneShot);
         let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, a.size(), PrepareHint::OneShot);
 
-        let mask_res = msb_mask_bottom_limb(ab_base2k, res_k);
-        let mask_a = msb_mask_bottom_limb(ab_base2k, a_k);
         let a_backend = a.to_backend_ref();
 
         scratch = scratch.apply_mut(|scratch| {
             let res_backend = res.to_backend_ref();
-            self.cnv_prepare_left(&mut res_prep, &res_backend.data, mask_res, scratch)
+            self.cnv_prepare_left(&mut res_prep, &res_backend.data, scratch)
         });
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut a_prep, &a_backend.data, mask_a, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut a_prep, &a_backend.data, scratch));
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
@@ -783,11 +778,10 @@ where
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size, PrepareHint::Reuse);
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, a_size, PrepareHint::Reuse);
 
-        let a_mask = msb_mask_bottom_limb(a_base2k, a_k);
         let a_backend = a.to_backend_ref();
 
         let mut prep_scratch = scratch.borrow();
-        self.cnv_prepare_self(&mut a_prep, &mut b_prep, &a_backend.data, a_mask, &mut prep_scratch);
+        self.cnv_prepare_self(&mut a_prep, &mut b_prep, &a_backend.data, &mut prep_scratch);
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
 
@@ -840,14 +834,12 @@ where
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size, PrepareHint::Reuse);
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, b_size, PrepareHint::Reuse);
 
-        let a_mask = msb_mask_bottom_limb(ab_base2k, a_k);
-        let b_mask = msb_mask_bottom_limb(ab_base2k, b_k);
         let a_backend = a.to_backend_ref();
         let b_backend = b.to_backend_ref();
 
         let mut prep_scratch = scratch.borrow();
-        self.cnv_prepare_left(&mut a_prep, &a_backend.data, a_mask, &mut prep_scratch);
-        self.cnv_prepare_right(&mut b_prep, &b_backend.data, b_mask, &mut prep_scratch);
+        self.cnv_prepare_left(&mut a_prep, &a_backend.data, &mut prep_scratch);
+        self.cnv_prepare_right(&mut b_prep, &b_backend.data, &mut prep_scratch);
 
         glwe_tensor_apply_loop(
             self,
@@ -1269,11 +1261,10 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
 
     let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(module, cols, a_size, PrepareHint::Reuse);
 
-    let a_mask = msb_mask_bottom_limb(ab_base2k, a_k);
     let a_backend = a.to_backend_ref();
 
     let mut prep_scratch = scratch.borrow();
-    module.cnv_prepare_left(&mut a_prep, &a_backend.data, a_mask, &mut prep_scratch);
+    module.cnv_prepare_left(&mut a_prep, &a_backend.data, &mut prep_scratch);
 
     glwe_tensor_apply_loop(
         module,
@@ -1309,17 +1300,8 @@ where
         b_k.div_ceil(b_base2k),
         b.size()
     );
-    let b_mask = msb_mask_bottom_limb(b_base2k, b_k);
     let b_backend = b.to_backend_ref();
-    module.cnv_prepare_right(&mut b_prep.to_backend_mut(), &b_backend.data, b_mask, scratch);
-}
-
-#[inline]
-pub fn msb_mask_bottom_limb(base2k: usize, k: usize) -> i64 {
-    match k % base2k {
-        0 => !0i64,
-        r => (!0i64) << (base2k - r),
-    }
+    module.cnv_prepare_right(&mut b_prep.to_backend_mut(), &b_backend.data, scratch);
 }
 
 pub fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i64) {

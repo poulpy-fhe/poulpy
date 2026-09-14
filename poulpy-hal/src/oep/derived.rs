@@ -656,13 +656,12 @@ pub fn cnv_prepare_self_derived<BE>(
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: HalConvolutionImpl,
 {
-    BE::cnv_prepare_left(module, left, a, mask, scratch);
-    BE::cnv_prepare_right(module, right, a, mask, scratch);
+    BE::cnv_prepare_left(module, left, a, scratch);
+    BE::cnv_prepare_right(module, right, a, scratch);
 }
 
 /// Scratch for [`cnv_apply_dft_add_derived`]: one `res_size`-limb `VecZnxDft`

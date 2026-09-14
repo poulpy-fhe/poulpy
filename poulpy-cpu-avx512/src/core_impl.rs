@@ -6,9 +6,7 @@ use crate::{FFT64Avx512, NTT4x30Avx512};
 #[cfg(feature = "enable-rayon")]
 use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 use poulpy_core::{
-    default::operations::{
-        GLWETensoringDefault, cnv_offset_to_limb_offset, msb_mask_bottom_limb, normalize_input_limb_bound_with_offset,
-    },
+    default::operations::{GLWETensoringDefault, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
     impl_conversion_defaults_full, impl_decryption_defaults_full, impl_encryption_defaults_full,
     impl_gglwe_automorphism_defaults_full, impl_gglwe_external_product_defaults_full, impl_gglwe_keyswitch_defaults_full,
     impl_gglwe_product_digits_strided_default, impl_ggsw_automorphism_defaults_full, impl_ggsw_external_product_defaults_full,
@@ -376,18 +374,8 @@ fn rank_one_tensor_apply<BE, R, A, B>(
     let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, b_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
-        module.cnv_prepare_left(
-            &mut a_prep,
-            a.to_backend_ref().data(),
-            msb_mask_bottom_limb(base2k, a.k().as_usize()),
-            &mut prep_scratch,
-        );
-        module.cnv_prepare_right(
-            &mut b_prep,
-            b.to_backend_ref().data(),
-            msb_mask_bottom_limb(base2k, b.k().as_usize()),
-            &mut prep_scratch,
-        );
+        module.cnv_prepare_left(&mut a_prep, a.to_backend_ref().data(), &mut prep_scratch);
+        module.cnv_prepare_right(&mut b_prep, b.to_backend_ref().data(), &mut prep_scratch);
     }
     rank_one_tensor_finish(
         module,
@@ -436,13 +424,7 @@ fn rank_one_tensor_square<BE, R, A>(
     let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, a_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
-        module.cnv_prepare_self(
-            &mut a_prep,
-            &mut b_prep,
-            a.to_backend_ref().data(),
-            msb_mask_bottom_limb(base2k, a.k().as_usize()),
-            &mut prep_scratch,
-        );
+        module.cnv_prepare_self(&mut a_prep, &mut b_prep, a.to_backend_ref().data(), &mut prep_scratch);
     }
     rank_one_tensor_finish(
         module,

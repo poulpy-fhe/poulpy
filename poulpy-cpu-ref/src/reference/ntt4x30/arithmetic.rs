@@ -59,31 +59,6 @@ pub fn b_from_znx64_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &[i64]) 
     }
 }
 
-/// Converts a vector of `i64` coefficients into q120b format, applying `mask` to each
-/// coefficient before conversion. Equivalent to `b_from_znx64_ref` on `x[j] & mask`.
-pub fn b_from_znx64_masked_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &[i64], mask: i64) {
-    assert!(res.len() >= 4 * nn);
-    assert!(x.len() >= nn);
-
-    // OQ[k] = Q[k] - (2^63 mod Q[k])
-    // Using i64::MIN as u64 = 2^63.
-    let oq: [u64; 4] = std::array::from_fn(|k| {
-        let q = P::Q[k] as u64;
-        q - (i64::MIN as u64 % q)
-    });
-
-    let mask_lo: u64 = i64::MAX as u64; // 0x7FFF_FFFF_FFFF_FFFF
-
-    for j in 0..nn {
-        let xu = (x[j] & mask) as u64;
-        let is_neg = xu > mask_lo;
-        let xl = xu & mask_lo;
-        for k in 0..4 {
-            res[4 * j + k] = xl + if is_neg { oq[k] } else { 0 };
-        }
-    }
-}
-
 /// Converts a vector of `i64` coefficients into q120c format.
 ///
 /// For each coefficient `x[j]` and each prime index `k`:

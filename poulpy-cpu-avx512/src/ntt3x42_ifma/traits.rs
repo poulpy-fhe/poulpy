@@ -17,10 +17,6 @@ pub trait Ntt3x42IfmaDFTExecute<Table> {
 /// `res` has length `3 * a.len()` (one plane per CRT prime).
 pub trait Ntt3x42IfmaFromZnx64 {
     fn ntt3x42_ifma_from_znx64(res: &mut [u64], a: &[i64]);
-
-    fn ntt3x42_ifma_from_znx64_masked(res: &mut [u64], a: &[i64], mask: i64) {
-        super::reference::arithmetic::b_ntt3x42_ifma_from_znx64_masked_ref(a.len(), res, a, mask)
-    }
 }
 
 /// Recover `i128` coefficients from 3-prime CRT format via Garner's algorithm.

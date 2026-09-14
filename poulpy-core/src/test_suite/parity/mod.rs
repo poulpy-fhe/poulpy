@@ -38,6 +38,7 @@ pub use external_product::*;
 pub use keyswitch::*;
 pub use operations::*;
 
+use poulpy_hal::layouts::ZnxViewMut;
 use poulpy_hal::{
     layouts::{Backend, CopyFromHost, CopyToHost, FillUniform, HostDataMut, Module},
     source::Source,
@@ -79,15 +80,34 @@ pub trait ParityBackend: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromH
 
 impl<BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost>> ParityBackend for BE {}
 
-/// Allocates a GLWE on the reference module and fills it with uniform noise.
+/// Allocates a GLWE on the reference module and fills it with uniform noise,
+/// canonical at the `k` it reports.
+///
+/// The operations read an operand at exactly the width it reports, so a
+/// layout whose `k` is not limb-aligned must carry nothing below it: the
+/// padding bits of the last live limb and every limb past it are zero.
 pub(crate) fn ref_glwe<BR, A>(module_ref: &Module<BR>, infos: &A, source: &mut Source) -> BackendGLWE<BR>
 where
     BR: ParityBackend,
     BR::OwnedBuf: HostDataMut,
     A: GLWEInfos,
 {
+    let base2k: usize = infos.base2k().into();
     let mut glwe = module_ref.glwe_alloc_from_infos(infos);
-    glwe.fill_uniform(infos.base2k().into(), source);
+    glwe.fill_uniform(base2k, source);
+    let k: usize = infos.k().as_usize();
+    let live: usize = k.div_ceil(base2k);
+    let pad: usize = (base2k - k % base2k) % base2k;
+    for col in 0..glwe.data.cols() {
+        if pad != 0 && live > 0 {
+            for digit in glwe.data.at_mut(col, live - 1) {
+                *digit &= !0i64 << pad;
+            }
+        }
+        for limb in live..glwe.data.size() {
+            glwe.data.at_mut(col, limb).fill(0);
+        }
+    }
     glwe
 }
 

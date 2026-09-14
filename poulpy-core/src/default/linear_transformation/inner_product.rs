@@ -15,7 +15,6 @@ use poulpy_hal::{
 
 use crate::{
     LinearTransformationGiantStep,
-    default::operations::msb_mask_bottom_limb,
     layouts::IntPolyInfos,
     layouts::{GLWEInfos, GLWEToBackendRef, prepared::PreparedDiagonal},
 };
@@ -111,13 +110,10 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
         .diagonals
         .first()
         .expect("streamed linear transformation giant step has no diagonals");
-    let pt_base2k = first.plaintext.base2k().as_usize();
     // The streamed diagonal is an integer poly encoded across its full physical
-    // width, so mask/size use `max_k`/`max_size`, not the (possibly smaller)
-    // effective `k`/`size`.
-    let pt_k = first.plaintext.encoded_k().as_usize();
+    // width, so its width and size are `max_k`/`max_size`, not the (possibly
+    // smaller) effective `k`/`size`.
     let diagonal_size = first.plaintext.max_size();
-    let mask = msb_mask_bottom_limb(pt_base2k, pt_k);
     let res_dft_size = lhs.size() + diagonal_size - cnv_offset_hi;
     assert_eq!(prod_dft.cols(), cols);
     assert_eq!(prod_dft.size(), res_dft_size);
@@ -138,7 +134,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
         // Stream the RHS: prepare this diagonal on the fly, then reuse the slot.
         {
             let plaintext = d.plaintext.to_backend_ref();
-            module.cnv_prepare_right(&mut diagonal, &plaintext.data, mask, &mut scratch_1.borrow());
+            module.cnv_prepare_right(&mut diagonal, &plaintext.data, &mut scratch_1.borrow());
         }
 
         for col in 0..cols {

@@ -16,13 +16,9 @@ use poulpy_hal::{
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
-use crate::layouts::IntPolyInfos;
-use crate::{
-    default::operations::msb_mask_bottom_limb,
-    layouts::{
-        GLWEInfos, GLWEToBackendRef, LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
-        LinearTransformationLayout, LinearTransformationPlan, prepared::PreparedDiagonal,
-    },
+use crate::layouts::{
+    GLWEInfos, GLWEToBackendRef, LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
+    LinearTransformationLayout, LinearTransformationPlan, prepared::PreparedDiagonal,
 };
 
 impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
@@ -140,9 +136,8 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
     let pt_base2k_usize = pt_base2k.as_usize();
     let pt_k_usize = pt_k.as_usize();
     // The diagonal is an integer poly encoded across its full physical width
-    // (`max_k`), so the bottom-limb mask must span `max_k`, not the (possibly
-    // smaller) effective `k`, otherwise the low limb's data is truncated.
-    let mask = msb_mask_bottom_limb(pt_base2k_usize, first.encoded_k().as_usize());
+    // (`max_k`), so it is consumed at `max_k`, not the (possibly smaller)
+    // effective `k`, otherwise the low limb's data is truncated.
 
     for gs in &lt.giant_steps {
         if gs.diagonals.is_empty() {
@@ -181,7 +176,6 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
             module.cnv_prepare_right(
                 &mut prepared_slot.plaintext.cnv_mut().to_backend_mut(),
                 &plaintext_backend.data,
-                mask,
                 scratch,
             );
         }

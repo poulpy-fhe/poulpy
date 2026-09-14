@@ -140,7 +140,6 @@ use $crate::__private::poulpy_hal::{
 
 use $crate::{RayonTaskExecutor, SendPtr};
 
-
 $crate::__private::poulpy_hal::impl_backend_from!($rayon, $base, $crate::RayonTaskExecutor);
 
 fn base_module(module: &Module<$rayon>) -> &Module<$base> {
@@ -164,8 +163,6 @@ fn base_big_mut<'a>(a: &'a mut VecZnxBigBackendMut<'_, $rayon>) -> VecZnxBigBack
 fn base_big_ref<'a>(a: &'a VecZnxBigBackendRef<'_, $rayon>) -> VecZnxBigBackendRef<'a, $base> {
     VecZnxBig::from_shape(&**a.data(), a.shape())
 }
-
-
 
 $crate::rayon_parallel_binary!($rayon, $base, ZnxAdd, znx_add);
 $crate::rayon_parallel_assign!($rayon, $base, ZnxAddAssign, znx_add_assign);
@@ -256,10 +253,6 @@ impl ReimArith for $rayon {
     #[inline(always)]
     fn reim_from_znx(res: &mut [f64], a: &[i64]) {
         <$base as ReimArith>::reim_from_znx(res, a)
-    }
-    #[inline(always)]
-    fn reim_from_znx_masked(res: &mut [f64], a: &[i64], mask: i64) {
-        <$base as ReimArith>::reim_from_znx_masked(res, a, mask)
     }
     #[inline(always)]
     fn reim_to_znx(res: &mut [i64], divisor: f64, a: &[f64]) {

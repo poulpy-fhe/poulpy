@@ -1103,7 +1103,6 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
         module: &Module<Self>,
         res: &mut CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_prepare_left_tmp_bytes(module.n());
@@ -1113,13 +1112,7 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
             scratch.available(),
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        super::convolution::cnv_prepare_left::<NTT3x42IfmaRayonExecutor>(
-            base_module(module),
-            &mut base_cnv_l_mut(res),
-            a,
-            mask,
-            tmp,
-        )
+        super::convolution::cnv_prepare_left::<NTT3x42IfmaRayonExecutor>(base_module(module), &mut base_cnv_l_mut(res), a, tmp)
     }
 
     fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
@@ -1131,7 +1124,6 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
         module: &Module<Self>,
         res: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_prepare_right_tmp_bytes(module.n());
@@ -1141,13 +1133,7 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
             scratch.available(),
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::convolution::cnv_prepare_right::<NTT3x42IfmaRayonExecutor>(
-            base_module(module),
-            &mut base_cnv_r_mut(res),
-            a,
-            mask,
-            tmp,
-        )
+        super::convolution::cnv_prepare_right::<NTT3x42IfmaRayonExecutor>(base_module(module), &mut base_cnv_r_mut(res), a, tmp)
     }
 
     fn cnv_apply_dft_tmp_bytes(module: &Module<Self>, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
@@ -1435,7 +1421,6 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
         left: &mut CnvPVecLBackendMut<'_, Self>,
         right: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_prepare_self_tmp_bytes(module.n());
@@ -1450,7 +1435,6 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
             &mut base_cnv_l_mut(left),
             &mut base_cnv_r_mut(right),
             a,
-            mask,
             tmp,
         )
     }

@@ -2,10 +2,7 @@
 //! low-digit column selection of the §4.4 hybrid).
 
 use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::{
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
-    msb_mask_bottom_limb,
-};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
@@ -75,7 +72,6 @@ where
     )?;
     let a_size = kk.div_ceil(base2k);
     let b_size = pis[0].size();
-    let b_mask = msb_mask_bottom_limb(base2k, pis[0].max_k().as_usize());
     let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < base2k {
         (0, -((base2k - (cnv_offset % base2k)) as i64))
     } else {
@@ -94,8 +90,7 @@ where
             "{OP}: inconsistent operand sizes"
         );
         let (mut b_prep, next) = rest.take_cnv_pvec_right_scratch(module, 1, b_size, PrepareHint::Reuse);
-        rest = next
-            .apply_mut(|s| module.cnv_prepare_right(&mut b_prep, GLWEToBackendRef::<BE>::to_backend_ref(pi).data(), b_mask, s));
+        rest = next.apply_mut(|s| module.cnv_prepare_right(&mut b_prep, GLWEToBackendRef::<BE>::to_backend_ref(pi).data(), s));
         preps.push(b_prep);
     }
 

@@ -297,9 +297,6 @@ impl NttFromZnx64 for NTT4x30AvxRayon {
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
         <NTT4x30Avx as NttFromZnx64>::ntt_from_znx64(res, a)
     }
-    fn ntt_from_znx64_masked(res: &mut [u64], a: &[i64], mask: i64) {
-        <NTT4x30Avx as NttFromZnx64>::ntt_from_znx64_masked(res, a, mask)
-    }
 }
 
 impl NttToZnx128 for NTT4x30AvxRayon {
@@ -767,7 +764,6 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
@@ -777,7 +773,7 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
             scratch.available(),
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::convolution::cnv_prepare_left::<_, RayonTaskExecutor>(module, res, a, mask, tmp);
+        super::convolution::cnv_prepare_left::<_, RayonTaskExecutor>(module, res, a, tmp);
     }
 
     fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -789,7 +785,6 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
@@ -799,7 +794,7 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
             scratch.available(),
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::convolution::cnv_prepare_right::<_, RayonTaskExecutor>(module, res, a, mask, tmp);
+        super::convolution::cnv_prepare_right::<_, RayonTaskExecutor>(module, res, a, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes(
@@ -993,7 +988,6 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
         left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
@@ -1003,7 +997,7 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
             scratch.available(),
         ) * per_worker;
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        super::convolution::cnv_prepare_self::<_, RayonTaskExecutor>(module, left, right, a, mask, tmp);
+        super::convolution::cnv_prepare_self::<_, RayonTaskExecutor>(module, left, right, a, tmp);
     }
 }
 unsafe impl HalVecZnxBigImpl for NTT4x30AvxRayon {

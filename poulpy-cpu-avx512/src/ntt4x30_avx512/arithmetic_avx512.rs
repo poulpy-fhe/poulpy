@@ -22,7 +22,6 @@
 //! | Function | Trait |
 //! |---|---|
 //! | [`b_from_znx64_avx512`] | `NttFromZnx64` |
-//! | [`b_from_znx64_masked_avx512`] | `NttFromZnx64::ntt_from_znx64_masked` |
 //! | [`c_from_b_avx512`] | `NttCFromB` |
 //! | [`vec_mat1col_product_bbb_avx512`] | `NttMulBbb` |
 //! | [`b_to_znx128_avx512`] | `NttToZnx128` |
@@ -500,49 +499,6 @@ pub(crate) unsafe fn b_from_znx64_avx512(nn: usize, res: &mut [u64], x: &[i64]) 
             let i64_max = _mm256_set1_epi64x(i64::MAX);
             let zero = _mm256_setzero_si256();
             let xval = *x.get_unchecked(idx);
-            let xv = _mm256_set1_epi64x(xval);
-            let xl = _mm256_and_si256(xv, i64_max);
-            let sign = _mm256_cmpgt_epi64(zero, xv);
-            let add = _mm256_and_si256(sign, oq_vec);
-            _mm256_storeu_si256(r_ptr as *mut __m256i, _mm256_add_epi64(xl, add));
-        }
-    }
-}
-
-/// AVX-512F variant of `b_from_znx64_masked_ref`: mask coefficients before q120b conversion.
-///
-/// Caller must ensure AVX-512F support. `res.len() >= 4 * nn`, `x.len() >= nn`.
-#[target_feature(enable = "avx512f")]
-pub(crate) unsafe fn b_from_znx64_masked_avx512(nn: usize, res: &mut [u64], x: &[i64], mask: i64) {
-    assert!(
-        res.len() >= 4 * nn,
-        "b_from_znx64_masked_avx512: res.len()={} < 4*nn={}",
-        res.len(),
-        4 * nn
-    );
-    assert!(x.len() >= nn, "b_from_znx64_masked_avx512: x.len()={} < nn={}", x.len(), nn);
-    unsafe {
-        let oq_vec_512 = bcast_quad(OQ.as_ptr());
-        let i64_max_512 = _mm512_set1_epi64(i64::MAX);
-        let mut r_ptr = res.as_mut_ptr() as *mut __m512i;
-
-        let pairs = nn / 2;
-        let mut idx = 0usize;
-        for _ in 0..pairs {
-            let x0 = *x.get_unchecked(idx) & mask;
-            let x1 = *x.get_unchecked(idx + 1) & mask;
-            let xv = _mm512_set_epi64(x1, x1, x1, x1, x0, x0, x0, x0);
-            let xl = _mm512_and_si512(xv, i64_max_512);
-            let sign_mask = _mm512_cmpgt_epi64_mask(_mm512_setzero_si512(), xv);
-            _mm512_storeu_si512(r_ptr, _mm512_mask_add_epi64(xl, sign_mask, xl, oq_vec_512));
-            r_ptr = r_ptr.add(1);
-            idx += 2;
-        }
-        if nn & 1 != 0 {
-            let oq_vec = _mm256_loadu_si256(OQ.as_ptr() as *const __m256i);
-            let i64_max = _mm256_set1_epi64x(i64::MAX);
-            let zero = _mm256_setzero_si256();
-            let xval = *x.get_unchecked(idx) & mask;
             let xv = _mm256_set1_epi64x(xval);
             let xl = _mm256_and_si256(xv, i64_max);
             let sign = _mm256_cmpgt_epi64(zero, xv);

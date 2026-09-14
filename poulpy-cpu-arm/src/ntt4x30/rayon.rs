@@ -276,9 +276,6 @@ impl NttFromZnx64 for NTT4x30NeonRayon {
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
         <NTT4x30Neon as NttFromZnx64>::ntt_from_znx64(res, a)
     }
-    fn ntt_from_znx64_masked(res: &mut [u64], a: &[i64], mask: i64) {
-        <NTT4x30Neon as NttFromZnx64>::ntt_from_znx64_masked(res, a, mask)
-    }
 }
 
 impl NttToZnx128 for NTT4x30NeonRayon {
