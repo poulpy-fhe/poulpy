@@ -48,6 +48,7 @@
 - `ckks_add_pt_const` / `ckks_sub_pt_const` and the polynomial-evaluation constant shift use the shift operations on window views; the `pt_const_bounds` field of the carry-verb macros is gone.
 - `ckks_extract_pt_tmp_bytes`, the `carry_verb` tmp-bytes helpers, `ckks_add_many_tmp_bytes` and the `ckks_{copy,neg,mul_pow2,div_pow2,mul_i,div_i,mod_up}_tmp_bytes` families take the destination size, the same cascade as `poulpy-core`; `eval_baby_linear_combination_tmp_bytes` folds in `cnv_by_const_apply_add_tmp_bytes`.
 - **Fix:** `ckks_rotate_into` stamped the destination's metadata after the key switch, so the key switch normalized its output at the destination's stale, wider `k` and the result carried key-switch noise below the width it was then labelled with. The stamp now precedes the key switch, which makes the rotation canonical at the `k` it reports. `offset` is computed against the pre-stamp destination, so the alignment is unchanged and the decrypted values are unchanged; the ciphertext bits below `k` are now zero where they previously held noise. A convolution consumer rescales by `2^k`, so those bits were only harmless because `cnv_prepare_left` / `_right` mask them away.
+- **Fix:** `ckks_conjugate_into` had the same write-then-stamp ordering as `ckks_rotate_into` above, and is corrected the same way.
 
 ### `poulpy-bin-fhe`
 
