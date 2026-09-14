@@ -257,6 +257,34 @@ pub fn test_vec_znx_dft_add_assign<BR: crate::test_suite::TestBackend, BT: crate
     }
 }
 
+/// `step == 0` is outside the contract of `vec_znx_dft_apply` and
+/// `vec_znx_dft_copy`. Every kernel must reject it, rather than read the same
+/// source limb into every output limb.
+pub fn test_vec_znx_dft_step_zero_rejected<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VecZnxDftAlloc<BE> + VecZnxDftApply<BE> + VecZnxDftCopy<BE>,
+{
+    let (cols, size) = (1usize, 2usize);
+    let mut source = Source::new([7u8; 32]);
+    let mut a = VecZnxOwned::<i64>::alloc(params.size, cols, size);
+    a.fill_uniform(params.base2k, &mut source);
+    let a_be = upload_vec_znx::<BE>(&a);
+
+    let mut dft = module.vec_znx_dft_alloc(cols, size);
+    let apply_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.vec_znx_dft_apply(0, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&a_be), 0);
+    }))
+    .is_err();
+    assert!(apply_panicked, "vec_znx_dft_apply accepted step == 0 instead of panicking");
+
+    let mut res = module.vec_znx_dft_alloc(cols, size);
+    let copy_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.vec_znx_dft_copy(0, 0, &mut res.to_backend_mut(), 0, &dft.to_backend_ref(), 0);
+    }))
+    .is_err();
+    assert!(copy_panicked, "vec_znx_dft_copy accepted step == 0 instead of panicking");
+}
+
 pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,

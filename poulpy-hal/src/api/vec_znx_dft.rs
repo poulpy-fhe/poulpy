@@ -46,7 +46,7 @@ pub trait VecZnxDftBytesOf {
 /// domain     res: a VecZnxDft; a: a dense VecZnx of the module degree; step >= 1
 /// ensures    limb j of res[res_col] is the forward transform of limb offset + j * step of a[a_col], for as many limbs as res holds; limbs whose source is past a.size() are zero. The representation is opaque, so the statement is on the observable: idft(res) reproduces those limbs of a
 /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
-/// test       test_vec_znx_dft_apply, test_vec_znx_idft_apply
+/// test       test_vec_znx_dft_apply, test_vec_znx_idft_apply, test_vec_znx_dft_step_zero_rejected
 /// ```
 pub trait VecZnxDftApply<B: Backend> {
     fn vec_znx_dft_apply(
@@ -291,7 +291,7 @@ pub trait VecZnxDftSubNegateAssign<B: Backend> {
 /// domain     res, a: VecZnxDft of the same degree; step >= 1
 /// ensures    limb j of res[res_col] holds limb offset + j * step of a[a_col], for as many limbs as res holds; limbs whose source is past a.size() are zero. It moves representation bytes, so both operands are the same backend's
 /// exact      exact, it copies
-/// test       test_vec_znx_dft_copy
+/// test       test_vec_znx_dft_copy, test_vec_znx_dft_step_zero_rejected
 /// ```
 pub trait VecZnxDftCopy<B: Backend> {
     fn vec_znx_dft_copy(

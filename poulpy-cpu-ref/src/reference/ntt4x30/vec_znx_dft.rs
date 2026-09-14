@@ -251,6 +251,7 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_vec_znx_dft_apply");
+    assert!(step >= 1, "ntt4x30_vec_znx_dft_apply: step must be >= 1");
     let a_size = a.size();
     let res_size = res.size();
 
@@ -655,7 +656,8 @@ pub fn ntt4x30_vec_znx_dft_copy<BE>(
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     {
-        assert_eq!(res.n(), a.n())
+        assert_eq!(res.n(), a.n());
+        assert!(step >= 1, "ntt4x30_vec_znx_dft_copy: step must be >= 1");
     }
 
     let steps: usize = a.size().div_ceil(step);

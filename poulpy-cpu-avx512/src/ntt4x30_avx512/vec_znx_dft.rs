@@ -214,6 +214,7 @@ pub(crate) fn vec_znx_dft_apply(
     a_col: usize,
 ) {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
+    assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
     let n = res.n();
     let cols = res.cols();
     let res_size = res.size();
@@ -448,6 +449,7 @@ pub(crate) fn vec_znx_dft_copy(
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
     a_col: usize,
 ) {
+    assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
     let n = res.n();
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size();

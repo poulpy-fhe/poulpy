@@ -608,6 +608,7 @@ pub(crate) fn vec_znx_dft_apply(
     a_col: usize,
 ) {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
+    assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
     let a_size = a.size();
     let res_size = res.size();
     let n = res.n();
@@ -852,7 +853,8 @@ pub(crate) fn vec_znx_dft_copy<E: poulpy_hal::execution::TaskExecutor>(
     a_col: usize,
 ) {
     {
-        assert_eq!(res.n(), a.n())
+        assert_eq!(res.n(), a.n());
+        assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
     }
 
     let n = res.n();
