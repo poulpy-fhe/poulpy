@@ -306,7 +306,7 @@ impl Backend for HostBytesBackend {
     unsafe fn destroy(_handle: NonNull<Self::Handle>) {}
 }
 
-unsafe impl HalModuleImpl<HostBytesBackend> for HostBytesBackend {
+unsafe impl HalModuleImpl for HostBytesBackend {
     fn new(n: u64) -> crate::layouts::Module<Self> {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
         unsafe { crate::layouts::Module::from_nonnull(NonNull::dangling(), n) }

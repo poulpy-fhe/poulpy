@@ -43,7 +43,7 @@ pub unsafe trait CKKSConjugateImpl<BE: Backend>: Backend {
 
 unsafe impl<BE: Backend> CKKSConjugateImpl<BE> for BE
 where
-    BE: Backend + HalVecZnxImpl<BE>,
+    BE: Backend + HalVecZnxImpl,
     Module<BE>: CKKSConjugateDefault<BE> + GLWEAutomorphism<BE> + poulpy_core::GLWEShift<BE>,
 {
     fn ckks_conjugate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize {

@@ -36,46 +36,46 @@ where
     (slice, arena)
 }
 
-unsafe impl HalVecZnxImpl<FFT64Neon> for FFT64Neon {
+unsafe impl HalVecZnxImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
-unsafe impl HalModuleImpl<FFT64Neon> for FFT64Neon {
+unsafe impl HalModuleImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
 }
 
-unsafe impl HalVmpImpl<FFT64Neon> for FFT64Neon {
+unsafe impl HalVmpImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl<FFT64Neon> for FFT64Neon {
+unsafe impl HalConvolutionImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
-unsafe impl HalVecZnxBigImpl<FFT64Neon> for FFT64Neon {
+unsafe impl HalVecZnxBigImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl<FFT64Neon> for FFT64Neon {
+unsafe impl HalSvpImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_svp!(FFT64SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl<FFT64Neon> for FFT64Neon {
+unsafe impl HalVecZnxDftImpl for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }
 
-unsafe impl HalVecZnxImpl<NTT4x30Neon> for NTT4x30Neon {
+unsafe impl HalVecZnxImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
-unsafe impl HalModuleImpl<NTT4x30Neon> for NTT4x30Neon {
+unsafe impl HalModuleImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);
 }
 
 #[cfg(target_arch = "aarch64")]
-unsafe impl HalVmpImpl<NTT4x30Neon> for NTT4x30Neon {
+unsafe impl HalVmpImpl for NTT4x30Neon {
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
         crate::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(module.n())
     }
@@ -166,27 +166,27 @@ unsafe impl HalVmpImpl<NTT4x30Neon> for NTT4x30Neon {
     }
 
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
-        <Self as NTT4x30VmpDefault<Self>>::vmp_zero_default(module, res)
+        <Self as NTT4x30VmpDefault>::vmp_zero_default(module, res)
     }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-unsafe impl HalVmpImpl<NTT4x30Neon> for NTT4x30Neon {
+unsafe impl HalVmpImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vmp!(NTT4x30VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
+unsafe impl HalConvolutionImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_convolution!(NTT4x30ConvolutionDefault);
 }
 
-unsafe impl HalVecZnxBigImpl<NTT4x30Neon> for NTT4x30Neon {
+unsafe impl HalVecZnxBigImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl<NTT4x30Neon> for NTT4x30Neon {
+unsafe impl HalSvpImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_svp!(NTT4x30SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl<NTT4x30Neon> for NTT4x30Neon {
+unsafe impl HalVecZnxDftImpl for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_dft!(NTT4x30VecZnxDftDefault);
 }

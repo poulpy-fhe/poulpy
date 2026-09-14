@@ -14,7 +14,7 @@ use crate::api::CKKSPlaintextVecOps;
 
 impl<BE: Backend + CKKSPlaintextZnxImpl<BE>> CKKSPlaintextVecOps<BE> for Module<BE>
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes,
 {
     fn ckks_extract_pt_tmp_bytes(&self, res_size: usize) -> usize {

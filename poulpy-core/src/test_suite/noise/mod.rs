@@ -57,7 +57,7 @@ pub trait TestBackend:
     + GLWENegateImpl<Self>
     + GLWESubImpl<Self>
     + GLWECopyImpl<Self>
-    + HalVecZnxImpl<Self>
+    + HalVecZnxImpl
     + GLWEExternalProductImpl<Self>
     + GGLWEExternalProductImpl<Self>
     + GGSWExternalProductImpl<Self>
@@ -94,7 +94,7 @@ where
         + GLWENegateImpl<BE>
         + GLWESubImpl<BE>
         + GLWECopyImpl<BE>
-        + HalVecZnxImpl<BE>
+        + HalVecZnxImpl
         + GLWEExternalProductImpl<BE>
         + GGLWEExternalProductImpl<BE>
         + GGSWExternalProductImpl<BE>

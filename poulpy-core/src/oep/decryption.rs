@@ -223,8 +223,7 @@ macro_rules! impl_decryption_defaults_full {
     };
 }
 
-unsafe impl<BE: Backend + HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE>> DecryptionImpl<BE>
-    for BE
+unsafe impl<BE: Backend + HalVecZnxImpl + HalVecZnxBigImpl + HalVecZnxDftImpl + HalSvpImpl> DecryptionImpl<BE> for BE
 where
     Module<BE>: DecryptionDefault<BE>,
 {

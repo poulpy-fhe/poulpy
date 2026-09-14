@@ -22,7 +22,7 @@ pub unsafe trait CKKSCopyImpl<BE: Backend>: Backend {
 
 unsafe impl<BE: Backend> CKKSCopyImpl<BE> for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: crate::default::copy::CKKSCopyDefault<BE> + GLWECopy<BE> + GLWEShift<BE>,
 {
     fn ckks_copy_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {

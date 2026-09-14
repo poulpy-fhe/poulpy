@@ -152,7 +152,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
 
 unsafe impl<BE: Backend> CKKSMulImpl<BE> for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: crate::default::mul::CKKSMulDefault<BE>
         + GLWEAdd<BE>
         + GLWECopy<BE>

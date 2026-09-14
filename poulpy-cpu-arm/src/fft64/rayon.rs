@@ -8,14 +8,14 @@ use crate::FFT64Neon;
 
 fn dft_automorphism(
     module: &Module<FFT64NeonRayon>,
-    plan: &<FFT64Neon as HalVecZnxDftImpl<FFT64Neon>>::AutomorphismPlan,
+    plan: &<FFT64Neon as HalVecZnxDftImpl>::AutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, FFT64NeonRayon>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, FFT64NeonRayon>,
     a_col: usize,
 ) {
     let res_shape = res.shape();
-    <FFT64Neon as HalVecZnxDftImpl<FFT64Neon>>::vec_znx_dft_automorphism_with_plan(
+    <FFT64Neon as HalVecZnxDftImpl>::vec_znx_dft_automorphism_with_plan(
         module.reinterpret(),
         plan,
         &mut VecZnxDft::from_shape(&mut **res.data_mut(), res_shape),

@@ -31,7 +31,7 @@ pub unsafe trait CKKSNegImpl<BE: Backend>: Backend {
 
 unsafe impl<BE: Backend> CKKSNegImpl<BE> for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: crate::default::neg::CKKSNegDefault<BE> + GLWENegate<BE> + GLWEShift<BE>,
 {
     fn ckks_neg_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {

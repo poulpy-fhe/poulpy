@@ -49,7 +49,7 @@ pub unsafe trait CKKSPow2Impl<BE: Backend>: Backend {
 
 unsafe impl<BE: Backend> CKKSPow2Impl<BE> for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: crate::default::pow2::CKKSPow2Default<BE> + GLWECopy<BE> + GLWEShift<BE>,
 {
     fn ckks_mul_pow2_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {

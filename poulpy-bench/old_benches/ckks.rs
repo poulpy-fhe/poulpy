@@ -118,13 +118,13 @@ pub trait CkksBenchBackend:
     + DecryptionImpl<Self>
     + ConversionImpl<Self>
     + AutomorphismImpl<Self>
-    + HalModuleImpl<Self>
-    + HalVecZnxImpl<Self>
-    + HalVecZnxBigImpl<Self>
-    + HalVecZnxDftImpl<Self>
-    + HalSvpImpl<Self>
-    + HalVmpImpl<Self>
-    + HalConvolutionImpl<Self>
+    + HalModuleImpl
+    + HalVecZnxImpl
+    + HalVecZnxBigImpl
+    + HalVecZnxDftImpl
+    + HalSvpImpl
+    + HalVmpImpl
+    + HalConvolutionImpl
     + LinearTransformationImpl<Self>
 where
     Self: Sized,
@@ -178,13 +178,13 @@ where
         + DecryptionImpl<BE>
         + ConversionImpl<BE>
         + AutomorphismImpl<BE>
-        + HalModuleImpl<BE>
-        + HalVecZnxImpl<BE>
-        + HalVecZnxBigImpl<BE>
-        + HalVecZnxDftImpl<BE>
-        + HalSvpImpl<BE>
-        + HalVmpImpl<BE>
-        + HalConvolutionImpl<BE>
+        + HalModuleImpl
+        + HalVecZnxImpl
+        + HalVecZnxBigImpl
+        + HalVecZnxDftImpl
+        + HalSvpImpl
+        + HalVmpImpl
+        + HalConvolutionImpl
         + LinearTransformationImpl<BE>,
     Module<BE>: ModuleNew<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
