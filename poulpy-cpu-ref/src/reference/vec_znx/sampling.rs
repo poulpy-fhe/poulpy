@@ -1,5 +1,5 @@
 use crate::{
-    layouts::{Backend, HostDataMut, NoiseInfos, VecZnxBackendMut, ZnxViewMut},
+    layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxViewMut},
     reference::znx::{znx_add_normal_f64_ref, znx_fill_uniform_ref},
     source::Source,
 };
@@ -37,18 +37,21 @@ pub fn vec_znx_add_normal_ref<'r, BE>(
     base2k: usize,
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
-    noise_infos: NoiseInfos,
+    k: usize,
+    sigma: f64,
+    bound: f64,
     source: &mut Source,
 ) where
     BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
 {
     assert!(
-        (noise_infos.bound.log2().ceil() as i64) < 64,
+        (bound.log2().ceil() as i64) < 64,
         "invalid bound: ceil(log2(bound))={} > 63",
-        (noise_infos.bound.log2().ceil() as i64)
+        (bound.log2().ceil() as i64)
     );
 
-    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
-    znx_add_normal_f64_ref(res.at_mut(res_col, limb), noise_infos.sigma, noise_infos.bound, shift, source)
+    let limb: usize = k.div_ceil(base2k) - 1;
+    let shift: u32 = ((limb + 1) * base2k - k) as u32;
+    znx_add_normal_f64_ref(res.at_mut(res_col, limb), sigma, bound, shift, source)
 }

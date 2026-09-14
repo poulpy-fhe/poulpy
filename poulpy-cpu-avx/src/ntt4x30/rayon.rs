@@ -32,10 +32,10 @@ use poulpy_hal::{
     api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     execution::{SerialTaskExecutor, TaskExecutor},
     layouts::{
-        Backend, DataView, DataViewMut, MatZnxBackendRef, Module, NoiseInfos, ScalarZnx, ScalarZnxBackendRef, ScratchArena,
-        SvpPPol, SvpPPolBackendMut, SvpPPolBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig,
-        VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
-        VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
+        Backend, DataView, DataViewMut, MatZnxBackendRef, Module, ScalarZnx, ScalarZnxBackendRef, ScratchArena, SvpPPol,
+        SvpPPolBackendMut, SvpPPolBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut,
+        VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat,
+        VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };

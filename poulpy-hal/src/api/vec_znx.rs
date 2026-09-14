@@ -1,5 +1,5 @@
 use crate::{
-    layouts::{Backend, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef},
+    layouts::{Backend, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef},
     source::Source,
 };
 
@@ -355,18 +355,5 @@ pub trait VecZnxFillUniformSource<B: Backend> {
         res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
         source: &mut Source,
-    );
-}
-
-#[allow(clippy::too_many_arguments)]
-pub trait VecZnxAddNormalSource<B: Backend> {
-    /// Adds a discrete normal vector scaled by 2^{-k} with the provided standard deviation and bounded to \[-bound, bound\].
-    fn vec_znx_add_normal_source(
-        &self,
-        base2k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        source_xe: &mut Source,
     );
 }

@@ -9,7 +9,7 @@ use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     execution::SerialTaskExecutor,
     layouts::{
-        Backend, DataView, DataViewMut, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena,
+        Backend, DataView, DataViewMut, MatZnxBackendRef, MatZnxInfos, Module, ScalarZnxBackendRef, ScratchArena,
         SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
         VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },

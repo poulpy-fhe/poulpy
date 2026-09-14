@@ -1,15 +1,14 @@
 use crate::{
     api::{
-        ScalarZnxAutomorphism, VecZnxAdd, VecZnxAddAssign, VecZnxAddNormalSource, VecZnxAddScalarAssign, VecZnxAutomorphism,
-        VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxFillUniformSource, VecZnxLsh, VecZnxLshAdd,
-        VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign,
-        VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign,
-        VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd,
-        VecZnxRshAssign, VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing,
-        VecZnxZero,
+        ScalarZnxAutomorphism, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAutomorphism, VecZnxAutomorphismAssign,
+        VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxFillUniformSource, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign,
+        VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
+        VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
+        VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshAssign, VecZnxRshSub,
+        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
     },
     layouts::{
-        Backend, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
+        Backend, Module, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
         scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     oep::HalVecZnxImpl,
@@ -438,19 +437,5 @@ impl_vec_znx_delegate!(
         source: &mut Source,
     ) {
         B::vec_znx_fill_uniform(self, base2k, k, res, res_col, source.new_seed());
-    }
-);
-
-impl_vec_znx_delegate!(
-    VecZnxAddNormalSource<B>,
-    fn vec_znx_add_normal_source(
-        &self,
-        base2k: usize,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        source_xe: &mut Source,
-    ) {
-        B::vec_znx_add_normal(self, base2k, res, res_col, noise_infos, source_xe.new_seed());
     }
 );
