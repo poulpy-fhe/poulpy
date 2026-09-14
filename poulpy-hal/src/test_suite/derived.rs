@@ -1877,6 +1877,106 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
     }
 }
 
+/// `vec_znx_dft_automorphism`: the OEP default body against the plan form it
+/// abbreviates, `vec_znx_dft_automorphism_plan` then
+/// `vec_znx_dft_automorphism_with_plan` through the public api traits, and the
+/// api entry itself, which routes through the OEP. DFT-domain results are
+/// compared after `idft` and `big_normalize`.
+pub fn test_vec_znx_dft_automorphism_derived<BE: TestBackend + HalVecZnxDftImpl<BE>>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + VecZnxAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftAutomorphismPlan<BE, Plan = <BE as HalVecZnxDftImpl<BE>>::AutomorphismPlan>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k: usize = params.base2k;
+    let mut source: Source = Source::new([1u8; 32]);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(module.n() as u64);
+    let mut oracle_scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
+    let cols: usize = 2;
+    for (res_size, a_size) in [(3usize, 3usize), (2, 4), (4, 2)] {
+        let mut a = module_host.vec_znx_alloc(cols, a_size);
+        a.fill_uniform(base2k, &mut source);
+        let a_backend = upload_vec_znx::<BE>(&a);
+        let mut a_dft = module.vec_znx_dft_alloc(cols, a_size);
+        for col in 0..cols {
+            module.vec_znx_dft_apply(
+                1,
+                0,
+                &mut a_dft.to_backend_mut(),
+                col,
+                &vec_znx_backend_ref::<BE>(&a_backend),
+                col,
+            );
+        }
+        for p in [1i64, 5, -3] {
+            for col in 0..cols {
+                let mut have_dft = module.vec_znx_dft_alloc(cols, res_size);
+                let mut api_dft = module.vec_znx_dft_alloc(cols, res_size);
+                let mut want_dft = module.vec_znx_dft_alloc(cols, res_size);
+                crate::oep::vec_znx_dft_automorphism_derived::<BE, BE>(
+                    module,
+                    p,
+                    &mut have_dft.to_backend_mut(),
+                    col,
+                    &a_dft.to_backend_ref(),
+                    col,
+                );
+                module.vec_znx_dft_automorphism(p, &mut api_dft.to_backend_mut(), col, &a_dft.to_backend_ref(), col);
+                let plan = module.vec_znx_dft_automorphism_plan(p);
+                module.vec_znx_dft_automorphism_with_plan(
+                    &plan,
+                    &mut want_dft.to_backend_mut(),
+                    col,
+                    &a_dft.to_backend_ref(),
+                    col,
+                );
+                let res_template = module_host.vec_znx_alloc(cols, res_size);
+                let mut have_backend = upload_vec_znx::<BE>(&res_template);
+                let mut api_backend = upload_vec_znx::<BE>(&res_template);
+                let mut want_backend = upload_vec_znx::<BE>(&res_template);
+                let mut big = module.vec_znx_big_alloc(1, res_size);
+                for (dft, out) in [
+                    (&mut have_dft, &mut have_backend),
+                    (&mut api_dft, &mut api_backend),
+                    (&mut want_dft, &mut want_backend),
+                ] {
+                    module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), col);
+                    module.vec_znx_big_normalize(
+                        &mut vec_znx_backend_mut::<BE>(out),
+                        base2k,
+                        res_size * base2k,
+                        0,
+                        col,
+                        &big.to_backend_ref(),
+                        base2k,
+                        0,
+                        &mut oracle_scratch.borrow(),
+                    );
+                }
+                let want = download_vec_znx::<BE>(&want_backend);
+                assert_eq!(
+                    want,
+                    download_vec_znx::<BE>(&have_backend),
+                    "vec_znx_dft_automorphism: default body != plan form (p {p} col {col} res_size {res_size} a_size {a_size})"
+                );
+                assert_eq!(
+                    want,
+                    download_vec_znx::<BE>(&api_backend),
+                    "vec_znx_dft_automorphism: api entry != plan form (p {p} col {col} res_size {res_size} a_size {a_size})"
+                );
+            }
+        }
+    }
+}
+
 /// `svp_apply_dft`: the OEP default body against an independent oracle,
 /// `vec_znx_dft_apply` into a fresh `VecZnxDft`, then `svp_apply_dft_to_dft`,
 /// through the public api traits. DFT-domain results are compared after

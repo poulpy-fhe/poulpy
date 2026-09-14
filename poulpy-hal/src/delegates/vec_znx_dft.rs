@@ -225,6 +225,16 @@ where
     ) {
         B::vec_znx_dft_automorphism_with_plan(self, plan, res, res_col, a, a_col);
     }
+    fn vec_znx_dft_automorphism(
+        &self,
+        p: i64,
+        res: &mut VecZnxDftBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, B>,
+        a_col: usize,
+    ) {
+        B::vec_znx_dft_automorphism(self, p, res, res_col, a, a_col);
+    }
 
     fn vec_znx_dft_automorphism_add_with_plan(
         &self,

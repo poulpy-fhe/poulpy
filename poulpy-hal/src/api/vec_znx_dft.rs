@@ -426,10 +426,10 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     /// definition vec_znx_dft_automorphism_with_plan(vec_znx_dft_automorphism_plan(p), res, res_col, a, a_col)
     /// domain     res, a: VecZnxDft of the module degree; p odd
     /// ensures    as for vec_znx_dft_automorphism_with_plan, with the plan built and dropped inside the call; prefer the plan form when one p is reused
-    /// fallback   trait default body: build the plan, then apply it
-    /// override   allowed, though building a plan is the cheap half
+    /// fallback   OEP default body: build the plan, apply it, drop it
+    /// override   allowed, scratch-free
     /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
-    /// test       test_vec_znx_dft_automorphism
+    /// test       test_vec_znx_dft_automorphism, test_vec_znx_dft_automorphism_derived
     /// ```
     fn vec_znx_dft_automorphism(
         &self,
@@ -438,8 +438,5 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, B>,
         a_col: usize,
-    ) {
-        let plan = self.vec_znx_dft_automorphism_plan(p);
-        self.vec_znx_dft_automorphism_with_plan(&plan, res, res_col, a, a_col);
-    }
+    );
 }

@@ -596,6 +596,23 @@ pub fn vec_znx_idft_normalize_consume_derived<S, BE>(
     );
 }
 
+/// `res = tau_p(a)`: build the plan for `p`, apply it, drop it.
+#[doc(hidden)]
+pub fn vec_znx_dft_automorphism_derived<S, BE>(
+    module: &Module<BE>,
+    p: i64,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    a_col: usize,
+) where
+    S: HalVecZnxDftImpl<BE>,
+    BE: Backend,
+{
+    let plan = <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_automorphism_plan(module, p);
+    <S as HalVecZnxDftImpl<BE>>::vec_znx_dft_automorphism_with_plan(module, &plan, res, res_col, a, a_col);
+}
+
 /// Scratch for [`vec_znx_dft_automorphism_add_with_plan_derived`]: the limbs
 /// the accumulation touches, as one `VecZnxDft`.
 #[doc(hidden)]
