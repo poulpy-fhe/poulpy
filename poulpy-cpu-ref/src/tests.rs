@@ -12,6 +12,7 @@ use crate::{FFT64Ref, NTT4x30Ref};
 mod ckks_tests;
 #[cfg(feature = "enable-core")]
 mod delegating_backend;
+mod derived_scratch;
 
 #[test]
 fn test_convolution_by_const_fft64_ref() {

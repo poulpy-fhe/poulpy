@@ -178,14 +178,6 @@ impl<'a, B: Backend> ScratchArena<'a, B> {
 
 #[inline]
 fn align_up<B: Backend>(offset: usize) -> usize {
-    let align = B::SCRATCH_ALIGN;
-    assert!(align != 0, "B::SCRATCH_ALIGN must be non-zero");
-    let rem = offset % align;
-    if rem == 0 {
-        offset
-    } else {
-        offset
-            .checked_add(align - rem)
-            .expect("scratch arena alignment overflows usize")
-    }
+    assert!(B::SCRATCH_ALIGN != 0, "B::SCRATCH_ALIGN must be non-zero");
+    B::scratch_aligned(offset)
 }

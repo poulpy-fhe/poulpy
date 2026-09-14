@@ -22,7 +22,10 @@
 //!   carving and `Backend::bytes_of_*`;
 //! - no `HostData*` bound, no family kernel trait, no knowledge of a prepared
 //!   representation;
-//! - `<op>_tmp_bytes_derived` reports exactly the scratch `<op>_derived` takes.
+//! - `<op>_tmp_bytes_derived` reports exactly the scratch `<op>_derived` takes;
+//!   when it adds a nested call's scratch to a temporary of its own, the
+//!   temporary is rounded with `Backend::scratch_aligned` first, since every
+//!   carve from the arena realigns its start.
 //!
 //! These functions are `pub` so that `poulpy_hal::test_suite` can call the
 //! decomposition directly and pin it against a hand-built oracle, which is
@@ -60,7 +63,7 @@ where
     BE: Backend,
 {
     let a_dft_size = a_size.min(b_rows);
-    BE::bytes_of_vec_znx_dft(module.n(), b_cols_in, a_dft_size)
+    BE::scratch_aligned(BE::bytes_of_vec_znx_dft(module.n(), b_cols_in, a_dft_size))
         + <S as HalVmpImpl<BE>>::vmp_apply_dft_to_dft_tmp_bytes(
             module, res_size, a_dft_size, b_rows, b_cols_in, b_cols_out, b_size,
         )
@@ -120,7 +123,7 @@ where
     S: HalVmpImpl<BE>,
     BE: Backend,
 {
-    BE::bytes_of_vec_znx_dft(module.n(), b_cols_out, res_size)
+    BE::scratch_aligned(BE::bytes_of_vec_znx_dft(module.n(), b_cols_out, res_size))
         + <S as HalVmpImpl<BE>>::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
 }
 
@@ -189,7 +192,8 @@ where
     S: HalVecZnxImpl<BE>,
     BE: Backend,
 {
-    BE::bytes_of_vec_znx(module.n(), 1, res_size) + <S as HalVecZnxImpl<BE>>::vec_znx_normalize_tmp_bytes(module)
+    BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), 1, res_size))
+        + <S as HalVecZnxImpl<BE>>::vec_znx_normalize_tmp_bytes(module)
 }
 
 /// `res = a * 2^k` at the same radix: a normalization with `offset = +k`.
@@ -220,7 +224,8 @@ where
     S: HalVecZnxImpl<BE>,
     BE: Backend,
 {
-    BE::bytes_of_vec_znx(module.n(), 1, res_size) + <S as HalVecZnxImpl<BE>>::vec_znx_normalize_tmp_bytes(module)
+    BE::scratch_aligned(BE::bytes_of_vec_znx(module.n(), 1, res_size))
+        + <S as HalVecZnxImpl<BE>>::vec_znx_normalize_tmp_bytes(module)
 }
 
 /// `res = a / 2^k` at the same radix: a normalization with `offset = -k`.
@@ -550,7 +555,8 @@ where
     S: HalVecZnxDftImpl<BE>,
     BE: Backend,
 {
-    BE::bytes_of_vec_znx_big(module.n(), 1, a_size) + <S as HalVecZnxBigImpl<BE>>::vec_znx_big_normalize_tmp_bytes(module)
+    BE::scratch_aligned(BE::bytes_of_vec_znx_big(module.n(), 1, a_size))
+        + <S as HalVecZnxBigImpl<BE>>::vec_znx_big_normalize_tmp_bytes(module)
 }
 
 /// `res = normalize(idft(a) + addend)`, clobbering `a`.
@@ -699,7 +705,7 @@ where
     S: HalConvolutionImpl<BE>,
     BE: Backend,
 {
-    BE::bytes_of_vec_znx_dft(module.n(), 1, res_size)
+    BE::scratch_aligned(BE::bytes_of_vec_znx_dft(module.n(), 1, res_size))
         + <S as HalConvolutionImpl<BE>>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
 }
 
@@ -794,7 +800,7 @@ where
     S: HalConvolutionImpl<BE>,
     BE: Backend,
 {
-    BE::bytes_of_vec_znx_big(module.n(), 1, res_size)
+    BE::scratch_aligned(BE::bytes_of_vec_znx_big(module.n(), 1, res_size))
         + <S as HalConvolutionImpl<BE>>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
 }
 
