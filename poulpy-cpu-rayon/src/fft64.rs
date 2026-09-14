@@ -638,7 +638,7 @@ unsafe impl HalVmpImpl for $rayon {
         // `vmp_apply_dft_to_dft_tmp_bytes` below is this backend's own
         // override, already scaled by `ScratchWorkers::VMP`; this reproduces
         // the deleted `_add_tmp_bytes_default` total (`D + VMP * T`) exactly.
-        vmp_apply_dft_to_dft_add_tmp_bytes_derived::<Self, Self>(
+        vmp_apply_dft_to_dft_add_tmp_bytes_derived::<Self>(
             module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
         )
     }

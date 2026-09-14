@@ -1403,7 +1403,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
         NTT4x30Avx::vec_znx_dft_zero(base_module(module), &mut base_dft_mut(res), res_col)
     }
 
-    type AutomorphismPlan = NTT4x30Avx::AutomorphismPlan;
+    type AutomorphismPlan = <NTT4x30Avx as HalVecZnxDftImpl>::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
         NTT4x30Avx::vec_znx_dft_automorphism_plan(base_module(module), p)
