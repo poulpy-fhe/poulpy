@@ -12,18 +12,18 @@ use crate::GLWEToBackendRef;
 use crate::{CKKSInfos, SetCKKSInfos, SlotsKind, checked_log_budget_sub, ckks_offset_unary};
 
 pub trait CKKSImagDefault<BE: Backend> {
-    fn ckks_mul_i_tmp_bytes_default(&self) -> usize
+    fn ckks_mul_i_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Self: GLWERotate<BE> + GLWEShift<BE>,
     {
-        self.glwe_rotate_tmp_bytes().max(self.glwe_shift_tmp_bytes())
+        self.glwe_rotate_tmp_bytes().max(self.glwe_shift_tmp_bytes(res_size))
     }
 
-    fn ckks_div_i_tmp_bytes_default(&self) -> usize
+    fn ckks_div_i_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Self: GLWERotate<BE> + GLWEShift<BE>,
     {
-        self.glwe_rotate_tmp_bytes().max(self.glwe_shift_tmp_bytes())
+        self.glwe_rotate_tmp_bytes().max(self.glwe_shift_tmp_bytes(res_size))
     }
 
     fn ckks_mul_i_into_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

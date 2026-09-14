@@ -3,9 +3,12 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
-    api::{ModuleNew, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxDftAlloc},
+    api::{
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft, SvpApplyDftTmpBytes, SvpApplyDftToDft,
+        SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxDftAlloc,
+    },
     layouts::{
-        Backend, Module, PrepareHint, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxDftOwned,
+        Backend, Module, PrepareHint, ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxDftOwned,
         VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
     source::Source,
@@ -39,7 +42,8 @@ where
 
 pub fn runner_svp_apply_dft<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: SvpApplyDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: SvpApplyDft<B> + SvpApplyDftTmpBytes + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     B: Backend<ZnxWord = i64>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -49,13 +53,14 @@ where
     let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols, sweep.size);
     let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<B>(&a);
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.svp_apply_dft_tmp_bytes(sweep.size));
 
     bencher.iter(|| {
         let svp = svp.to_backend_ref();
         let a = vec_znx_backend_ref::<B>(&a);
         let mut res = res.to_backend_mut();
         for j in 0..sweep.cols {
-            module.svp_apply_dft(&mut res, j, &svp, j, &a, j);
+            module.svp_apply_dft(&mut res, j, &svp, j, &a, j, &mut scratch.borrow());
         }
         black_box(());
     });

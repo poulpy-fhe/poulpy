@@ -3,10 +3,9 @@
 use poulpy_cpu_ref::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
     ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
-    ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
-    ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
-    ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref,
-    znx_rotate, znx_zero_ref,
+    ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
+    ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign,
+    ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref, znx_rotate, znx_zero_ref,
 };
 
 use super::NTT4x30Neon;
@@ -24,14 +23,12 @@ use crate::neon::{
         znx_extract_digit_addmul_neon as kn_extract_digit_addmul, znx_normalize_digit_neon as kn_normalize_digit,
         znx_normalize_final_step_assign_neon as kn_normalize_final_step_assign,
         znx_normalize_final_step_neon as kn_normalize_final_step,
-        znx_normalize_final_step_sub_neon as kn_normalize_final_step_sub,
         znx_normalize_first_step_assign_neon as kn_normalize_first_step_assign,
         znx_normalize_first_step_carry_only_neon as kn_normalize_first_step_carry_only,
         znx_normalize_first_step_neon as kn_normalize_first_step,
         znx_normalize_middle_step_assign_neon as kn_normalize_middle_step_assign,
         znx_normalize_middle_step_carry_only_neon as kn_normalize_middle_step_carry_only,
         znx_normalize_middle_step_neon as kn_normalize_middle_step,
-        znx_normalize_middle_step_sub_neon as kn_normalize_middle_step_sub,
     },
 };
 #[cfg(not(target_arch = "aarch64"))]
@@ -41,15 +38,14 @@ use poulpy_cpu_ref::reference::znx::{
     znx_mul_add_power_of_two_ref as kn_mul_add_p2, znx_mul_power_of_two_assign_ref as kn_mul_p2_assign,
     znx_mul_power_of_two_ref as kn_mul_p2, znx_negate_assign_ref as kn_negate_assign, znx_negate_ref as kn_negate,
     znx_normalize_digit_ref as kn_normalize_digit, znx_normalize_final_step_assign_ref as kn_normalize_final_step_assign,
-    znx_normalize_final_step_ref as kn_normalize_final_step, znx_normalize_final_step_sub_ref as kn_normalize_final_step_sub,
+    znx_normalize_final_step_ref as kn_normalize_final_step,
     znx_normalize_first_step_assign_ref as kn_normalize_first_step_assign,
     znx_normalize_first_step_carry_only_ref as kn_normalize_first_step_carry_only,
     znx_normalize_first_step_ref as kn_normalize_first_step,
     znx_normalize_middle_step_assign_ref as kn_normalize_middle_step_assign,
     znx_normalize_middle_step_carry_only_ref as kn_normalize_middle_step_carry_only,
-    znx_normalize_middle_step_ref as kn_normalize_middle_step, znx_normalize_middle_step_sub_ref as kn_normalize_middle_step_sub,
-    znx_sub_assign_ref as kn_sub_assign, znx_sub_negate_assign_ref as kn_sub_negate_assign, znx_sub_ref as kn_sub,
-    znx_switch_ring_ref as kn_switch_ring,
+    znx_normalize_middle_step_ref as kn_normalize_middle_step, znx_sub_assign_ref as kn_sub_assign,
+    znx_sub_negate_assign_ref as kn_sub_negate_assign, znx_sub_ref as kn_sub, znx_switch_ring_ref as kn_switch_ring,
 };
 
 impl ZnxAdd for NTT4x30Neon {
@@ -182,20 +178,6 @@ impl ZnxNormalizeFinalStep for NTT4x30Neon {
     #[inline(always)]
     fn znx_normalize_final_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         kn_normalize_final_step::<OVERWRITE>(base2k, lsh, x, a, carry);
-    }
-}
-
-impl ZnxNormalizeMiddleStepSub for NTT4x30Neon {
-    #[inline(always)]
-    fn znx_normalize_middle_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        kn_normalize_middle_step_sub(base2k, lsh, x, a, carry);
-    }
-}
-
-impl ZnxNormalizeFinalStepSub for NTT4x30Neon {
-    #[inline(always)]
-    fn znx_normalize_final_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        kn_normalize_final_step_sub(base2k, lsh, x, a, carry);
     }
 }
 

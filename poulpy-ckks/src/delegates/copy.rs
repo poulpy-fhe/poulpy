@@ -11,8 +11,8 @@ impl<BE: Backend + CKKSCopyImpl<BE>> CKKSCopyOps<BE> for Module<BE>
 where
     Module<BE>: GLWECopy<BE> + GLWEShift<BE>,
 {
-    fn ckks_copy_tmp_bytes(&self) -> usize {
-        BE::ckks_copy_tmp_bytes_impl(self)
+    fn ckks_copy_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_copy_tmp_bytes_impl(self, res_size)
     }
 
     fn ckks_copy<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

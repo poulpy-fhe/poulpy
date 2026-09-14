@@ -703,15 +703,105 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
     }
 }
 
+/// In-place counterpart of [`vec_znx_normalize_inter_base2k`] for a non-positive
+/// `res_offset`, that is a right shift.
+///
+/// Source and destination are the same column. With `res_offset <= 0` every
+/// destination limb sits at an index at least as high as the source limb it is
+/// written from, and the loop walks destinations downward, so each limb is read
+/// before it is overwritten. A positive offset reverses that and is rejected:
+/// the carry has to flow from the least significant limb upward, so the loop
+/// order cannot be reversed to compensate.
+#[allow(clippy::too_many_arguments)]
+unsafe fn vec_znx_normalize_assign_inter_base2k<BE>(
+    base2k: usize,
+    res_ptr: *mut i64,
+    res_shape: VecZnxShape,
+    res_col: usize,
+    res_offset: i64,
+    coeff_start: usize,
+    coeff_len: usize,
+    carry: &mut [i64],
+) where
+    BE: Backend<ZnxWord = i64>
+        + ZnxZero
+        + ZnxNormalizeFirstStepCarryOnly
+        + ZnxNormalizeMiddleStepCarryOnly
+        + ZnxNormalizeMiddleStep
+        + I64NormalizeOps,
+{
+    assert!(
+        res_offset <= 0,
+        "vec_znx_normalize_assign: only a non-positive offset is in place"
+    );
+
+    let size: usize = res_shape.size();
+    let (carry, _) = carry.split_at_mut(coeff_len);
+
+    let mut lsh: i64 = res_offset % base2k as i64;
+    let mut limbs_offset: i64 = res_offset / base2k as i64;
+    if res_offset < 0 && lsh != 0 {
+        lsh = (lsh + base2k as i64) % (base2k as i64);
+        limbs_offset -= 1;
+    }
+    let lsh_pos: usize = lsh as usize;
+
+    let res_end: usize = (-limbs_offset).clamp(0, size as i64) as usize;
+    let res_start: usize = (size as i64 - limbs_offset).clamp(0, size as i64) as usize;
+    let a_end: usize = limbs_offset.clamp(0, size as i64) as usize;
+    let a_start: usize = (size as i64 + limbs_offset).clamp(0, size as i64) as usize;
+
+    let mut res = unsafe { VecZnxRangeMut::new(res_ptr, res_shape, res_col, coeff_start, coeff_len) };
+    let limb = |j: usize| -> &[i64] {
+        unsafe { std::slice::from_raw_parts(res_ptr.add(res_shape.scalar_offset(res_col, j) + coeff_start), coeff_len) }
+    };
+
+    // Carry over the limbs that fall off the least significant end.
+    let a_out_range: usize = size.saturating_sub(a_start);
+    for j in 0..a_out_range {
+        if j == 0 {
+            BE::znx_normalize_first_step_carry_only(base2k, lsh_pos, limb(size - j - 1), carry);
+        } else {
+            BE::znx_normalize_middle_step_carry_only(base2k, lsh_pos, limb(size - j - 1), carry);
+        }
+    }
+    if a_out_range == 0 {
+        BE::znx_zero(carry);
+    }
+
+    for j in res_start..size {
+        BE::znx_zero(res.at_mut(j));
+    }
+
+    // Overlap. `res_start - a_start == -limbs_offset >= 0`, so the source limb
+    // of iteration `j` was already read by the time it is written.
+    let mid_range: usize = a_start.saturating_sub(a_end);
+    for j in 0..mid_range {
+        let res_limb: usize = res_start - j - 1;
+        let src: &[i64] = limb(a_start - j - 1);
+        BE::znx_normalize_middle_step::<true>(base2k, lsh_pos, res.at_mut(res_limb), src, carry);
+    }
+
+    // Carry into the vacated most significant limbs.
+    for j in (0..res_end).rev() {
+        BE::znx_extract_digit_mul(base2k, 0, res.at_mut(j), carry);
+    }
+}
+
 pub fn vec_znx_normalize_assign<'r, BE>(
     base2k: usize,
     res_k: usize,
+    res_offset: i64,
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     carry: &mut [i64],
 ) where
     BE: Backend<ZnxWord = i64>
         + I64NormalizeOps
+        + ZnxZero
+        + ZnxNormalizeFirstStepCarryOnly
+        + ZnxNormalizeMiddleStepCarryOnly
+        + ZnxNormalizeMiddleStep
         + ZnxNormalizeFirstStepAssign
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign,
@@ -719,13 +809,15 @@ pub fn vec_znx_normalize_assign<'r, BE>(
 {
     assert!(res_k <= res.size() * base2k);
     let n = res.n();
-    vec_znx_normalize_assign_range::<BE>(base2k, res_k, res, res_col, 0, n, carry)
+    vec_znx_normalize_assign_range::<BE>(base2k, res_k, res_offset, res, res_col, 0, n, carry)
 }
 
 /// [`vec_znx_normalize_assign`] restricted to `[coeff_start, coeff_start + coeff_len)`.
+#[allow(clippy::too_many_arguments)]
 fn vec_znx_normalize_assign_range<'r, BE>(
     base2k: usize,
     res_k: usize,
+    res_offset: i64,
     res: &mut VecZnxBackendMut<'r, BE>,
     res_col: usize,
     coeff_start: usize,
@@ -734,6 +826,10 @@ fn vec_znx_normalize_assign_range<'r, BE>(
 ) where
     BE: Backend<ZnxWord = i64>
         + I64NormalizeOps
+        + ZnxZero
+        + ZnxNormalizeFirstStepCarryOnly
+        + ZnxNormalizeMiddleStepCarryOnly
+        + ZnxNormalizeMiddleStep
         + ZnxNormalizeFirstStepAssign
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign,
@@ -746,7 +842,19 @@ fn vec_znx_normalize_assign_range<'r, BE>(
 
     let res_shape = res.shape();
     let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
-    unsafe { vec_znx_normalize_assign_range_raw::<BE>(ptr, res_shape, base2k, res_k, res_col, coeff_start, coeff_len, carry) }
+    unsafe {
+        vec_znx_normalize_assign_range_raw::<BE>(
+            ptr,
+            res_shape,
+            base2k,
+            res_k,
+            res_offset,
+            res_col,
+            coeff_start,
+            coeff_len,
+            carry,
+        )
+    }
 }
 
 /// Normalizes one coefficient range in a raw host output.
@@ -769,6 +877,7 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
     res_shape: VecZnxShape,
     base2k: usize,
     res_k: usize,
+    res_offset: i64,
     res_col: usize,
     coeff_start: usize,
     coeff_len: usize,
@@ -776,6 +885,10 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
 ) where
     BE: Backend<ZnxWord = i64>
         + I64NormalizeOps
+        + ZnxZero
+        + ZnxNormalizeFirstStepCarryOnly
+        + ZnxNormalizeMiddleStepCarryOnly
+        + ZnxNormalizeMiddleStep
         + ZnxNormalizeFirstStepAssign
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign,
@@ -786,6 +899,51 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
         assert!(coeff_start + coeff_len <= res_shape.n());
         assert!(carry.len() >= coeff_len);
         assert!(res_k <= size * base2k);
+    }
+    if res_offset != 0 {
+        assert_eq!(
+            res_k,
+            size * base2k,
+            "vec_znx_normalize_assign: a shifting offset needs the full destination precision"
+        );
+        assert!(
+            res_offset < 0,
+            "vec_znx_normalize_assign: only a negative offset is in place, a positive one would write a limb before reading it"
+        );
+        // Same dispatch as the out-of-place kernel: the carry-chain path only
+        // agrees with the exact one while at most one limb is dropped.
+        if base2k <= 63 && !normalize_needs_exact(size, base2k, size, base2k, res_offset) {
+            unsafe {
+                vec_znx_normalize_assign_inter_base2k::<BE>(
+                    base2k,
+                    res_ptr,
+                    res_shape,
+                    res_col,
+                    res_offset,
+                    coeff_start,
+                    coeff_len,
+                    carry,
+                )
+            };
+            return;
+        }
+        // Reading walks the coefficient from its least significant limb upward
+        // and a negative offset sends every source limb to an index at least as
+        // high, so each limb is consumed before it is written.
+        let mut res = unsafe { VecZnxRangeMut::new(res_ptr, res_shape, res_col, coeff_start, coeff_len) };
+        for i in 0..coeff_len {
+            normalize_exact::<true, _, _>(
+                |j| unsafe { *res_ptr.add(res_shape.scalar_offset(res_col, j) + coeff_start + i) } as i128,
+                size,
+                base2k,
+                size,
+                base2k,
+                res_k,
+                res_offset,
+                |j, digit| res.at_mut(j)[i] = digit,
+            );
+        }
+        return;
     }
     let mut res = unsafe { VecZnxRangeMut::new(res_ptr, res_shape, res_col, coeff_start, coeff_len) };
     let carry = &mut carry[..coeff_len];
@@ -1793,6 +1951,7 @@ fn test_normalize_window_and_range_integer() {
                 vec_znx_normalize_assign::<FFT64Ref>(
                     a_base2k,
                     size * a_base2k,
+                    0,
                     &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut assigned),
                     1,
                     &mut vec![37; n],
@@ -1802,6 +1961,7 @@ fn test_normalize_window_and_range_integer() {
                     vec_znx_normalize_assign::<FFT64Ref>(
                         a_base2k,
                         size * a_base2k,
+                        0,
                         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut coeff_assigned)
                             .window_coeffs(i, 1),
                         1,

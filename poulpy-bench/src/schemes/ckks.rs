@@ -11,7 +11,7 @@ use poulpy_core::{
     EncryptionLayout,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
-        GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, Rank, SetGaloisElement, TorusPrecision,
+        GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, Rank, SetGaloisElement, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -84,7 +84,7 @@ pub fn runner_ckks_add_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: M
     ct_b.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_tmp_bytes(ct_layout.size()));
 
     bencher.iter(|| {
         module
@@ -207,7 +207,7 @@ pub fn runner_ckks_add_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64
     let mut pt = module.ckks_pt_vec_alloc(Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     pt.set_meta(meta);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_pt_vec_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_pt_vec_tmp_bytes(ct_layout.size()));
 
     bencher.iter(|| {
         module
@@ -236,7 +236,7 @@ pub fn runner_ckks_add_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i
     let mut cst = module.ckks_pt_coeffs_alloc(2, Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     cst.set_meta(meta);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_pt_const_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_pt_const_tmp_bytes(ct_layout.size()));
 
     bencher.iter(|| {
         module
@@ -264,7 +264,7 @@ pub fn runner_ckks_sub_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: M
     ct_b.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_tmp_bytes(ct_layout.size()));
 
     bencher.iter(|| {
         module
@@ -293,7 +293,7 @@ pub fn runner_ckks_sub_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64
     let mut pt = module.ckks_pt_vec_alloc(Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     pt.set_meta(meta);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_vec_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_vec_tmp_bytes(ct_layout.size()));
 
     bencher.iter(|| {
         module
@@ -322,7 +322,7 @@ pub fn runner_ckks_sub_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i
     let mut cst = module.ckks_pt_coeffs_alloc(2, Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
     cst.set_meta(meta);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_const_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_const_tmp_bytes(ct_layout.size()));
 
     bencher.iter(|| {
         module
@@ -348,7 +348,7 @@ pub fn runner_ckks_neg_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: M
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_neg_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_neg_tmp_bytes(ct_layout.size()));
 
     bencher.iter(|| {
         module.ckks_neg_into(&mut ct_dst, &ct_a, &mut scratch.borrow()).unwrap();
@@ -372,7 +372,7 @@ pub fn runner_ckks_mul_pow2_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pow2_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_pow2_tmp_bytes(ct_layout.size()));
 
     bencher.iter(|| {
         module
@@ -398,7 +398,7 @@ pub fn runner_ckks_div_pow2_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
     ct_a.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_div_pow2_tmp_bytes());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_div_pow2_tmp_bytes(ct_layout.size()));
 
     bencher.iter(|| {
         module

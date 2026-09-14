@@ -18,7 +18,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSImagImpl<BE: Backend>: Backend {
-    fn ckks_mul_i_tmp_bytes_impl(module: &Module<BE>) -> usize;
+    fn ckks_mul_i_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize;
 
     fn ckks_mul_i_into_impl<Dst, Src>(
         module: &Module<BE>,
@@ -34,7 +34,7 @@ pub unsafe trait CKKSImagImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
-    fn ckks_div_i_tmp_bytes_impl(module: &Module<BE>) -> usize;
+    fn ckks_div_i_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize;
 
     fn ckks_div_i_into_impl<Dst, Src>(
         module: &Module<BE>,
@@ -57,8 +57,8 @@ where
     Module<BE>:
         crate::default::imag::CKKSImagDefault<BE> + GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
 {
-    fn ckks_mul_i_tmp_bytes_impl(module: &Module<BE>) -> usize {
-        module.ckks_mul_i_tmp_bytes_default()
+    fn ckks_mul_i_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
+        module.ckks_mul_i_tmp_bytes_default(res_size)
     }
 
     fn ckks_mul_i_into_impl<Dst, Src>(
@@ -81,8 +81,8 @@ where
         module.ckks_mul_i_assign_default(dst, scratch)
     }
 
-    fn ckks_div_i_tmp_bytes_impl(module: &Module<BE>) -> usize {
-        module.ckks_div_i_tmp_bytes_default()
+    fn ckks_div_i_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
+        module.ckks_div_i_tmp_bytes_default(res_size)
     }
 
     fn ckks_div_i_into_impl<Dst, Src>(

@@ -7,8 +7,7 @@ use crate::{
     },
 };
 use poulpy_hal::{
-    api::{VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
-    layouts::{Backend, Module, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos},
+    layouts::{Module, VecZnxBackendMut, VecZnxBackendRef},
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
@@ -93,7 +92,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Ref> for NTT4x30Ref {
         terms: &[poulpy_hal::layouts::CnvDftAccTerm<'a, Self>],
         scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
     ) where
-        Self: HalVecZnxDftImpl<Self> + 'a,
+        Self: 'a,
     {
         let mut scratch = scratch.borrow();
         <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_dft_sum_default(

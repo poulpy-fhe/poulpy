@@ -136,11 +136,11 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_extract_pt_tmp_bytes_default(&self) -> usize
+    fn ckks_extract_pt_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Self: VecZnxLshTmpBytes + VecZnxRshTmpBytes,
     {
-        self.vec_znx_rsh_tmp_bytes().max(self.vec_znx_lsh_tmp_bytes())
+        self.vec_znx_rsh_tmp_bytes(res_size).max(self.vec_znx_lsh_tmp_bytes(res_size))
     }
 
     fn ckks_extract_pt_default<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

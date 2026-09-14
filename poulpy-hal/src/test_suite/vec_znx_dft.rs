@@ -8,8 +8,9 @@ use crate::{
     api::{
         ScratchOwnedAlloc, VecZnxAutomorphism, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
-        VecZnxDftAutomorphismPlan, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply,
-        VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftAutomorphismPlan, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign,
+        VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
+        VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{FillUniform, HostBytesBackend, Module, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef},
     source::Source,
@@ -769,6 +770,7 @@ fn automorphism_add_check_one_backend<BE>(
     Module<BE>: VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphism<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftAddAssign<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxIdftApplyTmpA<BE>
@@ -784,6 +786,11 @@ fn automorphism_add_check_one_backend<BE>(
         a.fill_uniform(base2k, &mut source);
         seed.fill_uniform(base2k, &mut source);
 
+        // Sized by the op's own `_tmp_bytes` alone, so a default that
+        // under-reports its scratch panics here.
+        let mut op_scratch: ScratchOwned<BE> =
+            ScratchOwned::alloc(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res_size, a_size));
+
         for &p in p_values {
             let plan = module.vec_znx_dft_automorphism_plan(p);
             let a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
@@ -797,6 +804,7 @@ fn automorphism_add_check_one_backend<BE>(
                     j,
                     &a_dft.to_backend_ref(),
                     j,
+                    &mut op_scratch.arena(),
                 );
             }
 
@@ -830,6 +838,7 @@ pub fn test_vec_znx_dft_automorphism_add<BR: crate::test_suite::TestBackend, BT:
     Module<BR>: VecZnxDftAlloc<BR>
         + VecZnxDftApply<BR>
         + VecZnxDftAutomorphism<BR>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftAddAssign<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxIdftApplyTmpA<BR>
@@ -838,6 +847,7 @@ pub fn test_vec_znx_dft_automorphism_add<BR: crate::test_suite::TestBackend, BT:
     Module<BT>: VecZnxDftAlloc<BT>
         + VecZnxDftApply<BT>
         + VecZnxDftAutomorphism<BT>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftAddAssign<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxIdftApplyTmpA<BT>

@@ -161,6 +161,7 @@ fn main() {
     module.vec_znx_normalize_assign(
         base2k,
         pt_lwe.size() * base2k,
+        0,
         &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_lwe.data_mut()),
         0,
         &mut scratch.borrow(),
@@ -262,6 +263,7 @@ fn main() {
     module.vec_znx_normalize_assign(
         base2k,
         pt_glwe.size() * base2k,
+        0,
         &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_glwe.data_mut()),
         0,
         &mut scratch.borrow(),

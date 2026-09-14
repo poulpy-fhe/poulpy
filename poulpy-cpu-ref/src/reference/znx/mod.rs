@@ -133,16 +133,6 @@ pub trait ZnxNormalizeMiddleStepAssign {
     fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);
 }
 
-/// Uses the carry bound of [`ZnxNormalizeMiddleStep`].
-pub trait ZnxNormalizeMiddleStepSub {
-    fn znx_normalize_middle_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]);
-}
-
-/// Uses the bounds of [`ZnxNormalizeMiddleStep`] and requires representable destination differences.
-pub trait ZnxNormalizeFinalStepSub {
-    fn znx_normalize_final_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]);
-}
-
 /// In-place form with the bounds of [`ZnxNormalizeMiddleStep`].
 pub trait ZnxNormalizeFinalStepAssign {
     fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);

@@ -1,19 +1,18 @@
 use crate::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
     ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
-    ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
-    ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
-    ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
+    ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
+    ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign,
+    ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
     add::{znx_add_assign_ref, znx_add_ref},
     automorphism::znx_automorphism_ref,
     automorphism_rotate::znx_automorphism_rotate_ref,
     copy::znx_copy_ref,
     neg::{znx_negate_assign_ref, znx_negate_ref},
     normalization::{
-        znx_normalize_final_step_assign_ref, znx_normalize_final_step_ref, znx_normalize_final_step_sub_ref,
-        znx_normalize_first_step_assign_ref, znx_normalize_first_step_carry_only_ref, znx_normalize_first_step_ref,
-        znx_normalize_middle_step_assign_ref, znx_normalize_middle_step_carry_only_ref, znx_normalize_middle_step_ref,
-        znx_normalize_middle_step_sub_ref,
+        znx_normalize_final_step_assign_ref, znx_normalize_final_step_ref, znx_normalize_first_step_assign_ref,
+        znx_normalize_first_step_carry_only_ref, znx_normalize_first_step_ref, znx_normalize_middle_step_assign_ref,
+        znx_normalize_middle_step_carry_only_ref, znx_normalize_middle_step_ref,
     },
     sub::{znx_sub_assign_ref, znx_sub_negate_assign_ref, znx_sub_ref},
     switch_ring::znx_switch_ring_ref,
@@ -154,20 +153,6 @@ impl ZnxNormalizeFinalStep for ZnxRef {
     #[inline(always)]
     fn znx_normalize_final_step<const OVERWRITE: bool>(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
         znx_normalize_final_step_ref::<OVERWRITE>(base2k, lsh, x, a, carry);
-    }
-}
-
-impl ZnxNormalizeMiddleStepSub for ZnxRef {
-    #[inline(always)]
-    fn znx_normalize_middle_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        znx_normalize_middle_step_sub_ref(base2k, lsh, x, a, carry);
-    }
-}
-
-impl ZnxNormalizeFinalStepSub for ZnxRef {
-    #[inline(always)]
-    fn znx_normalize_final_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        znx_normalize_final_step_sub_ref(base2k, lsh, x, a, carry);
     }
 }
 

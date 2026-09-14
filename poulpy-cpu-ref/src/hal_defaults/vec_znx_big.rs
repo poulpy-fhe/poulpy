@@ -241,7 +241,9 @@ where
         fft64_vec_znx_big_add_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_big_add_small_into_default<R, A>(
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_add_small_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `add_assign`.
+    fn vec_znx_big_add_small_default<R, A>(
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
@@ -307,6 +309,8 @@ where
         fft64_vec_znx_big_sub_negate_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_a_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `sub_assign`.
     fn vec_znx_big_sub_small_a_default<R, C>(
         _module: &Module<BE>,
         res: &mut R,
@@ -338,6 +342,8 @@ where
         fft64_vec_znx_big_sub_small_a_assign::<_, _, BE>(res, res_col, &a, a_col);
     }
 
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_b_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `sub_negate_assign`.
     fn vec_znx_big_sub_small_b_default<R, A>(
         _module: &Module<BE>,
         res: &mut R,
@@ -569,7 +575,9 @@ where
         ntt4x30_vec_znx_big_add_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_big_add_small_into_default<R, A>(
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_add_small_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `add_assign`.
+    fn vec_znx_big_add_small_default<R, A>(
         _module: &Module<BE>,
         res: &mut R,
         res_col: usize,
@@ -637,6 +645,8 @@ where
         ntt4x30_vec_znx_big_sub_negate_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_a_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `sub_assign`.
     fn vec_znx_big_sub_small_a_default<R, C>(
         _module: &Module<BE>,
         res: &mut R,
@@ -670,6 +680,8 @@ where
         ntt4x30_vec_znx_big_sub_small_assign::<_, _, BE>(res, res_col, &a, a_col);
     }
 
+    /// CPU override of [`poulpy_hal::oep::vec_znx_big_sub_small_b_derived`]: one
+    /// fused pass over `res` instead of `from_small` then `sub_negate_assign`.
     fn vec_znx_big_sub_small_b_default<R, A>(
         _module: &Module<BE>,
         res: &mut R,

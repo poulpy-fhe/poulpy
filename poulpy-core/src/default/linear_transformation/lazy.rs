@@ -10,8 +10,8 @@
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf,
+        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -51,7 +51,12 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft_tmp_bytes<BE, M, K>(
 ) -> usize
 where
     BE: Backend,
-    M: ModuleN + GGLWEProductDefault<BE> + VecZnxBigBytesOf + VecZnxDftBytesOf + VecZnxIdftApplyTmpBytes,
+    M: ModuleN
+        + GGLWEProductDefault<BE>
+        + VecZnxBigBytesOf
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
+        + VecZnxDftBytesOf
+        + VecZnxIdftApplyTmpBytes,
     K: GGLWEInfos,
 {
     let cols = rank + 1;
@@ -61,7 +66,9 @@ where
     let mask_dft = module.bytes_of_vec_znx_dft(rank, mask_small_size);
     let mask_small = mask_small_size * core::mem::size_of::<i64>() * module.n();
     let ks_dft = module.bytes_of_vec_znx_dft(cols, key_size);
-    let inner = module.gglwe_product_dft_tmp_bytes_default(key_size, mask_small_size, key_infos);
+    let inner = module
+        .gglwe_product_dft_tmp_bytes_default(key_size, mask_small_size, key_infos)
+        .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(key_size, key_size));
 
     mask_dft + mask_big + mask_small + module.vec_znx_idft_apply_tmp_bytes() + ks_dft + inner
 }
@@ -140,7 +147,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
     let ks_dft_ref = ks_dft.to_backend_ref();
     for col in 0..cols {
         if accumulate {
-            module.vec_znx_dft_automorphism_add_with_plan(&plan, res_dft, col, &ks_dft_ref, col);
+            module.vec_znx_dft_automorphism_add_with_plan(&plan, res_dft, col, &ks_dft_ref, col, &mut scratch_2);
         } else {
             module.vec_znx_dft_automorphism_with_plan(&plan, res_dft, col, &ks_dft_ref, col);
         }

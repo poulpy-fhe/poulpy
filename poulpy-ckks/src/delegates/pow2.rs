@@ -13,8 +13,8 @@ impl<BE: Backend + CKKSPow2Impl<BE>> CKKSPow2Ops<BE> for Module<BE>
 where
     Module<BE>: GLWECopy<BE> + GLWEShift<BE>,
 {
-    fn ckks_mul_pow2_tmp_bytes(&self) -> usize {
-        BE::ckks_mul_pow2_tmp_bytes_impl(self)
+    fn ckks_mul_pow2_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_mul_pow2_tmp_bytes_impl(self, res_size)
     }
 
     fn ckks_mul_pow2_into<Dst, Src>(
@@ -38,8 +38,8 @@ where
         BE::ckks_mul_pow2_assign_impl(self, dst, bits, scratch)
     }
 
-    fn ckks_div_pow2_tmp_bytes(&self) -> usize {
-        BE::ckks_div_pow2_tmp_bytes_impl(self)
+    fn ckks_div_pow2_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_div_pow2_tmp_bytes_impl(self, res_size)
     }
 
     fn ckks_div_pow2_into<Dst, Src>(

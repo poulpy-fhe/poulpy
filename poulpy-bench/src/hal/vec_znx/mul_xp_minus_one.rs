@@ -49,7 +49,7 @@ pub fn runner_vec_znx_mul_xp_minus_one_assign<B: Backend<ZnxWord = i64>, M: Meas
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut scratch = ScratchOwned::alloc(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes());
+    let mut scratch = ScratchOwned::alloc(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes(sweep.size));
 
     let res = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let mut res = upload_host_vec_znx::<B>(&res);

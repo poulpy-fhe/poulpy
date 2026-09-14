@@ -818,6 +818,7 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     module.vec_znx_normalize_assign(
         base2k,
         res_backend.size() * base2k,
+        0,
         &mut vec_znx_backend_mut::<BE>(&mut res_backend),
         res_col,
         scratch,
@@ -881,6 +882,7 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
         module.vec_znx_normalize_assign(
             base2k,
             res_backend.size() * base2k,
+            0,
             &mut vec_znx_backend_mut::<BE>(&mut res_backend),
             i,
             scratch,

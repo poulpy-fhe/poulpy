@@ -8,11 +8,11 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{CKKSInfos, SetCKKSInfos, ckks_offset_unary};
 
 pub trait CKKSCopyDefault<BE: Backend> {
-    fn ckks_copy_tmp_bytes_default(&self) -> usize
+    fn ckks_copy_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Self: GLWEShift<BE>,
     {
-        self.glwe_shift_tmp_bytes()
+        self.glwe_shift_tmp_bytes(res_size)
     }
 
     fn ckks_copy_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

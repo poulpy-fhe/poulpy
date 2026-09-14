@@ -149,7 +149,7 @@ where
                     }
                     scratch_1 = scratch_1.apply_mut(|scratch| {
                         let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                        self.vec_znx_normalize_assign(base2k, tmp_pt_k, &mut tmp_pt_backend.data, 0, scratch)
+                        self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt_backend.data, 0, scratch)
                     });
 
                     let (seed, _) = source_xa.branch();

@@ -160,6 +160,24 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// carved regions satisfy both alignment and SIMD requirements.
     const SCRATCH_ALIGN: usize = 64;
 
+    /// `len` rounded up to the next multiple of [`Self::SCRATCH_ALIGN`].
+    ///
+    /// Every region carved from a [`ScratchArena`](crate::layouts::ScratchArena)
+    /// starts at an aligned offset, so a `_tmp_bytes` formula that adds the
+    /// scratch of a nested call to a temporary of its own has to round the
+    /// temporary with this first. Without it the sum is short by up to
+    /// `SCRATCH_ALIGN - 1` bytes whenever the temporary is not itself a
+    /// multiple of the alignment, and the nested take panics.
+    fn scratch_aligned(len: usize) -> usize {
+        let rem = len % Self::SCRATCH_ALIGN;
+        if rem == 0 {
+            len
+        } else {
+            len.checked_add(Self::SCRATCH_ALIGN - rem)
+                .expect("scratch alignment overflows usize")
+        }
+    }
+
     /// Byte size of a [`crate::layouts::VecZnx`] buffer.
     fn bytes_of_vec_znx(n: usize, cols: usize, size: usize) -> usize {
         checked_product(&[n, cols, size, Self::size_of_znx_word()], "VecZnx byte size")

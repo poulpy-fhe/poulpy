@@ -113,15 +113,21 @@ pub fn vec_znx_normalize_par<B, T>(
 }
 
 /// Parallel [`vec_znx_normalize_assign`], `B` being the serial kernel backend.
+#[allow(clippy::too_many_arguments)]
 pub fn vec_znx_normalize_assign_par<B, T>(
     base2k: usize,
     k: usize,
+    res_offset: i64,
     res: &mut VecZnxBackendMut<'_, B>,
     res_col: usize,
     carry: &mut [i64],
 ) where
     B: Backend<ZnxWord = i64>
         + I64NormalizeOps
+        + ZnxZero
+        + ZnxNormalizeFirstStepCarryOnly
+        + ZnxNormalizeMiddleStepCarryOnly
+        + ZnxNormalizeMiddleStep
         + ZnxNormalizeFirstStepAssign
         + ZnxNormalizeMiddleStepAssign
         + ZnxNormalizeFinalStepAssign,
@@ -133,13 +139,23 @@ pub fn vec_znx_normalize_assign_par<B, T>(
     let n = res.n();
     let tasks = normalize_tasks::<T>(n);
     if tasks < 2 {
-        return vec_znx_normalize_assign::<B>(base2k, k, res, res_col, carry);
+        return vec_znx_normalize_assign::<B>(base2k, k, res_offset, res, res_col, carry);
     }
 
     let res_shape = res.shape();
     let res_ptr = SendPtr::new(res.data_mut().as_mut_ptr().cast::<i64>());
     for_each_range(n, tasks, 1, carry, |start, len, task_carry| unsafe {
-        vec_znx_normalize_assign_range_raw::<B>(res_ptr.get(), res_shape, base2k, k, res_col, start, len, task_carry)
+        vec_znx_normalize_assign_range_raw::<B>(
+            res_ptr.get(),
+            res_shape,
+            base2k,
+            k,
+            res_offset,
+            res_col,
+            start,
+            len,
+            task_carry,
+        )
     });
 }
 

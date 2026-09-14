@@ -1,9 +1,9 @@
 use crate::{
     api::{
-        VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAddScaledAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
-        VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign,
-        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
-        VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxDftAdd, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftSub,
+        VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
+        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
@@ -138,20 +138,6 @@ impl_vec_znx_dft_delegate!(
 );
 
 impl_vec_znx_dft_delegate!(
-    VecZnxDftAddScaledAssign<B>,
-    fn vec_znx_dft_add_scaled_assign(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
-        a_col: usize,
-        a_scale: i64,
-    ) {
-        B::vec_znx_dft_add_scaled_assign(self, res, res_col, a, a_col, a_scale);
-    }
-);
-
-impl_vec_znx_dft_delegate!(
     VecZnxDftSub<B>,
     fn vec_znx_dft_sub(
         &self,
@@ -247,7 +233,15 @@ where
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, B>,
         a_col: usize,
+        scratch: &mut ScratchArena<'_, B>,
     ) {
-        B::vec_znx_dft_automorphism_add_with_plan(self, plan, res, res_col, a, a_col);
+        B::vec_znx_dft_automorphism_add_with_plan(self, plan, res, res_col, a, a_col, scratch);
     }
 }
+
+impl_vec_znx_dft_delegate!(
+    VecZnxDftAutomorphismAddWithPlanTmpBytes,
+    fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
+        B::vec_znx_dft_automorphism_add_with_plan_tmp_bytes(self, res_size, a_size)
+    }
+);

@@ -127,7 +127,7 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .cnv_apply_dft_tmp_bytes(0, c_size, sweep.size, sweep.size)
+            .cnv_apply_dft_add_tmp_bytes(0, c_size, sweep.size, sweep.size)
             .max(module.cnv_prepare_left_tmp_bytes(c_size, sweep.size))
             .max(module.cnv_prepare_right_tmp_bytes(c_size, sweep.size)),
     );
@@ -237,6 +237,83 @@ where
             &b_backend,
             0,
             0,
+            &mut scratch.borrow(),
+        );
+        black_box(());
+    });
+}
+
+pub fn runner_cnv_by_const_apply_add<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
+where
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
+
+    let cols = 2;
+    let c_size: usize = sweep.size + sweep.size - 1;
+
+    let a = random_host_vec_znx(module.n(), cols, sweep.size, &mut source);
+    let a = upload_host_vec_znx::<BE>(&a);
+    let mut c_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, c_size);
+
+    let b = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
+    let b = upload_host_vec_znx::<BE>(&b);
+
+    let mut scratch: ScratchOwned<BE> =
+        ScratchOwned::alloc(module.cnv_by_const_apply_add_tmp_bytes(0, c_size, sweep.size, sweep.size));
+
+    bencher.iter(|| {
+        let mut c_big_backend = c_big.to_backend_mut();
+        let a_backend = vec_znx_backend_ref::<BE>(&a);
+        let b_backend = vec_znx_backend_ref::<BE>(&b);
+        module.cnv_by_const_apply_add(
+            0,
+            &mut c_big_backend,
+            0,
+            &a_backend,
+            0,
+            &b_backend,
+            0,
+            0,
+            &mut scratch.borrow(),
+        );
+        black_box(());
+    });
+}
+
+pub fn runner_cnv_prepare_self<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
+where
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let c_size: usize = sweep.size + sweep.size - 1;
+
+    let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
+
+    let mut left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(1, sweep.size, PrepareHint::Reuse);
+    let mut right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(1, sweep.size, PrepareHint::Reuse);
+
+    let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
+    let a = upload_host_vec_znx::<BE>(&a);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_self_tmp_bytes(c_size, sweep.size));
+
+    bencher.iter(|| {
+        let mut left_backend = left.to_backend_mut();
+        let mut right_backend = right.to_backend_mut();
+        let a_backend = vec_znx_backend_ref::<BE>(&a);
+        module.cnv_prepare_self(
+            &mut left_backend,
+            &mut right_backend,
+            &a_backend,
+            !0i64,
             &mut scratch.borrow(),
         );
         black_box(());

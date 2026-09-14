@@ -90,7 +90,7 @@ pub fn runner_vec_znx_normalize_assign<B: Backend<ZnxWord = i64>, M: Measurement
     bencher.iter(|| {
         let mut a = vec_znx_backend_mut::<B>(&mut a);
         for i in 0..sweep.cols {
-            module.vec_znx_normalize_assign(base2k, sweep.size * base2k, &mut a, i, &mut scratch.borrow());
+            module.vec_znx_normalize_assign(base2k, sweep.size * base2k, 0, &mut a, i, &mut scratch.borrow());
         }
         black_box(());
     });

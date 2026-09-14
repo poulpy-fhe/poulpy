@@ -42,7 +42,7 @@ macro_rules! hal_impl_vec_znx_big_without_normalize {
             b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             b_col: usize,
         ) {
-            <Self as $defaults<Self>>::vec_znx_big_add_small_into_default(module, &mut res, res_col, &a, a_col, b, b_col)
+            <Self as $defaults<Self>>::vec_znx_big_add_small_default(module, &mut res, res_col, &a, a_col, b, b_col)
         }
 
         fn vec_znx_big_add_small_assign(

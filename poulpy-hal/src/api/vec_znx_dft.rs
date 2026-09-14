@@ -106,20 +106,6 @@ pub trait VecZnxDftAddAssign<B: Backend> {
     );
 }
 
-/// In-place LIMB-SHIFTED addition in the DFT domain:
-/// `res += a * 2^(a_scale * base2k)` (`a_scale` is a limb offset, positive
-/// shifts toward the most significant limb — NOT an integer scaling of `a`).
-pub trait VecZnxDftAddScaledAssign<B: Backend> {
-    fn vec_znx_dft_add_scaled_assign(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
-        res_col: usize,
-        a: &VecZnxDftBackendRef<'_, B>,
-        a_col: usize,
-        a_scale: i64,
-    );
-}
-
 /// Element-wise subtraction of two [`VecZnxDft`](crate::layouts::VecZnxDft) vectors.
 pub trait VecZnxDftSub<B: Backend> {
     fn vec_znx_dft_sub(
@@ -190,6 +176,12 @@ pub trait VecZnxDftAutomorphismPlan<B: Backend> {
     fn vec_znx_dft_automorphism_plan(&self, p: i64) -> Self::Plan;
 }
 
+/// Returns scratch bytes required by
+/// [`VecZnxDftAutomorphism::vec_znx_dft_automorphism_add_with_plan`].
+pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
+    fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
+}
+
 /// Applies a precomputed DFT-domain automorphism plan to `a`, writing the
 /// result into `res` (out-of-place).
 pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
@@ -202,7 +194,14 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
         a_col: usize,
     );
 
-    /// `res[res_col] += automorphism(a[a_col])` over `min(res.size(), a.size())` limbs.
+    /// `res[res_col] += automorphism(a[a_col])` over `min(res.size(), a.size())` limbs;
+    /// res limbs beyond that are left untouched.
+    ///
+    /// `scratch` must hold at least
+    /// [`vec_znx_dft_automorphism_add_with_plan_tmp_bytes`](VecZnxDftAutomorphismAddWithPlanTmpBytes::vec_znx_dft_automorphism_add_with_plan_tmp_bytes)
+    /// on the same sizes: the derived body carves one
+    /// `min(res.size(), a.size())`-limb, one-column `VecZnxDft` for the
+    /// rotated operand.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_dft_automorphism_add_with_plan(
         &self,
@@ -211,6 +210,7 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, B>,
         a_col: usize,
+        scratch: &mut ScratchArena<'_, B>,
     );
 
     /// Convenience: build the plan and apply in one call. Prefer

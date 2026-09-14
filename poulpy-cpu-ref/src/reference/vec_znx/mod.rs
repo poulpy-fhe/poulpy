@@ -1,5 +1,4 @@
 mod add;
-mod add_scalar;
 mod automorphism;
 mod automorphism_rotate;
 mod copy;
@@ -15,7 +14,6 @@ mod switch_ring;
 mod zero;
 
 pub use add::*;
-pub use add_scalar::*;
 pub use automorphism::*;
 pub use automorphism_rotate::*;
 pub use copy::*;

@@ -37,7 +37,8 @@ where
         + BE::bytes_of_vec_znx_big(module.n(), 1, acc_size)
         + module
             .cnv_by_const_apply_tmp_bytes(0, acc_size, ct_size, pt_size + 1)
-            .max(module.vec_znx_rsh_tmp_bytes())
+            .max(module.cnv_by_const_apply_add_tmp_bytes(0, acc_size, ct_size, pt_size + 1))
+            .max(module.vec_znx_rsh_tmp_bytes(acc_size))
             .max(module.vec_znx_big_normalize_tmp_bytes())
 }
 

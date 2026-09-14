@@ -1,30 +1,20 @@
+//! CPU override of the rotate-into-a-full-width-temporary default for
+//! `vec_znx_mul_xp_minus_one_assign`.
+//!
+//! The OEP default carves a whole `res.size()`-limb `VecZnx`; the kernel below
+//! rotates limb by limb through a one-limb temporary, so the backend also
+//! overrides `vec_znx_mul_xp_minus_one_assign_tmp_bytes` down to that single
+//! limb. The out-of-place `vec_znx_mul_xp_minus_one` stays on its default.
+
 use std::mem::size_of;
 
 use crate::{
-    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
-    reference::{
-        vec_znx::{vec_znx_rotate, vec_znx_sub_assign},
-        znx::{ZnxNegate, ZnxRotate, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero},
-    },
+    layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxView, ZnxViewMut},
+    reference::znx::{ZnxNegate, ZnxRotate, ZnxSubNegateAssign},
 };
 
 pub fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(n: usize) -> usize {
     n * size_of::<i64>()
-}
-
-pub fn vec_znx_mul_xp_minus_one<'r, 'a, BE>(
-    p: i64,
-    res: &mut VecZnxBackendMut<'r, BE>,
-    res_col: usize,
-    a: &VecZnxBackendRef<'a, BE>,
-    a_col: usize,
-) where
-    BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxZero + ZnxSubAssign,
-    BE::BufMut<'r>: HostDataMut,
-    BE::BufRef<'a>: HostDataRef,
-{
-    vec_znx_rotate::<BE>(p, res, res_col, a, a_col);
-    vec_znx_sub_assign::<BE>(res, res_col, a, a_col);
 }
 
 pub fn vec_znx_mul_xp_minus_one_assign<'r, BE>(p: i64, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, tmp: &mut [i64])

@@ -32,7 +32,7 @@ where
     // `VecZnx` has one column per triangular tensor term rather than `rank + 1`.
     let cols = res.data.cols();
     for col in 0..cols {
-        module.vec_znx_normalize_assign(base2k, k, &mut res.data, col, &mut scratch.borrow());
+        module.vec_znx_normalize_assign(base2k, k, 0, &mut res.data, col, &mut scratch.borrow());
     }
 }
 
@@ -257,11 +257,11 @@ where
         let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::OneShot)
             + self.bytes_of_cnv_pvec_right(1, b_size, PrepareHint::OneShot);
         let lvl_1: usize = self
-            .cnv_prepare_left_lazy_tmp_bytes(a_size, a_size)
-            .max(self.cnv_prepare_right_lazy_tmp_bytes(b_size, b_size));
+            .cnv_prepare_left_tmp_bytes(a_size, a_size)
+            .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
 
         let res_dft_size = a_size + b_size;
-        let lvl_2_cnv_apply: usize = self.cnv_apply_dft_lazy_tmp_bytes(0, res_dft_size, a_size, b_size);
+        let lvl_2_cnv_apply: usize = self.cnv_apply_dft_tmp_bytes(0, res_dft_size, a_size, b_size);
 
         let lvl_2_res_dft: usize = self.bytes_of_vec_znx_dft(1, res_dft_size);
         let lvl_2_res_tmp: usize = self.bytes_of_vec_znx_big(1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
@@ -309,8 +309,8 @@ where
         let a_backend = a.to_backend_ref();
         let b_backend = b.to_backend_ref();
 
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_left_lazy(&mut a_prep, &a_backend.data, a_mask, scratch));
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right_lazy(&mut b_prep, &b_backend.data, b_mask, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_left(&mut a_prep, &a_backend.data, a_mask, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut b_prep, &b_backend.data, b_mask, scratch));
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
@@ -319,7 +319,7 @@ where
             let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self, 1, res_dft_size);
             {
                 let mut res_dft_backend = res_dft.to_backend_mut();
-                self.cnv_apply_dft_lazy(
+                self.cnv_apply_dft(
                     cnv_offset_hi,
                     &mut res_dft_backend,
                     0,
@@ -387,9 +387,9 @@ where
 
         scratch = scratch.apply_mut(|scratch| {
             let res_backend = res.to_backend_ref();
-            self.cnv_prepare_left_lazy(&mut res_prep, &res_backend.data, mask_res, scratch)
+            self.cnv_prepare_left(&mut res_prep, &res_backend.data, mask_res, scratch)
         });
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right_lazy(&mut a_prep, &a_backend.data, mask_a, scratch));
+        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut a_prep, &a_backend.data, mask_a, scratch));
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
@@ -398,7 +398,7 @@ where
             let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self, 1, res_dft_size);
             {
                 let mut res_dft_backend = res_dft.to_backend_mut();
-                self.cnv_apply_dft_lazy(
+                self.cnv_apply_dft(
                     cnv_offset_hi,
                     &mut res_dft_backend,
                     0,
@@ -1781,7 +1781,7 @@ where
 
 #[doc(hidden)]
 pub trait GLWEShiftDefault<BE: Backend> {
-    fn glwe_shift_tmp_bytes_default(&self) -> usize;
+    fn glwe_shift_tmp_bytes_default(&self, res_size: usize) -> usize;
 
     fn glwe_rsh_default<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
@@ -1818,9 +1818,8 @@ where
         + VecZnxLshAssign<BE>
         + VecZnxLsh<BE>,
 {
-    fn glwe_shift_tmp_bytes_default(&self) -> usize {
-        let lvl_0: usize = self.vec_znx_rsh_tmp_bytes().max(self.vec_znx_lsh_tmp_bytes());
-        lvl_0
+    fn glwe_shift_tmp_bytes_default(&self, res_size: usize) -> usize {
+        self.vec_znx_rsh_tmp_bytes(res_size).max(self.vec_znx_lsh_tmp_bytes(res_size))
     }
 
     fn glwe_rsh_default<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
@@ -1829,10 +1828,10 @@ where
     {
         let res = &mut res.to_backend_mut();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self),
+            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self)
+            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
         );
         let base2k: usize = res.base2k().into();
         for i in 0..res.rank().as_usize() + 1 {
@@ -1848,10 +1847,10 @@ where
         let res = &mut res.to_backend_mut();
 
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self),
+            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self)
+            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         let base2k: usize = res.base2k().into();
@@ -1869,10 +1868,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self),
+            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self)
+            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1895,10 +1894,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self),
+            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self)
+            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1921,10 +1920,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self),
+            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self)
+            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -2016,7 +2015,7 @@ where
         let res_k = res.k().as_usize();
         for i in 0..res.rank().as_usize() + 1 {
             let mut scratch_iter = scratch.borrow();
-            self.vec_znx_normalize_assign(res_base2k, res_k, &mut res.data, i, &mut scratch_iter);
+            self.vec_znx_normalize_assign(res_base2k, res_k, 0, &mut res.data, i, &mut scratch_iter);
         }
     }
 }

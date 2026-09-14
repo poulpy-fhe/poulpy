@@ -38,7 +38,7 @@ macro_rules! ckks_carry_verb_oep {
             /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
             /// associated method signatures.
             pub unsafe trait $Impl<BE: Backend>: Backend {
-                fn [<ckks_ $verb _tmp_bytes_impl>](module: &Module<BE>) -> usize;
+                fn [<ckks_ $verb _tmp_bytes_impl>](module: &Module<BE>, res_size: usize) -> usize;
                 fn [<ckks_ $verb _into_impl>]<Dst, A, B>(
                     module: &Module<BE>,
                     dst: &mut Dst,
@@ -105,7 +105,7 @@ macro_rules! ckks_carry_verb_oep {
                 ) -> Result<()>
                 where
                     Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
-                fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<BE>) -> usize;
+                fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<BE>, res_size: usize) -> usize;
                 fn [<ckks_ $verb _pt_vec_into_impl>]<Dst, A, P>(
                     module: &Module<BE>,
                     dst: &mut Dst,
@@ -148,7 +148,7 @@ macro_rules! ckks_carry_verb_oep {
                     Dst: Data,
                     GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
                     P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-                fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<BE>) -> usize;
+                fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<BE>, res_size: usize) -> usize;
                 fn [<ckks_ $verb _pt_const_into_impl>]<Dst, A, P>(
                     module: &Module<BE>,
                     dst: &mut Dst,
@@ -214,8 +214,8 @@ macro_rules! ckks_carry_verb_oep {
                     + VecZnxLshTmpBytes
                     + VecZnxRshTmpBytes,
             {
-                fn [<ckks_ $verb _tmp_bytes_impl>](module: &Module<BE>) -> usize {
-                    $Default::[<ckks_ $verb _tmp_bytes_default>](module)
+                fn [<ckks_ $verb _tmp_bytes_impl>](module: &Module<BE>, res_size: usize) -> usize {
+                    $Default::[<ckks_ $verb _tmp_bytes_default>](module, res_size)
                 }
 
                 fn [<ckks_ $verb _into_impl>]<Dst, A, B>(
@@ -301,8 +301,8 @@ macro_rules! ckks_carry_verb_oep {
                     $Default::[<ckks_ $verb _one_assign_default>](module, dst, scratch)
                 }
 
-                fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<BE>) -> usize {
-                    $Default::[<ckks_ $verb _pt_vec_tmp_bytes_default>](module)
+                fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<BE>, res_size: usize) -> usize {
+                    $Default::[<ckks_ $verb _pt_vec_tmp_bytes_default>](module, res_size)
                 }
 
                 fn [<ckks_ $verb _pt_vec_into_impl>]<Dst, A, P>(
@@ -363,8 +363,8 @@ macro_rules! ckks_carry_verb_oep {
                     $Default::[<ckks_ $verb _pt_vec_assign_unnormalized_default>](module, &mut dst.write_view(), pt, scratch)
                 }
 
-                fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<BE>) -> usize {
-                    $Default::[<ckks_ $verb _pt_const_tmp_bytes_default>](module)
+                fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<BE>, res_size: usize) -> usize {
+                    $Default::[<ckks_ $verb _pt_const_tmp_bytes_default>](module, res_size)
                 }
 
                 fn [<ckks_ $verb _pt_const_into_impl>]<Dst, A, P>(

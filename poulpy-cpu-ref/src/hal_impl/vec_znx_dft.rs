@@ -82,27 +82,6 @@ macro_rules! __hal_impl_vec_znx_dft_common {
         ) {
             <Self as $defaults<Self>>::vec_znx_idft_apply_tmpa_default(module, res, res_col, a, a_col)
         }
-        fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-            <Self as $defaults<Self>>::vec_znx_idft_normalize_consume_tmp_bytes_default(module, res_size, a_size)
-        }
-
-        fn vec_znx_idft_normalize_consume(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
-            res_base2k: usize,
-            res_k: usize,
-            res_col: usize,
-            a: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
-            a_col: usize,
-            a_base2k: usize,
-            addend: Option<(&poulpy_hal::layouts::VecZnxBackendRef<'_, Self>, usize)>,
-            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
-        ) {
-            <Self as $defaults<Self>>::vec_znx_idft_normalize_consume_default(
-                module, res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch,
-            )
-        }
-
         fn vec_znx_dft_add(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
@@ -113,17 +92,6 @@ macro_rules! __hal_impl_vec_znx_dft_common {
             b_col: usize,
         ) {
             <Self as $defaults<Self>>::vec_znx_dft_add_default(module, res, res_col, a, a_col, b, b_col)
-        }
-
-        fn vec_znx_dft_add_scaled_assign(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
-            res_col: usize,
-            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
-            a_col: usize,
-            a_scale: i64,
-        ) {
-            <Self as $defaults<Self>>::vec_znx_dft_add_scaled_assign_default(module, res, res_col, a, a_col, a_scale)
         }
 
         fn vec_znx_dft_add_assign(
@@ -184,6 +152,11 @@ macro_rules! __hal_impl_vec_znx_dft_common {
             <Self as $defaults<Self>>::vec_znx_dft_zero_default(module, res, res_col)
         }
 
+        fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(_module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+            0
+        }
+
+        #[allow(clippy::too_many_arguments)]
         fn vec_znx_dft_automorphism_add_with_plan(
             module: &Module<Self>,
             plan: &Self::AutomorphismPlan,
@@ -191,7 +164,9 @@ macro_rules! __hal_impl_vec_znx_dft_common {
             res_col: usize,
             a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
             a_col: usize,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
+            let _ = scratch;
             <Self as $defaults<Self>>::vec_znx_dft_automorphism_add_with_plan_default(module, plan, res, res_col, a, a_col)
         }
     };

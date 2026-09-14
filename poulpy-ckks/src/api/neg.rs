@@ -20,7 +20,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// For `_assign` the buffer is the same as the source so `offset = 0` and
 /// metadata is unchanged.
 pub trait CKKSNegOps<BE: Backend> {
-    fn ckks_neg_tmp_bytes(&self) -> usize;
+    fn ckks_neg_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = -src`.
     fn ckks_neg_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

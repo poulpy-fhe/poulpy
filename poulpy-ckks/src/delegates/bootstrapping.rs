@@ -45,8 +45,8 @@ where
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    fn ckks_mod_up_tmp_bytes(&self) -> usize {
-        BootstrappingDefault::new(self).ckks_mod_up_tmp_bytes_default()
+    fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize {
+        BootstrappingDefault::new(self).ckks_mod_up_tmp_bytes_default(res_size)
     }
 
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(

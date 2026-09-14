@@ -244,7 +244,9 @@ pub trait GLWECopy<BE: Backend> {
 }
 
 pub trait GLWEShift<BE: Backend> {
-    fn glwe_shift_tmp_bytes(&self) -> usize;
+    /// Scratch bytes for the GLWE shift family, on a destination of
+    /// `res_size` limbs.
+    fn glwe_shift_tmp_bytes(&self, res_size: usize) -> usize;
 
     fn glwe_rsh<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where

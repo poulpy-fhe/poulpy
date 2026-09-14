@@ -534,7 +534,7 @@ where
                     self.vec_znx_copy(&mut ci, 0, &pt.data, 0);
                     let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
                     self.vec_znx_sub_negate_assign(&mut ci, 0, &ct_ref, i);
-                    self.vec_znx_normalize_assign(base2k, size * base2k, &mut ci.to_backend_mut(), 0, &mut scratch_2.borrow());
+                    self.vec_znx_normalize_assign(base2k, size * base2k, 0, &mut ci.to_backend_mut(), 0, &mut scratch_2.borrow());
                 } else {
                     let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
                     self.vec_znx_copy(&mut ci, 0, &ct_ref, i);
@@ -574,7 +574,7 @@ where
             && *col == 0
         {
             self.vec_znx_add_assign(&mut c0.to_backend_mut(), 0, &pt.data, 0);
-            self.vec_znx_normalize_assign(base2k, size * base2k, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
+            self.vec_znx_normalize_assign(base2k, size * base2k, 0, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
         }
         self.vec_znx_copy(res, 0, &c0.to_backend_ref(), 0);
     }

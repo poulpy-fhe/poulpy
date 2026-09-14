@@ -58,7 +58,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiph
 /// one coefficient slot of the ciphertext.  Metadata follows the same rule as
 /// the `pt_vec` variants above.
 pub trait CKKSAddOps<BE: Backend> {
-    fn ckks_add_tmp_bytes(&self) -> usize;
+    fn ckks_add_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = a + b`.
     ///
@@ -86,7 +86,7 @@ pub trait CKKSAddOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
-    fn ckks_add_pt_vec_tmp_bytes(&self) -> usize;
+    fn ckks_add_pt_vec_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = a + pt` where `pt` is a full plaintext polynomial.
     ///
@@ -105,7 +105,7 @@ pub trait CKKSAddOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
-    fn ckks_add_pt_const_tmp_bytes(&self) -> usize;
+    fn ckks_add_pt_const_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = a + pt[pt_coeff]`, adding one quantized constant to
     /// a single coefficient slot of the ciphertext.
