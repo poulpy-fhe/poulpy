@@ -67,7 +67,7 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
 /// natively instead of relying on this blanket impl.
 unsafe impl<BE: Backend> CKKSEncryptionImpl<BE> for BE
 where
-    BE: HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE> + HostBackend,
+    BE: HalVecZnxImpl + HalVecZnxBigImpl + HalVecZnxDftImpl + HalSvpImpl + HostBackend,
     Module<BE>: CKKSEncryptionDefault<BE>
         + CKKSPlaintextDefault<BE>
         + EncryptionDefault<BE>

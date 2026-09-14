@@ -16,7 +16,7 @@ macro_rules! impl_vec_znx_dft_delegate {
     ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
-            B: Backend<ZnxWord = i64> + HalVecZnxDftImpl<B>,
+            B: Backend<ZnxWord = i64> + HalVecZnxDftImpl,
         {
             $($body)+
         }
@@ -202,7 +202,7 @@ impl_vec_znx_dft_delegate!(
 
 impl<B> VecZnxDftAutomorphismPlan<B> for Module<B>
 where
-    B: Backend + HalVecZnxDftImpl<B>,
+    B: Backend + HalVecZnxDftImpl,
 {
     type Plan = B::AutomorphismPlan;
 
@@ -213,7 +213,7 @@ where
 
 impl<B> VecZnxDftAutomorphism<B> for Module<B>
 where
-    B: Backend + HalVecZnxDftImpl<B>,
+    B: Backend + HalVecZnxDftImpl,
 {
     fn vec_znx_dft_automorphism_with_plan(
         &self,

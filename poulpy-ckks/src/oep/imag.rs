@@ -53,7 +53,7 @@ pub unsafe trait CKKSImagImpl<BE: Backend>: Backend {
 
 unsafe impl<BE: Backend> CKKSImagImpl<BE> for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>:
         crate::default::imag::CKKSImagDefault<BE> + GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
 {

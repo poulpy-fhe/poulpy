@@ -31,7 +31,7 @@ pub unsafe trait CKKSPlaintextZnxImpl<BE: Backend>: Backend {
 
 unsafe impl<BE: Backend> CKKSPlaintextZnxImpl<BE> for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: CKKSPlaintextDefault<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes + VecZnxLsh<BE> + VecZnxRsh<BE>,
 {
     fn ckks_extract_pt_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {

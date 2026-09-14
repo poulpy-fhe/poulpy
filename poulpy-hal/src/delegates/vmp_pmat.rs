@@ -14,7 +14,7 @@ macro_rules! impl_vmp_delegate {
     ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
-            B: Backend<ZnxWord = i64> + HalVmpImpl<B>,
+            B: Backend<ZnxWord = i64> + HalVmpImpl,
         {
             $($body)+
         }

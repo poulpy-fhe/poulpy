@@ -142,30 +142,30 @@ impl BigWordHadamardProduct for DelegatingFFT64Ref {
     }
 }
 
-unsafe impl HalVecZnxImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalVecZnxImpl for DelegatingFFT64Ref {
     crate::hal_impl_vec_znx!();
 }
 
-unsafe impl HalModuleImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalModuleImpl for DelegatingFFT64Ref {
     crate::hal_impl_module!(FFT64ModuleDefault);
 }
 
-unsafe impl HalVmpImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalVmpImpl for DelegatingFFT64Ref {
     crate::hal_impl_vmp!(FFT64VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalConvolutionImpl for DelegatingFFT64Ref {
     crate::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
-unsafe impl HalVecZnxBigImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalVecZnxBigImpl for DelegatingFFT64Ref {
     crate::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalSvpImpl for DelegatingFFT64Ref {
     crate::hal_impl_svp!(FFT64SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalVecZnxDftImpl for DelegatingFFT64Ref {
     crate::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }

@@ -203,7 +203,7 @@ macro_rules! ckks_carry_verb_oep {
 
             unsafe impl<BE: Backend> $Impl<BE> for BE
             where
-                BE: ::poulpy_hal::oep::HalVecZnxImpl<BE>,
+                BE: ::poulpy_hal::oep::HalVecZnxImpl,
                 Module<BE>: $Default<BE>
                     + CKKSModuleAlloc<BE>
                     + CKKSPlaintextDefault<BE>

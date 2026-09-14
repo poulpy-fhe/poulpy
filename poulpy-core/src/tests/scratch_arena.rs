@@ -130,7 +130,7 @@ impl Backend for TestBackend {
     unsafe fn destroy(_: NonNull<Self::Handle>) {}
 }
 
-unsafe impl HalModuleImpl<TestBackend> for TestBackend {
+unsafe impl HalModuleImpl for TestBackend {
     fn new(n: u64) -> Module<TestBackend> {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
         unsafe { Module::from_nonnull(NonNull::dangling(), n) }

@@ -56,7 +56,7 @@ use crate::{
 
 /// `vmp_apply_dft`: the derived free function's decomposition versus an
 /// oracle hand-built from the public api traits.
-pub fn test_vmp_apply_dft_derived<BE: TestBackend + HalVmpImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vmp_apply_dft_derived<BE: TestBackend + HalVmpImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + VecZnxAlloc<BE>
@@ -135,7 +135,7 @@ where
     );
 
     let mut res_derived = module.vec_znx_dft_alloc(cols_out, size);
-    vmp_apply_dft_derived::<BE, BE, _>(module, &mut res_derived, &a_ref, &pmat_ref, &mut scratch.borrow());
+    vmp_apply_dft_derived::<BE, _>(module, &mut res_derived, &a_ref, &pmat_ref, &mut scratch.borrow());
 
     let mut big = module.vec_znx_big_alloc(1, size);
     for col in 0..cols_out {
@@ -189,7 +189,7 @@ where
 /// DFT-domain results. The scratch for the derived call is sized only by
 /// `vmp_apply_dft_to_dft_add_tmp_bytes_derived`, so a decomposition that
 /// under-reports its own scratch panics here.
-pub fn test_vmp_apply_dft_to_dft_add_derived<BE: TestBackend + HalVmpImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vmp_apply_dft_to_dft_add_derived<BE: TestBackend + HalVmpImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + VmpPMatAlloc<BE>
@@ -289,10 +289,10 @@ where
             // The derived free function, dispatched directly (bypassing the
             // OEP method entirely) with an arena sized only by its own
             // `_tmp_bytes_derived` sibling.
-            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-                vmp_apply_dft_to_dft_add_tmp_bytes_derived::<BE, BE>(module, res_size, a_size, rows, cols_in, cols_out, mat_size),
-            );
-            vmp_apply_dft_to_dft_add_derived::<BE, BE>(
+            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(vmp_apply_dft_to_dft_add_tmp_bytes_derived::<BE>(
+                module, res_size, a_size, rows, cols_in, cols_out, mat_size,
+            ));
+            vmp_apply_dft_to_dft_add_derived::<BE>(
                 module,
                 &mut res_derived.to_backend_mut(),
                 &a_dft_ref,
@@ -378,7 +378,7 @@ where
 /// base2k, res_offset = +k)`. Both sides are canonical, so this is bit for
 /// bit. The arena is sized by `vec_znx_lsh_tmp_bytes(res_size)` alone, so a
 /// default that under-reports its scratch panics here.
-pub fn test_vec_znx_lsh_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_lsh_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -439,7 +439,7 @@ where
 /// base2k, res_offset = -k)`. Both sides are canonical, so this is bit for
 /// bit. The arena is sized by `vec_znx_rsh_tmp_bytes(res_size)` alone, so a
 /// default that under-reports its scratch panics here.
-pub fn test_vec_znx_rsh_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_rsh_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxRsh<BE> + VecZnxRshTmpBytes + VecZnxNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -530,7 +530,7 @@ where
 /// three-operand `vec_znx_add`. The two spread the same value over different
 /// non-canonical digits, so the comparison is on canonical forms. The arena is
 /// sized by the family's `vec_znx_lsh_tmp_bytes(res_size)`.
-pub fn test_vec_znx_lsh_add_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_lsh_add_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxLshAdd<BE>
         + VecZnxLsh<BE>
@@ -619,7 +619,7 @@ where
 /// three-operand `vec_znx_sub`. The two spread the same value over different
 /// non-canonical digits, so the comparison is on canonical forms. The arena is
 /// sized by the family's `vec_znx_lsh_tmp_bytes(res_size)`.
-pub fn test_vec_znx_lsh_sub_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_lsh_sub_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxLshSub<BE>
         + VecZnxLsh<BE>
@@ -708,7 +708,7 @@ where
 /// three-operand `vec_znx_add`. The two spread the same value over different
 /// non-canonical digits, so the comparison is on canonical forms. The arena is
 /// sized by the family's `vec_znx_rsh_tmp_bytes(res_size)`.
-pub fn test_vec_znx_rsh_add_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_rsh_add_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxRshAdd<BE>
         + VecZnxRsh<BE>
@@ -797,7 +797,7 @@ where
 /// three-operand `vec_znx_sub`. The two spread the same value over different
 /// non-canonical digits, so the comparison is on canonical forms. The arena is
 /// sized by the family's `vec_znx_rsh_tmp_bytes(res_size)`.
-pub fn test_vec_znx_rsh_sub_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_rsh_sub_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxRshSub<BE>
         + VecZnxRsh<BE>
@@ -889,7 +889,7 @@ where
 /// override has no freedom left. `k` runs past `res_size * base2k`, where both
 /// have to leave the column zero. The arena is sized by
 /// `vec_znx_lsh_tmp_bytes(res_size)`.
-pub fn test_vec_znx_lsh_assign_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_lsh_assign_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxLshAssign<BE>
         + VecZnxLsh<BE>
@@ -918,7 +918,7 @@ where
             let mut got_backend = upload_vec_znx::<BE>(&res);
             let mut want_backend = upload_vec_znx::<BE>(&res);
 
-            crate::oep::vec_znx_lsh_assign_derived::<BE, BE>(
+            crate::oep::vec_znx_lsh_assign_derived::<BE>(
                 module,
                 base2k,
                 k,
@@ -983,7 +983,7 @@ where
 /// the api, `tmp = rsh(a, k)` into a fresh buffer, then `vec_znx_copy` back.
 /// Compared on canonical forms; the arena is sized by
 /// `vec_znx_rsh_tmp_bytes(res_size)`.
-pub fn test_vec_znx_rsh_assign_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_rsh_assign_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxRshAssign<BE>
         + VecZnxRsh<BE>
@@ -1059,7 +1059,7 @@ where
 
 /// `vec_znx_mul_xp_minus_one`: the OEP default body versus an oracle
 /// hand-built from the public api traits (`rotate` then `sub_assign`).
-pub fn test_vec_znx_mul_xp_minus_one_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_mul_xp_minus_one_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxMulXpMinusOne<BE> + VecZnxRotate<BE> + VecZnxSubAssign<BE>,
 {
@@ -1078,7 +1078,7 @@ where
             let mut have_backend = upload_vec_znx::<BE>(&res);
             let mut want_backend = upload_vec_znx::<BE>(&res);
 
-            crate::oep::vec_znx_mul_xp_minus_one_derived::<BE, BE>(
+            crate::oep::vec_znx_mul_xp_minus_one_derived::<BE>(
                 module,
                 p,
                 &mut vec_znx_backend_mut::<BE>(&mut have_backend),
@@ -1119,7 +1119,7 @@ where
 /// for bit. The default body gets an arena sized by its own
 /// `_tmp_bytes_derived`, the dispatched op one sized by the api `_tmp_bytes`,
 /// which an override may have shrunk.
-pub fn test_vec_znx_mul_xp_minus_one_assign_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_mul_xp_minus_one_assign_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxMulXpMinusOne<BE> + VecZnxMulXpMinusOneAssign<BE> + VecZnxMulXpMinusOneAssignTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -1133,7 +1133,6 @@ where
         // under-reports its scratch panics here.
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(crate::oep::vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived::<
             BE,
-            BE,
         >(module, size));
         let mut scratch_api: ScratchOwned<BE> = ScratchOwned::alloc(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes(size));
 
@@ -1143,7 +1142,7 @@ where
             let a_backend = upload_vec_znx::<BE>(&a);
 
             let mut have_backend = upload_vec_znx::<BE>(&a);
-            crate::oep::vec_znx_mul_xp_minus_one_assign_derived::<BE, BE>(
+            crate::oep::vec_znx_mul_xp_minus_one_assign_derived::<BE>(
                 module,
                 p,
                 &mut vec_znx_backend_mut::<BE>(&mut have_backend),
@@ -1188,7 +1187,7 @@ where
 /// `vec_znx_add_scalar_assign`: the OEP default body (an `add_assign` on the
 /// one-limb window) versus a whole-vector `add_assign` against a `VecZnx` that
 /// carries the scalar in limb `res_limb`, an independent oracle, bit for bit.
-pub fn test_vec_znx_add_scalar_assign_derived<BE: TestBackend + HalVecZnxImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_add_scalar_assign_derived<BE: TestBackend + HalVecZnxImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxAddScalarAssign<BE> + VecZnxAddAssign<BE>,
 {
@@ -1208,7 +1207,7 @@ where
             let mut have_backend = upload_vec_znx::<BE>(&res);
             let mut want_backend = upload_vec_znx::<BE>(&res);
 
-            crate::oep::vec_znx_add_scalar_assign_derived::<BE, BE>(
+            crate::oep::vec_znx_add_scalar_assign_derived::<BE>(
                 module,
                 &mut vec_znx_backend_mut::<BE>(&mut have_backend),
                 0,
@@ -1244,7 +1243,7 @@ where
 /// function under test, even though it is the same decomposition).
 /// The same oracle also pins whatever `module` dispatches to, which is a
 /// fused backend override under ruling R10.
-pub fn test_vec_znx_big_add_small_derived<BE: TestBackend + HalVecZnxBigImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_big_add_small_derived<BE: TestBackend + HalVecZnxBigImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + VecZnxBigAlloc<BE>
@@ -1298,7 +1297,7 @@ where
             module.vec_znx_big_from_small(&mut dst.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&sentinel_backend), 0);
         }
 
-        crate::oep::vec_znx_big_add_small_derived::<BE, BE>(
+        crate::oep::vec_znx_big_add_small_derived::<BE>(
             module,
             &mut want_big.to_backend_mut(),
             0,
@@ -1383,7 +1382,7 @@ where
 /// `from_small(a)` then `sub_assign(b)`, through the public api traits.
 /// The same oracle also pins whatever `module` dispatches to, which is a
 /// fused backend override under ruling R10.
-pub fn test_vec_znx_big_sub_small_a_derived<BE: TestBackend + HalVecZnxBigImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_big_sub_small_a_derived<BE: TestBackend + HalVecZnxBigImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + VecZnxBigAlloc<BE>
@@ -1437,7 +1436,7 @@ where
             module.vec_znx_big_from_small(&mut dst.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&sentinel_backend), 0);
         }
 
-        crate::oep::vec_znx_big_sub_small_a_derived::<BE, BE>(
+        crate::oep::vec_znx_big_sub_small_a_derived::<BE>(
             module,
             &mut want_big.to_backend_mut(),
             0,
@@ -1522,7 +1521,7 @@ where
 /// `from_small(b)` then `sub_negate_assign(a)`, through the public api traits.
 /// The same oracle also pins whatever `module` dispatches to, which is a
 /// fused backend override under ruling R10.
-pub fn test_vec_znx_big_sub_small_b_derived<BE: TestBackend + HalVecZnxBigImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_big_sub_small_b_derived<BE: TestBackend + HalVecZnxBigImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + VecZnxBigAlloc<BE>
@@ -1576,7 +1575,7 @@ where
             module.vec_znx_big_from_small(&mut dst.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&sentinel_backend), 0);
         }
 
-        crate::oep::vec_znx_big_sub_small_b_derived::<BE, BE>(
+        crate::oep::vec_znx_big_sub_small_b_derived::<BE>(
             module,
             &mut want_big.to_backend_mut(),
             0,
@@ -1662,10 +1661,8 @@ where
 /// api traits. The op clobbers its input, so each side transforms its own
 /// copy of the same host operand. Both arenas are sized by their own side's
 /// `_tmp_bytes` alone, so a default that under-reports its scratch panics.
-pub fn test_vec_znx_idft_normalize_consume_derived<BE: TestBackend + HalVecZnxDftImpl<BE>>(
-    params: &TestParams,
-    module: &Module<BE>,
-) where
+pub fn test_vec_znx_idft_normalize_consume_derived<BE: TestBackend + HalVecZnxDftImpl>(params: &TestParams, module: &Module<BE>)
+where
     Module<BE>: ModuleN
         + VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
@@ -1692,10 +1689,9 @@ pub fn test_vec_znx_idft_normalize_consume_derived<BE: TestBackend + HalVecZnxDf
         let addend_backend = upload_vec_znx::<BE>(&addend);
         let addend_ref = vec_znx_backend_ref::<BE>(&addend_backend);
 
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(crate::oep::vec_znx_idft_normalize_consume_tmp_bytes_derived::<
-            BE,
-            BE,
-        >(module, res_size, a_size));
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            crate::oep::vec_znx_idft_normalize_consume_tmp_bytes_derived::<BE>(module, res_size, a_size),
+        );
 
         for with_addend in [false, true] {
             let addend_arg = with_addend.then_some((&addend_ref, 0));
@@ -1711,7 +1707,7 @@ pub fn test_vec_znx_idft_normalize_consume_derived<BE: TestBackend + HalVecZnxDf
             let mut have_backend = upload_vec_znx::<BE>(&res_template);
             let mut want_backend = upload_vec_znx::<BE>(&res_template);
 
-            crate::oep::vec_znx_idft_normalize_consume_derived::<BE, BE>(
+            crate::oep::vec_znx_idft_normalize_consume_derived::<BE>(
                 module,
                 &mut vec_znx_backend_mut::<BE>(&mut have_backend),
                 base2k,
@@ -1758,7 +1754,7 @@ pub fn test_vec_znx_idft_normalize_consume_derived<BE: TestBackend + HalVecZnxDf
 /// temporary, then `vec_znx_dft_add_assign`, through the public api traits.
 /// DFT-domain results are compared after `idft` and `big_normalize`. The
 /// arena is sized by the op's own `_tmp_bytes` alone.
-pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + HalVecZnxDftImpl<BE>>(
+pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + HalVecZnxDftImpl>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -1804,7 +1800,7 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
         }
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            crate::oep::vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived::<BE, BE>(module, res_size, a_size),
+            crate::oep::vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived::<BE>(module, res_size, a_size),
         );
 
         for p in [1i64, 5, -3] {
@@ -1829,7 +1825,7 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
                     }
                 }
 
-                crate::oep::vec_znx_dft_automorphism_add_with_plan_derived::<BE, BE>(
+                crate::oep::vec_znx_dft_automorphism_add_with_plan_derived::<BE>(
                     module,
                     &plan,
                     &mut have_dft.to_backend_mut(),
@@ -1882,7 +1878,7 @@ pub fn test_vec_znx_dft_automorphism_add_with_plan_derived<BE: TestBackend + Hal
 /// `vec_znx_dft_automorphism_with_plan` through the public api traits, and the
 /// api entry itself, which routes through the OEP. DFT-domain results are
 /// compared after `idft` and `big_normalize`.
-pub fn test_vec_znx_dft_automorphism_derived<BE: TestBackend + HalVecZnxDftImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_vec_znx_dft_automorphism_derived<BE: TestBackend + HalVecZnxDftImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + VecZnxAlloc<BE>
@@ -1921,7 +1917,7 @@ where
                 let mut have_dft = module.vec_znx_dft_alloc(cols, res_size);
                 let mut api_dft = module.vec_znx_dft_alloc(cols, res_size);
                 let mut want_dft = module.vec_znx_dft_alloc(cols, res_size);
-                crate::oep::vec_znx_dft_automorphism_derived::<BE, BE>(
+                crate::oep::vec_znx_dft_automorphism_derived::<BE>(
                     module,
                     p,
                     &mut have_dft.to_backend_mut(),
@@ -1982,7 +1978,7 @@ where
 /// through the public api traits. DFT-domain results are compared after
 /// `idft` and `big_normalize`. The arena is sized by the op's own
 /// `_tmp_bytes` alone.
-pub fn test_svp_apply_dft_derived<BE: TestBackend + HalSvpImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_svp_apply_dft_derived<BE: TestBackend + HalSvpImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + VecZnxAlloc<BE>
@@ -2027,7 +2023,7 @@ where
         let seed_backend = upload_vec_znx::<BE>(&seed);
 
         let mut scratch: ScratchOwned<BE> =
-            ScratchOwned::alloc(crate::oep::svp_apply_dft_tmp_bytes_derived::<BE, BE>(module, b_size));
+            ScratchOwned::alloc(crate::oep::svp_apply_dft_tmp_bytes_derived::<BE>(module, b_size));
 
         // Every column starts on the same seed on both sides, so the limbs the
         // product has to zero are asserted and a write outside `col` shows up.
@@ -2047,7 +2043,7 @@ where
                 }
             }
 
-            crate::oep::svp_apply_dft_derived::<BE, BE>(
+            crate::oep::svp_apply_dft_derived::<BE>(
                 module,
                 &mut have_dft.to_backend_mut(),
                 col,
@@ -2118,7 +2114,7 @@ where
 /// equality. The arena for the derived call is sized only by
 /// `cnv_apply_dft_add_tmp_bytes_derived`, so a decomposition that
 /// under-reports its own scratch panics here.
-pub fn test_cnv_apply_dft_add_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_apply_dft_add_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + Convolution<BE>
@@ -2177,10 +2173,10 @@ where
             module.vec_znx_dft_add_assign(&mut res_oracle.to_backend_mut(), res_col, &fresh.to_backend_ref(), 0);
 
             // The derived free function, with an arena sized only by its own sibling.
-            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_apply_dft_add_tmp_bytes_derived::<BE, BE>(
+            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_apply_dft_add_tmp_bytes_derived::<BE>(
                 module, cnv_offset, res_size, a_size, b_size,
             ));
-            cnv_apply_dft_add_derived::<BE, BE>(
+            cnv_apply_dft_add_derived::<BE>(
                 module,
                 cnv_offset,
                 &mut res_derived.to_backend_mut(),
@@ -2239,7 +2235,7 @@ where
 /// suite states DFT-domain equality. The arena for the derived call is sized
 /// only by `cnv_apply_dft_sum_tmp_bytes_derived`, so a decomposition that
 /// under-reports its own scratch panics here.
-pub fn test_cnv_apply_dft_sum_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_apply_dft_sum_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + Convolution<BE>
@@ -2311,10 +2307,10 @@ where
                 .collect();
 
             // The derived free function, with an arena sized only by its own sibling.
-            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_apply_dft_sum_tmp_bytes_derived::<BE, BE>(
+            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_apply_dft_sum_tmp_bytes_derived::<BE>(
                 module, cnv_offset, res_size, a_size, b_size,
             ));
-            cnv_apply_dft_sum_derived::<BE, BE>(
+            cnv_apply_dft_sum_derived::<BE>(
                 module,
                 cnv_offset,
                 &mut res_derived.to_backend_mut(),
@@ -2364,7 +2360,7 @@ where
 /// writes out the expansion, one `cnv_apply_dft` when `i == j`, and the four
 /// cross terms as `cnv_apply_dft` + three `cnv_apply_dft_add` otherwise, and
 /// versus the backend's own `module.cnv_pairwise_apply_dft`.
-pub fn test_cnv_pairwise_apply_dft_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_pairwise_apply_dft_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + Convolution<BE>
@@ -2419,10 +2415,10 @@ where
                 }
             }
 
-            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_pairwise_apply_dft_tmp_bytes_derived::<BE, BE>(
+            let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_pairwise_apply_dft_tmp_bytes_derived::<BE>(
                 module, cnv_offset, res_size, a_size, b_size,
             ));
-            cnv_pairwise_apply_dft_derived::<BE, BE>(
+            cnv_pairwise_apply_dft_derived::<BE>(
                 module,
                 cnv_offset,
                 &mut res_derived.to_backend_mut(),
@@ -2475,7 +2471,7 @@ where
 /// decision 4), so equality is stated on an observable: the same
 /// `cnv_apply_dft` is run against each of the three prepared pairs and the
 /// normalized products are compared.
-pub fn test_cnv_prepare_self_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_prepare_self_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + Convolution<BE>
@@ -2520,8 +2516,8 @@ where
     let mut left_derived: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
     let mut right_derived: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
     let mut derived_scratch: ScratchOwned<BE> =
-        ScratchOwned::alloc(cnv_prepare_self_tmp_bytes_derived::<BE, BE>(module, a_size, a_size));
-    cnv_prepare_self_derived::<BE, BE>(
+        ScratchOwned::alloc(cnv_prepare_self_tmp_bytes_derived::<BE>(module, a_size, a_size));
+    cnv_prepare_self_derived::<BE>(
         module,
         &mut left_derived.to_backend_mut(),
         &mut right_derived.to_backend_mut(),
@@ -2580,7 +2576,7 @@ where
 /// `vec_znx_big_add_assign`), and versus the backend's own
 /// `module.cnv_by_const_apply_add`. The result never enters the DFT domain,
 /// so the comparison is on the `vec_znx_big_normalize` output alone.
-pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend + HalConvolutionImpl<BE>>(params: &TestParams, module: &Module<BE>)
+pub fn test_cnv_by_const_apply_add_derived<BE: TestBackend + HalConvolutionImpl>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
         + Convolution<BE>
@@ -2649,10 +2645,10 @@ where
         );
         module.vec_znx_big_add_assign(&mut acc_oracle.to_backend_mut(), 0, &fresh.to_backend_ref(), 0);
 
-        let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_by_const_apply_add_tmp_bytes_derived::<BE, BE>(
+        let mut derived_scratch: ScratchOwned<BE> = ScratchOwned::alloc(cnv_by_const_apply_add_tmp_bytes_derived::<BE>(
             module, cnv_offset, res_size, a_size, b_size,
         ));
-        cnv_by_const_apply_add_derived::<BE, BE>(
+        cnv_by_const_apply_add_derived::<BE>(
             module,
             cnv_offset,
             &mut acc_derived.to_backend_mut(),
@@ -2711,7 +2707,7 @@ where
 /// plus an arena covering every `_tmp_bytes` the convolution parity tests use
 /// on the module-dispatch side.
 #[allow(clippy::type_complexity)]
-fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl<BE>>(
+fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl>(
     module: &Module<BE>,
     module_host: &Module<HostBytesBackend>,
     cols: usize,

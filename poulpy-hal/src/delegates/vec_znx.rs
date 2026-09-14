@@ -23,7 +23,7 @@ macro_rules! impl_vec_znx_delegate {
             // delegated here are i64-only, so a backend declaring any other word must not receive
             // them. Interim fence until the coefficient aliases flip to `B::ZnxWord` (i32 plumbing),
             // which replaces these bounds. Same bound on all six delegate family macros.
-            B: Backend<ZnxWord = i64> + HalVecZnxImpl<B>,
+            B: Backend<ZnxWord = i64> + HalVecZnxImpl,
         {
             $($body)+
         }

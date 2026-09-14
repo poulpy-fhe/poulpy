@@ -33,32 +33,32 @@ where
     (slice, arena)
 }
 
-unsafe impl HalVecZnxImpl<FFT64Avx512> for FFT64Avx512 {
+unsafe impl HalVecZnxImpl for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
-unsafe impl HalModuleImpl<FFT64Avx512> for FFT64Avx512 {
+unsafe impl HalModuleImpl for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
 }
 
-unsafe impl HalVmpImpl<FFT64Avx512> for FFT64Avx512 {
+unsafe impl HalVmpImpl for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl<FFT64Avx512> for FFT64Avx512 {
+unsafe impl HalConvolutionImpl for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
-unsafe impl HalVecZnxBigImpl<FFT64Avx512> for FFT64Avx512 {
+unsafe impl HalVecZnxBigImpl for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl<FFT64Avx512> for FFT64Avx512 {
+unsafe impl HalSvpImpl for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_svp!(FFT64SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl<FFT64Avx512> for FFT64Avx512 {
+unsafe impl HalVecZnxDftImpl for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault, automorphism_with_plan: skip);
 
     fn vec_znx_dft_automorphism_with_plan(
@@ -73,16 +73,16 @@ unsafe impl HalVecZnxDftImpl<FFT64Avx512> for FFT64Avx512 {
     }
 }
 
-unsafe impl HalVecZnxImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+unsafe impl HalVecZnxImpl for NTT4x30Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
     poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
 }
 
-unsafe impl HalModuleImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+unsafe impl HalModuleImpl for NTT4x30Avx512 {
     poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);
 }
 
-unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+unsafe impl HalVmpImpl for NTT4x30Avx512 {
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
         crate::ntt4x30_avx512::vmp::vmp_prepare_tmp_bytes_avx(module.n())
     }
@@ -177,7 +177,7 @@ unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     }
 }
 
-unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n())
     }
@@ -257,7 +257,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <Self as HalConvolutionImpl<Self>>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+        <Self as HalConvolutionImpl>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -306,7 +306,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <Self as HalConvolutionImpl<Self>>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+        <Self as HalConvolutionImpl>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -377,11 +377,11 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     }
 }
 
-unsafe impl HalVecZnxBigImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+unsafe impl HalVecZnxBigImpl for NTT4x30Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+unsafe impl HalSvpImpl for NTT4x30Avx512 {
     fn svp_prepare(
         module: &Module<Self>,
         res: &mut SvpPPolBackendMut<'_, Self>,
@@ -444,7 +444,7 @@ unsafe impl HalSvpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     }
 }
 
-unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+unsafe impl HalVecZnxDftImpl for NTT4x30Avx512 {
     fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
         4 * module.n() * size_of::<u64>() + 3 * module.n() * size_of::<i128>()
     }
@@ -664,18 +664,18 @@ mod ifma_impl {
     };
     use std::mem::size_of;
 
-    unsafe impl HalVecZnxImpl<NTT3x42Ifma> for NTT3x42Ifma {
+    unsafe impl HalVecZnxImpl for NTT3x42Ifma {
         poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
         poulpy_cpu_ref::hal_impl_vec_znx_normalize!();
     }
 
-    unsafe impl HalModuleImpl<NTT3x42Ifma> for NTT3x42Ifma {
+    unsafe impl HalModuleImpl for NTT3x42Ifma {
         fn new(n: u64) -> Module<NTT3x42Ifma> {
             crate::ntt3x42_ifma::module::module_new(n)
         }
     }
 
-    unsafe impl HalVmpImpl<NTT3x42Ifma> for NTT3x42Ifma {
+    unsafe impl HalVmpImpl for NTT3x42Ifma {
         fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
             crate::ntt3x42_ifma::vmp::vmp_prepare_tmp_bytes_ifma(module.n())
         }
@@ -773,11 +773,11 @@ mod ifma_impl {
     use poulpy_cpu_ref::hal_defaults::NTT4x30VecZnxBigDefault;
     use poulpy_hal::layouts::{DataView, DataViewMut};
 
-    unsafe impl HalVecZnxBigImpl<NTT3x42Ifma> for NTT3x42Ifma {
+    unsafe impl HalVecZnxBigImpl for NTT3x42Ifma {
         poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
     }
 
-    unsafe impl HalSvpImpl<NTT3x42Ifma> for NTT3x42Ifma {
+    unsafe impl HalSvpImpl for NTT3x42Ifma {
         fn svp_prepare(
             module: &Module<Self>,
             res: &mut SvpPPolBackendMut<'_, Self>,
@@ -846,7 +846,7 @@ mod ifma_impl {
         }
     }
 
-    unsafe impl HalVecZnxDftImpl<NTT3x42Ifma> for NTT3x42Ifma {
+    unsafe impl HalVecZnxDftImpl for NTT3x42Ifma {
         fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
             3 * module.n() * size_of::<u64>() + 3 * module.n() * size_of::<i128>()
         }
@@ -1063,7 +1063,7 @@ mod ifma_impl {
         }
     }
 
-    unsafe impl HalConvolutionImpl<NTT3x42Ifma> for NTT3x42Ifma {
+    unsafe impl HalConvolutionImpl for NTT3x42Ifma {
         fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
             crate::ntt3x42_ifma::convolution::cnv_prepare_left_tmp_bytes(module.n())
         }
@@ -1143,7 +1143,7 @@ mod ifma_impl {
             a_size: usize,
             b_size: usize,
         ) -> usize {
-            <Self as HalConvolutionImpl<Self>>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+            <Self as HalConvolutionImpl>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -1194,7 +1194,7 @@ mod ifma_impl {
             a_size: usize,
             b_size: usize,
         ) -> usize {
-            <Self as HalConvolutionImpl<Self>>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+            <Self as HalConvolutionImpl>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]

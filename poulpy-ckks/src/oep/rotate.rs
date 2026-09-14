@@ -43,7 +43,7 @@ pub unsafe trait CKKSRotateImpl<BE: Backend>: Backend {
 
 unsafe impl<BE: Backend> CKKSRotateImpl<BE> for BE
 where
-    BE: Backend + HalVecZnxImpl<BE>,
+    BE: Backend + HalVecZnxImpl,
     Module<BE>: CKKSRotateDefault<BE> + GLWEAutomorphism<BE> + GLWEShift<BE>,
 {
     fn ckks_rotate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize {

@@ -11,7 +11,7 @@ macro_rules! impl_convolution_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
         impl<BE: Backend<ZnxWord = i64>> $trait for Module<BE>
         where
-            BE: HalConvolutionImpl<BE> + HalVecZnxDftImpl<BE>,
+            BE: HalConvolutionImpl + HalVecZnxDftImpl,
         {
             $($body)+
         }

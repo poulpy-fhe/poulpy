@@ -22,10 +22,10 @@ const PARAMS: TestParams = TestParams { size: 4, base2k: 17 };
 fn run<BE>(module: &Module<BE>)
 where
     BE: poulpy_hal::test_suite::TestBackend
-        + poulpy_hal::oep::HalVecZnxImpl<BE>
-        + poulpy_hal::oep::HalVmpImpl<BE>
-        + poulpy_hal::oep::HalVecZnxDftImpl<BE>
-        + poulpy_hal::oep::HalConvolutionImpl<BE>,
+        + poulpy_hal::oep::HalVecZnxImpl
+        + poulpy_hal::oep::HalVmpImpl
+        + poulpy_hal::oep::HalVecZnxDftImpl
+        + poulpy_hal::oep::HalConvolutionImpl,
 {
     test_vec_znx_lsh_add_derived(&PARAMS, module);
     test_vec_znx_lsh_sub_derived(&PARAMS, module);
@@ -40,7 +40,7 @@ where
 /// NTT backend runs them at `n = 4`.
 fn run_vmp<BE>(module: &Module<BE>)
 where
-    BE: poulpy_hal::test_suite::TestBackend + poulpy_hal::oep::HalVmpImpl<BE>,
+    BE: poulpy_hal::test_suite::TestBackend + poulpy_hal::oep::HalVmpImpl,
 {
     test_vmp_apply_dft_derived(&PARAMS, module);
     test_vmp_apply_dft_to_dft_add_derived(&PARAMS, module);
