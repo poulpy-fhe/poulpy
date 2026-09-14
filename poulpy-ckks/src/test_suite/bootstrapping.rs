@@ -63,8 +63,8 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, ckks_encrypt_with_prec, ckks_spec,
-            gen_sk_with_raw, precision_stats, test_vector_1,
+            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, assert_canonical_at_k,
+            ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, precision_stats, test_vector_1,
         },
     },
 };
@@ -1168,20 +1168,20 @@ where
     (s_re.avg_log2_prec, s_im.avg_log2_prec)
 }
 
-fn decrypt<BE: Backend<ZnxWord = i64>, C, F, E, S>(
+fn decrypt<BE: Backend<ZnxWord = i64> + TestContextBackend, F, E, S>(
     module: &Module<BE>,
     encoder: &ReferenceEncoder<E>,
-    ct: &C,
+    ct: &CKKSCiphertextOwned<BE>,
     sk: &S,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> (Vec<F>, Vec<F>)
 where
-    C: GLWEToBackendRef<BE> + CKKSInfos + CKKSCtBounds,
     F: TestScalar,
     Module<BE>: CKKSDecryptOps<BE>,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
 {
+    assert_canonical_at_k::<BE>("decrypt", ct);
     // Decrypt, decode, and confirm the slots are recovered. Cap the budget so
     // `log_delta + log_budget <= 127` fits the i128 decode codec (the unused
     // high-order budget is dropped losslessly).
@@ -1199,14 +1199,19 @@ where
 }
 
 /// Decrypts `ct` and returns its raw polynomial coefficients (length `n`).
-fn decrypt_coeffs<BE, C, S>(module: &Module<BE>, ct: &C, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Vec<f64>
+fn decrypt_coeffs<BE, S>(
+    module: &Module<BE>,
+    ct: &CKKSCiphertextOwned<BE>,
+    sk: &S,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Vec<f64>
 where
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
-    C: GLWEToBackendRef<BE> + CKKSInfos + CKKSCtBounds,
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + TestContextBackend,
     Module<BE>: CKKSDecryptOps<BE>,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
+    assert_canonical_at_k::<BE>("decrypt_coeffs", ct);
     let prec = meta(ct.log_delta(), ct.log_budget().min(127usize.saturating_sub(ct.log_delta())));
     let mut pt = module.ckks_pt_vec_alloc(ct.base2k(), prec.k);
     pt.set_meta(prec.meta);
