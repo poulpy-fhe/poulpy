@@ -2,7 +2,7 @@ use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAdd, VecZnxAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxIdftApplyTmpA, VecZnxLsh, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
+        VecZnxIdftApplyTmpA, VecZnxLshAdd, VecZnxLshAssign, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxMulXpMinusOne,
         VecZnxMulXpMinusOneAssign, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign,
         VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRshAssign,
         VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
@@ -10,7 +10,7 @@ use poulpy_hal::{
     layouts::{
         Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, PrepareHint, ScratchArena,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef,
+        VecZnxToBackendRef, vec_znx_backend_ref_from_mut,
     },
 };
 
@@ -1816,7 +1816,9 @@ where
         + VecZnxRshTmpBytes
         + VecZnxLshTmpBytes
         + VecZnxLshAssign<BE>
-        + VecZnxLsh<BE>,
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxCopy<BE>,
 {
     fn glwe_shift_tmp_bytes_default(&self, res_size: usize) -> usize {
         self.vec_znx_rsh_tmp_bytes(res_size).max(self.vec_znx_lsh_tmp_bytes(res_size))
@@ -1834,9 +1836,35 @@ where
             Self::glwe_shift_tmp_bytes_default(self, res.size())
         );
         let base2k: usize = res.base2k().into();
-        for i in 0..res.rank().as_usize() + 1 {
-            let mut scratch_iter = scratch.borrow();
-            self.vec_znx_rsh_assign(base2k, k, &mut res.data, i, &mut scratch_iter);
+        let res_k: usize = res.k().as_usize();
+        let cols: usize = res.rank().as_usize() + 1;
+        if res_k == res.size() * base2k {
+            for i in 0..cols {
+                let mut scratch_iter = scratch.borrow();
+                self.vec_znx_rsh_assign(base2k, k, &mut res.data, i, &mut scratch_iter);
+            }
+            return;
+        }
+        // The in-place kernel only shifts at the full buffer width. A
+        // destination whose `k` sits below its allocation goes through a
+        // temporary: one normalization at `res_k` with offset `-k`, then a
+        // copy back, so the result is canonical at the `k` it reports.
+        // `glwe_shift_tmp_bytes` already reserves that temporary.
+        let n: usize = self.n();
+        for i in 0..cols {
+            let (mut tmp, mut scratch_iter) = scratch.borrow().take_vec_znx_scratch(n, 1, res.size());
+            self.vec_znx_normalize(
+                &mut tmp,
+                base2k,
+                res_k,
+                -(k as i64),
+                0,
+                &vec_znx_backend_ref_from_mut::<BE>(&res.data),
+                base2k,
+                i,
+                &mut scratch_iter,
+            );
+            self.vec_znx_copy(&mut res.data, i, &tmp.to_backend_ref(), 0);
         }
     }
 
@@ -1854,9 +1882,21 @@ where
         );
 
         let base2k: usize = res.base2k().into();
-        for i in 0..res.rank().as_usize() + 1 {
+        let cols: usize = res.rank().as_usize() + 1;
+        for i in 0..cols {
             let mut scratch_iter = scratch.borrow();
             self.vec_znx_lsh_assign(base2k, k, &mut res.data, i, &mut scratch_iter);
+        }
+        // The fused kernel writes the full buffer width. When `k` sits below
+        // the allocation, round the column once more at `res_k` so it is
+        // canonical at the `k` it reports. The first pass shifts zeros in at
+        // the bottom, so this is one rounding, not two.
+        let res_k: usize = res.k().as_usize();
+        if res_k != res.size() * base2k {
+            for i in 0..cols {
+                let mut scratch_iter = scratch.borrow();
+                self.vec_znx_normalize_assign(base2k, res_k, 0, &mut res.data, i, &mut scratch_iter);
+            }
         }
     }
 
@@ -1880,9 +1920,23 @@ where
         assert!(res.rank() >= a.rank());
 
         let base2k: usize = res.base2k().into();
+        // `vec_znx_lsh` would normalize at the full buffer width; the
+        // destination is canonical at its own `k` instead, which is what a
+        // ciphertext whose `k` sits below its allocation needs.
+        let res_k: usize = res.k().as_usize();
         for i in 0..res.rank().as_usize() + 1 {
             let mut scratch_iter = scratch.borrow();
-            self.vec_znx_lsh(base2k, k, &mut res.data, i, &a.data, i, &mut scratch_iter);
+            self.vec_znx_normalize(
+                &mut res.data,
+                base2k,
+                res_k,
+                k as i64,
+                i,
+                &a.data,
+                base2k,
+                i,
+                &mut scratch_iter,
+            );
         }
     }
 
