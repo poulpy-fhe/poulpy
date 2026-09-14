@@ -257,7 +257,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <Self as HalConvolutionImpl>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+        Self::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -306,7 +306,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <Self as HalConvolutionImpl>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1143,7 +1143,7 @@ mod ifma_impl {
             a_size: usize,
             b_size: usize,
         ) -> usize {
-            <Self as HalConvolutionImpl>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+            Self::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -1194,7 +1194,7 @@ mod ifma_impl {
             a_size: usize,
             b_size: usize,
         ) -> usize {
-            <Self as HalConvolutionImpl>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+            Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]

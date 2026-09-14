@@ -670,7 +670,7 @@ unsafe impl HalVmpImpl for NTT4x30Avx512Rayon {
         first_row: usize,
         row_step: usize,
     ) {
-        <NTT4x30Avx512 as HalVmpImpl>::vmp_extract_selected_rows(
+        NTT4x30Avx512::vmp_extract_selected_rows(
             base_module(module),
             &mut base_vmp_mut(res),
             &base_vmp_ref(a),
@@ -839,13 +839,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <NTT4x30Avx512 as HalConvolutionImpl>::cnv_apply_dft_tmp_bytes(
-            base_module(_module),
-            _cnv_offset,
-            res_size,
-            a_size,
-            b_size,
-        )
+        NTT4x30Avx512::cnv_apply_dft_tmp_bytes(base_module(_module), _cnv_offset, res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes(
@@ -855,13 +849,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <NTT4x30Avx512 as HalConvolutionImpl>::cnv_by_const_apply_tmp_bytes(
-            base_module(module),
-            cnv_offset,
-            res_size,
-            a_size,
-            b_size,
-        )
+        NTT4x30Avx512::cnv_by_const_apply_tmp_bytes(base_module(module), cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -909,7 +897,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <Self as HalConvolutionImpl>::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+        Self::cnv_by_const_apply_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -983,7 +971,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <Self as HalConvolutionImpl>::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1019,13 +1007,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <NTT4x30Avx512 as HalConvolutionImpl>::cnv_pairwise_apply_dft_tmp_bytes(
-            base_module(_module),
-            _cnv_offset,
-            res_size,
-            a_size,
-            b_size,
-        )
+        NTT4x30Avx512::cnv_pairwise_apply_dft_tmp_bytes(base_module(_module), _cnv_offset, res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1122,7 +1104,7 @@ unsafe impl HalSvpImpl for NTT4x30Avx512Rayon {
         a: &ScalarZnxBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx512 as HalSvpImpl>::svp_prepare(
+        NTT4x30Avx512::svp_prepare(
             base_module(module),
             &mut base_svp_mut(res),
             res_col,
@@ -1138,13 +1120,7 @@ unsafe impl HalSvpImpl for NTT4x30Avx512Rayon {
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx512 as HalSvpImpl>::svp_ppol_copy(
-            base_module(module),
-            &mut base_svp_mut(res),
-            res_col,
-            &base_svp_ref(a),
-            a_col,
-        );
+        NTT4x30Avx512::svp_ppol_copy(base_module(module), &mut base_svp_mut(res), res_col, &base_svp_ref(a), a_col);
     }
 
     fn svp_apply_dft_tmp_bytes(_module: &Module<Self>, _b_size: usize) -> usize {
@@ -1163,7 +1139,7 @@ unsafe impl HalSvpImpl for NTT4x30Avx512Rayon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-        <NTT4x30Avx512 as HalSvpImpl>::svp_apply_dft(
+        NTT4x30Avx512::svp_apply_dft(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,
@@ -1184,7 +1160,7 @@ unsafe impl HalSvpImpl for NTT4x30Avx512Rayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <NTT4x30Avx512 as HalSvpImpl>::svp_apply_dft_to_dft(
+        NTT4x30Avx512::svp_apply_dft_to_dft(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,
@@ -1202,18 +1178,12 @@ unsafe impl HalSvpImpl for NTT4x30Avx512Rayon {
         a: &SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx512 as HalSvpImpl>::svp_apply_dft_to_dft_assign(
-            base_module(module),
-            &mut base_dft_mut(res),
-            res_col,
-            &base_svp_ref(a),
-            a_col,
-        );
+        NTT4x30Avx512::svp_apply_dft_to_dft_assign(base_module(module), &mut base_dft_mut(res), res_col, &base_svp_ref(a), a_col);
     }
 }
 unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
     fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_idft_normalize_consume_tmp_bytes(base_module(module), res_size, a_size)
+        NTT4x30Avx512::vec_znx_idft_normalize_consume_tmp_bytes(base_module(module), res_size, a_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1234,7 +1204,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
         let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
         if let Some((add, add_col)) = addend {
             let base_add = base_znx_ref(add);
-            <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_idft_normalize_consume(
+            NTT4x30Avx512::vec_znx_idft_normalize_consume(
                 base_module(module),
                 &mut base_res,
                 res_base2k,
@@ -1247,7 +1217,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
                 &mut base_scratch,
             );
         } else {
-            <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_idft_normalize_consume(
+            NTT4x30Avx512::vec_znx_idft_normalize_consume(
                 base_module(module),
                 &mut base_res,
                 res_base2k,
@@ -1273,7 +1243,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
         poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         if !parallel_limb_tasks(res.size()) {
-            return <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_dft_apply(
+            return NTT4x30Avx512::vec_znx_dft_apply(
                 base_module(module),
                 step,
                 offset,
@@ -1304,7 +1274,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
-        <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
+        NTT4x30Avx512::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
             poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 4 * module.n() * size_of::<u64>(),
         )
     }
@@ -1319,7 +1289,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
     ) {
         if !parallel_limb_tasks(res.size()) {
             let mut base_scratch = scratch.borrow().into_backend::<NTT4x30Avx512>();
-            return <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_idft_apply(
+            return NTT4x30Avx512::vec_znx_idft_apply(
                 base_module(module),
                 &mut base_big_mut(res),
                 res_col,
@@ -1367,7 +1337,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
         a_col: usize,
     ) {
         if !parallel_limb_tasks(res.size()) {
-            return <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_idft_apply_tmpa(
+            return NTT4x30Avx512::vec_znx_idft_apply_tmpa(
                 base_module(module),
                 &mut base_big_mut(res),
                 res_col,
@@ -1409,7 +1379,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_dft_add(
+        NTT4x30Avx512::vec_znx_dft_add(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,
@@ -1427,13 +1397,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_dft_add_assign(
-            base_module(module),
-            &mut base_dft_mut(res),
-            res_col,
-            &base_dft_ref(a),
-            a_col,
-        )
+        NTT4x30Avx512::vec_znx_dft_add_assign(base_module(module), &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col)
     }
 
     fn vec_znx_dft_sub(
@@ -1445,7 +1409,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_dft_sub(
+        NTT4x30Avx512::vec_znx_dft_sub(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,
@@ -1463,13 +1427,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_dft_sub_assign(
-            base_module(module),
-            &mut base_dft_mut(res),
-            res_col,
-            &base_dft_ref(a),
-            a_col,
-        )
+        NTT4x30Avx512::vec_znx_dft_sub_assign(base_module(module), &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col)
     }
 
     fn vec_znx_dft_sub_negate_assign(
@@ -1479,7 +1437,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_dft_sub_negate_assign(
+        NTT4x30Avx512::vec_znx_dft_sub_negate_assign(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,
@@ -1497,7 +1455,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_dft_copy(
+        NTT4x30Avx512::vec_znx_dft_copy(
             base_module(module),
             step,
             offset,
@@ -1509,13 +1467,13 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
     }
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
-        <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_dft_zero(base_module(module), &mut base_dft_mut(res), res_col)
+        NTT4x30Avx512::vec_znx_dft_zero(base_module(module), &mut base_dft_mut(res), res_col)
     }
 
-    type AutomorphismPlan = <NTT4x30Avx512 as HalVecZnxDftImpl>::AutomorphismPlan;
+    type AutomorphismPlan = NTT4x30Avx512::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
-        <NTT4x30Avx512 as HalVecZnxDftImpl>::vec_znx_dft_automorphism_plan(base_module(module), p)
+        NTT4x30Avx512::vec_znx_dft_automorphism_plan(base_module(module), p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(

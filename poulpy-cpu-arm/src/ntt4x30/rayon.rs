@@ -631,7 +631,7 @@ unsafe impl HalVmpImpl for NTT4x30NeonRayon {
         first_row: usize,
         row_step: usize,
     ) {
-        <NTT4x30Neon as HalVmpImpl>::vmp_extract_selected_rows(
+        NTT4x30Neon::vmp_extract_selected_rows(
             base_module(module),
             &mut base_vmp_mut(res),
             &base_vmp_ref(a),
@@ -693,15 +693,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
         poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         if !parallel_limb_tasks(res.size()) {
-            return <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_dft_apply(
-                base_module(module),
-                step,
-                offset,
-                &mut base_dft_mut(res),
-                res_col,
-                a,
-                a_col,
-            );
+            return NTT4x30Neon::vec_znx_dft_apply(base_module(module), step, offset, &mut base_dft_mut(res), res_col, a, a_col);
         }
 
         let n = res.n();
@@ -721,7 +713,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
     }
 
     fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize {
-        <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
+        NTT4x30Neon::vec_znx_idft_apply_tmp_bytes(base_module(module)).max(
             poulpy_cpu_rayon::workers(<Self as poulpy_hal::execution::ScratchWorkers>::IDFT) * 4 * module.n() * size_of::<u64>(),
         )
     }
@@ -736,7 +728,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
     ) {
         if !parallel_limb_tasks(res.size()) {
             let mut scratch = scratch.borrow().into_backend::<NTT4x30Neon>();
-            return <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_idft_apply(
+            return NTT4x30Neon::vec_znx_idft_apply(
                 base_module(module),
                 &mut base_big_mut(res),
                 res_col,
@@ -782,7 +774,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
         a_col: usize,
     ) {
         if !parallel_limb_tasks(res.size()) {
-            return <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_idft_apply_tmpa(
+            return NTT4x30Neon::vec_znx_idft_apply_tmpa(
                 base_module(module),
                 &mut base_big_mut(res),
                 res_col,
@@ -822,7 +814,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_dft_add(
+        NTT4x30Neon::vec_znx_dft_add(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,
@@ -840,13 +832,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_dft_add_assign(
-            base_module(module),
-            &mut base_dft_mut(res),
-            res_col,
-            &base_dft_ref(a),
-            a_col,
-        )
+        NTT4x30Neon::vec_znx_dft_add_assign(base_module(module), &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col)
     }
 
     fn vec_znx_dft_sub(
@@ -858,7 +844,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
         b: &VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     ) {
-        <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_dft_sub(
+        NTT4x30Neon::vec_znx_dft_sub(
             base_module(module),
             &mut base_dft_mut(res),
             res_col,
@@ -876,13 +862,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_dft_sub_assign(
-            base_module(module),
-            &mut base_dft_mut(res),
-            res_col,
-            &base_dft_ref(a),
-            a_col,
-        )
+        NTT4x30Neon::vec_znx_dft_sub_assign(base_module(module), &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col)
     }
 
     fn vec_znx_dft_sub_negate_assign(
@@ -892,13 +872,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_dft_sub_negate_assign(
-            base_module(module),
-            &mut base_dft_mut(res),
-            res_col,
-            &base_dft_ref(a),
-            a_col,
-        )
+        NTT4x30Neon::vec_znx_dft_sub_negate_assign(base_module(module), &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col)
     }
 
     fn vec_znx_dft_copy(
@@ -910,7 +884,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_dft_copy(
+        NTT4x30Neon::vec_znx_dft_copy(
             base_module(module),
             step,
             offset,
@@ -922,13 +896,13 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
     }
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
-        <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_dft_zero(base_module(module), &mut base_dft_mut(res), res_col)
+        NTT4x30Neon::vec_znx_dft_zero(base_module(module), &mut base_dft_mut(res), res_col)
     }
 
-    type AutomorphismPlan = <NTT4x30Neon as HalVecZnxDftImpl>::AutomorphismPlan;
+    type AutomorphismPlan = NTT4x30Neon::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
-        <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_dft_automorphism_plan(base_module(module), p)
+        NTT4x30Neon::vec_znx_dft_automorphism_plan(base_module(module), p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(
@@ -939,7 +913,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        <NTT4x30Neon as HalVecZnxDftImpl>::vec_znx_dft_automorphism_with_plan(
+        NTT4x30Neon::vec_znx_dft_automorphism_with_plan(
             base_module(module),
             plan,
             &mut base_dft_mut(res),
