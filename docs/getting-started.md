@@ -115,7 +115,9 @@ You write a scheme once against the `api` traits, name a backend as the `B` in `
 A new backend implements the `Backend` trait and the `oep` traits, and inherits every algorithm from `default` for free, so it is correct from the first day.
 It then overrides only its hot paths by implementing the relevant `oep` trait directly instead of taking the `default`, and each override is independent per operation and per layer.
 This is what lets the portable reference prove correctness once while the accelerated backends add speed incrementally without ever forking the scheme logic.
-Note that `poulpy-hal` has no `default` folder, since it defines the layouts and the dispatch but leaves the algorithms to the backends.
+`poulpy-hal` has no `default` folder.
+A backend implements the basis operations of each `oep` family, and the derived operations (the shifts, the small-operand big products, `vmp_apply_dft`, the convolution composites, ...) are default bodies on the `oep` traits themselves, written only in terms of the backend's own basis and overridable one method at a time; `test_suite::derived` pins every default body against the api on every backend.
+Every `api` trait of `poulpy-hal` carries a contract block (operation class, mutation class, domain, exact postcondition, pinning test) next to its prose; the `poulpy_hal::api` module docs define the vocabulary and the `poulpy_hal::oep` module docs give the order in which a new backend implements the families.
 
 ## Building, testing, and benchmarking
 
