@@ -270,7 +270,7 @@ macro_rules! ckks_carry_verb_default {
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, 0, 0, scratch)?;
+                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, 0, 0, 0, scratch)?;
                     self.[<ckks_ $verb _pt_vec_assign_unnormalized_default>](dst, pt, scratch)?;
                     Ok(())
                 }
@@ -342,7 +342,7 @@ macro_rules! ckks_carry_verb_default {
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, 0, 0, scratch)?;
+                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, 0, 0, 0, scratch)?;
                     self.[<ckks_ $verb _pt_const_assign_unnormalized_default>](dst, dst_coeff, cst, const_coeff, scratch)
                 }
 
