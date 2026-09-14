@@ -17,31 +17,31 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSRotateImpl<BE: Backend>: Backend {
-    fn ckks_rotate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize;
+pub unsafe trait CKKSRotateImpl: Backend {
+    fn ckks_rotate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
 
     fn ckks_rotate_into_impl<Dst, Src>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
     fn ckks_rotate_assign_impl<Dst>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         dst: &mut Dst,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos;
 }
 
-unsafe impl<BE: Backend> CKKSRotateImpl<BE> for BE
+unsafe impl<BE: Backend> CKKSRotateImpl for BE
 where
     BE: Backend + HalVecZnxImpl,
     Module<BE>: CKKSRotateDefault<BE> + GLWEAutomorphism<BE> + GLWEShift<BE>,

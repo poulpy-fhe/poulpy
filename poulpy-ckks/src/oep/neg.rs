@@ -11,25 +11,25 @@ use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSNegImpl<BE: Backend>: Backend {
-    fn ckks_neg_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize;
+pub unsafe trait CKKSNegImpl: Backend {
+    fn ckks_neg_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
 
     fn ckks_neg_into_impl<Dst, Src>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
-    fn ckks_neg_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst) -> Result<()>
+    fn ckks_neg_assign_impl<Dst>(module: &Module<Self>, dst: &mut Dst) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
-unsafe impl<BE: Backend> CKKSNegImpl<BE> for BE
+unsafe impl<BE: Backend> CKKSNegImpl for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: crate::default::neg::CKKSNegDefault<BE> + GLWENegate<BE> + GLWEShift<BE>,

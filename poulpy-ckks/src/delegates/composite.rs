@@ -97,7 +97,7 @@ where
 
 // --- CKKSMulAddOps ---
 
-impl<BE: Backend + CKKSAddImpl<BE>> CKKSMulAddOps<BE> for Module<BE>
+impl<BE: Backend + CKKSAddImpl> CKKSMulAddOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE>,
 {
@@ -455,7 +455,7 @@ fn accumulate_unnormalized<BE, D, F>(
 where
     BE: Backend,
     D: Data,
-    BE: CKKSAddImpl<BE>,
+    BE: CKKSAddImpl,
     Module<BE>: GLWENormalize<BE>,
     CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
     F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
@@ -476,7 +476,7 @@ where
     })
 }
 
-impl<BE: Backend + CKKSAddImpl<BE>> CKKSDotProductOps<BE> for Module<BE>
+impl<BE: Backend + CKKSAddImpl> CKKSDotProductOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + GLWENormalize<BE> + GLWETensoring<BE>,
 {

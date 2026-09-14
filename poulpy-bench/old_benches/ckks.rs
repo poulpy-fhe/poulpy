@@ -92,32 +92,32 @@ const CKKS_MUL_SWEEP: &[CkksMulParams] = &[
 
 pub trait CkksBenchBackend:
     Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>
-    + CKKSImpl<Self>
-    + GLWEKeyswitchImpl<Self>
-    + GLWEAddImpl<Self>
-    + GLWESubImpl<Self>
-    + GLWENegateImpl<Self>
-    + GLWECopyImpl<Self>
-    + GGLWEKeyswitchImpl<Self>
-    + GGSWKeyswitchImpl<Self>
-    + LWEKeyswitchImpl<Self>
-    + GLWEExternalProductImpl<Self>
-    + GGLWEExternalProductImpl<Self>
-    + GGSWExternalProductImpl<Self>
-    + GLWETensoringImpl<Self>
-    + GGLWEProductDigitsStridedImpl<Self>
-    + GLWEMulConstImpl<Self>
-    + GLWEMulPlainImpl<Self>
-    + GLWERotateImpl<Self>
-    + GLWEMulXpMinusOneImpl<Self>
-    + GLWEShiftImpl<Self>
-    + GLWENormalizeImpl<Self>
-    + GLWETraceImpl<Self>
-    + GLWEPackImpl<Self>
-    + GGSWRotateImpl<Self>
-    + DecryptionImpl<Self>
-    + ConversionImpl<Self>
-    + AutomorphismImpl<Self>
+    + CKKSImpl
+    + GLWEKeyswitchImpl
+    + GLWEAddImpl
+    + GLWESubImpl
+    + GLWENegateImpl
+    + GLWECopyImpl
+    + GGLWEKeyswitchImpl
+    + GGSWKeyswitchImpl
+    + LWEKeyswitchImpl
+    + GLWEExternalProductImpl
+    + GGLWEExternalProductImpl
+    + GGSWExternalProductImpl
+    + GLWETensoringImpl
+    + GGLWEProductDigitsStridedImpl
+    + GLWEMulConstImpl
+    + GLWEMulPlainImpl
+    + GLWERotateImpl
+    + GLWEMulXpMinusOneImpl
+    + GLWEShiftImpl
+    + GLWENormalizeImpl
+    + GLWETraceImpl
+    + GLWEPackImpl
+    + GGSWRotateImpl
+    + DecryptionImpl
+    + ConversionImpl
+    + AutomorphismImpl
     + HalModuleImpl
     + HalVecZnxImpl
     + HalVecZnxBigImpl
@@ -125,7 +125,7 @@ pub trait CkksBenchBackend:
     + HalSvpImpl
     + HalVmpImpl
     + HalConvolutionImpl
-    + LinearTransformationImpl<Self>
+    + LinearTransformationImpl
 where
     Self: Sized,
     Module<Self>: ModuleNew<Self>
@@ -152,32 +152,32 @@ where
 impl<BE> CkksBenchBackend for BE
 where
     BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>
-        + CKKSImpl<BE>
-        + GLWEKeyswitchImpl<BE>
-        + GLWEAddImpl<BE>
-        + GLWESubImpl<BE>
-        + GLWENegateImpl<BE>
-        + GLWECopyImpl<BE>
-        + GGLWEKeyswitchImpl<BE>
-        + GGSWKeyswitchImpl<BE>
-        + LWEKeyswitchImpl<BE>
-        + GLWEExternalProductImpl<BE>
-        + GGLWEExternalProductImpl<BE>
-        + GGSWExternalProductImpl<BE>
-        + GLWETensoringImpl<BE>
-        + GGLWEProductDigitsStridedImpl<BE>
-        + GLWEMulConstImpl<BE>
-        + GLWEMulPlainImpl<BE>
-        + GLWERotateImpl<BE>
-        + GLWEMulXpMinusOneImpl<BE>
-        + GLWEShiftImpl<BE>
-        + GLWENormalizeImpl<BE>
-        + GLWETraceImpl<BE>
-        + GLWEPackImpl<BE>
-        + GGSWRotateImpl<BE>
-        + DecryptionImpl<BE>
-        + ConversionImpl<BE>
-        + AutomorphismImpl<BE>
+        + CKKSImpl
+        + GLWEKeyswitchImpl
+        + GLWEAddImpl
+        + GLWESubImpl
+        + GLWENegateImpl
+        + GLWECopyImpl
+        + GGLWEKeyswitchImpl
+        + GGSWKeyswitchImpl
+        + LWEKeyswitchImpl
+        + GLWEExternalProductImpl
+        + GGLWEExternalProductImpl
+        + GGSWExternalProductImpl
+        + GLWETensoringImpl
+        + GGLWEProductDigitsStridedImpl
+        + GLWEMulConstImpl
+        + GLWEMulPlainImpl
+        + GLWERotateImpl
+        + GLWEMulXpMinusOneImpl
+        + GLWEShiftImpl
+        + GLWENormalizeImpl
+        + GLWETraceImpl
+        + GLWEPackImpl
+        + GGSWRotateImpl
+        + DecryptionImpl
+        + ConversionImpl
+        + AutomorphismImpl
         + HalModuleImpl
         + HalVecZnxImpl
         + HalVecZnxBigImpl
@@ -185,7 +185,7 @@ where
         + HalSvpImpl
         + HalVmpImpl
         + HalConvolutionImpl
-        + LinearTransformationImpl<BE>,
+        + LinearTransformationImpl,
     Module<BE>: ModuleNew<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWETensorKeyPreparedFactory<BE>

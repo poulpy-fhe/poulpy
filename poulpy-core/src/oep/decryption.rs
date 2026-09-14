@@ -15,51 +15,51 @@ use crate::layouts::{
 /// Implementations must interpret ciphertexts, plaintexts, and secrets according to their layout
 /// metadata, avoid out-of-bounds or aliased writes, and only use scratch space within the
 /// advertised temporary-size contracts.
-pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
-    fn glwe_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
+pub unsafe trait DecryptionImpl: Backend {
+    fn glwe_decrypt_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    fn glwe_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_decrypt<R, P, S>(module: &Module<Self>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendRef<Self> + GLWEInfos,
+        P: GLWEToBackendMut<Self> + GLWEInfos + SetBase2k,
+        S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 
-    fn lwe_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
+    fn lwe_decrypt_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: LWEInfos;
 
-    fn lwe_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    fn lwe_decrypt<R, P, S>(module: &Module<Self>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: LWEToBackendRef<BE> + LWEInfos,
-        P: LWEPlaintextToBackendMut<BE> + SetBase2k + LWEInfos,
-        S: LWESecretToBackendRef<BE> + LWEInfos;
+        R: LWEToBackendRef<Self> + LWEInfos,
+        P: LWEPlaintextToBackendMut<Self> + SetBase2k + LWEInfos,
+        S: LWESecretToBackendRef<Self> + LWEInfos;
 
-    fn lwe_matrix_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
+    fn lwe_matrix_decrypt_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: LWEMatrixInfos;
 
-    fn lwe_matrix_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    fn lwe_matrix_decrypt<R, P, S>(module: &Module<Self>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-        P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
-        S: LWESecretToBackendRef<BE> + LWEInfos;
+        R: LWEMatrixToBackendRef<Self> + LWEMatrixInfos,
+        P: GLWEToBackendMut<Self> + SetBase2k + GLWEInfos,
+        S: LWESecretToBackendRef<Self> + LWEInfos;
 
     fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
-        module: &Module<BE>,
-        res: &GLWETensor<R, BE::ZnxWord>,
-        pt: &mut GLWEPlaintext<P, BE::ZnxWord>,
-        sk: &GLWESecretPrepared<S0, BE>,
-        sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        module: &Module<Self>,
+        res: &GLWETensor<R, Self::ZnxWord>,
+        pt: &mut GLWEPlaintext<P, Self::ZnxWord>,
+        sk: &GLWESecretPrepared<S0, Self>,
+        sk_tensor: &GLWESecretTensorPrepared<S1, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
-        GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos;
+        GLWETensor<R, Self::ZnxWord>: GLWEToBackendRef<Self> + GLWEInfos,
+        GLWEPlaintext<P, Self::ZnxWord>: GLWEToBackendMut<Self> + GLWEInfos + SetBase2k,
+        GLWESecretPrepared<S0, Self>: GLWESecretPreparedToBackendRef<Self> + GLWEInfos,
+        GLWESecretTensorPrepared<S1, Self>: GLWESecretTensorPreparedToBackendRef<Self> + GLWEInfos;
 
-    fn glwe_tensor_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_tensor_decrypt_tmp_bytes<A>(module: &Module<Self>, infos: &A) -> usize
     where
         A: GLWEInfos;
 }
@@ -223,7 +223,7 @@ macro_rules! impl_decryption_defaults_full {
     };
 }
 
-unsafe impl<BE: Backend + HalVecZnxImpl + HalVecZnxBigImpl + HalVecZnxDftImpl + HalSvpImpl> DecryptionImpl<BE> for BE
+unsafe impl<BE: Backend + HalVecZnxImpl + HalVecZnxBigImpl + HalVecZnxDftImpl + HalSvpImpl> DecryptionImpl for BE
 where
     Module<BE>: DecryptionDefault<BE>,
 {

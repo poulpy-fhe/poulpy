@@ -12,7 +12,7 @@ use crate::{
 
 use crate::api::CKKSConjugateOps;
 
-impl<BE: Backend + CKKSConjugateImpl<BE>> CKKSConjugateOps<BE> for Module<BE>
+impl<BE: Backend + CKKSConjugateImpl> CKKSConjugateOps<BE> for Module<BE>
 where
     Module<BE>: GLWEAutomorphism<BE> + GLWEShift<BE>,
 {

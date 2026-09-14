@@ -113,7 +113,7 @@ pub(super) fn direct_tmp_bytes_validated<BE, F, K>(
     keys: &K,
 ) -> Result<usize>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>
@@ -237,7 +237,7 @@ pub(crate) fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
     encapsulated: bool,
 ) -> Result<usize>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>
@@ -278,7 +278,7 @@ pub(super) fn preflight<BE, F, K, Src>(
     scratch: &ScratchArena<'_, BE>,
 ) -> Result<((usize, usize), usize)>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>
@@ -325,7 +325,7 @@ where
 /// `kappa = N/(C*2^s)` makes that stride exactly `2^s`: every live
 /// coefficient is refreshed once, and no branch spends work on a coefficient
 /// the sparsity guarantees is zero.
-pub(super) fn branch_schedule<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoScalar>(
+pub(super) fn branch_schedule<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoScalar>(
     context: &PaCoContext<BE, F>,
     log_sparsity: usize,
 ) -> Result<(usize, usize)> {
@@ -366,7 +366,7 @@ pub(super) fn validate_encapsulation_key<'a, BE, F, K, Src>(
     keys: &'a K,
 ) -> Result<&'a K::SwitchingKey>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     K: PaCoKeys<BE>,
     Src: CKKSCtBounds,
@@ -408,7 +408,7 @@ where
 /// Layout produced by dense-to-PaCo encapsulation. The key switch accepts an
 /// input in a different limb radix, but its result must use the context radix
 /// consumed by the compiled plaintexts and bootstrapping keys.
-fn encapsulated_input_layout<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoScalar, Src: CKKSCtBounds>(
+fn encapsulated_input_layout<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoScalar, Src: CKKSCtBounds>(
     input: &Src,
     context: &PaCoContext<BE, F>,
 ) -> CKKSLayout {

@@ -10,7 +10,7 @@ use poulpy_hal::{
 
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSImagOps, oep::CKKSImagImpl};
 
-impl<BE: Backend + CKKSImagImpl<BE>> CKKSImagOps<BE> for Module<BE>
+impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE>
 where
     Module<BE>: GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
 {

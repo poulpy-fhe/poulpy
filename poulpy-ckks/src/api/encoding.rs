@@ -37,7 +37,7 @@ impl<T> CKKSEncodingScalar for T where T: CKKSScalar + FloatConst + Pod + Send +
 ///
 /// The scalar is a trait parameter so the methods stay free of backend bounds:
 /// the delegating impl on `Module<BE>` requires the
-/// [`CKKSEncodingImpl<BE, F>`](crate::oep::CKKSEncodingImpl) seam at the impl
+/// [`CKKSEncodingImpl<F>`](crate::oep::CKKSEncodingImpl) seam at the impl
 /// level, and a backend overrides that seam independently of any bounds the
 /// reference implementation carries.
 pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {

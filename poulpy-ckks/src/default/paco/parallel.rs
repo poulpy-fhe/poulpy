@@ -68,7 +68,7 @@ fn run_branch_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -109,7 +109,7 @@ where
     Ok(())
 }
 
-fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoScalar>(
+fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl, F: PaCoScalar>(
     output: &mut CKKSCiphertextOwned<BE>,
     context: &PaCoContext<BE, F>,
     kappa: usize,
@@ -138,7 +138,7 @@ pub(crate) fn paco_bootstrap_direct_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -182,7 +182,7 @@ fn paco_bootstrap_direct_validated_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -256,7 +256,7 @@ fn encapsulate_input<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<CKKSCiphertextOwned<BE>>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     Module<BE>: CKKSModuleAlloc<BE> + GLWEKeyswitch<BE>,
     K: PaCoKeys<BE>,
@@ -281,7 +281,7 @@ pub(crate) fn paco_bootstrap_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -330,7 +330,7 @@ pub(crate) fn paco_bootstrap_parallel_direct_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -380,7 +380,7 @@ fn paco_bootstrap_parallel_direct_validated_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -582,7 +582,7 @@ pub(crate) fn paco_bootstrap_parallel_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>

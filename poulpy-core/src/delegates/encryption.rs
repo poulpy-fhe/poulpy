@@ -28,7 +28,7 @@ macro_rules! impl_encryption_delegate {
     ($trait:ty, $default:path, $($body:item),+ $(,)?) => {
         impl<BE> $trait for Module<BE>
         where
-            BE: Backend + EncryptionImpl<BE>,
+            BE: Backend + EncryptionImpl,
         {
             $($body)+
         }

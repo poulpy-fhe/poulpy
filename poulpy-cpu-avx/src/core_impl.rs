@@ -21,7 +21,7 @@ impl_gglwe_product_digits_strided_default!(FFT64Avx);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_product_digits_strided_default!(FFT64AvxRayon);
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx> for NTT4x30Avx {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,

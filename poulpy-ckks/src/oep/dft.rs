@@ -45,108 +45,108 @@ use crate::{
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
-pub unsafe trait DFTImpl<BE: Backend>: Backend {
+pub unsafe trait DFTImpl: Backend {
     fn ckks_prepare_dft_matrix_impl<Dir, Fmt, P>(
-        module: &Module<BE>,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrixPrepared<BE, Dir, Fmt>
+        module: &Module<Self>,
+        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> DFTMatrixPrepared<Self, Dir, Fmt>
     where
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
+        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + DiagonalProd<Self>;
 
     fn ckks_dft_evaluate_assign_impl<Dir, Fmt, P, Dst, H>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        dft: &DFTMatrix<Self, Dir, Fmt, LinearTransformation<P>>,
         keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>;
+        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self>;
 
     fn ckks_coeffs_to_slots_impl<P, Dst, H>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
+        dft: &DFTMatrix<Self, Encode, Standard, LinearTransformation<P>>,
         keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>;
+        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self>;
 
     fn ckks_slots_to_coeffs_impl<P, Dst, H>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
+        dft: &DFTMatrix<Self, Decode, Standard, LinearTransformation<P>>,
         keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        H: GetAutomorphismKey<BE>;
+        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        H: GetAutomorphismKey<Self>;
 
     fn ckks_coeffs_to_slots_split_impl<P, Dst, Src, H>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
+        dft: &DFTMatrix<Self, Encode, Split, LinearTransformation<P>>,
         keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self>;
 
     fn ckks_slots_to_coeffs_split_impl<P, Dst, Src, H>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         op_out: &mut Dst,
         ct_real: &Src,
         ct_imag: &Src,
-        dft: &DFTMatrix<BE, Decode, Split, LinearTransformation<P>>,
+        dft: &DFTMatrix<Self, Decode, Split, LinearTransformation<P>>,
         keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self>;
 
     fn ckks_coeffs_to_slots_repack_impl<P, Dst, Src, H>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         ct_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
+        dft: &DFTMatrix<Self, Encode, Repack, LinearTransformation<P>>,
         keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self>;
 
     fn ckks_slots_to_coeffs_repack_impl<P, Dst, Src, H>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         op_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, Decode, Repack, LinearTransformation<P>>,
+        dft: &DFTMatrix<Self, Decode, Repack, LinearTransformation<P>>,
         keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        H: GetAutomorphismKey<BE>;
+        P: DiagonalProd<Self> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds,
+        H: GetAutomorphismKey<Self>;
 }
 
 /// Backend hook for homomorphic-DFT matrix generation at scalar precision `F`.
@@ -161,13 +161,13 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
-pub unsafe trait DFTMatrixImpl<BE: Backend, F: CKKSEncodingScalar>: Backend {
+pub unsafe trait DFTMatrixImpl<F: CKKSEncodingScalar>: Backend {
     fn ckks_new_dft_matrix_impl<Dir, Fmt>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         base2k: Base2K,
         literal: &DFTPlan,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<DFTMatrix<BE, Dir, Fmt>>
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<DFTMatrix<Self, Dir, Fmt>>
     where
         Dir: DftDirection,
         Fmt: DftFormat;
@@ -194,16 +194,16 @@ pub trait DFTMatrixDefault<BE: Backend, F: CKKSEncodingScalar> {
         Fmt: DftFormat,
         Self: Borrow<Module<BE>>,
         F: DftScalar,
-        BE: CKKSEncodingImpl<BE, F>,
+        BE: CKKSEncodingImpl<F>,
         Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     {
         crate::default::dft::ckks_new_dft_matrix::<Dir, Fmt, BE, F>(self.borrow(), base2k, literal, scratch)
     }
 }
 
-unsafe impl<BE, F> DFTMatrixImpl<BE, F> for BE
+unsafe impl<BE, F> DFTMatrixImpl<F> for BE
 where
-    BE: Backend + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar + DftScalar,
     Module<BE>: DFTMatrixDefault<BE, F>
         + CnvPVecAlloc<BE>
@@ -392,7 +392,7 @@ pub trait DFTDefault<BE: Backend> {
     }
 }
 
-unsafe impl<BE> DFTImpl<BE> for BE
+unsafe impl<BE> DFTImpl for BE
 where
     BE: Backend,
     Module<BE>: DFTDefault<BE>

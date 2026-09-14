@@ -11,7 +11,7 @@ use crate::{
 
 impl<BE> ScalarZnxFillDistribution<BE> for Module<BE>
 where
-    BE: Backend + SamplingImpl<BE>,
+    BE: Backend + SamplingImpl,
 {
     fn scalar_znx_fill_distribution(
         &self,
@@ -26,7 +26,7 @@ where
 
 impl<BE> VecZnxAddNormal<BE> for Module<BE>
 where
-    BE: Backend + SamplingImpl<BE>,
+    BE: Backend + SamplingImpl,
 {
     fn vec_znx_add_normal(
         &self,
@@ -42,7 +42,7 @@ where
 
 impl<BE> VecZnxBigAddNormal<BE> for Module<BE>
 where
-    BE: Backend + SamplingImpl<BE>,
+    BE: Backend + SamplingImpl,
 {
     fn vec_znx_big_add_normal(
         &self,

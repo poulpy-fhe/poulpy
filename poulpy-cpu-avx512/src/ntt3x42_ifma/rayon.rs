@@ -1005,7 +1005,7 @@ unsafe impl HalVmpImpl for NTT3x42IfmaRayon {
     }
 }
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42IfmaRayon {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -1070,7 +1070,7 @@ pub(crate) fn vmp_apply_digits_strided_known_zero_prefix(
     pmat: &VmpPMatBackendRef<'_, NTT3x42IfmaRayon>,
     scratch: &mut ScratchArena<'_, NTT3x42IfmaRayon>,
 ) {
-    let bytes = <NTT3x42IfmaRayon as poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42IfmaRayon>>::gglwe_product_digits_strided_tmp_bytes(
+    let bytes = <NTT3x42IfmaRayon as poulpy_core::oep::GGLWEProductDigitsStridedImpl>::gglwe_product_digits_strided_tmp_bytes(
         module,
         res.size(),
         a.cols(),

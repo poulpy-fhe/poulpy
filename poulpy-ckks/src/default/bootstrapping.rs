@@ -76,7 +76,7 @@ impl<BE: Backend> Deref for BootstrappingDefault<'_, BE> {
     }
 }
 
-impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
+impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
     pub(crate) fn ckks_mod_up_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Module<BE>: GLWEShift<BE>,
@@ -984,7 +984,7 @@ pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl<BE>,
+    BE: Backend + CKKSEncapsulatedModUpImpl,
     Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSPow2Ops<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,

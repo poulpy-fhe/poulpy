@@ -668,7 +668,7 @@ unsafe impl HalVmpImpl for NTT4x30AvxRayon {
     }
 }
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30AvxRayon> for NTT4x30AvxRayon {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30AvxRayon {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -733,7 +733,7 @@ pub(crate) fn vmp_apply_digits_strided_known_zero_prefix(
     pmat: &VmpPMatBackendRef<'_, NTT4x30AvxRayon>,
     scratch: &mut ScratchArena<'_, NTT4x30AvxRayon>,
 ) {
-    let bytes = <NTT4x30AvxRayon as poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30AvxRayon>>::gglwe_product_digits_strided_tmp_bytes(
+    let bytes = <NTT4x30AvxRayon as poulpy_core::oep::GGLWEProductDigitsStridedImpl>::gglwe_product_digits_strided_tmp_bytes(
         module,
         res.size(),
         a.cols(),

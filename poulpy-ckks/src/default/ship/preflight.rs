@@ -36,7 +36,7 @@ pub(crate) fn ship_bootstrap_tmp_bytes<BE, F, Src>(
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
 ) -> Result<usize>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
         + GGLWEProductDefault<BE>
