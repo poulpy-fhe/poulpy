@@ -950,7 +950,6 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         module: &Module<Self>,
         res: &mut crate::layouts::CnvPVecLBackendMut<'_, Self>,
         a: &crate::layouts::VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -960,7 +959,6 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         module: &Module<Self>,
         res: &mut crate::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &crate::layouts::VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     );
 
@@ -1145,9 +1143,8 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         left: &mut crate::layouts::CnvPVecLBackendMut<'_, Self>,
         right: &mut crate::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &crate::layouts::VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        crate::oep::cnv_prepare_self_derived::<Self>(module, left, right, a, mask, scratch)
+        crate::oep::cnv_prepare_self_derived::<Self>(module, left, right, a, scratch)
     }
 }

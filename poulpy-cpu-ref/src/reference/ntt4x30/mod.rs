@@ -147,12 +147,6 @@ pub trait NttFromZnx64 {
     ///
     /// `res` must have length `4 * a.len()`.
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]);
-
-    /// Encode `a` into `res` (q120b layout), applying `mask` to each coefficient
-    /// before conversion. Equivalent to `ntt_from_znx64` on `a[j] & mask`.
-    fn ntt_from_znx64_masked(res: &mut [u64], a: &[i64], mask: i64) {
-        arithmetic::b_from_znx64_masked_ref::<primes::Primes30>(a.len(), res, a, mask)
-    }
 }
 
 /// Recover `i128` ring-element coefficients from a q120b NTT vector.

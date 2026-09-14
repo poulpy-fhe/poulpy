@@ -151,12 +151,6 @@ unsafe fn simd_b_from_znx64(n: usize, res: &mut [u64], a: &[i64]) {
     unsafe { simd_b_from_znx64_impl(n, res, a, !0i64) }
 }
 
-/// Same as [`simd_b_from_znx64`] but ANDs each input by `mask` first.
-#[target_feature(enable = "avx512vl")]
-unsafe fn simd_b_from_znx64_masked(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
-    unsafe { simd_b_from_znx64_impl(n, res, a, mask) }
-}
-
 #[inline]
 #[target_feature(enable = "avx512f,avx512vl")]
 unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
@@ -295,11 +289,6 @@ impl Ntt3x42IfmaFromZnx64 for NTT3x42Ifma {
     #[inline(always)]
     fn ntt3x42_ifma_from_znx64(res: &mut [u64], a: &[i64]) {
         unsafe { simd_b_from_znx64(a.len(), res, a) };
-    }
-
-    #[inline(always)]
-    fn ntt3x42_ifma_from_znx64_masked(res: &mut [u64], a: &[i64], mask: i64) {
-        unsafe { simd_b_from_znx64_masked(a.len(), res, a, mask) };
     }
 }
 

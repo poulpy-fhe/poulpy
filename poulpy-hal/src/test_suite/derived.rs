@@ -2509,8 +2509,8 @@ where
     // Oracle: the two prepares, driven separately.
     let mut left_oracle: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
     let mut right_oracle: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
-    module.cnv_prepare_left(&mut left_oracle.to_backend_mut(), &a_ref, !0i64, &mut scratch.borrow());
-    module.cnv_prepare_right(&mut right_oracle.to_backend_mut(), &a_ref, !0i64, &mut scratch.borrow());
+    module.cnv_prepare_left(&mut left_oracle.to_backend_mut(), &a_ref, &mut scratch.borrow());
+    module.cnv_prepare_right(&mut right_oracle.to_backend_mut(), &a_ref, &mut scratch.borrow());
 
     // The derived free function, with an arena sized only by its own sibling.
     let mut left_derived: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
@@ -2522,7 +2522,6 @@ where
         &mut left_derived.to_backend_mut(),
         &mut right_derived.to_backend_mut(),
         &a_ref,
-        !0i64,
         &mut derived_scratch.borrow(),
     );
 
@@ -2533,7 +2532,6 @@ where
         &mut left_module.to_backend_mut(),
         &mut right_module.to_backend_mut(),
         &a_ref,
-        !0i64,
         &mut scratch.borrow(),
     );
 
@@ -2744,13 +2742,11 @@ where
     module.cnv_prepare_left(
         &mut a_prep.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_backend),
-        !0i64,
         &mut scratch.borrow(),
     );
     module.cnv_prepare_right(
         &mut b_prep.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&b_backend),
-        !0i64,
         &mut scratch.borrow(),
     );
 

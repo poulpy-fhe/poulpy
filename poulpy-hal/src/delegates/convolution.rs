@@ -47,10 +47,9 @@ impl_convolution_delegate!(
         &self,
         res: &mut CnvPVecLBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::cnv_prepare_left(self, res, a, mask, scratch);
+        BE::cnv_prepare_left(self, res, a, scratch);
     },
     fn cnv_prepare_right_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
         BE::cnv_prepare_right_tmp_bytes(self, res_size, a_size)
@@ -59,10 +58,9 @@ impl_convolution_delegate!(
         &self,
         res: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::cnv_prepare_right(self, res, a, mask, scratch);
+        BE::cnv_prepare_right(self, res, a, scratch);
     },
     fn cnv_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         BE::cnv_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
@@ -169,9 +167,8 @@ impl_convolution_delegate!(
         left: &mut CnvPVecLBackendMut<'_, BE>,
         right: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        BE::cnv_prepare_self(self, left, right, a, mask, scratch)
+        BE::cnv_prepare_self(self, left, right, a, scratch)
     }
 );

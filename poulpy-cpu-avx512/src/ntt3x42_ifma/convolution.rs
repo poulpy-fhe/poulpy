@@ -1228,7 +1228,6 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     module: &Module<NTT3x42Ifma>,
     res: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma>,
     a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
-    mask: i64,
     tmp: &mut [u8],
 ) {
     poulpy_hal::layouts::assert_dense(a, "cnv_prepare_left");
@@ -1250,11 +1249,7 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
             let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
             let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
             if j < min_size {
-                if j + 1 == min_size {
-                    NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-                } else {
-                    NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                }
+                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
                 unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
                 NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
                 unsafe { pack_limb_packed(dst, limb_c, n, res_size, j) };
@@ -1274,11 +1269,7 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
     for col in 0..cols {
         let dst = col_slice_mut(res_raw, n, res_size, col);
         for j in 0..min_size {
-            if j + 1 == min_size {
-                NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-            } else {
-                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-            }
+            NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
             // Lazy [0, 4q): c_from_b re-reduces to the canonical packing domain.
             unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
             NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
@@ -1299,7 +1290,6 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
     module: &Module<NTT3x42Ifma>,
     res: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma>,
     a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
-    mask: i64,
     tmp: &mut [u64],
 ) {
     poulpy_hal::layouts::assert_dense(a, "cnv_prepare_right");
@@ -1321,11 +1311,7 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
             let (limb_b, limb_c) = tmp.split_at_mut(3 * n);
             let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(col * col_stride), col_stride) };
             if j < min_size {
-                if j + 1 == min_size {
-                    NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-                } else {
-                    NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                }
+                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
                 unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
                 NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
                 unsafe { pack_limb_packed(dst, limb_c, n, res_size, res_size - 1 - j) };
@@ -1342,11 +1328,7 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
     for col in 0..cols {
         let dst = col_slice_mut(res_raw, n, res_size, col);
         for j in 0..min_size {
-            if j + 1 == min_size {
-                NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-            } else {
-                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-            }
+            NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
             // Lazy [0, 4q): c_from_b re-reduces to the canonical packing domain.
             unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
             NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
@@ -1368,7 +1350,6 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
     left: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma>,
     right: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma>,
     a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
-    mask: i64,
     tmp: &mut [u8],
 ) {
     poulpy_hal::layouts::assert_dense(a, "cnv_prepare_self");
@@ -1399,11 +1380,7 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
             let dst_l = unsafe { std::slice::from_raw_parts_mut(left_ptr.get().add(col * col_stride), col_stride) };
             let dst_r = unsafe { std::slice::from_raw_parts_mut(right_ptr.get().add(col * col_stride), col_stride) };
             if j < min_size {
-                if j + 1 == min_size {
-                    NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-                } else {
-                    NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-                }
+                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
                 unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
                 NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
                 unsafe { pack_limb_packed(dst_l, limb_c, n, res_size, j) };
@@ -1427,11 +1404,7 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
         let dst_l = col_slice_mut(left_raw, n, res_size, col);
         let dst_r = col_slice_mut(right_raw, n, res_size, col);
         for j in 0..min_size {
-            if j + 1 == min_size {
-                NTT3x42Ifma::ntt3x42_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
-            } else {
-                NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
-            }
+            NTT3x42Ifma::ntt3x42_ifma_from_znx64(limb_b, a.at(col, j));
             // Lazy [0, 4q): c_from_b re-reduces to the canonical packing domain.
             unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
             NTT3x42Ifma::ntt3x42_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);

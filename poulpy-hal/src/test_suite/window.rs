@@ -274,7 +274,6 @@ where
         module.cnv_prepare_left(
             &mut prep.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
-            !0i64,
             &mut scratch.arena(),
         );
     }))

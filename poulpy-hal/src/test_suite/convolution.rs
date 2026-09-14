@@ -277,7 +277,6 @@ where
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -286,7 +285,6 @@ where
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -385,7 +383,6 @@ where
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -394,7 +391,6 @@ where
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -516,7 +512,6 @@ where
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -525,7 +520,6 @@ where
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -671,7 +665,6 @@ where
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -680,7 +673,6 @@ where
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -948,7 +940,6 @@ pub fn test_convolution_prepare_shape_rejected<BE: crate::test_suite::TestBacken
         module.cnv_prepare_left(
             &mut narrow_left.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be),
-            !0i64,
             &mut scratch.arena(),
         );
     }))
@@ -963,7 +954,6 @@ pub fn test_convolution_prepare_shape_rejected<BE: crate::test_suite::TestBacken
         module.cnv_prepare_right(
             &mut narrow_right.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be),
-            !0i64,
             &mut scratch.arena(),
         );
     }))
@@ -980,7 +970,6 @@ pub fn test_convolution_prepare_shape_rejected<BE: crate::test_suite::TestBacken
             &mut left.to_backend_mut(),
             &mut short_right.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be),
-            !0i64,
             &mut scratch.arena(),
         );
     }))
@@ -995,7 +984,6 @@ pub fn test_convolution_prepare_shape_rejected<BE: crate::test_suite::TestBacken
             &mut left.to_backend_mut(),
             &mut narrow_right.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be),
-            !0i64,
             &mut scratch.arena(),
         );
     }))
