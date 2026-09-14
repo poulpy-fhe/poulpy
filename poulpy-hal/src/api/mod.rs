@@ -1,12 +1,43 @@
 //! Safe, user-facing trait definitions for polynomial arithmetic operations.
 //!
 //! Scheme authors program against these traits; the computation is dispatched
-//! to a backend through the [`oep`](crate::oep) extension points. Each trait
-//! will document one operation with a structured contract (`op / class / mutation /
-//! definition / domain / requires / ensures / fallback / override / exact /
-//! test`; basis operations omit `definition`, `fallback` and `override`) once
-//! the contract pass lands. The shared vocabulary those contracts use is
-//! defined here, once.
+//! to a backend through the [`oep`](crate::oep) extension points. Every trait
+//! below documents its operations with one prose paragraph and one structured
+//! contract block. The shared vocabulary those blocks use is defined here,
+//! once.
+//!
+//! # Contract blocks
+//!
+//! A block is fenced as `text`, one line per key:
+//!
+//! ```text
+//! op         vec_znx_add(res, res_col, a, a_col, b, b_col)
+//! class      basis
+//! mutation   out-of-place
+//! domain     res, a, b: VecZnx or windows of one, read at one shared base2k
+//! ensures    res[res_col] = a[a_col] + b[b_col] limb by limb
+//! exact      exact
+//! test       test_vec_znx_add_matches_reference
+//! ```
+//!
+//! `op`, `class`, `mutation`, `domain`, `ensures`, `exact` and `test` are
+//! always present; `definition`, `requires`, `fallback`, `override` and
+//! `sparse` appear where they have something to say.
+//!
+//! - `class` is `basis` (its own definition, required of every backend),
+//!   `variant` (a basis definition under a different storage or mutation
+//!   contract, still required), `derived` (an OEP default body that every
+//!   backend inherits and may override) or `support` (allocation, byte sizes,
+//!   scratch reports: nothing arithmetic).
+//! - `mutation` is one of the three classes below, or `none` on a support
+//!   trait, which computes nothing.
+//! - `definition` is the composition a variant or a derived operation stands
+//!   for, `fallback` the body a backend inherits, `override` whether a backend
+//!   may replace it and which `_tmp_bytes` it must replace with it.
+//! - `test` names the `pub fn` of [`test_suite`](crate::test_suite) that pins
+//!   the operation. A test in this crate reads every block, checks that each
+//!   trait carries one and that its class brings the lines it needs, and
+//!   resolves the names on the `test` line against the suite.
 //!
 //! # Value model
 //!
@@ -78,6 +109,24 @@
 //! on `idft(...)`: `idft(dft(a)) = a`, `idft(svp_apply(dft(a), prep(s))) =
 //! a * s`, `idft(vmp_apply(dft(a), prep(M))) = a * M`, and the DFT-domain
 //! `add`, `sub`, `automorphism` are the images of the ring operations.
+//!
+//! # Degree embedding
+//!
+//! Every operation is defined on `R_N`. A degree-`n` object, `n` a
+//! power-of-two divisor of `N`, denotes its image `p(X^(N/n))` under
+//! `switch_ring`; the compact storage, `N/n` smaller, is a representation
+//! choice the contracts never mention. Only the operand slots a contract's
+//! `sparse` line names accept a degree other than the module's; `res` and
+//! every other operand share `N`. The kernels that read those slots land with
+//! sparse operands (<https://github.com/poulpy-fhe/poulpy/issues/266>), so a
+//! mixed-degree call is rejected until then.
+//!
+//! The coefficient-wise operations are outside that rule: `vec_znx_big_inner_sum`,
+//! `vec_znx_big_col_weighted_sum` and `vec_znx_scalar_product` act on
+//! coefficients, not on `R_N`. Their operands take any degree, each contract's
+//! `domain` line gives the relations between them, and the module's degree
+//! does not enter. LWE encryption drives them on buffers of the LWE dimension
+//! and reduces to degree one.
 //!
 //! # Preconditions
 //!

@@ -41,7 +41,7 @@ impl<BE: Backend> CnvPVecBytesOf for Module<BE> {
 impl_convolution_delegate!(
     Convolution<BE>,
     fn cnv_prepare_left_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_prepare_left_tmp_bytes(self, res_size, a_size)
+        BE::cnv_prepare_left_tmp_bytes(self, res_size, a_size)
     },
     fn cnv_prepare_left(
         &self,
@@ -50,10 +50,10 @@ impl_convolution_delegate!(
         mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        <BE as HalConvolutionImpl<BE>>::cnv_prepare_left(self, res, a, mask, scratch);
+        BE::cnv_prepare_left(self, res, a, mask, scratch);
     },
     fn cnv_prepare_right_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_prepare_right_tmp_bytes(self, res_size, a_size)
+        BE::cnv_prepare_right_tmp_bytes(self, res_size, a_size)
     },
     fn cnv_prepare_right(
         &self,
@@ -62,13 +62,13 @@ impl_convolution_delegate!(
         mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        <BE as HalConvolutionImpl<BE>>::cnv_prepare_right(self, res, a, mask, scratch);
+        BE::cnv_prepare_right(self, res, a, mask, scratch);
     },
     fn cnv_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
+        BE::cnv_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
     },
     fn cnv_by_const_apply_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_by_const_apply_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
+        BE::cnv_by_const_apply_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
     },
     fn cnv_by_const_apply(
         &self,
@@ -82,10 +82,10 @@ impl_convolution_delegate!(
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        <BE as HalConvolutionImpl<BE>>::cnv_by_const_apply(self, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
+        BE::cnv_by_const_apply(self, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     },
     fn cnv_by_const_apply_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_by_const_apply_add_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
+        BE::cnv_by_const_apply_add_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
     },
     fn cnv_by_const_apply_add(
         &self,
@@ -99,9 +99,7 @@ impl_convolution_delegate!(
         b_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        <BE as HalConvolutionImpl<BE>>::cnv_by_const_apply_add(
-            self, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch,
-        )
+        BE::cnv_by_const_apply_add(self, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     },
     fn cnv_apply_dft(
         &self,
@@ -114,10 +112,10 @@ impl_convolution_delegate!(
         b_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+        BE::cnv_apply_dft(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     },
     fn cnv_apply_dft_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_add_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
+        BE::cnv_apply_dft_add_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
     },
     fn cnv_apply_dft_add(
         &self,
@@ -130,10 +128,10 @@ impl_convolution_delegate!(
         b_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_add(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+        BE::cnv_apply_dft_add(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     },
     fn cnv_apply_dft_sum_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_sum_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
+        BE::cnv_apply_dft_sum_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
     },
     fn cnv_apply_dft_sum<'a>(
         &self,
@@ -145,10 +143,10 @@ impl_convolution_delegate!(
     ) where
         BE: 'a,
     {
-        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_sum(self, cnv_offset, res, res_col, terms, scratch)
+        BE::cnv_apply_dft_sum(self, cnv_offset, res, res_col, terms, scratch)
     },
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_pairwise_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
+        BE::cnv_pairwise_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
     },
     fn cnv_pairwise_apply_dft(
         &self,
@@ -161,10 +159,10 @@ impl_convolution_delegate!(
         j: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        <BE as HalConvolutionImpl<BE>>::cnv_pairwise_apply_dft(self, cnv_offset, res, res_col, a, b, i, j, scratch)
+        BE::cnv_pairwise_apply_dft(self, cnv_offset, res, res_col, a, b, i, j, scratch)
     },
     fn cnv_prepare_self_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_prepare_self_tmp_bytes(self, res_size, a_size)
+        BE::cnv_prepare_self_tmp_bytes(self, res_size, a_size)
     },
     fn cnv_prepare_self(
         &self,
@@ -174,6 +172,6 @@ impl_convolution_delegate!(
         mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
-        <BE as HalConvolutionImpl<BE>>::cnv_prepare_self(self, left, right, a, mask, scratch)
+        BE::cnv_prepare_self(self, left, right, a, mask, scratch)
     }
 );

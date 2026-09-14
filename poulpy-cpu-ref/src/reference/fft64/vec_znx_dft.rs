@@ -103,7 +103,8 @@ pub fn vec_znx_dft_copy<BE>(
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     {
-        assert_eq!(res.n(), a.n())
+        assert_eq!(res.n(), a.n());
+        assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
     }
 
     let steps: usize = a.size().div_ceil(step);
@@ -136,7 +137,7 @@ pub fn vec_znx_dft_apply<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     {
-        assert!(step > 0);
+        assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         assert_eq!(table.m() << 1, res.n());
         assert_eq!(a.n(), res.n());
     }
@@ -152,6 +153,8 @@ pub fn vec_znx_dft_apply<BE>(
         if limb < a_size {
             BE::reim_from_znx(res.at_mut(res_col, j), a.at(a_col, limb));
             BE::reim_dft_execute(table, res.at_mut(res_col, j));
+        } else {
+            BE::reim_zero(res.at_mut(res_col, j));
         }
     }
 

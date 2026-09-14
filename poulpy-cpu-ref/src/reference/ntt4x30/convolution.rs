@@ -585,6 +585,7 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
     let n = res.n();
     let table = module.get_ntt_table();
     let cols = res.cols();
+    assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     let res_size = res.size();
     let min_size = res_size.min(a.size());
     let n_blks = n / 2;
@@ -676,6 +677,7 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
     let n = res.n();
     let table = module.get_ntt_table();
     let cols = res.cols();
+    assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     let res_size = res.size();
     let min_size = res_size.min(a.size());
     let n_blks = n / 2;
@@ -763,7 +765,15 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
     let n = left.n();
     let table = module.get_ntt_table();
     let cols = left.cols();
+    assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());
+    assert_eq!(right.cols(), cols, "right.cols():{} != left.cols():{cols}", right.cols());
     let res_size = left.size();
+    assert_eq!(
+        right.size(),
+        res_size,
+        "right.size():{} != left.size():{res_size}",
+        right.size()
+    );
     let min_size = res_size.min(a.size());
     let n_blks = n / 2;
     let col_stride = 8 * n * res_size;

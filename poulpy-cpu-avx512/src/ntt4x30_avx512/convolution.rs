@@ -248,6 +248,11 @@ fn prepare<E: TaskExecutor>(
         let res = right.as_ref().unwrap();
         (res.n(), res.cols(), res.size())
     };
+    assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
+    if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
+        assert_eq!(r.cols(), l.cols(), "right.cols():{} != left.cols():{}", r.cols(), l.cols());
+        assert_eq!(r.size(), l.size(), "right.size():{} != left.size():{}", r.size(), l.size());
+    }
     let min_size = size.min(a.size());
     let mut left = left.map(|res| cast_slice_mut::<_, u32>(res.data_mut()));
     let mut right = right.map(|res| cast_slice_mut::<_, u32>(res.data_mut()));

@@ -714,6 +714,19 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend + HalVecZnxBigImpl<BE> {
         a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
     );
+    /// `res[res_col] = automorphism(a[a_col])` for one `p`. Default body:
+    /// `vec_znx_dft_automorphism_derived`, the plan built and dropped inside
+    /// the call.
+    fn vec_znx_dft_automorphism(
+        module: &Module<BE>,
+        p: i64,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    ) {
+        crate::oep::vec_znx_dft_automorphism_derived::<Self, BE>(module, p, res, res_col, a, a_col)
+    }
 
     /// Returns scratch bytes required for
     /// [`Self::vec_znx_dft_automorphism_add_with_plan`]. Default body:

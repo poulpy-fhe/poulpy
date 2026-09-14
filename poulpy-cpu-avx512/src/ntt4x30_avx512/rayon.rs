@@ -1275,6 +1275,7 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512Rayon> for NTT4x30Avx512Rayon {
         a_col: usize,
     ) {
         poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
+        assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         if !parallel_limb_tasks(res.size()) {
             return <NTT4x30Avx512 as HalVecZnxDftImpl<NTT4x30Avx512>>::vec_znx_dft_apply(
                 base_module(module),
