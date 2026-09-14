@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-The HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/poulpy/issues/234): a smaller operation basis with a contract block on every api trait, derived operations as backend-generic default bodies on the OEP traits, sampling moved into `poulpy-core`, and CKKS ciphertexts canonical at the `k` they report.
+The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/poulpy/issues/234): a smaller operation basis with a contract block on every api trait, derived operations as backend-generic default bodies on the OEP traits, sampling moved into `poulpy-core`, and CKKS ciphertexts canonical at the `k` they report.
 
 ### `poulpy-hal`
 
