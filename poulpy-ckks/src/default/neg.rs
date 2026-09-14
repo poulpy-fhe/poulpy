@@ -25,16 +25,17 @@ pub trait CKKSNegDefault<BE: Backend> {
         if offset != 0 {
             // Validate before mutating: on error `dst` must remain untouched.
             let log_budget = checked_log_budget_sub("neg", src.log_budget(), offset)?;
-            self.glwe_lsh(dst, src, offset, scratch);
+            // Stamp before the shift: it normalizes at `dst.k()`.
             dst.set_meta(src.meta());
             dst.set_log_budget(log_budget);
+            self.glwe_lsh(dst, src, offset, scratch);
             self.glwe_negate_assign(dst);
         } else {
-            self.glwe_negate(dst, src);
             dst.set_meta(src.meta());
             // `set_meta` no longer carries the budget: propagate `src`'s width
             // explicitly so a wider `dst` does not keep a stale `k`.
             dst.set_log_budget(src.log_budget());
+            self.glwe_negate(dst, src);
         }
         Ok(())
     }
