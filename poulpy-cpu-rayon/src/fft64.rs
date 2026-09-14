@@ -1107,6 +1107,7 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         a_col: usize,
     ) {
         $crate::__private::poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
+        assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         if !$crate::parallel_limb_tasks(res.size()) {
             return <$base as HalVecZnxDftImpl>::vec_znx_dft_apply(
                 base_module(module),
