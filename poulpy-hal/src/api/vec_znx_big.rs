@@ -247,7 +247,7 @@ pub trait VecZnxBigSubSmallA<B: Backend> {
 /// op         vec_znx_big_sub_small_assign(res, res_col, a, a_col)
 /// class      variant
 /// mutation   in-place
-/// definition vec_znx_big_sub_small_a(res, res_col, res, res_col, a, a_col) with the operands in the big/small order the signature fixes
+/// definition vec_znx_big_sub_small_b(res, res_col, res, res_col, a, a_col): res is the big operand, a the small one
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] -= a[a_col] limb by limb; limbs of res past a.size() keep their value
 /// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
@@ -295,7 +295,7 @@ pub trait VecZnxBigSubSmallB<B: Backend> {
 /// op         vec_znx_big_sub_small_negate_assign(res, res_col, a, a_col)
 /// class      variant
 /// mutation   in-place
-/// definition vec_znx_big_sub_small_b(res, res_col, a, a_col, res, res_col) with the operands in the big/small order the signature fixes
+/// definition vec_znx_big_sub_small_a(res, res_col, a, a_col, res, res_col): a is the small operand, res the big one
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] = a[a_col] - res[res_col] limb by limb; limbs of res past a.size() are negated in place
 /// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
