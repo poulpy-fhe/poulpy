@@ -395,7 +395,7 @@ pub trait Convolution<BE: Backend> {
     /// definition cnv_apply_dft(a[i], b[i]) then cnv_apply_dft_add of (a[i], b[j]), (a[j], b[i]) and (a[j], b[j]); i == j degenerates to the single product
     /// domain     res: a VecZnxDft; a: a CnvPVecL; b: a CnvPVecR; i, j column indices
     /// requires   scratch >= cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
-    /// ensures    idft(res[res_col]) is the convolution of (a[i] + a[j]) with (b[i] + b[j]), expanded in the DFT domain where the prepared operands are linear
+    /// ensures    for i != j, idft(res[res_col]) is the convolution of (a[i] + a[j]) with (b[i] + b[j]), expanded in the DFT domain where the prepared operands are linear; for i == j it is the single product a[i] * b[i], not the four-fold one the sum would give
     /// sparse     per product, as for cnv_apply_dft (4.5)
     /// fallback   OEP default body: the four-product expansion above
     /// override   allowed, with cnv_pairwise_apply_dft_tmp_bytes; the avx512 family overrides it with a fused kernel
