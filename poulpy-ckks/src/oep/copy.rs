@@ -11,22 +11,27 @@ use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSCopyImpl<BE: Backend>: Backend {
-    fn ckks_copy_tmp_bytes_impl(module: &Module<BE>) -> usize;
+pub unsafe trait CKKSCopyImpl: Backend {
+    fn ckks_copy_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
 
-    fn ckks_copy_impl<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_copy_impl<Dst, Src>(
+        module: &Module<Self>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 }
 
-unsafe impl<BE: Backend> CKKSCopyImpl<BE> for BE
+unsafe impl<BE: Backend> CKKSCopyImpl for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: crate::default::copy::CKKSCopyDefault<BE> + GLWECopy<BE> + GLWEShift<BE>,
 {
-    fn ckks_copy_tmp_bytes_impl(module: &Module<BE>) -> usize {
-        module.ckks_copy_tmp_bytes_default()
+    fn ckks_copy_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
+        module.ckks_copy_tmp_bytes_default(res_size)
     }
 
     fn ckks_copy_impl<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

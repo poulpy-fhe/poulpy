@@ -274,7 +274,6 @@ where
         module.cnv_prepare_left(
             &mut prep.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&a_be).with_shape(shape),
-            !0i64,
             &mut scratch.arena(),
         );
     }))
@@ -457,8 +456,8 @@ where
     let base = VecZnxShape::new(n, cols, size);
     let tmp_bytes = module
         .vec_znx_normalize_tmp_bytes()
-        .max(module.vec_znx_lsh_tmp_bytes())
-        .max(module.vec_znx_rsh_tmp_bytes());
+        .max(module.vec_znx_lsh_tmp_bytes(size))
+        .max(module.vec_znx_rsh_tmp_bytes(size));
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(tmp_bytes);
 
     for w in windows(n, size) {
@@ -525,7 +524,14 @@ where
                             &mut scratch.arena()
                         )),
                         2 => {
-                            both!(|r, _a| module.vec_znx_normalize_assign(base2k, res_k_inter, &mut r, col, &mut scratch.arena()))
+                            both!(|r, _a| module.vec_znx_normalize_assign(
+                                base2k,
+                                res_k_inter,
+                                0,
+                                &mut r,
+                                col,
+                                &mut scratch.arena()
+                            ))
                         }
                         3 => both!(|r, a| module.vec_znx_lsh(base2k, k, &mut r, col, &a, col, &mut scratch.arena())),
                         4 => both!(|r, a| module.vec_znx_rsh(base2k, k, &mut r, col, &a, col, &mut scratch.arena())),

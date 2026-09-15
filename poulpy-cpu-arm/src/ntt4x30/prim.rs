@@ -31,8 +31,8 @@ use crate::neon::{
         ntt_sub_negate_assign_neon, ntt_sub_neon,
     },
     ntt4x30_convert::{
-        b_from_znx64_masked_neon, b_from_znx64_neon, b_to_znx128_neon, c_from_b_neon, pack_left_1blk_x2_neon,
-        pack_right_1blk_x2_neon, pairwise_pack_left_1blk_x2_neon, pairwise_pack_right_1blk_x2_neon,
+        b_from_znx64_neon, b_to_znx128_neon, c_from_b_neon, pack_left_1blk_x2_neon, pack_right_1blk_x2_neon,
+        pairwise_pack_left_1blk_x2_neon, pairwise_pack_right_1blk_x2_neon,
     },
     ntt4x30_mat_vec::{
         vec_mat_tile2_bbc_canonical_neon, vec_mat1col_product_bbb_neon, vec_mat1col_product_bbc_neon,
@@ -81,20 +81,6 @@ impl NttFromZnx64 for NTT4x30Neon {
         #[cfg(not(target_arch = "aarch64"))]
         {
             b_from_znx64_ref::<Primes30>(a.len(), res, a);
-        }
-    }
-
-    #[inline(always)]
-    fn ntt_from_znx64_masked(res: &mut [u64], a: &[i64], mask: i64) {
-        #[cfg(target_arch = "aarch64")]
-        {
-            b_from_znx64_masked_neon(a.len(), res, a, mask);
-        }
-        #[cfg(not(target_arch = "aarch64"))]
-        {
-            // Fallback: mask scalar, then reuse the ref kernel.
-            let masked: Vec<i64> = a.iter().map(|&v| v & mask).collect();
-            b_from_znx64_ref::<Primes30>(a.len(), res, &masked);
         }
     }
 }

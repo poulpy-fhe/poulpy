@@ -71,7 +71,7 @@ where
 
 impl<BE: Backend> GGLWEProductDefault<BE> for Module<BE>
 where
-    BE: GGLWEProductDigitsStridedImpl<BE>,
+    BE: GGLWEProductDigitsStridedImpl,
     Self: Sized
         + ModuleN
         + VecZnxDftBytesOf
@@ -166,7 +166,7 @@ fn gglwe_product_pmat<BE>(
     term_count: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + GGLWEProductDigitsStridedImpl<BE>,
+    BE: Backend + GGLWEProductDigitsStridedImpl,
     Module<BE>: VmpApplyDftToDft<BE>,
 {
     // One limb per digit is a plain VMP, not a strided gather; the hook below

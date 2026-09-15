@@ -22,7 +22,6 @@
 //! | Function | Trait |
 //! |---|---|
 //! | [`b_from_znx64_avx2`] | `NttFromZnx64` |
-//! | [`b_from_znx64_masked_avx2`] | `NttFromZnx64::ntt_from_znx64_masked` |
 //! | [`c_from_b_avx2`] | `NttCFromB` |
 //! | [`vec_mat1col_product_bbb_avx2`] | `NttMulBbb` |
 //! | [`b_to_znx128_avx2`] | `NttToZnx128` |
@@ -323,35 +322,6 @@ pub(crate) unsafe fn b_from_znx64_avx2(nn: usize, res: &mut [u64], x: &[i64]) {
             // sign = all-ones in lanes where xval < 0
             let sign = _mm256_cmpgt_epi64(zero, xv);
             // add oq[k] only for negative inputs
-            let add = _mm256_and_si256(sign, oq_vec);
-            _mm256_storeu_si256(r_ptr, _mm256_add_epi64(xl, add));
-            r_ptr = r_ptr.add(1);
-        }
-    }
-}
-
-/// AVX2 variant of `b_from_znx64_masked_ref`: mask coefficients before q120b conversion.
-///
-/// Caller must ensure AVX2 support. `res.len() >= 4 * nn`, `x.len() >= nn`.
-#[target_feature(enable = "avx2")]
-pub(crate) unsafe fn b_from_znx64_masked_avx2(nn: usize, res: &mut [u64], x: &[i64], mask: i64) {
-    assert!(
-        res.len() >= 4 * nn,
-        "b_from_znx64_masked_avx2: res.len()={} < 4*nn={}",
-        res.len(),
-        4 * nn
-    );
-    assert!(x.len() >= nn, "b_from_znx64_masked_avx2: x.len()={} < nn={}", x.len(), nn);
-    unsafe {
-        let oq_vec = _mm256_loadu_si256(OQ.as_ptr() as *const __m256i);
-        let i64_max = _mm256_set1_epi64x(i64::MAX);
-        let zero = _mm256_setzero_si256();
-        let mut r_ptr = res.as_mut_ptr() as *mut __m256i;
-
-        for &xval in &x[..nn] {
-            let xv = _mm256_set1_epi64x(xval & mask);
-            let xl = _mm256_and_si256(xv, i64_max);
-            let sign = _mm256_cmpgt_epi64(zero, xv);
             let add = _mm256_and_si256(sign, oq_vec);
             _mm256_storeu_si256(r_ptr, _mm256_add_epi64(xl, add));
             r_ptr = r_ptr.add(1);

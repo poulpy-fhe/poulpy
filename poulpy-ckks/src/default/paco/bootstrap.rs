@@ -172,7 +172,7 @@ pub(crate) fn validate_runtime<BE, F, K, Src>(
     keys: &K,
 ) -> Result<(usize, usize)>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl,
     F: PaCoScalar,
     Module<BE>: CyclotomicOrder,
     K: PaCoKeys<BE>,
@@ -326,7 +326,7 @@ pub(crate) fn paco_bootstrap_branch_validated_into<BE, F, K, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     K: PaCoKeys<BE>,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>

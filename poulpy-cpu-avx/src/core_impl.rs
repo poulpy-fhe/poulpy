@@ -21,7 +21,7 @@ impl_gglwe_product_digits_strided_default!(FFT64Avx);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_product_digits_strided_default!(FFT64AvxRayon);
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx> for NTT4x30Avx {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -97,7 +97,9 @@ impl_lwe_keyswitch_defaults_full!(FFT64Avx);
 impl_lwe_keyswitch_defaults_full!(NTT4x30Avx);
 
 impl_encryption_defaults_full!(FFT64Avx);
+poulpy_cpu_ref::impl_sampling_host!(FFT64Avx, fft64);
 impl_encryption_defaults_full!(NTT4x30Avx);
+poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx, ntt4x30);
 
 impl_glwe_external_product_defaults_full!(FFT64Avx);
 impl_glwe_external_product_defaults_full!(NTT4x30Avx);
@@ -125,6 +127,7 @@ mod rayon_defaults {
     impl_ggsw_keyswitch_defaults_full!(FFT64AvxRayon);
     impl_lwe_keyswitch_defaults_full!(FFT64AvxRayon);
     impl_encryption_defaults_full!(FFT64AvxRayon);
+    poulpy_cpu_ref::impl_sampling_host!(FFT64AvxRayon, fft64);
     impl_glwe_external_product_defaults_full!(FFT64AvxRayon);
     impl_gglwe_external_product_defaults_full!(FFT64AvxRayon);
     impl_ggsw_external_product_defaults_full!(FFT64AvxRayon);
@@ -142,6 +145,7 @@ mod rayon_defaults {
     impl_ggsw_keyswitch_defaults_full!(NTT4x30AvxRayon);
     impl_lwe_keyswitch_defaults_full!(NTT4x30AvxRayon);
     impl_encryption_defaults_full!(NTT4x30AvxRayon);
+    poulpy_cpu_ref::impl_sampling_host!(NTT4x30AvxRayon, ntt4x30);
     impl_glwe_external_product_defaults_full!(NTT4x30AvxRayon);
     impl_gglwe_external_product_defaults_full!(NTT4x30AvxRayon);
     impl_ggsw_external_product_defaults_full!(NTT4x30AvxRayon);

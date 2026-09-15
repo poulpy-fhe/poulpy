@@ -43,6 +43,8 @@ pub mod fft64;
 pub mod hal_defaults;
 mod hal_impl;
 pub mod ntt4x30;
+mod sampling;
+mod scalar_znx_fill;
 
 pub mod capabilities;
 pub mod reference;
@@ -65,6 +67,8 @@ pub mod layouts {
 pub mod source {
     pub use poulpy_hal::source::*;
 }
+
+pub use scalar_znx_fill::ScalarZnxFill;
 
 pub use fft64::{FFT64Ref, FFT64ReimTable};
 pub use ntt4x30::{NTT4x30Ref, NTT4x30RefHandle};

@@ -608,6 +608,7 @@ pub(crate) fn vec_znx_dft_apply(
     a_col: usize,
 ) {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
+    assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
     let a_size = a.size();
     let res_size = res.size();
     let n = res.n();
@@ -756,39 +757,6 @@ pub(crate) fn vec_znx_dft_add_assign<E: poulpy_hal::execution::TaskExecutor>(
     });
 }
 
-/// DFT-domain scaled in-place add: `res[res_col] += a[a_col] >> (a_scale * base2k)`.
-pub(crate) fn vec_znx_dft_add_scaled_assign<E: poulpy_hal::execution::TaskExecutor>(
-    res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
-    res_col: usize,
-    a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
-    a_col: usize,
-    a_scale: i64,
-) {
-    let n = res.n();
-    let (rc, ac) = (res.cols(), a.cols());
-    let res_size = res.size();
-    let a_size = a.size();
-
-    let (res_shift, a_shift, sum_size) = if a_scale > 0 {
-        let shift = (a_scale as usize).min(a_size);
-        (0, shift, a_size.min(res_size).saturating_sub(shift))
-    } else if a_scale < 0 {
-        let shift = (a_scale.unsigned_abs() as usize).min(res_size);
-        (shift, 0, a_size.min(res_size.saturating_sub(shift)))
-    } else {
-        (0, 0, a_size.min(res_size))
-    };
-
-    let rp: &mut [u64] = cast_slice_mut(res.data_mut());
-    let rp_ptr = SendPtr(rp.as_mut_ptr());
-    let ap: &[u64] = cast_slice(a.data());
-    for_index_exec::<E>(sum_size, 2 * n * sum_size, |j| {
-        let dst = unsafe { packed_limb_raw_mut(rp_ptr.get(), n, rc, res_col, j + res_shift) };
-        let av = packed_limb(ap, n, ac, a_col, j + a_shift);
-        unsafe { packed_add_assign(n, dst, av) };
-    });
-}
-
 /// DFT-domain sub: `res[res_col] = a[a_col] - b[b_col]`.
 pub(crate) fn vec_znx_dft_sub<E: poulpy_hal::execution::TaskExecutor>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
@@ -885,7 +853,8 @@ pub(crate) fn vec_znx_dft_copy<E: poulpy_hal::execution::TaskExecutor>(
     a_col: usize,
 ) {
     {
-        assert_eq!(res.n(), a.n())
+        assert_eq!(res.n(), a.n());
+        assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
     }
 
     let n = res.n();

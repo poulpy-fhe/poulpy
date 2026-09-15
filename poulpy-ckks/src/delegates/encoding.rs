@@ -35,7 +35,7 @@ fn validate_transform(max_n: usize, len: usize) -> Result<()> {
 
 impl<BE, F> CKKSEncodingOps<BE, F> for Module<BE>
 where
-    BE: Backend + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSEncodingImpl<F>,
     F: CKKSEncodingScalar,
 {
     fn ckks_encode_coeffs_into<P, C>(&self, pt: &mut P, coeffs: &C) -> Result<()>

@@ -1,3 +1,4 @@
+use poulpy_core::NoiseInfos;
 use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
@@ -7,7 +8,6 @@ use poulpy_core::{
         prepared::{GGSWPrepared, GGSWPreparedFactory, GLWESecretPrepared, GLWESecretPreparedFactory},
     },
 };
-use poulpy_hal::layouts::NoiseInfos;
 use std::time::Instant;
 
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
@@ -161,6 +161,7 @@ fn main() {
     module.vec_znx_normalize_assign(
         base2k,
         pt_lwe.size() * base2k,
+        0,
         &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_lwe.data_mut()),
         0,
         &mut scratch.borrow(),
@@ -262,6 +263,7 @@ fn main() {
     module.vec_znx_normalize_assign(
         base2k,
         pt_glwe.size() * base2k,
+        0,
         &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_glwe.data_mut()),
         0,
         &mut scratch.borrow(),

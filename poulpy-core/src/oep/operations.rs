@@ -20,36 +20,36 @@ use crate::{
 /// # Safety
 /// Implementations must respect the provided layout metadata, conversion offset, and scratch-space
 /// contracts, and must not read or write outside the specified backend-owned buffers.
-pub unsafe trait GLWEMulConstImpl<BE: Backend>: Backend {
-    fn glwe_mul_const_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
+pub unsafe trait GLWEMulConstImpl: Backend {
+    fn glwe_mul_const_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos;
 
     fn glwe_mul_const<R, A, B>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
         b: &B,
         b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        B: GLWEToBackendRef<Self> + GLWEInfos;
 
     fn glwe_mul_const_assign<R, B>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         b: &B,
         b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        B: GLWEToBackendRef<Self> + GLWEInfos;
 }
 
 /// Backend-provided GLWE-by-plaintext multiplication operations.
@@ -57,8 +57,8 @@ pub unsafe trait GLWEMulConstImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must interpret the plaintext and ciphertext layouts consistently with the
 /// backend and preserve all aliasing and buffer-bound invariants.
-pub unsafe trait GLWEMulPlainImpl<BE: Backend>: Backend {
-    fn glwe_mul_plain_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
+pub unsafe trait GLWEMulPlainImpl: Backend {
+    fn glwe_mul_plain_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -66,26 +66,26 @@ pub unsafe trait GLWEMulPlainImpl<BE: Backend>: Backend {
 
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_plain<R, A, B>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
         b: &B,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        B: GLWEToBackendRef<Self> + IntPolyInfos + GLWEInfos;
 
     fn glwe_mul_plain_assign<R, A>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + IntPolyInfos + GLWEInfos;
 }
 
 /// Backend-provided GLWE tensoring and relinearization operations.
@@ -93,47 +93,47 @@ pub unsafe trait GLWEMulPlainImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must preserve tensor layout semantics, respect the temporary-size contracts,
 /// and only touch backend-owned storage regions that belong to the supplied operands.
-pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
-    fn glwe_tensor_apply_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
+pub unsafe trait GLWETensoringImpl: Backend {
+    fn glwe_tensor_apply_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos;
 
-    fn glwe_tensor_square_apply_tmp_bytes<R, A>(module: &Module<BE>, res: &R, a: &A) -> usize
+    fn glwe_tensor_square_apply_tmp_bytes<R, A>(module: &Module<Self>, res: &R, a: &A) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos;
 
     fn glwe_tensor_apply<R, A, B>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
         b: &B,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        B: GLWEToBackendRef<Self> + GLWEInfos;
 
     fn glwe_tensor_square_apply<R, A>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos;
 
-    fn glwe_tensor_relinearize<R, A, H>(module: &Module<BE>, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_tensor_relinearize<R, A, H>(module: &Module<Self>, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        H: GetTensorKey<Self>;
 
-    fn glwe_tensor_relinearize_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, tsk: &B) -> usize
+    fn glwe_tensor_relinearize_tmp_bytes<R, A, B>(module: &Module<Self>, res: &R, a: &A, tsk: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -144,54 +144,54 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
 ///
 /// # Safety
 /// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
-pub unsafe trait GLWEAddImpl<BE: Backend>: Backend {
-    fn glwe_add_into<R, A, B>(module: &Module<BE>, res: &mut R, a: &A, b: &B)
+pub unsafe trait GLWEAddImpl: Backend {
+    fn glwe_add_into<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-        B: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>,
+        B: GLWEToBackendRef<Self>;
 
-    fn glwe_add_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A)
+    fn glwe_add_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 }
 
 /// Backend-provided GLWE negation operations.
 ///
 /// # Safety
 /// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
-pub unsafe trait GLWENegateImpl<BE: Backend>: Backend {
-    fn glwe_negate<R, A>(module: &Module<BE>, res: &mut R, a: &A)
+pub unsafe trait GLWENegateImpl: Backend {
+    fn glwe_negate<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 
-    fn glwe_negate_assign<R>(module: &Module<BE>, res: &mut R)
+    fn glwe_negate_assign<R>(module: &Module<Self>, res: &mut R)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<Self>;
 }
 
 /// Backend-provided GLWE subtraction operations.
 ///
 /// # Safety
 /// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
-pub unsafe trait GLWESubImpl<BE: Backend>: Backend {
-    fn glwe_sub<R, A, B>(module: &Module<BE>, res: &mut R, a: &A, b: &B)
+pub unsafe trait GLWESubImpl: Backend {
+    fn glwe_sub<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-        B: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>,
+        B: GLWEToBackendRef<Self>;
 
-    fn glwe_sub_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A)
+    fn glwe_sub_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 
-    fn glwe_sub_negate_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A)
+    fn glwe_sub_negate_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 }
 
 /// Backend-provided GLWE zeroing operations.
@@ -199,21 +199,21 @@ pub unsafe trait GLWESubImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must zero every polynomial column in the GLWE without violating layout or
 /// backend buffer invariants.
-pub unsafe trait GLWEZeroImpl<BE: Backend>: Backend {
-    fn glwe_zero<R>(module: &Module<BE>, res: &mut R)
+pub unsafe trait GLWEZeroImpl: Backend {
+    fn glwe_zero<R>(module: &Module<Self>, res: &mut R)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<Self>;
 }
 
 /// Backend-provided GLWE copy operations.
 ///
 /// # Safety
 /// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
-pub unsafe trait GLWECopyImpl<BE: Backend>: Backend {
-    fn glwe_copy<R, A>(module: &Module<BE>, res: &mut R, a: &A)
+pub unsafe trait GLWECopyImpl: Backend {
+    fn glwe_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 }
 
 /// Backend-provided GLWE rotation operations.
@@ -221,17 +221,17 @@ pub unsafe trait GLWECopyImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must perform rotations according to the polynomial layout without violating
 /// scratch-space, aliasing, or buffer-bound guarantees.
-pub unsafe trait GLWERotateImpl<BE: Backend>: Backend {
-    fn glwe_rotate_tmp_bytes(module: &Module<BE>) -> usize;
+pub unsafe trait GLWERotateImpl: Backend {
+    fn glwe_rotate_tmp_bytes(module: &Module<Self>) -> usize;
 
-    fn glwe_rotate<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
+    fn glwe_rotate<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 
-    fn glwe_rotate_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rotate_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<Self>;
 }
 
 /// Backend-provided GGSW rotation operations.
@@ -239,17 +239,17 @@ pub unsafe trait GLWERotateImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must preserve the GGSW structure for the backend and may only use scratch space
 /// and in-place mutation in ways compatible with the advertised contracts.
-pub unsafe trait GGSWRotateImpl<BE: Backend>: Backend {
-    fn ggsw_rotate_tmp_bytes(module: &Module<BE>) -> usize;
+pub unsafe trait GGSWRotateImpl: Backend {
+    fn ggsw_rotate_tmp_bytes(module: &Module<Self>) -> usize;
 
-    fn ggsw_rotate<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
+    fn ggsw_rotate<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
     where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos;
+        R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
+        A: GGSWToBackendRef<Self> + GGSWAtViewRef<Self> + GGSWInfos;
 
-    fn ggsw_rotate_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn ggsw_rotate_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GGSWToBackendMut<BE> + GGSWInfos;
+        R: GGSWToBackendMut<Self> + GGSWInfos;
 }
 
 /// Backend-provided multiplication by `X^p - 1` operations.
@@ -257,15 +257,15 @@ pub unsafe trait GGSWRotateImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must apply the requested ring operation without violating the layout or memory
 /// invariants of the supplied ciphertext buffers.
-pub unsafe trait GLWEMulXpMinusOneImpl<BE: Backend>: Backend {
-    fn glwe_mul_xp_minus_one<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
+pub unsafe trait GLWEMulXpMinusOneImpl: Backend {
+    fn glwe_mul_xp_minus_one<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 
-    fn glwe_mul_xp_minus_one_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_mul_xp_minus_one_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<Self>;
 }
 
 /// Backend-provided GLWE shift operations.
@@ -273,31 +273,31 @@ pub unsafe trait GLWEMulXpMinusOneImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must respect the polynomial/ciphertext layout and scratch requirements, and may
 /// not read or write beyond the backend-owned regions described by the inputs.
-pub unsafe trait GLWEShiftImpl<BE: Backend>: Backend {
-    fn glwe_shift_tmp_bytes(module: &Module<BE>) -> usize;
+pub unsafe trait GLWEShiftImpl: Backend {
+    fn glwe_shift_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize;
 
-    fn glwe_rsh<R>(module: &Module<BE>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rsh<R>(module: &Module<Self>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<Self>;
 
-    fn glwe_lsh_assign<R>(module: &Module<BE>, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_assign<R>(module: &Module<Self>, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<Self>;
 
-    fn glwe_lsh<R, A>(module: &Module<BE>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh<R, A>(module: &Module<Self>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 
-    fn glwe_lsh_add<R, A>(module: &Module<BE>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_add<R, A>(module: &Module<Self>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 
-    fn glwe_lsh_sub<R, A>(module: &Module<BE>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_sub<R, A>(module: &Module<Self>, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 }
 
 /// Backend-provided GLWE normalization operations.
@@ -305,17 +305,17 @@ pub unsafe trait GLWEShiftImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must return views that remain valid for the advertised lifetime, preserve
 /// normalization semantics, and avoid aliasing or out-of-bounds access across temporary buffers.
-pub unsafe trait GLWENormalizeImpl<BE: Backend>: Backend {
-    fn glwe_normalize_tmp_bytes(module: &Module<BE>) -> usize;
+pub unsafe trait GLWENormalizeImpl: Backend {
+    fn glwe_normalize_tmp_bytes(module: &Module<Self>) -> usize;
 
-    fn glwe_normalize<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_normalize<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
+        R: GLWEToBackendMut<Self>,
+        A: GLWEToBackendRef<Self>;
 
-    fn glwe_normalize_assign<R>(module: &Module<BE>, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_normalize_assign<R>(module: &Module<Self>, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE>;
+        R: GLWEToBackendMut<Self>;
 }
 
 /// Backend-provided GLWE trace operations.
@@ -323,25 +323,31 @@ pub unsafe trait GLWENormalizeImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must apply the requested automorphism sequence faithfully, interpret prepared
 /// keys correctly, and keep all accesses within the described ciphertext and scratch regions.
-pub unsafe trait GLWETraceImpl<BE: Backend>: Backend {
-    fn glwe_trace_galois_elements(module: &Module<BE>) -> Vec<i64>;
+pub unsafe trait GLWETraceImpl: Backend {
+    fn glwe_trace_galois_elements(module: &Module<Self>) -> Vec<i64>;
 
-    fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace<R, A, H>(module: &Module<BE>, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>;
+    fn glwe_trace<R, A, H>(
+        module: &Module<Self>,
+        res: &mut R,
+        skip: usize,
+        a: &A,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        H: GetAutomorphismKey<Self>;
 
-    fn glwe_trace_assign<R, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_trace_assign<R, H>(module: &Module<Self>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, Self>)
     where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        H: GetAutomorphismKey<Self>;
 }
 
 /// Backend-provided GLWE packing operations.
@@ -349,28 +355,28 @@ pub unsafe trait GLWETraceImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must maintain ciphertext correctness while combining inputs, and must respect
 /// all backend buffer, aliasing, and scratch-space invariants expected by the higher layers.
-pub unsafe trait GLWEPackImpl<BE: Backend>: Backend {
-    fn glwe_pack_galois_elements(module: &Module<BE>) -> Vec<i64>;
+pub unsafe trait GLWEPackImpl: Backend {
+    fn glwe_pack_galois_elements(module: &Module<Self>) -> Vec<i64>;
 
-    fn glwe_pack_tmp_bytes<R, K>(module: &Module<BE>, res: &R, key: &K) -> usize
+    fn glwe_pack_tmp_bytes<R, K>(module: &Module<Self>, res: &R, key: &K) -> usize
     where
         R: GLWEInfos,
         K: GGLWEInfos;
 
     fn glwe_pack<R, A, H>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendMut<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendMut<Self> + GLWEInfos,
+        H: GetAutomorphismKey<Self>;
 }
 
-unsafe impl<BE: Backend> GLWEMulConstImpl<BE> for BE
+unsafe impl<BE: Backend> GLWEMulConstImpl for BE
 where
     Module<BE>: GLWEMulConstDefault<BE>,
 {
@@ -414,7 +420,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWEMulPlainImpl<BE> for BE
+unsafe impl<BE: Backend> GLWEMulPlainImpl for BE
 where
     Module<BE>: GLWEMulPlainDefault<BE>,
 {
@@ -457,7 +463,7 @@ where
 #[macro_export]
 macro_rules! impl_glwe_tensoring_default {
     ($be:ty) => {
-        unsafe impl $crate::oep::GLWETensoringImpl<$be> for $be {
+        unsafe impl $crate::oep::GLWETensoringImpl for $be {
             fn glwe_tensor_apply_tmp_bytes<R, A, B>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res: &R,
@@ -555,7 +561,7 @@ macro_rules! impl_glwe_tensoring_default {
     };
 }
 
-unsafe impl<BE: Backend> GLWEAddImpl<BE> for BE
+unsafe impl<BE: Backend> GLWEAddImpl for BE
 where
     Module<BE>: GLWEAddDefault<BE>,
 {
@@ -577,7 +583,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWENegateImpl<BE> for BE
+unsafe impl<BE: Backend> GLWENegateImpl for BE
 where
     Module<BE>: GLWENegateDefault<BE>,
 {
@@ -597,7 +603,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWESubImpl<BE> for BE
+unsafe impl<BE: Backend> GLWESubImpl for BE
 where
     Module<BE>: GLWESubDefault<BE>,
 {
@@ -627,7 +633,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWEZeroImpl<BE> for BE
+unsafe impl<BE: Backend> GLWEZeroImpl for BE
 where
     Module<BE>: GLWEZeroDefault<BE>,
 {
@@ -639,7 +645,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWECopyImpl<BE> for BE
+unsafe impl<BE: Backend> GLWECopyImpl for BE
 where
     Module<BE>: GLWECopyDefault<BE>,
 {
@@ -652,7 +658,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWERotateImpl<BE> for BE
+unsafe impl<BE: Backend> GLWERotateImpl for BE
 where
     Module<BE>: GLWERotateDefault<BE>,
 {
@@ -676,7 +682,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWEMulXpMinusOneImpl<BE> for BE
+unsafe impl<BE: Backend> GLWEMulXpMinusOneImpl for BE
 where
     Module<BE>: GLWEMulXpMinusOneDefault<BE>,
 {
@@ -696,12 +702,12 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWEShiftImpl<BE> for BE
+unsafe impl<BE: Backend> GLWEShiftImpl for BE
 where
     Module<BE>: GLWEShiftDefault<BE>,
 {
-    fn glwe_shift_tmp_bytes(module: &Module<BE>) -> usize {
-        module.glwe_shift_tmp_bytes_default()
+    fn glwe_shift_tmp_bytes(module: &Module<BE>, res_size: usize) -> usize {
+        module.glwe_shift_tmp_bytes_default(res_size)
     }
 
     fn glwe_rsh<R>(module: &Module<BE>, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
@@ -743,7 +749,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWENormalizeImpl<BE> for BE
+unsafe impl<BE: Backend> GLWENormalizeImpl for BE
 where
     Module<BE>: GLWENormalizeDefault<BE>,
 {
@@ -767,7 +773,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GGSWRotateImpl<BE> for BE
+unsafe impl<BE: Backend> GGSWRotateImpl for BE
 where
     Module<BE>: GGSWRotateDefault<BE>,
 {
@@ -792,7 +798,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWETraceImpl<BE> for BE
+unsafe impl<BE: Backend> GLWETraceImpl for BE
 where
     Module<BE>: crate::default::glwe_trace::GLWETraceDefault<BE>,
 {
@@ -829,7 +835,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GLWEPackImpl<BE> for BE
+unsafe impl<BE: Backend> GLWEPackImpl for BE
 where
     Module<BE>: crate::default::glwe_packing::GLWEPackingDefault<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE>,

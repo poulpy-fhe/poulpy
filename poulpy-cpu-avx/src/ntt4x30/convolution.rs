@@ -11,7 +11,7 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
-    Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
+    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
 };
 use std::mem::size_of;
 
@@ -200,7 +200,6 @@ fn prepare<BE, E: TaskExecutor>(
     left: Option<&mut CnvPVecLBackendMut<'_, BE>>,
     right: Option<&mut CnvPVecRBackendMut<'_, BE>>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -217,6 +216,11 @@ fn prepare<BE, E: TaskExecutor>(
         let res = right.as_ref().unwrap();
         (res.n(), res.cols(), res.size())
     };
+    assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
+    if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
+        assert_eq!(r.cols(), l.cols(), "right.cols():{} != left.cols():{}", r.cols(), l.cols());
+        assert_eq!(r.size(), l.size(), "right.size():{} != left.size():{}", r.size(), l.size());
+    }
     let min_size = size.min(a.size());
     let mut left = left.map(|res| cast_slice_mut::<_, u32>(res.raw_mut()));
     let mut right = right.map(|res| cast_slice_mut::<_, u32>(res.raw_mut()));
@@ -231,11 +235,7 @@ fn prepare<BE, E: TaskExecutor>(
             let mut dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             if limb < min_size {
-                if limb + 1 == min_size {
-                    BE::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
-                } else {
-                    BE::ntt_from_znx64(tmp, a.at(col, limb));
-                }
+                BE::ntt_from_znx64(tmp, a.at(col, limb));
                 BE::ntt_dft_execute(module.get_ntt_table(), tmp);
                 if let Some(dst) = dst_l.as_deref_mut() {
                     unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
@@ -264,11 +264,7 @@ fn prepare<BE, E: TaskExecutor>(
         let mut dst_l = left.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         for limb in 0..min_size {
-            if limb + 1 == min_size {
-                BE::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
-            } else {
-                BE::ntt_from_znx64(tmp, a.at(col, limb));
-            }
+            BE::ntt_from_znx64(tmp, a.at(col, limb));
             BE::ntt_dft_execute(module.get_ntt_table(), tmp);
             if let Some(dst) = dst_l.as_deref_mut() {
                 unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
@@ -296,7 +292,6 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -306,14 +301,13 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, Some(res), None, a, mask, tmp);
+    prepare::<BE, E>(module, Some(res), None, a, tmp);
 }
 
 pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -323,7 +317,7 @@ pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, None, Some(res), a, mask, tmp);
+    prepare::<BE, E>(module, None, Some(res), a, tmp);
 }
 
 pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
@@ -331,7 +325,6 @@ pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -341,7 +334,7 @@ pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, Some(left), Some(right), a, mask, tmp);
+    prepare::<BE, E>(module, Some(left), Some(right), a, tmp);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
@@ -517,94 +510,4 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
 
 pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
     0
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply<BE, E: TaskExecutor>(
-    cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
-    res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
-    a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
-    b_col: usize,
-    b_coeff: usize,
-) where
-    BE: Backend<BigWord = i128, ZnxWord = i64>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply");
-    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply");
-    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
-    if res_size == 0 || a_size == 0 || b_size == 0 {
-        let n = res.n();
-        let cols = res.cols();
-        let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
-        E::for_each(res_size, |limb| unsafe {
-            std::slice::from_raw_parts_mut(res_ptr.get().add(n * (limb * cols + res_col)), n).fill(0)
-        });
-        return;
-    }
-    let bound = a_size + b_size - 1;
-    let min_size = res_size.min(bound);
-    let offset = cnv_offset.min(bound);
-    let n = res.n();
-    let cols = res.cols();
-    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
-    E::for_each(res_size, |k| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * cols + res_col)), n) };
-        if k < min_size {
-            let k_abs = k + offset;
-            let j_min = k_abs.saturating_sub(a_size - 1);
-            let j_max = (k_abs + 1).min(b_size);
-            for (coeff, out) in dst.iter_mut().enumerate() {
-                *out = (j_min..j_max)
-                    .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
-                    .sum();
-            }
-        } else {
-            dst.fill(0);
-        }
-    });
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply_add<BE, E: TaskExecutor>(
-    cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
-    res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
-    a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
-    b_col: usize,
-    b_coeff: usize,
-) where
-    BE: Backend<BigWord = i128, ZnxWord = i64>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply_add");
-    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply_add");
-    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
-    if res_size == 0 || a_size == 0 || b_size == 0 {
-        return;
-    }
-    let bound = a_size + b_size - 1;
-    let min_size = res_size.min(bound);
-    let offset = cnv_offset.min(bound);
-    let n = res.n();
-    let cols = res.cols();
-    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
-    E::for_each(min_size, |k| {
-        let k_abs = k + offset;
-        let j_min = k_abs.saturating_sub(a_size - 1);
-        let j_max = (k_abs + 1).min(b_size);
-        let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * cols + res_col)), n) };
-        for (coeff, out) in dst.iter_mut().enumerate() {
-            *out += (j_min..j_max)
-                .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
-                .sum::<i128>();
-        }
-    });
 }

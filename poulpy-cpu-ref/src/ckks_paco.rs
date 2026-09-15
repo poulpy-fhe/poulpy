@@ -42,7 +42,7 @@ pub fn paco_coeff_encodings_staged<BE, F, Src>(
     base2k: Base2K,
 ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
 where
-    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<BE, F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BE::OwnedBuf: HostDataRef,
     Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: PaCoScalar,
@@ -67,14 +67,14 @@ where
 #[macro_export]
 macro_rules! impl_ckks_paco_coeff_encoding {
     ($be:ty) => {
-        unsafe impl ::poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl<$be> for $be {
+        unsafe impl ::poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl for $be {
             fn ckks_paco_coeff_encodings_tmp_bytes_impl<F>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 _plan: &::poulpy_ckks::layouts::PaCoPlan,
             ) -> ::poulpy_ckks::CKKSResult<usize>
             where
                 F: ::poulpy_ckks::api::PaCoScalar,
-                $be: ::poulpy_ckks::oep::CKKSEncodingImpl<$be, F>,
+                $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
             {
                 // The reference path uses ordinary host vectors. Native
                 // device implementations report their arena workspace here.
@@ -95,7 +95,7 @@ macro_rules! impl_ckks_paco_coeff_encoding {
             >
             where
                 F: ::poulpy_ckks::api::PaCoScalar,
-                $be: ::poulpy_ckks::oep::CKKSEncodingImpl<$be, F>,
+                $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {
                 $crate::ckks_paco::paco_coeff_encodings_staged::<$be, F, Src>(module, ct, plan, base2k)

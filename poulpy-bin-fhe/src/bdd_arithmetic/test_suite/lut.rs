@@ -354,6 +354,7 @@ where
             self.vec_znx_normalize_assign(
                 res.base2k.into(),
                 res.k.as_usize(),
+                0,
                 &mut a_data,
                 0,
                 &mut scratch.borrow(),

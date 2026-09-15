@@ -26,7 +26,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 ///
 /// For `_assign` variants `offset = 0` and metadata is unchanged.
 pub trait CKKSImagOps<BE: Backend> {
-    fn ckks_mul_i_tmp_bytes(&self) -> usize;
+    fn ckks_mul_i_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = i · src` (multiply every slot by the imaginary unit).
     fn ckks_mul_i_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -39,7 +39,7 @@ pub trait CKKSImagOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
-    fn ckks_div_i_tmp_bytes(&self) -> usize;
+    fn ckks_div_i_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = src / i = −i · src` (multiply every slot by `−i`).
     fn ckks_div_i_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

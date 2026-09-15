@@ -11,7 +11,7 @@ use crate::{
 
 /// Tree-reduction sum over a slice of ciphertexts.
 pub trait CKKSAddManyOps<BE: Backend> {
-    fn ckks_add_many_tmp_bytes(&self) -> usize;
+    fn ckks_add_many_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = inputs[0] + inputs[1] + … + inputs[n-1]` using a
     /// balanced binary tree of pairwise additions.

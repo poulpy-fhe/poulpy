@@ -106,10 +106,12 @@ fn inv_twiddle_ifft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64
         let omra: __m256d = _mm256_set_m128d(omx, omx);
         let omi: __m256d = _mm256_unpackhi_pd(omra, omra);
         let omr: __m256d = _mm256_unpacklo_pd(omra, omra);
-        let mut r0: *mut f64 = re.as_mut_ptr();
-        let mut r1: *mut f64 = re.as_mut_ptr().add(h);
-        let mut i0: *mut f64 = im.as_mut_ptr();
-        let mut i1: *mut f64 = im.as_mut_ptr().add(h);
+        let re_base: *mut f64 = re.as_mut_ptr();
+        let im_base: *mut f64 = im.as_mut_ptr();
+        let mut r0: *mut f64 = re_base;
+        let mut r1: *mut f64 = re_base.add(h);
+        let mut i0: *mut f64 = im_base;
+        let mut i1: *mut f64 = im_base.add(h);
         for _ in (0..h).step_by(4) {
             let mut ur0: __m256d = _mm256_loadu_pd(r0);
             let mut ur1: __m256d = _mm256_loadu_pd(r1);
@@ -139,14 +141,16 @@ fn inv_twiddle_ifft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64
 #[target_feature(enable = "avx2,fma")]
 fn inv_bitwiddle_ifft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64; 4]) {
     unsafe {
-        let mut r0: *mut f64 = re.as_mut_ptr();
-        let mut r1: *mut f64 = re.as_mut_ptr().add(h);
-        let mut r2: *mut f64 = re.as_mut_ptr().add(2 * h);
-        let mut r3: *mut f64 = re.as_mut_ptr().add(3 * h);
-        let mut i0: *mut f64 = im.as_mut_ptr();
-        let mut i1: *mut f64 = im.as_mut_ptr().add(h);
-        let mut i2: *mut f64 = im.as_mut_ptr().add(2 * h);
-        let mut i3: *mut f64 = im.as_mut_ptr().add(3 * h);
+        let re_base: *mut f64 = re.as_mut_ptr();
+        let im_base: *mut f64 = im.as_mut_ptr();
+        let mut r0: *mut f64 = re_base;
+        let mut r1: *mut f64 = re_base.add(h);
+        let mut r2: *mut f64 = re_base.add(2 * h);
+        let mut r3: *mut f64 = re_base.add(3 * h);
+        let mut i0: *mut f64 = im_base;
+        let mut i1: *mut f64 = im_base.add(h);
+        let mut i2: *mut f64 = im_base.add(2 * h);
+        let mut i3: *mut f64 = im_base.add(3 * h);
         let om0: __m256d = _mm256_loadu_pd(omg.as_ptr());
         let omb: __m256d = _mm256_permute2f128_pd(om0, om0, 0x11);
         let oma: __m256d = _mm256_permute2f128_pd(om0, om0, 0x00);

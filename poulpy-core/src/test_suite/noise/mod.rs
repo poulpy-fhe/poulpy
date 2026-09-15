@@ -18,11 +18,13 @@ pub mod linear_transformation;
 mod conversion;
 mod glwe_packing;
 mod rotate;
+mod shift;
 mod trace;
 
 pub use conversion::*;
 pub use glwe_packing::*;
 pub use rotate::*;
+pub use shift::*;
 pub use trace::*;
 
 use crate::oep::{
@@ -30,7 +32,7 @@ use crate::oep::{
     GGLWEProductDigitsStridedImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
     GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
     GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
-    LWEKeyswitchImpl,
+    LWEKeyswitchImpl, SamplingImpl,
 };
 use crate::{
     api::TransferInto,
@@ -49,32 +51,33 @@ use poulpy_hal::{
 
 pub trait TestBackend:
     HalTestBackend
-    + GLWEKeyswitchImpl<Self>
-    + GGLWEKeyswitchImpl<Self>
-    + GGSWKeyswitchImpl<Self>
-    + LWEKeyswitchImpl<Self>
-    + GLWEAddImpl<Self>
-    + GLWENegateImpl<Self>
-    + GLWESubImpl<Self>
-    + GLWECopyImpl<Self>
-    + HalVecZnxImpl<Self>
-    + GLWEExternalProductImpl<Self>
-    + GGLWEExternalProductImpl<Self>
-    + GGSWExternalProductImpl<Self>
-    + GLWETensoringImpl<Self>
-    + GGLWEProductDigitsStridedImpl<Self>
-    + GLWEMulConstImpl<Self>
-    + GLWEMulPlainImpl<Self>
-    + GLWERotateImpl<Self>
-    + GLWEMulXpMinusOneImpl<Self>
-    + GLWEShiftImpl<Self>
-    + GLWENormalizeImpl<Self>
-    + GLWETraceImpl<Self>
-    + GLWEPackImpl<Self>
-    + GGSWRotateImpl<Self>
-    + DecryptionImpl<Self>
-    + ConversionImpl<Self>
-    + AutomorphismImpl<Self>
+    + GLWEKeyswitchImpl
+    + GGLWEKeyswitchImpl
+    + GGSWKeyswitchImpl
+    + LWEKeyswitchImpl
+    + GLWEAddImpl
+    + GLWENegateImpl
+    + GLWESubImpl
+    + GLWECopyImpl
+    + HalVecZnxImpl
+    + GLWEExternalProductImpl
+    + GGLWEExternalProductImpl
+    + GGSWExternalProductImpl
+    + GLWETensoringImpl
+    + GGLWEProductDigitsStridedImpl
+    + GLWEMulConstImpl
+    + GLWEMulPlainImpl
+    + GLWERotateImpl
+    + GLWEMulXpMinusOneImpl
+    + GLWEShiftImpl
+    + GLWENormalizeImpl
+    + GLWETraceImpl
+    + GLWEPackImpl
+    + GGSWRotateImpl
+    + DecryptionImpl
+    + ConversionImpl
+    + AutomorphismImpl
+    + SamplingImpl
 where
     Self: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
     for<'a> Self::BufRef<'a>: HostDataRef,
@@ -85,32 +88,33 @@ where
 impl<BE> TestBackend for BE
 where
     BE: HalTestBackend
-        + GLWEKeyswitchImpl<BE>
-        + GGLWEKeyswitchImpl<BE>
-        + GGSWKeyswitchImpl<BE>
-        + LWEKeyswitchImpl<BE>
-        + GLWEAddImpl<BE>
-        + GLWENegateImpl<BE>
-        + GLWESubImpl<BE>
-        + GLWECopyImpl<BE>
-        + HalVecZnxImpl<BE>
-        + GLWEExternalProductImpl<BE>
-        + GGLWEExternalProductImpl<BE>
-        + GGSWExternalProductImpl<BE>
-        + GLWETensoringImpl<BE>
-        + GGLWEProductDigitsStridedImpl<BE>
-        + GLWEMulConstImpl<BE>
-        + GLWEMulPlainImpl<BE>
-        + GLWERotateImpl<BE>
-        + GLWEMulXpMinusOneImpl<BE>
-        + GLWEShiftImpl<BE>
-        + GLWENormalizeImpl<BE>
-        + GLWETraceImpl<BE>
-        + GLWEPackImpl<BE>
-        + GGSWRotateImpl<BE>
-        + DecryptionImpl<BE>
-        + ConversionImpl<BE>
-        + AutomorphismImpl<BE>,
+        + GLWEKeyswitchImpl
+        + GGLWEKeyswitchImpl
+        + GGSWKeyswitchImpl
+        + LWEKeyswitchImpl
+        + GLWEAddImpl
+        + GLWENegateImpl
+        + GLWESubImpl
+        + GLWECopyImpl
+        + HalVecZnxImpl
+        + GLWEExternalProductImpl
+        + GGLWEExternalProductImpl
+        + GGSWExternalProductImpl
+        + GLWETensoringImpl
+        + GGLWEProductDigitsStridedImpl
+        + GLWEMulConstImpl
+        + GLWEMulPlainImpl
+        + GLWERotateImpl
+        + GLWEMulXpMinusOneImpl
+        + GLWEShiftImpl
+        + GLWENormalizeImpl
+        + GLWETraceImpl
+        + GLWEPackImpl
+        + GGSWRotateImpl
+        + DecryptionImpl
+        + ConversionImpl
+        + AutomorphismImpl
+        + SamplingImpl,
     BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,

@@ -8,18 +8,18 @@ use crate::GLWEToBackendRef;
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub};
 
 pub trait CKKSPow2Default<BE: Backend> {
-    fn ckks_mul_pow2_tmp_bytes_default(&self) -> usize
+    fn ckks_mul_pow2_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Self: GLWEShift<BE>,
     {
-        self.glwe_shift_tmp_bytes()
+        self.glwe_shift_tmp_bytes(res_size)
     }
 
-    fn ckks_div_pow2_tmp_bytes_default(&self) -> usize
+    fn ckks_div_pow2_tmp_bytes_default(&self, res_size: usize) -> usize
     where
         Self: GLWEShift<BE>,
     {
-        self.glwe_shift_tmp_bytes()
+        self.glwe_shift_tmp_bytes(res_size)
     }
 
     fn ckks_mul_pow2_into_default<Dst, Src>(
@@ -34,7 +34,7 @@ pub trait CKKSPow2Default<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        crate::ckks_shift_stamp_unary(self, "mul_pow2", dst, src, bits, 0, scratch)?;
+        crate::ckks_shift_stamp_unary(self, "mul_pow2", dst, src, bits, 0, 0, scratch)?;
         Ok(())
     }
 
@@ -59,8 +59,9 @@ pub trait CKKSPow2Default<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        crate::ckks_shift_stamp_unary(self, "div_pow2", dst, src, 0, bits, scratch)?;
-        dst.set_log_delta(dst.log_delta() + bits);
+        // The `bits` charged to the budget move under `log_delta` inside the
+        // stamp, so the shift normalizes at the width the result reports.
+        crate::ckks_shift_stamp_unary(self, "div_pow2", dst, src, 0, bits, bits, scratch)?;
         Ok(())
     }
 

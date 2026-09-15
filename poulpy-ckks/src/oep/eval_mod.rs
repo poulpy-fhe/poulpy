@@ -24,24 +24,24 @@ use crate::{
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSEvalModImpl<BE: Backend>: Backend {
+pub unsafe trait CKKSEvalModImpl: Backend {
     /// See [`CKKSEvalModOps::ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod).
     fn ckks_eval_mod_impl<R, C, P, F, H>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
         ct: &C,
         params: &EvalMod<F, P>,
         tsk: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
-        H: GetTensorKey<BE>;
+        R: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<Self> + CKKSCtBounds,
+        P: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
+        H: GetTensorKey<Self>;
 }
 
-unsafe impl<BE: Backend> CKKSEvalModImpl<BE> for BE
+unsafe impl<BE: Backend> CKKSEvalModImpl for BE
 where
     Module<BE>: CKKSPolynomialEvaluationOps<BE>
         + CKKSAddOps<BE>

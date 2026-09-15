@@ -10,12 +10,12 @@ use poulpy_hal::{
 
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSImagOps, oep::CKKSImagImpl};
 
-impl<BE: Backend + CKKSImagImpl<BE>> CKKSImagOps<BE> for Module<BE>
+impl<BE: Backend + CKKSImagImpl> CKKSImagOps<BE> for Module<BE>
 where
     Module<BE>: GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
 {
-    fn ckks_mul_i_tmp_bytes(&self) -> usize {
-        BE::ckks_mul_i_tmp_bytes_impl(self)
+    fn ckks_mul_i_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_mul_i_tmp_bytes_impl(self, res_size)
     }
 
     fn ckks_mul_i_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -33,8 +33,8 @@ where
         BE::ckks_mul_i_assign_impl(self, dst, scratch)
     }
 
-    fn ckks_div_i_tmp_bytes(&self) -> usize {
-        BE::ckks_div_i_tmp_bytes_impl(self)
+    fn ckks_div_i_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_div_i_tmp_bytes_impl(self, res_size)
     }
 
     fn ckks_div_i_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

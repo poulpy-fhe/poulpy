@@ -8,11 +8,11 @@
 //! the [`EvalMod`] structure. The public entry point is
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
-use crate::{CKKSResult as Result, ckks_ensure};
+use crate::{CKKSResult as Result, ckks_ensure, ckks_set_log_delta_normalized};
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    GLWECopy,
+    GLWECopy, GLWENormalize,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta,
         prepared::GLWETensorKeyPreparedToBackendRef,
@@ -76,7 +76,8 @@ where
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
-        + GLWECopy<BE>,
+        + GLWECopy<BE>
+        + GLWENormalize<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
@@ -130,7 +131,8 @@ where
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
-        + GLWECopy<BE>,
+        + GLWECopy<BE>
+        + GLWENormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
@@ -237,9 +239,12 @@ where
     // which reinterprets the value at `2^-(s_eval - s_in)`); relabelling back to
     // `s_in` here undoes exactly that, so the scale round-trip is budget-neutral
     // and the only consumption is the EvalMod arithmetic, which `consumed_bits()`
-    // accounts for in full.
+    // accounts for in full. When the plan scale is the wider one the relabel
+    // lowers `k` by `s_eval - s_in`, and the bits below the new `k` still hold
+    // the low end of the result; the helper rounds them away so `res` is
+    // canonical at the `k` it reports.
     if s_eval != s_in {
-        res.set_log_delta(s_in);
+        ckks_set_log_delta_normalized(module, res, s_in, scratch);
     }
 
     Ok(())

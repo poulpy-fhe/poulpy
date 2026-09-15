@@ -94,30 +94,30 @@ macro_rules! ckks_carry_verb_default {
                 /// scratch needs. The ct–ct path never touches the `vec_znx` hooks,
                 /// so for it this is a slight over-provision — the price of keeping
                 /// one formula for the whole family.
-                fn [<ckks_ $verb _tmp_bytes_default>](&self) -> usize
+                fn [<ckks_ $verb _tmp_bytes_default>](&self, res_size: usize) -> usize
                 where
                     Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
                 {
-                    self.glwe_shift_tmp_bytes()
+                    self.glwe_shift_tmp_bytes(res_size)
                         .max(self.glwe_normalize_tmp_bytes())
-                        .max(self.vec_znx_rsh_tmp_bytes())
-                        .max(self.vec_znx_lsh_tmp_bytes())
+                        .max(self.vec_znx_rsh_tmp_bytes(res_size))
+                        .max(self.vec_znx_lsh_tmp_bytes(res_size))
                 }
 
                 /// Scratch bytes for the ct–pt-vector variants.
-                fn [<ckks_ $verb _pt_vec_tmp_bytes_default>](&self) -> usize
+                fn [<ckks_ $verb _pt_vec_tmp_bytes_default>](&self, res_size: usize) -> usize
                 where
                     Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
                 {
-                    self.[<ckks_ $verb _tmp_bytes_default>]()
+                    self.[<ckks_ $verb _tmp_bytes_default>](res_size)
                 }
 
                 /// Scratch bytes for the ct–pt-constant variants.
-                fn [<ckks_ $verb _pt_const_tmp_bytes_default>](&self) -> usize
+                fn [<ckks_ $verb _pt_const_tmp_bytes_default>](&self, res_size: usize) -> usize
                 where
                     Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
                 {
-                    self.[<ckks_ $verb _tmp_bytes_default>]()
+                    self.[<ckks_ $verb _tmp_bytes_default>](res_size)
                 }
 
                 fn [<ckks_ $verb _into_default>]<Dst, A, B>(
@@ -270,7 +270,7 @@ macro_rules! ckks_carry_verb_default {
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, 0, 0, scratch)?;
+                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, 0, 0, 0, scratch)?;
                     self.[<ckks_ $verb _pt_vec_assign_unnormalized_default>](dst, pt, scratch)?;
                     Ok(())
                 }
@@ -342,7 +342,7 @@ macro_rules! ckks_carry_verb_default {
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, 0, 0, scratch)?;
+                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, 0, 0, 0, scratch)?;
                     self.[<ckks_ $verb _pt_const_assign_unnormalized_default>](dst, dst_coeff, cst, const_coeff, scratch)
                 }
 

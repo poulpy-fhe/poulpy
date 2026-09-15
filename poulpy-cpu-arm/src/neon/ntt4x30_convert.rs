@@ -261,39 +261,6 @@ pub(crate) fn b_from_znx64_neon(nn: usize, res: &mut [u64], x: &[i64]) {
     }
 }
 
-/// Masked variant: `(x & mask) → q120b`.
-pub(crate) fn b_from_znx64_masked_neon(nn: usize, res: &mut [u64], x: &[i64], mask: i64) {
-    assert!(res.len() >= 4 * nn);
-    assert!(x.len() >= nn);
-    unsafe {
-        let oq = load_const(&OQ);
-        let i64_max_v = vdupq_n_u64(i64::MAX as u64);
-        let i64_max = Q120 {
-            lo: i64_max_v,
-            hi: i64_max_v,
-        };
-        let zero_s = vdupq_n_s64(0);
-        let mut r_ptr = res.as_mut_ptr();
-
-        for &xval in &x[..nn] {
-            let masked = xval & mask;
-            let xv_s = vdupq_n_s64(masked);
-            let xv_v = vreinterpretq_u64_s64(xv_s);
-            let xv = Q120 { lo: xv_v, hi: xv_v };
-            let xl = and_q120(xv, i64_max);
-            let sign_lo = vcgtq_s64(zero_s, xv_s);
-            let sign = Q120 {
-                lo: sign_lo,
-                hi: sign_lo,
-            };
-            let add = and_q120(sign, oq);
-            let out = add_q120(xl, add);
-            store_q120(r_ptr, out);
-            r_ptr = r_ptr.add(4);
-        }
-    }
-}
-
 /// `q120b → q120c` (Barrett reduce + pack `[r, r·2^32 mod Q]` per lane as u32 pairs).
 pub(crate) fn c_from_b_neon(nn: usize, res: &mut [u32], a: &[u64]) {
     assert!(res.len() >= 8 * nn);

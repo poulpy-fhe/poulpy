@@ -43,7 +43,7 @@ use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, ScratchOwnedAlloc},
     layouts::{
         Backend, Data, GaloisElement, HostBackend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena,
-        ScratchOwned, ZnxWord,
+        ScratchOwned, ZnxView, ZnxWord,
     },
     source::Source,
 };
@@ -947,6 +947,62 @@ where
     ct
 }
 
+/// Asserts that the data of `ct` is canonical at `ct.k()`.
+///
+/// Canonical at `k` means, coefficient by coefficient: the low
+/// `(-k) mod base2k` bits of the last live limb are zero, every limb past
+/// `ceil(k / base2k)` is zero, and no digit exceeds `2^(base2k - 1)` in
+/// magnitude. The first two are what the convolution consumers depend on:
+/// their `cnv_offset` rescales by `2^k`, so any content an operand carries
+/// below its own `k` comes back at full magnitude in the product.
+///
+/// The digit bound is the closed range, not the half-open one `normalize`
+/// produces: rotation, automorphism and negation are negacyclic and send the
+/// single digit `-2^(base2k - 1)` to `+2^(base2k - 1)`. That changes no value
+/// and nothing below `k`, so it is allowed here.
+///
+/// Every decryption helper in this module runs it first, so each operation
+/// test holds its output to the invariant before checking the value.
+///
+/// `BE` cannot be inferred from `CKKSCiphertextOwned<BE>`, which is a type
+/// alias over the backend's buffer and word types, so callers pass it.
+pub fn assert_canonical_at_k<BE: TestContextBackend>(label: &str, ct: &CKKSCiphertextOwned<BE>) {
+    let host = ct.to_host_owned::<BE>();
+    let base2k: usize = host.base2k().as_usize();
+    let k: usize = host.k().as_usize();
+    let live: usize = k.div_ceil(base2k);
+    let pad: usize = (base2k - k % base2k) % base2k;
+    let half: i64 = 1i64 << (base2k - 1);
+    let data = host.data();
+    for col in 0..data.cols() {
+        for limb in 0..live.min(data.size()) {
+            for (i, &digit) in data.at(col, limb).iter().enumerate() {
+                assert!(
+                    (-half..=half).contains(&digit),
+                    "{label}: col {col} limb {limb} coeff {i}: digit {digit} exceeds 2^(base2k - 1) (base2k {base2k}, k {k}, live limbs {live}, pad {pad})"
+                );
+            }
+        }
+        if live > 0 && pad != 0 {
+            let mask: i64 = (1i64 << pad) - 1;
+            let dirty: usize = data.at(col, live - 1).iter().filter(|&&d| d & mask != 0).count();
+            assert_eq!(
+                dirty,
+                0,
+                "{label}: col {col} limb {}: {dirty} coefficients carry bits below k = {k}",
+                live - 1
+            );
+        }
+        for limb in live..data.size() {
+            let dirty: usize = data.at(col, limb).iter().filter(|&&d| d != 0).count();
+            assert_eq!(
+                dirty, 0,
+                "{label}: col {col} limb {limb} past k = {k}: {dirty} non-zero coefficients"
+            );
+        }
+    }
+}
+
 /// Decrypts `ct` with `prec` metadata and returns the host-side plaintext.
 pub fn ckks_decrypt_with_prec<BE>(
     module: &Module<BE>,
@@ -959,6 +1015,7 @@ where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
 {
+    assert_canonical_at_k::<BE>("decrypt", ct);
     let mut pt = module.ckks_pt_vec_alloc(ct.base2k(), prec.k());
     pt.set_meta(prec.meta());
     module.ckks_decrypt(&mut pt, ct, sk, scratch)?;
@@ -1206,6 +1263,8 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
+    assert_canonical_at_k::<BE>(label, ct);
+
     // Encode the expected message at the ciphertext's full metadata, so the
     // reference spans the same limbs as a full-width decryption (no head-room
     // clipping — any corruption above the head-room shows up as noise).

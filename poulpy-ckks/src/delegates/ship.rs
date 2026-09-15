@@ -26,7 +26,7 @@ use crate::{
 
 impl<BE, F> CKKSShipOps<BE, F> for Module<BE>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
         + GGLWEProductDefault<BE>

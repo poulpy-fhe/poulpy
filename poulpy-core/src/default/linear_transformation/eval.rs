@@ -11,11 +11,12 @@
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssign, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
-        VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
-        VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume,
-        VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssign, VecZnxBigAddAssign, VecZnxBigAlloc,
+        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
+        VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
+        VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, GaloisElement, PrepareHint, ScratchArena},
 };
@@ -55,6 +56,7 @@ where
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes
@@ -151,7 +153,6 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
         + GGLWEProductDefault<BE>
         + poulpy_hal::api::ModuleN
         + VecZnxAutomorphismAssign<BE>
-        + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
@@ -202,7 +203,6 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + GGLWEProductDefault<BE>
         + GLWEKeyswitchInternal<BE>
         + VecZnxBigAddAssign<BE>
-        + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
@@ -261,6 +261,7 @@ where
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes

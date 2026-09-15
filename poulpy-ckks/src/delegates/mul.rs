@@ -32,7 +32,7 @@ fn prepared_mul_k_checked<D: CKKSCtBounds>(dst: &D, prepared_k: usize) -> Result
     Ok(dst.k().max(TorusPrecision(prepared_k)))
 }
 
-impl<BE: Backend + CKKSMulImpl<BE>> CKKSMulOps<BE> for Module<BE>
+impl<BE: Backend + CKKSMulImpl> CKKSMulOps<BE> for Module<BE>
 where
     Module<BE>: GLWEAdd<BE>
         + GLWECopy<BE>

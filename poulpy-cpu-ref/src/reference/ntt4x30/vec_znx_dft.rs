@@ -251,6 +251,7 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_vec_znx_dft_apply");
+    assert!(step >= 1, "ntt4x30_vec_znx_dft_apply: step must be >= 1");
     let a_size = a.size();
     let res_size = res.size();
 
@@ -547,44 +548,6 @@ pub fn ntt4x30_vec_znx_dft_add_assign<BE>(
     }
 }
 
-/// DFT-domain scaled in-place add: `res[res_col] += a[a_col] >> (a_scale * base2k)`.
-///
-/// `a_scale > 0` shifts `a` down by `a_scale` limbs (drops low limbs);
-/// `a_scale < 0` shifts `a` up by `|a_scale|` limbs (adds into higher limbs).
-pub fn ntt4x30_vec_znx_dft_add_scaled_assign<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    a_col: usize,
-    a_scale: i64,
-) where
-    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign,
-    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
-{
-    let res_size = res.size();
-    let a_size = a.size();
-
-    if a_scale > 0 {
-        let shift = (a_scale as usize).min(a_size);
-        let sum_size = a_size.min(res_size).saturating_sub(shift);
-        for j in 0..sum_size {
-            BE::ntt_add_assign(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j + shift));
-        }
-    } else if a_scale < 0 {
-        let shift = (a_scale.unsigned_abs() as usize).min(res_size);
-        let sum_size = a_size.min(res_size.saturating_sub(shift));
-        for j in 0..sum_size {
-            BE::ntt_add_assign(limb_u64_mut::<_, BE>(res, res_col, j + shift), limb_u64::<_, BE>(a, a_col, j));
-        }
-    } else {
-        let sum_size = a_size.min(res_size);
-        for j in 0..sum_size {
-            BE::ntt_add_assign(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
-        }
-    }
-}
-
 /// DFT-domain sub: `res[res_col] = a[a_col] - b[b_col]`.
 pub fn ntt4x30_vec_znx_dft_sub<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -693,7 +656,8 @@ pub fn ntt4x30_vec_znx_dft_copy<BE>(
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     {
-        assert_eq!(res.n(), a.n())
+        assert_eq!(res.n(), a.n());
+        assert!(step >= 1, "ntt4x30_vec_znx_dft_copy: step must be >= 1");
     }
 
     let steps: usize = a.size().div_ceil(step);

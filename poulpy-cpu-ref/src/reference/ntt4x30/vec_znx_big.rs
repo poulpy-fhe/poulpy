@@ -34,7 +34,7 @@ use rand_distr::{Distribution, Normal};
 
 use crate::{
     layouts::{
-        Backend, HostDataMut, HostDataRef, NoiseInfos, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxShape,
+        Backend, HostDataMut, HostDataRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxInfos, VecZnxShape,
         VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
@@ -1337,18 +1337,25 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
             || crate::reference::vec_znx::normalize_cross_needs_exact(input.size(), a_base2k, res_base2k, res_k, res_offset)
     };
     if needs_exact {
-        for i in 0..coeff_len {
+        let input_limbs: Vec<&[i128]> = (0..input.size())
+            .map(|j| &input.at(a_col, j)[coeff_start..coeff_start + coeff_len])
+            .collect();
+        // One base pointer per output limb of the range; limbs are disjoint and
+        // each holds `coeff_len` writable scalars, so `add(i)` with `i < coeff_len`
+        // stays inside limb `j`.
+        let res_limbs: Vec<*mut i64> = (0..size).map(|j| res.at_mut(j).as_mut_ptr()).collect();
+        (0..coeff_len).for_each(|i| {
             crate::reference::vec_znx::normalize_exact::<false, _, _>(
-                |j| input.at(a_col, j)[coeff_start + i],
+                |j| input_limbs[j][i],
                 input.size(),
                 a_base2k,
                 size,
                 res_base2k,
                 res_k,
                 res_offset,
-                |j, digit| res.at_mut(j)[i] = digit,
+                |j, digit| unsafe { *res_limbs[j].add(i) = digit },
             );
-        }
+        });
         return;
     }
 
@@ -1408,10 +1415,18 @@ pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
     let mut output = res.to_backend_mut();
     let output_size = output.size();
     assert!(carry.len() >= 3 * output.n());
-    for i in 0..output.n() {
+    let input_limbs: Vec<&[i128]> = (0..input.size()).map(|j| input.at(a_col, j)).collect();
+    assert!(res_col < output.cols(), "res_col {res_col} >= cols {}", output.cols());
+    // One base pointer, limb addresses from the shape: each `at_mut` call
+    // reborrows the whole buffer and would invalidate the pointers taken before it.
+    let out_base: *mut i64 = output.base_mut_ptr();
+    let out_limbs: Vec<*mut i64> = (0..output_size)
+        .map(|j| unsafe { out_base.add(output.scalar_offset(res_col, j)) })
+        .collect();
+    (0..output.n()).for_each(|i| {
         let mut extra = 0i128;
         crate::reference::vec_znx::normalize_exact::<false, _, _>(
-            |j| input.at(a_col, j)[i],
+            |j| input_limbs[j][i],
             input.size(),
             a_base2k,
             output_size,
@@ -1419,14 +1434,14 @@ pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
             output_size * res_base2k,
             res_offset,
             |j, digit| {
-                let value = &mut output.at_mut(res_col, j)[i];
+                let value = unsafe { &mut *out_limbs[j].add(i) };
                 let signed = if O::SUB { -(digit as i128) } else { digit as i128 };
                 let total = *value as i128 + signed + extra;
                 *value = total as i64;
                 extra = (total - *value as i128) >> res_base2k;
             },
         );
-    }
+    });
 }
 
 /// Adds normalized `a` under the source bounds of [`ntt4x30_vec_znx_big_normalize`].
@@ -1555,7 +1570,9 @@ pub fn ntt4x30_vec_znx_big_add_normal_ref<R, BE>(
     base2k: usize,
     res: &mut R,
     res_col: usize,
-    noise_infos: NoiseInfos,
+    k: usize,
+    sigma: f64,
+    bound: f64,
     source: &mut Source,
 ) where
     BE: Backend<BigWord = i128, ZnxWord = i64>,
@@ -1564,18 +1581,19 @@ pub fn ntt4x30_vec_znx_big_add_normal_ref<R, BE>(
 {
     let mut res = res.to_backend_mut();
     assert!(
-        (noise_infos.bound.log2().ceil() as i64) < 64,
+        (bound.log2().ceil() as i64) < 64,
         "invalid bound: ceil(log2(bound))={} > 63",
-        noise_infos.bound.log2().ceil() as i64
+        bound.log2().ceil() as i64
     );
 
-    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
-    let normal: Normal<f64> = Normal::new(0.0, noise_infos.sigma).unwrap();
+    let limb: usize = k.div_ceil(base2k) - 1;
+    let shift: u32 = ((limb + 1) * base2k - k) as u32;
+    let normal: Normal<f64> = Normal::new(0.0, sigma).unwrap();
     let rj: &mut [i128] = res.at_mut(res_col, limb);
 
     rj.iter_mut().for_each(|r| {
         let mut s: f64 = normal.sample(source);
-        while s.abs() > noise_infos.bound {
+        while s.abs() > bound {
             s = normal.sample(source);
         }
         *r = r.wrapping_add((s.round() as i64 as i128) << shift);

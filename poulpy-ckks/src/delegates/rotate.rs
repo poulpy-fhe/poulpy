@@ -9,7 +9,7 @@ use crate::{CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, oep::CKKSRotateImp
 
 use crate::api::CKKSRotateOps;
 
-impl<BE: Backend + CKKSRotateImpl<BE>> CKKSRotateOps<BE> for Module<BE>
+impl<BE: Backend + CKKSRotateImpl> CKKSRotateOps<BE> for Module<BE>
 where
     Module<BE>: GLWEAutomorphism<BE> + GLWEShift<BE> + GaloisElement,
 {

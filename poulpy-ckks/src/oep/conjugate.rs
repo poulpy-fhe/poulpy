@@ -17,33 +17,33 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSConjugateImpl<BE: Backend>: Backend {
-    fn ckks_conjugate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize;
+pub unsafe trait CKKSConjugateImpl: Backend {
+    fn ckks_conjugate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<Self>, ct_infos: &C, key_infos: &K) -> usize;
 
     fn ckks_conjugate_into_impl<Dst, Src>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<Self> + GLWEInfos + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds;
 
     fn ckks_conjugate_assign_impl<Dst>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         dst: &mut Dst,
-        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
-unsafe impl<BE: Backend> CKKSConjugateImpl<BE> for BE
+unsafe impl<BE: Backend> CKKSConjugateImpl for BE
 where
-    BE: Backend + HalVecZnxImpl<BE>,
+    BE: Backend + HalVecZnxImpl,
     Module<BE>: CKKSConjugateDefault<BE> + GLWEAutomorphism<BE> + poulpy_core::GLWEShift<BE>,
 {
     fn ckks_conjugate_tmp_bytes_impl<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize {

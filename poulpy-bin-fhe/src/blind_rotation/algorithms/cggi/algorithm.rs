@@ -6,8 +6,8 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign,
-        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotate, VecZnxZero, VmpApplyDftToDft,
-        VmpApplyDftToDftTmpBytes,
+        VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxRotate, VecZnxZero,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef,
@@ -53,8 +53,9 @@ where
         + GLWENormalize<BE>
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
+        + VecZnxMulXpMinusOneAssignTmpBytes
         + Sync,
-    BE: HalVecZnxImpl<BE>,
+    BE: HalVecZnxImpl,
 {
     fn blind_rotation_execute_tmp_bytes<G, B>(
         &self,
@@ -104,7 +105,12 @@ where
                                 .max(self.vec_znx_idft_apply_tmp_bytes()))))
             }
         } else {
-            self.glwe_bytes_of_from_infos(glwe_infos) + self.glwe_external_product_tmp_bytes(glwe_infos, glwe_infos, brk_infos)
+            // `glwe_mul_xp_minus_one_assign` runs on the accumulator carved out
+            // of the same arena, so its own scratch is part of the bound.
+            self.glwe_bytes_of_from_infos(glwe_infos)
+                + self
+                    .glwe_external_product_tmp_bytes(glwe_infos, glwe_infos, brk_infos)
+                    .max(self.vec_znx_mul_xp_minus_one_assign_tmp_bytes(glwe_infos.size()))
         }
     }
 

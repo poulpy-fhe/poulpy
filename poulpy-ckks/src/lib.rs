@@ -386,14 +386,16 @@ where
     a.k().as_usize().saturating_sub(res.k().as_usize())
 }
 
-/// Shared unary-op preamble: aligns `src` into `dst` (left shift by
-/// `offset + extra_shift`) and stamps `src`'s metadata with the budget charged
-/// by `offset + extra_charge`. Validates **before** mutating, so on `Err`
+/// Shared unary-op preamble: stamps `src`'s metadata with the budget charged
+/// by `offset + extra_charge` and `extra_log_delta` bits moved under
+/// `log_delta`, then aligns `src` into `dst` (left shift by
+/// `offset + extra_shift`). Validates **before** mutating, so on `Err`
 /// (insufficient budget) `dst` is untouched. Returns the computed offset.
 ///
 /// This is the single implementation of the "shift + stamp" sequence the
 /// copy/pow2/add-pt/sub-pt into-ops previously hand-rolled (H1 in the 2026-07
 /// review was a drift bug in exactly this preamble).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn ckks_shift_stamp_unary<BE, M, Dst, Src>(
     module: &M,
     op: &'static str,
@@ -401,6 +403,7 @@ pub(crate) fn ckks_shift_stamp_unary<BE, M, Dst, Src>(
     src: &Src,
     extra_shift: usize,
     extra_charge: usize,
+    extra_log_delta: usize,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
 ) -> CKKSResult<()>
 where
@@ -411,10 +414,60 @@ where
 {
     let offset = ckks_offset_unary(dst, src);
     let log_budget = checked_log_budget_sub(op, src.log_budget(), offset + extra_charge)?;
-    module.glwe_lsh(dst, src, offset + extra_shift, scratch);
+    // Stamp first, and stamp the final metadata: the shift normalizes at
+    // `dst.k()`, so the label has to be the width the result will carry, not
+    // whatever `dst` held before and not an intermediate. `div_pow2` charges
+    // `bits` to the budget and moves them under `log_delta`; doing the second
+    // half after the shift would have it round `bits` too low. `offset` is
+    // computed against the pre-stamp `dst`.
     dst.set_meta(src.meta());
     dst.set_log_budget(log_budget);
+    if extra_log_delta != 0 {
+        dst.set_log_delta(src.log_delta() + extra_log_delta);
+    }
+    module.glwe_lsh(dst, src, offset + extra_shift, scratch);
     Ok(())
+}
+
+/// Relabels `ct` at `k`, and when that lowers `k` normalizes at the new `k`,
+/// so the bits the relabel leaves below it are rounded away instead of kept.
+/// Raising `k` leaves canonical data canonical. Every relabel that follows a
+/// write goes through here or [`ckks_set_log_delta_normalized`], so no
+/// operation returns data below the `k` it reports.
+pub(crate) fn ckks_set_k_normalized<BE, M, R>(
+    module: &M,
+    ct: &mut R,
+    k: TorusPrecision,
+    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: poulpy_core::GLWENormalize<BE> + ?Sized,
+    R: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+{
+    let lowered = k.as_usize() < ct.k().as_usize();
+    ct.set_k(k);
+    if lowered {
+        module.glwe_normalize_assign(ct, scratch);
+    }
+}
+
+/// [`SetCKKSInfos::set_log_delta`] with the normalization
+/// [`ckks_set_k_normalized`] applies when the relabel lowers `k`.
+pub(crate) fn ckks_set_log_delta_normalized<BE, M, R>(
+    module: &M,
+    ct: &mut R,
+    log_delta: usize,
+    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: poulpy_core::GLWENormalize<BE> + ?Sized,
+    R: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+{
+    let k = ct.log_budget() + log_delta;
+    let mut meta = ct.meta();
+    meta.log_delta = log_delta;
+    ct.set_meta(meta);
+    ckks_set_k_normalized(module, ct, k.into(), scratch);
 }
 
 #[cfg(test)]

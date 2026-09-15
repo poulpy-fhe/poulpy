@@ -116,71 +116,6 @@ pub fn reim_from_znx_i64_bnd50_fma(res: &mut [f64], a: &[i64]) {
     }
 }
 
-/// Masked AVX2/FMA variant of [`reim_from_znx_i64_bnd50_fma`].
-///
-/// Converts `(a[i] & mask)` into `f64` exactly for values bounded by `|x| < 2^50`.
-#[target_feature(enable = "avx2,fma")]
-pub fn reim_from_znx_i64_masked_bnd50_fma(res: &mut [f64], a: &[i64], mask: i64) {
-    assert_eq!(res.len(), a.len());
-    #[cfg(debug_assertions)]
-    {
-        const BOUND: i64 = (1i64 << 50) - 1;
-        for (i, &val) in a.iter().enumerate() {
-            let masked = val & mask;
-            assert!(
-                masked.abs() <= BOUND,
-                "Masked input (a[{}] & mask) = {} exceeds bound 2^50-1 ({})",
-                i,
-                masked,
-                BOUND
-            );
-        }
-    }
-
-    let n: usize = res.len();
-
-    unsafe {
-        use std::arch::x86_64::{
-            __m256d, __m256i, _mm256_add_epi64, _mm256_and_si256, _mm256_castsi256_pd, _mm256_loadu_si256, _mm256_or_pd,
-            _mm256_set1_epi64x, _mm256_set1_pd, _mm256_storeu_pd, _mm256_sub_pd,
-        };
-
-        let expo: f64 = (1i64 << 52) as f64;
-        let add_cst: i64 = 1i64 << 51;
-        let sub_cst: f64 = (3i64 << 51) as f64;
-
-        let expo_256: __m256d = _mm256_set1_pd(expo);
-        let add_cst_256: __m256i = _mm256_set1_epi64x(add_cst);
-        let mask_256: __m256i = _mm256_set1_epi64x(mask);
-        let sub_cst_256: __m256d = _mm256_set1_pd(sub_cst);
-
-        let mut res_ptr: *mut f64 = res.as_mut_ptr();
-        let mut a_ptr: *const __m256i = a.as_ptr() as *const __m256i;
-
-        let span: usize = n >> 2;
-
-        for _ in 0..span {
-            let mut ai64_256: __m256i = _mm256_loadu_si256(a_ptr);
-            ai64_256 = _mm256_and_si256(ai64_256, mask_256);
-            ai64_256 = _mm256_add_epi64(ai64_256, add_cst_256);
-
-            let mut af64_256: __m256d = _mm256_castsi256_pd(ai64_256);
-            af64_256 = _mm256_or_pd(af64_256, expo_256);
-            af64_256 = _mm256_sub_pd(af64_256, sub_cst_256);
-
-            _mm256_storeu_pd(res_ptr, af64_256);
-
-            res_ptr = res_ptr.add(4);
-            a_ptr = a_ptr.add(1);
-        }
-
-        if !res.len().is_multiple_of(4) {
-            use poulpy_cpu_ref::reference::fft64::reim::reim_from_znx_i64_masked_ref;
-            reim_from_znx_i64_masked_ref(&mut res[span << 2..], &a[span << 2..], mask)
-        }
-    }
-}
-
 /// # Correctness
 /// Only ensured for inputs absoluate value bounded by 2^63-1
 /// # Safety
@@ -292,8 +227,9 @@ pub fn reim_to_znx_i64_assign_bnd63_avx2_fma(res: &mut [f64], divisor: f64) {
         let offset_256: __m256d = _mm256_set1_pd(offset);
         let divi_bits_256: __m256i = _mm256_castpd_si256(_mm256_set1_pd(divi_bits));
 
-        let mut res_ptr_4xi64: *mut __m256i = res.as_mut_ptr() as *mut __m256i;
-        let mut res_ptr_1xf64: *mut f64 = res.as_mut_ptr();
+        let res_base: *mut f64 = res.as_mut_ptr();
+        let mut res_ptr_4xi64: *mut __m256i = res_base as *mut __m256i;
+        let mut res_ptr_1xf64: *mut f64 = res_base;
 
         let span: usize = res.len() >> 2;
 

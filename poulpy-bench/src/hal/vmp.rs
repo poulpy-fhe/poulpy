@@ -5,7 +5,7 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_hal::{
     api::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         Backend, Module, PrepareHint, ScratchOwned, VecZnxDftOwned, VecZnxDftToBackendMut, VmpPMatOwned, VmpPMatToBackendMut,
@@ -105,6 +105,39 @@ where
         let pmat = pmat.to_backend_ref();
         let a = vec_znx_dft_backend_ref::<B>(&a);
         module.vmp_apply_dft_to_dft(&mut res.to_backend_mut(), &a, &pmat, 0, &mut scratch.borrow());
+        black_box(());
+    });
+}
+
+pub fn runner_vmp_apply_dft_to_dft_add<B: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    sweep: &VmpSweepParms,
+) where
+    Module<B>: ModuleNew<B> + VecZnxDftAlloc<B> + VmpPMatAlloc<B> + VmpApplyDftToDftAdd<B> + VmpApplyDftToDftAddTmpBytes,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+{
+    let module: Module<B> = Module::<B>::new(sweep.n as u64);
+
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vmp_apply_dft_to_dft_add_tmp_bytes(
+        sweep.size,
+        sweep.size,
+        sweep.rows,
+        sweep.cols_in,
+        sweep.cols_out,
+        sweep.size,
+    ));
+
+    let mut res: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols_out, sweep.size, &mut source);
+    let a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols_in, sweep.size, &mut source);
+    let pmat: VmpPMatOwned<B> =
+        random_backend_vmp_pmat::<B>(module.n(), sweep.rows, sweep.cols_in, sweep.cols_out, sweep.size, &mut source);
+
+    bencher.iter(|| {
+        let pmat = pmat.to_backend_ref();
+        let a = vec_znx_dft_backend_ref::<B>(&a);
+        module.vmp_apply_dft_to_dft_add(&mut res.to_backend_mut(), &a, &pmat, 0, &mut scratch.borrow());
         black_box(());
     });
 }

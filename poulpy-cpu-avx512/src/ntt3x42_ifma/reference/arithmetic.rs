@@ -65,23 +65,6 @@ pub fn b_ntt3x42_ifma_from_znx64_ref(n: usize, res: &mut [u64], a: &[i64]) {
     }
 }
 
-/// Equivalent to [`b_ntt3x42_ifma_from_znx64_ref`] on `a[j] & mask`.
-pub fn b_ntt3x42_ifma_from_znx64_masked_ref(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
-    assert!(res.len() >= 3 * n);
-    assert!(a.len() >= n);
-    for i in 0..n {
-        let x = a[i] & mask;
-        for k in 0..3 {
-            res[k * n + i] = if x >= 0 {
-                (x as u64) % Q[k]
-            } else {
-                let pos = (x as u64) & (i64::MAX as u64);
-                (pos + OQ[k]) % Q[k]
-            };
-        }
-    }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 3-prime CRT → i128 (Garner's algorithm)
 // ─────────────────────────────────────────────────────────────────────────────

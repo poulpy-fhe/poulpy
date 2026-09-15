@@ -3,10 +3,9 @@
 use core::arch::aarch64::{int64x2_t, vaddq_s64, vandq_s64, vdupq_n_s64, veorq_s64, vld1q_s64, vshlq_s64, vst1q_s64, vsubq_s64};
 
 use poulpy_cpu_ref::reference::znx::{
-    znx_normalize_digit_ref, znx_normalize_final_step_assign_ref, znx_normalize_final_step_ref, znx_normalize_final_step_sub_ref,
+    znx_normalize_digit_ref, znx_normalize_final_step_assign_ref, znx_normalize_final_step_ref,
     znx_normalize_first_step_assign_ref, znx_normalize_first_step_carry_only_ref, znx_normalize_first_step_ref,
     znx_normalize_middle_step_assign_ref, znx_normalize_middle_step_carry_only_ref, znx_normalize_middle_step_ref,
-    znx_normalize_middle_step_sub_ref,
 };
 
 /// `(mask_k, sign_k, cnt_neg)` with `cnt_neg = -base2k` for `vshlq_s64` arithmetic right shift.
@@ -461,48 +460,6 @@ pub(crate) fn znx_normalize_middle_step_neon<const OVERWRITE: bool>(
     }
 }
 
-/// Middle step (subtract): `x -= digit_chain(a)` ; carry accumulates.
-#[inline]
-pub(crate) fn znx_normalize_middle_step_sub_neon(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    assert_eq!(x.len(), a.len());
-    assert!(x.len() <= carry.len());
-    assert!(lsh < base2k);
-    let n = x.len();
-    let span = n >> 2;
-    unsafe {
-        let mut xx = x.as_mut_ptr();
-        let mut aa = a.as_ptr();
-        let mut cc = carry.as_mut_ptr();
-        let (mask, sign, cnt_neg) = normalize_consts_neon(base2k);
-        let (mask_lsh, sign_lsh, cnt_neg_lsh) = if lsh == 0 {
-            (mask, sign, cnt_neg)
-        } else {
-            normalize_consts_neon(base2k - lsh)
-        };
-        let lsh_v = vdupq_n_s64(lsh as i64);
-        let has_lsh = lsh != 0;
-        for _ in 0..span {
-            let a0 = vld1q_s64(aa);
-            let a1 = vld1q_s64(aa.add(2));
-            let cv0 = vld1q_s64(cc);
-            let cv1 = vld1q_s64(cc.add(2));
-            let (n0, nc0) = middle_chunk(a0, cv0, mask, sign, cnt_neg, mask_lsh, sign_lsh, cnt_neg_lsh, lsh_v, has_lsh);
-            let (n1, nc1) = middle_chunk(a1, cv1, mask, sign, cnt_neg, mask_lsh, sign_lsh, cnt_neg_lsh, lsh_v, has_lsh);
-            vst1q_s64(xx, vsubq_s64(vld1q_s64(xx), n0));
-            vst1q_s64(xx.add(2), vsubq_s64(vld1q_s64(xx.add(2)), n1));
-            vst1q_s64(cc, nc0);
-            vst1q_s64(cc.add(2), nc1);
-            xx = xx.add(4);
-            aa = aa.add(4);
-            cc = cc.add(4);
-        }
-    }
-    let tail = span << 2;
-    if tail < n {
-        znx_normalize_middle_step_sub_ref(base2k, lsh, &mut x[tail..], &a[tail..], &mut carry[tail..]);
-    }
-}
-
 /// Final-step body (no carry-out): `digit(digit(x [<< lsh]) + carry)`.
 #[allow(clippy::too_many_arguments)]
 #[inline(always)]
@@ -615,47 +572,6 @@ pub(crate) fn znx_normalize_final_step_neon<const OVERWRITE: bool>(
     let tail = span << 2;
     if tail < n {
         znx_normalize_final_step_ref::<OVERWRITE>(base2k, lsh, &mut x[tail..], &a[tail..], &mut carry[tail..]);
-    }
-}
-
-/// Final step (subtract): `x -= final_chunk(a, carry)`.
-#[inline]
-pub(crate) fn znx_normalize_final_step_sub_neon(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    assert_eq!(x.len(), a.len());
-    assert!(x.len() <= carry.len());
-    assert!(lsh < base2k);
-    let n = x.len();
-    let span = n >> 2;
-    unsafe {
-        let mut xx = x.as_mut_ptr();
-        let mut aa = a.as_ptr();
-        let mut cc = carry.as_mut_ptr();
-        let (mask, sign, _) = normalize_consts_neon(base2k);
-        let (mask_lsh, sign_lsh) = if lsh == 0 {
-            (mask, sign)
-        } else {
-            let (m, s, _) = normalize_consts_neon(base2k - lsh);
-            (m, s)
-        };
-        let lsh_v = vdupq_n_s64(lsh as i64);
-        let has_lsh = lsh != 0;
-        for _ in 0..span {
-            let a0 = vld1q_s64(aa);
-            let a1 = vld1q_s64(aa.add(2));
-            let cv0 = vld1q_s64(cc);
-            let cv1 = vld1q_s64(cc.add(2));
-            let r0 = final_chunk(a0, cv0, mask, sign, mask_lsh, sign_lsh, lsh_v, has_lsh);
-            let r1 = final_chunk(a1, cv1, mask, sign, mask_lsh, sign_lsh, lsh_v, has_lsh);
-            vst1q_s64(xx, vsubq_s64(vld1q_s64(xx), r0));
-            vst1q_s64(xx.add(2), vsubq_s64(vld1q_s64(xx.add(2)), r1));
-            xx = xx.add(4);
-            aa = aa.add(4);
-            cc = cc.add(4);
-        }
-    }
-    let tail = span << 2;
-    if tail < n {
-        znx_normalize_final_step_sub_ref(base2k, lsh, &mut x[tail..], &a[tail..], &mut carry[tail..]);
     }
 }
 

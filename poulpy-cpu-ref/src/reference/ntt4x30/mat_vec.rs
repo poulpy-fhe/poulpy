@@ -30,6 +30,7 @@
 //! fit without overflow (all intermediate sums stay below 64 bits).
 
 use crate::reference::ntt4x30::primes::PrimeSetCrt4;
+use bytemuck::{cast_slice, cast_slice_mut};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Precomputed metadata
@@ -376,11 +377,11 @@ pub fn vec_mat1col_product_bbc_ref<P: PrimeSetCrt4>(meta: &BbcMeta<P>, ell: usiz
     assert!(x.len() >= 8 * ell);
     assert!(y.len() >= 8 * ell);
 
+    let xs: &[[u32; 8]] = cast_slice(&x[..8 * ell]);
+    let ys: &[[u32; 8]] = cast_slice(&y[..8 * ell]);
     let mut s = [0u64; 8];
     for i in 0..ell {
-        let xi: &[u32; 8] = x[8 * i..8 * i + 8].try_into().unwrap();
-        let yi: &[u32; 8] = y[8 * i..8 * i + 8].try_into().unwrap();
-        accum_mul_q120_bc(&mut s, xi, yi);
+        accum_mul_q120_bc(&mut s, &xs[i], &ys[i]);
     }
     let res4: &mut [u64; 4] = (&mut res[..4]).try_into().unwrap();
     accum_to_q120b::<P>(res4, &s, meta);
@@ -396,23 +397,16 @@ pub fn vec_mat1col_product_x2_bbc_ref<P: PrimeSetCrt4>(meta: &BbcMeta<P>, ell: u
     assert!(x.len() >= 16 * ell);
     assert!(y.len() >= 16 * ell);
 
+    let xs: &[[u32; 8]] = cast_slice(&x[..16 * ell]);
+    let ys: &[[u32; 8]] = cast_slice(&y[..16 * ell]);
     let mut s = [[0u64; 8]; 2];
-
     for i in 0..ell {
-        // Each element: 2 × q120b (16 u32) in x, 2 × q120c (16 u32) in y
-        let x0: &[u32; 8] = x[16 * i..16 * i + 8].try_into().unwrap();
-        let x1: &[u32; 8] = x[16 * i + 8..16 * i + 16].try_into().unwrap();
-        let y0: &[u32; 8] = y[16 * i..16 * i + 8].try_into().unwrap();
-        let y1: &[u32; 8] = y[16 * i + 8..16 * i + 16].try_into().unwrap();
-        accum_mul_q120_bc(&mut s[0], x0, y0);
-        accum_mul_q120_bc(&mut s[1], x1, y1);
+        accum_mul_q120_bc(&mut s[0], &xs[2 * i], &ys[2 * i]);
+        accum_mul_q120_bc(&mut s[1], &xs[2 * i + 1], &ys[2 * i + 1]);
     }
-
-    let (res0, res1) = res.split_at_mut(4);
-    let r0: &mut [u64; 4] = res0.try_into().unwrap();
-    accum_to_q120b::<P>(r0, &s[0], meta);
-    let r1: &mut [u64; 4] = (&mut res1[..4]).try_into().unwrap();
-    accum_to_q120b::<P>(r1, &s[1], meta);
+    let res4: &mut [[u64; 4]] = cast_slice_mut(&mut res[..8]);
+    accum_to_q120b::<P>(&mut res4[0], &s[0], meta);
+    accum_to_q120b::<P>(&mut res4[1], &s[1], meta);
 }
 
 /// Computes four q120b dot products (two output, two columns).
@@ -425,23 +419,17 @@ pub fn vec_mat2cols_product_x2_bbc_ref<P: PrimeSetCrt4>(meta: &BbcMeta<P>, ell: 
     assert!(x.len() >= 16 * ell);
     assert!(y.len() >= 32 * ell);
 
+    let xs: &[[u32; 8]] = cast_slice(&x[..16 * ell]);
+    let ys: &[[u32; 8]] = cast_slice(&y[..32 * ell]);
     let mut s = [[0u64; 8]; 4];
-
     for i in 0..ell {
-        let x0: &[u32; 8] = x[16 * i..16 * i + 8].try_into().unwrap();
-        let x1: &[u32; 8] = x[16 * i + 8..16 * i + 16].try_into().unwrap();
-        let y0: &[u32; 8] = y[32 * i..32 * i + 8].try_into().unwrap();
-        let y1: &[u32; 8] = y[32 * i + 8..32 * i + 16].try_into().unwrap();
-        let y2: &[u32; 8] = y[32 * i + 16..32 * i + 24].try_into().unwrap();
-        let y3: &[u32; 8] = y[32 * i + 24..32 * i + 32].try_into().unwrap();
-        accum_mul_q120_bc(&mut s[0], x0, y0);
-        accum_mul_q120_bc(&mut s[1], x1, y1);
-        accum_mul_q120_bc(&mut s[2], x0, y2);
-        accum_mul_q120_bc(&mut s[3], x1, y3);
+        accum_mul_q120_bc(&mut s[0], &xs[2 * i], &ys[4 * i]);
+        accum_mul_q120_bc(&mut s[1], &xs[2 * i + 1], &ys[4 * i + 1]);
+        accum_mul_q120_bc(&mut s[2], &xs[2 * i], &ys[4 * i + 2]);
+        accum_mul_q120_bc(&mut s[3], &xs[2 * i + 1], &ys[4 * i + 3]);
     }
-
-    for (out_idx, si) in s.iter().enumerate() {
-        let r: &mut [u64; 4] = (&mut res[4 * out_idx..4 * out_idx + 4]).try_into().unwrap();
+    let res4: &mut [[u64; 4]] = cast_slice_mut(&mut res[..16]);
+    for (r, si) in res4.iter_mut().zip(&s) {
         accum_to_q120b::<P>(r, si, meta);
     }
 }

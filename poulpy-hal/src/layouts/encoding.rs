@@ -387,10 +387,9 @@ impl<D: HostDataRef> VecZnx<D, i64> {
 ///
 /// # Panics
 ///
-/// Panics if `b == 0`.
+/// Panics if `b == 0` (integer division by zero).
 #[inline]
 pub fn div_round_i64(a: i64, b: i64) -> i64 {
-    assert!(b != 0, "division by zero");
     let div = a / b;
     let rem = a % b;
     if (2 * rem.abs()) >= b.abs() {
@@ -400,9 +399,11 @@ pub fn div_round_i64(a: i64, b: i64) -> i64 {
     }
 }
 
+/// # Panics
+///
+/// Panics if `b == 0` (integer division by zero).
 #[inline]
 pub fn div_round_i128(a: i128, b: i128) -> i128 {
-    assert!(b != 0, "division by zero");
     let div = a / b;
     let rem = a % b;
     if (2 * rem.abs()) >= b.abs() {

@@ -1,22 +1,20 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScalarZnxFillBinaryBlockSource, ScalarZnxFillBinaryHwSource, ScalarZnxFillBinaryProbSource,
-        ScalarZnxFillTernaryHwSource, ScalarZnxFillTernaryProbSource, ScratchArenaTakeBasic, SvpApplyDftToDft,
-        SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssign, VecZnxAddNormalSource, VecZnxBigAddNormal,
+        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssign,
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf,
         VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
         VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxZero,
     },
     layouts::{
-        Backend, Module, PrepareHint, ScalarZnx, ScratchArena, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef,
-        scalar_znx_as_vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut,
+        Backend, Module, PrepareHint, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ScratchArena, SvpPPolToBackendRef, VecZnx,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxToBackendMut, VecZnxToBackendRef,
+        vec_znx_backend_ref_from_mut,
     },
     source::Source,
 };
 
 use crate::{
-    EncryptionInfos, GetDistribution,
+    EncryptionInfos, GetDistribution, ScalarZnxFillDistribution, VecZnxAddNormal, VecZnxBigAddNormal,
     dist::Distribution,
     layouts::{
         GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -258,12 +256,7 @@ pub trait GLWEEncryptPkDefault<BE: Backend> {
 
 impl<BE: Backend> GLWEEncryptPkDefault<BE> for Module<BE>
 where
-    Self: GLWEEncryptPkInternal<BE>
-        + VecZnxDftBytesOf
-        + SvpPPolBytesOf
-        + VecZnxBigBytesOf
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxZero<BE>,
+    Self: GLWEEncryptPkInternal<BE> + VecZnxDftBytesOf + SvpPPolBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
 {
     fn glwe_encrypt_pk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -363,15 +356,10 @@ where
         + VecZnxBigNormalize<BE>
         + VecZnxAddAssign<BE>
         + VecZnxCopy<BE>
-        + VecZnxZero<BE>
-        + ScalarZnxFillTernaryHwSource<BE>
-        + ScalarZnxFillTernaryProbSource<BE>
-        + ScalarZnxFillBinaryHwSource<BE>
-        + ScalarZnxFillBinaryProbSource<BE>
-        + ScalarZnxFillBinaryBlockSource<BE>
         + SvpPPolBytesOf
         + ModuleN
-        + VecZnxDftBytesOf,
+        + VecZnxDftBytesOf
+        + ScalarZnxFillDistribution<BE>,
 {
     #[allow(clippy::too_many_arguments)]
     fn glwe_encrypt_pk_internal<R, K, E>(
@@ -415,21 +403,9 @@ where
                      Self::generate"
                 ),
                 Distribution::ENCAPSULATED(name) => panic!("invalid public key: secret {name} is tagged for encapsulation"),
-                Distribution::TernaryFixed(hw) => self.scalar_znx_fill_ternary_hw_source(&mut u_backend, 0, *hw, source_xu),
-                Distribution::TernaryProb(prob) => self.scalar_znx_fill_ternary_prob_source(&mut u_backend, 0, *prob, source_xu),
-                Distribution::BinaryFixed(hw) => self.scalar_znx_fill_binary_hw_source(&mut u_backend, 0, *hw, source_xu),
-                Distribution::BinaryProb(prob) => self.scalar_znx_fill_binary_prob_source(&mut u_backend, 0, *prob, source_xu),
-                Distribution::BinaryBlock(block_size) => {
-                    self.scalar_znx_fill_binary_block_source(&mut u_backend, 0, *block_size, source_xu)
-                }
-                Distribution::ZERO => {
-                    let mut u_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut u_backend);
-                    self.vec_znx_zero(&mut u_vec, 0);
-                }
+                dist => self.scalar_znx_fill_distribution(&mut u_backend.to_backend_mut(), 0, *dist, source_xu),
             }
-
-            let u_backend_ref = ScalarZnx::from_data(BE::view_ref_mut(&u_backend.data), u_backend.n(), u_backend.cols());
-            self.svp_prepare(&mut u_dft, 0, &u_backend_ref, 0);
+            self.svp_prepare(&mut u_dft, 0, &u_backend.to_backend_ref(), 0);
             scratch_1 = scratch_2;
         }
 
@@ -512,7 +488,7 @@ where
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
         + VecZnxNormalizeAssign<BE>
-        + VecZnxAddNormalSource<BE>
+        + VecZnxAddNormal<BE>
         + VecZnxNormalize<BE>
         + VecZnxSubAssign<BE>
         + VecZnxSubNegateAssign<BE>
@@ -558,7 +534,7 @@ where
                     self.vec_znx_copy(&mut ci, 0, &pt.data, 0);
                     let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
                     self.vec_znx_sub_negate_assign(&mut ci, 0, &ct_ref, i);
-                    self.vec_znx_normalize_assign(base2k, size * base2k, &mut ci.to_backend_mut(), 0, &mut scratch_2.borrow());
+                    self.vec_znx_normalize_assign(base2k, size * base2k, 0, &mut ci.to_backend_mut(), 0, &mut scratch_2.borrow());
                 } else {
                     let ct_ref = vec_znx_backend_ref_from_mut::<BE>(res);
                     self.vec_znx_copy(&mut ci, 0, &ct_ref, i);
@@ -591,14 +567,14 @@ where
         }
 
         // c[0] += e
-        self.vec_znx_add_normal_source(base2k, &mut c0.to_backend_mut(), 0, noise_infos, source_xe);
+        self.vec_znx_add_normal(base2k, &mut c0.to_backend_mut(), 0, noise_infos, source_xe);
 
         // c[0] += m if col = 0
         if let Some((pt, col)) = &pt
             && *col == 0
         {
             self.vec_znx_add_assign(&mut c0.to_backend_mut(), 0, &pt.data, 0);
-            self.vec_znx_normalize_assign(base2k, size * base2k, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
+            self.vec_znx_normalize_assign(base2k, size * base2k, 0, &mut c0.to_backend_mut(), 0, &mut scratch_2.borrow());
         }
         self.vec_znx_copy(res, 0, &c0.to_backend_ref(), 0);
     }

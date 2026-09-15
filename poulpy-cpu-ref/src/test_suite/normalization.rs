@@ -15,22 +15,18 @@ where
         + ZnxNormalizeFirstStepAssign
         + ZnxNormalizeMiddleStepCarryOnly
         + ZnxNormalizeMiddleStepAssign
-        + ZnxNormalizeMiddleStepSub
-        + ZnxNormalizeFinalStepSub
         + ZnxNormalizeFinalStepAssign
         + I64NormalizeOps
         + ZnxNormalizeDigit,
 {
     test_boundary_kernels::<B>();
-    let steps: [(Step, Step); 8] = [
+    let steps: [(Step, Step); 6] = [
         (znx_normalize_first_step_ref::<true>, B::znx_normalize_first_step::<true>),
         (znx_normalize_first_step_ref::<false>, B::znx_normalize_first_step::<false>),
         (znx_normalize_middle_step_ref::<true>, B::znx_normalize_middle_step::<true>),
         (znx_normalize_middle_step_ref::<false>, B::znx_normalize_middle_step::<false>),
-        (znx_normalize_middle_step_sub_ref, B::znx_normalize_middle_step_sub),
         (znx_normalize_final_step_ref::<true>, B::znx_normalize_final_step::<true>),
         (znx_normalize_final_step_ref::<false>, B::znx_normalize_final_step::<false>),
-        (znx_normalize_final_step_sub_ref, B::znx_normalize_final_step_sub),
     ];
     let assign_steps: [(AssignStep, AssignStep); 3] = [
         (znx_normalize_first_step_assign_ref, B::znx_normalize_first_step_assign),
@@ -97,12 +93,11 @@ where
                         let q = (total + base / 2).div_euclid(base);
                         let d = (total - q * base) as i64;
                         let expected = match index {
-                            0 | 2 | 5 => d,
-                            4 | 7 => 7 - d,
+                            0 | 2 | 4 => d,
                             _ => 7 + d,
                         };
                         assert_eq!(r[i], expected, "oracle step={index}, k={k}, lsh={lsh}");
-                        assert_eq!(rc[i], if index < 5 { q as i64 } else { carry[i] });
+                        assert_eq!(rc[i], if index < 4 { q as i64 } else { carry[i] });
                     }
                 }
                 for (reference, backend) in &assign_steps {

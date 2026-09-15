@@ -14,16 +14,46 @@ use crate::{
 };
 
 /// Allocates a new [crate::layouts::ScratchOwned] of `size` aligned bytes.
+///
+/// ```text
+/// op         ScratchOwned::<BE>::alloc(size)
+/// class      support
+/// mutation   none
+/// domain     size: bytes, at least the largest `*_tmp_bytes` the caller will hand out
+/// ensures    returns an owned buffer of at least `size` bytes with the backend's alignment; its contents are unspecified
+/// exact      not an arithmetic operation
+/// test       none
+/// ```
 pub trait ScratchOwnedAlloc<B: Backend> {
     fn alloc(size: usize) -> Self;
 }
 
 /// Borrows an owned scratch buffer as a backend-native arena.
+///
+/// ```text
+/// op         borrow()
+/// class      support
+/// mutation   none
+/// domain     -
+/// ensures    returns a ScratchArena over the whole owned buffer; the arena's contents are unspecified on entry and after every call that takes it
+/// exact      not an arithmetic operation
+/// test       none
+/// ```
 pub trait ScratchOwnedBorrow<B: Backend> {
     fn borrow(&mut self) -> ScratchArena<'_, B>;
 }
 
 /// Returns how many bytes left can be taken from the scratch.
+///
+/// ```text
+/// op         available()
+/// class      support
+/// mutation   none
+/// domain     -
+/// ensures    returns the number of bytes still carvable from the arena
+/// exact      not an arithmetic operation
+/// test       none
+/// ```
 pub trait ScratchAvailable {
     fn available(&self) -> usize;
 }
@@ -32,6 +62,16 @@ pub trait ScratchAvailable {
 ///
 /// Device backends should not implement this unless their borrowed mutable
 /// scratch region is directly accessible as a host byte slice.
+///
+/// ```text
+/// op         into_bytes()
+/// class      support
+/// mutation   none
+/// domain     a borrowed scratch region of a backend whose memory the host can address
+/// ensures    returns the region as a host byte slice; a backend whose scratch lives on a device does not implement this
+/// exact      not an arithmetic operation
+/// test       none
+/// ```
 pub trait HostBufMut<'a>: Sized {
     fn into_bytes(self) -> &'a mut [u8];
 }
@@ -48,6 +88,16 @@ impl<'a> HostBufMut<'a> for &'a mut [u8] {
 /// This is the additive, backend-owned scratch path introduced for
 /// incremental device-backend integration. It consumes a [`ScratchArena`]
 /// by value and returns the carved layout together with the remaining arena.
+///
+/// ```text
+/// op         take_*_scratch(dimensions)
+/// class      support
+/// mutation   none
+/// domain     the arena holds at least the matching `bytes_of_*`
+/// ensures    consumes the arena and returns the carved layout, tagged with the requested dimensions, beside the remaining arena; the carved bytes are unspecified, so a caller that reads before writing zeroes first
+/// exact      not an arithmetic operation
+/// test       none
+/// ```
 pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
     /// Takes a [`CnvPVecL`] from the scratch arena.
     fn take_cnv_pvec_left_scratch<M>(

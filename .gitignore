@@ -6,3 +6,6 @@
 /ci-local.md
 
 *.patch
+
+# git worktrees used for base-vs-patch benchmarking
+.worktrees/

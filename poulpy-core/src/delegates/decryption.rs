@@ -15,7 +15,7 @@ macro_rules! impl_decryption_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
         impl<BE> $trait for Module<BE>
         where
-            BE: Backend + DecryptionImpl<BE>,
+            BE: Backend + DecryptionImpl,
         {
             $($body)+
         }

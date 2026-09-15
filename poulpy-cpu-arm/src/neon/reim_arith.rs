@@ -12,8 +12,8 @@ use core::arch::aarch64::{
 
 #[allow(unused_imports)]
 use poulpy_cpu_ref::reference::fft64::reim::{
-    reim_add_assign_ref, reim_add_ref, reim_addmul_ref, reim_from_znx_i64_masked_ref, reim_from_znx_i64_ref, reim_mul_assign_ref,
-    reim_mul_ref, reim_negate_assign_ref, reim_negate_ref, reim_sub_assign_ref, reim_sub_negate_assign_ref, reim_sub_ref,
+    reim_add_assign_ref, reim_add_ref, reim_addmul_ref, reim_from_znx_i64_ref, reim_mul_assign_ref, reim_mul_ref,
+    reim_negate_assign_ref, reim_negate_ref, reim_sub_assign_ref, reim_sub_negate_assign_ref, reim_sub_ref,
     reim_to_znx_i64_assign_ref, reim_to_znx_i64_ref,
 };
 
@@ -411,56 +411,6 @@ pub(crate) fn reim_from_znx_i64_bnd50_neon(res: &mut [f64], a: &[i64]) {
     }
 }
 
-/// Masked variant: `(a[i] & mask) → f64`. Mirrors `reim_from_znx_i64_masked_bnd50_fma`.
-pub(crate) fn reim_from_znx_i64_masked_bnd50_neon(res: &mut [f64], a: &[i64], mask: i64) {
-    assert_eq!(res.len(), a.len());
-    #[cfg(debug_assertions)]
-    {
-        const BOUND: i64 = (1i64 << 50) - 1;
-        for (i, &val) in a.iter().enumerate() {
-            let masked = val & mask;
-            assert!(
-                masked.abs() <= BOUND,
-                "reim_from_znx_i64_masked_bnd50_neon: (a[{i}] & mask) = {masked} exceeds 2^50-1"
-            );
-        }
-    }
-    let n = res.len();
-    let span = n >> 2;
-    unsafe {
-        let expo: f64 = (1i64 << 52) as f64;
-        let add_cst: i64 = 1i64 << 51;
-        let sub_cst: f64 = (3i64 << 51) as f64;
-
-        let expo_v = vreinterpretq_u64_f64(vdupq_n_f64(expo));
-        let add_cst_v = vdupq_n_s64(add_cst);
-        let sub_cst_v = vdupq_n_f64(sub_cst);
-        let mask_v = vdupq_n_s64(mask);
-
-        let mut res_ptr = res.as_mut_ptr();
-        let mut a_ptr = a.as_ptr();
-
-        for _ in 0..span {
-            let lo_raw = vandq_s64(vld1q_s64(a_ptr), mask_v);
-            let hi_raw = vandq_s64(vld1q_s64(a_ptr.add(2)), mask_v);
-            let lo = vaddq_s64(lo_raw, add_cst_v);
-            let hi = vaddq_s64(hi_raw, add_cst_v);
-            let mut lo_f = vreinterpretq_f64_u64(vorrq_u64(vreinterpretq_u64_s64(lo), expo_v));
-            let mut hi_f = vreinterpretq_f64_u64(vorrq_u64(vreinterpretq_u64_s64(hi), expo_v));
-            lo_f = vsubq_f64(lo_f, sub_cst_v);
-            hi_f = vsubq_f64(hi_f, sub_cst_v);
-            vst1q_f64(res_ptr, lo_f);
-            vst1q_f64(res_ptr.add(2), hi_f);
-            res_ptr = res_ptr.add(4);
-            a_ptr = a_ptr.add(4);
-        }
-    }
-    let tail = span << 2;
-    if tail < n {
-        reim_from_znx_i64_masked_ref(&mut res[tail..], &a[tail..], mask);
-    }
-}
-
 /// Shared per-lane body: round and convert one f64 lane vector to i64 via
 /// IEEE 754 exponent-diff bit manipulation. Mirrors the inner block of
 /// `reim_to_znx_i64_bnd63_avx2_fma` at `conversion.rs:223`. Caller supplies
@@ -588,7 +538,7 @@ pub(crate) fn reim_to_znx_i64_assign_bnd63_neon(res: &mut [f64], divisor: f64) {
         let divi_bits_v = vreinterpretq_s64_f64(vdupq_n_f64(divi_bits_f));
 
         let mut ptr_f = res.as_mut_ptr();
-        let mut ptr_i = res.as_mut_ptr() as *mut i64;
+        let mut ptr_i = ptr_f as *mut i64;
 
         for _ in 0..span {
             let lo = reim_to_znx_chunk(

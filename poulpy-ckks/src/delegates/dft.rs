@@ -19,7 +19,7 @@ use crate::{
     oep::{DFTImpl, DFTMatrixImpl},
 };
 
-impl<BE: Backend + DFTImpl<BE>> CKKSDFTOps<BE> for Module<BE> {
+impl<BE: Backend + DFTImpl> CKKSDFTOps<BE> for Module<BE> {
     fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
         &self,
         dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
@@ -149,7 +149,7 @@ impl<BE: Backend + DFTImpl<BE>> CKKSDFTOps<BE> for Module<BE> {
 
 impl<BE, F> CKKSDFTMatrixOps<BE, F> for Module<BE>
 where
-    BE: Backend + DFTMatrixImpl<BE, F>,
+    BE: Backend + DFTMatrixImpl<F>,
     F: CKKSEncodingScalar,
 {
     fn ckks_new_dft_matrix<Dir, Fmt>(

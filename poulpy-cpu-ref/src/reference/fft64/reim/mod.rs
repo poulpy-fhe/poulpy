@@ -72,10 +72,6 @@ pub trait ReimArith {
         reim_from_znx_i64_ref(res, a)
     }
 
-    fn reim_from_znx_masked(res: &mut [f64], a: &[i64], mask: i64) {
-        reim_from_znx_i64_masked_ref(res, a, mask)
-    }
-
     fn reim_to_znx(res: &mut [i64], divisor: f64, a: &[f64]) {
         reim_to_znx_i64_ref(res, divisor, a)
     }

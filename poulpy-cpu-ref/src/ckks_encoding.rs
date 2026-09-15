@@ -376,7 +376,7 @@ where
 #[macro_export]
 macro_rules! impl_ckks_encoding {
     ($be:ty) => {
-        unsafe impl<F> ::poulpy_ckks::oep::CKKSEncodingImpl<$be, F> for $be
+        unsafe impl<F> ::poulpy_ckks::oep::CKKSEncodingImpl<F> for $be
         where
             F: ::poulpy_ckks::api::CKKSEncodingScalar,
             $be: $crate::ckks_encoding::CKKSEncodingTransform<F>,

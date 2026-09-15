@@ -15,33 +15,30 @@ pub fn convolution_prepare_left<BE>(
     table: &ReimFFTTable<f64>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    convolution_prepare::<_, BE>(table, res, a, mask, tmp)
+    convolution_prepare::<_, BE>(table, res, a, tmp)
 }
 
 pub fn convolution_prepare_right<BE>(
     table: &ReimFFTTable<f64>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    convolution_prepare::<_, BE>(table, res, a, mask, tmp)
+    convolution_prepare::<_, BE>(table, res, a, tmp)
 }
 
 fn convolution_prepare<R, BE>(
     table: &ReimFFTTable<f64>,
     res: &mut R,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
@@ -67,11 +64,7 @@ fn convolution_prepare<R, BE>(
             let col = task / res_size;
             let j = task % res_size;
             if j < min_size {
-                if j + 1 == min_size {
-                    BE::reim_from_znx_masked(limb, a.at(col, j), mask);
-                } else {
-                    BE::reim_from_znx(limb, a.at(col, j));
-                }
+                BE::reim_from_znx(limb, a.at(col, j));
                 BE::reim_dft_execute(table, limb);
             }
             for blk_i in 0..m / 4 {
@@ -88,15 +81,7 @@ fn convolution_prepare<R, BE>(
     }
 
     for i in 0..cols {
-        // FFT all limbs (unmasked); the last active limb will be overwritten below.
         vec_znx_dft_apply::<BE>(table, 1, 0, tmp, 0, a, i);
-
-        // Re-compute only the last active limb with the mask applied.
-        if min_size > 0 {
-            let last = min_size - 1;
-            BE::reim_from_znx_masked(tmp.at_mut(0, last), a.at(i, last), mask);
-            BE::reim_dft_execute(table, tmp.at_mut(0, last));
-        }
 
         let tmp_raw: &[f64] = tmp.raw();
         let res_col: &mut [f64] = &mut res_raw[i * n * res_size..];
@@ -113,7 +98,6 @@ pub fn convolution_prepare_self<BE>(
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
@@ -147,11 +131,7 @@ pub fn convolution_prepare_self<BE>(
             let col = task / res_size;
             let j = task % res_size;
             if j < min_size {
-                if j + 1 == min_size {
-                    BE::reim_from_znx_masked(limb, a.at(col, j), mask);
-                } else {
-                    BE::reim_from_znx(limb, a.at(col, j));
-                }
+                BE::reim_from_znx(limb, a.at(col, j));
                 BE::reim_dft_execute(table, limb);
             }
             for blk_i in 0..m / 4 {
@@ -171,15 +151,7 @@ pub fn convolution_prepare_self<BE>(
     }
 
     for i in 0..cols {
-        // FFT all limbs (unmasked); the last active limb will be overwritten below.
         vec_znx_dft_apply::<BE>(table, 1, 0, tmp, 0, a, i);
-
-        // Re-compute only the last active limb with the mask applied.
-        if min_size > 0 {
-            let last = min_size - 1;
-            BE::reim_from_znx_masked(tmp.at_mut(0, last), a.at(i, last), mask);
-            BE::reim_dft_execute(table, tmp.at_mut(0, last));
-        }
 
         let tmp_raw: &[f64] = tmp.raw();
         let left_col: &mut [f64] = &mut left_raw[i * n * res_size..];

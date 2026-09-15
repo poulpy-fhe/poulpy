@@ -52,10 +52,10 @@ where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     {
         assert!(
-            scratch.available() >= <Self as GGSWRotateDefault<BE>>::ggsw_rotate_tmp_bytes_default(self),
+            scratch.available() >= Self::ggsw_rotate_tmp_bytes_default(self),
             "scratch.available(): {} < GGSWRotate::ggsw_rotate_tmp_bytes: {}",
             scratch.available(),
-            <Self as GGSWRotateDefault<BE>>::ggsw_rotate_tmp_bytes_default(self)
+            Self::ggsw_rotate_tmp_bytes_default(self)
         );
 
         let rows: usize = res.dnum().into();
