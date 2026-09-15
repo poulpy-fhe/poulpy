@@ -186,12 +186,11 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_left::<SerialTaskExecutor>(module, res, a, mask, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_left::<SerialTaskExecutor>(module, res, a, tmp);
     }
 
     fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -202,12 +201,11 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_right::<SerialTaskExecutor>(module, res, a, mask, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_right::<SerialTaskExecutor>(module, res, a, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes(
@@ -368,12 +366,11 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
         left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::convolution::cnv_prepare_self::<SerialTaskExecutor>(module, left, right, a, mask, tmp);
+        crate::ntt4x30_avx512::convolution::cnv_prepare_self::<SerialTaskExecutor>(module, left, right, a, tmp);
     }
 }
 
@@ -1072,12 +1069,11 @@ mod ifma_impl {
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
             a: &VecZnxBackendRef<'_, Self>,
-            mask: i64,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_left_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            crate::ntt3x42_ifma::convolution::cnv_prepare_left::<SerialTaskExecutor>(module, res, a, mask, tmp);
+            crate::ntt3x42_ifma::convolution::cnv_prepare_left::<SerialTaskExecutor>(module, res, a, tmp);
         }
 
         fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -1088,12 +1084,11 @@ mod ifma_impl {
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
             a: &VecZnxBackendRef<'_, Self>,
-            mask: i64,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_right_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-            crate::ntt3x42_ifma::convolution::cnv_prepare_right::<SerialTaskExecutor>(module, res, a, mask, tmp);
+            crate::ntt3x42_ifma::convolution::cnv_prepare_right::<SerialTaskExecutor>(module, res, a, tmp);
         }
 
         fn cnv_apply_dft_tmp_bytes(
@@ -1289,12 +1284,11 @@ mod ifma_impl {
             left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
             right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
             a: &VecZnxBackendRef<'_, Self>,
-            mask: i64,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_self_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            crate::ntt3x42_ifma::convolution::cnv_prepare_self::<SerialTaskExecutor>(module, left, right, a, mask, tmp);
+            crate::ntt3x42_ifma::convolution::cnv_prepare_self::<SerialTaskExecutor>(module, left, right, a, tmp);
         }
     }
 }

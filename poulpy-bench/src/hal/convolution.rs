@@ -38,7 +38,7 @@ where
     bencher.iter(|| {
         let mut a_prep_backend = a_prep.to_backend_mut();
         let a_backend = vec_znx_backend_ref::<BE>(&a);
-        module.cnv_prepare_left(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
+        module.cnv_prepare_left(&mut a_prep_backend, &a_backend, &mut scratch.borrow());
         black_box(());
     });
 }
@@ -65,7 +65,7 @@ where
     bencher.iter(|| {
         let mut a_prep_backend = a_prep.to_backend_mut();
         let a_backend = vec_znx_backend_ref::<BE>(&a);
-        module.cnv_prepare_right(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
+        module.cnv_prepare_right(&mut a_prep_backend, &a_backend, &mut scratch.borrow());
         black_box(());
     });
 }
@@ -309,13 +309,7 @@ where
         let mut left_backend = left.to_backend_mut();
         let mut right_backend = right.to_backend_mut();
         let a_backend = vec_znx_backend_ref::<BE>(&a);
-        module.cnv_prepare_self(
-            &mut left_backend,
-            &mut right_backend,
-            &a_backend,
-            !0i64,
-            &mut scratch.borrow(),
-        );
+        module.cnv_prepare_self(&mut left_backend, &mut right_backend, &a_backend, &mut scratch.borrow());
         black_box(());
     });
 }

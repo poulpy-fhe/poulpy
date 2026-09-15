@@ -200,7 +200,6 @@ fn prepare<BE, E: TaskExecutor>(
     left: Option<&mut CnvPVecLBackendMut<'_, BE>>,
     right: Option<&mut CnvPVecRBackendMut<'_, BE>>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -236,11 +235,7 @@ fn prepare<BE, E: TaskExecutor>(
             let mut dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             if limb < min_size {
-                if limb + 1 == min_size {
-                    BE::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
-                } else {
-                    BE::ntt_from_znx64(tmp, a.at(col, limb));
-                }
+                BE::ntt_from_znx64(tmp, a.at(col, limb));
                 BE::ntt_dft_execute(module.get_ntt_table(), tmp);
                 if let Some(dst) = dst_l.as_deref_mut() {
                     unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
@@ -269,11 +264,7 @@ fn prepare<BE, E: TaskExecutor>(
         let mut dst_l = left.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         for limb in 0..min_size {
-            if limb + 1 == min_size {
-                BE::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
-            } else {
-                BE::ntt_from_znx64(tmp, a.at(col, limb));
-            }
+            BE::ntt_from_znx64(tmp, a.at(col, limb));
             BE::ntt_dft_execute(module.get_ntt_table(), tmp);
             if let Some(dst) = dst_l.as_deref_mut() {
                 unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
@@ -301,7 +292,6 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -311,14 +301,13 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, Some(res), None, a, mask, tmp);
+    prepare::<BE, E>(module, Some(res), None, a, tmp);
 }
 
 pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -328,7 +317,7 @@ pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, None, Some(res), a, mask, tmp);
+    prepare::<BE, E>(module, None, Some(res), a, tmp);
 }
 
 pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
@@ -336,7 +325,6 @@ pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -346,7 +334,7 @@ pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, Some(left), Some(right), a, mask, tmp);
+    prepare::<BE, E>(module, Some(left), Some(right), a, tmp);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {

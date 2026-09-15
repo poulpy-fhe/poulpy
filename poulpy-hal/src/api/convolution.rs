@@ -56,12 +56,12 @@ pub trait Convolution<BE: Backend> {
     /// operand of a bivariate convolution.
     ///
     /// ```text
-    /// op         cnv_prepare_left(res, a, mask, scratch)
+    /// op         cnv_prepare_left(res, a, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// domain     res: a CnvPVecL with res.cols() == a.cols(); a: a dense VecZnx of the module degree; mask: the bitwise AND applied to the coefficients of a's last live limb, which is how a caller drops the bits below its working precision, -1 keeping every bit
+    /// domain     res: a CnvPVecL with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_left_tmp_bytes(res.size(), a.size())
-    /// ensures    res holds prep_L(a) with that mask applied, in the representation res's PrepareHint names. The representation is opaque, so the statement is on the observable: cnv_apply_dft with it is the bivariate convolution by the masked a
+    /// ensures    res holds prep_L(a) in the representation res's PrepareHint names. The representation is opaque, so the statement is on the observable: cnv_apply_dft with it is the bivariate convolution by a
     /// sparse     a is a sparse-capable slot: a degree-n input, n dividing N, produces a degree-n prepared operand standing for prep_L(switch_ring_{n->N}(a)) (4.5). Implemented in PR7 (#266)
     /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
     /// test       test_convolution, test_convolution_prepare_shape_rejected
@@ -70,7 +70,6 @@ pub trait Convolution<BE: Backend> {
         &self,
         res: &mut CnvPVecLBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     );
 
@@ -90,12 +89,12 @@ pub trait Convolution<BE: Backend> {
     /// operand of a bivariate convolution.
     ///
     /// ```text
-    /// op         cnv_prepare_right(res, a, mask, scratch)
+    /// op         cnv_prepare_right(res, a, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// domain     res: a CnvPVecR with res.cols() == a.cols(); a: a dense VecZnx of the module degree; mask as for cnv_prepare_left
+    /// domain     res: a CnvPVecR with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_right_tmp_bytes(res.size(), a.size())
-    /// ensures    res holds prep_R(a) with that mask applied, in the representation res's PrepareHint names, observed through cnv_apply_dft
+    /// ensures    res holds prep_R(a) in the representation res's PrepareHint names, observed through cnv_apply_dft
     /// sparse     a is a sparse-capable slot, as for cnv_prepare_left (4.5)
     /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
     /// test       test_convolution, test_convolution_prepare_shape_rejected
@@ -104,7 +103,6 @@ pub trait Convolution<BE: Backend> {
         &self,
         res: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     );
 
@@ -432,11 +430,11 @@ pub trait Convolution<BE: Backend> {
     /// (squaring) where both operands are the same polynomial.
     ///
     /// ```text
-    /// op         cnv_prepare_self(left, right, a, mask, scratch)
+    /// op         cnv_prepare_self(left, right, a, scratch)
     /// class      derived
     /// mutation   out-of-place
-    /// definition cnv_prepare_left(left, a, mask) and cnv_prepare_right(right, a, mask)
-    /// domain     left: a CnvPVecL; right: a CnvPVecR with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of the module degree with a.cols() == left.cols(); mask as for cnv_prepare_left
+    /// definition cnv_prepare_left(left, a) and cnv_prepare_right(right, a)
+    /// domain     left: a CnvPVecL; right: a CnvPVecR with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of the module degree with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_self_tmp_bytes(left.size(), a.size())
     /// ensures    left holds prep_L(a) and right holds prep_R(a), the pair a self-convolution needs
     /// sparse     a is a sparse-capable slot, as for cnv_prepare_left (4.5)
@@ -450,7 +448,6 @@ pub trait Convolution<BE: Backend> {
         left: &mut CnvPVecLBackendMut<'_, BE>,
         right: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }

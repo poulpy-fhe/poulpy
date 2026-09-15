@@ -188,12 +188,11 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx {
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::convolution::cnv_prepare_left::<_, SerialTaskExecutor>(module, res, a, mask, tmp);
+        crate::ntt4x30::convolution::cnv_prepare_left::<_, SerialTaskExecutor>(module, res, a, tmp);
     }
 
     fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -204,12 +203,11 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx {
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::convolution::cnv_prepare_right::<_, SerialTaskExecutor>(module, res, a, mask, tmp);
+        crate::ntt4x30::convolution::cnv_prepare_right::<_, SerialTaskExecutor>(module, res, a, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes(
@@ -370,12 +368,11 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx {
         left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt4x30::convolution::cnv_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::convolution::cnv_prepare_self::<_, SerialTaskExecutor>(module, left, right, a, mask, tmp);
+        crate::ntt4x30::convolution::cnv_prepare_self::<_, SerialTaskExecutor>(module, left, right, a, tmp);
     }
 }
 

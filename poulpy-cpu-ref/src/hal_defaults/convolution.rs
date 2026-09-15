@@ -82,7 +82,6 @@ where
         module: &Module<Self>,
         res: &mut CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: FFTModuleHandle<f64> + ModuleN + VecZnxDftBytesOf,
@@ -95,7 +94,7 @@ where
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_left::<Self>(module.get_fft_table(), res, a, mask, &mut tmp_ref);
+        convolution_prepare_left::<Self>(module.get_fft_table(), res, a, &mut tmp_ref);
     }
 
     fn cnv_prepare_right_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
@@ -109,7 +108,6 @@ where
         module: &Module<Self>,
         res: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: FFTModuleHandle<f64> + ModuleN + VecZnxDftBytesOf,
@@ -122,7 +120,7 @@ where
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_right::<Self>(module.get_fft_table(), res, a, mask, &mut tmp_ref);
+        convolution_prepare_right::<Self>(module.get_fft_table(), res, a, &mut tmp_ref);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
@@ -301,7 +299,6 @@ where
         left: &mut CnvPVecLBackendMut<'_, Self>,
         right: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: FFTModuleHandle<f64> + ModuleN + VecZnxDftBytesOf,
@@ -314,7 +311,7 @@ where
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_self::<Self>(module.get_fft_table(), left, right, a, mask, &mut tmp_ref);
+        convolution_prepare_self::<Self>(module.get_fft_table(), left, right, a, &mut tmp_ref);
     }
 }
 
@@ -376,7 +373,6 @@ where
         module: &Module<Self>,
         res: &mut CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: NttModuleHandle,
@@ -392,7 +388,7 @@ where
         let bytes = scratch_workers_within::<Self::TaskExecutor>(res.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_prepare_left::<Self>(module, res, a, mask, tmp);
+        ntt4x30_cnv_prepare_left::<Self>(module, res, a, tmp);
     }
 
     fn cnv_prepare_right_tmp_bytes_default(module: &Module<Self>, res_size: usize, _a_size: usize) -> usize
@@ -406,7 +402,6 @@ where
         module: &Module<Self>,
         res: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: NttModuleHandle,
@@ -422,7 +417,7 @@ where
         let bytes = scratch_workers_within::<Self::TaskExecutor>(res.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt4x30_cnv_prepare_right::<Self>(module, res, a, mask, tmp);
+        ntt4x30_cnv_prepare_right::<Self>(module, res, a, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
@@ -658,7 +653,6 @@ where
         left: &mut CnvPVecLBackendMut<'_, Self>,
         right: &mut CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         Module<Self>: NttModuleHandle,
@@ -675,7 +669,7 @@ where
         let bytes = scratch_workers_within::<Self::TaskExecutor>(left.size().min(Self::PREPARE), per_worker, scratch.available())
             * per_worker;
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        ntt4x30_cnv_prepare_self::<Self>(module, left, right, a, mask, tmp);
+        ntt4x30_cnv_prepare_self::<Self>(module, left, right, a, tmp);
     }
 }
 

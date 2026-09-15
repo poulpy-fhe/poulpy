@@ -9,11 +9,10 @@ macro_rules! hal_impl_convolution {
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            mask: i64,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults>::cnv_prepare_left_default(module, res, a, mask, &mut scratch);
+            <Self as $defaults>::cnv_prepare_left_default(module, res, a, &mut scratch);
         }
 
         fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
@@ -24,11 +23,10 @@ macro_rules! hal_impl_convolution {
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            mask: i64,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults>::cnv_prepare_right_default(module, res, a, mask, &mut scratch);
+            <Self as $defaults>::cnv_prepare_right_default(module, res, a, &mut scratch);
         }
 
         fn cnv_apply_dft_tmp_bytes(
@@ -204,11 +202,10 @@ macro_rules! hal_impl_convolution {
             left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
             right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            mask: i64,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults>::cnv_prepare_self_default(module, left, right, a, mask, &mut scratch);
+            <Self as $defaults>::cnv_prepare_self_default(module, left, right, a, &mut scratch);
         }
     };
 }

@@ -30,7 +30,6 @@ use crate::{
             GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared,
         },
     },
-    msb_mask_bottom_limb,
 };
 
 /// The stored keys, with the rotations listed in `coarse_ps` answered through a
@@ -205,14 +204,8 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
 
         let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size(), PrepareHint::Reuse);
         let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
-        module.cnv_prepare_right(
-            &mut right_prepared.to_backend_mut(),
-            &pt_ref.data,
-            !0i64,
-            &mut scratch.borrow(),
-        );
+        module.cnv_prepare_right(&mut right_prepared.to_backend_mut(), &pt_ref.data, &mut scratch.borrow());
 
-        let mask = msb_mask_bottom_limb(ct.base2k().as_usize(), k_in);
         for &rot in &baby_steps {
             let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct);
             if rot == 0 {
@@ -230,7 +223,6 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             module.cnv_prepare_left(
                 &mut expected_prepared.to_backend_mut(),
                 &expected_ref.data,
-                mask,
                 &mut scratch.borrow(),
             );
 

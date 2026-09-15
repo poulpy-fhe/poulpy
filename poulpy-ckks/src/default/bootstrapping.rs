@@ -26,7 +26,8 @@ use crate::{
     },
     oep::CKKSEncapsulatedModUpImpl,
 };
-use poulpy_core::GLWEBytesOf;
+use crate::{ckks_set_k_normalized, ckks_set_log_delta_normalized};
+use poulpy_core::{GLWEBytesOf, GLWENormalize};
 
 fn bootstrap_layouts<C1, C2>(ct_out: &C1, ct_in: &C2) -> (CKKSLayout, CKKSLayout)
 where
@@ -380,14 +381,16 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: CKKSDFTOps<BE>,
+        Module<BE>: CKKSDFTOps<BE> + GLWENormalize<BE>,
         K: BootstrappingKeys<BE>,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         self.ckks_coeffs_to_slots_split(r0, i0, ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
-        r0.set_log_delta(r0.log_delta() - ctx.c2s_guard_bits());
-        i0.set_log_delta(i0.log_delta() - ctx.c2s_guard_bits());
+        let log_delta = r0.log_delta() - ctx.c2s_guard_bits();
+        ckks_set_log_delta_normalized(self.0, r0, log_delta, scratch);
+        let log_delta = i0.log_delta() - ctx.c2s_guard_bits();
+        ckks_set_log_delta_normalized(self.0, i0, log_delta, scratch);
         Ok(())
     }
 
@@ -400,7 +403,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: CKKSDFTOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
+        Module<BE>: CKKSDFTOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + GLWENormalize<BE>,
         K: BootstrappingKeys<BE>,
         R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -408,7 +411,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
         self.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
         self.ckks_conjugate_into(conjugate, &*ct, keys.rotation_keys(), scratch)?;
         self.ckks_add_assign(ct, &*conjugate, scratch)?;
-        ct.set_log_delta(ct.log_delta() - ctx.c2s_guard_bits());
+        let log_delta = ct.log_delta() - ctx.c2s_guard_bits();
+        ckks_set_log_delta_normalized(self.0, ct, log_delta, scratch);
         // `z + conj(z) = 2·Re(z)` holds the input polynomial's coefficients.
         ct.set_slots(SlotsKind::Real);
         Ok(())
@@ -476,7 +480,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
             + CKKSDFTOps<BE>
             + CKKSEvalModOps<BE>
             + CKKSCopyOps<BE>
-            + CKKSPow2Ops<BE>,
+            + CKKSPow2Ops<BE>
+            + GLWENormalize<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
@@ -525,8 +530,10 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
                         keys.rotation_keys(),
                         &mut scratch_local,
                     )?;
-                    r0_hp.set_log_delta(r0_hp.log_delta() - ctx.c2s_guard_bits());
-                    i0_hp.set_log_delta(i0_hp.log_delta() - ctx.c2s_guard_bits());
+                    let log_delta = r0_hp.log_delta() - ctx.c2s_guard_bits();
+                    ckks_set_log_delta_normalized(self.0, &mut r0_hp, log_delta, &mut scratch_local);
+                    let log_delta = i0_hp.log_delta() - ctx.c2s_guard_bits();
+                    ckks_set_log_delta_normalized(self.0, &mut i0_hp, log_delta, &mut scratch_local);
 
                     {
                         let r0_ref = r0.to_backend_view_ref();
@@ -646,7 +653,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
             + CKKSConjugateOps<BE>
             + CKKSImagOps<BE>
             + CKKSDFTOps<BE>
-            + CKKSEvalModOps<BE>,
+            + CKKSEvalModOps<BE>
+            + GLWENormalize<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
@@ -762,10 +770,11 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
                     )?;
                 }
             }
-            ct_out.set_log_delta(ct_in.log_delta());
-            ct_out.set_slots(ct_in.slots());
             Result::Ok(())
-        })
+        })?;
+        ckks_set_log_delta_normalized(self.0, ct_out, ct_in.log_delta(), scratch);
+        ct_out.set_slots(ct_in.slots());
+        Ok(())
     }
 
     /// Real-slot S2C-first pipeline: one EvalMod instead of two. Selected by
@@ -788,7 +797,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
             + CKKSAddOps<BE>
             + CKKSConjugateOps<BE>
             + CKKSDFTOps<BE>
-            + CKKSEvalModOps<BE>,
+            + CKKSEvalModOps<BE>
+            + GLWENormalize<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
@@ -846,7 +856,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
             + CKKSCopyOps<BE>
             + CKKSMulOps<BE>
             + CKKSPow2Ops<BE>
-            + CKKSAffineOps<BE>,
+            + CKKSAffineOps<BE>
+            + GLWENormalize<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
@@ -965,7 +976,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
                 "functional bootstrap produced k={}, below required {expected_k}",
                 ct_out.k().as_usize()
             );
-            ct_out.set_k(expected_k.into());
+            ckks_set_k_normalized(self.0, ct_out, expected_k.into(), scratch);
         }
         Ok(())
     }

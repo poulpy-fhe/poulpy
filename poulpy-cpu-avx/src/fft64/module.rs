@@ -30,9 +30,9 @@ use crate::{
         },
         reim::{
             ReimFFTAvx, ReimIFFTAvx, reim_add_assign_avx2_fma, reim_add_avx2_fma, reim_addmul_avx2_fma,
-            reim_from_znx_i64_bnd50_fma, reim_from_znx_i64_masked_bnd50_fma, reim_mul_assign_avx2_fma, reim_mul_avx2_fma,
-            reim_negate_assign_avx2_fma, reim_negate_avx2_fma, reim_sub_assign_avx2_fma, reim_sub_avx2_fma,
-            reim_sub_negate_assign_avx2_fma, reim_to_znx_i64_assign_bnd63_avx2_fma, reim_to_znx_i64_bnd63_avx2_fma,
+            reim_from_znx_i64_bnd50_fma, reim_mul_assign_avx2_fma, reim_mul_avx2_fma, reim_negate_assign_avx2_fma,
+            reim_negate_avx2_fma, reim_sub_assign_avx2_fma, reim_sub_avx2_fma, reim_sub_negate_assign_avx2_fma,
+            reim_to_znx_i64_assign_bnd63_avx2_fma, reim_to_znx_i64_bnd63_avx2_fma,
         },
         reim4::{
             reim4_convolution_1coeff_avx, reim4_convolution_2coeffs_avx, reim4_convolution_apply_accumulate_avx,
@@ -519,11 +519,6 @@ impl ReimArith for FFT64Avx {
     #[inline(always)]
     fn reim_from_znx(res: &mut [f64], a: &[i64]) {
         unsafe { reim_from_znx_i64_bnd50_fma(res, a) }
-    }
-
-    #[inline(always)]
-    fn reim_from_znx_masked(res: &mut [f64], a: &[i64], mask: i64) {
-        unsafe { reim_from_znx_i64_masked_bnd50_fma(res, a, mask) }
     }
 
     #[inline(always)]

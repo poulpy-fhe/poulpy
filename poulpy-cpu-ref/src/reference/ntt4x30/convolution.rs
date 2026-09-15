@@ -571,7 +571,6 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
     module: &impl NttModuleHandle,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u8],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
@@ -603,11 +602,7 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
             let (limb, canon_u64) = task_tmp.split_at_mut(4 * n);
             let canon: &mut [u32] = cast_slice_mut(canon_u64);
             if j < min_size {
-                if j + 1 == min_size {
-                    BE::ntt_from_znx64_masked(limb, a.at(col, j), mask);
-                } else {
-                    BE::ntt_from_znx64(limb, a.at(col, j));
-                }
+                BE::ntt_from_znx64(limb, a.at(col, j));
                 BE::ntt_dft_execute(table, limb);
             }
             for g in (0..n_blks).step_by(PREP_GROUP) {
@@ -633,11 +628,7 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
     for col in 0..cols {
         let dst = &mut res_u32[col * col_stride..(col + 1) * col_stride];
         for j in 0..min_size {
-            if j + 1 == min_size {
-                BE::ntt_from_znx64_masked(limb, a.at(col, j), mask);
-            } else {
-                BE::ntt_from_znx64(limb, a.at(col, j));
-            }
+            BE::ntt_from_znx64(limb, a.at(col, j));
             BE::ntt_dft_execute(table, limb);
             // Canonicalize and scatter per block group so the staging chunk
             // stays L1-resident.
@@ -667,7 +658,6 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
     module: &impl NttModuleHandle,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
@@ -692,11 +682,7 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
             let (limb_b, limb_c_u64) = task_tmp.split_at_mut(4 * n);
             let limb_c: &mut [u32] = cast_slice_mut(limb_c_u64);
             if j < min_size {
-                if j + 1 == min_size {
-                    BE::ntt_from_znx64_masked(limb_b, a.at(col, j), mask);
-                } else {
-                    BE::ntt_from_znx64(limb_b, a.at(col, j));
-                }
+                BE::ntt_from_znx64(limb_b, a.at(col, j));
                 BE::ntt_dft_execute(table, limb_b);
                 BE::ntt_c_from_b(n, limb_c, limb_b);
             }
@@ -718,11 +704,7 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
     for col in 0..cols {
         let dst = &mut res_u32[col * col_stride..(col + 1) * col_stride];
         for j in 0..min_size {
-            if j + 1 == min_size {
-                BE::ntt_from_znx64_masked(limb_b, a.at(col, j), mask);
-            } else {
-                BE::ntt_from_znx64(limb_b, a.at(col, j));
-            }
+            BE::ntt_from_znx64(limb_b, a.at(col, j));
             BE::ntt_dft_execute(table, limb_b);
             BE::ntt_c_from_b(n, limb_c, limb_b);
             // Reversed row order: limb j lands on row size-1-j.
@@ -750,7 +732,6 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u8],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
@@ -794,11 +775,7 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
             let canon: &mut [u32] = cast_slice_mut(canon_u64);
             let limb_c: &mut [u32] = cast_slice_mut(limb_c_u64);
             if j < min_size {
-                if j + 1 == min_size {
-                    BE::ntt_from_znx64_masked(limb_b, a.at(col, j), mask);
-                } else {
-                    BE::ntt_from_znx64(limb_b, a.at(col, j));
-                }
+                BE::ntt_from_znx64(limb_b, a.at(col, j));
                 BE::ntt_dft_execute(table, limb_b);
                 BE::ntt_c_from_b(n, limb_c, limb_b);
             }
@@ -838,11 +815,7 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
         let dst_l = &mut left_u32[col * col_stride..(col + 1) * col_stride];
         let dst_r = &mut right_u32[col * col_stride..(col + 1) * col_stride];
         for j in 0..min_size {
-            if j + 1 == min_size {
-                BE::ntt_from_znx64_masked(limb_b, a.at(col, j), mask);
-            } else {
-                BE::ntt_from_znx64(limb_b, a.at(col, j));
-            }
+            BE::ntt_from_znx64(limb_b, a.at(col, j));
             BE::ntt_dft_execute(table, limb_b);
             for g in (0..n_blks).step_by(PREP_GROUP) {
                 let gl = PREP_GROUP.min(n_blks - g);

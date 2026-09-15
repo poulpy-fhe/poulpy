@@ -34,7 +34,7 @@ pub trait CKKSPow2Default<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        crate::ckks_shift_stamp_unary(self, "mul_pow2", dst, src, bits, 0, scratch)?;
+        crate::ckks_shift_stamp_unary(self, "mul_pow2", dst, src, bits, 0, 0, scratch)?;
         Ok(())
     }
 
@@ -59,8 +59,9 @@ pub trait CKKSPow2Default<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        crate::ckks_shift_stamp_unary(self, "div_pow2", dst, src, 0, bits, scratch)?;
-        dst.set_log_delta(dst.log_delta() + bits);
+        // The `bits` charged to the budget move under `log_delta` inside the
+        // stamp, so the shift normalizes at the width the result reports.
+        crate::ckks_shift_stamp_unary(self, "div_pow2", dst, src, 0, bits, bits, scratch)?;
         Ok(())
     }
 

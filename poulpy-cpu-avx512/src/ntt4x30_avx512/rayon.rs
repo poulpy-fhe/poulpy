@@ -315,9 +315,6 @@ impl NttFromZnx64 for NTT4x30Avx512Rayon {
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
         <NTT4x30Avx512 as NttFromZnx64>::ntt_from_znx64(res, a)
     }
-    fn ntt_from_znx64_masked(res: &mut [u64], a: &[i64], mask: i64) {
-        <NTT4x30Avx512 as NttFromZnx64>::ntt_from_znx64_masked(res, a, mask)
-    }
 }
 
 impl NttToZnx128 for NTT4x30Avx512Rayon {
@@ -784,7 +781,6 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
@@ -798,7 +794,6 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
             base_module(module),
             &mut base_cnv_l_mut(res),
             &base_znx_ref(a),
-            mask,
             tmp,
         );
     }
@@ -813,7 +808,6 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
@@ -827,7 +821,6 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
             base_module(module),
             &mut base_cnv_r_mut(res),
             &base_znx_ref(a),
-            mask,
             tmp,
         );
     }
@@ -1047,7 +1040,6 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
         left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
-        mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
@@ -1062,7 +1054,6 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
             &mut base_cnv_l_mut(left),
             &mut base_cnv_r_mut(right),
             &base_znx_ref(a),
-            mask,
             tmp,
         );
     }
