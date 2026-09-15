@@ -16,7 +16,7 @@
 //!
 //! Rules (spec section 5) every function in this module obeys:
 //!
-//! - only OEP methods of `S`/`BE`, backend-native views, [`ScratchArena`]
+//! - only OEP methods of `BE`, backend-native views, [`ScratchArena`]
 //!   carving and `Backend::bytes_of_*`;
 //! - no `HostData*` bound, no family kernel trait, no knowledge of a prepared
 //!   representation;
