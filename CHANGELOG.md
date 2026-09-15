@@ -24,6 +24,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - `test_suite` gains the pinning tests the contract pass found missing: `test_vec_znx_dft_apply` (the `step` / `offset` limb selection), `test_vec_znx_dft_zero`, `test_vec_znx_big_from_small`, `test_vec_znx_big_inner_sum`, `test_vec_znx_big_col_weighted_sum`, `test_vec_znx_scalar_product` and `test_vmp_zero`, each against a host oracle as well as across backends, registered on every backend. The DFT-domain copy test is renamed `test_vec_znx_dft_copy`, having been `test_vec_znx_copy`.
 - **Fix:** the NTT4x30 AVX2 and AVX-512 `vec_znx_dft_apply` and `vec_znx_dft_copy` kernels, and the rayon parallel paths of every NTT backend, accepted `step == 0` and transformed the same source limb into every output limb, where the FFT64 reference asserted and the NTT reference and IFMA kernels only failed on a division by zero. Every kernel now asserts `step >= 1` explicitly, and `test_vec_znx_dft_step_zero_rejected` pins it on every backend.
 - The `cnv_prepare_left` and `cnv_prepare_right` contracts state `res.cols() == a.cols()`, and `cnv_prepare_self` that `right` matches `left` in columns and size and that `a.cols() == left.cols()`. Only the FFT64 kernels asserted any of it; the NTT4x30 reference, AVX2, AVX-512 and IFMA kernels indexed on it unchecked. Every kernel now asserts it, and `test_convolution_prepare_shape_rejected` pins it on every backend.
+- `div_round_i64` / `div_round_i128` no longer assert `b != 0` on every coefficient of a decode loop; integer division already panics on zero.
 
 ### `poulpy-core`
 
@@ -56,6 +57,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - `poulpy-cpu-ref` gains `ScalarZnxFill`, the host secret-distribution samplers moved from the HAL; `impl_sampling_host!` dispatches to them.
 - **Fix, behaviour:** `poulpy-cpu-ref`'s FFT64 `vec_znx_dft_apply` left a destination limb untouched when its source index `offset + j * step` fell past the input, so the limb kept whatever the buffer held. It now zeroes it, as the NTT4x30 and IFMA kernels already did and as the limb rule requires. Only calls with a non-zero `offset` could reach it.
 - `poulpy-cpu-arm`: the hand-expanded `HalConvolutionImpl<NTT4x30Neon>` block and the `NTT4x30NeonRayon` `idft_normalize_consume` override collapse to the shared macro / inherited default (the Rayon variant now runs the parallel `normalize` and `idft`); no CI lane builds `poulpy-cpu-arm` with `enable-rayon`.
+- **Fix, performance:** the four scalar `cnv_by_const_apply` / `cnv_by_const_apply_add` kernels (`poulpy-cpu-ref`, `poulpy-cpu-avx`, both `poulpy-cpu-avx512` NTT backends) are one `poulpy-cpu-ref` kernel, generic over `BigWord = i128` and `ZnxWord = i64`, taking each limb slice once per limb instead of calling an accessor per coefficient; every backend's `HalConvolutionImpl` methods still forward to it, and the shared kernel checks its column and degree preconditions once with `debug_assert!` at entry. `NTT4x30Avx512` `cnv_by_const_apply` at degree 4096 with 8 limbs goes from 1,162 us to 220 us (pre-cleanup `main`: 704 us) and `ckks_mul_pt_const_into` from 48.0 us to 14.6 us.
+- **Fix, performance:** `poulpy-cpu-ref`'s `normalize_exact` scalar fallbacks (`vec_znx/normalize.rs`, `ntt4x30/vec_znx_big.rs`) take their limb base pointers once per call instead of `at()` / `at_mut()` per coefficient, and `ntt4x30_cnv_apply_dft_sum` and the three `mat_vec` bbc products replace a `try_into().unwrap()` per lane with one `bytemuck::cast_slice` per call. No kernel loop over coefficients calls a checked accessor.
 
 ### `poulpy-bench`
 
@@ -68,7 +71,7 @@ Measured against `main` before this cleanup (`d56615f9`, three commits before th
 | op | backend | base (ns) | patch (ns) | delta |
 |---|---|---|---|---|
 | `ckks_add_pt_const_into` | NTT4x30Avx512 | 3,386 | 3,531 | +4.3% |
-| `ckks_mul_pt_const_into` | NTT4x30Avx512 | 35,013 | 48,077 | +37.3% |
+| `ckks_mul_pt_const_into` | NTT4x30Avx512 | 35,013 | 14,576 | -58.2% |
 | `ckks_sub_pt_const_into` | NTT4x30Avx512 | 3,386 | 3,530 | +4.2% |
 | `glwe_external_product` | FFT64Avx512 | 60,120 | 61,567 | +2.4% |
 | `glwe_external_product` | NTT4x30Avx512 | 620,644 | 622,267 | +0.3% |
@@ -87,7 +90,7 @@ Measured against `main` before this cleanup (`d56615f9`, three commits before th
 | `glwe_tensor_square_apply` | FFT64Avx512 | 106,743 | 102,126 | -4.3% |
 | `glwe_tensor_square_apply` | NTT4x30Avx512 | 743,888 | 745,752 | +0.3% |
 
-`ckks_mul_pt_const_into` on NTT4x30Avx512 is 37% slower. Its `cnv_by_const_apply` kernel, about 1.6 times slower on the HAL convolution row at eight limbs, calls `at()` on both operands for every coefficient of its inner loop, and `ZnxView::at_ptr` has addressed through `VecZnxShape` since the window support landed (#265); hoisting the limb slices out of the coefficient loop is the follow-up. `glwe_mul_plain`, `glwe_mul_plain_assign` and `glwe_tensor_apply` on FFT64Avx512 are 7 to 10% faster. Every other row is within 5%.
+`ckks_mul_pt_const_into` on NTT4x30Avx512 measured 37% slower before PR6a: its `cnv_by_const_apply` kernel called `at()` on both operands for every coefficient, and `ZnxView::at_ptr` has addressed through `VecZnxShape` since the window support landed (#265). PR6a takes each limb slice once per limb; the row is now -58.2% against the pre-cleanup `main` and the HAL row `cnv_by_const_apply` at 4096x8 is -68.8%. `glwe_mul_plain`, `glwe_mul_plain_assign` and `glwe_tensor_apply` on FFT64Avx512 are 7 to 10% faster. Every other row is within 5%.
 
 ## [0.8.3] - 2026-09-09
 
