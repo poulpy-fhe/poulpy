@@ -69,3 +69,6 @@ pub use automorphism::fft64_vec_znx_dft_automorphism_avx;
 #[allow(unused_imports)]
 pub use poulpy_cpu_portable::reference::fft64::module::FFTModuleHandle;
 pub use reim::{FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
+
+#[cfg(feature = "enable-ckks")]
+pub use reim::EncodingFFTTable;

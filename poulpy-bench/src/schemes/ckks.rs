@@ -513,7 +513,9 @@ pub fn runner_ckks_encode_slots_assign_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxW
     let values = ckks_encoding_values(cp.n);
     let mut slots = CKKSEncodingBuffer::<BE::OwnedBuf, f64>::from_host::<BE>(&values);
 
+    module.ckks_encode_slots_assign_into(&mut pt, &mut slots).unwrap();
     bencher.iter(|| {
+        slots.copy_from_host::<BE>(black_box(&values));
         module.ckks_encode_slots_assign_into(&mut pt, &mut slots).unwrap();
         black_box(());
     });

@@ -70,3 +70,8 @@ required-features = ["enable-avx512f", "enable-ckks"]
 name = "normalize"
 harness = false
 required-features = ["enable-avx512f"]
+
+[[bench]]
+name = "encoding"
+harness = false
+required-features = ["enable-ifma", "enable-ckks"]

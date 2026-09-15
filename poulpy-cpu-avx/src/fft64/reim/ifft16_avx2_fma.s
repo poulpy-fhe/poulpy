@@ -55,10 +55,10 @@ vmulpd      %ymm10,%ymm13,%ymm4 # imtw.omai  (tw)
 vmulpd      %ymm11,%ymm12,%ymm5 # imitw.omar (itw)
 vmulpd      %ymm8,%ymm13,%ymm6  # retw.omai  (tw)
 vmulpd      %ymm9,%ymm12,%ymm7  # reitw.omar (itw)
-vfmsub231pd %ymm8,%ymm12,%ymm4  # rprod0 (tw)
-vfmadd231pd %ymm9,%ymm13,%ymm5  # rprod4 (itw)
-vfmadd231pd %ymm10,%ymm12,%ymm6 # iprod0 (tw)
-vfmsub231pd %ymm11,%ymm13,%ymm7 # iprod4 (itw)
+poulpy_msub %ymm8,%ymm12,%ymm4  # rprod0 (tw)
+poulpy_madd %ymm9,%ymm13,%ymm5  # rprod4 (itw)
+poulpy_madd %ymm10,%ymm12,%ymm6 # iprod0 (tw)
+poulpy_msub %ymm11,%ymm13,%ymm7 # iprod4 (itw)
 
 vunpckhpd %ymm7,%ymm3,%ymm11   # (0,4) -> (0,1)
 vunpckhpd %ymm5,%ymm1,%ymm9    # (2,6) -> (2,3)
@@ -91,10 +91,10 @@ vmulpd      %ymm6,%ymm13,%ymm8  # imtw.omai (tw)
 vmulpd      %ymm7,%ymm12,%ymm9  # imitw.omar (itw)
 vmulpd      %ymm4,%ymm13,%ymm10 # retw.omai (tw)
 vmulpd      %ymm5,%ymm12,%ymm11 # reitw.omar (itw)
-vfmsub231pd %ymm4,%ymm12,%ymm8 # rprod0 (tw)
-vfmadd231pd %ymm5,%ymm13,%ymm9 # rprod4 (itw)
-vfmadd231pd %ymm6,%ymm12,%ymm10 # iprod0 (tw)
-vfmsub231pd %ymm7,%ymm13,%ymm11 # iprod4 (itw)
+poulpy_msub %ymm4,%ymm12,%ymm8 # rprod0 (tw)
+poulpy_madd %ymm5,%ymm13,%ymm9 # rprod4 (itw)
+poulpy_madd %ymm6,%ymm12,%ymm10 # iprod0 (tw)
+poulpy_msub %ymm7,%ymm13,%ymm11 # iprod4 (itw)
 
 vperm2f128 $0x31,%ymm10,%ymm2,%ymm6
 vperm2f128 $0x31,%ymm11,%ymm3,%ymm7
@@ -128,10 +128,10 @@ vmulpd      %ymm10,%ymm13,%ymm1 # imtw.omai (tw)
 vmulpd      %ymm11,%ymm12,%ymm3 # imitw.omar (itw)
 vmulpd      %ymm8,%ymm13,%ymm5  # retw.omai (tw)
 vmulpd      %ymm9,%ymm12,%ymm7  # reitw.omar (itw)
-vfmsub231pd %ymm8,%ymm12,%ymm1 # rprod0 (tw)
-vfmadd231pd %ymm9,%ymm13,%ymm3 # rprod4 (itw)
-vfmadd231pd %ymm10,%ymm12,%ymm5 # iprod0 (tw)
-vfmsub231pd %ymm11,%ymm13,%ymm7 # iprod4 (itw)
+poulpy_msub %ymm8,%ymm12,%ymm1 # rprod0 (tw)
+poulpy_madd %ymm9,%ymm13,%ymm3 # rprod4 (itw)
+poulpy_madd %ymm10,%ymm12,%ymm5 # iprod0 (tw)
+poulpy_msub %ymm11,%ymm13,%ymm7 # iprod4 (itw)
 
 4:
 vmovupd     0x70(%rdx),%xmm12
@@ -155,10 +155,10 @@ vmulpd      %ymm10,%ymm13,%ymm2 # imtw1.omai
 vmulpd      %ymm11,%ymm13,%ymm3 # imtw2.omai
 vmulpd      %ymm8,%ymm13,%ymm6  # retw1.omai
 vmulpd      %ymm9,%ymm13,%ymm7  # retw2.omai
-vfmsub231pd %ymm8,%ymm12,%ymm2 # rprod0
-vfmsub231pd %ymm9,%ymm12,%ymm3 # rprod4
-vfmadd231pd %ymm10,%ymm12,%ymm6 # iprod0
-vfmadd231pd %ymm11,%ymm12,%ymm7 # iprod4
+poulpy_msub %ymm8,%ymm12,%ymm2 # rprod0
+poulpy_msub %ymm9,%ymm12,%ymm3 # rprod4
+poulpy_madd %ymm10,%ymm12,%ymm6 # iprod0
+poulpy_madd %ymm11,%ymm12,%ymm7 # iprod4
 
 5:
 vmovupd     %ymm0,(%rdi)       # ra0

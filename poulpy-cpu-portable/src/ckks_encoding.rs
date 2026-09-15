@@ -7,10 +7,10 @@
 //! for each scalar precision it supports, and instantiates the encoder with
 //! [`impl_ckks_encoding!`](crate::impl_ckks_encoding).
 //!
-//! A plan-cache entry holds the complete geometric family for one scalar
+//! A plan-cache entry lazily builds the geometric family for one scalar
 //! precision. The encoder owns its twiddle tables rather than borrowing the
 //! backend's ring-FFT tables: the duplication is a geometric series bounded by
-//! `2·max_n` scalars (~100 KiB of `f64` at `n = 65536`), and in exchange every
+//! `4·max_n` scalars (~2 MiB of `f64` at `n = 65536`), and in exchange every
 //! backend follows one code path and can use its own accelerated kernels.
 
 use poulpy_core::layouts::IntPolyInfos;
@@ -147,14 +147,14 @@ impl EncodingPlanSet {
     }
 }
 
-/// Complete geometric family of negacyclic transforms, one per power-of-two
-/// slot count up to `max_slots`.
+/// Lazily initialized negacyclic transforms for each power-of-two slot count
+/// up to `max_slots`.
 ///
 /// The family is owned by the encoder rather than borrowed from the ring
 /// backend, so a backend may pick a transform whose kernels differ from the
 /// ones its ring operations use.
 pub struct NegacyclicFFTSet<F, T> {
-    ffts: Vec<T>,
+    ffts: Vec<std::sync::OnceLock<T>>,
     max_slots: usize,
     scalar: PhantomData<F>,
 }
@@ -168,11 +168,7 @@ where
             max_slots > 0 && max_slots.is_power_of_two(),
             "maximum slot count must be a non-zero power of two"
         );
-        // `NegacyclicFFTNew::new` takes the transform half-length, which for a
-        // `slots`-slot encoding is `slots` itself.
-        let ffts = (0..=max_slots.ilog2() as usize)
-            .map(|log_slots| T::new(1usize << log_slots))
-            .collect();
+        let ffts = (0..=max_slots.ilog2()).map(|_| std::sync::OnceLock::new()).collect();
         Ok(Self {
             ffts,
             max_slots,
@@ -190,7 +186,7 @@ where
             "slot count {slots} exceeds module capacity {}",
             self.max_slots
         );
-        Ok(&self.ffts[slots.ilog2() as usize])
+        Ok(self.ffts[slots.ilog2() as usize].get_or_init(|| T::new(slots)))
     }
 }
 
@@ -206,7 +202,7 @@ impl<F, T> OwnedEncodingPlanSet<F, T>
 where
     T: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    /// Builds the family for every power-of-two slot count up to `max_n / 2`.
+    /// Reserves the family for every power-of-two slot count up to `max_n / 2`.
     pub fn new(max_n: usize) -> Result<Self> {
         let max_slots = max_n / 2;
         Ok(Self {
@@ -279,8 +275,7 @@ where
             .iter()
             .enumerate()
             .map(|(index, &x)| {
-                x.ckks_quantize(log_delta)
-                    .and_then(|value| i64::try_from(value).ok())
+                x.ckks_quantize_i64(log_delta)
                     .with_context(|| format!("CKKS coefficient {index} is not representable as an i64 at scale 2^{log_delta}"))
             })
             .collect::<Result<_>>()?;
@@ -448,9 +443,28 @@ impl<F: CKKSEncodingScalar> EncodingFFTTable<F> {
 
 impl<F: CKKSEncodingScalar> NegacyclicFFTNew<F> for EncodingFFTTable<F> {
     fn new(m: usize) -> Self {
+        use crate::reference::fft64::reim::{ReimFFTTable, ReimIFFTTable};
+        if size_of::<F>() <= size_of::<f64>() {
+            return Self {
+                fft: ReimFFTTable::new_with_trig(m, F::ckks_sin, F::ckks_cos),
+                ifft: ReimIFFTTable::new_with_trig(m, F::ckks_sin, F::ckks_cos),
+            };
+        }
+        // Reuse expensive wide-scalar evaluations across both twiddle layouts.
+        let cache = std::cell::RefCell::new(std::collections::HashMap::<Vec<u8>, (F, F)>::new());
+        let trig = |x: F| {
+            let mut cache = cache.borrow_mut();
+            let key = bytemuck::bytes_of(&x);
+            if let Some(&value) = cache.get(key) {
+                return value;
+            }
+            let value = (x.ckks_sin(), x.ckks_cos());
+            cache.insert(key.to_vec(), value);
+            value
+        };
         Self {
-            fft: crate::reference::fft64::reim::ReimFFTTable::new_with_trig(m, F::ckks_sin, F::ckks_cos),
-            ifft: crate::reference::fft64::reim::ReimIFFTTable::new_with_trig(m, F::ckks_sin, F::ckks_cos),
+            fft: ReimFFTTable::new_with_trig(m, |x| trig(x).0, |x| trig(x).1),
+            ifft: ReimIFFTTable::new_with_trig(m, |x| trig(x).0, |x| trig(x).1),
         }
     }
 }
@@ -469,6 +483,28 @@ impl<F: CKKSEncodingScalar> NegacyclicFFT<F> for EncodingFFTTable<F> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn encoding_twiddle_cache_preserves_bits() {
+        use crate::reference::fft64::reim::{ReimFFTTable, ReimIFFTTable};
+        use poulpy_ckks::{Quad, numerics::CKKSFloat};
+        use poulpy_hal::api::NegacyclicFFTNew;
+
+        for log_slots in 0..=15 {
+            let slots = 1 << log_slots;
+            let cached = super::EncodingFFTTable::<Quad>::new(slots);
+            let fft = ReimFFTTable::new_with_trig(slots, Quad::ckks_sin, Quad::ckks_cos);
+            let ifft = ReimIFFTTable::new_with_trig(slots, Quad::ckks_sin, Quad::ckks_cos);
+            assert_eq!(
+                bytemuck::cast_slice::<Quad, u8>(cached.fft_twiddles()),
+                bytemuck::cast_slice::<Quad, u8>(fft.omg())
+            );
+            assert_eq!(
+                bytemuck::cast_slice::<Quad, u8>(cached.ifft_twiddles()),
+                bytemuck::cast_slice::<Quad, u8>(ifft.omg())
+            );
+        }
+    }
+
     use crate::{FFT64Portable, NTT4x30Portable};
     use poulpy_ckks::{
         CKKSMeta, SetCKKSInfos, SlotsKind,

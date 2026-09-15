@@ -69,3 +69,8 @@ required-features = ["enable-neon", "enable-ckks"]
 name = "normalize"
 harness = false
 required-features = ["enable-neon"]
+
+[[bench]]
+name = "encoding"
+harness = false
+required-features = ["enable-neon", "enable-ckks"]

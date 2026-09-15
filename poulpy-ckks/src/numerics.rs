@@ -41,6 +41,12 @@ pub trait CKKSFloat: Float + FromPrimitive {
     /// Reject non-finite values and signed integer overflow.
     fn ckks_quantize(self, log_delta: usize) -> Option<i128>;
 
+    /// Quantize with the same rounding, rejecting values outside `i64`.
+    #[inline]
+    fn ckks_quantize_i64(self, log_delta: usize) -> Option<i64> {
+        self.ckks_quantize(log_delta).and_then(|value| i64::try_from(value).ok())
+    }
+
     /// Round `value * 2^-log_delta` once, ties to even.
     fn ckks_dequantize(value: i128, log_delta: usize) -> Self;
 }
@@ -67,6 +73,15 @@ impl CKKSFloat for f64 {
     #[inline]
     fn ckks_quantize(self, log_delta: usize) -> Option<i128> {
         quantize(self.to_bits() as u128, 52, 11, log_delta)
+    }
+    #[inline]
+    fn ckks_quantize_i64(self, log_delta: usize) -> Option<i64> {
+        if log_delta <= 1023 {
+            // Scaling up by a finite power of two is exact unless it overflows.
+            let scale = Self::from_bits(((log_delta + 1023) as u64) << 52);
+            return num_traits::ToPrimitive::to_i64(&(self * scale).round());
+        }
+        self.ckks_quantize(log_delta).and_then(|value| i64::try_from(value).ok())
     }
     #[inline]
     fn ckks_dequantize(value: i128, log_delta: usize) -> Self {
@@ -194,6 +209,7 @@ mod tests {
     fn codec_edges<F: CKKSFloat>() {
         for (x, want) in [(0.0, 0), (-0.0, 0), (0.5, 1), (-0.5, -1), (1.5, 2), (-1.5, -2)] {
             assert_eq!(F::from_f64(x).unwrap().ckks_quantize(0), Some(want));
+            assert_eq!(F::from_f64(x).unwrap().ckks_quantize_i64(0), Some(want as i64));
         }
         assert_eq!(F::nan().ckks_quantize(0), None);
         assert_eq!(F::infinity().ckks_quantize(0), None);
@@ -203,6 +219,13 @@ mod tests {
         assert_eq!(F::one().ckks_quantize(128), None);
         assert_eq!(F::one().ckks_quantize(usize::MAX), None);
         assert_eq!(F::zero().ckks_quantize(usize::MAX), Some(0));
+        assert_eq!(F::nan().ckks_quantize_i64(0), None);
+        assert_eq!(F::infinity().ckks_quantize_i64(0), None);
+        assert_eq!(F::neg_infinity().ckks_quantize_i64(0), None);
+        assert_eq!(F::one().ckks_quantize_i64(63), None);
+        assert_eq!((-F::one()).ckks_quantize_i64(63), Some(i64::MIN));
+        assert_eq!(F::one().ckks_quantize_i64(usize::MAX), None);
+        assert_eq!(F::zero().ckks_quantize_i64(usize::MAX), Some(0));
     }
 
     #[test]
@@ -211,6 +234,14 @@ mod tests {
         codec_edges::<Quad>();
         assert_eq!(f64::from_bits(1).ckks_quantize(1074), Some(1));
         assert_eq!(Quad::from_bits(1).ckks_quantize(16494), Some(1));
+        assert_eq!(f64::from_bits(1).ckks_quantize_i64(1074), Some(1));
+        assert_eq!(Quad::from_bits(1).ckks_quantize_i64(16494), Some(1));
+        for bits in [0x43e0000000000000u64, 0xc3e0000000000000] {
+            for bits in [bits - 1, bits, bits + 1] {
+                let x = f64::from_bits(bits);
+                assert_eq!(x.ckks_quantize_i64(0), x.ckks_quantize(0).and_then(|x| i64::try_from(x).ok()));
+            }
+        }
         assert_eq!(f64::ckks_dequantize(1, 1074).to_bits(), 1);
         assert_eq!(f64::ckks_dequantize(1, 1075).to_bits(), 0);
         assert_eq!(f64::ckks_dequantize(3, 1075).to_bits(), 2);
@@ -235,7 +266,7 @@ mod tests {
             state ^= state >> 7;
             state ^= state << 17;
             let x = f64::from_bits(state);
-            for delta in [0, 30, 60, 110, 1074] {
+            for delta in [0, 30, 60, 110, 1023, 1024, 1074] {
                 let rounded = ((x as f128) * 2.0f128.powi(delta as i32)).round();
                 let expected = if !rounded.is_finite() || !(-2.0f128.powi(127)..2.0f128.powi(127)).contains(&rounded) {
                     None
@@ -244,6 +275,13 @@ mod tests {
                 };
                 assert_eq!(x.ckks_quantize(delta), expected, "{x:?} at {delta}");
                 assert_eq!(Quad(x as f128).ckks_quantize(delta), expected, "Quad({x:?}) at {delta}");
+                let expected_i64 = expected.and_then(|value| i64::try_from(value).ok());
+                assert_eq!(x.ckks_quantize_i64(delta), expected_i64, "i64({x:?}) at {delta}");
+                assert_eq!(
+                    Quad(x as f128).ckks_quantize_i64(delta),
+                    expected_i64,
+                    "i64(Quad({x:?})) at {delta}"
+                );
             }
         }
     }

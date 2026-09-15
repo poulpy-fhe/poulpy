@@ -25,11 +25,11 @@ impl_ckks_pow2_defaults!(FFT64Avx);
 impl_ckks_pow2_defaults!(NTT4x30Avx);
 impl_ckks_rotate_defaults!(FFT64Avx);
 impl_ckks_rotate_defaults!(NTT4x30Avx);
-// Both precisions use the canonical portable encoding transform.
+// Encoding kernels preserve the canonical separate multiply/add roundings.
 macro_rules! select_avx_encoding_transform {
     ($be:ty) => {
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f64> for $be {
-            type Fft = ::poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<f64>;
+            type Fft = crate::fft64::EncodingFFTTable;
         }
 
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {

@@ -41,7 +41,7 @@ impl<R: Float + FloatConst + Debug> ReimIFFTTable<R> {
     }
 
     /// Builds the same layout with a caller-selected trigonometric implementation.
-    pub fn new_with_trig(m: usize, sin: fn(R) -> R, cos: fn(R) -> R) -> Self {
+    pub fn new_with_trig(m: usize, sin: impl Fn(R) -> R + Copy, cos: impl Fn(R) -> R + Copy) -> Self {
         assert!(m & (m - 1) == 0, "m must be a power of two but is {m}");
         let mut omg: Vec<R> = alloc_aligned::<R>(2 * m);
 
@@ -87,7 +87,13 @@ impl<R: Float + FloatConst + Debug> ReimIFFTTable<R> {
 }
 
 #[inline(always)]
-fn fill_ifft2_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin: fn(R) -> R, cos: fn(R) -> R) -> usize {
+fn fill_ifft2_omegas<R: Float + FloatConst>(
+    j: R,
+    omg: &mut [R],
+    pos: usize,
+    sin: impl Fn(R) -> R + Copy,
+    cos: impl Fn(R) -> R + Copy,
+) -> usize {
     let omg_pos: &mut [R] = &mut omg[pos..];
     assert!(omg_pos.len() >= 2);
     let angle: R = j / R::from(4).unwrap();
@@ -98,7 +104,13 @@ fn fill_ifft2_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin
 }
 
 #[inline(always)]
-fn fill_ifft4_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin: fn(R) -> R, cos: fn(R) -> R) -> usize {
+fn fill_ifft4_omegas<R: Float + FloatConst>(
+    j: R,
+    omg: &mut [R],
+    pos: usize,
+    sin: impl Fn(R) -> R + Copy,
+    cos: impl Fn(R) -> R + Copy,
+) -> usize {
     let omg_pos: &mut [R] = &mut omg[pos..];
     assert!(omg_pos.len() >= 4);
     let angle_1: R = j / R::from(2).unwrap();
@@ -112,7 +124,13 @@ fn fill_ifft4_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin
 }
 
 #[inline(always)]
-fn fill_ifft8_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin: fn(R) -> R, cos: fn(R) -> R) -> usize {
+fn fill_ifft8_omegas<R: Float + FloatConst>(
+    j: R,
+    omg: &mut [R],
+    pos: usize,
+    sin: impl Fn(R) -> R + Copy,
+    cos: impl Fn(R) -> R + Copy,
+) -> usize {
     let omg_pos: &mut [R] = &mut omg[pos..];
     assert!(omg_pos.len() >= 8);
     let _8th: R = R::from(1. / 8.).unwrap();
@@ -132,7 +150,13 @@ fn fill_ifft8_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin
 }
 
 #[inline(always)]
-fn fill_ifft16_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin: fn(R) -> R, cos: fn(R) -> R) -> usize {
+fn fill_ifft16_omegas<R: Float + FloatConst>(
+    j: R,
+    omg: &mut [R],
+    pos: usize,
+    sin: impl Fn(R) -> R + Copy,
+    cos: impl Fn(R) -> R + Copy,
+) -> usize {
     let omg_pos: &mut [R] = &mut omg[pos..];
     assert!(omg_pos.len() >= 16);
     let _8th: R = R::from(1. / 8.).unwrap();
@@ -167,8 +191,8 @@ fn fill_ifft_bfs_16_omegas<R: Float + FloatConst + Debug>(
     j: R,
     omg: &mut [R],
     mut pos: usize,
-    sin: fn(R) -> R,
-    cos: fn(R) -> R,
+    sin: impl Fn(R) -> R + Copy,
+    cos: impl Fn(R) -> R + Copy,
 ) -> usize {
     let log_m: usize = (usize::BITS - (m - 1).leading_zeros()) as usize;
     let mut jj: R = j * R::from(16).unwrap() / R::from(m).unwrap();
@@ -217,8 +241,8 @@ fn fill_ifft_rec_16_omegas<R: Float + FloatConst + Debug>(
     j: R,
     omg: &mut [R],
     mut pos: usize,
-    sin: fn(R) -> R,
-    cos: fn(R) -> R,
+    sin: impl Fn(R) -> R + Copy,
+    cos: impl Fn(R) -> R + Copy,
 ) -> usize {
     if m <= 2048 {
         return fill_ifft_bfs_16_omegas(m, j, omg, pos, sin, cos);

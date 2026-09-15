@@ -264,8 +264,7 @@ where
             .iter()
             .enumerate()
             .map(|(index, &x)| {
-                x.ckks_quantize(log_delta)
-                    .and_then(|value| i64::try_from(value).ok())
+                x.ckks_quantize_i64(log_delta)
                     .with_context(|| format!("CKKS coefficient {index} is not representable as an i64 at scale 2^{log_delta}"))
             })
             .collect::<Result<_>>()?;

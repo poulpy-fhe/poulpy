@@ -442,7 +442,6 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         .unwrap();
     println!("ckks_eval_mod: {:?}", now.elapsed());
     super::determinism::bootstrap_snapshot::<BE, F>("evalmod-real", &res_real);
-    super::determinism::bootstrap_snapshot::<BE, F>("evalmod-imag", &res_imag);
     let now = Instant::now();
     module
         .ckks_eval_mod(
@@ -454,6 +453,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         )
         .unwrap();
     println!("ckks_eval_mod: {:?}", now.elapsed());
+    super::determinism::bootstrap_snapshot::<BE, F>("evalmod-imag", &res_imag);
 
     log_budget_check -= plan.eval_mod().consumed_bits();
 

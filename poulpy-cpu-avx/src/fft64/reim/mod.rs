@@ -33,48 +33,56 @@ use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::fft64::reim::{fft_avx2_fma::fft_avx2_fma, ifft_avx2_fma::ifft_avx2_fma};
 
-// Mach-O: symbols carry a leading underscore, and `.hidden`/`.type`/`.size`/
-// `.note.GNU-stack` are ELF-only directives the Mach-O assembler rejects.
-#[cfg(target_vendor = "apple")]
-global_asm!(
-    ".text",
-    ".globl  _fft16_avx2_fma_asm",
-    ".private_extern _fft16_avx2_fma_asm",
-    ".p2align 4, 0x90",
-    "_fft16_avx2_fma_asm:",
-    ".att_syntax prefix",
-    include_str!("fft16_avx2_fma.s"),
-    ".text",
-    ".globl  _ifft16_avx2_fma_asm",
-    ".private_extern _ifft16_avx2_fma_asm",
-    ".p2align 4, 0x90",
-    "_ifft16_avx2_fma_asm:",
-    ".att_syntax prefix",
-    include_str!("ifft16_avx2_fma.s"),
-);
+macro_rules! fft16_kernels {
+    ($fft:literal, $ifft:literal, $fused:expr) => {
+        #[cfg(target_vendor = "apple")]
+        global_asm!(
+            ".att_syntax prefix",
+            include_str!("mul_add.s"),
+            ".text",
+            concat!(".globl _", $fft),
+            concat!(".private_extern _", $fft),
+            ".p2align 4, 0x90",
+            concat!("_", $fft, ":"),
+            include_str!("fft16_avx2_fma.s"),
+            concat!(".globl _", $ifft),
+            concat!(".private_extern _", $ifft),
+            ".p2align 4, 0x90",
+            concat!("_", $ifft, ":"),
+            include_str!("ifft16_avx2_fma.s"),
+            ".purgem poulpy_madd",
+            ".purgem poulpy_msub",
+            fused = const $fused as usize,
+        );
+        #[cfg(not(target_vendor = "apple"))]
+        global_asm!(
+            ".att_syntax prefix",
+            include_str!("mul_add.s"),
+            ".text",
+            concat!(".globl ", $fft),
+            concat!(".hidden ", $fft),
+            concat!(".type ", $fft, ",@function"),
+            ".p2align 4, 0x90",
+            concat!($fft, ":"),
+            include_str!("fft16_avx2_fma.s"),
+            concat!(".size ", $fft, ", .-", $fft),
+            concat!(".globl ", $ifft),
+            concat!(".hidden ", $ifft),
+            concat!(".type ", $ifft, ",@function"),
+            ".p2align 4, 0x90",
+            concat!($ifft, ":"),
+            include_str!("ifft16_avx2_fma.s"),
+            concat!(".size ", $ifft, ", .-", $ifft),
+            ".purgem poulpy_madd",
+            ".purgem poulpy_msub",
+            ".section .note.GNU-stack,\"\",@progbits",
+            fused = const $fused as usize,
+        );
+    };
+}
 
-#[cfg(not(target_vendor = "apple"))]
-global_asm!(
-    ".text",
-    ".globl  fft16_avx2_fma_asm",
-    ".hidden fft16_avx2_fma_asm",
-    ".p2align 4, 0x90",
-    ".type   fft16_avx2_fma_asm,@function",
-    "fft16_avx2_fma_asm:",
-    ".att_syntax prefix",
-    include_str!("fft16_avx2_fma.s"),
-    ".size   fft16_avx2_fma_asm, .-fft16_avx2_fma_asm",
-    ".text",
-    ".globl  ifft16_avx2_fma_asm",
-    ".hidden ifft16_avx2_fma_asm",
-    ".p2align 4, 0x90",
-    ".type   ifft16_avx2_fma_asm,@function",
-    "ifft16_avx2_fma_asm:",
-    ".att_syntax prefix",
-    include_str!("ifft16_avx2_fma.s"),
-    ".size   ifft16_avx2_fma_asm, .-ifft16_avx2_fma_asm",
-    ".section .note.GNU-stack,\"\",@progbits",
-);
+fft16_kernels!("fft16_avx2_fma_asm", "ifft16_avx2_fma_asm", true);
+fft16_kernels!("fft16_avx2_encoding_asm", "ifft16_avx2_encoding_asm", false);
 
 #[inline(always)]
 pub(crate) fn as_arr<const SIZE: usize, R: Float + FloatConst>(x: &[R]) -> &[R; SIZE] {
@@ -91,9 +99,8 @@ pub(crate) fn as_arr_mut<const SIZE: usize, R: Float + FloatConst>(x: &mut [R]) 
 /// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT,
 /// dispatching to AVX2/FMA-accelerated kernels.
 ///
-/// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
-/// implements [`NegacyclicFFT`], suitable for use as the transform provider
-/// in the CPU CKKS encoding implementation.
+/// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] for fused ring arithmetic.
+/// CKKS uses a separate table with its canonical rounding contract.
 pub struct FFT64AvxReimTable {
     fft: ReimFFTTable<f64>,
     ifft: ReimIFFTTable<f64>,
@@ -142,4 +149,71 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTAvx {
             ifft_avx2_fma(table.m(), table.omg(), data);
         }
     }
+}
+
+#[inline]
+#[target_feature(enable = "avx2,fma")]
+fn encoding_mul_add<const FUSED: bool>(
+    a: std::arch::x86_64::__m256d,
+    b: std::arch::x86_64::__m256d,
+    c: std::arch::x86_64::__m256d,
+) -> std::arch::x86_64::__m256d {
+    use std::arch::x86_64::*;
+    if FUSED {
+        _mm256_fmadd_pd(a, b, c)
+    } else {
+        _mm256_add_pd(_mm256_mul_pd(a, b), c)
+    }
+}
+
+#[inline]
+#[target_feature(enable = "avx2,fma")]
+fn encoding_mul_sub<const FUSED: bool>(
+    a: std::arch::x86_64::__m256d,
+    b: std::arch::x86_64::__m256d,
+    c: std::arch::x86_64::__m256d,
+) -> std::arch::x86_64::__m256d {
+    use std::arch::x86_64::*;
+    if FUSED {
+        _mm256_fmsub_pd(a, b, c)
+    } else {
+        _mm256_sub_pd(_mm256_mul_pd(a, b), c)
+    }
+}
+
+#[cfg(feature = "enable-ckks")]
+pub struct EncodingFFTTable(poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<f64>);
+
+#[cfg(feature = "enable-ckks")]
+impl NegacyclicFFTNew<f64> for EncodingFFTTable {
+    fn new(m: usize) -> Self {
+        Self(NegacyclicFFTNew::new(m))
+    }
+}
+
+#[cfg(feature = "enable-ckks")]
+impl NegacyclicFFT<f64> for EncodingFFTTable {
+    fn m(&self) -> usize {
+        self.0.m()
+    }
+    fn fft(&self, data: &mut [f64]) {
+        unsafe {
+            fft_avx2_fma::fft_avx2_with_fma::<false>(self.m(), self.0.fft_twiddles(), data);
+        }
+    }
+    fn ifft(&self, data: &mut [f64]) {
+        unsafe {
+            ifft_avx2_fma::ifft_avx2_with_fma::<false>(self.m(), self.0.ifft_twiddles(), data);
+        }
+    }
+}
+
+#[cfg(all(test, feature = "enable-ckks"))]
+#[test]
+fn encoding_fft_matches_oracle() {
+    poulpy_ckks::test_suite::determinism::assert_transform_matches::<
+        f64,
+        poulpy_cpu_oracle::ckks_encoding_fft::EncodingFFTTable<f64>,
+        EncodingFFTTable,
+    >();
 }

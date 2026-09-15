@@ -16,14 +16,19 @@
 // ----------------------------------------------------------------------
 
 use std::arch::x86_64::{
-    __m128d, __m256d, _mm_load_pd, _mm256_add_pd, _mm256_fmadd_pd, _mm256_fmsub_pd, _mm256_loadu_pd, _mm256_mul_pd,
-    _mm256_permute2f128_pd, _mm256_set_m128d, _mm256_storeu_pd, _mm256_sub_pd, _mm256_unpackhi_pd, _mm256_unpacklo_pd,
+    __m128d, __m256d, _mm_load_pd, _mm256_add_pd, _mm256_loadu_pd, _mm256_mul_pd, _mm256_permute2f128_pd, _mm256_set_m128d,
+    _mm256_storeu_pd, _mm256_sub_pd, _mm256_unpackhi_pd, _mm256_unpacklo_pd,
 };
 
 use crate::fft64::reim::{as_arr, as_arr_mut};
 
 #[target_feature(enable = "avx2,fma")]
 pub(crate) fn fft_avx2_fma(m: usize, omg: &[f64], data: &mut [f64]) {
+    fft_avx2_with_fma::<true>(m, omg, data);
+}
+
+#[target_feature(enable = "avx2,fma")]
+pub(crate) fn fft_avx2_with_fma<const FUSED: bool>(m: usize, omg: &[f64], data: &mut [f64]) {
     if m < 16 {
         use poulpy_cpu_portable::reference::fft64::reim::fft_ref;
 
@@ -35,47 +40,52 @@ pub(crate) fn fft_avx2_fma(m: usize, omg: &[f64], data: &mut [f64]) {
     let (re, im) = data.split_at_mut(m);
 
     if m == 16 {
-        fft16_avx2_fma(as_arr_mut::<16, f64>(re), as_arr_mut::<16, f64>(im), as_arr::<16, f64>(omg))
+        fft16_avx2_fma::<FUSED>(as_arr_mut::<16, f64>(re), as_arr_mut::<16, f64>(im), as_arr::<16, f64>(omg))
     } else if m <= 2048 {
-        fft_bfs_16_avx2_fma(m, re, im, omg, 0);
+        fft_bfs_16_avx2_fma::<FUSED>(m, re, im, omg, 0);
     } else {
-        fft_rec_16_avx2_fma(m, re, im, omg, 0);
+        fft_rec_16_avx2_fma::<FUSED>(m, re, im, omg, 0);
     }
 }
 
 unsafe extern "sysv64" {
     unsafe fn fft16_avx2_fma_asm(re: *mut f64, im: *mut f64, omg: *const f64);
+    unsafe fn fft16_avx2_encoding_asm(re: *mut f64, im: *mut f64, omg: *const f64);
 }
 
 #[target_feature(enable = "avx2,fma")]
-fn fft16_avx2_fma(re: &mut [f64; 16], im: &mut [f64; 16], omg: &[f64; 16]) {
+fn fft16_avx2_fma<const FUSED: bool>(re: &mut [f64; 16], im: &mut [f64; 16], omg: &[f64; 16]) {
     unsafe {
-        fft16_avx2_fma_asm(re.as_mut_ptr(), im.as_mut_ptr(), omg.as_ptr());
+        if FUSED {
+            fft16_avx2_fma_asm(re.as_mut_ptr(), im.as_mut_ptr(), omg.as_ptr());
+        } else {
+            fft16_avx2_encoding_asm(re.as_mut_ptr(), im.as_mut_ptr(), omg.as_ptr());
+        }
     }
 }
 
 #[target_feature(enable = "avx2,fma")]
-fn fft_rec_16_avx2_fma(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
+fn fft_rec_16_avx2_fma<const FUSED: bool>(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
     if m <= 2048 {
-        return fft_bfs_16_avx2_fma(m, re, im, omg, pos);
+        return fft_bfs_16_avx2_fma::<FUSED>(m, re, im, omg, pos);
     };
 
     let h: usize = m >> 1;
-    twiddle_fft_avx2_fma(h, re, im, *as_arr::<2, f64>(&omg[pos..]));
+    twiddle_fft_avx2_fma::<FUSED>(h, re, im, *as_arr::<2, f64>(&omg[pos..]));
     pos += 2;
-    pos = fft_rec_16_avx2_fma(h, re, im, omg, pos);
-    pos = fft_rec_16_avx2_fma(h, &mut re[h..], &mut im[h..], omg, pos);
+    pos = fft_rec_16_avx2_fma::<FUSED>(h, re, im, omg, pos);
+    pos = fft_rec_16_avx2_fma::<FUSED>(h, &mut re[h..], &mut im[h..], omg, pos);
     pos
 }
 
 #[target_feature(enable = "avx2,fma")]
-fn fft_bfs_16_avx2_fma(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
+fn fft_bfs_16_avx2_fma<const FUSED: bool>(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
     let log_m: usize = (usize::BITS - (m - 1).leading_zeros()) as usize;
     let mut mm: usize = m;
 
     if !log_m.is_multiple_of(2) {
         let h: usize = mm >> 1;
-        twiddle_fft_avx2_fma(h, re, im, *as_arr::<2, f64>(&omg[pos..]));
+        twiddle_fft_avx2_fma::<FUSED>(h, re, im, *as_arr::<2, f64>(&omg[pos..]));
         pos += 2;
         mm = h
     }
@@ -83,7 +93,7 @@ fn fft_bfs_16_avx2_fma(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mu
     while mm > 16 {
         let h: usize = mm >> 2;
         for off in (0..m).step_by(mm) {
-            bitwiddle_fft_avx2_fma(h, &mut re[off..], &mut im[off..], as_arr::<4, f64>(&omg[pos..]));
+            bitwiddle_fft_avx2_fma::<FUSED>(h, &mut re[off..], &mut im[off..], as_arr::<4, f64>(&omg[pos..]));
 
             pos += 4;
         }
@@ -91,7 +101,7 @@ fn fft_bfs_16_avx2_fma(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mu
     }
 
     for off in (0..m).step_by(16) {
-        fft16_avx2_fma(
+        fft16_avx2_fma::<FUSED>(
             as_arr_mut::<16, f64>(&mut re[off..]),
             as_arr_mut::<16, f64>(&mut im[off..]),
             as_arr::<16, f64>(&omg[pos..]),
@@ -104,7 +114,7 @@ fn fft_bfs_16_avx2_fma(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mu
 }
 
 #[target_feature(enable = "avx2,fma")]
-fn twiddle_fft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 2]) {
+fn twiddle_fft_avx2_fma<const FUSED: bool>(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 2]) {
     unsafe {
         let omx: __m128d = _mm_load_pd(omg.as_ptr());
         let omra: __m256d = _mm256_set_m128d(omx, omx);
@@ -125,8 +135,8 @@ fn twiddle_fft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 2])
             let mut tra: __m256d = _mm256_mul_pd(omi, ui1);
             let mut tia: __m256d = _mm256_mul_pd(omi, ur1);
 
-            tra = _mm256_fmsub_pd(omr, ur1, tra);
-            tia = _mm256_fmadd_pd(omr, ui1, tia);
+            tra = super::encoding_mul_sub::<FUSED>(omr, ur1, tra);
+            tia = super::encoding_mul_add::<FUSED>(omr, ui1, tia);
             ur1 = _mm256_sub_pd(ur0, tra);
             ui1 = _mm256_sub_pd(ui0, tia);
             ur0 = _mm256_add_pd(ur0, tra);
@@ -146,7 +156,7 @@ fn twiddle_fft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 2])
 }
 
 #[target_feature(enable = "avx2,fma")]
-fn bitwiddle_fft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64; 4]) {
+fn bitwiddle_fft_avx2_fma<const FUSED: bool>(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64; 4]) {
     unsafe {
         let re_base: *mut f64 = re.as_mut_ptr();
         let im_base: *mut f64 = im.as_mut_ptr();
@@ -179,10 +189,10 @@ fn bitwiddle_fft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64; 
             let mut trb: __m256d = _mm256_mul_pd(omai, ui3);
             let mut tia: __m256d = _mm256_mul_pd(omai, ur2);
             let mut tib: __m256d = _mm256_mul_pd(omai, ur3);
-            tra = _mm256_fmsub_pd(omar, ur2, tra);
-            trb = _mm256_fmsub_pd(omar, ur3, trb);
-            tia = _mm256_fmadd_pd(omar, ui2, tia);
-            tib = _mm256_fmadd_pd(omar, ui3, tib);
+            tra = super::encoding_mul_sub::<FUSED>(omar, ur2, tra);
+            trb = super::encoding_mul_sub::<FUSED>(omar, ur3, trb);
+            tia = super::encoding_mul_add::<FUSED>(omar, ui2, tia);
+            tib = super::encoding_mul_add::<FUSED>(omar, ui3, tib);
             ur2 = _mm256_sub_pd(ur0, tra);
             ur3 = _mm256_sub_pd(ur1, trb);
             ui2 = _mm256_sub_pd(ui0, tia);
@@ -196,10 +206,10 @@ fn bitwiddle_fft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64; 
             trb = _mm256_mul_pd(ombr, ui3);
             tia = _mm256_mul_pd(ombi, ur1);
             tib = _mm256_mul_pd(ombr, ur3);
-            tra = _mm256_fmsub_pd(ombr, ur1, tra);
-            trb = _mm256_fmadd_pd(ombi, ur3, trb);
-            tia = _mm256_fmadd_pd(ombr, ui1, tia);
-            tib = _mm256_fmsub_pd(ombi, ui3, tib);
+            tra = super::encoding_mul_sub::<FUSED>(ombr, ur1, tra);
+            trb = super::encoding_mul_add::<FUSED>(ombi, ur3, trb);
+            tia = super::encoding_mul_add::<FUSED>(ombr, ui1, tia);
+            tib = super::encoding_mul_sub::<FUSED>(ombi, ui3, tib);
             ur1 = _mm256_sub_pd(ur0, tra);
             ur3 = _mm256_add_pd(ur2, trb);
             ui1 = _mm256_sub_pd(ui0, tia);

@@ -88,3 +88,8 @@ required-features = ["enable-core", "enable-ckks"]
 [[bench]]
 name = "normalize"
 harness = false
+
+[[bench]]
+name = "encoding"
+harness = false
+required-features = ["enable-ckks"]

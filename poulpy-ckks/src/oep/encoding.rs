@@ -17,6 +17,9 @@ use crate::{
 /// including the separate FFT multiply/add roundings and
 /// [`CKKSFloat`](crate::numerics::CKKSFloat) conversions. Backend-specific
 /// layouts and scheduling may differ.
+/// Scalar-bit equality requires finite inputs and finite FFT intermediates;
+/// NaN payload propagation is unspecified. Plaintext mapping rejects non-finite
+/// coefficients and signed integer overflow.
 ///
 /// # Safety
 /// Implementations must uphold the backend layout, aliasing, and numeric
