@@ -34,8 +34,8 @@ use rand_distr::{Distribution, Normal};
 
 use crate::{
     layouts::{
-        Backend, HostDataMut, HostDataRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxShape, VecZnxToBackendMut,
-        VecZnxToBackendRef, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxInfos, VecZnxShape,
+        VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
         normalization::I64NormalizeOps,
@@ -1416,7 +1416,13 @@ pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
     let output_size = output.size();
     assert!(carry.len() >= 3 * output.n());
     let input_limbs: Vec<&[i128]> = (0..input.size()).map(|j| input.at(a_col, j)).collect();
-    let out_limbs: Vec<*mut i64> = (0..output_size).map(|j| output.at_mut(res_col, j).as_mut_ptr()).collect();
+    assert!(res_col < output.cols(), "res_col {res_col} >= cols {}", output.cols());
+    // One base pointer, limb addresses from the shape: each `at_mut` call
+    // reborrows the whole buffer and would invalidate the pointers taken before it.
+    let out_base: *mut i64 = output.base_mut_ptr();
+    let out_limbs: Vec<*mut i64> = (0..output_size)
+        .map(|j| unsafe { out_base.add(output.scalar_offset(res_col, j)) })
+        .collect();
     (0..output.n()).for_each(|i| {
         let mut extra = 0i128;
         crate::reference::vec_znx::normalize_exact::<false, _, _>(
