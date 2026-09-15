@@ -8,7 +8,7 @@ use crate::{
     oep::PolynomialEvaluationImpl,
 };
 
-impl<BE: Backend + PolynomialEvaluationImpl<BE>> GLWEPolynomialEvaluation<BE> for Module<BE> {
+impl<BE: Backend + PolynomialEvaluationImpl> GLWEPolynomialEvaluation<BE> for Module<BE> {
     fn glwe_eval_baby_step<Ops, V, P, A, G>(
         &self,
         ops: &Ops,

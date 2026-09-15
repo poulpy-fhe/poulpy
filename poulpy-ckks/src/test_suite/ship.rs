@@ -413,7 +413,7 @@ fn ship_bootstrap_case<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     complex: bool,
 ) where
-    BE: TestContextBackend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -538,7 +538,7 @@ fn ship_bootstrap_case<BE, F, E>(
 /// End-to-end SHIP half bootstrap over real cleartexts.
 pub fn test_ship_bootstrap<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>
@@ -557,7 +557,7 @@ where
 /// into complex slots through the shared mux keys and the `omega_2` masks.
 pub fn test_ship_bootstrap_complex<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
-    BE: TestContextBackend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: TestContextBackend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     Module<BE>: TestContextModule<BE>
         + CKKSShipOps<BE, F>
         + CKKSEncodingOps<BE, F>

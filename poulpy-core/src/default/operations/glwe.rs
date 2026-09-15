@@ -1682,10 +1682,10 @@ where
         let mut res = res.to_backend_mut();
 
         assert!(
-            scratch.available() >= <Self as GLWERotateDefault<BE>>::glwe_rotate_tmp_bytes_default(self),
+            scratch.available() >= Self::glwe_rotate_tmp_bytes_default(self),
             "scratch.available(): {} < GLWERotate::glwe_rotate_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWERotateDefault<BE>>::glwe_rotate_tmp_bytes_default(self)
+            Self::glwe_rotate_tmp_bytes_default(self)
         );
 
         for i in 0..(res.rank() + 1).into() {
@@ -1828,10 +1828,10 @@ where
     {
         let res = &mut res.to_backend_mut();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
+            Self::glwe_shift_tmp_bytes_default(self, res.size())
         );
         let base2k: usize = res.base2k().into();
         for i in 0..res.rank().as_usize() + 1 {
@@ -1847,10 +1847,10 @@ where
         let res = &mut res.to_backend_mut();
 
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
+            Self::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         let base2k: usize = res.base2k().into();
@@ -1868,10 +1868,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
+            Self::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1894,10 +1894,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
+            Self::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1920,10 +1920,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_default(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWEShiftDefault<BE>>::glwe_shift_tmp_bytes_default(self, res.size())
+            Self::glwe_shift_tmp_bytes_default(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1974,10 +1974,10 @@ where
         assert_eq!(a.n(), self.n() as u32);
         assert_eq!(res.rank(), a.rank());
         assert!(
-            scratch.available() >= <Self as GLWENormalizeDefault<BE>>::glwe_normalize_tmp_bytes_default(self),
+            scratch.available() >= Self::glwe_normalize_tmp_bytes_default(self),
             "scratch.available(): {} < GLWENormalize::glwe_normalize_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWENormalizeDefault<BE>>::glwe_normalize_tmp_bytes_default(self)
+            Self::glwe_normalize_tmp_bytes_default(self)
         );
 
         let res_base2k = res.base2k().into();
@@ -2006,10 +2006,10 @@ where
         let mut res = res.to_backend_mut();
 
         assert!(
-            scratch.available() >= <Self as GLWENormalizeDefault<BE>>::glwe_normalize_tmp_bytes_default(self),
+            scratch.available() >= Self::glwe_normalize_tmp_bytes_default(self),
             "scratch.available(): {} < GLWENormalize::glwe_normalize_tmp_bytes: {}",
             scratch.available(),
-            <Self as GLWENormalizeDefault<BE>>::glwe_normalize_tmp_bytes_default(self)
+            Self::glwe_normalize_tmp_bytes_default(self)
         );
         let res_base2k = res.base2k().as_usize();
         let res_k = res.k().as_usize();

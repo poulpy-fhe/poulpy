@@ -9,7 +9,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSPow2Impl};
 
 use crate::api::CKKSPow2Ops;
 
-impl<BE: Backend + CKKSPow2Impl<BE>> CKKSPow2Ops<BE> for Module<BE>
+impl<BE: Backend + CKKSPow2Impl> CKKSPow2Ops<BE> for Module<BE>
 where
     Module<BE>: GLWECopy<BE> + GLWEShift<BE>,
 {

@@ -7,7 +7,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSCopyOps, oep::CKKSCopyImpl};
 
-impl<BE: Backend + CKKSCopyImpl<BE>> CKKSCopyOps<BE> for Module<BE>
+impl<BE: Backend + CKKSCopyImpl> CKKSCopyOps<BE> for Module<BE>
 where
     Module<BE>: GLWECopy<BE> + GLWEShift<BE>,
 {

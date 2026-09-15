@@ -76,7 +76,7 @@ fn dft_factor_lts<BE, F>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<(DFTPlan, Vec<DftFactorLt<BE>>)>
 where
-    BE: Backend + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSEncodingImpl<F>,
     Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: DftScalar + CKKSEncodingScalar,
 {
@@ -178,7 +178,7 @@ pub fn ckks_new_dft_matrix<Dir, Fmt, BE, F>(
 where
     Dir: DftDirection,
     Fmt: DftFormat,
-    BE: Backend + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSEncodingImpl<F>,
     Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     F: DftScalar + CKKSEncodingScalar,
 {

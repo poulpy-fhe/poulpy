@@ -56,7 +56,7 @@ impl CKKSInfos for EvalModWorkCtInfos {
     }
 }
 
-impl<BE: Backend + CKKSEvalModImpl<BE>> CKKSEvalModOps<BE> for Module<BE>
+impl<BE: Backend + CKKSEvalModImpl> CKKSEvalModOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE>
         + CKKSSubOps<BE>

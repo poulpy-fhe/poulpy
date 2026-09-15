@@ -14,9 +14,9 @@ use crate::{
     oep::CKKSEncryptionImpl,
 };
 
-impl<BE: Backend + CKKSEncryptionImpl<BE>> CKKSEncryptOps<BE> for Module<BE>
+impl<BE: Backend + CKKSEncryptionImpl> CKKSEncryptOps<BE> for Module<BE>
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Self: GLWEEncryptSk<BE> + VecZnxRshAdd<BE> + VecZnxRshTmpBytes,
 {
     fn ckks_encrypt_sk_tmp_bytes<A>(&self, ct_infos: &A) -> usize
@@ -49,9 +49,9 @@ where
 // The `BE::OwnedBuf: HostDataMut` bound restricts this delegate to host
 // backends; the `CKKSDecryptOps` trait itself carries no host bounds and a device
 // backend provides its own impl.
-impl<BE: Backend + CKKSEncryptionImpl<BE>> CKKSDecryptOps<BE> for Module<BE>
+impl<BE: Backend + CKKSEncryptionImpl> CKKSDecryptOps<BE> for Module<BE>
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Self: GLWEDecrypt<BE>
         + VecZnxLsh<BE>
         + VecZnxLshTmpBytes

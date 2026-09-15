@@ -27,7 +27,7 @@ use crate::{
 
 impl<BE, F> CKKSPaCoOps<BE, F> for Module<BE>
 where
-    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSPaCoCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: PaCoScalar,
     Module<BE>: CKKSMulOps<BE>
         + CKKSAddOps<BE>

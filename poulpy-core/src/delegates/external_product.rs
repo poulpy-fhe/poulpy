@@ -22,7 +22,7 @@ macro_rules! impl_external_product_delegate {
 
 impl_external_product_delegate!(
     GLWEExternalProduct<BE>,
-    [BE: Backend + GLWEExternalProductImpl<BE>],
+    [BE: Backend + GLWEExternalProductImpl],
     fn glwe_external_product_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
@@ -61,7 +61,7 @@ impl_external_product_delegate!(
 
 impl_external_product_delegate!(
     GGLWEExternalProduct<BE>,
-    [BE: Backend + GGLWEExternalProductImpl<BE>, Module<BE>: GLWEExternalProduct<BE>],
+    [BE: Backend + GGLWEExternalProductImpl, Module<BE>: GLWEExternalProduct<BE>],
     fn gglwe_external_product_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GGLWEInfos,
@@ -100,7 +100,7 @@ impl_external_product_delegate!(
 
 impl_external_product_delegate!(
     GGSWExternalProduct<BE>,
-    [BE: Backend + GGSWExternalProductImpl<BE>, Module<BE>: GLWEExternalProduct<BE>],
+    [BE: Backend + GGSWExternalProductImpl, Module<BE>: GLWEExternalProduct<BE>],
     fn ggsw_external_product_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GGSWInfos,

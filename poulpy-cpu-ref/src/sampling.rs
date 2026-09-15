@@ -21,7 +21,7 @@ macro_rules! impl_sampling_host {
         $crate::impl_sampling_host!(@impl $be, $crate::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_normal_ref::<_, $be>);
     };
     (@impl $be:ty, $big_kernel:expr) => {
-        unsafe impl ::poulpy_core::oep::SamplingImpl<$be> for $be {
+        unsafe impl ::poulpy_core::oep::SamplingImpl for $be {
             fn scalar_znx_fill_distribution(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 res: &mut ::poulpy_hal::layouts::ScalarZnxBackendMut<'_, $be>,

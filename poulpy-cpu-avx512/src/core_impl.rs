@@ -459,7 +459,7 @@ fn rank_one_tensor_square<BE, R, A>(
 
 macro_rules! impl_rank_one_tensoring {
     ($be:ty) => {
-        unsafe impl GLWETensoringImpl<$be> for $be {
+        unsafe impl GLWETensoringImpl for $be {
             fn glwe_tensor_apply_tmp_bytes<R, A, B>(module: &Module<$be>, res: &R, a: &A, b: &B) -> usize
             where
                 R: GLWEInfos,
@@ -555,7 +555,7 @@ impl_rank_one_tensoring!(NTT3x42Ifma);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_rank_one_tensoring!(NTT3x42IfmaRayon);
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512 {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -604,7 +604,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512> for N
 }
 
 #[cfg(feature = "enable-ifma")]
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42Ifma> for NTT3x42Ifma {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42Ifma {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,

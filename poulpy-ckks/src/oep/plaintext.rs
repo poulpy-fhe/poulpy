@@ -15,23 +15,23 @@ use crate::{CKKSInfos, SetCKKSInfos};
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSPlaintextZnxImpl<BE: Backend>: Backend {
-    fn ckks_extract_pt_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize;
+pub unsafe trait CKKSPlaintextZnxImpl: Backend {
+    fn ckks_extract_pt_tmp_bytes_impl(module: &Module<Self>, res_size: usize) -> usize;
 
     fn ckks_extract_pt_impl<Dst, Src>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         dst: &mut Dst,
         src: &Src,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos;
+        Dst: GLWEToBackendMut<Self> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<Self> + GLWEInfos + CKKSInfos;
 }
 
-unsafe impl<BE: Backend> CKKSPlaintextZnxImpl<BE> for BE
+unsafe impl<BE: Backend> CKKSPlaintextZnxImpl for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>: CKKSPlaintextDefault<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes + VecZnxLsh<BE> + VecZnxRsh<BE>,
 {
     fn ckks_extract_pt_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {

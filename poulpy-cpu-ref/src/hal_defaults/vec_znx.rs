@@ -70,36 +70,36 @@ impl BigWordHadamardProduct for crate::NTT4x30Ref {
 }
 
 #[doc(hidden)]
-pub trait HalVecZnxDefault<BE: Backend<ZnxWord = i64>>: Backend
+pub trait HalVecZnxDefault: Backend<ZnxWord = i64>
 where
-    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    Self::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    fn vec_znx_zero_default(_module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize)
+    fn vec_znx_zero_default(_module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, res_col: usize)
     where
-        BE: ZnxZero,
-        for<'x> BE::BufMut<'x>: HostDataMut,
+        Self: ZnxZero,
+        for<'x> Self::BufMut<'x>: HostDataMut,
     {
-        vec_znx_zero::<BE>(res, res_col);
+        vec_znx_zero::<Self>(res, res_col);
     }
 
-    fn vec_znx_normalize_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_normalize_tmp_bytes_default(module: &Module<Self>) -> usize {
         vec_znx_normalize_tmp_bytes(module.n())
     }
 
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize_default(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        BE: ZnxZero
+        Self: ZnxZero
             + ZnxCopy
             + ZnxAddAssign
             + ZnxMulPowerOfTwoAssign
@@ -112,9 +112,9 @@ where
             + ZnxNormalizeMiddleStepAssign
             + ZnxNormalizeFinalStepAssign
             + ZnxNormalizeDigit,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
-        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
         let byte_count = vec_znx_normalize_tmp_bytes(module.n());
         assert!(
@@ -123,21 +123,21 @@ where
             byte_count,
             size_of::<i64>()
         );
-        let (carry, _) = take_host_typed::<BE, i64>(scratch.borrow(), byte_count / size_of::<i64>());
-        vec_znx_normalize::<BE>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
+        let (carry, _) = take_host_typed::<Self, i64>(scratch.borrow(), byte_count / size_of::<i64>());
+        vec_znx_normalize::<Self>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize_assign_default(
-        module: &Module<BE>,
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
         res_offset: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        BE: I64NormalizeOps
+        Self: I64NormalizeOps
             + ZnxZero
             + ZnxNormalizeFirstStepCarryOnly
             + ZnxNormalizeMiddleStepCarryOnly
@@ -145,8 +145,8 @@ where
             + ZnxNormalizeFirstStepAssign
             + ZnxNormalizeMiddleStepAssign
             + ZnxNormalizeFinalStepAssign,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
         let byte_count = vec_znx_normalize_tmp_bytes(module.n());
         assert!(
@@ -155,36 +155,36 @@ where
             byte_count,
             size_of::<i64>()
         );
-        let (carry, _) = take_host_typed::<BE, i64>(scratch.borrow(), byte_count / size_of::<i64>());
-        vec_znx_normalize_assign::<BE>(base2k, k, res_offset, res, res_col, carry);
+        let (carry, _) = take_host_typed::<Self, i64>(scratch.borrow(), byte_count / size_of::<i64>());
+        vec_znx_normalize_assign::<Self>(base2k, k, res_offset, res, res_col, carry);
     }
 
     fn vec_znx_add_default<'a>(
-        _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, BE>,
+        a: &VecZnxBackendRef<'a, Self>,
         a_col: usize,
-        b: &VecZnxBackendRef<'a, BE>,
+        b: &VecZnxBackendRef<'a, Self>,
         b_col: usize,
     ) where
-        BE: ZnxAdd + ZnxCopy + ZnxZero,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: PartialEq + Eq + Sized + Default + AsRef<[u8]> + Sync,
+        Self: ZnxAdd + ZnxCopy + ZnxZero,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: PartialEq + Eq + Sized + Default + AsRef<[u8]> + Sync,
     {
-        vec_znx_add::<BE>(res, res_col, a, a_col, b, b_col);
+        vec_znx_add::<Self>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_add_assign_default(
-        _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        BE: ZnxAddAssign,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+        Self: ZnxAddAssign,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
         {
             assert_eq!(a.n(), res.n());
@@ -193,172 +193,172 @@ where
         let sum_size: usize = a.size().min(res.size());
 
         for j in 0..sum_size {
-            BE::znx_add_assign(res.at_mut(res_col, j), a.at(a_col, j));
+            Self::znx_add_assign(res.at_mut(res_col, j), a.at(a_col, j));
         }
     }
 
     fn vec_znx_sub_default<'a>(
-        _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, BE>,
+        a: &VecZnxBackendRef<'a, Self>,
         a_col: usize,
-        b: &VecZnxBackendRef<'a, BE>,
+        b: &VecZnxBackendRef<'a, Self>,
         b_col: usize,
     ) where
-        BE: ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+        Self: ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        vec_znx_sub::<BE>(res, res_col, a, a_col, b, b_col);
+        vec_znx_sub::<Self>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_sub_assign_default(
-        _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        BE: ZnxSubAssign,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+        Self: ZnxSubAssign,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        vec_znx_sub_assign::<BE>(res, res_col, a, a_col);
+        vec_znx_sub_assign::<Self>(res, res_col, a, a_col);
     }
 
     fn vec_znx_sub_negate_assign_default(
-        _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        BE: ZnxSubNegateAssign + ZnxNegateAssign,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+        Self: ZnxSubNegateAssign + ZnxNegateAssign,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        vec_znx_sub_negate_assign::<BE>(res, res_col, a, a_col);
+        vec_znx_sub_negate_assign::<Self>(res, res_col, a, a_col);
     }
 
     fn vec_znx_negate_default(
-        _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        BE: ZnxNegate + ZnxZero,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+        Self: ZnxNegate + ZnxZero,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        vec_znx_negate::<BE>(res, res_col, a, a_col);
+        vec_znx_negate::<Self>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_negate_assign_default(_module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize)
+    fn vec_znx_negate_assign_default(_module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, res_col: usize)
     where
-        BE: ZnxNegateAssign,
-        for<'x> BE::BufMut<'x>: HostDataMut,
+        Self: ZnxNegateAssign,
+        for<'x> Self::BufMut<'x>: HostDataMut,
     {
-        vec_znx_negate_assign::<BE>(res, res_col);
+        vec_znx_negate_assign::<Self>(res, res_col);
     }
 
     /// CPU override of [`poulpy_hal::oep::vec_znx_lsh_assign_derived`]: the
     /// fused in-place kernel, bit-exact with the default.
     fn vec_znx_lsh_assign_default(
-        module: &Module<BE>,
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        BE: ZnxZero + ZnxCopy + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        Self: ZnxZero + ZnxCopy + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let (carry, _) = take_host_typed::<BE, i64>(
+        let (carry, _) = take_host_typed::<Self, i64>(
             scratch.borrow(),
             vec_znx_lsh_assign_carry_bytes(module.n()) / size_of::<i64>(),
         );
-        vec_znx_lsh_assign::<BE>(base2k, k, res, res_col, carry);
+        vec_znx_lsh_assign::<Self>(base2k, k, res, res_col, carry);
     }
 
     fn vec_znx_rotate_default(
-        _module: &Module<BE>,
+        _module: &Module<Self>,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        BE: ZnxRotate + ZnxZero,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+        Self: ZnxRotate + ZnxZero,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        vec_znx_rotate::<BE>(p, res, res_col, a, a_col);
+        vec_znx_rotate::<Self>(p, res, res_col, a, a_col);
     }
 
-    fn vec_znx_rotate_assign_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_rotate_assign_tmp_bytes_default(module: &Module<Self>) -> usize {
         vec_znx_rotate_assign_tmp_bytes(module.n())
     }
 
     fn vec_znx_rotate_assign_default(
-        module: &Module<BE>,
+        module: &Module<Self>,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        BE: ZnxRotate + ZnxCopy,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        Self: ZnxRotate + ZnxCopy,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let (tmp, _) = take_host_typed::<BE, i64>(
+        let (tmp, _) = take_host_typed::<Self, i64>(
             scratch.borrow(),
             vec_znx_rotate_assign_tmp_bytes(module.n()) / size_of::<i64>(),
         );
-        vec_znx_rotate_assign::<BE>(p, res, res_col, tmp);
+        vec_znx_rotate_assign::<Self>(p, res, res_col, tmp);
     }
 
     fn vec_znx_automorphism_default(
-        _module: &Module<BE>,
+        _module: &Module<Self>,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        BE: ZnxAutomorphism + ZnxZero,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+        Self: ZnxAutomorphism + ZnxZero,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        vec_znx_automorphism::<BE>(p, res, res_col, a, a_col);
+        vec_znx_automorphism::<Self>(p, res, res_col, a, a_col);
     }
 
-    fn vec_znx_automorphism_assign_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_automorphism_assign_tmp_bytes_default(module: &Module<Self>) -> usize {
         vec_znx_automorphism_assign_tmp_bytes(module.n())
     }
 
     fn vec_znx_automorphism_assign_default(
-        module: &Module<BE>,
+        module: &Module<Self>,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        BE: ZnxAutomorphism + ZnxCopy,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        Self: ZnxAutomorphism + ZnxCopy,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let (tmp, _) = take_host_typed::<BE, i64>(
+        let (tmp, _) = take_host_typed::<Self, i64>(
             scratch.borrow(),
             vec_znx_automorphism_assign_tmp_bytes(module.n()) / size_of::<i64>(),
         );
-        vec_znx_automorphism_assign::<BE>(p, res, res_col, tmp);
+        vec_znx_automorphism_assign::<Self>(p, res, res_col, tmp);
     }
 
-    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module: &Module<Self>) -> usize {
         vec_znx_mul_xp_minus_one_assign_tmp_bytes(module.n())
     }
 
@@ -367,64 +367,64 @@ where
     /// [`Self::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default`] reports,
     /// bit-exact with the default.
     fn vec_znx_mul_xp_minus_one_assign_default(
-        module: &Module<BE>,
+        module: &Module<Self>,
         p: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        BE: ZnxRotate + ZnxNegate + ZnxSubNegateAssign,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        Self: ZnxRotate + ZnxNegate + ZnxSubNegateAssign,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let (tmp, _) = take_host_typed::<BE, i64>(
+        let (tmp, _) = take_host_typed::<Self, i64>(
             scratch.borrow(),
             vec_znx_mul_xp_minus_one_assign_tmp_bytes(module.n()) / size_of::<i64>(),
         );
-        vec_znx_mul_xp_minus_one_assign::<BE>(p, res, res_col, tmp);
+        vec_znx_mul_xp_minus_one_assign::<Self>(p, res, res_col, tmp);
     }
 
     fn vec_znx_switch_ring_default(
-        _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        BE: ZnxCopy + ZnxSwitchRing + ZnxZero,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+        Self: ZnxCopy + ZnxSwitchRing + ZnxZero,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        vec_znx_switch_ring::<BE>(res, res_col, a, a_col);
+        vec_znx_switch_ring::<Self>(res, res_col, a, a_col);
     }
 
     fn vec_znx_copy_default(
-        _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        _module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     ) where
-        BE: ZnxCopy + ZnxZero,
-        for<'x> BE::BufMut<'x>: HostDataMut,
-        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+        Self: ZnxCopy + ZnxZero,
+        for<'x> Self::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        vec_znx_copy::<BE>(res, res_col, a, a_col);
+        vec_znx_copy::<Self>(res, res_col, a, a_col);
     }
 
     fn vec_znx_fill_uniform_default(
-        _module: &Module<BE>,
+        _module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
         seed: [u8; 32],
     ) where
-        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> Self::BufMut<'x>: HostDataMut,
     {
         let mut source = Source::new(seed);
-        vec_znx_fill_uniform_ref::<BE>(base2k, k, res, res_col, &mut source);
+        vec_znx_fill_uniform_ref::<Self>(base2k, k, res, res_col, &mut source);
     }
 }
 
-impl<BE: Backend<ZnxWord = i64>> HalVecZnxDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend<ZnxWord = i64>> HalVecZnxDefault for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

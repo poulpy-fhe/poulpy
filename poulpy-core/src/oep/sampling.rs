@@ -46,28 +46,28 @@ use crate::{Distribution, NoiseInfos};
 /// [`VecZnxBigAddNormal`]: crate::VecZnxBigAddNormal
 /// [`GLWESecretSampling`]: crate::layouts::GLWESecretSampling
 /// [`LWESecretSampling`]: crate::layouts::LWESecretSampling
-pub unsafe trait SamplingImpl<BE: Backend>: Backend {
+pub unsafe trait SamplingImpl: Backend {
     fn scalar_znx_fill_distribution(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut ScalarZnxBackendMut<'_, Self>,
         res_col: usize,
         dist: Distribution,
         seed: [u8; 32],
     );
 
     fn vec_znx_add_normal(
-        module: &Module<BE>,
+        module: &Module<Self>,
         base2k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
         noise: NoiseInfos,
         seed: [u8; 32],
     );
 
     fn vec_znx_big_add_normal(
-        module: &Module<BE>,
+        module: &Module<Self>,
         base2k: usize,
-        res: &mut VecZnxBigBackendMut<'_, BE>,
+        res: &mut VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
         noise: NoiseInfos,
         seed: [u8; 32],

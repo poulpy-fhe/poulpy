@@ -29,47 +29,47 @@ mod vec_znx_dft;
 #[cfg(all(test, feature = "enable-core"))]
 pub(crate) mod delegating_backend;
 
-unsafe impl HalVecZnxImpl<FFT64Ref> for FFT64Ref {
+unsafe impl HalVecZnxImpl for FFT64Ref {
     hal_impl_vec_znx!();
 }
 
-unsafe impl HalModuleImpl<FFT64Ref> for FFT64Ref {
+unsafe impl HalModuleImpl for FFT64Ref {
     hal_impl_module!(FFT64ModuleDefault);
 }
 
-unsafe impl HalVmpImpl<FFT64Ref> for FFT64Ref {
+unsafe impl HalVmpImpl for FFT64Ref {
     hal_impl_vmp!(FFT64VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl<FFT64Ref> for FFT64Ref {
+unsafe impl HalConvolutionImpl for FFT64Ref {
     hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
-unsafe impl HalVecZnxBigImpl<FFT64Ref> for FFT64Ref {
+unsafe impl HalVecZnxBigImpl for FFT64Ref {
     hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl<FFT64Ref> for FFT64Ref {
+unsafe impl HalSvpImpl for FFT64Ref {
     hal_impl_svp!(FFT64SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl<FFT64Ref> for FFT64Ref {
+unsafe impl HalVecZnxDftImpl for FFT64Ref {
     hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }
 
-unsafe impl HalVecZnxImpl<NTT4x30Ref> for NTT4x30Ref {
+unsafe impl HalVecZnxImpl for NTT4x30Ref {
     hal_impl_vec_znx!();
 }
 
-unsafe impl HalModuleImpl<NTT4x30Ref> for NTT4x30Ref {
+unsafe impl HalModuleImpl for NTT4x30Ref {
     hal_impl_module!(NTT4x30ModuleDefault);
 }
 
-unsafe impl HalVmpImpl<NTT4x30Ref> for NTT4x30Ref {
+unsafe impl HalVmpImpl for NTT4x30Ref {
     hal_impl_vmp!(NTT4x30VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl<NTT4x30Ref> for NTT4x30Ref {
+unsafe impl HalConvolutionImpl for NTT4x30Ref {
     hal_impl_convolution!(NTT4x30ConvolutionDefault);
 
     fn cnv_apply_dft_sum_tmp_bytes(
@@ -79,9 +79,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Ref> for NTT4x30Ref {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_dft_sum_tmp_bytes_default(
-            module, cnv_offset, res_size, a_size, b_size,
-        )
+        <Self as NTT4x30ConvolutionDefault>::cnv_apply_dft_sum_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
     }
 
     fn cnv_apply_dft_sum<'a>(
@@ -95,7 +93,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Ref> for NTT4x30Ref {
         Self: 'a,
     {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_dft_sum_default(
+        <Self as NTT4x30ConvolutionDefault>::cnv_apply_dft_sum_default(
             module,
             cnv_offset,
             &mut res,
@@ -106,14 +104,14 @@ unsafe impl HalConvolutionImpl<NTT4x30Ref> for NTT4x30Ref {
     }
 }
 
-unsafe impl HalVecZnxBigImpl<NTT4x30Ref> for NTT4x30Ref {
+unsafe impl HalVecZnxBigImpl for NTT4x30Ref {
     hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl<NTT4x30Ref> for NTT4x30Ref {
+unsafe impl HalSvpImpl for NTT4x30Ref {
     hal_impl_svp!(NTT4x30SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl<NTT4x30Ref> for NTT4x30Ref {
+unsafe impl HalVecZnxDftImpl for NTT4x30Ref {
     hal_impl_vec_znx_dft!(NTT4x30VecZnxDftDefault);
 }

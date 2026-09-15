@@ -33,10 +33,10 @@ pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: 
 /// # Safety
 /// Implementations must honor the supplied layouts and return a scratch bound
 /// sufficient for [`Self::gglwe_product_digits_strided`].
-pub unsafe trait GGLWEProductDigitsStridedImpl<BE: Backend>: Backend {
+pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
     #[allow(clippy::too_many_arguments)]
     fn gglwe_product_digits_strided_tmp_bytes(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res_size: usize,
         a_cols: usize,
         a_size: usize,
@@ -48,13 +48,13 @@ pub unsafe trait GGLWEProductDigitsStridedImpl<BE: Backend>: Backend {
     ) -> usize;
 
     fn gglwe_product_digits_strided(
-        module: &Module<BE>,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
-        a: &VecZnxDftBackendRef<'_, BE>,
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &VecZnxDftBackendRef<'_, Self>,
         dsize: usize,
         product_limbs: usize,
-        pmat: &VmpPMatBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        pmat: &VmpPMatBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 }
 
@@ -62,7 +62,7 @@ pub unsafe trait GGLWEProductDigitsStridedImpl<BE: Backend>: Backend {
 #[macro_export]
 macro_rules! impl_gglwe_product_digits_strided_default {
     ($be:ty) => {
-        unsafe impl $crate::oep::GGLWEProductDigitsStridedImpl<$be> for $be {
+        unsafe impl $crate::oep::GGLWEProductDigitsStridedImpl for $be {
             fn gglwe_product_digits_strided_tmp_bytes(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 res_size: usize,
@@ -115,30 +115,30 @@ macro_rules! impl_gglwe_product_digits_strided_default {
 /// # Safety
 /// Implementations must satisfy the documented key-switch semantics, honor layout metadata and
 /// prepared-key interpretation, and keep all reads and writes within the described backend buffers.
-pub unsafe trait GLWEKeyswitchImpl<BE: Backend>: Backend {
-    fn glwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub unsafe trait GLWEKeyswitchImpl: Backend {
+    fn glwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         K: GGLWEInfos;
 
     fn glwe_keyswitch<R, A>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos;
 
     fn glwe_keyswitch_assign<R>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
+        R: GLWEToBackendMut<Self> + GLWEInfos;
 }
 
 /// Backend-provided GGLWE key-switching operations.
@@ -146,30 +146,30 @@ pub unsafe trait GLWEKeyswitchImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must preserve ciphertext invariants, use scratch space according to the
 /// advertised temporary-size contract, and uphold aliasing guarantees for backend-owned buffers.
-pub unsafe trait GGLWEKeyswitchImpl<BE: Backend>: Backend {
-    fn gglwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub unsafe trait GGLWEKeyswitchImpl: Backend {
+    fn gglwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
         A: GGLWEInfos,
         K: GGLWEInfos;
 
     fn gglwe_keyswitch<R, A>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos;
+        R: GGLWEToBackendMut<Self> + GGLWEInfos,
+        A: GGLWEToBackendRef<Self> + GGLWEInfos;
 
     fn gglwe_keyswitch_assign<R>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos;
+        R: GGLWEToBackendMut<Self> + GGLWEInfos;
 }
 
 /// Backend-provided GGSW key-switching operations.
@@ -177,9 +177,9 @@ pub unsafe trait GGLWEKeyswitchImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must correctly interpret prepared key material for the backend, respect all
 /// layout-derived bounds, and avoid invalid aliasing or mutation through scratch-backed views.
-pub unsafe trait GGSWKeyswitchImpl<BE: Backend>: Backend {
+pub unsafe trait GGSWKeyswitchImpl: Backend {
     fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res_infos: &R,
         a_infos: &A,
         key_infos: &K,
@@ -192,24 +192,24 @@ pub unsafe trait GGSWKeyswitchImpl<BE: Backend>: Backend {
         T: GGLWEInfos;
 
     fn ggsw_keyswitch<R, A>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
         a: &A,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWInfos;
+        R: GGSWToBackendMut<Self> + GGSWInfos,
+        A: GGSWToBackendRef<Self> + GGSWInfos;
 
     fn ggsw_keyswitch_assign<R>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
-        key: &GGLWEPreparedBackendRef<'_, BE>,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        key: &GGLWEPreparedBackendRef<'_, Self>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos;
+        R: GGSWToBackendMut<Self> + GGSWInfos;
 }
 
 /// Backend-provided LWE key-switching operations.
@@ -217,22 +217,22 @@ pub unsafe trait GGSWKeyswitchImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must only access the ciphertext and key regions described by the layouts and
 /// must produce results matching the logical key-switch operation for the backend.
-pub unsafe trait LWEKeyswitchImpl<BE: Backend>: Backend {
-    fn lwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub unsafe trait LWEKeyswitchImpl: Backend {
+    fn lwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
         A: LWEInfos,
         K: GGLWEInfos;
 
     fn lwe_keyswitch<R, A>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ksk: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        ksk: &GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: LWEToBackendMut<BE> + LWEInfos,
-        A: LWEToBackendRef<BE> + LWEInfos;
+        R: LWEToBackendMut<Self> + LWEInfos,
+        A: LWEToBackendRef<Self> + LWEInfos;
 }
 
 /// Override surface for the GLWE key-switching sub-family.
@@ -373,7 +373,7 @@ pub trait LWEKeyswitchDefault<BE: Backend> {
         A: LWEToBackendRef<BE> + LWEInfos;
 }
 
-unsafe impl<BE: Backend> GLWEKeyswitchImpl<BE> for BE
+unsafe impl<BE: Backend> GLWEKeyswitchImpl for BE
 where
     Module<BE>: GLWEKeyswitchDefault<BE>,
 {
@@ -411,7 +411,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GGLWEKeyswitchImpl<BE> for BE
+unsafe impl<BE: Backend> GGLWEKeyswitchImpl for BE
 where
     Module<BE>: GGLWEKeyswitchDefault<BE>,
 {
@@ -449,7 +449,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GGSWKeyswitchImpl<BE> for BE
+unsafe impl<BE: Backend> GGSWKeyswitchImpl for BE
 where
     Module<BE>: GGSWKeyswitchDefault<BE>,
 {
@@ -496,7 +496,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> LWEKeyswitchImpl<BE> for BE
+unsafe impl<BE: Backend> LWEKeyswitchImpl for BE
 where
     Module<BE>: LWEKeyswitchDefault<BE>,
 {

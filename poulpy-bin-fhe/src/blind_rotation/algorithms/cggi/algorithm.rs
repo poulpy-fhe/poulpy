@@ -55,7 +55,7 @@ where
         + VecZnxZero<BE>
         + VecZnxMulXpMinusOneAssignTmpBytes
         + Sync,
-    BE: HalVecZnxImpl<BE>,
+    BE: HalVecZnxImpl,
 {
     fn blind_rotation_execute_tmp_bytes<G, B>(
         &self,

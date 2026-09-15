@@ -12,7 +12,7 @@ use crate::{
     polynomial::ComplexBSGSPolynomial,
 };
 
-impl<BE: Backend + CKKSPolynomialEvaluationImpl<BE>> CKKSPolynomialEvaluationOps<BE> for Module<BE>
+impl<BE: Backend + CKKSPolynomialEvaluationImpl> CKKSPolynomialEvaluationOps<BE> for Module<BE>
 where
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
 {

@@ -8,7 +8,7 @@ use crate::layouts::UnnormalizedCKKSCiphertext;
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, oep::CKKSSubImpl};
 
-impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOps<BE> for Module<BE> {
+impl<BE: Backend + CKKSSubImpl> CKKSSubOps<BE> for Module<BE> {
     fn ckks_sub_tmp_bytes(&self, res_size: usize) -> usize {
         BE::ckks_sub_tmp_bytes_impl(self, res_size)
     }

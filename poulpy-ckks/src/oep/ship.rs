@@ -26,32 +26,32 @@ use crate::{
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by
 /// the associated method signatures.
-pub unsafe trait CKKSShipCoeffEncodingImpl<BE: Backend>: Backend {
+pub unsafe trait CKKSShipCoeffEncodingImpl: Backend {
     /// Backend-native arena bytes required by the coefficient encoding.
     fn ckks_ship_coeff_encodings_tmp_bytes_impl<F>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         plan: &ShipPlan,
         base2k: Base2K,
         complex: bool,
     ) -> Result<usize>
     where
         F: ShipScalar,
-        BE: CKKSEncodingImpl<BE, F>;
+        Self: CKKSEncodingImpl<F>;
 
     /// Builds the input-dependent SHIP plaintext material from the bottom
     /// ciphertext's public coefficients. Implementations must preserve the
     /// plan's degree, radix, scales, and backend ownership, and must reject
     /// malformed ciphertext layouts before reading their limbs.
     fn ckks_ship_coeff_encodings_impl<F, Src>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         ct: &Src,
         plan: &ShipPlan,
         base2k: Base2K,
         complex: bool,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<ShipCoeffEncodings<Self::OwnedBuf, Self::ZnxWord>>
     where
         F: ShipScalar,
-        BE: CKKSEncodingImpl<BE, F>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Self: CKKSEncodingImpl<F>,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 }

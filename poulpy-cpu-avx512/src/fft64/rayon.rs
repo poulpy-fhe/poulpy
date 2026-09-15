@@ -7,7 +7,7 @@ use crate::FFT64Avx512;
 
 fn dft_automorphism(
     _module: &Module<FFT64Avx512Rayon>,
-    plan: &<FFT64Avx512 as poulpy_hal::oep::HalVecZnxDftImpl<FFT64Avx512>>::AutomorphismPlan,
+    plan: &<FFT64Avx512 as poulpy_hal::oep::HalVecZnxDftImpl>::AutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, FFT64Avx512Rayon>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, FFT64Avx512Rayon>,

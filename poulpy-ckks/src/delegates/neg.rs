@@ -9,7 +9,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSNegImpl};
 
 use crate::api::CKKSNegOps;
 
-impl<BE: Backend + CKKSNegImpl<BE>> CKKSNegOps<BE> for Module<BE>
+impl<BE: Backend + CKKSNegImpl> CKKSNegOps<BE> for Module<BE>
 where
     Module<BE>: GLWENegate<BE> + GLWEShift<BE>,
 {

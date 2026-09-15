@@ -13,7 +13,7 @@ use crate::{
 
 impl<BE> GLWELinearTransformations<BE> for Module<BE>
 where
-    BE: Backend + LinearTransformationImpl<BE>,
+    BE: Backend + LinearTransformationImpl,
 {
     fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
     where

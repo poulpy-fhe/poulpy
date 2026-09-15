@@ -359,7 +359,7 @@ pub trait SecretConversion<B: Backend> {
 
 // Coefficient-word fence: `scalar_znx_automorphism` is delegated by
 // poulpy-hal for i64 backends only.
-impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
+impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl> SecretConversion<B> for Module<B> {
     fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf, B::ZnxWord>
     where
         S: LWESecretToBackendRef<B>,

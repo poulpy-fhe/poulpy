@@ -67,7 +67,7 @@ where
         + BDDKeyPreparedFactory<BRA, BE>
         + GLWESecretSampling<BE>
         + LWESecretSampling<BE>,
-    BE: HalModuleImpl<BE>,
+    BE: HalModuleImpl,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: poulpy_hal::layouts::HostDataRef + poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -77,9 +77,7 @@ where
     }
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + HalModuleImpl<BE>>
-    TestContext<BRA, BE>
-{
+impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + HalModuleImpl> TestContext<BRA, BE> {
     pub fn glwe_infos(&self) -> GLWELayout {
         TEST_GLWE_INFOS
     }

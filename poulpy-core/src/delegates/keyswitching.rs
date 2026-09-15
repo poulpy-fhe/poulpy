@@ -23,7 +23,7 @@ macro_rules! impl_keyswitching_delegate {
 
 impl_keyswitching_delegate!(
     GLWEKeyswitch<BE>,
-    [BE: Backend + GLWEKeyswitchImpl<BE>],
+    [BE: Backend + GLWEKeyswitchImpl],
     fn glwe_keyswitch_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, key_infos: &B) -> usize
     where
         R: GLWEInfos,
@@ -51,7 +51,7 @@ impl_keyswitching_delegate!(
 
 impl_keyswitching_delegate!(
     GGLWEKeyswitch<BE>,
-    [BE: Backend + GGLWEKeyswitchImpl<BE>],
+    [BE: Backend + GGLWEKeyswitchImpl],
     fn gglwe_keyswitch_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
@@ -79,7 +79,7 @@ impl_keyswitching_delegate!(
 
 impl_keyswitching_delegate!(
     GGSWKeyswitch<BE>,
-    [BE: Backend + GGSWKeyswitchImpl<BE>],
+    [BE: Backend + GGSWKeyswitchImpl],
     fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
@@ -121,7 +121,7 @@ impl_keyswitching_delegate!(
 
 impl_keyswitching_delegate!(
     LWEKeyswitch<BE>,
-    [BE: Backend + LWEKeyswitchImpl<BE>],
+    [BE: Backend + LWEKeyswitchImpl],
     fn lwe_keyswitch_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,

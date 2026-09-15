@@ -17,9 +17,9 @@ use crate::{CKKSCtBounds, CKKSResult, SetCKKSInfos};
 /// Implementations must preserve the exact CKKS metadata and ciphertext
 /// semantics of the reference composition, honor all key layouts, and stay
 /// within the supplied scratch arena.
-pub unsafe trait CKKSEncapsulatedModUpImpl<BE: Backend>: Backend {
+pub unsafe trait CKKSEncapsulatedModUpImpl: Backend {
     fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         dst_infos: &Dst,
         src_infos: &Src,
         dense_to_sparse_infos: &D2S,
@@ -35,24 +35,24 @@ pub unsafe trait CKKSEncapsulatedModUpImpl<BE: Backend>: Backend {
     /// sparse-to-dense switch, so the message is already at its final scale when
     /// that key-switch's noise is added.
     fn ckks_encapsulated_mod_up<Dst, Src>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         dst: &mut Dst,
         src: &mut Src,
         scale_up: usize,
-        dense_to_sparse: &GGLWEPreparedBackendRef<'_, BE>,
-        sparse_to_dense: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        dense_to_sparse: &GGLWEPreparedBackendRef<'_, Self>,
+        sparse_to_dense: &GGLWEPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> CKKSResult<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+        Dst: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendMut<Self> + GLWEToBackendRef<Self> + CKKSCtBounds + SetCKKSInfos;
 }
 
 /// Opts a backend into the CKKS reference encapsulated-ModUp pipeline.
 #[macro_export]
 macro_rules! impl_ckks_encapsulated_mod_up_default {
     ($be:ty) => {
-        unsafe impl $crate::oep::CKKSEncapsulatedModUpImpl<$be> for $be {
+        unsafe impl $crate::oep::CKKSEncapsulatedModUpImpl for $be {
             fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
                 module: &::poulpy_hal::layouts::Module<$be>,
                 dst_infos: &Dst,
