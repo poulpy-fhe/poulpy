@@ -20,7 +20,7 @@ To avoid illegal hardware instructions on non-AArch64 CPUs, this backend is **op
 
 If `enable-neon` is enabled but the target is not `aarch64`, the build **fails immediately with a clear error message** (`compile_error!` in `lib.rs`), rather than generating invalid binaries.
 
-When `enable-neon` is **not** enabled, this crate is simply skipped and Poulpy automatically falls back to the portable `poulpy-cpu-ref` backend. This ensures that Poulpy's workspace remains portable on x86 hosts and CI runners.
+When `enable-neon` is **not** enabled, this crate is simply skipped and Poulpy automatically falls back to the portable `poulpy-cpu-portable` backend. This ensures that Poulpy's workspace remains portable on x86 hosts and CI runners.
 
 ## ⚙️ Building with the NEON backend enabled
 
@@ -79,7 +79,7 @@ The serial backends require `enable-neon`; the Rayon variants additionally requi
 
 ## Numerical contract
 
-- Integer / modular operations (`Znx*`, `I128BigOps`, `Ntt*`, `NttDFTExecute`) are bit-exact against `poulpy-cpu-ref`.
+- Integer / modular operations (`Znx*`, `I128BigOps`, `Ntt*`, `NttDFTExecute`) are bit-exact against `poulpy-cpu-portable`.
 - FFT-domain operations (`ReimArith`, `Reim4*`, `I64Ops`, `ReimFFTExecute`) match the reference within ULP tolerance — NEON kernels use FMA where the scalar reference does not.
 
 See `poulpy-hal/docs/backend_safety_contract.md` for the full backend contract.

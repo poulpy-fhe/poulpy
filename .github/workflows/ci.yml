@@ -15,14 +15,14 @@ env:
   RUST_TOOLCHAIN: nightly-2026-05-14
   PORTABLE_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-cpu-ref/enable-core
-    poulpy-cpu-ref/enable-ckks
+    poulpy-cpu-portable/enable-core
+    poulpy-cpu-portable/enable-ckks
     poulpy-bin-fhe/enable-bin-fhe
   AVX_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-avx
-    poulpy-cpu-ref/enable-core
-    poulpy-cpu-ref/enable-ckks
+    poulpy-cpu-portable/enable-core
+    poulpy-cpu-portable/enable-ckks
     poulpy-cpu-avx/enable-avx
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-rayon
@@ -31,8 +31,8 @@ env:
     poulpy-core/enable-core
     poulpy-core/enable-avx
     poulpy-core/enable-ifma
-    poulpy-cpu-ref/enable-core
-    poulpy-cpu-ref/enable-ckks
+    poulpy-cpu-portable/enable-core
+    poulpy-cpu-portable/enable-ckks
     poulpy-cpu-avx/enable-avx
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-rayon
@@ -43,8 +43,8 @@ env:
   NEON_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-neon
-    poulpy-cpu-ref/enable-core
-    poulpy-cpu-ref/enable-ckks
+    poulpy-cpu-portable/enable-core
+    poulpy-cpu-portable/enable-ckks
     poulpy-cpu-arm/enable-ckks
     poulpy-cpu-arm/enable-neon
     poulpy-cpu-arm/enable-rayon
@@ -188,7 +188,7 @@ jobs:
 
       - name: Test Quad CKKS encoding on Darwin
         run: >-
-          cargo test -p poulpy-cpu-ref --lib
+          cargo test -p poulpy-cpu-portable --lib
           --features "enable-ckks,poulpy-ckks/libquadmath"
           ckks_encoding::tests::fft64_precision_families_coexist_in_one_module
           -- --exact
@@ -234,7 +234,7 @@ jobs:
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_log_regressions_terminate -- --exact
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_math_surface_values -- --exact
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_special_value_semantics -- --exact
-          cargo test -p poulpy-cpu-ref --lib --features "enable-ckks,poulpy-ckks/libquadmath" ckks_encoding::tests::fft64_precision_families_coexist_in_one_module -- --exact
+          cargo test -p poulpy-cpu-portable --lib --features "enable-ckks,poulpy-ckks/libquadmath" ckks_encoding::tests::fft64_precision_families_coexist_in_one_module -- --exact
 
   # AVX-512 typecheck/clippy lane. GitHub-hosted runners do not expose AVX-512,
   # so this lane builds and lints the AVX-512F + IFMA configuration on every

@@ -16,7 +16,7 @@ depends on no backend. Its tests are backend-generic: each backend crate
 instantiates them with `bin_fhe_backend_test_suite!`, so they run from there:
 
 ```sh
-cargo test -p poulpy-cpu-ref --features enable-core bin_fhe
+cargo test -p poulpy-cpu-portable --features enable-core bin_fhe
 ```
 
 ```sh
@@ -31,7 +31,7 @@ suite from the backend crate:
 cargo test -p poulpy-cpu-arm --features enable-rayon bin_fhe
 ```
 
-The runnable examples live in `poulpy-cpu-ref/examples` (`bdd_arithmetic`,
+The runnable examples live in `poulpy-cpu-portable/examples` (`bdd_arithmetic`,
 `circuit_bootstrapping`, `max_array`), behind its `enable-core` feature.
 
 ## Backend Status

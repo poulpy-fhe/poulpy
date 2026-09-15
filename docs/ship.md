@@ -23,7 +23,7 @@ All outputs are caller-allocated:
 - `ckks_ship_bootstrap_tmp_bytes` reports the caller-arena bound, validating the ciphertext and key layouts along the way.
 
 The only SHIP-specific backend hook is the coefficient encoding: the input-dependent conversion of the bottom ciphertext's public residues into `pt0` and the rotated `pi` plaintexts.
-A backend opts in by implementing `poulpy_ckks::oep::CKKSShipCoeffEncodingImpl`; the scheme definition is exported as `poulpy_ckks::encoding::ship_coeff_encodings_host`, and a CPU backend adopts it wholesale with `poulpy-cpu-ref`'s `impl_ckks_ship_coeff_encoding!` macro.
+A backend opts in by implementing `poulpy_ckks::oep::CKKSShipCoeffEncodingImpl`; the scheme definition is exported as `poulpy_ckks::encoding::ship_coeff_encodings_host`, and a CPU backend adopts it wholesale with `poulpy-cpu-portable`'s `impl_ckks_ship_coeff_encoding!` macro.
 The rest of SHIP composes existing CKKS multiplication, keyswitching, convolution, and DFT APIs.
 
 ## Construction outline

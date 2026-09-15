@@ -13,7 +13,7 @@ poulpy-hal                 hardware abstraction: layouts and operation traits
     ├── poulpy-ckks        leveled CKKS evaluator
     └── poulpy-bin-fhe     binary and gate-level FHE
 
-poulpy-cpu-ref             portable reference backend
+poulpy-cpu-portable             portable reference backend
 poulpy-cpu-avx             AVX2 / FMA backend
 poulpy-cpu-avx512          AVX-512 / IFMA backend
 ```
@@ -37,9 +37,9 @@ The operation traits are grouped by the type they act on: `vec_znx` for coeffici
 A backend supplies the actual low-level arithmetic behind the HAL: the Fourier or number-theoretic transform, the vector-matrix and scalar-vector products, and the coefficient-domain operations.
 Each backend crate exposes one or more zero-sized marker types that you pass as the `B` in `Module<B>`.
 
-`poulpy-cpu-ref` is the portable reference.
+`poulpy-cpu-portable` is the portable reference.
 It implements the full HAL operation set in plain scalar Rust with no intrinsics, runs on any target, and acts as the correctness oracle the other backends are checked against.
-It provides `FFT64Ref` and `NTT4x30Ref`.
+It provides `FFT64Portable` and `NTT4x30Portable`.
 
 `poulpy-cpu-avx` and `poulpy-cpu-avx512` do not reimplement the whole HAL.
 They hand-vectorize only the hot paths, the transform butterflies and the matrix-vector products, and delegate every other operation to the reference implementation through shared macros.
@@ -47,7 +47,7 @@ They hand-vectorize only the hot paths, the transform butterflies and the matrix
 `poulpy-cpu-avx512` adds AVX-512 and IFMA kernels and provides `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma`, the last of which reconstructs its CRT output with an AVX-512 IFMA kernel.
 
 Results are deterministic and bit-identical across backends, since the NTT backends are exact and the FFT backends are held within correct rounding.
-This means you can develop and test against `FFT64Ref` and switch to an accelerated backend with no change in output.
+This means you can develop and test against `FFT64Portable` and switch to an accelerated backend with no change in output.
 See [backends.md](backends.md) for the arithmetic families, their subfamilies, and how to pick one.
 
 ### poulpy-core
@@ -133,8 +133,8 @@ Run them with the matching features.
 ```sh
 cargo test -p poulpy-core
 cargo test -p poulpy-ckks
-cargo test -p poulpy-cpu-ref --features enable-core
-cargo test -p poulpy-cpu-ref --features enable-ckks
+cargo test -p poulpy-cpu-portable --features enable-core
+cargo test -p poulpy-cpu-portable --features enable-ckks
 cargo test -p poulpy-bin-fhe --features enable-bin-fhe
 ```
 
@@ -206,8 +206,8 @@ let ggsw_layout = GGSWLayout {
 
 ## Where to go next
 
-- For a GLWE encrypt and decrypt roundtrip, read `poulpy-cpu-ref/examples/core_encryption.rs`.
+- For a GLWE encrypt and decrypt roundtrip, read `poulpy-cpu-portable/examples/core_encryption.rs`.
 - For the gate and encrypted integer API, read `poulpy-bin-fhe/examples/bdd_arithmetic.rs`.
-- For CKKS, read `poulpy-cpu-ref/examples/ckks_poly2.rs`.
+- For CKKS, read `poulpy-cpu-portable/examples/ckks_poly2.rs`.
 - For CKKS polynomial evaluation and homomorphic linear transformations, read [polynomial_evaluation.md](polynomial_evaluation.md) and [linear_transformation.md](linear_transformation.md).
 - For the choice of arithmetic backend, read [backends.md](backends.md).

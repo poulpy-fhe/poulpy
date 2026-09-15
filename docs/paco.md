@@ -74,7 +74,7 @@ backend with a native encoder may implement the whole step as one fused
 kernel from the ciphertext residues. The complete scheme definition of the
 step is exported as `poulpy_ckks::encoding::paco_coeff_encodings_host`, and a
 CPU backend with host-accessible buffers adopts it wholesale with
-`poulpy-cpu-ref`'s `impl_ckks_paco_coeff_encoding!` macro, which routes the
+`poulpy-cpu-portable`'s `impl_ckks_paco_coeff_encoding!` macro, which routes the
 staged host routine through the backend's own CKKS encoding implementation.
 The rest of PaCo composes existing CKKS multiplication, automorphism,
 trace/fold, linear-transformation, allocation, transfer, and metadata APIs.
@@ -267,5 +267,5 @@ live in `poulpy_ckks::test_suite`, not in the production operation surface.
 Run the reference backend gates with:
 
 ```bash
-cargo test -p poulpy-cpu-ref --features enable-ckks paco
+cargo test -p poulpy-cpu-portable --features enable-ckks paco
 ```

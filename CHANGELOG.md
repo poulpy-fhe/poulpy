@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+- **Breaking:** rename `poulpy-cpu-ref` to `poulpy-cpu-portable`,
+  `FFT64Ref` to `FFT64Portable`, and `NTT4x30Ref` to `NTT4x30Portable`.
+  Update production fallback dependencies and backend imports throughout the
+  workspace. Existing scalar kernels and behavior are preserved.
+- Add the unpublished `poulpy-cpu-oracle` crate with `FFT64Oracle` and
+  `NTT4x30Oracle`. The oracle owns its transform arithmetic, tables, dot products,
+  and CRT reconstruction; generic HAL/Core/CKKS compositions remain shared.
+  Public-operation parity suites use the oracle through path-only development
+  dependencies. Production fallbacks and raw-buffer compatibility tests use the
+  portable backend.
+
 The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/poulpy/issues/234): a smaller operation basis with a contract block on every api trait, derived operations as backend-generic default bodies on the OEP traits, sampling moved into `poulpy-core`, and CKKS ciphertexts canonical at the `k` they report.
 
 ### `poulpy-hal`

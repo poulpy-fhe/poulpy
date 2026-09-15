@@ -3,7 +3,7 @@
 Shared benchmarking library for the poulpy workspace. `poulpy-bench` does not
 ship its own runnable benchmarks — it provides the runners, sweep
 parameters, and composition primitives that a backend crate (e.g.
-`poulpy-cpu-ref`) uses to build its own `benches/*.rs` binaries.
+`poulpy-cpu-portable`) uses to build its own `benches/*.rs` binaries.
 
 ## Why a library, not binaries
 
@@ -97,7 +97,7 @@ criterion_group! {
 criterion_main!(benches);
 ```
 
-See [`poulpy-cpu-ref/benches`](../poulpy-cpu-ref/benches) — or any of
+See [`poulpy-cpu-portable/benches`](../poulpy-cpu-portable/benches) — or any of
 `poulpy-cpu-avx`/`-avx512`/`-arm`'s `benches/` — for the complete, minimal
 `full.rs` / `standard.rs` / `light.rs` binaries this produces.
 
@@ -132,17 +132,17 @@ backend doesn't need to compile ops it can't run). Run them with
 `cargo bench -p <backend-crate> --bench <binary>`, enabling whatever
 features the binary needs.
 
-For example, the `poulpy-cpu-ref` backend ships three binaries — `full` (every op, full
+For example, the `poulpy-cpu-portable` backend ships three binaries — `full` (every op, full
 parameter grid), `standard` (a representative cross-section), and `light`
 (a single-parameter test) — all three require the `enable-ckks` feature
 (which pulls in `enable-core`):
 
 ```sh
 # Everything in the standard suite
-cargo bench -p poulpy-cpu-ref --bench standard --features enable-ckks
+cargo bench -p poulpy-cpu-portable --bench standard --features enable-ckks
 
 # The full grid — long running; only do this when you mean it
-cargo bench -p poulpy-cpu-ref --bench full --features enable-ckks
+cargo bench -p poulpy-cpu-portable --bench full --features enable-ckks
 ```
 
 ### Running a subset: layer or op filters
@@ -154,14 +154,14 @@ prefix or substring. `--list` (optionally combined with a filter) prints the mat
 without running them.
 
 ```sh
-# Only the HAL layer, on the NTT4x30Ref backend
-cargo bench -p poulpy-cpu-ref --bench standard --features enable-ckks -- "NTT4x30Ref/hal"
+# Only the HAL layer, on the NTT4x30Portable backend
+cargo bench -p poulpy-cpu-portable --bench standard --features enable-ckks -- "NTT4x30Portable/hal"
 
 # One op, across every backend/layer that has it
-cargo bench -p poulpy-cpu-ref --bench standard  --features enable-ckks -- "vec_znx_add"
+cargo bench -p poulpy-cpu-portable --bench standard  --features enable-ckks -- "vec_znx_add"
 
 # See what a filter would run, without running it
-cargo bench -p poulpy-cpu-ref --bench standard --features enable-ckks -- --list "core"
+cargo bench -p poulpy-cpu-portable --bench standard --features enable-ckks -- --list "core"
 ```
 
 ## Normalization sweep

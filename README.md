@@ -20,10 +20,11 @@
 ## Library Crates
 
 - **`poulpy-hal`**: a crate providing layouts and a trait-based hardware acceleration layer with open extension points, matching the API and types of spqlios-arithmetic. This crate does not provide concrete implementations other than the layouts (e.g. `VecZnx`, `VmpPmat`).
-- **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic Module-LWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-ref`, `poulpy-cpu-avx`).
+- **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic Module-LWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-portable`, `poulpy-cpu-avx`).
 - **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
 - **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate; its public APIs have moved to the backend-owned HAL/core surface, while a few host/reference-backend dependencies remain for this release.
-- **`poulpy-cpu-ref`**: the reference CPU implementation of **`poulpy-hal`**, intended for correctness and validation rather than performance-sensitive workloads.
+- **`poulpy-cpu-portable`**: the portable CPU implementation of **`poulpy-hal`**, requiring no SIMD instructions.
+- **`poulpy-cpu-oracle`**: unpublished correctness backends with independent FFT/NTT arithmetic; used through development dependencies.
 - **`poulpy-cpu-rayon`**: the shared Rayon task executor and parallel kernels used by the optional multithreaded CPU backend variants.
 - **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx`, `NTT4x30Avx`, and their optional Rayon-scheduled variants (`enable-rayon`).
 - **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma` (`enable-ifma`), plus `FFT64Avx512Rayon` and `NTT4x30Avx512Rayon` (`enable-rayon`) and `NTT3x42IfmaRayon` (`enable-rayon` with `enable-ifma`).
@@ -40,14 +41,14 @@ poulpy-hal                  ← hardware abstraction: layouts and operation trai
     ├── poulpy-ckks           ← leveled CKKS evaluator
     └── poulpy-bin-fhe        ← binary / gate-level FHE
 
-poulpy-cpu-ref              ← portable reference backend
+poulpy-cpu-portable         ← portable CPU backend
 poulpy-cpu-rayon            ← shared Rayon executor and parallel CPU kernels
 poulpy-cpu-avx              ← AVX2/FMA-accelerated backend
 poulpy-cpu-avx512           ← AVX-512/IFMA-accelerated backend
 poulpy-cpu-arm              ← NEON/ASIMD-accelerated backend (AArch64)
 ```
 
-Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. The CKKS and core layers keep concrete backend wiring in backend crates; `poulpy-bin-fhe` still carries a few reference-backend ties in v0.6.0 while that cleanup continues.
+Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. The CKKS and core layers keep concrete backend wiring in backend crates; `poulpy-bin-fhe` still carries a few reference-backend ties in v0.6.0 while that cleanup continues.
 
 ### Layer Anatomy
 
@@ -79,7 +80,7 @@ A backend overrides any operation by implementing the corresponding `oep` trait 
 
 At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `default` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
 
-See `poulpy-cpu-ref` for the reference implementation of all four steps.
+See `poulpy-cpu-portable` for the reference implementation of all four steps.
 
 ### Testing a Backend
 
@@ -94,16 +95,19 @@ A new backend does not re-implement the tests. `poulpy-hal` and `poulpy-core` sh
 
 A bound is a weak oracle: a gadget-product accumulator one limb too narrow passes the key-switch noise sweep comfortably. Byte equality is not weak, but on its own it cannot tell you the reference is right.
 
-Coverage degrades rather than switching off. A backend with a narrower envelope restricts the sweep through `ParityShapes` (rank 1 only, a single `dsize`) instead of dropping the suite, and parity holds across families: `NTT3x42Ifma` is checked against `NTT4x30Ref`.
+Coverage degrades rather than switching off. A backend with a narrower envelope restricts the sweep through `ParityShapes` (rank 1 only, a single `dsize`) instead of dropping the suite, and parity holds across families: `NTT3x42Ifma` is checked against `NTT4x30Oracle`.
 
-| | `poulpy-cpu-ref` | `poulpy-cpu-avx` | `poulpy-cpu-avx512` | `poulpy-cpu-arm` |
+| | `poulpy-cpu-portable` | `poulpy-cpu-avx` | `poulpy-cpu-avx512` | `poulpy-cpu-arm` |
 | --- | --- | --- | --- | --- |
 | HAL, per backend | yes | yes | yes | yes |
-| HAL, cross backend | `NTT4x30Ref` vs `FFT64Ref` | vs `poulpy-cpu-ref` | vs `poulpy-cpu-ref` | vs `poulpy-cpu-ref` |
-| Core noise | `FFT64Ref`, `NTT4x30Ref` | — | — | — |
-| Core parity | reference side | FFT64, NTT4x30 | FFT64, NTT4x30, NTT3x42Ifma | FFT64, NTT4x30 |
+| HAL, cross backend | vs oracle | vs oracle | vs oracle | vs oracle |
+| Core noise | FFT64, NTT4x30 | — | — | — |
+| Core parity | vs oracle | FFT64, NTT4x30 vs oracle | FFT64, NTT4x30, NTT3x42Ifma vs oracle | FFT64, NTT4x30 vs oracle |
 
-The noise suite runs in `poulpy-cpu-ref` alone: the scheme-level model is backend-independent, so an accelerated backend proves itself by byte-parity against the reference rather than by re-running the model.
+The oracle also runs the generic HAL and Core suites. Public-operation comparisons
+use oracle backends; raw-buffer compatibility tests use production backends with
+compatible layouts. Shared HAL/Core/CKKS compositions still need expected-result
+and cleartext tests. See [oracle validation boundaries](poulpy-cpu-oracle/README.md).
 
 ## Bivariate Polynomial Representation
 
@@ -131,7 +135,7 @@ The bivariate representation recovers bit-granular scale and capacity management
 - **`poulpy-core`**: https://crates.io/crates/poulpy-core
 - **`poulpy-ckks`**: https://crates.io/crates/poulpy-ckks
 - **`poulpy-bin-fhe`**: https://crates.io/crates/poulpy-bin-fhe
-- **`poulpy-cpu-ref`**: https://crates.io/crates/poulpy-cpu-ref
+- **`poulpy-cpu-portable`**: https://crates.io/crates/poulpy-cpu-portable
 - **`poulpy-cpu-rayon`**: https://crates.io/crates/poulpy-cpu-rayon
 - **`poulpy-cpu-avx`**: https://crates.io/crates/poulpy-cpu-avx
 - **`poulpy-cpu-avx512`**: https://crates.io/crates/poulpy-cpu-avx512
@@ -142,7 +146,7 @@ For example, a CKKS application can depend on:
 ```toml
 [dependencies]
 poulpy-ckks = "0.8.3"
-poulpy-cpu-ref = "0.8.3"
+poulpy-cpu-portable = "0.8.3"
 ```
 
 For binary FHE:
@@ -150,7 +154,7 @@ For binary FHE:
 ```toml
 [dependencies]
 poulpy-bin-fhe = "0.8.3"
-poulpy-cpu-ref = "0.8.3"
+poulpy-cpu-portable = "0.8.3"
 ```
 
 ## Documentation
@@ -189,8 +193,8 @@ integration tests remain feature-gated so default workspace builds stay light:
 ```sh
 cargo test -p poulpy-core
 cargo test -p poulpy-ckks
-cargo test -p poulpy-cpu-ref --features enable-core
-cargo test -p poulpy-cpu-ref --features enable-ckks
+cargo test -p poulpy-cpu-portable --features enable-core
+cargo test -p poulpy-cpu-portable --features enable-ckks
 cargo test -p poulpy-bin-fhe --features enable-bin-fhe
 ```
 

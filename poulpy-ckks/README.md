@@ -39,13 +39,13 @@ The full backend-generic CKKS conformance suite is instantiated by backend
 crates. To run it against the portable reference backends:
 
 ```sh
-cargo test -p poulpy-cpu-ref --features enable-ckks
+cargo test -p poulpy-cpu-portable --features enable-ckks
 ```
 
 To run the reference CKKS example:
 
 ```sh
-cargo run -p poulpy-cpu-ref --example ckks_poly2 --features enable-ckks
+cargo run -p poulpy-cpu-portable --example ckks_poly2 --features enable-ckks
 ```
 
 Like the rest of Poulpy, the public API is backend-agnostic. `poulpy-ckks`
@@ -53,7 +53,7 @@ does not depend on any concrete backend crate. Default dispatches and fallback
 implementations flow through `poulpy-hal` and `poulpy-core`, while
 `poulpy-ckks` remains free to override behavior at the scheme level when
 CKKS-specific semantics require it. Concrete execution comes from backend
-crates such as `poulpy-cpu-ref` and `poulpy-cpu-avx`.
+crates such as `poulpy-cpu-portable` and `poulpy-cpu-avx`.
 
 ## Design Notes
 
@@ -254,7 +254,7 @@ input map spans the union's convex hull, while the excluded gaps do not
 contribute to the reported sup-norm error.
 
 The crate includes a runnable example at
-[`poulpy-cpu-ref/examples/ckks_poly2.rs`](../poulpy-cpu-ref/examples/ckks_poly2.rs)
+[`poulpy-cpu-portable/examples/ckks_poly2.rs`](../poulpy-cpu-portable/examples/ckks_poly2.rs)
 that approximates `sin(x)` on `[-1, 1]` with a degree-31 Chebyshev interpolation,
 `sin(x) ≈ Σ cᵢ·Tᵢ(x)`, and evaluates it homomorphically through the Baby-Step
 Giant-Step polynomial evaluator. It follows the standard six-phase CKKS workflow:
@@ -362,7 +362,7 @@ receives.
 `poulpy-ckks` does not depend on any concrete backend crate. In practice, most
 users will choose one of:
 
-- `poulpy-cpu-ref` for portable reference execution
+- `poulpy-cpu-portable` for portable reference execution
 - `poulpy-cpu-avx` for optimized x86_64 execution when AVX2/FMA is available
 - `poulpy-cpu-avx512` for AVX-512F and AVX-512-IFMA execution when those
   target features are available
@@ -400,8 +400,8 @@ these higher-level features without changing the backend-agnostic programming mo
 
 ## Where to Look Next
 
-- `src/api/encoding.rs` for the slot/coefficient encoding API (the reference packing lives in `poulpy-cpu-ref/src/ckks_encoding.rs`)
+- `src/api/encoding.rs` for the slot/coefficient encoding API (the reference packing lives in `poulpy-cpu-portable/src/ckks_encoding.rs`)
 - `src/layouts/` for CKKS data structures
 - `src/api/` for evaluator trait definitions
 - `src/test_suite/` for end-to-end usage patterns
-- `poulpy-cpu-ref/examples/ckks_poly2.rs` for the full end-to-end runnable example
+- `poulpy-cpu-portable/examples/ckks_poly2.rs` for the full end-to-end runnable example

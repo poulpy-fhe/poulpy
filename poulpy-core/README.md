@@ -15,12 +15,12 @@ The backend conformance tests are instantiated by backend crates. To run the
 portable reference backend core suite:
 
 ```sh
-cargo test -p poulpy-cpu-ref --features enable-core
+cargo test -p poulpy-cpu-portable --features enable-core
 ```
 
 `poulpy-core` is backend-agnostic. Concrete execution lives in backend crates such as
-`poulpy-cpu-ref`, `poulpy-cpu-avx`, or `poulpy-cpu-avx512`, which provide the backend type `BE` used by
-`poulpy_hal::layouts::Module<BE>`. The HAL remains dispatch-only: `poulpy-cpu-ref`
+`poulpy-cpu-portable`, `poulpy-cpu-avx`, or `poulpy-cpu-avx512`, which provide the backend type `BE` used by
+`poulpy_hal::layouts::Module<BE>`. The HAL remains dispatch-only: `poulpy-cpu-portable`
 hosts the default implementations, while accelerated backends override selected methods.
 
 The canonical public traits live under `poulpy_core::api::*`:
@@ -46,7 +46,7 @@ where
 ```
 
 For a runnable end-to-end example using a concrete backend, see
-`poulpy-cpu-ref/examples/core_encryption.rs`.
+`poulpy-cpu-portable/examples/core_encryption.rs`.
 
 ## Crate Organization
 
@@ -153,5 +153,5 @@ Useful commands:
 
 ```sh
 cargo test -p poulpy-core
-cargo test -p poulpy-cpu-ref --features enable-core
+cargo test -p poulpy-cpu-portable --features enable-core
 ```

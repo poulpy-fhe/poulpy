@@ -275,8 +275,8 @@ The total arithmetic cost is `consumed_bits`; its placement around ModUp is give
 A small self-contained parameter set (ring degree `n = 2048`, `K = 16`, message ratio `2^11`, `log_delta = 45`, a degree-30 `CosHK` EvalMod) recovers the slots to a few bits of precision on the reference backend, which is the floor the end-to-end test asserts; wider parameters recover proportionally more.
 
 - `poulpy-ckks/src/test_suite/bootstrapping.rs` contains the C2S-first, EvalRound+, and S2C-first reference compositions.
-- `poulpy-cpu-ref/examples/bootstrap_trace.rs` runs the standard pipeline for profiling.
+- `poulpy-cpu-portable/examples/bootstrap_trace.rs` runs the standard pipeline for profiling.
 
 ```sh
-cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping -- --nocapture
+cargo test -p poulpy-cpu-portable --features enable-ckks --release ntt4x30_f64::bootstrapping -- --nocapture
 ```
