@@ -56,6 +56,12 @@ pub fn embedding_gap(res_n: usize, n: usize) -> usize {
 /// `res[k * gap] += a[k]` for every coefficient `k` of `a`, `gap = res.len() / a.len()`.
 #[inline(always)]
 pub fn znx_add_strided<T: SparseWord, U: Copy + Into<T>>(res: &mut [T], a: &[U]) {
+    debug_assert!(
+        res.len().is_multiple_of(a.len()),
+        "res.len():{} not a multiple of a.len():{}",
+        res.len(),
+        a.len()
+    );
     let gap = res.len() / a.len();
     res.iter_mut()
         .step_by(gap)
@@ -66,6 +72,12 @@ pub fn znx_add_strided<T: SparseWord, U: Copy + Into<T>>(res: &mut [T], a: &[U])
 /// `res[k * gap] -= a[k]` for every coefficient `k` of `a`, `gap = res.len() / a.len()`.
 #[inline(always)]
 pub fn znx_sub_strided<T: SparseWord, U: Copy + Into<T>>(res: &mut [T], a: &[U]) {
+    debug_assert!(
+        res.len().is_multiple_of(a.len()),
+        "res.len():{} not a multiple of a.len():{}",
+        res.len(),
+        a.len()
+    );
     let gap = res.len() / a.len();
     res.iter_mut()
         .step_by(gap)

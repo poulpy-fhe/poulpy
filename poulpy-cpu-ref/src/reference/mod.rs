@@ -26,6 +26,12 @@ pub fn sparse_log_gap(module_n: usize, n: usize) -> usize {
     (module_n / n).trailing_zeros() as usize
 }
 
+/// Asserts once that `n` is an admissible sparse degree for `module_n`: a power
+/// of two, at least 8, dividing `module_n`.
+pub fn assert_sparse_degree(module_n: usize, n: usize) {
+    sparse_log_gap(module_n, n);
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct SendPtr<T>(*mut T);
 

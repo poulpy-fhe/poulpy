@@ -6,7 +6,7 @@ use core::arch::x86_64::{
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
-use poulpy_cpu_ref::reference::sparse_log_gap;
+use poulpy_cpu_ref::reference::{assert_sparse_degree, sparse_log_gap};
 use poulpy_hal::execution::TaskExecutor;
 #[cfg(feature = "enable-rayon")]
 use poulpy_hal::layouts::CnvDftAccTerm;
@@ -232,11 +232,11 @@ fn prepare<BE, E: TaskExecutor>(
         let res = right.as_ref().unwrap();
         (res.n(), res.cols(), res.size())
     };
-    let _ = sparse_log_gap(module.n(), n);
-    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
+    assert_sparse_degree(module.n(), n);
+    assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
-        assert_eq!(r.n(), n, "cnv_prepare_self: right.n():{} != left.n():{n}", r.n());
+        assert_eq!(r.n(), n, "prepare: right.n():{} != left.n():{n}", r.n());
         assert_eq!(r.cols(), l.cols(), "right.cols():{} != left.cols():{}", r.cols(), l.cols());
         assert_eq!(r.size(), l.size(), "right.size():{} != left.size():{}", r.size(), l.size());
     }
@@ -379,6 +379,8 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     Module<BE>: NttModuleHandle,
 {
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
+    let a_log_gap = sparse_log_gap(n, a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {
@@ -388,8 +390,6 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
         return;
     }
     let bound = a_size + b_size - 1;
-    let a_log_gap = sparse_log_gap(n, a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
     let offset = cnv_offset.min(bound);
     let min_size = res_size.min((bound + 1).saturating_sub(offset));
     let a_raw: &[u32] = cast_slice(a.raw());

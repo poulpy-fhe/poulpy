@@ -186,9 +186,7 @@ where
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        {
-            vec_znx_add_assign::<Self>(res, res_col, a, a_col);
-        }
+        vec_znx_add_assign::<Self>(res, res_col, a, a_col);
     }
 
     fn vec_znx_sub_default<'a>(

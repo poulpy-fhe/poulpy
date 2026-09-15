@@ -13,7 +13,7 @@ use crate::ntt3x42_ifma::{
     primes::Primes42,
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
-use poulpy_cpu_ref::reference::sparse_log_gap;
+use poulpy_cpu_ref::reference::{assert_sparse_degree, sparse_log_gap};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
@@ -832,6 +832,8 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<E: TaskExecutor>(
     tmp: &mut [u8],
 ) {
     let n = res.n();
+    let a_log_gap = sparse_log_gap(n, a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -846,8 +848,6 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<E: TaskExecutor>(
     assert!(prefix.is_empty());
     assert!(suffix.is_empty());
 
-    let a_log_gap = sparse_log_gap(n, a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
     let a_col_u64 = col_slice(cast_slice(a.data()), a.n(), a_size, a_col);
     let b_col_u64 = col_slice(cast_slice(b.data()), b.n(), b_size, b_col);
     unsafe {
@@ -871,6 +871,8 @@ pub(crate) unsafe fn cnv_apply_dft_add_ifma<E: TaskExecutor>(
     tmp: &mut [u8],
 ) {
     let n = res.n();
+    let a_log_gap = sparse_log_gap(n, a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -882,8 +884,6 @@ pub(crate) unsafe fn cnv_apply_dft_add_ifma<E: TaskExecutor>(
     assert!(prefix.is_empty());
     assert!(suffix.is_empty());
 
-    let a_log_gap = sparse_log_gap(n, a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
     let a_col_u64 = col_slice(cast_slice(a.data()), a.n(), a_size, a_col);
     let b_col_u64 = col_slice(cast_slice(b.data()), b.n(), b_size, b_col);
     unsafe {
@@ -1249,6 +1249,8 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<E: TaskExecutor>(
     }
 
     let n = res.n();
+    let a_log_gap = sparse_log_gap(n, a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -1263,8 +1265,6 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<E: TaskExecutor>(
     assert!(prefix.is_empty());
     assert!(suffix.is_empty());
 
-    let a_log_gap = sparse_log_gap(n, a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
     let a_u64: &[u64] = cast_slice(a.data());
     let b_u64: &[u64] = cast_slice(b.data());
     let a0 = col_slice(a_u64, a.n(), a_size, col_0);
@@ -1335,7 +1335,7 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
 ) {
     poulpy_hal::layouts::assert_dense(a, "cnv_prepare_left");
     let n = res.n();
-    let _ = sparse_log_gap(module.n(), n);
+    assert_sparse_degree(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let table = handle(module).table_ntt_for(n);
     let cols = res.cols();
@@ -1399,7 +1399,7 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
 ) {
     poulpy_hal::layouts::assert_dense(a, "cnv_prepare_right");
     let n = res.n();
-    let _ = sparse_log_gap(module.n(), n);
+    assert_sparse_degree(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let table = handle(module).table_ntt_for(n);
     let cols = res.cols();
@@ -1461,8 +1461,8 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
 ) {
     poulpy_hal::layouts::assert_dense(a, "cnv_prepare_self");
     let n = left.n();
-    let _ = sparse_log_gap(module.n(), n);
-    assert_eq!(a.n(), n, "a.n():{} != left.n():{n}", a.n());
+    assert_sparse_degree(module.n(), n);
+    assert_eq!(a.n(), n, "cnv_prepare_self: a.n():{} != left.n():{n}", a.n());
     assert_eq!(right.n(), n, "cnv_prepare_self: right.n():{} != left.n():{n}", right.n());
     let table = handle(module).table_ntt_for(n);
     let cols = left.cols();

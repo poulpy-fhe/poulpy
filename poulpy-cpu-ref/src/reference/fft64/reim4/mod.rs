@@ -110,7 +110,9 @@ pub trait Reim4Convolution {
     }
 
     /// Accumulating variant of [`Reim4Convolution::reim4_convolution_apply`]:
-    /// `dst += a ⊛ b`, leaving limbs beyond `min_size` untouched.
+    /// `dst += a ⊛ b`, leaving limbs beyond `min_size` untouched. `tmp` holds
+    /// at least `8 * (a_size + b_size + min_size)` f64, sized by the caller's
+    /// [`convolution_apply_dft_tmp_bytes`](super::convolution::convolution_apply_dft_tmp_bytes).
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_apply_accumulate(
         m: usize,

@@ -122,7 +122,9 @@
 //! convolution prepare yields a degree-`n` prepared operand, and every apply
 //! form reads it through the backend's slot correspondence (sparse operands,
 //! <https://github.com/poulpy-fhe/poulpy/issues/266>). The in-tree CPU
-//! backends take sparse degrees from 8 up.
+//! backends take sparse degrees from 8 up for the convolution slots, prepare
+//! and apply; the coefficient-domain add and sub families accept any
+//! power-of-two divisor.
 //!
 //! The coefficient-wise operations are outside that rule: `vec_znx_big_inner_sum`,
 //! `vec_znx_big_col_weighted_sum` and `vec_znx_scalar_product` act on

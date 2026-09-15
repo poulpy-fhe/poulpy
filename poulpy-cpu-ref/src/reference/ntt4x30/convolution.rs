@@ -18,6 +18,7 @@ use crate::{
         VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
     },
     reference::{
+        assert_sparse_degree,
         ntt4x30::{
             NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
             ntt::NttTable,
@@ -394,6 +395,8 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n = res.n();
+    let a_log_gap = sparse_log_gap(n, a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -404,8 +407,6 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
         return;
     }
 
-    let a_log_gap = sparse_log_gap(n, a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
     let a_col_u32 = col_slice_u32(a.raw(), a.n(), a_size, a_col);
     let b_col_u32 = col_slice_u32(b.raw(), b.n(), b_size, b_col);
     ntt4x30_conv_columns::<BE, false, false>(
@@ -433,6 +434,8 @@ pub fn ntt4x30_cnv_apply_dft_add<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n = res.n();
+    let a_log_gap = sparse_log_gap(n, a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -440,8 +443,6 @@ pub fn ntt4x30_cnv_apply_dft_add<BE>(
         return;
     }
 
-    let a_log_gap = sparse_log_gap(n, a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
     let a_col_u32 = col_slice_u32(a.raw(), a.n(), a_size, a_col);
     let b_col_u32 = col_slice_u32(b.raw(), b.n(), b_size, b_col);
     ntt4x30_conv_columns::<BE, true, false>(
@@ -520,18 +521,6 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
 
     let n = res.n();
     let res_size = res.size();
-    if res_size == 0 {
-        return;
-    }
-    if terms.is_empty() {
-        for j in 0..res_size {
-            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
-        }
-        return;
-    }
-
-    let meta = module.get_bbc_meta();
-    let n_blks = n / 2;
 
     #[allow(clippy::type_complexity)]
     let term_cols: Vec<(&[u32], &[u32], usize, usize, usize, usize)> = terms
@@ -549,6 +538,20 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
             )
         })
         .collect();
+
+    if res_size == 0 {
+        return;
+    }
+    if terms.is_empty() {
+        for j in 0..res_size {
+            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+        }
+        return;
+    }
+
+    let meta = module.get_bbc_meta();
+    let n_blks = n / 2;
+
     let sched = cnv_accumulate_schedule(
         cnv_offset,
         res_size,
@@ -623,6 +626,8 @@ pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
     }
 
     let n = res.n();
+    let a_log_gap = sparse_log_gap(n, a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -633,8 +638,6 @@ pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
         return;
     }
 
-    let a_log_gap = sparse_log_gap(n, a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
     let a0 = col_slice_u32(a.raw(), a.n(), a_size, col_i);
     let a1 = col_slice_u32(a.raw(), a.n(), a_size, col_j);
     let b0 = col_slice_u32(b.raw(), b.n(), b_size, col_i);
@@ -678,7 +681,7 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_left");
     let n = res.n();
-    let _ = sparse_log_gap(module.n(), n);
+    assert_sparse_degree(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let table = module.get_ntt_table_for(n);
     let cols = res.cols();
@@ -763,7 +766,7 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_right");
     let n = res.n();
-    let _ = sparse_log_gap(module.n(), n);
+    assert_sparse_degree(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let table = module.get_ntt_table_for(n);
     let cols = res.cols();
@@ -844,12 +847,12 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_self");
     let n = left.n();
-    let _ = sparse_log_gap(module.n(), n);
-    assert_eq!(a.n(), n, "a.n():{} != left.n():{n}", a.n());
+    assert_sparse_degree(module.n(), n);
+    assert_eq!(a.n(), n, "ntt4x30_cnv_prepare_self: a.n():{} != left.n():{n}", a.n());
     assert_eq!(
         right.n(),
         n,
-        "convolution_prepare_self: right.n():{} != left.n():{n}",
+        "ntt4x30_cnv_prepare_self: right.n():{} != left.n():{n}",
         right.n()
     );
     let table = module.get_ntt_table_for(n);
