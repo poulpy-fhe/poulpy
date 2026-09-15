@@ -97,9 +97,9 @@ pub trait VecZnxNormalizeAssign<B: Backend> {
 /// mutation   out-of-place
 /// domain     res, a, b: VecZnx or windows of one, read at one shared base2k
 /// ensures    res[res_col] = a[a_col] + b[b_col] limb by limb; operands shorter than res are zero-extended, every limb of res is written, and the digits are not renormalized
-/// sparse     a and b are the sparse-capable slots: a degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself (4.5). Implemented in PR7 (#266); until then the kernels require the module degree
+/// sparse     a and b are the sparse-capable slots: a degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself (4.5). The kernels read it with a stride (#266)
 /// exact      exact
-/// test       test_vec_znx_add_matches_reference, test_vec_znx_window_ops
+/// test       test_vec_znx_add_matches_reference, test_vec_znx_window_ops, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxAdd<B: Backend> {
     /// Adds the selected backend-native column of `a` to the selected backend-native column of `b`.
@@ -123,7 +123,7 @@ pub trait VecZnxAdd<B: Backend> {
 /// ensures    res[res_col] += a[a_col] limb by limb; limbs of res past a.size() add the zero-extension of a and so keep their value; the digits are not renormalized
 /// sparse     a is the sparse-capable slot, as for vec_znx_add (4.5)
 /// exact      exact
-/// test       test_vec_znx_add_assign, test_vec_znx_add_assign_matches_wrapper
+/// test       test_vec_znx_add_assign, test_vec_znx_add_assign_matches_wrapper, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxAddAssign<B: Backend> {
     fn vec_znx_add_assign(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
@@ -160,7 +160,7 @@ pub trait VecZnxAddScalarAssign<B: Backend> {
 /// ensures    res[res_col] = a[a_col] - b[b_col] limb by limb; operands shorter than res are zero-extended, every limb of res is written, and the digits are not renormalized
 /// sparse     a and b are the sparse-capable slots, as for vec_znx_add (4.5)
 /// exact      exact
-/// test       test_vec_znx_sub, test_vec_znx_window_ops
+/// test       test_vec_znx_sub, test_vec_znx_window_ops, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxSub<B: Backend> {
     fn vec_znx_sub(
@@ -183,7 +183,7 @@ pub trait VecZnxSub<B: Backend> {
 /// ensures    res[res_col] -= a[a_col] limb by limb; limbs of res past a.size() keep their value; the digits are not renormalized
 /// sparse     a is the sparse-capable slot, as for vec_znx_add (4.5)
 /// exact      exact
-/// test       test_vec_znx_sub_assign
+/// test       test_vec_znx_sub_assign, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxSubAssign<B: Backend> {
     fn vec_znx_sub_assign(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
@@ -198,7 +198,7 @@ pub trait VecZnxSubAssign<B: Backend> {
 /// ensures    res[res_col] = a[a_col] - res[res_col] limb by limb; limbs of res past a.size() are negated in place; the digits are not renormalized
 /// sparse     a is the sparse-capable slot, as for vec_znx_add (4.5)
 /// exact      exact
-/// test       test_vec_znx_sub_negate_assign
+/// test       test_vec_znx_sub_negate_assign, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxSubNegateAssign<B: Backend> {
     fn vec_znx_sub_negate_assign(

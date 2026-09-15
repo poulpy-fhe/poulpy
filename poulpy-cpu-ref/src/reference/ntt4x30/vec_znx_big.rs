@@ -39,7 +39,10 @@ use crate::{
     },
     reference::{
         normalization::I64NormalizeOps,
-        vec_znx::VecZnxRangeMut,
+        vec_znx::{
+            VecZnxRangeMut, vec_znx_add_assign_mixed, vec_znx_add_mixed, vec_znx_sub_assign_mixed, vec_znx_sub_mixed,
+            vec_znx_sub_negate_assign_mixed,
+        },
         znx::{
             ZnxNormalizeMiddleStepAssign, get_carry_i128, get_digit_i128, znx_extract_digit_addmul_normalize_i128_ref,
             znx_extract_digit_mul_i128_ref,
@@ -800,6 +803,10 @@ where
     let a = a.to_backend_ref();
     let b = b.to_backend_ref();
 
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_add_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+    }
+
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -842,6 +849,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_add_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
         BE::i128_add_assign(res.at_mut(res_col, j), a.at(a_col, j));
@@ -862,6 +874,10 @@ where
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
     let b = b.to_backend_ref();
+
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_add_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+    }
 
     let res_size = res.size();
     let a_size = a.size();
@@ -894,6 +910,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_add_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
         BE::i128_add_small_assign(res.at_mut(res_col, j), a.at(a_col, j));
@@ -913,6 +934,10 @@ where
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
     let b = b.to_backend_ref();
+
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_sub_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+    }
 
     let res_size = res.size();
     let a_size = a.size();
@@ -953,6 +978,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_sub_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
         BE::i128_sub_assign(res.at_mut(res_col, j), a.at(a_col, j));
@@ -970,6 +1000,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_sub_negate_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
 
@@ -994,6 +1029,10 @@ where
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
     let b = b.to_backend_ref();
+
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_sub_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+    }
 
     let res_size = res.size();
     let a_size = a.size();
@@ -1032,6 +1071,10 @@ where
     let a = a.to_backend_ref();
     let b = b.to_backend_ref();
 
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_sub_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+    }
+
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -1063,6 +1106,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_sub_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
         BE::i128_sub_small_assign(res.at_mut(res_col, j), a.at(a_col, j));
@@ -1079,6 +1127,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_sub_negate_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
 

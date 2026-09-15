@@ -1,12 +1,13 @@
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
-    __m256i, __m512i, _mm_cvtsi64_si128, _mm256_loadu_si256, _mm256_storeu_si256, _mm512_add_epi64, _mm512_and_si512,
-    _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512, _mm512_mul_epu32, _mm512_set1_epi64, _mm512_setzero_si512,
-    _mm512_srl_epi64, _mm512_srli_epi64,
+    __m128i, __m256i, __m512i, _mm_cvtsi64_si128, _mm_loadu_si128, _mm256_broadcastsi128_si256, _mm256_loadu_si256,
+    _mm256_storeu_si256, _mm512_add_epi64, _mm512_and_si512, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512,
+    _mm512_mul_epu32, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_srl_epi64, _mm512_srli_epi64,
 };
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
+use poulpy_cpu_ref::reference::{assert_sparse_degree, sparse_log_gap};
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
@@ -37,6 +38,16 @@ impl<T> SendPtr<T> {
 #[inline(always)]
 fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
     (group * size + limb) * 4 * GROUP
+}
+
+/// u32 offset, inside a prepared column whose own degree is `N >> log_gap`, of
+/// row `row0` of the slot that degree-`N` slot `group * GROUP + slot_in_group`
+/// reads: the slot itself when dense, slot `>> log_gap` when sparse (spec 4.5).
+/// Consecutive rows of that slot are `4 * GROUP` u32 apart.
+#[inline(always)]
+fn slot_offset(size: usize, row0: usize, group: usize, slot_in_group: usize, log_gap: usize) -> usize {
+    let slot = (group * GROUP + slot_in_group) >> log_gap;
+    packed_row_offset(size, row0, slot / GROUP) + 4 * (slot % GROUP)
 }
 
 #[inline(always)]
@@ -91,9 +102,17 @@ unsafe fn load_pair(row: *const u32, pair: usize) -> __m512i {
     unsafe { _mm512_cvtepu32_epi64(_mm256_loadu_si256(row.add(8 * pair) as *const __m256i)) }
 }
 
+/// The four residues of one slot duplicated into both halves of a pair: the two
+/// slots of a pair of a sparse operand read the same degree-`n` slot (their
+/// degree-`N` indices differ in the low bit, which `>> log_gap` drops).
+#[inline(always)]
+unsafe fn load_slot_dup(slot: *const u32) -> __m512i {
+    unsafe { _mm512_cvtepu32_epi64(_mm256_broadcastsi128_si256(_mm_loadu_si128(slot as *const __m128i))) }
+}
+
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512f")]
-unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
+unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool, const A_SPARSE: bool, const B_SPARSE: bool>(
     meta: &BbcMeta<Primes30>,
     res: SendPtr<u32>,
     res_col: usize,
@@ -105,9 +124,11 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
     a0: &[u32],
     a1: &[u32],
     a_size: usize,
+    a_log_gap: usize,
     b0: &[u32],
     b1: &[u32],
     b_size: usize,
+    b_log_gap: usize,
 ) {
     unsafe {
         let q = bcast_quad(Q_VEC.as_ptr());
@@ -118,16 +139,43 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
             let a_start = k_abs + 1 - j_max;
             let b_start = b_size - j_max;
             for pair in 0..GROUP / 2 {
+                let a_off = if A_SPARSE {
+                    slot_offset(a_size, a_start, group, 2 * pair, a_log_gap)
+                } else {
+                    packed_row_offset(a_size, a_start, group) + 8 * pair
+                };
+                let b_off = if B_SPARSE {
+                    slot_offset(b_size, b_start, group, 2 * pair, b_log_gap)
+                } else {
+                    packed_row_offset(b_size, b_start, group) + 8 * pair
+                };
                 let mut lo = _mm512_setzero_si512();
                 let mut hi = _mm512_setzero_si512();
                 for row in 0..j_max - j_min {
-                    let ao = packed_row_offset(a_size, a_start + row, group);
-                    let bo = packed_row_offset(b_size, b_start + row, group);
-                    let mut av = load_pair(a0.as_ptr().add(ao), pair);
-                    let mut bv = load_pair(b0.as_ptr().add(bo), pair);
+                    let ro = row * 4 * GROUP;
+                    let mut av = if A_SPARSE {
+                        load_slot_dup(a0.as_ptr().add(a_off + ro))
+                    } else {
+                        load_pair(a0.as_ptr().add(a_off + ro), 0)
+                    };
+                    let mut bv = if B_SPARSE {
+                        load_slot_dup(b0.as_ptr().add(b_off + ro))
+                    } else {
+                        load_pair(b0.as_ptr().add(b_off + ro), 0)
+                    };
                     if PAIRWISE {
-                        av = cond_sub_512(_mm512_add_epi64(av, load_pair(a1.as_ptr().add(ao), pair)), q);
-                        bv = cond_sub_512(_mm512_add_epi64(bv, load_pair(b1.as_ptr().add(bo), pair)), q);
+                        let av1 = if A_SPARSE {
+                            load_slot_dup(a1.as_ptr().add(a_off + ro))
+                        } else {
+                            load_pair(a1.as_ptr().add(a_off + ro), 0)
+                        };
+                        let bv1 = if B_SPARSE {
+                            load_slot_dup(b1.as_ptr().add(b_off + ro))
+                        } else {
+                            load_pair(b1.as_ptr().add(b_off + ro), 0)
+                        };
+                        av = cond_sub_512(_mm512_add_epi64(av, av1), q);
+                        bv = cond_sub_512(_mm512_add_epi64(bv, bv1), q);
                     }
                     accumulate_product(&mut lo, &mut hi, av, bv);
                 }
@@ -247,8 +295,11 @@ fn prepare<E: TaskExecutor>(
         let res = right.as_ref().unwrap();
         (res.n(), res.cols(), res.size())
     };
+    assert_sparse_degree(module.n(), n);
+    assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
+        assert_eq!(r.n(), n, "prepare: right.n():{} != left.n():{n}", r.n());
         assert_eq!(r.cols(), l.cols(), "right.cols():{} != left.cols():{}", r.cols(), l.cols());
         assert_eq!(r.size(), l.size(), "right.size():{} != left.size():{}", r.size(), l.size());
     }
@@ -267,7 +318,7 @@ fn prepare<E: TaskExecutor>(
             let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             if limb < min_size {
                 NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
-                NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), tmp);
+                NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
                 if let Some(dst) = dst_l.as_deref_mut() {
                     unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
                 }
@@ -296,7 +347,7 @@ fn prepare<E: TaskExecutor>(
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         for limb in 0..min_size {
             NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
-            NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), tmp);
+            NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
             if let Some(dst) = dst_l.as_deref_mut() {
                 unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
             }
@@ -365,6 +416,8 @@ unsafe fn apply<E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     b1_col: usize,
 ) {
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
+    let a_log_gap = sparse_log_gap(n, a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {
@@ -378,29 +431,32 @@ unsafe fn apply<E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let min_size = res_size.min((bound + 1).saturating_sub(offset));
     let a_raw: &[u32] = cast_slice(a.data());
     let b_raw: &[u32] = cast_slice(b.data());
-    let a0 = col_slice(a_raw, n, a_size, a0_col);
-    let a1 = col_slice(a_raw, n, a_size, a1_col);
-    let b0 = col_slice(b_raw, n, b_size, b0_col);
-    let b1 = col_slice(b_raw, n, b_size, b1_col);
+    let a0 = col_slice(a_raw, a.n(), a_size, a0_col);
+    let a1 = col_slice(a_raw, a.n(), a_size, a1_col);
+    let b0 = col_slice(b_raw, b.n(), b_size, b0_col);
+    let b1 = col_slice(b_raw, b.n(), b_size, b1_col);
     let res_cols = res.cols();
     let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.data_mut()).as_mut_ptr());
     E::for_each(n / GROUP, |group| unsafe {
-        conv_group::<ACC, PAIRWISE>(
-            module.get_bbc_meta(),
-            res_ptr,
-            res_col,
-            n,
-            res_cols,
-            min_size,
-            offset,
-            group,
-            a0,
-            a1,
-            a_size,
-            b0,
-            b1,
-            b_size,
-        )
+        let meta = module.get_bbc_meta();
+        match (a_log_gap > 0, b_log_gap > 0) {
+            (false, false) => conv_group::<ACC, PAIRWISE, false, false>(
+                meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, a_log_gap, b0, b1, b_size,
+                b_log_gap,
+            ),
+            (true, false) => conv_group::<ACC, PAIRWISE, true, false>(
+                meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, a_log_gap, b0, b1, b_size,
+                b_log_gap,
+            ),
+            (false, true) => conv_group::<ACC, PAIRWISE, false, true>(
+                meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, a_log_gap, b0, b1, b_size,
+                b_log_gap,
+            ),
+            (true, true) => conv_group::<ACC, PAIRWISE, true, true>(
+                meta, res_ptr, res_col, n, res_cols, min_size, offset, group, a0, a1, a_size, a_log_gap, b0, b1, b_size,
+                b_log_gap,
+            ),
+        }
     });
     if !ACC {
         for limb in min_size..res_size {
@@ -463,6 +519,8 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft<E: TaskExecutor>(
     b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
 ) {
     assert!(res.cols() >= 3 && a.cols() >= 2 && b.cols() >= 2);
+    assert_eq!(a.n(), res.n(), "cnv_tensor_rank1_dft: a.n():{} != res.n():{}", a.n(), res.n());
+    assert_eq!(b.n(), res.n(), "cnv_tensor_rank1_dft: b.n():{} != res.n():{}", b.n(), res.n());
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
     if res_size == 0 || a_size == 0 || b_size == 0 {
         for col in 0..3 {

@@ -3,6 +3,7 @@
 use std::mem::size_of;
 
 use crate::reference::{
+    assert_sparse_degree,
     fft64::{
         convolution::{
             I64Ops, convolution_apply_dft, convolution_apply_dft_add, convolution_apply_dft_tmp_bytes,
@@ -90,11 +91,13 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
+        let n: usize = res.n();
+        assert_sparse_degree(module.n(), n);
         let tmp_size = res.size().min(a.size());
-        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
-        let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
+        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
+        let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_left::<Self>(module.get_fft_table(), res, a, &mut tmp_ref);
+        convolution_prepare_left::<Self>(module.get_fft_table_for(n), res, a, &mut tmp_ref);
     }
 
     fn cnv_prepare_right_tmp_bytes_default(module: &Module<Self>, res_size: usize, a_size: usize) -> usize
@@ -116,11 +119,13 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
+        let n: usize = res.n();
+        assert_sparse_degree(module.n(), n);
         let tmp_size = res.size().min(a.size());
-        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
-        let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
+        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
+        let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_right::<Self>(module.get_fft_table(), res, a, &mut tmp_ref);
+        convolution_prepare_right::<Self>(module.get_fft_table_for(n), res, a, &mut tmp_ref);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
@@ -307,11 +312,13 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
+        let n: usize = left.n();
+        assert_sparse_degree(module.n(), n);
         let tmp_size = left.size().min(a.size());
-        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
-        let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
+        let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(n, 1, tmp_size));
+        let mut tmp = VecZnxDft::from_data(tmp_bytes, n, 1, tmp_size);
         let mut tmp_ref = vec_znx_dft_backend_mut_from_mut::<Self>(&mut tmp);
-        convolution_prepare_self::<Self>(module.get_fft_table(), left, right, a, &mut tmp_ref);
+        convolution_prepare_self::<Self>(module.get_fft_table_for(n), left, right, a, &mut tmp_ref);
     }
 }
 
