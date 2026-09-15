@@ -55,6 +55,8 @@ macro_rules! core_backend_test_suite {
                 glwe_external_product_ignores_dirty_scratch =>
                     $crate::test_suite::noise::keyswitch::test_glwe_external_product_ignores_dirty_scratch,
                 glwe_rotate => $crate::test_suite::noise::test_glwe_rotate,
+                glwe_shift_saturates => $crate::test_suite::noise::test_glwe_shift_saturates,
+                glwe_shift_exact_scratch => $crate::test_suite::noise::test_glwe_shift_exact_scratch,
                 glwe_trace_assign => $crate::test_suite::noise::test_glwe_trace_assign,
                 glwe_trace_coarsened => $crate::test_suite::parity::test_glwe_trace_coarsened,
                 glwe_hoisted_baby_rotations_match_automorphism =>

@@ -1761,6 +1761,13 @@ where
     }
 }
 
+/// The shift `k` as a normalization offset. `bound` is an operand width past
+/// which every bit has left the destination, so a `k` at or past it yields the
+/// same zero as `bound`; the clamp keeps the `i64` cast from wrapping.
+fn shift_offset(k: usize, bound: usize) -> i64 {
+    k.min(bound) as i64
+}
+
 #[doc(hidden)]
 pub trait GLWEShiftDefault<BE: Backend> {
     fn glwe_shift_tmp_bytes_default(&self, res_size: usize) -> usize;
@@ -1800,10 +1807,20 @@ where
         + VecZnxLshAssign<BE>
         + VecZnxNormalize<BE>
         + VecZnxNormalizeAssign<BE>
+        + VecZnxNormalizeTmpBytes
         + VecZnxCopy<BE>,
 {
     fn glwe_shift_tmp_bytes_default(&self, res_size: usize) -> usize {
-        self.vec_znx_rsh_tmp_bytes(res_size).max(self.vec_znx_lsh_tmp_bytes(res_size))
+        // The partial-width `glwe_rsh` path normalizes into a one-column
+        // temporary, and `glwe_lsh_assign` normalizes in place after the
+        // kernel; both need the normalization scratch on top of the kernels'.
+        // The arena aligns the allocation after the temporary, so its size is
+        // rounded to the scratch alignment before the normalization scratch.
+        let normalize: usize =
+            BE::scratch_aligned(BE::bytes_of_vec_znx(self.n(), 1, res_size)) + self.vec_znx_normalize_tmp_bytes();
+        self.vec_znx_rsh_tmp_bytes(res_size)
+            .max(self.vec_znx_lsh_tmp_bytes(res_size))
+            .max(normalize)
     }
 
     fn glwe_rsh_default<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
@@ -1839,7 +1856,7 @@ where
                 &mut tmp,
                 base2k,
                 res_k,
-                -(k as i64),
+                -shift_offset(k, res.size() * base2k),
                 0,
                 &vec_znx_backend_ref_from_mut::<BE>(&res.data),
                 base2k,
@@ -1912,7 +1929,7 @@ where
                 &mut res.data,
                 base2k,
                 res_k,
-                k as i64,
+                shift_offset(k, a.size() * base2k),
                 i,
                 &a.data,
                 base2k,

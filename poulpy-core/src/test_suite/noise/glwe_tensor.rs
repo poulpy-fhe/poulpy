@@ -34,7 +34,7 @@ use crate::{
 /// 4x or more.
 const TENSOR_NOISE_MARGIN: f64 = 2.0;
 
-fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
+pub(crate) fn assert_canonical(a: &VecZnx<impl HostDataRef, i64>, base2k: usize, k: usize) {
     let active_size = k.div_ceil(base2k);
     let half = 1i128 << (base2k - 1);
     for col in 0..a.cols() {
