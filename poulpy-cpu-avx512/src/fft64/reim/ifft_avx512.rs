@@ -101,10 +101,12 @@ fn inv_twiddle_ifft_avx512(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 
     unsafe {
         let omr: __m512d = _mm512_set1_pd(omg[0]);
         let omi: __m512d = _mm512_set1_pd(omg[1]);
-        let mut r0: *mut f64 = re.as_mut_ptr();
-        let mut r1: *mut f64 = re.as_mut_ptr().add(h);
-        let mut i0: *mut f64 = im.as_mut_ptr();
-        let mut i1: *mut f64 = im.as_mut_ptr().add(h);
+        let re_base: *mut f64 = re.as_mut_ptr();
+        let im_base: *mut f64 = im.as_mut_ptr();
+        let mut r0: *mut f64 = re_base;
+        let mut r1: *mut f64 = re_base.add(h);
+        let mut i0: *mut f64 = im_base;
+        let mut i1: *mut f64 = im_base.add(h);
         for _ in (0..h).step_by(8) {
             let mut ur0: __m512d = _mm512_loadu_pd(r0);
             let mut ur1: __m512d = _mm512_loadu_pd(r1);
@@ -134,14 +136,16 @@ fn inv_twiddle_ifft_avx512(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 
 #[target_feature(enable = "avx512f")]
 fn inv_bitwiddle_ifft_avx512(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64; 4]) {
     unsafe {
-        let mut r0: *mut f64 = re.as_mut_ptr();
-        let mut r1: *mut f64 = re.as_mut_ptr().add(h);
-        let mut r2: *mut f64 = re.as_mut_ptr().add(2 * h);
-        let mut r3: *mut f64 = re.as_mut_ptr().add(3 * h);
-        let mut i0: *mut f64 = im.as_mut_ptr();
-        let mut i1: *mut f64 = im.as_mut_ptr().add(h);
-        let mut i2: *mut f64 = im.as_mut_ptr().add(2 * h);
-        let mut i3: *mut f64 = im.as_mut_ptr().add(3 * h);
+        let re_base: *mut f64 = re.as_mut_ptr();
+        let im_base: *mut f64 = im.as_mut_ptr();
+        let mut r0: *mut f64 = re_base;
+        let mut r1: *mut f64 = re_base.add(h);
+        let mut r2: *mut f64 = re_base.add(2 * h);
+        let mut r3: *mut f64 = re_base.add(3 * h);
+        let mut i0: *mut f64 = im_base;
+        let mut i1: *mut f64 = im_base.add(h);
+        let mut i2: *mut f64 = im_base.add(2 * h);
+        let mut i3: *mut f64 = im_base.add(3 * h);
         let omar: __m512d = _mm512_set1_pd(omg[0]);
         let omai: __m512d = _mm512_set1_pd(omg[1]);
         let ombr: __m512d = _mm512_set1_pd(omg[2]);
