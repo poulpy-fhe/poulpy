@@ -13,7 +13,7 @@ poulpy-hal                 hardware abstraction: layouts and operation traits
     ├── poulpy-ckks        leveled CKKS evaluator
     └── poulpy-bin-fhe     binary and gate-level FHE
 
-poulpy-cpu-portable             portable reference backend
+poulpy-cpu-portable        portable CPU backend
 poulpy-cpu-avx             AVX2 / FMA backend
 poulpy-cpu-avx512          AVX-512 / IFMA backend
 ```
@@ -37,12 +37,12 @@ The operation traits are grouped by the type they act on: `vec_znx` for coeffici
 A backend supplies the actual low-level arithmetic behind the HAL: the Fourier or number-theoretic transform, the vector-matrix and scalar-vector products, and the coefficient-domain operations.
 Each backend crate exposes one or more zero-sized marker types that you pass as the `B` in `Module<B>`.
 
-`poulpy-cpu-portable` is the portable reference.
-It implements the full HAL operation set in plain scalar Rust with no intrinsics, runs on any target, and acts as the correctness oracle the other backends are checked against.
-It provides `FFT64Portable` and `NTT4x30Portable`.
+`poulpy-cpu-portable` provides the production scalar CPU backends `FFT64Portable` and `NTT4x30Portable`.
+The unpublished `poulpy-cpu-oracle` crate provides a dedicated [correctness oracle](../README.md#correctness-oracle) for validating production arithmetic.
+Its `FFT64Oracle` and `NTT4x30Oracle` types implement HAL interfaces so tests can run the same operations and compare results.
 
 `poulpy-cpu-avx` and `poulpy-cpu-avx512` do not reimplement the whole HAL.
-They hand-vectorize only the hot paths, the transform butterflies and the matrix-vector products, and delegate every other operation to the reference implementation through shared macros.
+They hand-vectorize only the hot paths, the transform butterflies and the matrix-vector products, and reuse portable CPU helpers through shared macros.
 `poulpy-cpu-avx` adds AVX2 and FMA kernels and provides `FFT64Avx` and `NTT4x30Avx`.
 `poulpy-cpu-avx512` adds AVX-512 and IFMA kernels and provides `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma`, the last of which reconstructs its CRT output with an AVX-512 IFMA kernel.
 

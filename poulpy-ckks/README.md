@@ -36,13 +36,13 @@ cargo test -p poulpy-ckks
 ```
 
 The full backend-generic CKKS conformance suite is instantiated by backend
-crates. To run it against the portable reference backends:
+crates. To run it against the portable CPU backends:
 
 ```sh
 cargo test -p poulpy-cpu-portable --features enable-ckks
 ```
 
-To run the reference CKKS example:
+To run the portable CKKS example:
 
 ```sh
 cargo run -p poulpy-cpu-portable --example ckks_poly2 --features enable-ckks
@@ -362,7 +362,7 @@ receives.
 `poulpy-ckks` does not depend on any concrete backend crate. In practice, most
 users will choose one of:
 
-- `poulpy-cpu-portable` for portable reference execution
+- `poulpy-cpu-portable` for portable CPU execution
 - `poulpy-cpu-avx` for optimized x86_64 execution when AVX2/FMA is available
 - `poulpy-cpu-avx512` for AVX-512F and AVX-512-IFMA execution when those
   target features are available

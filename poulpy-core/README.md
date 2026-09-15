@@ -12,7 +12,7 @@ cargo test -p poulpy-core
 ```
 
 The backend conformance tests are instantiated by backend crates. To run the
-portable reference backend core suite:
+portable CPU backend core suite:
 
 ```sh
 cargo test -p poulpy-cpu-portable --features enable-core

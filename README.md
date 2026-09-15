@@ -24,12 +24,20 @@
 - **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**, including polynomial evaluation and bootstrappings.
 - **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate; its public APIs have moved to the backend-owned HAL/core surface, while a few host/reference-backend dependencies remain for this release.
 - **`poulpy-cpu-portable`**: the portable CPU implementation of **`poulpy-hal`**, requiring no SIMD instructions.
-- **`poulpy-cpu-oracle`**: unpublished correctness backends with independent FFT/NTT arithmetic; used through development dependencies.
 - **`poulpy-cpu-rayon`**: the shared Rayon task executor and parallel kernels used by the optional multithreaded CPU backend variants.
 - **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx`, `NTT4x30Avx`, and their optional Rayon-scheduled variants (`enable-rayon`).
 - **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma` (`enable-ifma`), plus `FFT64Avx512Rayon` and `NTT4x30Avx512Rayon` (`enable-rayon`) and `NTT3x42IfmaRayon` (`enable-rayon` with `enable-ifma`).
 - **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing `FFT64Neon`, `NTT4x30Neon`, and their optional Rayon-scheduled variants (`enable-rayon`).
+- **[`poulpy-cpu-oracle`](poulpy-cpu-oracle/README.md)**: the unpublished correctness oracle used to validate production arithmetic. See [Correctness Oracle](#correctness-oracle).
 - **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
+
+## Correctness Oracle
+
+Poulpy checks its production arithmetic against a dedicated **correctness oracle** in `poulpy-cpu-oracle`. Tests give the oracle and a production backend the same inputs and compare their results at public operation boundaries. This checks optimized implementations against a simpler arithmetic implementation, including when kernels use different internal layouts.
+
+The oracle provides independent FFT and NTT arithmetic through `FFT64Oracle` and `NTT4x30Oracle`. It implements the minimum required HAL primitives, inherits every optional operation, and has no fast paths or optional overrides. Its arithmetic and tables are maintained separately from production CPU kernels so they remain compact and easy to inspect. This separation lets production backends, including `poulpy-cpu-portable`, adopt optimizations and fusion while retaining a simple comparison target.
+
+The oracle implements HAL's backend interfaces so it can execute the same operations in tests. Its role is validation; it is unpublished and used through development dependencies. Public-operation comparisons check coefficient-domain results; FFT transform tests use numerical tolerances. Shared HAL/Core/CKKS algorithms also need independent expected-result and cleartext tests. See [oracle validation boundaries](poulpy-cpu-oracle/README.md).
 
 ## Architecture
 
@@ -46,6 +54,8 @@ poulpy-cpu-rayon            ← shared Rayon executor and parallel CPU kernels
 poulpy-cpu-avx              ← AVX2/FMA-accelerated backend
 poulpy-cpu-avx512           ← AVX-512/IFMA-accelerated backend
 poulpy-cpu-arm              ← NEON/ASIMD-accelerated backend (AArch64)
+
+poulpy-cpu-oracle           ← correctness oracle for production arithmetic
 ```
 
 Backend crates (`poulpy-cpu-portable`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. The CKKS and core layers keep concrete backend wiring in backend crates; `poulpy-bin-fhe` still carries a few reference-backend ties in v0.6.0 while that cleanup continues.
@@ -104,8 +114,8 @@ Coverage degrades rather than switching off. A backend with a narrower envelope 
 | Core noise | FFT64, NTT4x30 | — | — | — |
 | Core parity | vs oracle | FFT64, NTT4x30 vs oracle | FFT64, NTT4x30, NTT3x42Ifma vs oracle | FFT64, NTT4x30 vs oracle |
 
-The oracle also runs the generic HAL and Core suites. Public-operation comparisons
-use oracle backends; raw-buffer compatibility tests use production backends with
+The oracle also runs the generic HAL, Core, and CKKS suites. Public-operation comparisons
+use the correctness oracle; raw-buffer compatibility tests use production backends with
 compatible layouts. Shared HAL/Core/CKKS compositions still need expected-result
 and cleartext tests. See [oracle validation boundaries](poulpy-cpu-oracle/README.md).
 

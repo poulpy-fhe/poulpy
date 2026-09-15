@@ -18,7 +18,7 @@
 //! `HalVecZnxImpl::vec_znx_rsh_tmp_bytes`, which must cover the temporary
 //! every `_add` / `_sub` / `_assign` body of their family carves. There it is
 //! correct to leave the family `_tmp_bytes` on its default while overriding
-//! individual bodies, as `poulpy-cpu-ref` does for `vec_znx_lsh_assign`; a
+//! individual bodies, as `poulpy-cpu-portable` does for `vec_znx_lsh_assign`; a
 //! backend that does override such a `_tmp_bytes` must still return a value
 //! large enough for the bodies of the family it left on the default.
 //!

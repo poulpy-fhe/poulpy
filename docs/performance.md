@@ -73,6 +73,10 @@ For AVX2 and AVX-512, start with NTT4 for a full CKKS pipeline and FFT for a sma
 
 ## 2. Backend
 
+`poulpy-cpu-portable` supplies the scalar CPU backends for applications and performance comparisons.
+Production kernel optimizations are checked against the dedicated [correctness oracle](../README.md#correctness-oracle), whose simple arithmetic is maintained independently.
+The oracle is validation infrastructure; performance comparisons use the portable and accelerated production backends.
+
 Within a family, prefer the most accelerated backend your CPU and build flags allow, and pick it before choosing a thread count: in our measurements the ordering between backends was the same on one thread as on sixteen.
 Threads multiply what the serial backend gives you; they do not reorder the choice.
 

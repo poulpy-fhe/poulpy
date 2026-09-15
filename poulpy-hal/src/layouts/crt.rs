@@ -9,7 +9,7 @@
 //!
 //! Concrete prime sets live with their kernel families in the backend crates
 //! (e.g. `Primes29/30/31` and the full-CRT `PrimeSetCrt4` extension in
-//! `poulpy-cpu-ref`'s ntt4x30 module, `Primes42` and the Garner
+//! `poulpy-cpu-portable`'s ntt4x30 module, `Primes42` and the Garner
 //! `PrimeSetNtt3x42Ifma` extension in `poulpy-cpu-avx512`), as do the CRT
 //! *reconstruction* constants, whose semantics differ per family.
 
@@ -91,7 +91,7 @@ impl<T: LaneElem, const N: usize> LaneArray<T> for [T; N] {
 /// ~30-bit family, `u64` for the ~42-bit family). CRT *reconstruction*
 /// constants are intentionally not part of this trait — their semantics
 /// differ per family (full-CRT vs Garner) and live on extension traits in
-/// the backend crates (e.g. `PrimeSetCrt4` in `poulpy-cpu-ref`,
+/// the backend crates (e.g. `PrimeSetCrt4` in `poulpy-cpu-portable`,
 /// `PrimeSetNtt3x42Ifma` in `poulpy-cpu-avx512`), next to the concrete
 /// prime-set implementations.
 pub trait PrimeSet: Sized + Sync + Send + 'static {

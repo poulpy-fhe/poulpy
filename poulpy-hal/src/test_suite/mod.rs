@@ -3,8 +3,9 @@
 //! Provides fully generic test functions that can be instantiated for any
 //! backend via the [`backend_test_suite!`](crate::backend_test_suite) and
 //! [`cross_backend_test_suite!`](crate::cross_backend_test_suite) macros.
-//! Tests validate correctness against the reference implementation in
-//! [`poulpy-cpu-ref`](https://docs.rs/poulpy-cpu-ref).
+//! Tests validate operation contracts and compare the supplied backends.
+//! Workspace production backends use `poulpy-cpu-oracle` for public-operation
+//! comparisons and layout-compatible production backends for raw-buffer tests.
 
 use crate::layouts::{
     Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef,

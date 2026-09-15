@@ -170,7 +170,7 @@ pub unsafe trait HalVecZnxImpl: Backend {
     /// `vec_znx_lsh` itself needs. A backend that overrides some but not all
     /// bodies of the family must therefore either leave this on the default or
     /// return a value large enough for the ones it did not override.
-    /// `poulpy-cpu-ref` does exactly that: it overrides `vec_znx_lsh_assign` and
+    /// `poulpy-cpu-portable` does exactly that: it overrides `vec_znx_lsh_assign` and
     /// leaves this `_tmp_bytes` on the default.
     fn vec_znx_lsh_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize {
         crate::oep::vec_znx_lsh_tmp_bytes_derived::<Self>(module, res_size)

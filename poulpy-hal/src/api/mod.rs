@@ -61,7 +61,7 @@
 //! A column is canonical at radix `base2k` and precision `k` when both hold:
 //!
 //! - every digit lies in the centered range `[-2^(base2k-1), 2^(base2k-1))`,
-//!   the range the `znx_normalize_*` step kernels of `poulpy-cpu-ref` produce;
+//!   the range the `znx_normalize_*` step kernels of `poulpy-cpu-portable` produce;
 //! - nothing lives below precision `k`: limbs `ceil(k / base2k)..size` are
 //!   zero, and the low `(-k) mod base2k` bits of limb `ceil(k / base2k) - 1`
 //!   are zero.

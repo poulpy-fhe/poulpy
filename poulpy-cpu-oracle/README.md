@@ -1,13 +1,16 @@
 # Poulpy CPU Oracle
 
-Correctness-testing backends for Poulpy. Applications should use
-`poulpy-cpu-portable` or a SIMD backend instead.
+A correctness oracle for Poulpy arithmetic. Tests run the same operations through
+the oracle and production backends, then compare their results. The oracle keeps
+its arithmetic simple and independently maintained so optimized kernels can be
+checked against an inspectable implementation.
 
 - `FFT64Oracle`: scalar radix-2 FFT with independently generated tables.
 - `NTT4x30Oracle`: scalar negacyclic NTT with modular reduction after every
   butterfly, direct modular products, and independently computed CRT inverses.
 
-The backends implement the required HAL primitives and inherit all optional
+These types implement HAL backend interfaces to participate in the shared test
+suites. They implement the required HAL primitives and inherit all optional
 operations from HAL. Prepared products use ordinary transform order and direct
 scalar loops. Normalization reconstructs each coefficient as an arbitrary-precision
 integer, rounds once, and writes centered radix digits; it uses heap storage.
@@ -23,7 +26,7 @@ backend implementations, not the correctness of a shared composition itself.
 The existing independent expected-result, noise, and cleartext tests complement
 these comparisons.
 
-This crate is unpublished (`publish = false`). Use oracle backends through
+This crate is unpublished (`publish = false`). Use the oracle through
 path-only development dependencies within the workspace. Compare coefficient-domain
 public results across layouts; use numerical tolerances for FFT operations.
 Oracle types do not promise raw-buffer compatibility with production backends.

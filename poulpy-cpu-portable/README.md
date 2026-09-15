@@ -2,6 +2,9 @@
 
 **Poulpy-CPU-Portable** is the **portable CPU backend for Poulpy**.
 
+Its arithmetic is checked against the dedicated
+[correctness oracle](../README.md#correctness-oracle).
+
 It implements the Poulpy HAL extension traits without requiring SIMD or specialized CPU instructions, making it suitable for:
 
 - all CPU architectures (`x86_64`, `aarch64`, `arm`, `riscv64`, …)
@@ -74,11 +77,8 @@ Both work on **all supported platforms and architectures**.
 
 ## Performance Notes
 
-`poulpy-cpu-portable` prioritizes:
-
-* portability
-* correctness
-* ease of debugging
+`poulpy-cpu-portable` is the production scalar CPU backend and can use optimized kernels and fused operations.
+The dedicated [`poulpy-cpu-oracle`](../poulpy-cpu-oracle/README.md) supplies a simple, independently maintained arithmetic implementation against which those optimizations are checked.
 
 For maximum performance on x86_64 CPUs with AVX2 + FMA support, consider enabling the optional optimized backend:
 
