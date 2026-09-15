@@ -25,7 +25,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - **Fix:** the NTT4x30 AVX2 and AVX-512 `vec_znx_dft_apply` and `vec_znx_dft_copy` kernels, and the rayon parallel paths of every NTT backend, accepted `step == 0` and transformed the same source limb into every output limb, where the FFT64 reference asserted and the NTT reference and IFMA kernels only failed on a division by zero. Every kernel now asserts `step >= 1` explicitly, and `test_vec_znx_dft_step_zero_rejected` pins it on every backend.
 - The `cnv_prepare_left` and `cnv_prepare_right` contracts state `res.cols() == a.cols()`, and `cnv_prepare_self` that `right` matches `left` in columns and size and that `a.cols() == left.cols()`. Only the FFT64 kernels asserted any of it; the NTT4x30 reference, AVX2, AVX-512 and IFMA kernels indexed on it unchecked. Every kernel now asserts it, and `test_convolution_prepare_shape_rejected` pins it on every backend.
 - `div_round_i64` / `div_round_i128` no longer assert `b != 0` on every coefficient of a decode loop; integer division already panics on zero.
-- `cnv_by_const_apply` / `cnv_by_const_apply_add` contracts: the constant operand `b` may have any degree with `b_coeff < b.n()`, which is how `poulpy-ckks` calls them; the shared kernel checks it in debug builds.
+- `cnv_by_const_apply` / `cnv_by_const_apply_add` contracts: the constant operand `b` may have any degree with `b_coeff < b.n()`, which is how `poulpy-ckks` calls them; the shared kernel checks it in debug builds. A first operand `a` of another degree or an out-of-range `res_col` panics in release builds too (`test_convolution_by_const_degree_rejected`).
 
 ### `poulpy-core`
 

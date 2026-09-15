@@ -160,7 +160,7 @@ pub trait Convolution<BE: Backend> {
     /// ensures    res[res_col] is the bivariate convolution of a[a_col] with coefficient b_coeff of b[b_col], read as a constant in X, scaled by 2^(cnv_offset * base2k); limbs past the convolution bound are zero-filled
     /// sparse     a is the sparse-capable slot, through the switch_ring substitution of 4.5, and stays derived there
     /// exact      exact: it is a big-domain product, which is why it is required of every backend rather than routed through the lossy DFT decomposition on FFT64
-    /// test       test_convolution_by_const
+    /// test       test_convolution_by_const, test_convolution_by_const_degree_rejected
     /// ```
     fn cnv_by_const_apply(
         &self,
@@ -205,7 +205,7 @@ pub trait Convolution<BE: Backend> {
     /// fallback   OEP default body: the product into a carved res.size()-limb VecZnxBig, then vec_znx_big_add_assign
     /// override   allowed, with cnv_by_const_apply_add_tmp_bytes
     /// exact      exact, as for cnv_by_const_apply
-    /// test       test_convolution_by_const_add, test_cnv_by_const_apply_add_derived
+    /// test       test_convolution_by_const_add, test_cnv_by_const_apply_add_derived, test_convolution_by_const_degree_rejected
     /// ```
     fn cnv_by_const_apply_add(
         &self,

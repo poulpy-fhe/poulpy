@@ -919,11 +919,11 @@ fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool>(
     let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
     let n = res.n();
     let res_cols = res.cols();
-    debug_assert!(
+    assert!(
         res_col < res_cols,
         "ntt4x30_cnv_by_const_apply_impl: res_col {res_col} >= cols {res_cols}"
     );
-    debug_assert!(a.n() == n, "ntt4x30_cnv_by_const_apply_impl: a.n() {} != res.n() {n}", a.n());
+    assert!(a.n() == n, "ntt4x30_cnv_by_const_apply_impl: a.n() {} != res.n() {n}", a.n());
     debug_assert!(
         b_coeff < b.n(),
         "ntt4x30_cnv_by_const_apply_impl: b_coeff {b_coeff} >= b.n() {}",
