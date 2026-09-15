@@ -858,7 +858,8 @@ pub fn ntt4x30_cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b
 /// Shared by every backend with `BigWord = i128`: each output limb is an
 /// `i128` accumulation over the `a` limbs, taken one slice at a time (no
 /// per-coefficient accessor calls, no checks inside the coefficient loop).
-/// Output limbs `min_size..res.size()` are zeroed. `_tmp` is unused.
+/// Output limbs `min_size..res.size()` are zeroed by `ntt4x30_cnv_by_const_apply`
+/// and left untouched by `ntt4x30_cnv_by_const_apply_add`. `_tmp` is unused.
 #[allow(clippy::too_many_arguments)]
 pub fn ntt4x30_cnv_by_const_apply<BE, E: TaskExecutor>(
     cnv_offset: usize,
@@ -918,6 +919,11 @@ fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool>(
     let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
     let n = res.n();
     let res_cols = res.cols();
+    debug_assert!(
+        res_col < res_cols,
+        "ntt4x30_cnv_by_const_apply_impl: res_col {res_col} >= cols {res_cols}"
+    );
+    debug_assert!(a.n() == n && b.n() == n, "ntt4x30_cnv_by_const_apply_impl: degree mismatch");
     let res_ptr = crate::reference::SendPtr::new(res.raw_mut().as_mut_ptr());
     let res_limb = |k: usize| unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * res_cols + res_col)), n) };
 
