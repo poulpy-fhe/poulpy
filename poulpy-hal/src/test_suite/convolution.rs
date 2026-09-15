@@ -142,6 +142,7 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .cnv_by_const_apply_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_by_const_apply_add_tmp_bytes(0, res_size, a_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
 
@@ -374,6 +375,7 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size))
             .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size)),
     );

@@ -368,12 +368,14 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
         + VecZnxBigAlloc<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
         + VecZnxIdftApply<BR>,
     Module<BT>: VecZnxDftApply<BT>
         + VecZnxDftAlloc<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
         + VecZnxIdftApply<BT>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
@@ -383,8 +385,16 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
     let _n = module_ref.n();
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
-    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_ref = ScratchOwned::alloc(
+        module_ref
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module_ref.vec_znx_idft_apply_tmp_bytes()),
+    );
+    let mut scratch_test = ScratchOwned::alloc(
+        module_test
+            .vec_znx_big_normalize_tmp_bytes()
+            .max(module_test.vec_znx_idft_apply_tmp_bytes()),
+    );
 
     for a_size in [1, 2, 3, 4] {
         let mut a = module_host.vec_znx_alloc(cols, a_size);

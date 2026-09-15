@@ -660,6 +660,8 @@ pub fn cnv_prepare_self_derived<BE>(
 ) where
     BE: HalConvolutionImpl,
 {
+    assert_eq!(left.cols(), right.cols());
+    assert_eq!(left.size(), right.size());
     BE::cnv_prepare_left(module, left, a, scratch);
     BE::cnv_prepare_right(module, right, a, scratch);
 }
