@@ -479,3 +479,25 @@ fn test_ntt3x42_ifma_zeroed_allocation_alignment_and_padding() {
         assert!(bytes.iter().all(|&byte| byte == 0));
     }
 }
+
+#[test]
+fn large_ring_ntt_log17() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42Ifma>(1 << 17, 53);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn large_ring_ntt_rayon_log17() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42IfmaRayon>(1 << 17, 53);
+}
+
+#[test]
+fn large_ring_ntt_log18() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42Ifma>(1 << 18, 53);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn large_ring_ntt_rayon_log18() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT3x42IfmaRayon>(1 << 18, 53);
+}

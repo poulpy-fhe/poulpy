@@ -34,74 +34,101 @@ pub trait PrimeSetCrt4: PrimeSet<PrimeElem = u32, Lanes<u32> = [u32; 4]> {
     const CRT_CST: [u32; 4];
 }
 
-/// 29-bit NTT-friendly primes with `2·2^16`-th roots of unity.
+/// 29-bit NTT-friendly primes with `2·2^18`-th roots of unity.
 ///
 /// - `Q ≈ 2^116`
-/// - Each prime is of the form `(1 << 29) - c·(1 << 17) + 1`.
+/// - Each prime is of the form `(1 << 29) - c·(1 << 19) + 1`.
 pub struct Primes29;
 
 impl PrimeSet for Primes29 {
     type PrimeElem = u32;
     type Lanes<T: LaneElem> = [T; 4];
-    const Q: [u32; 4] = [
-        (1u32 << 29) - 2 * (1u32 << 17) + 1,  // 536_608_769
-        (1u32 << 29) - 5 * (1u32 << 17) + 1,  // 536_215_553
-        (1u32 << 29) - 26 * (1u32 << 17) + 1, // 533_463_041
-        (1u32 << 29) - 35 * (1u32 << 17) + 1, // 532_283_393
-    ];
-    const OMEGA: [u32; 4] = [78_289_835, 178_519_192, 483_889_678, 239_808_033];
+    const Q: [u32; 4] = [531_628_033, 524_812_289, 518_520_833, 517_472_257];
+    const OMEGA: [u32; 4] = [119_931_893, 194_516_551, 403_971_879, 77_050_655];
     const LOG_Q: u64 = 29;
+    const MAX_LOG_N: u32 = 18;
 }
 
 impl PrimeSetCrt4 for Primes29 {
-    const CRT_CST: [u32; 4] = [301_701_286, 536_020_447, 86_367_873, 147_030_781];
+    const CRT_CST: [u32; 4] = [148_974_663, 415_017_145, 94_081_818, 386_832_361];
 }
 
-/// 30-bit NTT-friendly primes with `2·2^16`-th roots of unity.
+/// 30-bit NTT-friendly primes with `2·2^18`-th roots of unity.
 ///
-/// This is the **default** prime set, matching the spqlios-arithmetic
-/// library's default (`SPQLIOS_Q120_USE_30_BIT_PRIMES`).
+/// This is the default prime set for the NTT4x30 backends.
 ///
 /// - `Q ≈ 2^120`
-/// - Each prime is of the form `(1 << 30) - c·(1 << 17) + 1`.
+/// - Each prime is of the form `(1 << 30) - c·(1 << 19) + 1`.
 pub struct Primes30;
 
 impl PrimeSet for Primes30 {
     type PrimeElem = u32;
     type Lanes<T: LaneElem> = [T; 4];
-    const Q: [u32; 4] = [
-        (1u32 << 30) - 2 * (1u32 << 17) + 1,  // 1_073_479_681
-        (1u32 << 30) - 17 * (1u32 << 17) + 1, // 1_071_513_601
-        (1u32 << 30) - 23 * (1u32 << 17) + 1, // 1_070_727_169
-        (1u32 << 30) - 42 * (1u32 << 17) + 1, // 1_068_236_801
-    ];
-    const OMEGA: [u32; 4] = [1_070_907_127, 315_046_632, 309_185_662, 846_468_380];
+    const Q: [u32; 4] = [1_056_440_321, 1_053_818_881, 1_051_721_729, 1_049_100_289];
+    const OMEGA: [u32; 4] = [195_937_198, 50_863_243, 633_648_745, 87_406_124];
     const LOG_Q: u64 = 30;
+    const MAX_LOG_N: u32 = 18;
 }
 
 impl PrimeSetCrt4 for Primes30 {
-    const CRT_CST: [u32; 4] = [43_599_465, 292_938_863, 594_011_630, 140_177_212];
+    const CRT_CST: [u32; 4] = [222_597_450, 1_008_704_431, 722_621_871, 152_141_147];
 }
 
-/// 31-bit NTT-friendly primes with `2·2^16`-th roots of unity.
+/// 31-bit NTT-friendly primes with `2·2^18`-th roots of unity.
 ///
 /// - `Q ≈ 2^124`
-/// - Each prime is of the form `(1 << 31) - c·(1 << 17) + 1`.
+/// - Each prime is of the form `(1 << 31) - c·(1 << 19) + 1`.
 pub struct Primes31;
 
 impl PrimeSet for Primes31 {
     type PrimeElem = u32;
     type Lanes<T: LaneElem> = [T; 4];
-    const Q: [u32; 4] = [
-        (1u32 << 31) - (1u32 << 17) + 1,      // 2_147_352_577
-        (1u32 << 31) - 4 * (1u32 << 17) + 1,  // 2_146_959_361
-        (1u32 << 31) - 11 * (1u32 << 17) + 1, // 2_146_041_857
-        (1u32 << 31) - 23 * (1u32 << 17) + 1, // 2_144_468_993
-    ];
-    const OMEGA: [u32; 4] = [1_615_402_923, 1_137_738_560, 154_880_552, 558_784_885];
+    const Q: [u32; 4] = [2_146_959_361, 2_132_279_297, 2_130_706_433, 2_121_793_537];
+    const OMEGA: [u32; 4] = [1_961_488_829, 1_830_410_192, 339_671_193, 245_713_661];
     const LOG_Q: u64 = 31;
+    const MAX_LOG_N: u32 = 18;
 }
 
 impl PrimeSetCrt4 for Primes31 {
-    const CRT_CST: [u32; 4] = [1_811_422_063, 2_093_150_204, 164_149_010, 225_197_446];
+    const CRT_CST: [u32; 4] = [483_199_030, 1_354_824_273, 1_941_357_861, 484_653_143];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reference::ntt4x30::{arithmetic::b_to_znx128_ref, ntt::modq_pow};
+
+    fn check<P: PrimeSetCrt4>() {
+        let total: i128 = P::Q.iter().map(|&q| q as i128).product();
+        for (k, &q) in P::Q.iter().enumerate() {
+            assert_eq!(u32::BITS - q.leading_zeros(), P::LOG_Q as u32);
+            assert!((2..).take_while(|d| d * d <= q as u64).all(|d| !(q as u64).is_multiple_of(d)));
+            assert_eq!(modq_pow(P::OMEGA[k], 1 << P::MAX_LOG_N, q), q - 1);
+            assert_eq!(modq_pow(P::OMEGA[k], 1 << (P::MAX_LOG_N + 1), q), 1);
+            assert_eq!((total / q as i128 % q as i128) * P::CRT_CST[k] as i128 % q as i128, 1);
+        }
+        for x in [
+            0,
+            1,
+            -1,
+            i64::MIN as i128,
+            i64::MAX as i128,
+            total / 2,
+            -total / 2,
+            total / 2 - 1,
+            1 - total / 2,
+        ] {
+            let residues = P::Q.map(|q| x.rem_euclid(q as i128) as u64);
+            let mut result = [0];
+            b_to_znx128_ref::<P>(1, &mut result, &residues);
+            assert_eq!(result[0], x);
+        }
+    }
+
+    #[test]
+    fn prime_sets_and_crt() {
+        check::<Primes29>();
+        check::<Primes30>();
+        check::<Primes31>();
+    }
 }

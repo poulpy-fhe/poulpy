@@ -83,8 +83,7 @@ impl<T: LaneElem, const N: usize> LaneArray<T> for [T; N] {
 ///
 /// A prime set represents integers modulo `Q = Q[0]·...·Q[N-1]`, a
 /// product of `N` primes each of approximately the same bit-size.
-/// All primes support a primitive `2^17`-th root of unity, so NTT sizes
-/// up to `2^16` are supported.
+/// The root order determines the maximum supported negacyclic NTT size.
 ///
 /// The lane count and the storage element of the prime constants are part
 /// of the prime set (`Lanes<T> = [T; N]`, `PrimeElem` = `u32` for the
@@ -107,10 +106,14 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
     /// The NTT-friendly primes `[Q0, ..., Q_{N-1}]`.
     const Q: Self::Lanes<Self::PrimeElem>;
 
-    /// `OMEGA[k]` is a primitive `2^17`-th root of unity modulo `Q[k]`.
+    /// Maximum log2 of the negacyclic NTT size supported by `OMEGA`.
+    /// Defaults to 16 for prime sets using the original `2^17`-th roots.
+    const MAX_LOG_N: u32 = 16;
+
+    /// `OMEGA[k]` is a primitive `2^(MAX_LOG_N + 1)`-th root modulo `Q[k]`.
     ///
-    /// For an NTT of size `n ≤ 2^16`, the actual primitive `2n`-th root
-    /// used is `modq_pow(OMEGA[k], 2^16 / n, Q[k])`.
+    /// For an NTT of size `n ≤ 2^MAX_LOG_N`, the primitive `2n`-th root
+    /// used is `modq_pow(OMEGA[k], 2^MAX_LOG_N / n, Q[k])`.
     const OMEGA: Self::Lanes<Self::PrimeElem>;
 
     /// `ceil(log2(Q[0]))`.

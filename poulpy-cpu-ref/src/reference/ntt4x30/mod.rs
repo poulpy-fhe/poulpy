@@ -28,8 +28,8 @@
 //! Ring elements are stored in **CRT form**: each integer is represented
 //! as four residues, one per prime factor of `Q`.  Three concrete prime
 //! sets (29-, 30-, and 31-bit) are provided via the [`primes::PrimeSet`]
-//! trait; the 30-bit variant ([`primes::Primes30`]) is the default and
-//! matches the spqlios library default.
+//! trait; the 30-bit variant ([`primes::Primes30`]) is the default.
+//! All built-in sets support ring degrees through `2^18`.
 //!
 //! The concrete storage types are:
 //!

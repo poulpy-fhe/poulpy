@@ -494,7 +494,7 @@ mod tests {
     /// NEON NTT then NEON iNTT round-trips to the original (mod each Q[k]).
     #[test]
     fn ntt_intt_identity_neon() {
-        for log_n in 1..=8usize {
+        for log_n in 1..=18usize {
             let n = 1 << log_n;
             let fwd = NttTable::<Primes30>::new(n);
             let inv = NttTableInv::<Primes30>::new(n);
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn ntt_neon_vs_ref() {
-        for log_n in 1..=8usize {
+        for log_n in 1..=18usize {
             let n = 1 << log_n;
             let fwd = NttTable::<Primes30>::new(n);
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 13 + 5) % 201 - 100).collect();
