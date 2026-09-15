@@ -1338,4 +1338,21 @@ where
     }))
     .is_err();
     assert!(panicked, "cnv_prepare_left accepted a.n() != res.n()");
+
+    // `cnv_prepare_self` prepares one input into both halves, so the two must share a degree:
+    // the parallel path writes into `right` at offsets computed from `left`'s degree.
+    let mut full = VecZnx::alloc(n, cols, a_size);
+    full.fill_uniform(base2k, &mut source);
+    let full_be = upload_vec_znx::<BE>(&full);
+    let mut half_right: CnvPVecROwned<BE> = CnvPVecR::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_self(
+            &mut full_prep.to_backend_mut(),
+            &mut half_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&full_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(panicked, "cnv_prepare_self accepted right.n() != left.n()");
 }

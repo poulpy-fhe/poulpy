@@ -130,6 +130,12 @@ pub fn convolution_prepare_self<BE>(
     let n: usize = left.n();
     assert_eq!(a.n(), n, "convolution_prepare_self: a.n():{} != left.n():{n}", a.n());
     assert_eq!(
+        right.n(),
+        n,
+        "convolution_prepare_self: right.n():{} != left.n():{n}",
+        right.n()
+    );
+    assert_eq!(
         table.m() << 1,
         n,
         "convolution_prepare_self: table degree {} != left.n():{n}",
