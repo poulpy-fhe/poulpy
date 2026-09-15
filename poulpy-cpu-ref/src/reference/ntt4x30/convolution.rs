@@ -460,6 +460,11 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
             )
         })
         .collect();
+    #[allow(clippy::type_complexity)]
+    let term_rows: Vec<(&[[u32; 8]], &[[u32; 8]])> = term_cols
+        .iter()
+        .map(|&(a_col, b_col, _, _)| (cast_slice(a_col), cast_slice(b_col)))
+        .collect();
     let sched = cnv_accumulate_schedule(
         cnv_offset,
         res_size,
@@ -470,6 +475,7 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
     assert!(prefix.is_empty());
     assert!(suffix.is_empty());
     let stage = &mut tmp_u64[..8 * CNV_ACC_GROUP * res_size];
+    let stage4: &mut [[u64; 4]] = cast_slice_mut(stage);
 
     for blk in 0..n_blks {
         let grp_pos = blk % CNV_ACC_GROUP;
@@ -477,19 +483,18 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
         for (k, sched_k) in sched.iter().enumerate() {
             let mut s = [[0u64; 8]; 2];
             for e in sched_k {
-                let (a_col, b_col, a_size, b_size) = term_cols[e.term];
-                let a_blk = &a_col[blk * 16 * a_size..];
-                let b_blk = &b_col[blk * 16 * b_size..];
+                let (_, _, a_size, b_size) = term_cols[e.term];
+                let (a_rows, b_rows) = term_rows[e.term];
                 for i in 0..e.len {
-                    let x = &a_blk[16 * (e.a_row + i)..16 * (e.a_row + i) + 16];
-                    let y = &b_blk[16 * (e.b_row + i)..16 * (e.b_row + i) + 16];
-                    accum_mul_q120_bc(&mut s[0], x[..8].try_into().unwrap(), y[..8].try_into().unwrap());
-                    accum_mul_q120_bc(&mut s[1], x[8..].try_into().unwrap(), y[8..].try_into().unwrap());
+                    let r = 2 * (blk * a_size + e.a_row + i);
+                    let q = 2 * (blk * b_size + e.b_row + i);
+                    accum_mul_q120_bc(&mut s[0], &a_rows[r], &b_rows[q]);
+                    accum_mul_q120_bc(&mut s[1], &a_rows[r + 1], &b_rows[q + 1]);
                 }
             }
-            let out = &mut stage[8 * (k * CNV_ACC_GROUP + grp_pos)..];
-            accum_to_q120b::<Primes30>((&mut out[..4]).try_into().unwrap(), &s[0], meta);
-            accum_to_q120b::<Primes30>((&mut out[4..8]).try_into().unwrap(), &s[1], meta);
+            let o = 2 * (k * CNV_ACC_GROUP + grp_pos);
+            accum_to_q120b::<Primes30>(&mut stage4[o], &s[0], meta);
+            accum_to_q120b::<Primes30>(&mut stage4[o + 1], &s[1], meta);
         }
 
         // Flush the group per limb as one contiguous run.
@@ -498,8 +503,8 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
             let grp_base = blk + 1 - in_group;
             for k in 0..res_size {
                 let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
-                res_u64[8 * grp_base..8 * (grp_base + in_group)]
-                    .copy_from_slice(&stage[8 * k * CNV_ACC_GROUP..8 * (k * CNV_ACC_GROUP + in_group)]);
+                let run: &[u64] = cast_slice(&stage4[2 * k * CNV_ACC_GROUP..2 * (k * CNV_ACC_GROUP + in_group)]);
+                res_u64[8 * grp_base..8 * (grp_base + in_group)].copy_from_slice(run);
             }
         }
     }

@@ -1337,18 +1337,25 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
             || crate::reference::vec_znx::normalize_cross_needs_exact(input.size(), a_base2k, res_base2k, res_k, res_offset)
     };
     if needs_exact {
-        for i in 0..coeff_len {
+        let input_limbs: Vec<&[i128]> = (0..input.size())
+            .map(|j| &input.at(a_col, j)[coeff_start..coeff_start + coeff_len])
+            .collect();
+        // One base pointer per output limb of the range; limbs are disjoint and
+        // each holds `coeff_len` writable scalars, so `add(i)` with `i < coeff_len`
+        // stays inside limb `j`.
+        let res_limbs: Vec<*mut i64> = (0..size).map(|j| res.at_mut(j).as_mut_ptr()).collect();
+        (0..coeff_len).for_each(|i| {
             crate::reference::vec_znx::normalize_exact::<false, _, _>(
-                |j| input.at(a_col, j)[coeff_start + i],
+                |j| input_limbs[j][i],
                 input.size(),
                 a_base2k,
                 size,
                 res_base2k,
                 res_k,
                 res_offset,
-                |j, digit| res.at_mut(j)[i] = digit,
+                |j, digit| unsafe { *res_limbs[j].add(i) = digit },
             );
-        }
+        });
         return;
     }
 
@@ -1408,10 +1415,12 @@ pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
     let mut output = res.to_backend_mut();
     let output_size = output.size();
     assert!(carry.len() >= 3 * output.n());
-    for i in 0..output.n() {
+    let input_limbs: Vec<&[i128]> = (0..input.size()).map(|j| input.at(a_col, j)).collect();
+    let out_limbs: Vec<*mut i64> = (0..output_size).map(|j| output.at_mut(res_col, j).as_mut_ptr()).collect();
+    (0..output.n()).for_each(|i| {
         let mut extra = 0i128;
         crate::reference::vec_znx::normalize_exact::<false, _, _>(
-            |j| input.at(a_col, j)[i],
+            |j| input_limbs[j][i],
             input.size(),
             a_base2k,
             output_size,
@@ -1419,14 +1428,14 @@ pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
             output_size * res_base2k,
             res_offset,
             |j, digit| {
-                let value = &mut output.at_mut(res_col, j)[i];
+                let value = unsafe { &mut *out_limbs[j].add(i) };
                 let signed = if O::SUB { -(digit as i128) } else { digit as i128 };
                 let total = *value as i128 + signed + extra;
                 *value = total as i64;
                 extra = (total - *value as i128) >> res_base2k;
             },
         );
-    }
+    });
 }
 
 /// Adds normalized `a` under the source bounds of [`ntt4x30_vec_znx_big_normalize`].
