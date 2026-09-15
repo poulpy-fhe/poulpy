@@ -158,7 +158,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a VecZnxBig; a: a dense VecZnx of the module degree; b: a dense VecZnx of any degree, b_coeff < b.n()
     /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    res[res_col] is the bivariate convolution of a[a_col] with coefficient b_coeff of b[b_col], read as a constant in X, scaled by 2^(cnv_offset * base2k); limbs past the convolution bound are zero-filled
-    /// sparse     none: a and b take the module degree (b_coeff selects a coefficient of b); a degree-n a is embedded by the caller with vec_znx_switch_ring first, nothing consumes more (#266)
+    /// sparse     none: a takes the module degree; a degree-n a is embedded by the caller with vec_znx_switch_ring first, nothing consumes more (#266)
     /// exact      exact: it is a big-domain product, which is why it is required of every backend rather than routed through the lossy DFT decomposition on FFT64
     /// test       test_convolution_by_const, test_convolution_by_const_degree_rejected
     /// ```
