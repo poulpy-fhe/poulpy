@@ -29,8 +29,8 @@ use super::{
 use crate::NTT3x42Ifma;
 use core::arch::x86_64::{
     __m512i, _mm_sfence, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
-    _mm512_or_si512, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512,
-    _mm512_stream_si512,
+    _mm512_or_si512, _mm512_permutexvar_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64,
+    _mm512_storeu_si512, _mm512_stream_si512,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,13 +122,29 @@ fn packed_row_offset(size: usize, limb_row: usize, group: usize) -> usize {
 /// column `src` ([`packed_row_offset`] layout: a row is 16 u64, lane `l` at `l` and
 /// `8 + l`), `N = n << log_gap`: degree-`N` slot `i` reads degree-`n` slot
 /// `i >> log_gap`, so the whole group reads one slot once `log_gap >= 3`.
-fn gather_sparse_group_rows(dst: &mut [u64], src: &[u64], size: usize, group: usize, log_gap: usize) {
-    for lane in 0..8 {
-        let slot: usize = (8 * group + lane) >> log_gap;
-        let base: usize = packed_row_offset(size, 0, slot / 8) + slot % 8;
+///
+/// For `log_gap >= 1` every lane of the group lands in compact group `group >> log_gap`,
+/// so a row is one aligned load per word plus one lane permute, the index vector being
+/// built once per group.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX-512F.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn gather_sparse_group_rows(dst: &mut [u64], src: &[u64], size: usize, group: usize, log_gap: usize) {
+    let mut lanes: [i64; 8] = [0; 8];
+    for (lane, slot) in lanes.iter_mut().enumerate() {
+        *slot = (((8 * group + lane) >> log_gap) & 7) as i64;
+    }
+    unsafe {
+        let idx: __m512i = _mm512_loadu_si512(lanes.as_ptr() as *const __m512i);
+        let src_ptr: *const u64 = src.as_ptr().add(packed_row_offset(size, 0, group >> log_gap));
+        let dst_ptr: *mut u64 = dst.as_mut_ptr();
         for r in 0..size {
-            dst[16 * r + lane] = src[base + 16 * r];
-            dst[16 * r + 8 + lane] = src[base + 16 * r + 8];
+            let w0: __m512i = _mm512_loadu_si512(src_ptr.add(16 * r) as *const __m512i);
+            let w1: __m512i = _mm512_loadu_si512(src_ptr.add(16 * r + 8) as *const __m512i);
+            _mm512_storeu_si512(dst_ptr.add(16 * r) as *mut __m512i, _mm512_permutexvar_epi64(idx, w0));
+            _mm512_storeu_si512(dst_ptr.add(16 * r + 8) as *mut __m512i, _mm512_permutexvar_epi64(idx, w1));
         }
     }
 }

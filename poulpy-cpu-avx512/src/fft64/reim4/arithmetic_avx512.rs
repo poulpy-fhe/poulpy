@@ -15,7 +15,29 @@
 //
 // ----------------------------------------------------------------------
 
+use core::arch::x86_64::__m512i;
 use poulpy_cpu_ref::reference::fft64::reim4::{reim4_gather_sparse_block, reim4_gather_sparse_block_sum};
+
+/// Lane permutation of one degree-`N` reim4 block gathered from a degree-`n` prepared
+/// operand under `log_gap >= 1`: every lane of the block reads compact block
+/// `blk >> log_gap`, lane `l` reading compact lane `((4 * blk + l) >> log_gap) & 3` for
+/// re and `4 + ..` for im, so the whole block is one row load plus one permute.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX-512F.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn reim4_sparse_block_permutation(blk: usize, log_gap: usize) -> __m512i {
+    use core::arch::x86_64::_mm512_loadu_si512;
+
+    let mut lanes: [i64; 8] = [0; 8];
+    for lane in 0..4 {
+        let l: i64 = (((4 * blk + lane) >> log_gap) & 3) as i64;
+        lanes[lane] = l;
+        lanes[4 + lane] = 4 + l;
+    }
+    unsafe { _mm512_loadu_si512(lanes.as_ptr() as *const __m512i) }
+}
 
 /// # Safety
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`);
@@ -865,8 +887,8 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
 ) {
     use core::arch::x86_64::{
         __m256d, __m512d, _mm256_add_pd, _mm256_loadu_pd, _mm256_storeu_pd, _mm256_sub_pd, _mm512_add_pd, _mm512_castpd256_pd512,
-        _mm512_castpd512_pd256, _mm512_extractf64x4_pd, _mm512_fmadd_pd, _mm512_insertf64x4, _mm512_loadu_pd, _mm512_setzero_pd,
-        _mm512_shuffle_f64x2, _mm512_storeu_pd,
+        _mm512_castpd512_pd256, _mm512_extractf64x4_pd, _mm512_fmadd_pd, _mm512_insertf64x4, _mm512_loadu_pd,
+        _mm512_permutexvar_pd, _mm512_setzero_pd, _mm512_shuffle_f64x2, _mm512_storeu_pd,
     };
 
     assert!(a_size > 0);
@@ -923,14 +945,22 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
                 }
             }
             let b_src: *const f64 = if b_log_gap != 0 {
+                let idx: __m512i = reim4_sparse_block_permutation(blk, b_log_gap);
+                let b_blk: *const f64 = b0.as_ptr().add((blk >> b_log_gap) * 8 * b_size);
                 if PAIRWISE {
-                    reim4_gather_sparse_block_sum(b_sum, b0, b1, b_size, blk, b_log_gap);
+                    let b1_blk: *const f64 = b1.as_ptr().add((blk >> b_log_gap) * 8 * b_size);
+                    for r in 0..b_size {
+                        let s: __m512d = _mm512_add_pd(_mm512_loadu_pd(b_blk.add(8 * r)), _mm512_loadu_pd(b1_blk.add(8 * r)));
+                        let v: __m512d = _mm512_permutexvar_pd(idx, s);
+                        _mm512_storeu_pd(b_sum.as_mut_ptr().add(8 * r), v);
+                        _mm512_storeu_pd(b_swp.as_mut_ptr().add(8 * r), _mm512_shuffle_f64x2::<0b01_00_11_10>(v, v));
+                    }
                 } else {
-                    reim4_gather_sparse_block(b_sum, b0, b_size, blk, b_log_gap);
-                }
-                for r in 0..b_size {
-                    let v: __m512d = _mm512_loadu_pd(b_sum.as_ptr().add(8 * r));
-                    _mm512_storeu_pd(b_swp.as_mut_ptr().add(8 * r), _mm512_shuffle_f64x2::<0b01_00_11_10>(v, v));
+                    for r in 0..b_size {
+                        let v: __m512d = _mm512_permutexvar_pd(idx, _mm512_loadu_pd(b_blk.add(8 * r)));
+                        _mm512_storeu_pd(b_sum.as_mut_ptr().add(8 * r), v);
+                        _mm512_storeu_pd(b_swp.as_mut_ptr().add(8 * r), _mm512_shuffle_f64x2::<0b01_00_11_10>(v, v));
+                    }
                 }
                 b_sum.as_ptr()
             } else {

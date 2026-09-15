@@ -15,7 +15,39 @@
 //
 // ----------------------------------------------------------------------
 
+use core::arch::x86_64::{__m256d, __m256i};
 use poulpy_cpu_ref::reference::fft64::reim4::{reim4_gather_sparse_block, reim4_gather_sparse_block_sum};
+
+/// Lane permutation of one degree-`N` reim4 block gathered from a degree-`n` prepared
+/// operand under `log_gap >= 1`: every lane of the block reads compact block
+/// `blk >> log_gap`, lane `l` reading compact lane `((4 * blk + l) >> log_gap) & 3`.
+/// The re half and the im half of a row are permuted by the same vector, addressed as
+/// pairs of 32-bit words since AVX2 has no variable cross-lane `f64` permute.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX2.
+#[target_feature(enable = "avx2")]
+#[inline]
+unsafe fn reim4_sparse_block_permutation(blk: usize, log_gap: usize) -> __m256i {
+    use core::arch::x86_64::_mm256_loadu_si256;
+
+    let mut words: [i32; 8] = [0; 8];
+    for lane in 0..4 {
+        let l: i32 = ((((4 * blk + lane) >> log_gap) & 3) * 2) as i32;
+        words[2 * lane] = l;
+        words[2 * lane + 1] = l + 1;
+    }
+    unsafe { _mm256_loadu_si256(words.as_ptr() as *const __m256i) }
+}
+
+/// One reim4 half-row (4 f64) gathered through [`reim4_sparse_block_permutation`].
+#[target_feature(enable = "avx2")]
+#[inline]
+fn reim4_sparse_permute(v: __m256d, idx: __m256i) -> __m256d {
+    use core::arch::x86_64::{_mm256_castpd_ps, _mm256_castps_pd, _mm256_permutevar8x32_ps};
+
+    _mm256_castps_pd(_mm256_permutevar8x32_ps(_mm256_castpd_ps(v), idx))
+}
 
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
@@ -936,7 +968,7 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
     tmp: &mut [f64],
 ) {
     use core::arch::x86_64::{
-        __m256d, _mm256_add_pd, _mm256_fmadd_pd, _mm256_fnmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd,
+        _mm256_add_pd, _mm256_fmadd_pd, _mm256_fnmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd,
     };
 
     assert!(a_size > 0);
@@ -997,10 +1029,24 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
                 }
             }
             let b_src: *const f64 = if b_log_gap != 0 {
+                let idx: __m256i = reim4_sparse_block_permutation(blk, b_log_gap);
+                let b_blk: *const f64 = b0.as_ptr().add((blk >> b_log_gap) * 8 * b_size);
                 if PAIRWISE {
-                    reim4_gather_sparse_block_sum(b_sum, b0, b1, b_size, blk, b_log_gap);
+                    let b1_blk: *const f64 = b1.as_ptr().add((blk >> b_log_gap) * 8 * b_size);
+                    for r in 0..b_size {
+                        let lo: __m256d = _mm256_add_pd(_mm256_loadu_pd(b_blk.add(8 * r)), _mm256_loadu_pd(b1_blk.add(8 * r)));
+                        let hi: __m256d =
+                            _mm256_add_pd(_mm256_loadu_pd(b_blk.add(8 * r + 4)), _mm256_loadu_pd(b1_blk.add(8 * r + 4)));
+                        _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r), reim4_sparse_permute(lo, idx));
+                        _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r + 4), reim4_sparse_permute(hi, idx));
+                    }
                 } else {
-                    reim4_gather_sparse_block(b_sum, b0, b_size, blk, b_log_gap);
+                    for r in 0..b_size {
+                        let lo: __m256d = reim4_sparse_permute(_mm256_loadu_pd(b_blk.add(8 * r)), idx);
+                        let hi: __m256d = reim4_sparse_permute(_mm256_loadu_pd(b_blk.add(8 * r + 4)), idx);
+                        _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r), lo);
+                        _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r + 4), hi);
+                    }
                 }
                 b_sum.as_ptr()
             } else {
