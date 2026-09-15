@@ -88,6 +88,19 @@ impl GLWEInfos for GLWELayout {
 /// polynomial, and the remaining `rank` columns are the mask polynomials.
 ///
 /// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
+///
+/// # Normalized form
+///
+/// A normalized GLWE is canonical at its `k`: its `ceil(k / base2k)` live limbs
+/// hold digits in `[-2^(base2k - 1), 2^(base2k - 1)]`, the low
+/// `(base2k - k % base2k) % base2k` bits of the bottom live limb are zero and
+/// every limb past the live ones is zero. That is what normalizing at `k`
+/// produces, so every operation in this crate returns a normalized result and
+/// expects normalized operands; `GLWENormalize` normalizes a ciphertext whose
+/// data was written by hand. The convolving operations (`GLWEMulConst`,
+/// `GLWEMulPlain`, `GLWETensoring`, the linear transformations) read every bit
+/// of the live limbs, so there an unnormalized operand changes the result by
+/// its bits below `2^-k`. Nothing checks this at run time.
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWE<D: Data, W: ZnxWord> {
     pub(crate) data: VecZnx<D, W>,

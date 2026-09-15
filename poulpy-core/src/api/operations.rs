@@ -50,6 +50,11 @@ pub trait GLWEPacking<BE: Backend> {
         H: GetAutomorphismKey<BE>;
 }
 
+/// Multiplication of a GLWE ciphertext by one coefficient of a plaintext.
+///
+/// The ciphertext operand is expected normalized, hence canonical at its `k`
+/// (see the normalized form on [`crate::layouts::GLWE`]); the product reads
+/// every bit of its live limbs and does not check.
 pub trait GLWEMulConst<BE: Backend> {
     fn glwe_mul_const_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -92,8 +97,10 @@ pub trait GLWEMulConst<BE: Backend> {
 /// bounded by [`crate::layouts::IntPolyInfos`], so a type that cannot state
 /// its encoded width cannot be passed here. Its `k` labels claimed precision
 /// for budget arithmetic only, and `max_k()` is the allocation, never consumed
-/// by compute. The ciphertext operand, a Torus element, is processed at its
-/// effective `k`.
+/// by compute. The ciphertext operand, a Torus element, is consumed at the
+/// `k` it declares and is expected normalized, hence canonical at it (see the
+/// normalized form on [`crate::layouts::GLWE`]); the convolution reads every
+/// bit of its live limbs and does not check.
 pub trait GLWEMulPlain<BE: Backend> {
     fn glwe_mul_plain_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -115,6 +122,11 @@ pub trait GLWEMulPlain<BE: Backend> {
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
+/// Tensor products of GLWE ciphertexts.
+///
+/// Both ciphertext operands are expected normalized, hence canonical at their
+/// `k` (see the normalized form on [`crate::layouts::GLWE`]); the convolution
+/// reads every bit of their live limbs and does not check.
 pub trait GLWETensoring<BE: Backend> {
     fn glwe_tensor_apply_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
