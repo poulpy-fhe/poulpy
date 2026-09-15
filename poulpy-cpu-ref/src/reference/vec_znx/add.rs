@@ -1,3 +1,4 @@
+use super::{vec_znx_add_assign_mixed, vec_znx_add_mixed};
 use crate::{
     layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
     reference::znx::{ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxZero},
@@ -15,9 +16,8 @@ pub fn vec_znx_add<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(b.n(), res.n());
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_add_mixed(res, res_col, a, a_col, b, b_col);
     }
 
     let res_size: usize = res.size();
@@ -67,8 +67,8 @@ pub fn vec_znx_add_assign<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    {
-        assert_eq!(a.n(), res.n());
+    if a.n() != res.n() {
+        return vec_znx_add_assign_mixed(res, res_col, a, a_col);
     }
 
     let sum_size: usize = a.size().min(res.size());
