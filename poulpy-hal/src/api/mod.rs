@@ -117,9 +117,12 @@
 //! `switch_ring`; the compact storage, `N/n` smaller, is a representation
 //! choice the contracts never mention. Only the operand slots a contract's
 //! `sparse` line names accept a degree other than the module's; `res` and
-//! every other operand share `N`. The kernels that read those slots land with
-//! sparse operands (<https://github.com/poulpy-fhe/poulpy/issues/266>), so a
-//! mixed-degree call is rejected until then.
+//! every other operand share `N`. The coefficient-domain `add` and `sub`
+//! families read such an operand with a stride; a degree-`n` input to a
+//! convolution prepare yields a degree-`n` prepared operand, and every apply
+//! form reads it through the backend's slot correspondence (sparse operands,
+//! <https://github.com/poulpy-fhe/poulpy/issues/266>). The in-tree CPU
+//! backends take sparse degrees from 8 up.
 //!
 //! The coefficient-wise operations are outside that rule: `vec_znx_big_inner_sum`,
 //! `vec_znx_big_col_weighted_sum` and `vec_znx_scalar_product` act on
