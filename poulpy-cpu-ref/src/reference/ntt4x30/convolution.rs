@@ -923,7 +923,12 @@ fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool>(
         res_col < res_cols,
         "ntt4x30_cnv_by_const_apply_impl: res_col {res_col} >= cols {res_cols}"
     );
-    debug_assert!(a.n() == n && b.n() == n, "ntt4x30_cnv_by_const_apply_impl: degree mismatch");
+    debug_assert!(a.n() == n, "ntt4x30_cnv_by_const_apply_impl: a.n() {} != res.n() {n}", a.n());
+    debug_assert!(
+        b_coeff < b.n(),
+        "ntt4x30_cnv_by_const_apply_impl: b_coeff {b_coeff} >= b.n() {}",
+        b.n()
+    );
     let res_ptr = crate::reference::SendPtr::new(res.raw_mut().as_mut_ptr());
     let res_limb = |k: usize| unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * res_cols + res_col)), n) };
 

@@ -155,7 +155,7 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// domain     res: a VecZnxBig; a, b: dense VecZnx of the module degree; b_coeff < b.n()
+    /// domain     res: a VecZnxBig; a: a dense VecZnx of the module degree; b: a dense VecZnx of any degree, b_coeff < b.n()
     /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    res[res_col] is the bivariate convolution of a[a_col] with coefficient b_coeff of b[b_col], read as a constant in X, scaled by 2^(cnv_offset * base2k); limbs past the convolution bound are zero-filled
     /// sparse     a is the sparse-capable slot, through the switch_ring substitution of 4.5, and stays derived there
