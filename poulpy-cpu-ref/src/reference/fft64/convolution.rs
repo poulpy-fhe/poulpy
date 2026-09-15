@@ -303,9 +303,9 @@ fn convolution_by_const_apply_impl<BE, const ADD: bool>(
 
 pub fn convolution_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size - 1);
-    // Covers the reference per-block staging (a_size + b_size + min_size rows) and the fused
-    // SIMD cores: the padded `a` window, `b` staged for a sparse or a pairwise `b`, and
-    // 16 groups of output rows.
+    // Covers the reference per-block staging (a_size + b_size + min_size rows, the `a` rows
+    // only for the pairwise sum) and the fused SIMD cores: the padded `a` window, `b` staged
+    // for a sparse or a pairwise `b`, and 16 groups of output rows.
     size_of::<f64>() * 8 * (a_size + 6 + 2 * b_size + 16 * min_size)
 }
 
@@ -325,7 +325,7 @@ pub fn convolution_apply_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n: usize = res.n();
-    let a_log_gap: usize = sparse_log_gap(n, a.n());
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap: usize = sparse_log_gap(n, b.n());
     let m: usize = n >> 1;
 
@@ -350,9 +350,8 @@ pub fn convolution_apply_dft<BE>(
         offset,
         dst,
         dst_stride,
-        &a_raw[a_col * a.n() * a_size..],
+        &a_raw[a_col * n * a_size..],
         a_size,
-        a_log_gap,
         &b_raw[b_col * b.n() * b_size..],
         b_size,
         b_log_gap,
@@ -382,7 +381,7 @@ pub fn convolution_apply_dft_add<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n: usize = res.n();
-    let a_log_gap: usize = sparse_log_gap(n, a.n());
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap: usize = sparse_log_gap(n, b.n());
     let m: usize = n >> 1;
 
@@ -407,9 +406,8 @@ pub fn convolution_apply_dft_add<BE>(
         offset,
         dst,
         dst_stride,
-        &a_raw[a_col * a.n() * a_size..],
+        &a_raw[a_col * n * a_size..],
         a_size,
-        a_log_gap,
         &b_raw[b_col * b.n() * b_size..],
         b_size,
         b_log_gap,
@@ -444,7 +442,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
     let n: usize = res.n();
     let m: usize = n >> 1;
 
-    let a_log_gap: usize = sparse_log_gap(n, a.n());
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap: usize = sparse_log_gap(n, b.n());
 
     let res_size: usize = res.size();
@@ -470,10 +468,9 @@ pub fn convolution_pairwise_apply_dft<BE>(
         offset,
         res_raw,
         dst_stride,
-        &a_raw[col_i * a.n() * a_size..],
-        &a_raw[col_j * a.n() * a_size..],
+        &a_raw[col_i * n * a_size..],
+        &a_raw[col_j * n * a_size..],
         a_size,
-        a_log_gap,
         &b_raw[col_i * b.n() * b_size..],
         &b_raw[col_j * b.n() * b_size..],
         b_size,

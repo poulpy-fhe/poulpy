@@ -16,7 +16,6 @@
 // ----------------------------------------------------------------------
 
 use core::arch::x86_64::__m512i;
-use poulpy_cpu_ref::reference::fft64::reim4::{reim4_gather_sparse_block, reim4_gather_sparse_block_sum};
 
 /// Lane permutation of one degree-`N` reim4 block gathered from a degree-`n` prepared
 /// operand under `log_gap >= 1`: every lane of the block reads compact block
@@ -794,7 +793,6 @@ pub unsafe fn reim4_convolution_apply_avx512(
     dst_stride: usize,
     a: &[f64],
     a_size: usize,
-    a_log_gap: usize,
     b: &[f64],
     b_size: usize,
     b_log_gap: usize,
@@ -802,7 +800,7 @@ pub unsafe fn reim4_convolution_apply_avx512(
 ) {
     unsafe {
         reim4_convolution_apply_core_avx512::<false, false>(
-            m, min_size, offset, dst, dst_stride, a, a, a_size, a_log_gap, b, b, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
         )
     }
 }
@@ -810,7 +808,7 @@ pub unsafe fn reim4_convolution_apply_avx512(
 /// Pairwise variant of [`reim4_convolution_apply_avx512`]: `(a0 + a1) ⊛ (b0 + b1)`.
 ///
 /// `tmp` must hold at least `8 * (a_size + 6 + 2*b_size + 16 * min_size)` f64.
-/// `a_log_gap` and `b_log_gap` are `log2(N / n)` for a degree-`n` operand, zero when dense.
+/// `b_log_gap` is `log2(N / n)` for a degree-`n` right operand, zero when dense.
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX-512F (e.g. `is_x86_feature_detected!("avx512f")`).
@@ -825,7 +823,6 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx512(
     a0: &[f64],
     a1: &[f64],
     a_size: usize,
-    a_log_gap: usize,
     b0: &[f64],
     b1: &[f64],
     b_size: usize,
@@ -834,7 +831,7 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx512(
 ) {
     unsafe {
         reim4_convolution_apply_core_avx512::<true, false>(
-            m, min_size, offset, dst, dst_stride, a0, a1, a_size, a_log_gap, b0, b1, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
         )
     }
 }
@@ -854,7 +851,6 @@ pub unsafe fn reim4_convolution_apply_accumulate_avx512(
     dst_stride: usize,
     a: &[f64],
     a_size: usize,
-    a_log_gap: usize,
     b: &[f64],
     b_size: usize,
     b_log_gap: usize,
@@ -862,7 +858,7 @@ pub unsafe fn reim4_convolution_apply_accumulate_avx512(
 ) {
     unsafe {
         reim4_convolution_apply_core_avx512::<false, true>(
-            m, min_size, offset, dst, dst_stride, a, a, a_size, a_log_gap, b, b, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
         )
     }
 }
@@ -878,7 +874,6 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
     a0: &[f64],
     a1: &[f64],
     a_size: usize,
-    a_log_gap: usize,
     b0: &[f64],
     b1: &[f64],
     b_size: usize,
@@ -895,7 +890,7 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
     assert!(b_size > 0);
     assert!(m.is_multiple_of(4));
     assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
-    assert!(a0.len() >= ((m >> a_log_gap) / 4) * 8 * a_size);
+    assert!(a0.len() >= (m / 4) * 8 * a_size);
     assert!(b0.len() >= ((m >> b_log_gap) / 4) * 8 * b_size);
     assert!(dst_stride >= 2 * m);
     assert!(dst.len() >= dst_stride * (min_size - 1) + 2 * m);
@@ -923,25 +918,16 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
             let stage_ptr: *mut f64 = stage.as_mut_ptr().add(8 * min_size * (blk % GROUP));
             // `a` rows land in the padded window (rows 3..3 + a_size, f64 offset 8 * (3 + r));
             // `b` rows are read in place when dense and not pairwise, otherwise staged in `b_sum`.
-            if a_log_gap != 0 {
-                let a_rows: &mut [f64] = &mut a_pad[24..24 + 8 * a_size];
-                if PAIRWISE {
-                    reim4_gather_sparse_block_sum(a_rows, a0, a1, a_size, blk, a_log_gap);
-                } else {
-                    reim4_gather_sparse_block(a_rows, a0, a_size, blk, a_log_gap);
+            let a_blk: *const f64 = a0.as_ptr().add(blk * 8 * a_size);
+            if PAIRWISE {
+                let a1_blk: *const f64 = a1.as_ptr().add(blk * 8 * a_size);
+                for r in 0..a_size {
+                    let s: __m512d = _mm512_add_pd(_mm512_loadu_pd(a_blk.add(8 * r)), _mm512_loadu_pd(a1_blk.add(8 * r)));
+                    _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * (3 + r)), s);
                 }
             } else {
-                let a_blk: *const f64 = a0.as_ptr().add(blk * 8 * a_size);
-                if PAIRWISE {
-                    let a1_blk: *const f64 = a1.as_ptr().add(blk * 8 * a_size);
-                    for r in 0..a_size {
-                        let s: __m512d = _mm512_add_pd(_mm512_loadu_pd(a_blk.add(8 * r)), _mm512_loadu_pd(a1_blk.add(8 * r)));
-                        _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * (3 + r)), s);
-                    }
-                } else {
-                    for r in 0..a_size {
-                        _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * (3 + r)), _mm512_loadu_pd(a_blk.add(8 * r)));
-                    }
+                for r in 0..a_size {
+                    _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * (3 + r)), _mm512_loadu_pd(a_blk.add(8 * r)));
                 }
             }
             let b_src: *const f64 = if b_log_gap != 0 {
@@ -1260,7 +1246,6 @@ mod tests {
                                 2 * m,
                                 &a,
                                 a_size,
-                                0,
                                 &b,
                                 b_size,
                                 0,

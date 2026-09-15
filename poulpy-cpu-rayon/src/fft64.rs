@@ -353,7 +353,6 @@ fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool>(
     a0: &[f64],
     a1: &[f64],
     a_size: usize,
-    a_log_gap: usize,
     b0: &[f64],
     b1: &[f64],
     b_size: usize,
@@ -361,8 +360,8 @@ fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool>(
     tmp: &mut [f64],
 ) {
     let block_count = m / 4;
-    // An operand is staged per task when it is summed (pairwise) or gathered (sparse).
-    let stage_a = PAIRWISE || a_log_gap != 0;
+    // An operand is staged per task when it is summed (pairwise) or gathered (a sparse `b`).
+    let stage_a = PAIRWISE;
     let stage_b = PAIRWISE || b_log_gap != 0;
     let task_tmp_len = 8 * (min_size + a_size * stage_a as usize + b_size * stage_b as usize);
     let dst_ptr = SendPtr::new(dst.as_mut_ptr());
@@ -370,14 +369,7 @@ fn parallel_reim4_convolution_apply<const PAIRWISE: bool, const ACC: bool>(
             let (a_buf, rest) = tmp.split_at_mut(8 * a_size * stage_a as usize);
             let (b_buf, out) = rest.split_at_mut(8 * b_size * stage_b as usize);
             let out: &mut [f64] = &mut out[..8 * min_size];
-            let a: &[f64] = if a_log_gap != 0 {
-                if PAIRWISE {
-                    reim4_gather_sparse_block_sum(a_buf, a0, a1, a_size, block, a_log_gap);
-                } else {
-                    reim4_gather_sparse_block(a_buf, a0, a_size, block, a_log_gap);
-                }
-                &*a_buf
-            } else if PAIRWISE {
+            let a: &[f64] = if PAIRWISE {
                 <$base as ReimArith>::reim_add(
                     a_buf,
                     &a0[block * 8 * a_size..][..8 * a_size],
@@ -445,7 +437,6 @@ impl Reim4Convolution for $rayon {
         dst_stride: usize,
         a: &[f64],
         a_size: usize,
-        a_log_gap: usize,
         b: &[f64],
         b_size: usize,
         b_log_gap: usize,
@@ -453,11 +444,11 @@ impl Reim4Convolution for $rayon {
     ) {
         if !RayonTaskExecutor::is_parallel() {
             return <$base as Reim4Convolution>::reim4_convolution_apply(
-                m, min_size, offset, dst, dst_stride, a, a_size, a_log_gap, b, b_size, b_log_gap, tmp,
+                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp,
             );
         }
         parallel_reim4_convolution_apply::<false, false>(
-            m, min_size, offset, dst, dst_stride, a, a, a_size, a_log_gap, b, b, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
         );
     }
     #[inline(always)]
@@ -469,7 +460,6 @@ impl Reim4Convolution for $rayon {
         dst_stride: usize,
         a: &[f64],
         a_size: usize,
-        a_log_gap: usize,
         b: &[f64],
         b_size: usize,
         b_log_gap: usize,
@@ -477,11 +467,11 @@ impl Reim4Convolution for $rayon {
     ) {
         if !RayonTaskExecutor::is_parallel() {
             return <$base as Reim4Convolution>::reim4_convolution_apply_accumulate(
-                m, min_size, offset, dst, dst_stride, a, a_size, a_log_gap, b, b_size, b_log_gap, tmp,
+                m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp,
             );
         }
         parallel_reim4_convolution_apply::<false, true>(
-            m, min_size, offset, dst, dst_stride, a, a, a_size, a_log_gap, b, b, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, b_log_gap, tmp,
         );
     }
     #[inline(always)]
@@ -494,7 +484,6 @@ impl Reim4Convolution for $rayon {
         a0: &[f64],
         a1: &[f64],
         a_size: usize,
-        a_log_gap: usize,
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
@@ -503,11 +492,11 @@ impl Reim4Convolution for $rayon {
     ) {
         if !RayonTaskExecutor::is_parallel() {
             return <$base as Reim4Convolution>::reim4_convolution_pairwise_apply(
-                m, min_size, offset, dst, dst_stride, a0, a1, a_size, a_log_gap, b0, b1, b_size, b_log_gap, tmp,
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
             );
         }
         parallel_reim4_convolution_apply::<true, false>(
-            m, min_size, offset, dst, dst_stride, a0, a1, a_size, a_log_gap, b0, b1, b_size, b_log_gap, tmp,
+            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
         );
     }
     #[inline(always)]

@@ -40,10 +40,11 @@ fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
     (group * size + limb) * 4 * GROUP
 }
 
-/// u32 offset, inside a prepared column whose own degree is `N >> log_gap`, of
-/// row `row0` of the slot that degree-`N` slot `group * GROUP + slot_in_group`
-/// reads: the slot itself when dense, slot `>> log_gap` when sparse (spec 4.5).
-/// Consecutive rows of that slot are `4 * GROUP` u32 apart.
+/// u32 offset, inside a prepared right operand column whose own degree is
+/// `N >> log_gap`, of row `row0` of the slot that degree-`N` slot
+/// `group * GROUP + slot_in_group` reads: the slot itself when dense, slot
+/// `>> log_gap` when sparse (spec 4.5). Consecutive rows of that slot are
+/// `4 * GROUP` u32 apart.
 #[inline(always)]
 fn slot_offset(size: usize, row0: usize, group: usize, slot_in_group: usize, log_gap: usize) -> usize {
     let slot = (group * GROUP + slot_in_group) >> log_gap;
@@ -119,7 +120,6 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
     a0: &[u32],
     a1: &[u32],
     a_size: usize,
-    a_log_gap: usize,
     b0: &[u32],
     b1: &[u32],
     b_size: usize,
@@ -134,8 +134,6 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
             let a_start = k_abs + 1 - j_max;
             let b_start = b_size - j_max;
             for pair in 0..GROUP / 2 {
-                let a_off0 = slot_offset(a_size, a_start, group, 2 * pair, a_log_gap);
-                let a_off1 = slot_offset(a_size, a_start, group, 2 * pair + 1, a_log_gap);
                 let b_off0 = slot_offset(b_size, b_start, group, 2 * pair, b_log_gap);
                 let b_off1 = slot_offset(b_size, b_start, group, 2 * pair + 1, b_log_gap);
                 let mut lo0 = _mm256_setzero_si256();
@@ -143,14 +141,15 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
                 let mut lo1 = _mm256_setzero_si256();
                 let mut hi1 = _mm256_setzero_si256();
                 for row in 0..j_max - j_min {
+                    let ao = packed_row_offset(a_size, a_start + row, group);
                     let ro = row * 4 * GROUP;
-                    let mut av0 = load_coeff(a0.as_ptr().add(a_off0 + ro), 0);
-                    let mut av1 = load_coeff(a0.as_ptr().add(a_off1 + ro), 0);
+                    let mut av0 = load_coeff(a0.as_ptr().add(ao), 2 * pair);
+                    let mut av1 = load_coeff(a0.as_ptr().add(ao), 2 * pair + 1);
                     let mut bv0 = load_coeff(b0.as_ptr().add(b_off0 + ro), 0);
                     let mut bv1 = load_coeff(b0.as_ptr().add(b_off1 + ro), 0);
                     if PAIRWISE {
-                        av0 = cond_sub(_mm256_add_epi64(av0, load_coeff(a1.as_ptr().add(a_off0 + ro), 0)), q);
-                        av1 = cond_sub(_mm256_add_epi64(av1, load_coeff(a1.as_ptr().add(a_off1 + ro), 0)), q);
+                        av0 = cond_sub(_mm256_add_epi64(av0, load_coeff(a1.as_ptr().add(ao), 2 * pair)), q);
+                        av1 = cond_sub(_mm256_add_epi64(av1, load_coeff(a1.as_ptr().add(ao), 2 * pair + 1)), q);
                         bv0 = cond_sub(_mm256_add_epi64(bv0, load_coeff(b1.as_ptr().add(b_off0 + ro), 0)), q);
                         bv1 = cond_sub(_mm256_add_epi64(bv1, load_coeff(b1.as_ptr().add(b_off1 + ro), 0)), q);
                     }
@@ -233,6 +232,11 @@ fn prepare<BE, E: TaskExecutor>(
         (res.n(), res.cols(), res.size())
     };
     assert_sparse_degree(module.n(), n);
+    assert!(
+        left.is_none() || n == module.n(),
+        "prepare: a left operand takes the module degree, res.n():{n} != module.n():{}",
+        module.n()
+    );
     assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
@@ -379,7 +383,8 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     Module<BE>: NttModuleHandle,
 {
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
-    let a_log_gap = sparse_log_gap(n, a.n());
+    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap = sparse_log_gap(n, b.n());
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
@@ -394,8 +399,8 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let min_size = res_size.min((bound + 1).saturating_sub(offset));
     let a_raw: &[u32] = cast_slice(a.raw());
     let b_raw: &[u32] = cast_slice(b.raw());
-    let a0 = col_slice(a_raw, a.n(), a_size, a0_col);
-    let a1 = col_slice(a_raw, a.n(), a_size, a1_col);
+    let a0 = col_slice(a_raw, n, a_size, a0_col);
+    let a1 = col_slice(a_raw, n, a_size, a1_col);
     let b0 = col_slice(b_raw, b.n(), b_size, b0_col);
     let b1 = col_slice(b_raw, b.n(), b_size, b1_col);
     let res_cols = res.cols();
@@ -413,7 +418,6 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
             a0,
             a1,
             a_size,
-            a_log_gap,
             b0,
             b1,
             b_size,

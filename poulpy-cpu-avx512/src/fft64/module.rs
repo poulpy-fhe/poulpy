@@ -654,7 +654,6 @@ impl Reim4Convolution for FFT64Avx512 {
         dst_stride: usize,
         a: &[f64],
         a_size: usize,
-        a_log_gap: usize,
         b: &[f64],
         b_size: usize,
         b_log_gap: usize,
@@ -663,11 +662,7 @@ impl Reim4Convolution for FFT64Avx512 {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
-        unsafe {
-            reim4_convolution_apply_avx512(
-                m, min_size, offset, dst, dst_stride, a, a_size, a_log_gap, b, b_size, b_log_gap, tmp,
-            )
-        }
+        unsafe { reim4_convolution_apply_avx512(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp) }
     }
 
     #[inline(always)]
@@ -679,7 +674,6 @@ impl Reim4Convolution for FFT64Avx512 {
         dst_stride: usize,
         a: &[f64],
         a_size: usize,
-        a_log_gap: usize,
         b: &[f64],
         b_size: usize,
         b_log_gap: usize,
@@ -689,9 +683,7 @@ impl Reim4Convolution for FFT64Avx512 {
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
         unsafe {
-            reim4_convolution_apply_accumulate_avx512(
-                m, min_size, offset, dst, dst_stride, a, a_size, a_log_gap, b, b_size, b_log_gap, tmp,
-            )
+            reim4_convolution_apply_accumulate_avx512(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp)
         }
     }
 
@@ -705,7 +697,6 @@ impl Reim4Convolution for FFT64Avx512 {
         a0: &[f64],
         a1: &[f64],
         a_size: usize,
-        a_log_gap: usize,
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
@@ -717,7 +708,7 @@ impl Reim4Convolution for FFT64Avx512 {
         assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
         unsafe {
             reim4_convolution_pairwise_apply_avx512(
-                m, min_size, offset, dst, dst_stride, a0, a1, a_size, a_log_gap, b0, b1, b_size, b_log_gap, tmp,
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
             )
         }
     }
