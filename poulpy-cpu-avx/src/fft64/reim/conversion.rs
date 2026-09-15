@@ -227,8 +227,9 @@ pub fn reim_to_znx_i64_assign_bnd63_avx2_fma(res: &mut [f64], divisor: f64) {
         let offset_256: __m256d = _mm256_set1_pd(offset);
         let divi_bits_256: __m256i = _mm256_castpd_si256(_mm256_set1_pd(divi_bits));
 
-        let mut res_ptr_4xi64: *mut __m256i = res.as_mut_ptr() as *mut __m256i;
-        let mut res_ptr_1xf64: *mut f64 = res.as_mut_ptr();
+        let res_base: *mut f64 = res.as_mut_ptr();
+        let mut res_ptr_4xi64: *mut __m256i = res_base as *mut __m256i;
+        let mut res_ptr_1xf64: *mut f64 = res_base;
 
         let span: usize = res.len() >> 2;
 

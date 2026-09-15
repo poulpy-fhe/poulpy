@@ -538,7 +538,7 @@ pub(crate) fn reim_to_znx_i64_assign_bnd63_neon(res: &mut [f64], divisor: f64) {
         let divi_bits_v = vreinterpretq_s64_f64(vdupq_n_f64(divi_bits_f));
 
         let mut ptr_f = res.as_mut_ptr();
-        let mut ptr_i = res.as_mut_ptr() as *mut i64;
+        let mut ptr_i = ptr_f as *mut i64;
 
         for _ in 0..span {
             let lo = reim_to_znx_chunk(

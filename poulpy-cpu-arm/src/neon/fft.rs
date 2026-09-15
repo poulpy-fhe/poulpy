@@ -133,10 +133,12 @@ unsafe fn twiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]
         let omr: float64x2_t = vdupq_n_f64(omg[0]);
         let omi: float64x2_t = vdupq_n_f64(omg[1]);
 
-        let mut r0 = re.as_mut_ptr();
-        let mut r1 = re.as_mut_ptr().add(h);
-        let mut i0 = im.as_mut_ptr();
-        let mut i1 = im.as_mut_ptr().add(h);
+        let re_base = re.as_mut_ptr();
+        let im_base = im.as_mut_ptr();
+        let mut r0 = re_base;
+        let mut r1 = re_base.add(h);
+        let mut i0 = im_base;
+        let mut i1 = im_base.add(h);
 
         for _ in (0..h).step_by(4) {
             let mut ur0_lo = vld1q_f64(r0);
@@ -192,14 +194,16 @@ unsafe fn bitwiddle_fft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f6
     assert!(h.is_multiple_of(4));
     assert!(omg.len() >= 4);
     unsafe {
-        let mut r0 = re.as_mut_ptr();
-        let mut r1 = re.as_mut_ptr().add(h);
-        let mut r2 = re.as_mut_ptr().add(2 * h);
-        let mut r3 = re.as_mut_ptr().add(3 * h);
-        let mut i0 = im.as_mut_ptr();
-        let mut i1 = im.as_mut_ptr().add(h);
-        let mut i2 = im.as_mut_ptr().add(2 * h);
-        let mut i3 = im.as_mut_ptr().add(3 * h);
+        let re_base = re.as_mut_ptr();
+        let im_base = im.as_mut_ptr();
+        let mut r0 = re_base;
+        let mut r1 = re_base.add(h);
+        let mut r2 = re_base.add(2 * h);
+        let mut r3 = re_base.add(3 * h);
+        let mut i0 = im_base;
+        let mut i1 = im_base.add(h);
+        let mut i2 = im_base.add(2 * h);
+        let mut i3 = im_base.add(3 * h);
 
         let omar: float64x2_t = vdupq_n_f64(omg[0]);
         let omai: float64x2_t = vdupq_n_f64(omg[1]);
@@ -335,10 +339,12 @@ unsafe fn inv_twiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg: &
         let omr: float64x2_t = vdupq_n_f64(omg[0]);
         let omi: float64x2_t = vdupq_n_f64(omg[1]);
 
-        let mut r0 = re.as_mut_ptr();
-        let mut r1 = re.as_mut_ptr().add(h);
-        let mut i0 = im.as_mut_ptr();
-        let mut i1 = im.as_mut_ptr().add(h);
+        let re_base = re.as_mut_ptr();
+        let im_base = im.as_mut_ptr();
+        let mut r0 = re_base;
+        let mut r1 = re_base.add(h);
+        let mut i0 = im_base;
+        let mut i1 = im_base.add(h);
 
         for _ in (0..h).step_by(4) {
             let mut ur0_lo = vld1q_f64(r0);
@@ -395,14 +401,16 @@ unsafe fn inv_bitwiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg:
     assert!(h.is_multiple_of(4));
     assert!(omg.len() >= 4);
     unsafe {
-        let mut r0 = re.as_mut_ptr();
-        let mut r1 = re.as_mut_ptr().add(h);
-        let mut r2 = re.as_mut_ptr().add(2 * h);
-        let mut r3 = re.as_mut_ptr().add(3 * h);
-        let mut i0 = im.as_mut_ptr();
-        let mut i1 = im.as_mut_ptr().add(h);
-        let mut i2 = im.as_mut_ptr().add(2 * h);
-        let mut i3 = im.as_mut_ptr().add(3 * h);
+        let re_base = re.as_mut_ptr();
+        let im_base = im.as_mut_ptr();
+        let mut r0 = re_base;
+        let mut r1 = re_base.add(h);
+        let mut r2 = re_base.add(2 * h);
+        let mut r3 = re_base.add(3 * h);
+        let mut i0 = im_base;
+        let mut i1 = im_base.add(h);
+        let mut i2 = im_base.add(2 * h);
+        let mut i3 = im_base.add(3 * h);
 
         let omar: float64x2_t = vdupq_n_f64(omg[0]);
         let omai: float64x2_t = vdupq_n_f64(omg[1]);
