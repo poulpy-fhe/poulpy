@@ -40,9 +40,12 @@ unsafe fn reim4_sparse_block_permutation(blk: usize, log_gap: usize) -> __m256i 
 }
 
 /// One reim4 half-row (4 f64) gathered through [`reim4_sparse_block_permutation`].
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX2.
 #[target_feature(enable = "avx2")]
 #[inline]
-fn reim4_sparse_permute(v: __m256d, idx: __m256i) -> __m256d {
+unsafe fn reim4_sparse_permute(v: __m256d, idx: __m256i) -> __m256d {
     use core::arch::x86_64::{_mm256_castpd_ps, _mm256_castps_pd, _mm256_permutevar8x32_ps};
 
     _mm256_castps_pd(_mm256_permutevar8x32_ps(_mm256_castpd_ps(v), idx))

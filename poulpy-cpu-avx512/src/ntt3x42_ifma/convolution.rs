@@ -1096,6 +1096,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<'a, E: TaskExecutor>(
             max_size = max_size.max(min_size);
             max_a_size = max_a_size.max(a_size);
             max_b_size = max_b_size.max(b_size);
+            assert_eq!(term.a.n(), n, "a.n():{} != res.n():{n}", term.a.n());
             PreparedAccTerm {
                 a_col: col_slice(cast_slice(term.a.data()), n, a_size, term.a_col),
                 a_size,

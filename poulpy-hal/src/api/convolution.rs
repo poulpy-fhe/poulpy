@@ -434,7 +434,7 @@ pub trait Convolution<BE: Backend> {
     /// class      derived
     /// mutation   out-of-place
     /// definition cnv_prepare_left(left, a) and cnv_prepare_right(right, a)
-    /// domain     left: a CnvPVecL; right: a CnvPVecR with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of the module degree with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
+    /// domain     left: a CnvPVecL of the module degree; right: a CnvPVecR of the module degree, with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of the module degree with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_self_tmp_bytes(left.size(), a.size())
     /// ensures    left holds prep_L(a) and right holds prep_R(a), the pair a self-convolution needs
     /// sparse     none: a takes the module degree, as for cnv_prepare_left (4.5)

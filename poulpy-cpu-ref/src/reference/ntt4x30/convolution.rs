@@ -95,21 +95,6 @@ fn gather_sparse_x2_rows(dst: &mut [u32], src: &[u32], size: usize, blk: usize, 
     }
 }
 
-/// Row `row` of degree-`N` x2 block `blk` of a prepared column, as its two slot
-/// halves: a slice into the column when dense, the two gathered slots in `buf`
-/// when sparse.
-fn x2_row<'s>(col: &'s [u32], size: usize, blk: usize, row: usize, log_gap: usize, buf: &'s mut [[u32; 8]; 2]) -> &'s [[u32; 8]] {
-    if log_gap == 0 {
-        return cast_slice(&col[(blk * size + row) * 16..(blk * size + row + 1) * 16]);
-    }
-    for (lane, dst) in buf.iter_mut().enumerate() {
-        let slot: usize = (2 * blk + lane) >> log_gap;
-        let s: usize = ((slot >> 1) * size + row) * 16 + 8 * (slot & 1);
-        dst.copy_from_slice(&col[s..s + 8]);
-    }
-    &buf[..]
-}
-
 /// Convolve one column pair into `res[res_col]`, tiling [`TILE`] output limbs
 /// per pass over the zero-padded `a` window.
 ///
@@ -546,6 +531,7 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
     // dense term reads its rows in place and never touches it).
     let mut yb = [[0u32; 8]; 2];
     let term_a_rows: Vec<&[[u32; 8]]> = term_cols.iter().map(|&(a_col, _, _, _, _)| cast_slice(a_col)).collect();
+    let term_b_rows: Vec<&[[u32; 8]]> = term_cols.iter().map(|&(_, b_col, _, _, _)| cast_slice(b_col)).collect();
 
     for blk in 0..n_blks {
         let grp_pos = blk % CNV_ACC_GROUP;
@@ -555,9 +541,21 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
             for e in sched_k {
                 let (_, b_col, a_size, b_size, b_log_gap) = term_cols[e.term];
                 let a_rows = term_a_rows[e.term];
+                let b_rows = term_b_rows[e.term];
                 for i in 0..e.len {
                     let r = 2 * (blk * a_size + e.a_row + i);
-                    let y = x2_row(b_col, b_size, blk, e.b_row + i, b_log_gap, &mut yb);
+                    let row = e.b_row + i;
+                    let y: &[[u32; 8]] = if b_log_gap == 0 {
+                        let br = 2 * (blk * b_size + row);
+                        &b_rows[br..br + 2]
+                    } else {
+                        for (lane, dst) in yb.iter_mut().enumerate() {
+                            let slot: usize = (2 * blk + lane) >> b_log_gap;
+                            let idx: usize = ((slot >> 1) * b_size + row) * 16 + 8 * (slot & 1);
+                            dst.copy_from_slice(&b_col[idx..idx + 8]);
+                        }
+                        &yb[..]
+                    };
                     accum_mul_q120_bc(&mut s[0], &a_rows[r], &y[0]);
                     accum_mul_q120_bc(&mut s[1], &a_rows[r + 1], &y[1]);
                 }
