@@ -17,12 +17,14 @@ env:
     poulpy-core/enable-core
     poulpy-cpu-portable/enable-core
     poulpy-cpu-portable/enable-ckks
+    poulpy-cpu-oracle/enable-ckks
     poulpy-bin-fhe/enable-bin-fhe
   AVX_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-avx
     poulpy-cpu-portable/enable-core
     poulpy-cpu-portable/enable-ckks
+    poulpy-cpu-oracle/enable-ckks
     poulpy-cpu-avx/enable-avx
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-rayon
@@ -33,6 +35,7 @@ env:
     poulpy-core/enable-ifma
     poulpy-cpu-portable/enable-core
     poulpy-cpu-portable/enable-ckks
+    poulpy-cpu-oracle/enable-ckks
     poulpy-cpu-avx/enable-avx
     poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-rayon
@@ -45,6 +48,7 @@ env:
     poulpy-core/enable-neon
     poulpy-cpu-portable/enable-core
     poulpy-cpu-portable/enable-ckks
+    poulpy-cpu-oracle/enable-ckks
     poulpy-cpu-arm/enable-ckks
     poulpy-cpu-arm/enable-neon
     poulpy-cpu-arm/enable-rayon

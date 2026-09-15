@@ -36,7 +36,7 @@ Feature requests belong there too. Please make sure the feature is self-containe
 The toolchain is pinned in [`rust-toolchain.toml`](./rust-toolchain.toml), so `cargo` picks the right nightly on its own. CI runs six jobs (portable, AVX, AVX-512, NEON, and two macOS smoke jobs); the backend jobs skip themselves when the runner lacks the instruction set. The feature sets they use are at the top of [`.github/workflows/ci.yml`](./.github/workflows/ci.yml), and the portable one is the minimum to run locally:
 
 ```sh
-PORTABLE_FEATURES="poulpy-core/enable-core poulpy-cpu-portable/enable-core poulpy-cpu-portable/enable-ckks poulpy-bin-fhe/enable-bin-fhe"
+PORTABLE_FEATURES="poulpy-core/enable-core poulpy-cpu-portable/enable-core poulpy-cpu-portable/enable-ckks poulpy-cpu-oracle/enable-ckks poulpy-bin-fhe/enable-bin-fhe"
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --features "$PORTABLE_FEATURES" -- -D warnings

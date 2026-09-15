@@ -39,3 +39,5 @@ poulpy-cpu-oracle = { path = "../poulpy-cpu-oracle", features = ["enable-core"] 
 cargo test -p poulpy-cpu-oracle --features enable-ckks --profile ci
 cargo test -p poulpy-cpu-portable --features enable-ckks --profile ci tests::oracle
 ```
+
+CI enables `poulpy-cpu-oracle/enable-ckks` explicitly in each backend feature set.
