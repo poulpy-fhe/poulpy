@@ -26,13 +26,11 @@ poulpy-cpu-rayon = {path = "poulpy-cpu-rayon", version = "0.8.3"}
 poulpy-bin-fhe = {path = "poulpy-bin-fhe"}
 poulpy-bench = {path = "poulpy-bench"}
 poulpy-ckks = {path = "poulpy-ckks", version = "0.8.3"}
-dashu-float = "0.6.0"
+dashu-float = "=0.6.0"
 dashu-int = "0.6.0"
-astro-float-num = { version = "0.3.7", default-features = false, features = ["std"] }
-# `poulpy-ckks` enables `unstable-float` only for its portable target graph.
-# Cargo then unifies that feature onto transitive users of this same libm; the
-# workspace's pinned nightly is therefore part of the fallback's contract.
-libm = "0.2.16"
+astro-float-num = { version = "=0.3.7", default-features = false, features = ["std"] }
+# CKKS numerical fixtures pin these algorithms across platforms.
+libm = { version = "=0.2.16", default-features = false }
 rand = "0.10.2"
 rand_chacha = "0.10.0"
 rand_core = "0.10.1"

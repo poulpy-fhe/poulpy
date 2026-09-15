@@ -47,3 +47,6 @@ pub(crate) use scalar_znx_fill::ScalarZnxFill;
 
 pub use fft64::{FFT64Oracle, FFT64ReimTable};
 pub use ntt4x30::{NTT4x30Oracle, NTT4x30OracleHandle};
+
+#[cfg(feature = "enable-ckks")]
+pub mod ckks_encoding_fft;

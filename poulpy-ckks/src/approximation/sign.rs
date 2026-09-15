@@ -1,9 +1,10 @@
 //! Host-side composite minimax generation for `sign`.
 
+use crate::numerics::CKKSFloat;
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow, bail};
-use num_traits::{Float, FloatConst, FromPrimitive};
+use num_traits::{FloatConst, FromPrimitive};
 
 #[cfg(test)]
 use super::remez::eval_cheb;
@@ -12,7 +13,7 @@ use super::remez::{RemezOptions, fit_chebyshev_on_intervals, grid_error_bounds};
 /// Fits an odd polynomial to `1` on positive `[lo, hi]`.
 pub(crate) fn minimax_odd_const1<F>(lo: F, hi: F, degree: usize, opts: RemezOptions) -> Result<(Vec<F>, F, F)>
 where
-    F: Float + FloatConst + FromPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + Debug,
 {
     if degree.is_multiple_of(2) {
         bail!("minimax_odd_const1: degree {degree} must be odd");
@@ -22,7 +23,7 @@ where
     }
 
     let odd_degs: Vec<usize> = (0..).map(|j| 2 * j + 1).take_while(|&d| d <= degree).collect();
-    let interval_bits = (hi / lo).log2().ceil().to_usize().unwrap_or(usize::MAX);
+    let interval_bits = (hi / lo).ckks_log2().ceil().to_usize().unwrap_or(usize::MAX);
     let interval_tol = (lo / hi).to_f64().unwrap_or(opts.rel_tol);
     let fit_opts = RemezOptions {
         grid_mult: opts.grid_mult.max(interval_bits.saturating_mul(64)),
@@ -46,7 +47,7 @@ pub fn sign_composite_coeffs<F>(
     opts: RemezOptions,
 ) -> Result<Vec<Vec<F>>>
 where
-    F: Float + FloatConst + FromPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + Debug,
 {
     sign_composite_coeffs_with_margin(tau, F::zero(), target_bits, degrees, max_factors, opts)
 }
@@ -61,7 +62,7 @@ pub fn sign_composite_coeffs_with_margin<F>(
     opts: RemezOptions,
 ) -> Result<Vec<Vec<F>>>
 where
-    F: Float + FloatConst + FromPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + Debug,
 {
     if !tau.is_finite() || tau <= F::zero() || tau >= F::one() {
         bail!("sign_composite_coeffs_with_margin: tau must lie in (0, 1)");
@@ -92,7 +93,7 @@ where
     if opts.grid_mult == 0 {
         bail!("sign_composite_coeffs_with_margin: grid_mult must be positive");
     }
-    let target = F::from_f64(2f64.powf(-target_bits))
+    let target = F::from_f64(2f64.ckks_powf(-target_bits))
         .ok_or_else(|| anyhow!("sign_composite_coeffs_with_margin: target_bits {target_bits} not representable"))?;
     let one = F::one();
     let mut lo = tau;
@@ -144,7 +145,7 @@ mod tests {
             let x = tau + (1.0 - tau) * (k as f64) / 3999.0;
             worst = worst.max((compose(rows, x) - 1.0).abs());
         }
-        -worst.log2()
+        -worst.ckks_log2()
     }
 
     #[test]

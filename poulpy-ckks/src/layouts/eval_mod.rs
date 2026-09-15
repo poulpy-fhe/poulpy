@@ -41,6 +41,7 @@
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps) trait (see
 //! [`crate::default::eval_mod`] for the evaluation itself).
 
+use crate::numerics::CKKSFloat;
 use anyhow::{Result, anyhow, ensure};
 use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -578,7 +579,7 @@ where
         f_mod_inv_poly_opt = Some(Polynomial::new_with_parity(Basis::Monomial, coeffs, Parity::Odd));
         F::one()
     } else {
-        (inv_two_pi * scaling).powf(F::one() / sc_fac)
+        (inv_two_pi * scaling).ckks_powf(F::one() / sc_fac)
     };
 
     let mut f_mod_poly: Polynomial<F> = match lit.eval_mod_type {
@@ -587,7 +588,13 @@ where
             // polynomial: it evaluates the same periodic target and exercises
             // the full Chebyshev BSGS path used by the other real variants.
             let off = scalar_from_f64::<F>("-0.25", -0.25)?;
-            Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| (two_pi * (x + off)).cos())?
+            Polynomial::chebyshev_interpolate_with_cos(
+                lit.f_mod_degree,
+                -k_eff,
+                k_eff,
+                |x| (two_pi * (x + off)).ckks_cos(),
+                F::ckks_cos,
+            )?
         }
         EvalModType::CosCheby => {
             // Bake the −1/4-period phase shift into the interpolated function so
@@ -597,7 +604,13 @@ where
             // `−1/4 / 2^r` (it reaches the full `−1/4` after the squarings). The
             // shifted cosine is no longer even in `x`, hence `Parity::Full` below.
             let off = scalar_from_f64::<F>("-0.25", -0.25)? / scalar_from_u64::<F>("2^r", 1u64 << f_mod_log_interval_reduction)?;
-            Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| (two_pi * (x + off)).cos())?
+            Polynomial::chebyshev_interpolate_with_cos(
+                lit.f_mod_degree,
+                -k_eff,
+                k_eff,
+                |x| (two_pi * (x + off)).ckks_cos(),
+                F::ckks_cos,
+            )?
         }
         EvalModType::CosHK => {
             let coeffs = cosine::approximate_cos::<F>(
@@ -664,7 +677,9 @@ where
     // single plaintext (they all share `coeff_meta`); the evaluator reads
     // coefficient `i` at step `i`.
     let range_extension_consts = if f_mod_log_interval_reduction > 0 {
-        let vals: Vec<F> = (0..f_mod_log_interval_reduction).map(|i| s.powi(1i32 << (i + 1))).collect();
+        let vals: Vec<F> = (0..f_mod_log_interval_reduction)
+            .map(|i| s.ckks_powi(1i32 << (i + 1)))
+            .collect();
         let mut pt = module.ckks_pt_coeffs_alloc(f_mod_log_interval_reduction, base2k, coeff_meta.k);
         pt.set_meta_checked(coeff_meta.meta)?;
         module
@@ -710,10 +725,22 @@ where
 
     let two = F::one() + F::one();
     let two_pi = two * F::PI();
-    let s: F = (F::one() / two_pi * scaling).powf(F::one() / sc_fac);
+    let s: F = (F::one() / two_pi * scaling).ckks_powf(F::one() / sc_fac);
 
-    let re = Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| s * (two_pi * x).cos())?;
-    let im = Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| s * (two_pi * x).sin())?;
+    let re = Polynomial::chebyshev_interpolate_with_cos(
+        lit.f_mod_degree,
+        -k_eff,
+        k_eff,
+        |x| s * (two_pi * x).ckks_cos(),
+        F::ckks_cos,
+    )?;
+    let im = Polynomial::chebyshev_interpolate_with_cos(
+        lit.f_mod_degree,
+        -k_eff,
+        k_eff,
+        |x| s * (two_pi * x).ckks_sin(),
+        F::ckks_cos,
+    )?;
     let exp_poly = ComplexPolynomial::new(Basis::Chebyshev, re.coeffs, im.coeffs);
     let exp_bsgs = encode_complex_bsgs_backend(&exp_poly, module, base2k, coeff_meta, lit.split_strategy, scratch)?;
 
@@ -771,7 +798,7 @@ impl<F, P> EvalMod<F, P> {
             return 1.0;
         }
         (std::f64::consts::TAU.recip() * self.plan.scaling.unwrap_or(1.0))
-            .powf(1.0 / (1u64 << self.plan.f_mod_log_interval_reduction) as f64)
+            .ckks_powf(1.0 / (1u64 << self.plan.f_mod_log_interval_reduction) as f64)
     }
 
     /// Maps every encoded plaintext field from storage `P` to storage `Q`,

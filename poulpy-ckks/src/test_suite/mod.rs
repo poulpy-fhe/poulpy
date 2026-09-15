@@ -874,6 +874,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::eval_mod::test_eval_mod_cos_discrete_even
             );
             run_test!(
+                encoding_determinism,
+                $crate::test_suite::determinism::test_encoding_determinism
+            );
+            run_test!(
                 bootstrapping_standard_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_standard_e2e
             );
@@ -1019,3 +1023,5 @@ pub mod ship;
 pub mod slots_kind;
 pub mod sub;
 pub mod sub_unsafe;
+
+pub mod determinism;

@@ -270,9 +270,6 @@ where
     let gap = coefficient_gap(pt, coeffs.len())?;
     let log_delta = pt.log_delta();
     let log_budget = pt.log_budget();
-    let scale = F::from_usize(log_delta)
-        .context("CKKS plaintext scale exponent is not representable by the codec scalar")?
-        .exp2();
     let base2k = pt.base2k().as_usize();
     let k = pt.encoded_k().as_usize();
     let mut backend = pt.to_backend_mut();
@@ -282,9 +279,8 @@ where
             .iter()
             .enumerate()
             .map(|(index, &x)| {
-                (x * scale)
-                    .round()
-                    .to_i64()
+                x.ckks_quantize(log_delta)
+                    .and_then(|value| i64::try_from(value).ok())
                     .with_context(|| format!("CKKS coefficient {index} is not representable as an i64 at scale 2^{log_delta}"))
             })
             .collect::<Result<_>>()?;
@@ -294,9 +290,7 @@ where
             .iter()
             .enumerate()
             .map(|(index, &x)| {
-                (x * scale)
-                    .round()
-                    .to_i128()
+                x.ckks_quantize(log_delta)
                     .with_context(|| format!("CKKS coefficient {index} is not representable as an i128 at scale 2^{log_delta}"))
             })
             .collect::<Result<_>>()?;
@@ -323,8 +317,6 @@ where
         "CKKS host decoding supports at most 127 torus bits, got {}",
         log_delta + log_budget
     );
-    let scale =
-        (-F::from_usize(log_delta).context("CKKS plaintext scale exponent is not representable by the codec scalar")?).exp2();
     let base2k = pt.base2k().as_usize();
     let k = pt.encoded_k().as_usize();
     let backend = pt.to_backend_ref();
@@ -333,15 +325,13 @@ where
         let mut data = vec![0i64; coeffs.len()];
         backend.data().decode_vec_i64_strided(base2k, 0, k, gap, &mut data);
         for (coefficient, &value) in coeffs.iter_mut().zip(&data) {
-            *coefficient =
-                F::from_i64(value).context("decoded i64 coefficient is not representable by the codec scalar")? * scale;
+            *coefficient = F::ckks_dequantize(value as i128, log_delta);
         }
     } else {
         let mut data = vec![0i128; coeffs.len()];
         backend.data().decode_vec_i128_strided(base2k, 0, k, gap, &mut data);
         for (coefficient, &value) in coeffs.iter_mut().zip(&data) {
-            *coefficient =
-                F::from_i128(value).context("decoded i128 coefficient is not representable by the codec scalar")? * scale;
+            *coefficient = F::ckks_dequantize(value, log_delta);
         }
     }
     Ok(())

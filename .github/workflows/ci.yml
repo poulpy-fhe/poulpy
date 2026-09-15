@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -94,6 +93,9 @@ jobs:
 
       - name: Test all non-AVX features
         run: cargo test --workspace --profile ci --features "$PORTABLE_FEATURES"
+
+      - name: Check libquadmath-independent encoding
+        run: cargo test -p poulpy-cpu-portable --profile ci --features "enable-ckks,poulpy-ckks/libquadmath" encoding_determinism
 
   avx:
     name: AVX backend
@@ -204,6 +206,12 @@ jobs:
           fft64::reim::fft_avx2_fma::tests::fft_ifft_roundtrip_avx2
           -- --exact
 
+      - name: Test deterministic CKKS on Intel macOS
+        run: |
+          cargo test -p poulpy-cpu-avx -p poulpy-cpu-portable --profile ci --features "poulpy-cpu-avx/enable-avx,poulpy-cpu-avx/enable-ckks,poulpy-cpu-portable/enable-ckks" encoding_determinism
+          cargo test -p poulpy-cpu-avx -p poulpy-cpu-portable --profile ci --features "poulpy-cpu-avx/enable-avx,poulpy-cpu-avx/enable-ckks,poulpy-cpu-portable/enable-ckks" bootstrapping_standard_e2e
+          cargo test -p poulpy-cpu-portable --profile ci --features enable-ckks --test ckks_determinism
+
   macos_arm_quad:
     name: Apple Silicon Quad smoke
     runs-on: macos-latest
@@ -239,6 +247,12 @@ jobs:
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_math_surface_values -- --exact
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_special_value_semantics -- --exact
           cargo test -p poulpy-cpu-portable --lib --features "enable-ckks,poulpy-ckks/libquadmath" ckks_encoding::tests::fft64_precision_families_coexist_in_one_module -- --exact
+
+      - name: Test deterministic CKKS on Apple Silicon
+        run: |
+          cargo test -p poulpy-cpu-arm --profile ci --features "enable-neon,enable-ckks" encoding_determinism
+          cargo test -p poulpy-cpu-arm --profile ci --features "enable-neon,enable-ckks" bootstrapping_standard_e2e
+          cargo test -p poulpy-cpu-portable --profile ci --features enable-ckks --test ckks_determinism
 
   # AVX-512 typecheck/clippy lane. GitHub-hosted runners do not expose AVX-512,
   # so this lane builds and lints the AVX-512F + IFMA configuration on every

@@ -21,6 +21,7 @@
 //! and the canonical embedding uses the Galois generator 5 (`pow5`), identical to
 //! the backend CKKS encoding plans.
 
+use crate::numerics::CKKSFloat;
 use num_traits::{Float, FloatConst};
 use poulpy_core::layouts::Diagonals;
 
@@ -29,11 +30,9 @@ use crate::layouts::{
     dft::{DFTOutputFormat, DFTPlan, DFTType},
 };
 
-/// Real scalar used for plaintext DFT-matrix generation: any float carrying the
-/// constants needed for the roots of unity. Implemented for `f64` today; a
-/// higher-precision float can be plugged in for more accurate matrices.
-pub trait DftScalar: Float + FloatConst {}
-impl<F: Float + FloatConst> DftScalar for F {}
+/// Real scalar with canonical setup math and constants for plaintext DFT roots.
+pub trait DftScalar: CKKSFloat + FloatConst {}
+impl<F: CKKSFloat + FloatConst> DftScalar for F {}
 
 /// A minimal complex *scalar* for the butterfly math (roots, the per-layer
 /// coefficient vectors `a`/`b`/`c`, and `rotate_and_mul`). The diagonal *maps*
@@ -94,7 +93,7 @@ fn roots_of_unity<F: DftScalar>(n: usize) -> Vec<Cpx<F>> {
     let octant: Vec<Cpx<F>> = (0..=width)
         .map(|k| {
             let angle = step * F::from(k).unwrap();
-            let (sin, cos) = angle.sin_cos();
+            let (sin, cos) = angle.ckks_sin_cos();
             Cpx::new(cos, sin)
         })
         .collect();
@@ -565,11 +564,11 @@ pub(crate) fn nth_root_scalar<F: DftScalar>(s: F, depth: usize) -> F {
     if depth == 1 {
         return s;
     }
-    let seed = s.to_f64().expect("finite scaling").powf(1.0 / depth as f64);
+    let seed = s.to_f64().expect("finite scaling").ckks_powf(1.0 / depth as f64);
     let d = F::from(depth).unwrap();
     let mut x = F::from(seed).unwrap();
     for _ in 0..2 {
-        let x_dm1 = x.powi(depth as i32 - 1);
+        let x_dm1 = x.ckks_powi(depth as i32 - 1);
         x = x - (x * x_dm1 - s) / (d * x_dm1);
     }
     x

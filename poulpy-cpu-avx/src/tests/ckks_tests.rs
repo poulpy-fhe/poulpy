@@ -6,7 +6,7 @@ ckks_backend_test_suite!(
     mod fft64_f64,
     backend = crate::FFT64Avx,
     scalar = f64,
-    encoder = crate::FFT64AvxReimTable,
+    encoder = poulpy_cpu_oracle::ckks_encoding_fft::EncodingFFTTable<f64>,
     params = poulpy_ckks::test_suite::FFT64_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -16,7 +16,7 @@ ckks_backend_test_suite!(
     mod fft64_rayon_f64,
     backend = crate::FFT64AvxRayon,
     scalar = f64,
-    encoder = crate::FFT64AvxReimTable,
+    encoder = poulpy_cpu_oracle::ckks_encoding_fft::EncodingFFTTable<f64>,
     params = poulpy_ckks::test_suite::FFT64_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -26,7 +26,7 @@ ckks_backend_test_suite!(
     mod ntt4x30_rayon_f64,
     backend = crate::NTT4x30AvxRayon,
     scalar = f64,
-    encoder = crate::FFT64AvxReimTable,
+    encoder = poulpy_cpu_oracle::ckks_encoding_fft::EncodingFFTTable<f64>,
     params = poulpy_ckks::test_suite::NTT4X30_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
@@ -35,8 +35,17 @@ ckks_backend_test_suite!(
     mod ntt4x30_f64,
     backend = crate::NTT4x30Avx,
     scalar = f64,
-    encoder = crate::FFT64AvxReimTable,
+    encoder = poulpy_cpu_oracle::ckks_encoding_fft::EncodingFFTTable<f64>,
     params = poulpy_ckks::test_suite::NTT4X30_PARAMS_F64,
+    rotations = super::ATK_ROTATIONS,
+);
+
+ckks_backend_test_suite!(
+    mod ntt4x30_f128,
+    backend = crate::NTT4x30Avx,
+    scalar = poulpy_ckks::Quad,
+    encoder = poulpy_cpu_oracle::ckks_encoding_fft::EncodingFFTTable<poulpy_ckks::Quad>,
+    params = poulpy_ckks::test_suite::NTT4X30_PARAMS_F128,
     rotations = super::ATK_ROTATIONS,
 );
 

@@ -30,14 +30,14 @@ impl<F> crate::ckks_encoding::CKKSEncodingTransform<F> for FFT64Oracle
 where
     F: poulpy_ckks::api::CKKSEncodingScalar,
 {
-    type Fft = crate::FFT64ReimTable<F>;
+    type Fft = crate::ckks_encoding_fft::EncodingFFTTable<F>;
 }
 
 impl<F> crate::ckks_encoding::CKKSEncodingTransform<F> for NTT4x30Oracle
 where
     F: poulpy_ckks::api::CKKSEncodingScalar,
 {
-    type Fft = crate::FFT64ReimTable<F>;
+    type Fft = crate::ckks_encoding_fft::EncodingFFTTable<F>;
 }
 
 crate::ckks_encoding::impl_ckks_encoding!(FFT64Oracle);

@@ -299,6 +299,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     // Cross-check the one-shot orchestrator (the public API) against the explicit
     // pipeline below — run first, on the fresh input, since the manual path mutates
     // `ct0` in place for the encapsulation key-switch.
+    super::determinism::bootstrap_snapshot::<BE, F>("input", &ct0);
     let ct_bs = {
         let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
@@ -322,6 +323,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
                 s.avg_log2_prec
             );
         }
+        super::determinism::bootstrap_snapshot::<BE, F>("output", &ct_bs);
         ct_bs
     };
 
@@ -391,6 +393,8 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     println!("ct: {} {}", ct.k(), ct.size());
     println!("ct_real: {} {}", ct_real.k(), ct_real.size());
     println!("ct_imag: {} {}", ct_imag.k(), ct_imag.size());
+    super::determinism::bootstrap_snapshot::<BE, F>("c2s-real", &ct_real);
+    super::determinism::bootstrap_snapshot::<BE, F>("c2s-imag", &ct_imag);
 
     log_budget_check -= plan.coeffs_to_slots().consumed_bits();
 
@@ -437,6 +441,8 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         )
         .unwrap();
     println!("ckks_eval_mod: {:?}", now.elapsed());
+    super::determinism::bootstrap_snapshot::<BE, F>("evalmod-real", &res_real);
+    super::determinism::bootstrap_snapshot::<BE, F>("evalmod-imag", &res_imag);
     let now = Instant::now();
     module
         .ckks_eval_mod(

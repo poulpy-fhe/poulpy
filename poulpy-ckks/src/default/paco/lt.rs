@@ -164,7 +164,9 @@ pub(crate) fn paco_psi_c2s_factors<F: DftScalar + DiagonalArithmetic>(
     // its share directly). The root is taken at the working precision F after
     // converting the plan's f64 scaling value. The combined chain scaling is
     // validated as dyadic, but an individual per-chain root need not be.
-    let share = F::from(dft.scaling()).unwrap().powf(F::one() / F::from(n_factors).unwrap());
+    let share = F::from(dft.scaling())
+        .unwrap()
+        .ckks_powf(F::one() / F::from(n_factors).unwrap());
     factors.iter_mut().for_each(|f| scale_factor(f, share));
 
     let two_c = 2 * p.c();
@@ -272,7 +274,7 @@ pub(crate) fn paco_stc_factors<F: DftScalar + DiagonalArithmetic>(p: &PaCoPlan) 
     // One uniform share per factor of the user scaling and η's 1/π, computed
     // at the working precision F. π and the root do not add an f64 waypoint;
     // the caller-supplied plan scaling itself remains an f64 API value.
-    let share = (F::from(dft.scaling()).unwrap() / F::PI()).powf(F::one() / F::from(n_factors).unwrap());
+    let share = (F::from(dft.scaling()).unwrap() / F::PI()).ckks_powf(F::one() / F::from(n_factors).unwrap());
     factors.iter_mut().for_each(|f| scale_factor(f, share));
     factors
 }

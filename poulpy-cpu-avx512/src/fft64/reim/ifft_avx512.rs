@@ -17,9 +17,9 @@
 
 use std::arch::x86_64::{
     __m128d, __m256d, __m512d, __m512i, _mm_loadu_pd, _mm256_loadu_pd, _mm256_set_m128d, _mm256_storeu_pd, _mm512_add_pd,
-    _mm512_castpd256_pd512, _mm512_castpd512_pd256, _mm512_extractf64x4_pd, _mm512_fmadd_pd, _mm512_fmsub_pd, _mm512_insertf64x4,
-    _mm512_loadu_pd, _mm512_mul_pd, _mm512_permutex2var_pd, _mm512_set_epi64, _mm512_set1_pd, _mm512_shuffle_pd,
-    _mm512_storeu_pd, _mm512_sub_pd, _mm512_unpackhi_pd, _mm512_unpacklo_pd,
+    _mm512_castpd256_pd512, _mm512_castpd512_pd256, _mm512_extractf64x4_pd, _mm512_insertf64x4, _mm512_loadu_pd, _mm512_mul_pd,
+    _mm512_permutex2var_pd, _mm512_set_epi64, _mm512_set1_pd, _mm512_shuffle_pd, _mm512_storeu_pd, _mm512_sub_pd,
+    _mm512_unpackhi_pd, _mm512_unpacklo_pd,
 };
 
 use crate::fft64::reim::as_arr;
@@ -28,6 +28,11 @@ const IFFT_RECURSION_CUTOFF: usize = 2048;
 
 #[target_feature(enable = "avx512f")]
 pub(crate) fn ifft_avx512(m: usize, omg: &[f64], data: &mut [f64]) {
+    ifft_avx512_with_fma::<true>(m, omg, data);
+}
+
+#[target_feature(enable = "avx512f")]
+pub(crate) fn ifft_avx512_with_fma<const FUSED: bool>(m: usize, omg: &[f64], data: &mut [f64]) {
     // m <= 16 falls through to the reference implementation: it is too small
     // for the AVX-512 base case (`ifft16x2_avx512` processes 2 blocks per
     // call, so it needs m >= 32). For m >= 32, the BFS dispatcher always
@@ -42,27 +47,27 @@ pub(crate) fn ifft_avx512(m: usize, omg: &[f64], data: &mut [f64]) {
     let (re, im) = data.split_at_mut(m);
 
     if m <= IFFT_RECURSION_CUTOFF {
-        ifft_bfs_16_avx512(m, re, im, omg, 0);
+        ifft_bfs_16_avx512::<FUSED>(m, re, im, omg, 0);
     } else {
-        ifft_rec_16_avx512(m, re, im, omg, 0);
+        ifft_rec_16_avx512::<FUSED>(m, re, im, omg, 0);
     }
 }
 
 #[target_feature(enable = "avx512f")]
-fn ifft_rec_16_avx512(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
+fn ifft_rec_16_avx512<const FUSED: bool>(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
     if m <= IFFT_RECURSION_CUTOFF {
-        return ifft_bfs_16_avx512(m, re, im, omg, pos);
+        return ifft_bfs_16_avx512::<FUSED>(m, re, im, omg, pos);
     };
     let h: usize = m >> 1;
-    pos = ifft_rec_16_avx512(h, re, im, omg, pos);
-    pos = ifft_rec_16_avx512(h, &mut re[h..], &mut im[h..], omg, pos);
-    inv_twiddle_ifft_avx512(h, re, im, *as_arr::<2, f64>(&omg[pos..]));
+    pos = ifft_rec_16_avx512::<FUSED>(h, re, im, omg, pos);
+    pos = ifft_rec_16_avx512::<FUSED>(h, &mut re[h..], &mut im[h..], omg, pos);
+    inv_twiddle_ifft_avx512::<FUSED>(h, re, im, *as_arr::<2, f64>(&omg[pos..]));
     pos += 2;
     pos
 }
 
 #[target_feature(enable = "avx512f")]
-fn ifft_bfs_16_avx512(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
+fn ifft_bfs_16_avx512<const FUSED: bool>(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
     let log_m: usize = (usize::BITS - (m - 1).leading_zeros()) as usize;
 
     // m is always a multiple of 32 here (smallest BFS input is m == 32);
@@ -70,7 +75,7 @@ fn ifft_bfs_16_avx512(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut
     let mut off = 0;
     while off + 32 <= m {
         unsafe {
-            ifft16x2_avx512(&mut re[off..off + 32], &mut im[off..off + 32], &omg[pos..pos + 32]);
+            ifft16x2_avx512::<FUSED>(&mut re[off..off + 32], &mut im[off..off + 32], &omg[pos..pos + 32]);
         }
         pos += 32;
         off += 32;
@@ -82,14 +87,14 @@ fn ifft_bfs_16_avx512(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut
     while h < m_half {
         let mm: usize = h << 2;
         for off in (0..m).step_by(mm) {
-            inv_bitwiddle_ifft_avx512(h, &mut re[off..], &mut im[off..], as_arr::<4, f64>(&omg[pos..]));
+            inv_bitwiddle_ifft_avx512::<FUSED>(h, &mut re[off..], &mut im[off..], as_arr::<4, f64>(&omg[pos..]));
             pos += 4;
         }
         h = mm;
     }
 
     if !log_m.is_multiple_of(2) {
-        inv_twiddle_ifft_avx512(h, re, im, *as_arr::<2, f64>(&omg[pos..]));
+        inv_twiddle_ifft_avx512::<FUSED>(h, re, im, *as_arr::<2, f64>(&omg[pos..]));
         pos += 2;
     }
 
@@ -97,7 +102,7 @@ fn ifft_bfs_16_avx512(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut
 }
 
 #[target_feature(enable = "avx512f")]
-fn inv_twiddle_ifft_avx512(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 2]) {
+fn inv_twiddle_ifft_avx512<const FUSED: bool>(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 2]) {
     unsafe {
         let omr: __m512d = _mm512_set1_pd(omg[0]);
         let omi: __m512d = _mm512_set1_pd(omg[1]);
@@ -118,8 +123,8 @@ fn inv_twiddle_ifft_avx512(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 
             ui0 = _mm512_add_pd(ui0, ui1);
             ur1 = _mm512_mul_pd(omi, tia);
             ui1 = _mm512_mul_pd(omi, tra);
-            ur1 = _mm512_fmsub_pd(omr, tra, ur1);
-            ui1 = _mm512_fmadd_pd(omr, tia, ui1);
+            ur1 = super::encoding_mul_sub::<FUSED>(omr, tra, ur1);
+            ui1 = super::encoding_mul_add::<FUSED>(omr, tia, ui1);
             _mm512_storeu_pd(r0, ur0);
             _mm512_storeu_pd(r1, ur1);
             _mm512_storeu_pd(i0, ui0);
@@ -134,7 +139,7 @@ fn inv_twiddle_ifft_avx512(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 
 }
 
 #[target_feature(enable = "avx512f")]
-fn inv_bitwiddle_ifft_avx512(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64; 4]) {
+fn inv_bitwiddle_ifft_avx512<const FUSED: bool>(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f64; 4]) {
     unsafe {
         let re_base: *mut f64 = re.as_mut_ptr();
         let im_base: *mut f64 = im.as_mut_ptr();
@@ -172,10 +177,10 @@ fn inv_bitwiddle_ifft_avx512(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f6
             ur3 = _mm512_mul_pd(omar, tib);
             ui1 = _mm512_mul_pd(omai, tra);
             ui3 = _mm512_mul_pd(omar, trb);
-            ur1 = _mm512_fmsub_pd(omar, tra, ur1);
-            ur3 = _mm512_fmadd_pd(omai, trb, ur3);
-            ui1 = _mm512_fmadd_pd(omar, tia, ui1);
-            ui3 = _mm512_fmsub_pd(omai, tib, ui3);
+            ur1 = super::encoding_mul_sub::<FUSED>(omar, tra, ur1);
+            ur3 = super::encoding_mul_add::<FUSED>(omai, trb, ur3);
+            ui1 = super::encoding_mul_add::<FUSED>(omar, tia, ui1);
+            ui3 = super::encoding_mul_sub::<FUSED>(omai, tib, ui3);
 
             tra = _mm512_sub_pd(ur0, ur2);
             trb = _mm512_sub_pd(ur1, ur3);
@@ -189,10 +194,10 @@ fn inv_bitwiddle_ifft_avx512(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f6
             ur3 = _mm512_mul_pd(ombi, tib);
             ui2 = _mm512_mul_pd(ombi, tra);
             ui3 = _mm512_mul_pd(ombi, trb);
-            ur2 = _mm512_fmsub_pd(ombr, tra, ur2);
-            ur3 = _mm512_fmsub_pd(ombr, trb, ur3);
-            ui2 = _mm512_fmadd_pd(ombr, tia, ui2);
-            ui3 = _mm512_fmadd_pd(ombr, tib, ui3);
+            ur2 = super::encoding_mul_sub::<FUSED>(ombr, tra, ur2);
+            ur3 = super::encoding_mul_sub::<FUSED>(ombr, trb, ur3);
+            ui2 = super::encoding_mul_add::<FUSED>(ombr, tia, ui2);
+            ui3 = super::encoding_mul_add::<FUSED>(ombr, tib, ui3);
 
             _mm512_storeu_pd(r0, ur0);
             _mm512_storeu_pd(r1, ur1);
@@ -220,7 +225,7 @@ fn inv_bitwiddle_ifft_avx512(h: usize, re: &mut [f64], im: &mut [f64], omg: &[f6
 /// `re`, `im` must each be at least 32 doubles long. `omg` must be at least 32 doubles long.
 /// Block A is at offsets `[0..16]`, block B is at offsets `[16..32]`.
 #[target_feature(enable = "avx512f")]
-unsafe fn ifft16x2_avx512(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
+unsafe fn ifft16x2_avx512<const FUSED: bool>(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
     #[inline(always)]
     unsafe fn load_pair(p: *const f64, off: usize) -> __m512d {
         unsafe {
@@ -338,10 +343,10 @@ unsafe fn ifft16x2_avx512(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
         ia1 = _mm512_mul_pd(t11, s1_omr);
         ia2 = _mm512_mul_pd(t8, s1_omi);
         ia3 = _mm512_mul_pd(t9, s1_omr);
-        ia0 = _mm512_fmsub_pd(t8, s1_omr, ia0);
-        ia1 = _mm512_fmadd_pd(t9, s1_omi, ia1);
-        ia2 = _mm512_fmadd_pd(t10, s1_omr, ia2);
-        ia3 = _mm512_fmsub_pd(t11, s1_omi, ia3);
+        ia0 = super::encoding_mul_sub::<FUSED>(t8, s1_omr, ia0);
+        ia1 = super::encoding_mul_add::<FUSED>(t9, s1_omi, ia1);
+        ia2 = super::encoding_mul_add::<FUSED>(t10, s1_omr, ia2);
+        ia3 = super::encoding_mul_sub::<FUSED>(t11, s1_omi, ia3);
 
         t11 = _mm512_unpackhi_pd(ra3, ia3);
         t9 = _mm512_unpackhi_pd(ra1, ia1);
@@ -371,10 +376,10 @@ unsafe fn ifft16x2_avx512(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
         t9 = _mm512_mul_pd(ia3, s2_omr);
         t10 = _mm512_mul_pd(ia0, s2_omi);
         t11 = _mm512_mul_pd(ia1, s2_omr);
-        t8 = _mm512_fmsub_pd(ia0, s2_omr, t8);
-        t9 = _mm512_fmadd_pd(ia1, s2_omi, t9);
-        t10 = _mm512_fmadd_pd(ia2, s2_omr, t10);
-        t11 = _mm512_fmsub_pd(ia3, s2_omi, t11);
+        t8 = super::encoding_mul_sub::<FUSED>(ia0, s2_omr, t8);
+        t9 = super::encoding_mul_add::<FUSED>(ia1, s2_omi, t9);
+        t10 = super::encoding_mul_add::<FUSED>(ia2, s2_omr, t10);
+        t11 = super::encoding_mul_sub::<FUSED>(ia3, s2_omi, t11);
 
         let new_ia2: __m512d = _mm512_permutex2var_pd(ra2, perm_high, t10);
         let new_ia3: __m512d = _mm512_permutex2var_pd(ra3, perm_high, t11);
@@ -408,10 +413,10 @@ unsafe fn ifft16x2_avx512(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
         ra3 = _mm512_mul_pd(t11, s3_omr);
         ia1 = _mm512_mul_pd(t8, s3_omi);
         ia3 = _mm512_mul_pd(t9, s3_omr);
-        ra1 = _mm512_fmsub_pd(t8, s3_omr, ra1);
-        ra3 = _mm512_fmadd_pd(t9, s3_omi, ra3);
-        ia1 = _mm512_fmadd_pd(t10, s3_omr, ia1);
-        ia3 = _mm512_fmsub_pd(t11, s3_omi, ia3);
+        ra1 = super::encoding_mul_sub::<FUSED>(t8, s3_omr, ra1);
+        ra3 = super::encoding_mul_add::<FUSED>(t9, s3_omi, ra3);
+        ia1 = super::encoding_mul_add::<FUSED>(t10, s3_omr, ia1);
+        ia3 = super::encoding_mul_sub::<FUSED>(t11, s3_omi, ia3);
 
         // Stage 4.
         let (s4_omr, s4_omi) = load_narrow_twiddle(omg_ptr, 14, 30);
@@ -428,10 +433,10 @@ unsafe fn ifft16x2_avx512(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
         ra3 = _mm512_mul_pd(t11, s4_omi);
         ia2 = _mm512_mul_pd(t8, s4_omi);
         ia3 = _mm512_mul_pd(t9, s4_omi);
-        ra2 = _mm512_fmsub_pd(t8, s4_omr, ra2);
-        ra3 = _mm512_fmsub_pd(t9, s4_omr, ra3);
-        ia2 = _mm512_fmadd_pd(t10, s4_omr, ia2);
-        ia3 = _mm512_fmadd_pd(t11, s4_omr, ia3);
+        ra2 = super::encoding_mul_sub::<FUSED>(t8, s4_omr, ra2);
+        ra3 = super::encoding_mul_sub::<FUSED>(t9, s4_omr, ra3);
+        ia2 = super::encoding_mul_add::<FUSED>(t10, s4_omr, ia2);
+        ia3 = super::encoding_mul_add::<FUSED>(t11, s4_omr, ia3);
 
         // Store the two blocks back.
         store_pair(re_ptr, 0, ra0);

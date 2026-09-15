@@ -35,7 +35,7 @@ paste = {workspace = true}
 rayon = {workspace = true, optional = true}
 
 [dev-dependencies]
-poulpy-cpu-oracle = {workspace = true, features = ["enable-core"]}
+poulpy-cpu-oracle = {workspace = true, features = ["enable-ckks"]}
 # The core parity suites compare against the reference backend's impls.
 poulpy-cpu-portable = {workspace = true, features = ["enable-core"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}

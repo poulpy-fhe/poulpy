@@ -280,13 +280,13 @@ pub fn test_vector_1<F: TestScalar>(m: usize) -> (Vec<F>, Vec<F>) {
     let re = (0..m)
         .map(|i| {
             let i_f = F::from_usize(i).expect("usize → scalar");
-            (tau * (i_f + quarter) / m_f).cos()
+            (tau * (i_f + quarter) / m_f).ckks_cos()
         })
         .collect();
     let im = (0..m)
         .map(|i| {
             let i_f = F::from_usize(i).expect("usize → scalar");
-            (tau * (i_f + quarter) / m_f).sin()
+            (tau * (i_f + quarter) / m_f).ckks_sin()
         })
         .collect();
     (re, im)
@@ -304,13 +304,13 @@ pub fn test_vector_2<F: TestScalar>(m: usize) -> (Vec<F>, Vec<F>) {
     let re = (0..m)
         .map(|i| {
             let i_f = F::from_usize(i).expect("usize → scalar");
-            (tau * (five * i_f + three) / (two * m_f)).cos()
+            (tau * (five * i_f + three) / (two * m_f)).ckks_cos()
         })
         .collect();
     let im = (0..m)
         .map(|i| {
             let i_f = F::from_usize(i).expect("usize → scalar");
-            (tau * (five * i_f + three) / (two * m_f)).sin()
+            (tau * (five * i_f + three) / (two * m_f)).ckks_sin()
         })
         .collect();
     (re, im)

@@ -33,6 +33,7 @@
 //! - [Lee et al., *High-Precision Bootstrapping of RNS-CKKS*](https://eprint.iacr.org/2020/552)
 //!   describes the improved multi-interval Remez exchange strategy.
 
+use crate::numerics::CKKSFloat;
 use std::fmt::Debug;
 
 use anyhow::{Result, ensure};
@@ -115,7 +116,7 @@ pub struct Minimax<F> {
 /// `parity`, or if the Remez reference system becomes singular.
 pub fn minimax<F, Fun>(f: Fun, a: F, b: F, degree: usize, parity: Parity) -> Result<Minimax<F>>
 where
-    F: Float + FloatConst + FromPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + Debug,
     Fun: Fn(F) -> F,
 {
     minimax_multi_interval_with(f, &[(a, b)], degree, parity, RemezOptions::default())
@@ -127,7 +128,7 @@ where
 /// [`minimax`].
 pub fn minimax_with<F, Fun>(f: Fun, a: F, b: F, degree: usize, parity: Parity, opts: RemezOptions) -> Result<Minimax<F>>
 where
-    F: Float + FloatConst + FromPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + Debug,
     Fun: Fn(F) -> F,
 {
     minimax_multi_interval_with(f, &[(a, b)], degree, parity, opts)
@@ -149,7 +150,7 @@ where
 /// reference system becomes singular.
 pub fn minimax_multi_interval<F, Fun>(f: Fun, intervals: &[(F, F)], degree: usize, parity: Parity) -> Result<Minimax<F>>
 where
-    F: Float + FloatConst + FromPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + Debug,
     Fun: Fn(F) -> F,
 {
     minimax_multi_interval_with(f, intervals, degree, parity, RemezOptions::default())
@@ -183,7 +184,7 @@ pub fn minimax_multi_interval_with<F, Fun>(
     opts: RemezOptions,
 ) -> Result<Minimax<F>>
 where
-    F: Float + FloatConst + FromPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + Debug,
     Fun: Fn(F) -> F,
 {
     validate_intervals(intervals)?;
@@ -230,7 +231,7 @@ where
 }
 
 /// Checks the domain invariants required before normalization and fitting.
-fn validate_intervals<F: Float + Debug>(intervals: &[(F, F)]) -> Result<()> {
+fn validate_intervals<F: CKKSFloat + Debug>(intervals: &[(F, F)]) -> Result<()> {
     ensure!(!intervals.is_empty(), "minimax: intervals must be non-empty");
     for (i, &(a, b)) in intervals.iter().enumerate() {
         ensure!(
@@ -268,7 +269,7 @@ fn validate_options(opts: RemezOptions) -> Result<()> {
 /// Tests whether ordered intervals mirror each other about zero.
 ///
 /// Endpoint comparisons allow a small span-scaled floating-point tolerance.
-fn intervals_are_symmetric<F: Float + FromPrimitive>(intervals: &[(F, F)]) -> bool {
+fn intervals_are_symmetric<F: CKKSFloat + FromPrimitive>(intervals: &[(F, F)]) -> bool {
     let span = intervals[intervals.len() - 1].1 - intervals[0].0;
     let tolerance = F::epsilon() * span * F::from_u8(8).unwrap();
     intervals
@@ -324,7 +325,7 @@ pub(crate) fn fit_chebyshev_on_intervals<F, G>(
     opts: RemezOptions,
 ) -> Result<RemezFit<F>>
 where
-    F: Float + FloatConst + FromPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + Debug,
     G: Fn(F) -> F,
 {
     ensure!(!intervals.is_empty(), "minimax: fit domain must be non-empty");
@@ -424,7 +425,7 @@ where
 /// the extrema commonly seen in polynomial approximation.
 fn initial_references<F>(intervals: &[(F, F)], m: usize) -> Vec<F>
 where
-    F: Float + FloatConst + FromPrimitive,
+    F: CKKSFloat + FloatConst + FromPrimitive,
 {
     let counts = allocate_references(intervals, m);
     let two = F::one() + F::one();
@@ -436,7 +437,7 @@ where
             let half = (b - a) / two;
             (0..count).map(move |i| {
                 let theta = F::PI() * F::from_usize(2 * i + 1).unwrap() / F::from_usize(2 * count).unwrap();
-                mid - half * theta.cos()
+                mid - half * theta.ckks_cos()
             })
         })
         .collect()
@@ -448,7 +449,7 @@ where
 /// covered. Each remaining point goes to the interval maximizing
 /// `width / (count + 1)`, preventing small components from consuming a
 /// disproportionate share while keeping the allocation balanced.
-fn allocate_references<F: Float + FromPrimitive>(intervals: &[(F, F)], m: usize) -> Vec<usize> {
+fn allocate_references<F: CKKSFloat + FromPrimitive>(intervals: &[(F, F)], m: usize) -> Vec<usize> {
     let widths: Vec<F> = intervals.iter().map(|&(a, b)| b - a).collect();
     let mut counts = vec![0; intervals.len()];
     let seeded = m.min(intervals.len());
@@ -485,9 +486,9 @@ fn allocate_references<F: Float + FromPrimitive>(intervals: &[(F, F)], m: usize)
 /// Callers use `0 <= i < m` and `m >= 2`. These endpoint-inclusive nodes
 /// cluster where polynomial error can vary quickly and form the coarse extrema
 /// search grid.
-pub(crate) fn cheb_lobatto<F: Float + FloatConst + FromPrimitive>(i: usize, m: usize) -> F {
+pub(crate) fn cheb_lobatto<F: CKKSFloat + FloatConst + FromPrimitive>(i: usize, m: usize) -> F {
     let pi = F::PI();
-    (pi * F::from_usize(i).unwrap() / F::from_usize(m - 1).unwrap()).cos()
+    (pi * F::from_usize(i).unwrap() / F::from_usize(m - 1).unwrap()).ckks_cos()
 }
 
 /// Evaluates `T_0(y), ..., T_n(y)` with the three-term Chebyshev recurrence.
@@ -532,7 +533,7 @@ pub(crate) fn eval_cheb<F: Float>(c: &[F], y: F) -> F {
 /// gaps in a multi-interval domain.
 fn find_extrema<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> Vec<(F, F)>
 where
-    F: Float + FloatConst + FromPrimitive,
+    F: CKKSFloat + FloatConst + FromPrimitive,
     G: Fn(F) -> F,
 {
     let mut out: Vec<(F, F)> = Vec::new();
@@ -562,11 +563,11 @@ where
 /// iterations. It returns the better of its two remaining interior probes.
 fn refine_extremum<F, G>(g: &G, coeffs: &[F], mut a: F, mut b: F) -> (F, F)
 where
-    F: Float + FromPrimitive,
+    F: CKKSFloat + FromPrimitive,
     G: Fn(F) -> F,
 {
     let two = F::one() + F::one();
-    let ratio = (F::from_u8(5).unwrap().sqrt() - F::one()) / two;
+    let ratio = (F::from_u8(5).unwrap().ckks_sqrt() - F::one()) / two;
     let mut x0 = b - ratio * (b - a);
     let mut x1 = a + ratio * (b - a);
     let mut e0 = g(x0) - eval_cheb(coeffs, x0);
@@ -601,7 +602,7 @@ where
 /// numerical estimate, not an interval-arithmetic certificate.
 fn estimate_sup_error<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> F
 where
-    F: Float + FloatConst + FromPrimitive,
+    F: CKKSFloat + FloatConst + FromPrimitive,
     G: Fn(F) -> F,
 {
     find_extrema(g, coeffs, intervals, grid_len)
@@ -617,7 +618,7 @@ where
 /// bounds to propagate the image interval between polynomial factors.
 pub(crate) fn grid_error_bounds<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> (F, F)
 where
-    F: Float + FloatConst + FromPrimitive,
+    F: CKKSFloat + FloatConst + FromPrimitive,
     G: Fn(F) -> F,
 {
     find_extrema(g, coeffs, intervals, grid_len)

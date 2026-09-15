@@ -56,17 +56,15 @@ impl_ckks_rotate_defaults!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 impl_ckks_rotate_defaults!(NTT3x42Ifma);
 
-// `f64` encodes through the AVX-512 kernels; `Quad` has no accelerated
-// transform and falls back to the generic scalar table. Rust has no
-// specialization, so accelerated backends list their precisions explicitly.
+// Encoding uses the canonical, unfused butterfly graph.
 macro_rules! select_avx512_encoding_transform {
     ($be:ty) => {
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f64> for $be {
-            type Fft = crate::FFT64Avx512ReimTable;
+            type Fft = crate::fft64::EncodingFFTTable;
         }
 
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {
-            type Fft = ::poulpy_cpu_portable::FFT64ReimTable<poulpy_ckks::Quad>;
+            type Fft = ::poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>;
         }
     };
 }

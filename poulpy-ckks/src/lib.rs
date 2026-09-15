@@ -95,6 +95,7 @@ pub mod prelude {
         CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult, CoeffsMeta, Quad, SetCKKSInfos, SlotsKind,
     };
 }
+pub mod numerics;
 pub mod oep;
 pub mod polynomial;
 pub mod power_basis;

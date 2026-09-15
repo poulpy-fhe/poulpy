@@ -30,14 +30,14 @@ impl<F> crate::ckks_encoding::CKKSEncodingTransform<F> for FFT64Portable
 where
     F: poulpy_ckks::api::CKKSEncodingScalar,
 {
-    type Fft = crate::FFT64ReimTable<F>;
+    type Fft = crate::ckks_encoding::EncodingFFTTable<F>;
 }
 
 impl<F> crate::ckks_encoding::CKKSEncodingTransform<F> for NTT4x30Portable
 where
     F: poulpy_ckks::api::CKKSEncodingScalar,
 {
-    type Fft = crate::FFT64ReimTable<F>;
+    type Fft = crate::ckks_encoding::EncodingFFTTable<F>;
 }
 
 crate::impl_ckks_encoding!(FFT64Portable);

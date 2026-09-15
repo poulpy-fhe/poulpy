@@ -28,11 +28,8 @@ bytemuck = {workspace = true}
 paste = {workspace = true}
 dashu-float = {workspace = true}
 
-# The pure-Rust binary128 fallback is a production dependency only where the
-# platform is not positively known to provide binary128 libm.
-[target.'cfg(not(all(target_os = "linux", target_env = "gnu", any(target_arch = "x86_64", target_arch = "aarch64"))))'.dependencies]
 astro-float-num = {workspace = true}
-libm = {workspace = true, features = ["unstable-float"]}
+libm = {workspace = true, features = ["unstable-float", "force-soft-floats"]}
 
 # libquadmath backing for `Quad` (x86_64 Linux GNU only).
 [target.'cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))'.dependencies]
@@ -42,9 +39,3 @@ f128 = { version = "0.2", optional = true }
 # the crate compiles a C shim against GCC's quadmath.h/libquadmath.
 [target.'cfg(all(target_arch = "x86_64", target_os = "linux", target_env = "gnu"))'.dev-dependencies]
 f128 = "0.2"
-
-# Build and validate the fallback against libquadmath in Linux unit tests
-# without adding it to normal Linux consumers' dependency graph.
-[target.'cfg(all(target_os = "linux", target_env = "gnu", any(target_arch = "x86_64", target_arch = "aarch64")))'.dev-dependencies]
-astro-float-num = {workspace = true}
-libm = {workspace = true, features = ["unstable-float"]}

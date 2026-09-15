@@ -4,8 +4,9 @@
 //! The interpolation of a `p`-to-`p` LUT `f` is `R(x) = Re(T(x))` for
 //! `T(x) = Σ α_k·E(x)^k` in `E(x) = exp(2πi·x)`.
 
+use crate::numerics::CKKSFloat;
 use anyhow::{Result, anyhow, ensure};
-use num_traits::{Float, FloatConst, FromPrimitive};
+use num_traits::{FloatConst, FromPrimitive};
 use poulpy_core::layouts::GetAutomorphismKey;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::{GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta};
@@ -26,7 +27,7 @@ use crate::{
 /// interpolation of `f`.
 pub(crate) fn trig_hermite_lut<F>(f: &[F]) -> Result<ComplexPolynomial<F>>
 where
-    F: Float + FloatConst + FromPrimitive,
+    F: CKKSFloat + FloatConst + FromPrimitive,
 {
     ensure!(!f.is_empty(), "trig_hermite_lut: table must not be empty");
     let p = f.len();
@@ -48,8 +49,8 @@ where
         for (l, &fl) in f.iter().enumerate() {
             let index = (k * l) % p;
             let angle = two_pi * F::from_usize(index).ok_or_else(|| anyhow!("cannot represent LUT sample index {index}"))? / pf;
-            sr = sr + fl * angle.cos();
-            si = si - fl * angle.sin();
+            sr = sr + fl * angle.ckks_cos();
+            si = si - fl * angle.ckks_sin();
         }
         re[k] = half * scale * sr;
         im[k] = half * scale * si;
@@ -214,7 +215,7 @@ pub(crate) fn cos_hermite_binary<F>(
     log_interval_reduction: usize,
 ) -> Result<(Polynomial<F>, [F; 2])>
 where
-    F: Float + FloatConst + FromPrimitive + std::fmt::Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + std::fmt::Debug,
 {
     let two = F::one() + F::one();
     let two_pi = two * F::PI();
@@ -226,7 +227,7 @@ where
     let k_eff = F::from_usize(k_interval).ok_or_else(|| anyhow!("cannot represent interval bound {k_interval}"))?
         / F::from_usize(1usize << log_interval_reduction)
             .ok_or_else(|| anyhow!("cannot represent interval reduction 2^{log_interval_reduction}"))?;
-    let cos = Polynomial::chebyshev_interpolate(degree, -k_eff, k_eff, |x| (two_pi * x).cos())?;
+    let cos = Polynomial::chebyshev_interpolate_with_cos(degree, -k_eff, k_eff, |x| (two_pi * x).ckks_cos(), F::ckks_cos)?;
     Ok((cos, [(f0 + f1) / two, (f0 - f1) / two]))
 }
 

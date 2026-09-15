@@ -37,32 +37,37 @@ pub struct ReimIFFTTable<R: Float + FloatConst + Debug> {
 
 impl<R: Float + FloatConst + Debug> ReimIFFTTable<R> {
     pub fn new(m: usize) -> Self {
+        Self::new_with_trig(m, R::sin, R::cos)
+    }
+
+    /// Builds the same layout with a caller-selected trigonometric implementation.
+    pub fn new_with_trig(m: usize, sin: fn(R) -> R, cos: fn(R) -> R) -> Self {
         assert!(m & (m - 1) == 0, "m must be a power of two but is {m}");
         let mut omg: Vec<R> = alloc_aligned::<R>(2 * m);
 
-        let quarter: R = R::exp2(R::from(-2).unwrap());
+        let quarter: R = R::from(0.25).unwrap();
 
         if m <= 16 {
             match m {
                 1 => {}
                 2 => {
-                    fill_ifft2_omegas::<R>(quarter, &mut omg, 0);
+                    fill_ifft2_omegas::<R>(quarter, &mut omg, 0, sin, cos);
                 }
                 4 => {
-                    fill_ifft4_omegas(quarter, &mut omg, 0);
+                    fill_ifft4_omegas(quarter, &mut omg, 0, sin, cos);
                 }
                 8 => {
-                    fill_ifft8_omegas(quarter, &mut omg, 0);
+                    fill_ifft8_omegas(quarter, &mut omg, 0, sin, cos);
                 }
                 16 => {
-                    fill_ifft16_omegas(quarter, &mut omg, 0);
+                    fill_ifft16_omegas(quarter, &mut omg, 0, sin, cos);
                 }
                 _ => {}
             }
         } else if m <= 2048 {
-            fill_ifft_bfs_16_omegas(m, quarter, &mut omg, 0);
+            fill_ifft_bfs_16_omegas(m, quarter, &mut omg, 0, sin, cos);
         } else {
-            fill_ifft_rec_16_omegas(m, quarter, &mut omg, 0);
+            fill_ifft_rec_16_omegas(m, quarter, &mut omg, 0, sin, cos);
         }
 
         Self { m, omg }
@@ -82,32 +87,32 @@ impl<R: Float + FloatConst + Debug> ReimIFFTTable<R> {
 }
 
 #[inline(always)]
-fn fill_ifft2_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize) -> usize {
+fn fill_ifft2_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin: fn(R) -> R, cos: fn(R) -> R) -> usize {
     let omg_pos: &mut [R] = &mut omg[pos..];
     assert!(omg_pos.len() >= 2);
-    let angle: R = j / R::exp2(R::from(2).unwrap());
-    let two_pi: R = R::exp2(R::from(2).unwrap()) * R::PI();
-    omg_pos[0] = R::cos(two_pi * angle);
-    omg_pos[1] = -R::sin(two_pi * angle);
+    let angle: R = j / R::from(4).unwrap();
+    let two_pi: R = R::from(4).unwrap() * R::PI();
+    omg_pos[0] = cos(two_pi * angle);
+    omg_pos[1] = -sin(two_pi * angle);
     pos + 2
 }
 
 #[inline(always)]
-fn fill_ifft4_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize) -> usize {
+fn fill_ifft4_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin: fn(R) -> R, cos: fn(R) -> R) -> usize {
     let omg_pos: &mut [R] = &mut omg[pos..];
     assert!(omg_pos.len() >= 4);
     let angle_1: R = j / R::from(2).unwrap();
     let angle_2: R = j / R::from(4).unwrap();
     let two_pi: R = R::from(2).unwrap() * R::PI();
-    omg_pos[0] = R::cos(two_pi * angle_2);
-    omg_pos[1] = -R::sin(two_pi * angle_2);
-    omg_pos[2] = R::cos(two_pi * angle_1);
-    omg_pos[3] = -R::sin(two_pi * angle_1);
+    omg_pos[0] = cos(two_pi * angle_2);
+    omg_pos[1] = -sin(two_pi * angle_2);
+    omg_pos[2] = cos(two_pi * angle_1);
+    omg_pos[3] = -sin(two_pi * angle_1);
     pos + 4
 }
 
 #[inline(always)]
-fn fill_ifft8_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize) -> usize {
+fn fill_ifft8_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin: fn(R) -> R, cos: fn(R) -> R) -> usize {
     let omg_pos: &mut [R] = &mut omg[pos..];
     assert!(omg_pos.len() >= 8);
     let _8th: R = R::from(1. / 8.).unwrap();
@@ -115,19 +120,19 @@ fn fill_ifft8_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize) -> 
     let angle_2: R = j / R::from(4).unwrap();
     let angle_4: R = j / R::from(8).unwrap();
     let two_pi: R = R::from(2).unwrap() * R::PI();
-    omg_pos[0] = R::cos(two_pi * angle_4);
-    omg_pos[1] = R::cos(two_pi * (angle_4 + _8th));
-    omg_pos[2] = -R::sin(two_pi * angle_4);
-    omg_pos[3] = -R::sin(two_pi * (angle_4 + _8th));
-    omg_pos[4] = R::cos(two_pi * angle_2);
-    omg_pos[5] = -R::sin(two_pi * angle_2);
-    omg_pos[6] = R::cos(two_pi * angle_1);
-    omg_pos[7] = -R::sin(two_pi * angle_1);
+    omg_pos[0] = cos(two_pi * angle_4);
+    omg_pos[1] = cos(two_pi * (angle_4 + _8th));
+    omg_pos[2] = -sin(two_pi * angle_4);
+    omg_pos[3] = -sin(two_pi * (angle_4 + _8th));
+    omg_pos[4] = cos(two_pi * angle_2);
+    omg_pos[5] = -sin(two_pi * angle_2);
+    omg_pos[6] = cos(two_pi * angle_1);
+    omg_pos[7] = -sin(two_pi * angle_1);
     pos + 8
 }
 
 #[inline(always)]
-fn fill_ifft16_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize) -> usize {
+fn fill_ifft16_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize, sin: fn(R) -> R, cos: fn(R) -> R) -> usize {
     let omg_pos: &mut [R] = &mut omg[pos..];
     assert!(omg_pos.len() >= 16);
     let _8th: R = R::from(1. / 8.).unwrap();
@@ -137,33 +142,40 @@ fn fill_ifft16_omegas<R: Float + FloatConst>(j: R, omg: &mut [R], pos: usize) ->
     let angle_4: R = j / R::from(8).unwrap();
     let angle_8: R = j / R::from(16).unwrap();
     let two_pi: R = R::from(2).unwrap() * R::PI();
-    omg_pos[0] = R::cos(two_pi * angle_8);
-    omg_pos[1] = R::cos(two_pi * (angle_8 + _8th));
-    omg_pos[2] = R::cos(two_pi * (angle_8 + _16th));
-    omg_pos[3] = R::cos(two_pi * (angle_8 + _8th + _16th));
-    omg_pos[4] = -R::sin(two_pi * angle_8);
-    omg_pos[5] = -R::sin(two_pi * (angle_8 + _8th));
-    omg_pos[6] = -R::sin(two_pi * (angle_8 + _16th));
-    omg_pos[7] = -R::sin(two_pi * (angle_8 + _8th + _16th));
-    omg_pos[8] = R::cos(two_pi * angle_4);
-    omg_pos[9] = -R::sin(two_pi * angle_4);
-    omg_pos[10] = R::cos(two_pi * (angle_4 + _8th));
-    omg_pos[11] = -R::sin(two_pi * (angle_4 + _8th));
-    omg_pos[12] = R::cos(two_pi * angle_2);
-    omg_pos[13] = -R::sin(two_pi * angle_2);
-    omg_pos[14] = R::cos(two_pi * angle_1);
-    omg_pos[15] = -R::sin(two_pi * angle_1);
+    omg_pos[0] = cos(two_pi * angle_8);
+    omg_pos[1] = cos(two_pi * (angle_8 + _8th));
+    omg_pos[2] = cos(two_pi * (angle_8 + _16th));
+    omg_pos[3] = cos(two_pi * (angle_8 + _8th + _16th));
+    omg_pos[4] = -sin(two_pi * angle_8);
+    omg_pos[5] = -sin(two_pi * (angle_8 + _8th));
+    omg_pos[6] = -sin(two_pi * (angle_8 + _16th));
+    omg_pos[7] = -sin(two_pi * (angle_8 + _8th + _16th));
+    omg_pos[8] = cos(two_pi * angle_4);
+    omg_pos[9] = -sin(two_pi * angle_4);
+    omg_pos[10] = cos(two_pi * (angle_4 + _8th));
+    omg_pos[11] = -sin(two_pi * (angle_4 + _8th));
+    omg_pos[12] = cos(two_pi * angle_2);
+    omg_pos[13] = -sin(two_pi * angle_2);
+    omg_pos[14] = cos(two_pi * angle_1);
+    omg_pos[15] = -sin(two_pi * angle_1);
     pos + 16
 }
 
 #[inline(always)]
-fn fill_ifft_bfs_16_omegas<R: Float + FloatConst + Debug>(m: usize, j: R, omg: &mut [R], mut pos: usize) -> usize {
+fn fill_ifft_bfs_16_omegas<R: Float + FloatConst + Debug>(
+    m: usize,
+    j: R,
+    omg: &mut [R],
+    mut pos: usize,
+    sin: fn(R) -> R,
+    cos: fn(R) -> R,
+) -> usize {
     let log_m: usize = (usize::BITS - (m - 1).leading_zeros()) as usize;
     let mut jj: R = j * R::from(16).unwrap() / R::from(m).unwrap();
 
     for i in (0..m).step_by(16) {
         let j = jj + frac_rev_bits(i >> 4);
-        fill_ifft16_omegas(j, omg, pos);
+        fill_ifft16_omegas(j, omg, pos, sin, cos);
         pos += 16
     }
 
@@ -177,10 +189,10 @@ fn fill_ifft_bfs_16_omegas<R: Float + FloatConst + Debug>(m: usize, j: R, omg: &
         for i in (0..m).step_by(mm) {
             let rs_0 = jj + frac_rev_bits::<R>(i / mm) / R::from(4).unwrap();
             let rs_1 = R::from(2).unwrap() * rs_0;
-            omg[pos] = R::cos(two_pi * rs_0);
-            omg[pos + 1] = -R::sin(two_pi * rs_0);
-            omg[pos + 2] = R::cos(two_pi * rs_1);
-            omg[pos + 3] = -R::sin(two_pi * rs_1);
+            omg[pos] = cos(two_pi * rs_0);
+            omg[pos + 1] = -sin(two_pi * rs_0);
+            omg[pos + 2] = cos(two_pi * rs_1);
+            omg[pos + 3] = -sin(two_pi * rs_1);
             pos += 4;
         }
         h = mm;
@@ -188,8 +200,8 @@ fn fill_ifft_bfs_16_omegas<R: Float + FloatConst + Debug>(m: usize, j: R, omg: &
     }
 
     if !log_m.is_multiple_of(2) {
-        omg[pos] = R::cos(two_pi * jj);
-        omg[pos + 1] = -R::sin(two_pi * jj);
+        omg[pos] = cos(two_pi * jj);
+        omg[pos + 1] = -sin(two_pi * jj);
         pos += 2;
         jj = jj * R::from(2).unwrap();
     }
@@ -200,17 +212,24 @@ fn fill_ifft_bfs_16_omegas<R: Float + FloatConst + Debug>(m: usize, j: R, omg: &
 }
 
 #[inline(always)]
-fn fill_ifft_rec_16_omegas<R: Float + FloatConst + Debug>(m: usize, j: R, omg: &mut [R], mut pos: usize) -> usize {
+fn fill_ifft_rec_16_omegas<R: Float + FloatConst + Debug>(
+    m: usize,
+    j: R,
+    omg: &mut [R],
+    mut pos: usize,
+    sin: fn(R) -> R,
+    cos: fn(R) -> R,
+) -> usize {
     if m <= 2048 {
-        return fill_ifft_bfs_16_omegas(m, j, omg, pos);
+        return fill_ifft_bfs_16_omegas(m, j, omg, pos, sin, cos);
     }
     let h: usize = m >> 1;
     let s: R = j / R::from(2).unwrap();
-    pos = fill_ifft_rec_16_omegas(h, s, omg, pos);
-    pos = fill_ifft_rec_16_omegas(h, s + R::from(0.5).unwrap(), omg, pos);
+    pos = fill_ifft_rec_16_omegas(h, s, omg, pos, sin, cos);
+    pos = fill_ifft_rec_16_omegas(h, s + R::from(0.5).unwrap(), omg, pos, sin, cos);
     let _2pi = R::from(2).unwrap() * R::PI();
-    omg[pos] = R::cos(_2pi * s);
-    omg[pos + 1] = -R::sin(_2pi * s);
+    omg[pos] = cos(_2pi * s);
+    omg[pos + 1] = -sin(_2pi * s);
     pos += 2;
     pos
 }

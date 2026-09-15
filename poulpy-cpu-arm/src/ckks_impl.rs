@@ -26,17 +26,15 @@ impl_ckks_pow2_defaults!(FFT64Neon);
 impl_ckks_pow2_defaults!(NTT4x30Neon);
 impl_ckks_rotate_defaults!(FFT64Neon);
 impl_ckks_rotate_defaults!(NTT4x30Neon);
-// `f64` encodes through the NEON kernels; `Quad` has no accelerated transform
-// and falls back to the generic scalar table. Rust has no specialization, so
-// accelerated backends list their precisions explicitly.
+// Both precisions use the canonical portable encoding transform.
 macro_rules! select_neon_encoding_transform {
     ($be:ty) => {
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f64> for $be {
-            type Fft = crate::FFT64NeonReimTable;
+            type Fft = ::poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<f64>;
         }
 
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {
-            type Fft = ::poulpy_cpu_portable::FFT64ReimTable<poulpy_ckks::Quad>;
+            type Fft = ::poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>;
         }
     };
 }

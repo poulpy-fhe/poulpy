@@ -83,7 +83,7 @@ fn validate_factor_encoding<F: CKKSScalar>(diagonals: &crate::layouts::ComplexDi
         .context("PaCo factor torus width overflows usize")?;
     let scale = F::from(dft.log_delta())
         .context("PaCo factor scale exponent is not representable by the selected scalar")?
-        .exp2();
+        .ckks_exp2();
     ensure!(scale.is_finite(), "PaCo factor scale 2^{} is not finite", dft.log_delta());
 
     let mut nonzero = false;
@@ -133,7 +133,7 @@ fn validate_beta_encoding<F: PaCoScalar>(plan: &PaCoPlan) -> Result<()> {
         .context("PaCo beta plaintext width overflows usize")?;
     let scale = F::from(plan.log_delta_bsk())
         .context("PaCo beta scale exponent is not representable by the selected scalar")?
-        .exp2();
+        .ckks_exp2();
     ensure!(
         scale.is_finite(),
         "PaCo beta scale 2^{} is not finite for the selected scalar",
@@ -283,7 +283,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                 let dft = plan.c2s();
                 let scale = F::from(dft.log_delta())
                     .context("PaCo ψ mask scale exponent is not representable by the selected scalar")?
-                    .exp2();
+                    .ckks_exp2();
                 ensure!(
                     tile.iter()
                         .any(|value| (value.re * scale).round() != <F as DiagonalArithmetic>::zero()),

@@ -308,7 +308,7 @@ macro_rules! fwd_unary {
 /// The target predicate is written here and nowhere else. Callers go through
 /// [`routed_unary`] / [`routed_binary`], so adding a third backing is local to
 /// this module.
-mod backing {
+pub(crate) mod backing {
     #[cfg(all(feature = "libquadmath", target_arch = "x86_64", target_os = "linux", target_env = "gnu"))]
     pub(super) use quadmath::*;
 
@@ -452,18 +452,10 @@ mod backing {
     /// `from_big` performs one round-to-nearest-even conversion to binary128.
     /// It is used instead of the existing Dashu dependency because it also
     /// covers the hyperbolic `Float` surface without bespoke approximations.
-    /// The module is also built by tests on Linux so CI can validate it against
-    /// libquadmath without needing to emulate Darwin.
-    #[cfg(any(
-        test,
-        not(all(
-            target_os = "linux",
-            target_env = "gnu",
-            any(target_arch = "x86_64", target_arch = "aarch64"),
-        )),
-    ))]
-    #[cfg_attr(test, allow(dead_code))]
-    pub(super) mod portable {
+    /// CKKS uses this implementation on every target, independently of the
+    /// general `Quad` math routing. Linux tests validate it against libquadmath.
+    #[allow(dead_code)]
+    pub(crate) mod portable {
         use std::cell::RefCell;
 
         use astro_float_num::{BigFloat, Consts, INF_NEG, INF_POS, NAN, RoundingMode, Sign, WORD_BIT_SIZE};

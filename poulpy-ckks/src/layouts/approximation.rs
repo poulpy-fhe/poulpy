@@ -67,13 +67,13 @@ impl PolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>> {
 /// Returns `e` exactly when `value == 2^e` in `F`.
 fn exact_power_of_two_exponent<F>(value: F) -> Option<i32>
 where
-    F: Float + FromPrimitive + ToPrimitive,
+    F: crate::numerics::CKKSFloat,
 {
     if !value.is_finite() || value <= F::zero() {
         return None;
     }
-    let exponent = value.log2().round().to_i32()?;
-    let candidate = F::from_i32(exponent)?.exp2();
+    let exponent = value.ckks_log2().round().to_i32()?;
+    let candidate = F::from_i32(exponent)?.ckks_exp2();
     (candidate == value).then_some(exponent)
 }
 

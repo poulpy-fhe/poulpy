@@ -30,6 +30,7 @@
 //! speed↔depth balance of every level an explicit user choice instead of an
 //! implicit greedy grouping.
 
+use crate::numerics::CKKSFloat;
 use std::collections::BTreeSet;
 
 use anyhow::{Context, Result, ensure};
@@ -496,7 +497,7 @@ impl PaCoPlan {
     }
 
     fn checked_extra_scale_log2(&self) -> Result<i64> {
-        let log2 = (self.h as f64).mul_add(self.c2s.scaling.log2(), self.stc.scaling.log2());
+        let log2 = (self.h as f64).mul_add(self.c2s.scaling.ckks_log2(), self.stc.scaling.ckks_log2());
         ensure!(log2.is_finite(), "the total user scaling exponent is not finite");
         let rounded = log2.round();
         let tolerance = 32.0 * f64::EPSILON * log2.abs().max(1.0);

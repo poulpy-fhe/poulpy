@@ -25,17 +25,15 @@ impl_ckks_pow2_defaults!(FFT64Avx);
 impl_ckks_pow2_defaults!(NTT4x30Avx);
 impl_ckks_rotate_defaults!(FFT64Avx);
 impl_ckks_rotate_defaults!(NTT4x30Avx);
-// `f64` encodes through the AVX2/FMA kernels; `Quad` has no accelerated
-// transform and falls back to the generic scalar table. Rust has no
-// specialization, so accelerated backends list their precisions explicitly.
+// Both precisions use the canonical portable encoding transform.
 macro_rules! select_avx_encoding_transform {
     ($be:ty) => {
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f64> for $be {
-            type Fft = crate::FFT64AvxReimTable;
+            type Fft = ::poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<f64>;
         }
 
         impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {
-            type Fft = ::poulpy_cpu_portable::FFT64ReimTable<poulpy_ckks::Quad>;
+            type Fft = ::poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<poulpy_ckks::Quad>;
         }
     };
 }

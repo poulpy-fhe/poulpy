@@ -20,6 +20,7 @@
 //! `n16_d35_k600_p19_c2s` is thus the C2S-first preset at `N = 2^16` for inputs at
 //! scale `2^35`, producing 600-bit ciphertexts at scale `2^35` with at least 19 bits of precision.
 
+use crate::numerics::CKKSFloat;
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout,
@@ -366,7 +367,7 @@ fn build(spec: PresetSpec) -> Result<BootstrappingPreset> {
         CoeffsMeta::from_delta_budget(spec.s2c_log_delta, spec.s2c_log_budget),
     )?
     .with_scaling(match spec.pipeline {
-        BootstrappingPipeline::C2SFirst => (spec.log_msg_ratio as f64).exp2(),
+        BootstrappingPipeline::C2SFirst => (spec.log_msg_ratio as f64).ckks_exp2(),
         BootstrappingPipeline::S2CFirst => 0.5,
     })?;
     let coeffs_to_slots = DFTPlan::new(

@@ -1,18 +1,19 @@
 //! Degree and precision selection for minimax polynomials.
 
+use crate::numerics::CKKSFloat;
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow, bail, ensure};
-use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
+use num_traits::{FloatConst, FromPrimitive, ToPrimitive};
 
 use poulpy_core::layouts::{SplitStrategy, bsgs_eval_depth};
 
 use super::remez::{Minimax, Parity, RemezOptions, minimax_multi_interval_with};
 
 /// `−log2(error)` bits of precision (`+∞` for a zero error).
-pub fn error_bits<F: Float + ToPrimitive>(error: F) -> f64 {
+pub fn error_bits<F: CKKSFloat + ToPrimitive>(error: F) -> f64 {
     let e = error.to_f64().unwrap_or(f64::INFINITY);
-    if e <= 0.0 { f64::INFINITY } else { -e.log2() }
+    if e <= 0.0 { f64::INFINITY } else { -e.ckks_log2() }
 }
 
 /// A chosen degree with its fitted polynomial and homomorphic evaluation depth.
@@ -25,7 +26,7 @@ pub struct DegreeChoice<F> {
     pub depth: usize,
 }
 
-impl<F: Float + ToPrimitive> DegreeChoice<F> {
+impl<F: CKKSFloat + ToPrimitive> DegreeChoice<F> {
     /// Achieved precision in bits (`−log2(error)`).
     pub fn bits(&self) -> f64 {
         error_bits(self.minimax.error)
@@ -55,7 +56,7 @@ pub fn degree_for_precision<F, Fun>(
     strategy: SplitStrategy,
 ) -> Result<DegreeChoice<F>>
 where
-    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
     degree_for_precision_with(f, a, b, parity, target_bits, max_degree, strategy, RemezOptions::default())
@@ -74,7 +75,7 @@ pub fn degree_for_precision_with<F, Fun>(
     opts: RemezOptions,
 ) -> Result<DegreeChoice<F>>
 where
-    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
     degree_for_precision_multi_interval_with(f, &[(a, b)], parity, target_bits, max_degree, strategy, opts)
@@ -90,7 +91,7 @@ pub fn degree_for_precision_multi_interval<F, Fun>(
     strategy: SplitStrategy,
 ) -> Result<DegreeChoice<F>>
 where
-    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
     degree_for_precision_multi_interval_with(
@@ -116,14 +117,14 @@ pub fn degree_for_precision_multi_interval_with<F, Fun>(
     opts: RemezOptions,
 ) -> Result<DegreeChoice<F>>
 where
-    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
     ensure!(
         target_bits.is_finite() && target_bits > 0.0,
         "degree_for_precision: target_bits must be positive and finite"
     );
-    let threshold = F::from_f64(2f64.powf(-target_bits))
+    let threshold = F::from_f64(2f64.ckks_powf(-target_bits))
         .ok_or_else(|| anyhow!("degree_for_precision: target_bits {target_bits} not representable"))?;
     let (start, step) = start_step(parity);
     ensure!(
@@ -185,7 +186,7 @@ pub fn precision_at_depth<F, Fun>(
     strategy: SplitStrategy,
 ) -> Result<DegreeChoice<F>>
 where
-    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
     precision_at_depth_with(f, a, b, parity, max_depth, max_degree, strategy, RemezOptions::default())
@@ -204,7 +205,7 @@ pub fn precision_at_depth_with<F, Fun>(
     opts: RemezOptions,
 ) -> Result<DegreeChoice<F>>
 where
-    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
     precision_at_depth_multi_interval_with(f, &[(a, b)], parity, max_depth, max_degree, strategy, opts)
@@ -220,7 +221,7 @@ pub fn precision_at_depth_multi_interval<F, Fun>(
     strategy: SplitStrategy,
 ) -> Result<DegreeChoice<F>>
 where
-    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
     precision_at_depth_multi_interval_with(f, intervals, parity, max_depth, max_degree, strategy, RemezOptions::default())
@@ -238,7 +239,7 @@ pub fn precision_at_depth_multi_interval_with<F, Fun>(
     opts: RemezOptions,
 ) -> Result<DegreeChoice<F>>
 where
-    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    F: CKKSFloat + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
     let (start, step) = start_step(parity);

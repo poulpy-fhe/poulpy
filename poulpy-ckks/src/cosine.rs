@@ -9,6 +9,8 @@
 
 #![allow(clippy::needless_range_loop)]
 
+use crate::numerics::CKKSFloat;
+
 use dashu_float::{Context, DBig, FBig, round::mode::HalfEven};
 use num_traits::{Float, FromPrimitive};
 
@@ -168,7 +170,7 @@ fn cos2pi_x_minus_quarter_over_r(x: &FBig<HalfEven>, r: &FBig<HalfEven>) -> FBig
 }
 
 fn log2(x: f64) -> f64 {
-    x.log2()
+    x.ckks_log2()
 }
 
 fn max_index(arr: &[f64]) -> usize {
@@ -194,7 +196,7 @@ fn gen_degrees(degree: usize, k: usize, dev: f64) -> (Vec<usize>, usize) {
     for i in 1..=(2 * k - 1) as i64 {
         temp -= log2(i as f64);
     }
-    let log2_two_pi = (2.0 * std::f64::consts::PI).log2();
+    let log2_two_pi = (2.0 * std::f64::consts::PI).ckks_log2();
     temp += (2.0 * k as f64 - 1.0) * log2_two_pi;
     temp += log2(err);
 

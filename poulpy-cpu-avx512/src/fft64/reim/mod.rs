@@ -90,3 +90,70 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTAvx512 {
         }
     }
 }
+
+#[inline]
+#[target_feature(enable = "avx512f")]
+fn encoding_mul_add<const FUSED: bool>(
+    a: std::arch::x86_64::__m512d,
+    b: std::arch::x86_64::__m512d,
+    c: std::arch::x86_64::__m512d,
+) -> std::arch::x86_64::__m512d {
+    use std::arch::x86_64::*;
+    if FUSED {
+        _mm512_fmadd_pd(a, b, c)
+    } else {
+        _mm512_add_pd(_mm512_mul_pd(a, b), c)
+    }
+}
+
+#[inline]
+#[target_feature(enable = "avx512f")]
+fn encoding_mul_sub<const FUSED: bool>(
+    a: std::arch::x86_64::__m512d,
+    b: std::arch::x86_64::__m512d,
+    c: std::arch::x86_64::__m512d,
+) -> std::arch::x86_64::__m512d {
+    use std::arch::x86_64::*;
+    if FUSED {
+        _mm512_fmsub_pd(a, b, c)
+    } else {
+        _mm512_sub_pd(_mm512_mul_pd(a, b), c)
+    }
+}
+
+#[cfg(feature = "enable-ckks")]
+pub struct EncodingFFTTable(poulpy_cpu_portable::ckks_encoding::EncodingFFTTable<f64>);
+
+#[cfg(feature = "enable-ckks")]
+impl NegacyclicFFTNew<f64> for EncodingFFTTable {
+    fn new(m: usize) -> Self {
+        Self(NegacyclicFFTNew::new(m))
+    }
+}
+
+#[cfg(feature = "enable-ckks")]
+impl NegacyclicFFT<f64> for EncodingFFTTable {
+    fn m(&self) -> usize {
+        self.0.m()
+    }
+    fn fft(&self, data: &mut [f64]) {
+        unsafe {
+            fft_avx512::fft_avx512_with_fma::<false>(self.m(), self.0.fft_twiddles(), data);
+        }
+    }
+    fn ifft(&self, data: &mut [f64]) {
+        unsafe {
+            ifft_avx512::ifft_avx512_with_fma::<false>(self.m(), self.0.ifft_twiddles(), data);
+        }
+    }
+}
+
+#[cfg(all(test, feature = "enable-ckks"))]
+#[test]
+fn encoding_fft_matches_oracle() {
+    poulpy_ckks::test_suite::determinism::assert_transform_matches::<
+        f64,
+        poulpy_cpu_oracle::ckks_encoding_fft::EncodingFFTTable<f64>,
+        EncodingFFTTable,
+    >();
+}

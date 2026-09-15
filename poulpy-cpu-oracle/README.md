@@ -33,6 +33,9 @@ Oracle types do not promise raw-buffer compatibility with production backends.
 Backend-local IFMA scalar checks remain useful for internal representations and
 ranges, but share production helpers and are a separate category of validation.
 
+CKKS encoding has a separate [canonical floating-point contract](../docs/deterministic-encoding.md).
+The oracle implements its butterfly graph independently and checks scalar bits exactly; its ring FFT retains the independent decomposition described above.
+
 ```toml
 [dev-dependencies]
 poulpy-cpu-oracle = { path = "../poulpy-cpu-oracle", features = ["enable-core"] }

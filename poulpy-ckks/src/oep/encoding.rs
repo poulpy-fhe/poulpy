@@ -13,6 +13,10 @@ use crate::{
 /// Every scalar operand is backend-resident. A device implementation can run
 /// the permutation, FFT, and quantization kernels directly on arena-carved
 /// device memory; host slices appear only in public convenience helpers.
+/// Each boundary must preserve the canonical scalar bits or plaintext words,
+/// including the separate FFT multiply/add roundings and
+/// [`CKKSFloat`](crate::numerics::CKKSFloat) conversions. Backend-specific
+/// layouts and scheduling may differ.
 ///
 /// # Safety
 /// Implementations must uphold the backend layout, aliasing, and numeric
