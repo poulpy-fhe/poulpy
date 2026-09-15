@@ -15,7 +15,7 @@ doctest = false
 [features]
 enable-avx512f = []
 enable-ifma = ["enable-avx512f"]
-enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
+enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-portable/enable-ckks"]
 # Enable backend-owned Rayon scheduling. Concrete parallel backends are
 # available when their corresponding SIMD feature is enabled as well.
 enable-rayon = ["enable-avx512f", "dep:rayon", "dep:poulpy-cpu-rayon"]
@@ -25,7 +25,7 @@ bytemuck = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-hal = {workspace = true}
 poulpy-core = {workspace = true}
-poulpy-cpu-ref = {workspace = true}
+poulpy-cpu-portable = {workspace = true}
 poulpy-cpu-rayon = {workspace = true, optional = true}
 itertools = {workspace = true}
 rand = {workspace = true}
@@ -39,7 +39,7 @@ rayon = {workspace = true, optional = true}
 
 [dev-dependencies]
 # The core parity suites compare against the reference backend's impls.
-poulpy-cpu-ref = {workspace = true, features = ["enable-core"]}
+poulpy-cpu-portable = {workspace = true, features = ["enable-core"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 poulpy-bench = {workspace = true}

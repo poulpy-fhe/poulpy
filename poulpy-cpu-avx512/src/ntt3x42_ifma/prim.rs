@@ -22,7 +22,7 @@ use core::arch::x86_64::{
 use super::kernels::{cond_sub_2q_si256, cond_sub_2q_si512, intt_avx512, ntt_avx512};
 use super::mat_vec_ifma::vec_mat1col_product_bbc_ifma;
 
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     NttAdd, NttAddAssign, NttCopy, NttNegate, NttNegateAssign, NttSub, NttSubAssign, NttSubNegateAssign, NttZero,
 };
 

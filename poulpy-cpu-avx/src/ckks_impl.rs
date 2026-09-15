@@ -30,12 +30,12 @@ impl_ckks_rotate_defaults!(NTT4x30Avx);
 // specialization, so accelerated backends list their precisions explicitly.
 macro_rules! select_avx_encoding_transform {
     ($be:ty) => {
-        impl ::poulpy_cpu_ref::ckks_encoding::CKKSEncodingTransform<f64> for $be {
+        impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f64> for $be {
             type Fft = crate::FFT64AvxReimTable;
         }
 
-        impl ::poulpy_cpu_ref::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {
-            type Fft = ::poulpy_cpu_ref::FFT64ReimTable<poulpy_ckks::Quad>;
+        impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {
+            type Fft = ::poulpy_cpu_portable::FFT64ReimTable<poulpy_ckks::Quad>;
         }
     };
 }
@@ -43,12 +43,12 @@ macro_rules! select_avx_encoding_transform {
 select_avx_encoding_transform!(FFT64Avx);
 select_avx_encoding_transform!(NTT4x30Avx);
 
-::poulpy_cpu_ref::impl_ckks_encoding!(FFT64Avx);
-::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(FFT64Avx);
-::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(FFT64Avx);
-::poulpy_cpu_ref::impl_ckks_encoding!(NTT4x30Avx);
-::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT4x30Avx);
-::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT4x30Avx);
+::poulpy_cpu_portable::impl_ckks_encoding!(FFT64Avx);
+::poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(FFT64Avx);
+::poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(FFT64Avx);
+::poulpy_cpu_portable::impl_ckks_encoding!(NTT4x30Avx);
+::poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(NTT4x30Avx);
+::poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(NTT4x30Avx);
 impl_ckks_add_defaults!(FFT64Avx);
 impl_ckks_add_defaults!(NTT4x30Avx);
 impl_ckks_sub_defaults!(FFT64Avx);
@@ -72,9 +72,9 @@ mod rayon_defaults {
     impl_ckks_pow2_defaults!(FFT64AvxRayon);
     impl_ckks_rotate_defaults!(FFT64AvxRayon);
     select_avx_encoding_transform!(FFT64AvxRayon);
-    ::poulpy_cpu_ref::impl_ckks_encoding!(FFT64AvxRayon);
-    ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(FFT64AvxRayon);
-    ::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(FFT64AvxRayon);
+    ::poulpy_cpu_portable::impl_ckks_encoding!(FFT64AvxRayon);
+    ::poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(FFT64AvxRayon);
+    ::poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(FFT64AvxRayon);
     impl_ckks_add_defaults!(FFT64AvxRayon);
     impl_ckks_sub_defaults!(FFT64AvxRayon);
     impl_ckks_plaintext_defaults!(FFT64AvxRayon);
@@ -89,9 +89,9 @@ mod rayon_defaults {
     impl_ckks_pow2_defaults!(NTT4x30AvxRayon);
     impl_ckks_rotate_defaults!(NTT4x30AvxRayon);
     select_avx_encoding_transform!(NTT4x30AvxRayon);
-    ::poulpy_cpu_ref::impl_ckks_encoding!(NTT4x30AvxRayon);
-    ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT4x30AvxRayon);
-    ::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT4x30AvxRayon);
+    ::poulpy_cpu_portable::impl_ckks_encoding!(NTT4x30AvxRayon);
+    ::poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(NTT4x30AvxRayon);
+    ::poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(NTT4x30AvxRayon);
     impl_ckks_add_defaults!(NTT4x30AvxRayon);
     impl_ckks_sub_defaults!(NTT4x30AvxRayon);
     impl_ckks_plaintext_defaults!(NTT4x30AvxRayon);

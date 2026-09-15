@@ -50,7 +50,7 @@ pub(crate) unsafe fn znx_hadamard_product_i64_avx512(res: &mut [i64], a: &[i64],
     }
 }
 
-/// Multiply/divide by a power of two with rounding matching [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_ref].
+/// Multiply/divide by a power of two with rounding matching [poulpy_cpu_portable::reference::znx::znx_mul_power_of_two_ref].
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`);
@@ -117,7 +117,7 @@ pub unsafe fn znx_mul_power_of_two_avx512(k: i64, res: &mut [i64], a: &[i64]) {
 }
 
 /// Multiply/divide inplace by a power of two with rounding matching
-/// [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_assign_ref].
+/// [poulpy_cpu_portable::reference::znx::znx_mul_power_of_two_assign_ref].
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`);
@@ -172,7 +172,7 @@ pub unsafe fn znx_mul_power_of_two_assign_avx512(k: i64, res: &mut [i64]) {
 }
 
 /// Multiply/divide by a power of two and add on the result with rounding matching
-/// [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_assign_ref].
+/// [poulpy_cpu_portable::reference::znx::znx_mul_power_of_two_assign_ref].
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`);

@@ -16,7 +16,7 @@ use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingI
 /// method sees only the ciphertext, the validated plan, the radix, and the
 /// backend's own precomputed material, so a backend may implement the whole
 /// step as one fused native kernel. This crate carries no implementation; the
-/// reference implementation lives in `poulpy-cpu-ref`, and the complete
+/// reference implementation lives in `poulpy-cpu-portable`, and the complete
 /// scheme definition of the step (host ciphertext → four host plaintexts) is
 /// exposed as
 /// [`paco_coeff_encodings_host`](crate::encoding::paco_coeff_encodings_host)

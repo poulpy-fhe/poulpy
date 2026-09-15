@@ -258,7 +258,7 @@ fn _keep() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_cpu_ref::reference::fft64::reim4::{
+    use poulpy_cpu_portable::reference::fft64::reim4::{
         reim4_extract_1blk_from_reim_contiguous_ref, reim4_save_1blk_to_reim_contiguous_ref, reim4_save_1blk_to_reim_ref,
         reim4_save_2blk_to_reim_ref, reim4_vec_mat1col_product_ref, reim4_vec_mat2cols_2ndcol_product_ref,
         reim4_vec_mat2cols_product_ref,

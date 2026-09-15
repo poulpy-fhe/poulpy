@@ -51,7 +51,7 @@
 //! ## Determinism
 //!
 //! Integer / modular operations (`Znx*`, `I128BigOps`, `Ntt*`, `NttDFTExecute`) produce
-//! **bit-identical results** against `poulpy-cpu-ref`. Floating-point operations in FFT
+//! **bit-identical results** against `poulpy-cpu-portable`. Floating-point operations in FFT
 //! match the reference within ULP tolerance — NEON kernels use FMA (`vfmaq_f64`) where
 //! the scalar reference does not, so individual rounding bits may differ.
 //!

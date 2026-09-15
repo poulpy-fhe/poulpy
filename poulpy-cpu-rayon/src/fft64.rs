@@ -103,7 +103,7 @@ macro_rules! impl_fft64_rayon_backend {
 
 use $crate::__private::rayon::prelude::*;
 
-use $crate::__private::poulpy_cpu_ref::{
+use $crate::__private::poulpy_cpu_portable::{
     hal_defaults::{
         BigWordHadamardProduct, FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VmpDefault, HalVecZnxDefault,
     },
@@ -204,25 +204,25 @@ impl ZnxExtractDigitAddMul for $rayon {
     }
 }
 
-impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for $rayon {
+impl poulpy_cpu_portable::reference::normalization::I64NormalizeOps for $rayon {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
-        <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
+        <$base as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(base2k, lsh, a, carry);
     }
 
     #[inline(always)]
     fn znx_normalize_round<const CARRY_IN: bool, const PAD: bool>(base2k: usize, lsh: usize, padding: usize, res: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry);
+        <$base as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry);
     }
 
     #[inline(always)]
     fn znx_normalize_round_assign<const CARRY_IN: bool>(base2k: usize, lsh: usize, padding: usize, res: &mut [i64], carry: &mut [i64]) {
-        <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(base2k, lsh, padding, res, carry);
+        <$base as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(base2k, lsh, padding, res, carry);
     }
 
     #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
+        <$base as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
     }
 
     #[inline(always)]
@@ -230,7 +230,7 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for $rayon {
         base2k: usize, lsh: usize, res_base2k: usize,
         res: &mut [i64], src: &mut [i64], carry: &mut [i64],
     ) {
-        <$base as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
+        <$base as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(base2k, lsh, res_base2k, res, src, carry);
     }
 }
 $crate::rayon_forward_znx!($rayon, $base, ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
@@ -514,7 +514,7 @@ impl BigWordHadamardProduct for $rayon {
 }
 
 unsafe impl HalVecZnxImpl for $rayon {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
 
     fn vec_znx_normalize(
         module: &Module<Self>,
@@ -548,7 +548,7 @@ unsafe impl HalVecZnxImpl for $rayon {
     }
 }
 unsafe impl HalModuleImpl for $rayon {
-    poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
+    poulpy_cpu_portable::hal_impl_module!(FFT64ModuleDefault);
 }
 unsafe impl HalVmpImpl for $rayon {
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
@@ -682,7 +682,7 @@ unsafe impl HalVmpImpl for $rayon {
     }
 }
 unsafe impl HalConvolutionImpl for $rayon {
-    poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
+    poulpy_cpu_portable::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 unsafe impl HalVecZnxBigImpl for $rayon {
     fn vec_znx_big_from_small(
@@ -1033,7 +1033,7 @@ unsafe impl HalVecZnxBigImpl for $rayon {
     }
 }
 unsafe impl HalSvpImpl for $rayon {
-    poulpy_cpu_ref::hal_impl_svp!(FFT64SvpDefault);
+    poulpy_cpu_portable::hal_impl_svp!(FFT64SvpDefault);
 }
 unsafe impl HalVecZnxDftImpl for $rayon {
 
@@ -1078,7 +1078,7 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         if let Some((add, add_col)) = addend {
             let mut big: VecZnxBigBackendMut<'_, $base> = VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
             let mut big_ref = &mut big;
-            $crate::__private::poulpy_cpu_ref::reference::fft64::vec_znx_big::vec_znx_big_add_small_assign::<_, _, $base>(
+            $crate::__private::poulpy_cpu_portable::reference::fft64::vec_znx_big::vec_znx_big_add_small_assign::<_, _, $base>(
                 &mut big_ref,
                 a_col,
                 &add,
@@ -1363,12 +1363,12 @@ unsafe impl HalVecZnxDftImpl for $rayon {
     ) {
         let _ = scratch;
         if $crate::RayonTaskExecutor::should_serialize_inner() {
-            $crate::__private::poulpy_cpu_ref::reference::fft64::vec_znx_dft::vec_znx_dft_automorphism_add::<
+            $crate::__private::poulpy_cpu_portable::reference::fft64::vec_znx_dft::vec_znx_dft_automorphism_add::<
                 $base,
                 poulpy_hal::execution::SerialTaskExecutor,
             >(plan, &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col);
         } else {
-            $crate::__private::poulpy_cpu_ref::reference::fft64::vec_znx_dft::vec_znx_dft_automorphism_add::<
+            $crate::__private::poulpy_cpu_portable::reference::fft64::vec_znx_dft::vec_znx_dft_automorphism_add::<
                 $base,
                 $crate::RayonTaskExecutor,
             >(plan, &mut base_dft_mut(res), res_col, &base_dft_ref(a), a_col);
@@ -1380,7 +1380,7 @@ unsafe impl HalVecZnxDftImpl for $rayon {
 mod fft64_rayon_tests {
     #[allow(unused_imports)]
     use super::*;
-    use $crate::__private::poulpy_cpu_ref::reference::znx::ZnxAdd;
+    use $crate::__private::poulpy_cpu_portable::reference::znx::ZnxAdd;
 
     #[test]
     fn coefficient_add_matches_wrapping_arithmetic() {

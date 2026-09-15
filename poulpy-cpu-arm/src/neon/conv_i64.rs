@@ -200,7 +200,7 @@ pub(crate) fn i64_save_1blk_contiguous_neon(n: usize, offset: usize, rows: usize
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_cpu_ref::reference::fft64::convolution::{
+    use poulpy_cpu_portable::reference::fft64::convolution::{
         i64_convolution_by_const_1coeff_ref, i64_convolution_by_const_2coeffs_ref, i64_extract_1blk_contiguous_ref,
         i64_save_1blk_contiguous_ref,
     };

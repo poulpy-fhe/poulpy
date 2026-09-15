@@ -17,7 +17,7 @@
 
 //! Trait implementations for [`NTT4x30Avx`](super::NTT4x30Avx) — primitive NTT-domain operations.
 //!
-//! Implements all `Ntt*` traits from [`poulpy_cpu_ref::reference::ntt4x30`] for
+//! Implements all `Ntt*` traits from [`poulpy_cpu_portable::reference::ntt4x30`] for
 //! [`NTT4x30Avx`](super::NTT4x30Avx).
 //!
 //! NTT forward/inverse execution uses the AVX2-accelerated kernels from
@@ -31,7 +31,7 @@ use core::arch::x86_64::{
     _mm256_storeu_si256, _mm256_sub_epi64, _mm256_xor_si256,
 };
 
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     NttAdd, NttAddAssign, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
     NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2,
     NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign, NttToZnx128, NttZero,

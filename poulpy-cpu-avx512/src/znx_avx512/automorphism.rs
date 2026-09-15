@@ -26,7 +26,7 @@ pub unsafe fn znx_automorphism_avx512(p: i64, res: &mut [i64], a: &[i64]) {
     assert!(p & 1 == 1);
 
     if n < 8 {
-        use poulpy_cpu_ref::reference::znx::znx_automorphism_ref;
+        use poulpy_cpu_portable::reference::znx::znx_automorphism_ref;
         znx_automorphism_ref(p, res, a);
         return;
     }
@@ -84,7 +84,7 @@ pub unsafe fn znx_automorphism_avx512(p: i64, res: &mut [i64], a: &[i64]) {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_cpu_ref::reference::znx::znx_automorphism_ref;
+    use poulpy_cpu_portable::reference::znx::znx_automorphism_ref;
 
     use super::*;
 

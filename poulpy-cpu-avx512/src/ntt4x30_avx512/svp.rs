@@ -2,7 +2,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m256i, _mm256_loadu_si256, _mm256_storeu_si256, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_mul_epu32,
 };
-use poulpy_cpu_ref::reference::ntt4x30::{NttDFTExecute, NttFromZnx64, vec_znx_dft::NttModuleHandle};
+use poulpy_cpu_portable::reference::ntt4x30::{NttDFTExecute, NttFromZnx64, vec_znx_dft::NttModuleHandle};
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply},
     layouts::{

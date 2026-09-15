@@ -1,7 +1,7 @@
 //! Q120 forward / inverse NTT — NEON-accelerated kernels.
 
 use core::arch::aarch64::{int64x2_t, vdupq_n_s64, vmlal_u32, vmovn_u64, vmull_u32, vshlq_u64, vshrn_n_u64};
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
     primes::PrimeSetCrt4,
 };
@@ -485,7 +485,7 @@ pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64
 #[cfg(test)]
 mod tests {
     use super::*;
-    use poulpy_cpu_ref::reference::ntt4x30::{
+    use poulpy_cpu_portable::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
         ntt::{NttTable, NttTableInv, ntt_ref},
         primes::{PrimeSet, Primes30},

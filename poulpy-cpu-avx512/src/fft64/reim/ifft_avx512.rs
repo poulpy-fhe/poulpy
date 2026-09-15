@@ -33,7 +33,7 @@ pub(crate) fn ifft_avx512(m: usize, omg: &[f64], data: &mut [f64]) {
     // call, so it needs m >= 32). For m >= 32, the BFS dispatcher always
     // produces an even number of IFFT16 blocks and uses `ifft16x2_avx512`.
     if m <= 16 {
-        use poulpy_cpu_ref::reference::fft64::reim::ifft_ref;
+        use poulpy_cpu_portable::reference::fft64::reim::ifft_ref;
         ifft_ref(m, omg, data);
         return;
     }
@@ -451,7 +451,7 @@ fn test_ifft_avx512() {
 
     #[target_feature(enable = "avx512f")]
     fn internal(log_m: usize) {
-        use poulpy_cpu_ref::reference::fft64::reim::ReimIFFTRef;
+        use poulpy_cpu_portable::reference::fft64::reim::ReimIFFTRef;
 
         let m: usize = 1 << log_m;
 

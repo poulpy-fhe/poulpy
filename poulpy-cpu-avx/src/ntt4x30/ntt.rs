@@ -26,7 +26,7 @@
 //!
 //! # Algorithm
 //!
-//! Identical to the scalar reference in [`poulpy_cpu_ref::reference::ntt4x30::ntt`],
+//! Identical to the scalar reference in [`poulpy_cpu_portable::reference::ntt4x30::ntt`],
 //! but the inner loops operate on 4 primes simultaneously via 256-bit SIMD.
 //!
 //! Split-precomputed multiplication:
@@ -54,7 +54,7 @@ use core::arch::x86_64::{
     _mm256_set1_epi64x, _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64,
 };
 
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
     primes::PrimeSetCrt4,
 };
@@ -1344,7 +1344,7 @@ pub(crate) unsafe fn intt_avx2<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &m
 #[cfg(all(test, target_feature = "avx2"))]
 mod tests {
     use super::*;
-    use poulpy_cpu_ref::reference::ntt4x30::{
+    use poulpy_cpu_portable::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
         ntt::{NttTable, NttTableInv, intt_ref, ntt_ref},
         primes::{PrimeSet, Primes30},

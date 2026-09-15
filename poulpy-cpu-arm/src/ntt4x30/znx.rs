@@ -1,6 +1,6 @@
 //! `Znx*` trait impls for [`NTT4x30Neon`](super::NTT4x30Neon).
 
-use poulpy_cpu_ref::reference::znx::{
+use poulpy_cpu_portable::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
     ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
     ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
@@ -32,7 +32,7 @@ use crate::neon::{
     },
 };
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_ref::reference::znx::{
+use poulpy_cpu_portable::reference::znx::{
     znx_add_assign_ref as kn_add_assign, znx_add_ref as kn_add, znx_automorphism_ref as kn_automorphism,
     znx_automorphism_rotate_ref as kn_automorphism_rotate, znx_extract_digit_addmul_ref as kn_extract_digit_addmul,
     znx_mul_add_power_of_two_ref as kn_mul_add_p2, znx_mul_power_of_two_assign_ref as kn_mul_p2_assign,
@@ -223,7 +223,7 @@ impl ZnxExtractDigitAddMul for NTT4x30Neon {
     }
 }
 
-impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30Neon {
+impl poulpy_cpu_portable::reference::normalization::I64NormalizeOps for NTT4x30Neon {
     #[cfg(target_arch = "aarch64")]
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
@@ -260,7 +260,7 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30Neon {
         #[cfg(target_arch = "aarch64")]
         crate::neon::znx_normalize::znx_extract_digit_mul_neon(base2k, lsh, res, src);
         #[cfg(not(target_arch = "aarch64"))]
-        poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_ref(base2k, lsh, res, src);
+        poulpy_cpu_portable::reference::znx::znx_extract_digit_mul_ref(base2k, lsh, res, src);
     }
 
     #[inline(always)]
@@ -277,7 +277,7 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30Neon {
             base2k, lsh, res_base2k, res, src, carry,
         );
         #[cfg(not(target_arch = "aarch64"))]
-        poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
+        poulpy_cpu_portable::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
             base2k, lsh, res_base2k, res, src, carry,
         );
     }

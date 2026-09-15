@@ -7,7 +7,7 @@ use core::arch::aarch64::{
     vreinterpretq_s64_u64, vreinterpretq_u64_s64, vsetq_lane_s64, vshlq_s64, vshrq_n_u64, vst1q_s64, vsubq_s64,
 };
 
-use poulpy_cpu_ref::reference::znx::{
+use poulpy_cpu_portable::reference::znx::{
     znx_add_assign_ref, znx_add_ref, znx_automorphism_ref, znx_automorphism_rotate_ref, znx_copy_ref,
     znx_mul_add_power_of_two_ref, znx_mul_power_of_two_assign_ref, znx_mul_power_of_two_ref, znx_negate_assign_ref,
     znx_negate_ref, znx_sub_assign_ref, znx_sub_negate_assign_ref, znx_sub_ref, znx_switch_ring_ref, znx_zero_ref,

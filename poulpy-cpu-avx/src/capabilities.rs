@@ -1,6 +1,6 @@
 //! Which of this crate's backends the running CPU can use.
 
-use poulpy_cpu_ref::capabilities::BackendCapability;
+use poulpy_cpu_portable::capabilities::BackendCapability;
 
 /// The AVX2/FMA backends, with CPU support and whether this build enabled them.
 pub fn capabilities() -> Vec<BackendCapability> {
@@ -42,8 +42,8 @@ mod tests {
     #[test]
     #[ignore = "diagnostic: prints this machine's backend support"]
     fn print_report() {
-        let mut caps = poulpy_cpu_ref::capabilities::reference_backends();
+        let mut caps = poulpy_cpu_portable::capabilities::portable_backends();
         caps.extend(super::capabilities());
-        println!("{}", poulpy_cpu_ref::capabilities::report(&caps));
+        println!("{}", poulpy_cpu_portable::capabilities::report(&caps));
     }
 }

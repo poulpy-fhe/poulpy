@@ -28,7 +28,7 @@ pub fn znx_automorphism_avx(p: i64, res: &mut [i64], a: &[i64]) {
     assert!(p & 1 == 1, "p must be odd (invertible mod 2n)");
 
     if n < 4 {
-        use poulpy_cpu_ref::reference::znx::znx_automorphism_ref;
+        use poulpy_cpu_portable::reference::znx::znx_automorphism_ref;
 
         znx_automorphism_ref(p, res, a);
         return;
@@ -95,7 +95,7 @@ pub fn znx_automorphism_avx(p: i64, res: &mut [i64], a: &[i64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 /// all inputs must have the same length and must not alias.
 mod tests {
-    use poulpy_cpu_ref::reference::znx::znx_automorphism_ref;
+    use poulpy_cpu_portable::reference::znx::znx_automorphism_ref;
 
     use super::*;
 

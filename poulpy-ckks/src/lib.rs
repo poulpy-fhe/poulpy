@@ -5,7 +5,7 @@
 //! Backend-agnostic implementation of the CKKS (Cheon-Kim-Kim-Song)
 //! homomorphic encryption scheme, built on top of the low-level primitives
 //! provided by `poulpy-core`, `poulpy-hal`, and the available compute
-//! backends (`poulpy-cpu-ref`, `poulpy-cpu-avx`).
+//! backends (`poulpy-cpu-portable`, `poulpy-cpu-avx`).
 //!
 //! The crate uses a bivariate polynomial representation over the Torus
 //! (base-`2^{base2k}` digits) instead of the RNS representation used by

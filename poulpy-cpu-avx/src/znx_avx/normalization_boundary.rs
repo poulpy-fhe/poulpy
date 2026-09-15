@@ -125,7 +125,7 @@ pub(crate) unsafe fn znx_normalize_floor_avx<const CARRY_IN: bool, const ROUND: 
             }
             _mm256_storeu_si256(carry.as_mut_ptr().add(i).cast(), high);
         }
-        poulpy_cpu_ref::reference::normalization::znx_normalize_floor_ref::<CARRY_IN, ROUND>(
+        poulpy_cpu_portable::reference::normalization::znx_normalize_floor_ref::<CARRY_IN, ROUND>(
             base2k,
             lsh,
             &a[end..],
@@ -162,7 +162,7 @@ pub(crate) unsafe fn znx_normalize_round_avx<const CARRY_IN: bool, const PAD: bo
             _mm256_storeu_si256(res.as_mut_ptr().add(i).cast(), digit);
             _mm256_storeu_si256(carry.as_mut_ptr().add(i).cast(), _mm256_add_epi64(high, extra));
         }
-        poulpy_cpu_ref::reference::normalization::znx_normalize_round_ref::<CARRY_IN, PAD>(
+        poulpy_cpu_portable::reference::normalization::znx_normalize_round_ref::<CARRY_IN, PAD>(
             base2k,
             lsh,
             padding,
@@ -200,7 +200,7 @@ pub(crate) unsafe fn znx_normalize_round_assign_avx<const CARRY_IN: bool>(
             _mm256_storeu_si256(res.as_mut_ptr().add(i).cast(), digit);
             _mm256_storeu_si256(carry.as_mut_ptr().add(i).cast(), _mm256_add_epi64(high, extra));
         }
-        poulpy_cpu_ref::reference::normalization::znx_normalize_round_assign_ref::<CARRY_IN>(
+        poulpy_cpu_portable::reference::normalization::znx_normalize_round_assign_ref::<CARRY_IN>(
             base2k,
             lsh,
             padding,

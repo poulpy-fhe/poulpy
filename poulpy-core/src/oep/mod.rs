@@ -15,7 +15,7 @@
 //!   distribution is not such a composition, and a backend's buffers are opaque
 //!   to generic code, so only the backend can produce the values. A backend
 //!   implements it directly, the CPU backends through
-//!   `poulpy_cpu_ref::impl_sampling_host!`.
+//!   `poulpy_cpu_portable::impl_sampling_host!`.
 //!
 //! The `unsafe` marker on `*Impl` traits follows the same convention as the HAL:
 //! implementors are taking responsibility for the core correctness contract of
@@ -77,7 +77,7 @@
 //! writes the other six, forwarding them to
 //! `crate::default::automorphism::glwe`.
 //!
-//! `poulpy-cpu-ref`'s `core_impl` module (feature `enable-core`) is the in-tree
+//! `poulpy-cpu-portable`'s `core_impl` module (feature `enable-core`) is the in-tree
 //! worked example, forwarding every family.
 
 mod automorphism;

@@ -33,7 +33,7 @@ pub(crate) fn fft_avx512(m: usize, omg: &[f64], data: &mut [f64]) {
     // so it needs m >= 32). For m == 32 and above, the BFS dispatcher always
     // produces an even number of FFT16 blocks and uses `fft16x2_avx512`.
     if m <= 16 {
-        use poulpy_cpu_ref::reference::fft64::reim::fft_ref;
+        use poulpy_cpu_portable::reference::fft64::reim::fft_ref;
 
         fft_ref(m, omg, data);
         return;
@@ -460,7 +460,7 @@ unsafe fn fft16x2_avx512(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
 
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
-    use poulpy_cpu_ref::reference::fft64::reim::{ReimFFTExecute, ReimFFTRef, ReimFFTTable, ReimIFFTRef, ReimIFFTTable};
+    use poulpy_cpu_portable::reference::fft64::reim::{ReimFFTExecute, ReimFFTRef, ReimFFTTable, ReimIFFTRef, ReimIFFTTable};
 
     use crate::fft64::reim::{ReimFFTAvx512, ReimIFFTAvx512};
 
@@ -549,7 +549,7 @@ fn test_fft_avx512() {
 
     #[target_feature(enable = "avx512f")]
     fn internal(log_m: usize) {
-        use poulpy_cpu_ref::reference::fft64::reim::ReimFFTRef;
+        use poulpy_cpu_portable::reference::fft64::reim::ReimFFTRef;
 
         let m = 1 << log_m;
 

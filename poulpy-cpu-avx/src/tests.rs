@@ -3,7 +3,7 @@ mod ckks_tests;
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64,
-    backend_ref = poulpy_cpu_ref::FFT64Ref,
+    backend_ref = poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx,
     params = TestParams { size: 1<<8, base2k: 17 },
     tests = {
@@ -24,7 +24,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64_rayon,
-    backend_ref = poulpy_cpu_ref::FFT64Ref,
+    backend_ref = poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64AvxRayon,
     params = TestParams { size: 1<<8, base2k: 17 },
     tests = {
@@ -44,7 +44,7 @@ poulpy_core::core_parity_test_suite! {
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Avx,
     params = TestParams { size: 1<<8, base2k: 52 },
     tests = {
@@ -65,7 +65,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_rayon,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30AvxRayon,
     params = TestParams { size: 1<<8, base2k: 52 },
     tests = {
@@ -87,7 +87,7 @@ poulpy_core::core_parity_test_suite! {
 // sweep instead of forgoing the suite.
 poulpy_core::core_parity_test_suite! {
     mod core_parity_rank1_only,
-    backend_ref = poulpy_cpu_ref::FFT64Ref,
+    backend_ref = poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx,
     params = TestParams { size: 1<<8, base2k: 17 },
     shapes = poulpy_core::test_suite::parity::ParityShapes {

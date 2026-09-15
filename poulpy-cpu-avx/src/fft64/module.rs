@@ -1,7 +1,7 @@
 use std::ptr::NonNull;
 
-use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct;
+use poulpy_cpu_portable::reference::{
     fft64::{
         convolution::I64Ops,
         module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider},
@@ -78,7 +78,7 @@ use crate::{
 #[repr(C)]
 pub struct FFT64AvxHandle {
     ring_plans: FFT64PlanSet<f64>,
-    table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
+    table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
 }
 
 impl poulpy_hal::execution::ScratchWorkers for FFT64Avx {}
@@ -438,7 +438,7 @@ impl ZnxExtractDigitAddMul for FFT64Avx {
     }
 }
 
-impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for FFT64Avx {
+impl poulpy_cpu_portable::reference::normalization::I64NormalizeOps for FFT64Avx {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
         assert!(a.len() >= carry.len());
@@ -751,8 +751,8 @@ impl BigWordHadamardProduct for FFT64Avx {
     }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64AvxHandle {
-    fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
+unsafe impl ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for FFT64AvxHandle {
+    fn module_plan_cache(&self) -> &::poulpy_cpu_portable::table_cache::ModuleTableCache {
         &self.table_cache
     }
 }

@@ -637,8 +637,8 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-portable",
  "poulpy-cpu-rayon",
- "poulpy-cpu-ref",
  "poulpy-hal",
  "rand",
  "rand_chacha",
@@ -662,8 +662,8 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-portable",
  "poulpy-cpu-rayon",
- "poulpy-cpu-ref",
  "poulpy-hal",
  "rand",
  "rand_chacha",
@@ -687,8 +687,8 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-portable",
  "poulpy-cpu-rayon",
- "poulpy-cpu-ref",
  "poulpy-hal",
  "rand",
  "rand_chacha",
@@ -698,17 +698,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "poulpy-cpu-rayon"
-version = "0.8.3"
-dependencies = [
- "bytemuck",
- "poulpy-cpu-ref",
- "poulpy-hal",
- "rayon",
-]
-
-[[package]]
-name = "poulpy-cpu-ref"
+name = "poulpy-cpu-portable"
 version = "0.8.3"
 dependencies = [
  "anyhow",
@@ -728,6 +718,16 @@ dependencies = [
  "rand_chacha",
  "rand_core",
  "rand_distr",
+]
+
+[[package]]
+name = "poulpy-cpu-rayon"
+version = "0.8.3"
+dependencies = [
+ "bytemuck",
+ "poulpy-cpu-portable",
+ "poulpy-hal",
+ "rayon",
 ]
 
 [[package]]

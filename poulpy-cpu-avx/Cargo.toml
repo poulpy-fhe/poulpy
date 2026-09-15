@@ -15,14 +15,14 @@ doctest = false
 [features]
 enable-avx = []
 enable-rayon = ["enable-avx", "dep:rayon", "dep:poulpy-cpu-rayon"]
-enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
+enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-portable/enable-ckks"]
 
 [dependencies]
 bytemuck = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-core = {workspace = true}
 poulpy-hal = {workspace = true}
-poulpy-cpu-ref = {workspace = true}
+poulpy-cpu-portable = {workspace = true}
 poulpy-cpu-rayon = {workspace = true, optional = true}
 itertools = {workspace = true}
 rand = {workspace = true}
@@ -36,7 +36,7 @@ rayon = {workspace = true, optional = true}
 
 [dev-dependencies]
 # The core parity suites compare against the reference backend's impls.
-poulpy-cpu-ref = {workspace = true, features = ["enable-core"]}
+poulpy-cpu-portable = {workspace = true, features = ["enable-core"]}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}
 poulpy-bench = {workspace = true}

@@ -31,12 +31,12 @@ impl_ckks_rotate_defaults!(NTT4x30Neon);
 // accelerated backends list their precisions explicitly.
 macro_rules! select_neon_encoding_transform {
     ($be:ty) => {
-        impl ::poulpy_cpu_ref::ckks_encoding::CKKSEncodingTransform<f64> for $be {
+        impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<f64> for $be {
             type Fft = crate::FFT64NeonReimTable;
         }
 
-        impl ::poulpy_cpu_ref::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {
-            type Fft = ::poulpy_cpu_ref::FFT64ReimTable<poulpy_ckks::Quad>;
+        impl ::poulpy_cpu_portable::ckks_encoding::CKKSEncodingTransform<poulpy_ckks::Quad> for $be {
+            type Fft = ::poulpy_cpu_portable::FFT64ReimTable<poulpy_ckks::Quad>;
         }
     };
 }
@@ -44,12 +44,12 @@ macro_rules! select_neon_encoding_transform {
 select_neon_encoding_transform!(FFT64Neon);
 select_neon_encoding_transform!(NTT4x30Neon);
 
-::poulpy_cpu_ref::impl_ckks_encoding!(FFT64Neon);
-::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(FFT64Neon);
-::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(FFT64Neon);
-::poulpy_cpu_ref::impl_ckks_encoding!(NTT4x30Neon);
-::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT4x30Neon);
-::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT4x30Neon);
+::poulpy_cpu_portable::impl_ckks_encoding!(FFT64Neon);
+::poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(FFT64Neon);
+::poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(FFT64Neon);
+::poulpy_cpu_portable::impl_ckks_encoding!(NTT4x30Neon);
+::poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!(NTT4x30Neon);
+::poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!(NTT4x30Neon);
 impl_ckks_add_defaults!(FFT64Neon);
 impl_ckks_add_defaults!(NTT4x30Neon);
 impl_ckks_sub_defaults!(FFT64Neon);
@@ -75,9 +75,9 @@ mod rayon_defaults {
             impl_ckks_pow2_defaults!($backend);
             impl_ckks_rotate_defaults!($backend);
             select_neon_encoding_transform!($backend);
-            ::poulpy_cpu_ref::impl_ckks_encoding!($backend);
-            ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!($backend);
-            ::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!($backend);
+            ::poulpy_cpu_portable::impl_ckks_encoding!($backend);
+            ::poulpy_cpu_portable::impl_ckks_paco_coeff_encoding!($backend);
+            ::poulpy_cpu_portable::impl_ckks_ship_coeff_encoding!($backend);
             impl_ckks_add_defaults!($backend);
             impl_ckks_sub_defaults!($backend);
             impl_ckks_plaintext_defaults!($backend);

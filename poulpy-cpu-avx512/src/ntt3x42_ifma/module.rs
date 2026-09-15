@@ -33,7 +33,7 @@ pub struct NTT3x42IfmaHandle {
     pub(crate) table_ntt: Ntt3x42IfmaTable<Primes42>,
     pub(crate) table_intt: Ntt3x42IfmaTableInv<Primes42>,
     pub(crate) meta_bbc: Bbc126IfmaMeta<Primes42>,
-    table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
+    table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
 }
 
 impl Backend for NTT3x42Ifma {
@@ -244,8 +244,8 @@ pub(crate) fn module_new(n: u64) -> Module<NTT3x42Ifma> {
     unsafe { Module::from_nonnull(ptr, n) }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT3x42IfmaHandle {
-    fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
+unsafe impl ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for NTT3x42IfmaHandle {
+    fn module_plan_cache(&self) -> &::poulpy_cpu_portable::table_cache::ModuleTableCache {
         &self.table_cache
     }
 }

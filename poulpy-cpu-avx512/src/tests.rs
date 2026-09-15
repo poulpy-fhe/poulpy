@@ -3,7 +3,7 @@ mod ckks_tests;
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64,
-    backend_ref = poulpy_cpu_ref::FFT64Ref,
+    backend_ref = poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx512,
     params = TestParams { size: 1<<8, base2k: 17 },
     tests = {
@@ -23,7 +23,7 @@ poulpy_core::core_parity_test_suite! {
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Avx512,
     params = TestParams { size: 1<<8, base2k: 52 },
     tests = {
@@ -44,7 +44,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_rayon,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Avx512Rayon,
     params = TestParams { size: 1<<8, base2k: 52 },
     tests = {
@@ -65,7 +65,7 @@ poulpy_core::core_parity_test_suite! {
 // Exercise the rank-one specialization at degrees above the general suites.
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_fused,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Avx512,
     params = TestParams { size: 1<<15, base2k: 52 },
     tests = {
@@ -76,7 +76,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-rayon")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_rayon_fused,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Avx512Rayon,
     params = TestParams { size: 1<<15, base2k: 52 },
     tests = {
@@ -86,7 +86,7 @@ poulpy_core::core_parity_test_suite! {
 
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_fused_n16,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT4x30Avx512,
     params = TestParams { size: 1<<16, base2k: 52 },
     tests = {
@@ -97,7 +97,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma_fused,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT3x42Ifma,
     params = TestParams { size: 1<<15, base2k: 52 },
     tests = {
@@ -108,7 +108,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma_fused_n16,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT3x42Ifma,
     params = TestParams { size: 1<<16, base2k: 52 },
     tests = {
@@ -119,7 +119,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma_rayon_fused,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT3x42IfmaRayon,
     params = TestParams { size: 1<<15, base2k: 52 },
     tests = {
@@ -130,7 +130,7 @@ poulpy_core::core_parity_test_suite! {
 #[cfg(feature = "enable-ifma")]
 poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma,
-    backend_ref = poulpy_cpu_ref::NTT4x30Ref,
+    backend_ref = poulpy_cpu_portable::NTT4x30Portable,
     backend_test = crate::NTT3x42Ifma,
     params = TestParams { size: 1<<8, base2k: 52 },
     tests = {

@@ -15,7 +15,7 @@ use crate::{layouts::CKKSScalar, layouts::plaintext::CKKSPlaintextVecHostCodec};
 /// through the canonical FFT/IFFT packing used by the rest of the crate.
 ///
 /// `T` is the negacyclic FFT implementation (e.g. `FFT64ReimTable<f64>`
-/// from `poulpy-cpu-ref`).
+/// from `poulpy-cpu-portable`).
 pub struct ReferenceEncoder<T> {
     table: T,
     plan: ReferenceEncodingPlan,

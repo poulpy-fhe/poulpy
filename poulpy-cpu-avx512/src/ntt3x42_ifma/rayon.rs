@@ -3,7 +3,7 @@ use std::mem::{ManuallyDrop, size_of};
 use ::rayon::prelude::*;
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use poulpy_cpu_ref::{
+use poulpy_cpu_portable::{
     hal_defaults::{BigWordHadamardProduct, HalVecZnxDefault, NTT4x30VecZnxBigDefault},
     reference::{
         ntt4x30::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp},
@@ -238,10 +238,10 @@ impl ZnxExtractDigitAddMul for NTT3x42IfmaRayon {
     }
 }
 
-impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT3x42IfmaRayon {
+impl poulpy_cpu_portable::reference::normalization::I64NormalizeOps for NTT3x42IfmaRayon {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
-        <NTT3x42Ifma as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(
+        <NTT3x42Ifma as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(
             base2k, lsh, a, carry,
         )
     }
@@ -255,7 +255,7 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT3x42IfmaRa
         a: &[i64],
         carry: &mut [i64],
     ) {
-        <NTT3x42Ifma as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(
+        <NTT3x42Ifma as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(
             base2k, lsh, padding, res, a, carry,
         )
     }
@@ -268,14 +268,16 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT3x42IfmaRa
         res: &mut [i64],
         carry: &mut [i64],
     ) {
-        <NTT3x42Ifma as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(
+        <NTT3x42Ifma as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(
             base2k, lsh, padding, res, carry,
         )
     }
 
     #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <NTT3x42Ifma as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
+        <NTT3x42Ifma as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(
+            base2k, lsh, res, src,
+        );
     }
 
     #[inline(always)]
@@ -287,9 +289,9 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT3x42IfmaRa
         src: &mut [i64],
         carry: &mut [i64],
     ) {
-        <NTT3x42Ifma as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(
-            base2k, lsh, res_base2k, res, src, carry,
-        );
+        <NTT3x42Ifma as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<
+            OVERWRITE,
+        >(base2k, lsh, res_base2k, res, src, carry);
     }
 }
 forward_znx!(ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
@@ -302,7 +304,7 @@ unsafe impl HalModuleImpl for NTT3x42IfmaRayon {
 }
 
 unsafe impl HalVecZnxImpl for NTT3x42IfmaRayon {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
 
     fn vec_znx_normalize(
         module: &Module<Self>,
@@ -392,10 +394,12 @@ impl I128NormalizeOps for NTT3x42IfmaRayon {
         <NTT3x42Ifma as I128NormalizeOps>::nfc_normalize_round::<CARRY_IN, PAD>(base2k, lsh, padding, res, a, carry)
     }
 
-    const FUSE_NORMALIZE: bool = <NTT3x42Ifma as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
+    const FUSE_NORMALIZE: bool = <NTT3x42Ifma as poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
 
     fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        <NTT3x42Ifma as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(base2k, lsh, res, src)
+        <NTT3x42Ifma as poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(
+            base2k, lsh, res, src,
+        )
     }
 
     fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
@@ -406,9 +410,9 @@ impl I128NormalizeOps for NTT3x42IfmaRayon {
         src: &mut [i128],
         carry: &mut [i128],
     ) {
-        <NTT3x42Ifma as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<OVERWRITE>(
-            base2k, lsh, res_base2k, res, src, carry,
-        )
+        <NTT3x42Ifma as poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<
+            OVERWRITE,
+        >(base2k, lsh, res_base2k, res, src, carry)
     }
 
     #[inline(always)]
@@ -444,7 +448,7 @@ impl BigWordHadamardProduct for NTT3x42IfmaRayon {
 }
 
 unsafe impl HalVecZnxBigImpl for NTT3x42IfmaRayon {
-    poulpy_cpu_ref::hal_impl_vec_znx_big_without_normalize!(NTT4x30VecZnxBigDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_big_without_normalize!(NTT4x30VecZnxBigDefault);
 
     fn vec_znx_big_normalize(
         module: &Module<Self>,
@@ -508,7 +512,7 @@ unsafe impl HalVecZnxDftImpl for NTT3x42IfmaRayon {
             let mut big: poulpy_hal::layouts::VecZnxBigBackendMut<'_, NTT3x42Ifma> =
                 VecZnxBig::from_shape(&mut **a.data_mut(), a_shape);
             let mut big_ref = &mut big;
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, NTT3x42Ifma>(
+            poulpy_cpu_portable::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_small_assign::<_, _, NTT3x42Ifma>(
                 &mut big_ref,
                 a_col,
                 &add,
@@ -1166,7 +1170,7 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
         let bytes = super::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
-            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<NTT3x42Ifma, SerialTaskExecutor>(
+            poulpy_cpu_portable::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<NTT3x42Ifma, SerialTaskExecutor>(
                 cnv_offset,
                 &mut base_big_mut(res),
                 res_col,
@@ -1178,17 +1182,10 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
                 tmp,
             )
         } else {
-            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<NTT3x42Ifma, NTT3x42IfmaRayonExecutor>(
-                cnv_offset,
-                &mut base_big_mut(res),
-                res_col,
-                a,
-                a_col,
-                b,
-                b_col,
-                b_coeff,
-                tmp,
-            )
+            poulpy_cpu_portable::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<
+                NTT3x42Ifma,
+                NTT3x42IfmaRayonExecutor,
+            >(cnv_offset, &mut base_big_mut(res), res_col, a, a_col, b, b_col, b_coeff, tmp)
         }
     }
 
@@ -1218,7 +1215,7 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
         let bytes = super::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
-            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<NTT3x42Ifma, SerialTaskExecutor>(
+            poulpy_cpu_portable::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<NTT3x42Ifma, SerialTaskExecutor>(
                 cnv_offset,
                 &mut base_big_mut(res),
                 res_col,
@@ -1230,17 +1227,10 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
                 tmp,
             )
         } else {
-            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<NTT3x42Ifma, NTT3x42IfmaRayonExecutor>(
-                cnv_offset,
-                &mut base_big_mut(res),
-                res_col,
-                a,
-                a_col,
-                b,
-                b_col,
-                b_coeff,
-                tmp,
-            )
+            poulpy_cpu_portable::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<
+                NTT3x42Ifma,
+                NTT3x42IfmaRayonExecutor,
+            >(cnv_offset, &mut base_big_mut(res), res_col, a, a_col, b, b_col, b_coeff, tmp)
         }
     }
 
@@ -1455,7 +1445,7 @@ impl poulpy_cpu_rayon::RayonTuning for NTT3x42IfmaRayon {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_cpu_ref::reference::znx::{ZnxAdd, ZnxMulPowerOfTwo};
+    use poulpy_cpu_portable::reference::znx::{ZnxAdd, ZnxMulPowerOfTwo};
 
     use super::NTT3x42IfmaRayon;
 

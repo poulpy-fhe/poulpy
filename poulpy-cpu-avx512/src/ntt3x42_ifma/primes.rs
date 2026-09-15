@@ -11,7 +11,7 @@ use poulpy_hal::layouts::{LaneElem, PrimeSet};
 /// NTT sizes up to `2^16` are supported.
 ///
 /// Unlike the full-CRT constants of
-/// [`PrimeSetCrt4`](poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSetCrt4),
+/// [`PrimeSetCrt4`](poulpy_cpu_portable::reference::ntt4x30::primes::PrimeSetCrt4),
 /// the constants here follow Garner's algorithm and are semantically
 /// specific to this family.
 pub trait PrimeSetNtt3x42Ifma: PrimeSet<PrimeElem = u64, Lanes<u64> = [u64; 3]> {

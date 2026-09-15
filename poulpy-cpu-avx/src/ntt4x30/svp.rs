@@ -3,7 +3,7 @@ use core::arch::x86_64::{
     __m256i, _mm256_castsi256_si128, _mm256_cvtepu32_epi64, _mm256_extracti128_si256, _mm256_loadu_si256, _mm256_mul_epu32,
     _mm256_storeu_si256,
 };
-use poulpy_cpu_ref::reference::ntt4x30::{NttDFTExecute, NttFromZnx64, vec_znx_dft::NttModuleHandle};
+use poulpy_cpu_portable::reference::ntt4x30::{NttDFTExecute, NttFromZnx64, vec_znx_dft::NttModuleHandle};
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply},
     layouts::{

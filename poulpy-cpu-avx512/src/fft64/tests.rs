@@ -11,7 +11,7 @@ use crate::FFT64Avx512;
 
 cross_backend_test_suite! {
     mod vec_znx,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
+    backend_ref =  poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx512,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -42,7 +42,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod svp,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
+    backend_ref =  poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx512,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -54,7 +54,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_big,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
+    backend_ref =  poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx512,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -83,7 +83,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_dft,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
+    backend_ref =  poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx512,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -105,7 +105,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vmp,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
+    backend_ref =  poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx512,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -216,7 +216,7 @@ fn test_convolution_direct() {
 
 cross_backend_test_suite! {
     mod word_compat,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
+    backend_ref =  poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx512,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -229,7 +229,7 @@ cross_backend_test_suite! {
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {
     mod vec_znx_dft_rayon,
-    backend_ref =  poulpy_cpu_ref::FFT64Ref,
+    backend_ref =  poulpy_cpu_portable::FFT64Portable,
     backend_test = crate::FFT64Avx512Rayon,
     params = TestParams { size: 1<<14, base2k: 12 },
     tests = {

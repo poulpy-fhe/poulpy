@@ -47,7 +47,7 @@ pub(crate) unsafe fn znx_hadamard_product_i64_avx2(res: &mut [i64], a: &[i64], b
     }
 }
 
-/// Multiply/divide by a power of two with rounding matching [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_ref].
+/// Multiply/divide by a power of two with rounding matching [poulpy_cpu_portable::reference::znx::znx_mul_power_of_two_ref].
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
@@ -72,7 +72,7 @@ pub unsafe fn znx_mul_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
     }
 
     if k == 0 {
-        use poulpy_cpu_ref::reference::znx::znx_copy_ref;
+        use poulpy_cpu_portable::reference::znx::znx_copy_ref;
         znx_copy_ref(res, a);
         return;
     }
@@ -99,7 +99,7 @@ pub unsafe fn znx_mul_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
 
             // tail
             if !n.is_multiple_of(4) {
-                use poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_ref;
+                use poulpy_cpu_portable::reference::znx::znx_mul_power_of_two_ref;
 
                 znx_mul_power_of_two_ref(k, &mut res[span << 2..], &a[span << 2..]);
             }
@@ -146,13 +146,13 @@ pub unsafe fn znx_mul_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
 
     // tail
     if !n.is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_ref;
+        use poulpy_cpu_portable::reference::znx::znx_mul_power_of_two_ref;
 
         znx_mul_power_of_two_ref(k, &mut res[span << 2..], &a[span << 2..]);
     }
 }
 
-/// Multiply/divide inplace by a power of two with rounding matching [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_assign_ref].
+/// Multiply/divide inplace by a power of two with rounding matching [poulpy_cpu_portable::reference::znx::znx_mul_power_of_two_assign_ref].
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
@@ -196,7 +196,7 @@ pub unsafe fn znx_mul_power_of_two_assign_avx(k: i64, res: &mut [i64]) {
 
             // tail
             if !n.is_multiple_of(4) {
-                use poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_assign_ref;
+                use poulpy_cpu_portable::reference::znx::znx_mul_power_of_two_assign_ref;
                 znx_mul_power_of_two_assign_ref(k, &mut res[span << 2..]);
             }
             return;
@@ -241,12 +241,12 @@ pub unsafe fn znx_mul_power_of_two_assign_avx(k: i64, res: &mut [i64]) {
 
     // tail
     if !n.is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_assign_ref;
+        use poulpy_cpu_portable::reference::znx::znx_mul_power_of_two_assign_ref;
         znx_mul_power_of_two_assign_ref(k, &mut res[span << 2..]);
     }
 }
 
-/// Multiply/divide by a power of two and add on the result with rounding matching [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_assign_ref].
+/// Multiply/divide by a power of two and add on the result with rounding matching [poulpy_cpu_portable::reference::znx::znx_mul_power_of_two_assign_ref].
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
@@ -299,7 +299,7 @@ pub unsafe fn znx_mul_add_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
 
             // tail
             if !n.is_multiple_of(4) {
-                use poulpy_cpu_ref::reference::znx::znx_mul_add_power_of_two_ref;
+                use poulpy_cpu_portable::reference::znx::znx_mul_add_power_of_two_ref;
 
                 znx_mul_add_power_of_two_ref(k, &mut res[span << 2..], &a[span << 2..]);
             }
@@ -347,7 +347,7 @@ pub unsafe fn znx_mul_add_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
 
     // tail
     if !n.is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_mul_add_power_of_two_ref;
+        use poulpy_cpu_portable::reference::znx::znx_mul_add_power_of_two_ref;
         znx_mul_add_power_of_two_ref(k, &mut res[span << 2..], &a[span << 2..]);
     }
 }

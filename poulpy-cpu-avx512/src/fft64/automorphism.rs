@@ -12,7 +12,9 @@ use core::arch::x86_64::{
     _mm512_i64gather_pd, _mm512_set1_epi64, _mm512_storeu_pd, _mm512_xor_si512,
 };
 
-use poulpy_cpu_ref::reference::fft64::vec_znx_dft::{Fft64AutomorphismPlan, vec_znx_dft_automorphism as fft64_automorphism_ref};
+use poulpy_cpu_portable::reference::fft64::vec_znx_dft::{
+    Fft64AutomorphismPlan, vec_znx_dft_automorphism as fft64_automorphism_ref,
+};
 use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, ZnxViewMut};
 
 /// AVX-512F entry point for [`Fft64AutomorphismPlan`].
@@ -31,7 +33,7 @@ pub fn fft64_vec_znx_dft_automorphism_avx512<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + poulpy_cpu_ref::reference::fft64::reim::ReimArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + poulpy_cpu_portable::reference::fft64::reim::ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {

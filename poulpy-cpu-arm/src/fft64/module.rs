@@ -2,7 +2,7 @@
 
 use std::ptr::NonNull;
 
-use poulpy_cpu_ref::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
+use poulpy_cpu_portable::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
 use poulpy_hal::{
     alloc_aligned, assert_alignment,
     layouts::{Backend, Host},
@@ -17,7 +17,7 @@ use super::FFT64Neon;
 #[repr(C)]
 pub struct FFT64NeonHandle {
     ring_plans: FFT64PlanSet<f64>,
-    table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
+    table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
 }
 
 impl poulpy_hal::execution::ScratchWorkers for FFT64Neon {}
@@ -149,8 +149,8 @@ unsafe impl FFTHandleProvider<f64> for FFT64NeonHandle {
     }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64NeonHandle {
-    fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
+unsafe impl ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for FFT64NeonHandle {
+    fn module_plan_cache(&self) -> &::poulpy_cpu_portable::table_cache::ModuleTableCache {
         &self.table_cache
     }
 }

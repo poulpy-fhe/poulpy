@@ -2,7 +2,7 @@
 
 use std::ptr::NonNull;
 
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
     types::Q120bScalar,
@@ -24,7 +24,7 @@ pub struct NTT4x30NeonHandle {
     ring_plans: NttPlanSet<Primes30>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
-    table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
+    table_cache: ::poulpy_cpu_portable::table_cache::ModuleTableCache,
 }
 
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Neon {}
@@ -170,8 +170,8 @@ unsafe impl NttHandleProvider for NTT4x30NeonHandle {
     }
 }
 
-unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT4x30NeonHandle {
-    fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
+unsafe impl ::poulpy_cpu_portable::table_cache::ModuleTableCacheProvider for NTT4x30NeonHandle {
+    fn module_plan_cache(&self) -> &::poulpy_cpu_portable::table_cache::ModuleTableCache {
         &self.table_cache
     }
 }

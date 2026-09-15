@@ -11,7 +11,7 @@
 /// Instantiates the whole gate-level suite for one backend.
 ///
 /// ```ignore
-/// poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Ref);
+/// poulpy_bin_fhe::bin_fhe_backend_test_suite!(mod bin_fhe_fft64, backend = crate::FFT64Portable);
 /// ```
 #[macro_export]
 macro_rules! bin_fhe_backend_test_suite {

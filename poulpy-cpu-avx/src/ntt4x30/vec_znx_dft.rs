@@ -4,7 +4,7 @@ use core::arch::x86_64::{
     _mm256_cvtepu32_epi64, _mm256_inserti128_si256, _mm256_loadu_si256, _mm256_permutevar8x32_epi32, _mm256_set1_epi32,
     _mm256_setr_epi32, _mm256_storeu_si256, _mm256_sub_epi32,
 };
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, NttToZnx128,
     primes::{PrimeSet, Primes30},
     vec_znx_dft::{NttAutomorphismPlan, NttModuleHandle},

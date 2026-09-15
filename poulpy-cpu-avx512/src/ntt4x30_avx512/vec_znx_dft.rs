@@ -3,7 +3,7 @@ use core::arch::x86_64::{
     __m512i, _mm512_add_epi32, _mm512_cmp_epu32_mask, _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512,
     _mm512_mask_sub_epi32, _mm512_storeu_si512, _mm512_sub_epi32,
 };
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, NttToZnx128,
     primes::{PrimeSet, Primes30},
     vec_znx_dft::{NttAutomorphismPlan, NttModuleHandle},

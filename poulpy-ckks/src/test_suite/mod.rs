@@ -2,7 +2,7 @@
 //!
 //! All test functions are generic over `BE: super::helpers::TestContextBackend` and take
 //! `(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)`.
-//! The backend-specific test harnesses (in downstream crates such as `poulpy-cpu-ref`)
+//! The backend-specific test harnesses (in downstream crates such as `poulpy-cpu-portable`)
 //! instantiate and invoke these functions via the [`ckks_backend_test_suite!`] macro.
 
 use poulpy_core::{

@@ -64,7 +64,7 @@
 //! ## Determinism
 //!
 //! All operations produce **bit-identical results** across different runs and different backends
-//! (when compared to `poulpy-cpu-ref`). Floating-point operations in FFT are constrained to
+//! (when compared to `poulpy-cpu-portable`). Floating-point operations in FFT are constrained to
 //! maintain error < 0.5 ULP, ensuring correct rounding when converting back to integers.
 //!
 //! ## Overflow handling

@@ -107,7 +107,7 @@ pub(crate) unsafe fn znx_normalize_floor_avx512<const CARRY_IN: bool, const ROUN
         };
         _mm512_storeu_si512(carry.as_mut_ptr().add(i).cast(), out);
     }
-    poulpy_cpu_ref::reference::normalization::znx_normalize_floor_ref::<CARRY_IN, ROUND>(
+    poulpy_cpu_portable::reference::normalization::znx_normalize_floor_ref::<CARRY_IN, ROUND>(
         base2k,
         lsh,
         &a[end..],
@@ -156,7 +156,7 @@ pub(crate) unsafe fn znx_normalize_round_avx512<const CARRY_IN: bool, const PAD:
     let step = NormalizationBoundary512::new(base2k, lsh, padding);
     let end = res.len() / 8 * 8;
     znx_normalize_round_chunks_avx512::<CARRY_IN, PAD>(&step, end, res.as_mut_ptr(), a.as_ptr(), carry.as_mut_ptr());
-    poulpy_cpu_ref::reference::normalization::znx_normalize_round_ref::<CARRY_IN, PAD>(
+    poulpy_cpu_portable::reference::normalization::znx_normalize_round_ref::<CARRY_IN, PAD>(
         base2k,
         lsh,
         padding,
@@ -181,7 +181,7 @@ pub(crate) unsafe fn znx_normalize_round_assign_avx512<const CARRY_IN: bool>(
     let step = NormalizationBoundary512::new(base2k, lsh, padding);
     let end = res.len() / 8 * 8;
     znx_normalize_round_chunks_avx512::<CARRY_IN, true>(&step, end, res.as_mut_ptr(), res.as_ptr(), carry.as_mut_ptr());
-    poulpy_cpu_ref::reference::normalization::znx_normalize_round_assign_ref::<CARRY_IN>(
+    poulpy_cpu_portable::reference::normalization::znx_normalize_round_assign_ref::<CARRY_IN>(
         base2k,
         lsh,
         padding,
@@ -281,7 +281,7 @@ pub unsafe fn znx_extract_digit_addmul_impl_avx512<const OVERWRITE: bool>(
 
     // scalar tail
     if !n.is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_impl_ref;
+        use poulpy_cpu_portable::reference::znx::znx_extract_digit_addmul_impl_ref;
 
         let off: usize = span << 3;
         znx_extract_digit_addmul_impl_ref::<OVERWRITE>(base2k, lsh, &mut res[off..], &mut src[off..]);
@@ -342,7 +342,7 @@ pub unsafe fn znx_normalize_digit_avx512(base2k: usize, res: &mut [i64], src: &m
 
     // scalar tail
     if !n.is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_digit_ref;
+        use poulpy_cpu_portable::reference::znx::znx_normalize_digit_ref;
 
         let off: usize = span << 3;
         znx_normalize_digit_ref(base2k, &mut res[off..], &mut src[off..]);
@@ -384,7 +384,7 @@ pub unsafe fn znx_normalize_first_step_carry_only_avx512(base2k: usize, lsh: usi
 
     // tail
     if !x.len().is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_first_step_carry_only_ref;
+        use poulpy_cpu_portable::reference::znx::znx_normalize_first_step_carry_only_ref;
 
         znx_normalize_first_step_carry_only_ref(base2k, lsh, &x[span << 3..], &mut carry[span << 3..]);
     }
@@ -440,7 +440,7 @@ pub unsafe fn znx_normalize_first_step_assign_avx512(base2k: usize, lsh: usize, 
 
     // tail
     if !x.len().is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_first_step_assign_ref;
+        use poulpy_cpu_portable::reference::znx::znx_normalize_first_step_assign_ref;
 
         znx_normalize_first_step_assign_ref(base2k, lsh, &mut x[span << 3..], &mut carry[span << 3..]);
     }
@@ -520,7 +520,7 @@ pub unsafe fn znx_normalize_first_step_avx512<const OVERWRITE: bool>(
 
     // tail
     if !x.len().is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_first_step_ref;
+        use poulpy_cpu_portable::reference::znx::znx_normalize_first_step_ref;
 
         znx_normalize_first_step_ref::<OVERWRITE>(base2k, lsh, &mut x[span << 3..], &a[span << 3..], &mut carry[span << 3..]);
     }
@@ -593,7 +593,7 @@ pub unsafe fn znx_normalize_middle_step_carry_only_avx512(base2k: usize, lsh: us
     }
 
     if !x.len().is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_carry_only_ref;
+        use poulpy_cpu_portable::reference::znx::znx_normalize_middle_step_carry_only_ref;
 
         znx_normalize_middle_step_carry_only_ref(base2k, lsh, &x[span << 3..], &mut carry[span << 3..]);
     }
@@ -668,7 +668,7 @@ pub unsafe fn znx_normalize_middle_step_assign_avx512(base2k: usize, lsh: usize,
     }
 
     if !x.len().is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_assign_ref;
+        use poulpy_cpu_portable::reference::znx::znx_normalize_middle_step_assign_ref;
 
         znx_normalize_middle_step_assign_ref(base2k, lsh, &mut x[span << 3..], &mut carry[span << 3..]);
     }
@@ -763,7 +763,7 @@ pub unsafe fn znx_normalize_middle_step_avx512<const OVERWRITE: bool>(
     }
 
     if !x.len().is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_ref;
+        use poulpy_cpu_portable::reference::znx::znx_normalize_middle_step_ref;
 
         znx_normalize_middle_step_ref::<OVERWRITE>(base2k, lsh, &mut x[span << 3..], &a[span << 3..], &mut carry[span << 3..]);
     }
@@ -827,7 +827,7 @@ pub unsafe fn znx_normalize_final_step_assign_avx512(base2k: usize, lsh: usize, 
     }
 
     if !x.len().is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_final_step_assign_ref;
+        use poulpy_cpu_portable::reference::znx::znx_normalize_final_step_assign_ref;
 
         znx_normalize_final_step_assign_ref(base2k, lsh, &mut x[span << 3..], &mut carry[span << 3..]);
     }
@@ -910,7 +910,7 @@ pub unsafe fn znx_normalize_final_step_avx512<const OVERWRITE: bool>(
     }
 
     if !x.len().is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_final_step_ref;
+        use poulpy_cpu_portable::reference::znx::znx_normalize_final_step_ref;
 
         znx_normalize_final_step_ref::<OVERWRITE>(base2k, lsh, &mut x[span << 3..], &a[span << 3..], &mut carry[span << 3..]);
     }
@@ -956,7 +956,7 @@ pub unsafe fn znx_extract_digit_addmul_normalize_avx512<const OVERWRITE: bool>(
         _mm512_storeu_si512(res.as_mut_ptr().add(i).cast(), output);
         _mm512_storeu_si512(carry.as_mut_ptr().add(i).cast(), output_carry);
     }
-    poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
+    poulpy_cpu_portable::reference::znx::znx_extract_digit_addmul_normalize_ref::<OVERWRITE>(
         base2k,
         lsh,
         res_base2k,
@@ -977,20 +977,20 @@ mod tests {
         if !std::is_x86_feature_detected!("avx512f") {
             return;
         }
-        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx512>();
-        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx512>();
+        poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx512>();
+        poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx512>();
         #[cfg(feature = "enable-ifma")]
-        poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT3x42Ifma>();
+        poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::NTT3x42Ifma>();
         #[cfg(feature = "enable-rayon")]
         {
-            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx512Rayon>();
-            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx512Rayon>();
+            poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::FFT64Avx512Rayon>();
+            poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::NTT4x30Avx512Rayon>();
             #[cfg(feature = "enable-ifma")]
-            poulpy_cpu_ref::test_suite::normalization::test_normalization_kernels::<crate::NTT3x42IfmaRayon>();
+            poulpy_cpu_portable::test_suite::normalization::test_normalization_kernels::<crate::NTT3x42IfmaRayon>();
         }
     }
 
-    use poulpy_cpu_ref::reference::znx::{
+    use poulpy_cpu_portable::reference::znx::{
         get_carry_i64, get_digit_i64, znx_extract_digit_addmul_ref, znx_normalize_digit_ref, znx_normalize_final_step_assign_ref,
         znx_normalize_final_step_ref, znx_normalize_first_step_assign_ref, znx_normalize_first_step_ref,
         znx_normalize_middle_step_assign_ref, znx_normalize_middle_step_ref,

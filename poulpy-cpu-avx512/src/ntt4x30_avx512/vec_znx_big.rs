@@ -1,6 +1,6 @@
 //! Large-coefficient (i128) ring element vector support for [`NTT4x30Avx512`](super::NTT4x30Avx512).
 //!
-//! The shared `poulpy-cpu-ref` NTT4x30 defaults rely on backend-provided `I128BigOps`
+//! The shared `poulpy-cpu-portable` NTT4x30 defaults rely on backend-provided `I128BigOps`
 //! and `I128NormalizeOps` hooks for vectorized i128 operations. The kernels themselves
 //! live in [`crate::vec_znx_big_avx512`] and operate on **4 i128 per `__m512i`**
 //! (the 256-bit AVX backend handles 2 i128 per `__m256i`). Mask-form compares
@@ -18,8 +18,8 @@ use crate::vec_znx_big_avx512::{
     vi128_negate_assign_avx512, vi128_negate_avx512, vi128_sub_assign_avx512, vi128_sub_avx512, vi128_sub_negate_assign_avx512,
     vi128_sub_small_a_avx512, vi128_sub_small_assign_avx512, vi128_sub_small_b_avx512, vi128_sub_small_negate_assign_avx512,
 };
-use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
-use poulpy_cpu_ref::reference::ntt4x30::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
+use poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct;
+use poulpy_cpu_portable::reference::ntt4x30::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
 
 impl I128BigOps for NTT4x30Avx512 {
     #[inline(always)]

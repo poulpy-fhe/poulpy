@@ -4,7 +4,7 @@ use core::arch::x86_64::{
     _mm512_cvtepi64_epi32, _mm512_cvtepu32_epi64, _mm512_loadu_si512, _mm512_mul_epu32, _mm512_set1_epi64, _mm512_setzero_si512,
     _mm512_srl_epi64, _mm512_srli_epi64,
 };
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
 use poulpy_hal::execution::TaskExecutor;

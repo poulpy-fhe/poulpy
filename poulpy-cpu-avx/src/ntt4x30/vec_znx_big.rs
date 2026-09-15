@@ -1,6 +1,6 @@
 //! Large-coefficient (i128) ring element vector support for [`NTT4x30Avx`](super::NTT4x30Avx).
 //!
-//! The shared `poulpy-cpu-ref` NTT4x30 defaults rely on backend-provided `I128BigOps`
+//! The shared `poulpy-cpu-portable` NTT4x30 defaults rely on backend-provided `I128BigOps`
 //! and `I128NormalizeOps` hooks for vectorized i128 operations.
 
 use super::{
@@ -13,8 +13,8 @@ use super::{
         vi128_sub_small_a_avx2, vi128_sub_small_assign_avx2, vi128_sub_small_b_avx2, vi128_sub_small_negate_assign_avx2,
     },
 };
-use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
-use poulpy_cpu_ref::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
+use poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct;
+use poulpy_cpu_portable::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
 
 impl I128BigOps for NTT4x30Avx {
     #[inline(always)]

@@ -897,7 +897,7 @@ pub(crate) fn vec_znx_dft_zero<E: poulpy_hal::execution::TaskExecutor>(
 
 /// Packed-layout NTT3x42 automorphism fused with accumulation: `res += automorphism(a)`.
 pub(crate) fn vec_znx_dft_automorphism_add<E: poulpy_hal::execution::TaskExecutor>(
-    plan: &poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
+    plan: &poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,
@@ -954,7 +954,7 @@ unsafe fn automorphism_add_limb(n: usize, perm: &[u32], dst: &mut [u64], a: &[u6
 
 /// Packed-layout NTT3x42 automorphism.
 pub(crate) fn vec_znx_dft_automorphism<E: poulpy_hal::execution::TaskExecutor>(
-    plan: &poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
+    plan: &poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, NTT3x42Ifma>,

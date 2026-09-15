@@ -1,6 +1,6 @@
 //! Criterion benchmark harnesses for coefficient-domain [`VecZnx`](poulpy_hal::layouts::VecZnx) operations.
 //!
-//! Each submodule mirrors the corresponding `poulpy-cpu-ref` `vec_znx` implementation
+//! Each submodule mirrors the corresponding `poulpy-cpu-portable` `vec_znx` implementation
 //! file; the runners are assembled into `BenchOp` tables in `hal::suites`.
 
 mod add;

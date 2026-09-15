@@ -24,7 +24,7 @@ use crate::ntt3x42_ifma::{
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
 use poulpy_core::oep::gglwe_product_digit_output_size;
-use poulpy_cpu_ref::reference::vmp_select::assert_extractable;
+use poulpy_cpu_portable::reference::vmp_select::assert_extractable;
 use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{

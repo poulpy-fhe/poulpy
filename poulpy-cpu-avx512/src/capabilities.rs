@@ -1,6 +1,6 @@
 //! Which of this crate's backends the running CPU can use.
 
-use poulpy_cpu_ref::capabilities::BackendCapability;
+use poulpy_cpu_portable::capabilities::BackendCapability;
 
 const AVX512F: &str = "+avx512f";
 const IFMA: &str = "+avx512f,+avx512ifma,+avx512vl";
@@ -64,8 +64,8 @@ mod tests {
     #[test]
     #[ignore = "diagnostic: prints this machine's backend support"]
     fn print_report() {
-        let mut caps = poulpy_cpu_ref::capabilities::reference_backends();
+        let mut caps = poulpy_cpu_portable::capabilities::portable_backends();
         caps.extend(super::capabilities());
-        println!("{}", poulpy_cpu_ref::capabilities::report(&caps));
+        println!("{}", poulpy_cpu_portable::capabilities::report(&caps));
     }
 }

@@ -2,8 +2,8 @@
 
 use super::NTT4x30Neon;
 #[cfg(target_arch = "aarch64")]
-use poulpy_cpu_ref::reference::ntt4x30::vec_znx_big::AssignOp;
-use poulpy_cpu_ref::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
+use poulpy_cpu_portable::reference::ntt4x30::vec_znx_big::AssignOp;
+use poulpy_cpu_portable::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
 
 #[cfg(target_arch = "aarch64")]
 use crate::neon::normalize::{
@@ -85,7 +85,7 @@ impl I128BigOps for NTT4x30Neon {
 #[cfg(not(target_arch = "aarch64"))]
 impl I128BigOps for NTT4x30Neon {}
 
-impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for NTT4x30Neon {
+impl poulpy_cpu_portable::hal_defaults::BigWordHadamardProduct for NTT4x30Neon {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         <Self as I128BigOps>::i128_hadamard_product_i64(res, a, b)

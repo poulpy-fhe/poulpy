@@ -5,7 +5,7 @@ use std::mem::size_of;
 use bytemuck::{cast_slice, cast_slice_mut};
 use rayon::prelude::*;
 
-use poulpy_cpu_ref::{
+use poulpy_cpu_portable::{
     hal_defaults::{
         BigWordHadamardProduct, HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault,
         NTT4x30VecZnxBigDefault, NTT4x30VmpDefault,
@@ -204,10 +204,10 @@ impl ZnxExtractDigitAddMul for NTT4x30NeonRayon {
     }
 }
 
-impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30NeonRayon {
+impl poulpy_cpu_portable::reference::normalization::I64NormalizeOps for NTT4x30NeonRayon {
     #[inline(always)]
     fn znx_normalize_floor<const CARRY_IN: bool, const ROUND: bool>(base2k: usize, lsh: usize, a: &[i64], carry: &mut [i64]) {
-        <NTT4x30Neon as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(
+        <NTT4x30Neon as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_floor::<CARRY_IN, ROUND>(
             base2k, lsh, a, carry,
         );
     }
@@ -221,7 +221,7 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30NeonRa
         a: &[i64],
         carry: &mut [i64],
     ) {
-        <NTT4x30Neon as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(
+        <NTT4x30Neon as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_round::<CARRY_IN, PAD>(
             base2k, lsh, padding, res, a, carry,
         );
     }
@@ -234,14 +234,16 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30NeonRa
         res: &mut [i64],
         carry: &mut [i64],
     ) {
-        <NTT4x30Neon as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(
+        <NTT4x30Neon as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_normalize_round_assign::<CARRY_IN>(
             base2k, lsh, padding, res, carry,
         );
     }
 
     #[inline(always)]
     fn znx_extract_digit_mul(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i64]) {
-        <NTT4x30Neon as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(base2k, lsh, res, src);
+        <NTT4x30Neon as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_extract_digit_mul(
+            base2k, lsh, res, src,
+        );
     }
 
     #[inline(always)]
@@ -253,9 +255,9 @@ impl poulpy_cpu_ref::reference::normalization::I64NormalizeOps for NTT4x30NeonRa
         src: &mut [i64],
         carry: &mut [i64],
     ) {
-        <NTT4x30Neon as poulpy_cpu_ref::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<OVERWRITE>(
-            base2k, lsh, res_base2k, res, src, carry,
-        );
+        <NTT4x30Neon as poulpy_cpu_portable::reference::normalization::I64NormalizeOps>::znx_extract_digit_addmul_normalize::<
+            OVERWRITE,
+        >(base2k, lsh, res_base2k, res, src, carry);
     }
 }
 forward_znx!(ZnxNormalizeDigit, znx_normalize_digit(base2k: usize, res: &mut [i64], src: &mut [i64]));
@@ -428,10 +430,12 @@ impl I128NormalizeOps for NTT4x30NeonRayon {
         <NTT4x30Neon as I128NormalizeOps>::znx_extract_digit_addmul_i128(base2k, lsh, res, src);
     }
 
-    const FUSE_NORMALIZE: bool = <NTT4x30Neon as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
+    const FUSE_NORMALIZE: bool = <NTT4x30Neon as poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps>::FUSE_NORMALIZE;
 
     fn znx_extract_digit_mul_i128(base2k: usize, lsh: usize, res: &mut [i64], src: &mut [i128]) {
-        <NTT4x30Neon as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(base2k, lsh, res, src)
+        <NTT4x30Neon as poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_mul_i128(
+            base2k, lsh, res, src,
+        )
     }
 
     fn znx_extract_digit_addmul_normalize_i128<const OVERWRITE: bool>(
@@ -442,9 +446,9 @@ impl I128NormalizeOps for NTT4x30NeonRayon {
         src: &mut [i128],
         carry: &mut [i128],
     ) {
-        <NTT4x30Neon as poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<OVERWRITE>(
-            base2k, lsh, res_base2k, res, src, carry,
-        )
+        <NTT4x30Neon as poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps>::znx_extract_digit_addmul_normalize_i128::<
+            OVERWRITE,
+        >(base2k, lsh, res_base2k, res, src, carry)
     }
 
     fn nfc_middle_step(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
@@ -471,7 +475,7 @@ impl BigWordHadamardProduct for NTT4x30NeonRayon {
 }
 
 unsafe impl HalVecZnxImpl for NTT4x30NeonRayon {
-    poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
+    poulpy_cpu_portable::hal_impl_vec_znx_without_normalize!();
 
     fn vec_znx_normalize(
         module: &Module<Self>,
@@ -505,7 +509,7 @@ unsafe impl HalVecZnxImpl for NTT4x30NeonRayon {
     }
 }
 unsafe impl HalModuleImpl for NTT4x30NeonRayon {
-    poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);
+    poulpy_cpu_portable::hal_impl_module!(NTT4x30ModuleDefault);
 }
 unsafe impl HalVmpImpl for NTT4x30NeonRayon {
     fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
@@ -643,10 +647,10 @@ unsafe impl HalVmpImpl for NTT4x30NeonRayon {
 }
 
 unsafe impl HalConvolutionImpl for NTT4x30NeonRayon {
-    poulpy_cpu_ref::hal_impl_convolution!(NTT4x30ConvolutionDefault);
+    poulpy_cpu_portable::hal_impl_convolution!(NTT4x30ConvolutionDefault);
 }
 unsafe impl HalVecZnxBigImpl for NTT4x30NeonRayon {
-    poulpy_cpu_ref::hal_impl_vec_znx_big_without_normalize!(NTT4x30VecZnxBigDefault);
+    poulpy_cpu_portable::hal_impl_vec_znx_big_without_normalize!(NTT4x30VecZnxBigDefault);
 
     fn vec_znx_big_normalize(
         module: &Module<Self>,
@@ -675,7 +679,7 @@ unsafe impl HalVecZnxBigImpl for NTT4x30NeonRayon {
     }
 }
 unsafe impl HalSvpImpl for NTT4x30NeonRayon {
-    poulpy_cpu_ref::hal_impl_svp!(NTT4x30SvpDefault);
+    poulpy_cpu_portable::hal_impl_svp!(NTT4x30SvpDefault);
 }
 unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
     fn vec_znx_dft_apply(
@@ -936,11 +940,11 @@ unsafe impl HalVecZnxDftImpl for NTT4x30NeonRayon {
     ) {
         let _ = scratch;
         if RayonTaskExecutor::should_serialize_inner() {
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, SerialTaskExecutor>(
+            poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, SerialTaskExecutor>(
                 plan, res, res_col, a, a_col,
             );
         } else {
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, RayonTaskExecutor>(
+            poulpy_cpu_portable::reference::ntt4x30::vec_znx_dft::ntt4x30_vec_znx_dft_automorphism_add::<Self, RayonTaskExecutor>(
                 plan, res, res_col, a, a_col,
             );
         }
@@ -962,7 +966,7 @@ impl poulpy_cpu_rayon::RayonTuning for NTT4x30NeonRayon {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_cpu_ref::reference::znx::ZnxAdd;
+    use poulpy_cpu_portable::reference::znx::ZnxAdd;
     use poulpy_hal::{layouts::Module, test_suite::convolution::test_convolution_by_const};
 
     use super::NTT4x30NeonRayon;

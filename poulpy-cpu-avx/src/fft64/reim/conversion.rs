@@ -110,7 +110,7 @@ pub fn reim_from_znx_i64_bnd50_fma(res: &mut [f64], a: &[i64]) {
         }
 
         if !res.len().is_multiple_of(4) {
-            use poulpy_cpu_ref::reference::fft64::reim::reim_from_znx_i64_ref;
+            use poulpy_cpu_portable::reference::fft64::reim::reim_from_znx_i64_ref;
             reim_from_znx_i64_ref(&mut res[span << 2..], &a[span << 2..])
         }
     }
@@ -192,7 +192,7 @@ pub fn reim_to_znx_i64_bnd63_avx2_fma(res: &mut [i64], divisor: f64, a: &[f64]) 
         }
 
         if !res.len().is_multiple_of(4) {
-            use poulpy_cpu_ref::reference::fft64::reim::reim_to_znx_i64_ref;
+            use poulpy_cpu_portable::reference::fft64::reim::reim_to_znx_i64_ref;
             reim_to_znx_i64_ref(&mut res[span << 2..], divisor, &a[span << 2..])
         }
     }
@@ -218,7 +218,7 @@ pub fn reim_to_znx_i64_assign_bnd63_avx2_fma(res: &mut [f64], divisor: f64) {
             _mm256_srli_epi64, _mm256_srlv_epi64, _mm256_sub_epi64, _mm256_xor_si256,
         };
 
-        use poulpy_cpu_ref::reference::fft64::reim::reim_to_znx_i64_assign_ref;
+        use poulpy_cpu_portable::reference::fft64::reim::reim_to_znx_i64_assign_ref;
 
         let sign_mask_256: __m256d = _mm256_castsi256_pd(_mm256_set1_epi64x(sign_mask as i64));
         let expo_mask_256: __m256i = _mm256_set1_epi64x(expo_mask as i64);
@@ -322,7 +322,7 @@ pub fn reim_to_znx_i64_avx2_bnd50_fma(res: &mut [i64], divisor: f64, a: &[f64]) 
         }
 
         if !res.len().is_multiple_of(4) {
-            use poulpy_cpu_ref::reference::fft64::reim::reim_to_znx_i64_ref;
+            use poulpy_cpu_portable::reference::fft64::reim::reim_to_znx_i64_ref;
             reim_to_znx_i64_ref(&mut res[span << 2..], divisor, &a[span << 2..])
         }
     }
@@ -334,7 +334,7 @@ pub fn reim_to_znx_i64_avx2_bnd50_fma(res: &mut [i64], divisor: f64, a: &[f64]) 
 
 #[cfg(all(test, target_feature = "avx2"))]
 mod tests {
-    use poulpy_cpu_ref::reference::fft64::reim::{reim_from_znx_i64_ref, reim_to_znx_i64_ref};
+    use poulpy_cpu_portable::reference::fft64::reim::{reim_from_znx_i64_ref, reim_to_znx_i64_ref};
 
     use super::*;
 

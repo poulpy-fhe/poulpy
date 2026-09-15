@@ -4,7 +4,7 @@ use core::arch::aarch64::{
     int64x2_t, uint64x2_t, vaddq_s64, vaddq_u64, vandq_u64, vdupq_n_s64, vdupq_n_u64, vld1q_s64, vorrq_u64,
     vreinterpretq_s64_u64, vreinterpretq_u64_s64, vshlq_s64, vshlq_u64, vst1q_s64,
 };
-use poulpy_cpu_ref::reference::normalization::{
+use poulpy_cpu_portable::reference::normalization::{
     nfc_normalize_floor_ref, nfc_normalize_round_ref, znx_normalize_floor_ref, znx_normalize_round_assign_ref,
     znx_normalize_round_ref,
 };

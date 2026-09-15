@@ -7,7 +7,7 @@ use core::arch::aarch64::{
     float64x2_t, vaddq_f64, vdupq_n_f64, vfmaq_f64, vfmsq_f64, vld1q_f64, vmulq_f64, vst1q_f64, vsubq_f64, vzip1q_f64, vzip2q_f64,
 };
 
-use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
+use poulpy_cpu_portable::reference::fft64::reim::{fft_ref, ifft_ref};
 
 /// Forward FFT in REIM split layout. Mirrors `fft_avx2_fma`.
 pub(crate) fn fft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
@@ -553,7 +553,7 @@ unsafe fn inv_bitwiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg:
 // interleave the per-lane operands.
 //
 // Algorithm shape lifted from `fft16_ref` / `ifft16_ref`
-// (`poulpy-cpu-ref/src/reference/fft64/reim/{fft,ifft}_ref.rs`).
+// (`poulpy-cpu-portable/src/reference/fft64/reim/{fft,ifft}_ref.rs`).
 
 #[inline(always)]
 unsafe fn cplx_twiddle_neon(
@@ -888,7 +888,7 @@ unsafe fn ifft16_neon(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
 
 #[cfg(test)]
 mod tests {
-    use poulpy_cpu_ref::reference::fft64::reim::{ReimFFTTable, ReimIFFTTable, fft_ref, ifft_ref};
+    use poulpy_cpu_portable::reference::fft64::reim::{ReimFFTTable, ReimIFFTTable, fft_ref, ifft_ref};
 
     use super::{fft_neon, ifft_neon};
 

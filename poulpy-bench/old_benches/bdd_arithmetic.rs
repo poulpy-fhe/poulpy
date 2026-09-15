@@ -396,7 +396,7 @@ pub fn benc_bdd_arithmetic<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + Host
 }
 
 fn bench_bdd_arithmetic(c: &mut Criterion) {
-    benc_bdd_arithmetic::<poulpy_cpu_ref::FFT64Ref, CGGI>(c, "fft64-ref");
+    benc_bdd_arithmetic::<poulpy_cpu_portable::FFT64Portable, CGGI>(c, "fft64-ref");
     #[cfg(all(feature = "enable-avx", target_arch = "x86_64"))]
     benc_bdd_arithmetic::<poulpy_cpu_avx::FFT64Avx, CGGI>(c, "fft64-avx");
     #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64"))]

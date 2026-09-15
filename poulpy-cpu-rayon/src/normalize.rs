@@ -2,7 +2,7 @@
 //! per coefficient, so disjoint coefficient ranges split freely and the carry
 //! reservation is unchanged.
 
-use poulpy_cpu_ref::reference::{
+use poulpy_cpu_portable::reference::{
     ntt4x30::vec_znx_big::{I128NormalizeOps, ntt4x30_vec_znx_big_normalize, ntt4x30_vec_znx_big_normalize_range_raw},
     vec_znx::{vec_znx_normalize, vec_znx_normalize_assign, vec_znx_normalize_assign_range_raw, vec_znx_normalize_range_raw},
     znx::{

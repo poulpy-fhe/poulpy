@@ -2,7 +2,7 @@
 //!
 //! This module contains the low-level SIMD kernels behind the `I128BigOps` and
 //! `I128NormalizeOps` traits. The higher-level loop structure lives in the shared
-//! defaults (`poulpy-cpu-ref`); this file provides the accelerated per-slice building blocks.
+//! defaults (`poulpy-cpu-portable`); this file provides the accelerated per-slice building blocks.
 //!
 //! # Memory layout
 //!
@@ -18,13 +18,13 @@
 //! `lsh != 0` have dedicated kernels; scalar fallback only when `base2k > 64`
 //! or `n < 8`.
 //!
-//! [`I128NormalizeOps`]: poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps
-//! [`I128BigOps`]: poulpy_cpu_ref::reference::ntt4x30::I128BigOps
+//! [`I128NormalizeOps`]: poulpy_cpu_portable::reference::ntt4x30::I128NormalizeOps
+//! [`I128BigOps`]: poulpy_cpu_portable::reference::ntt4x30::I128BigOps
 
 use std::arch::x86_64::*;
 
 use itertools::izip;
-use poulpy_cpu_ref::reference::znx::{get_carry_i128, get_digit_i128};
+use poulpy_cpu_portable::reference::znx::{get_carry_i128, get_digit_i128};
 
 /// # Safety
 /// Requires AVX-512F.
@@ -112,7 +112,7 @@ unsafe fn nfc_normalize_boundary_avx512<const CARRY_IN: bool, const ROUND: bool,
         }
         let end = chunks * 8;
         if WRITE {
-            poulpy_cpu_ref::reference::normalization::nfc_normalize_round_ref::<CARRY_IN, PAD>(
+            poulpy_cpu_portable::reference::normalization::nfc_normalize_round_ref::<CARRY_IN, PAD>(
                 base2k,
                 lsh,
                 padding,
@@ -121,7 +121,7 @@ unsafe fn nfc_normalize_boundary_avx512<const CARRY_IN: bool, const ROUND: bool,
                 &mut carry[end..],
             );
         } else {
-            poulpy_cpu_ref::reference::normalization::nfc_normalize_floor_ref::<CARRY_IN, ROUND>(
+            poulpy_cpu_portable::reference::normalization::nfc_normalize_floor_ref::<CARRY_IN, ROUND>(
                 base2k,
                 lsh,
                 &a[end..],
@@ -1377,13 +1377,13 @@ pub(super) unsafe fn nfc_extract_normalize_avx512<const OVERWRITE: bool, const F
 ) {
     if base2k >= 64 || res_base2k >= 64 {
         if FINALIZE {
-            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+            poulpy_cpu_portable::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
                 base2k, lsh, res_base2k, res, src, carry,
             );
         } else if OVERWRITE {
-            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
+            poulpy_cpu_portable::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, res, src);
         } else {
-            poulpy_cpu_ref::reference::normalization::znx_extract_digit_addmul_i128_ref(base2k, lsh, res, src);
+            poulpy_cpu_portable::reference::normalization::znx_extract_digit_addmul_i128_ref(base2k, lsh, res, src);
         }
         return;
     }
@@ -1427,7 +1427,7 @@ pub(super) unsafe fn nfc_extract_normalize_avx512<const OVERWRITE: bool, const F
             }
         }
         if FINALIZE {
-            poulpy_cpu_ref::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
+            poulpy_cpu_portable::reference::znx::znx_extract_digit_addmul_normalize_i128_ref::<OVERWRITE>(
                 base2k,
                 lsh,
                 res_base2k,
@@ -1436,9 +1436,9 @@ pub(super) unsafe fn nfc_extract_normalize_avx512<const OVERWRITE: bool, const F
                 &mut carry[end..],
             );
         } else if OVERWRITE {
-            poulpy_cpu_ref::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
+            poulpy_cpu_portable::reference::znx::znx_extract_digit_mul_i128_ref(base2k, lsh, &mut res[end..], &mut src[end..]);
         } else {
-            poulpy_cpu_ref::reference::normalization::znx_extract_digit_addmul_i128_ref(
+            poulpy_cpu_portable::reference::normalization::znx_extract_digit_addmul_i128_ref(
                 base2k,
                 lsh,
                 &mut res[end..],
@@ -1623,16 +1623,16 @@ mod tests {
     }
     #[test]
     fn nfc_fused_matches_scalar() {
-        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx512>();
+        poulpy_cpu_portable::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx512>();
         #[cfg(feature = "enable-rayon")]
-        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx512Rayon>();
+        poulpy_cpu_portable::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT4x30Avx512Rayon>();
     }
 
     #[test]
     #[cfg(feature = "enable-ifma")]
     fn nfc_ifma_fused_matches_scalar() {
-        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT3x42Ifma>();
+        poulpy_cpu_portable::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT3x42Ifma>();
         #[cfg(feature = "enable-rayon")]
-        poulpy_cpu_ref::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT3x42IfmaRayon>();
+        poulpy_cpu_portable::test_suite::normalization_i128::test_i128_normalize_fused::<crate::NTT3x42IfmaRayon>();
     }
 }

@@ -27,7 +27,7 @@
 //! the `MIN_AVG_LOG2_PREC` regression floor a few bits under that.
 //!
 //! RUSTFLAGS="-C target-feature=+avx2,+fma" cargo test -p poulpy-cpu-avx --release --features enable-avx,enable-ckks ntt4x30_f64::bootstrapping -- --nocapture
-//! cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping_e2e -- --nocapture
+//! cargo test -p poulpy-cpu-portable --features enable-ckks --release ntt4x30_f64::bootstrapping_e2e -- --nocapture
 
 use crate::api::CKKSEncodingOps;
 use crate::ckks_set_log_delta_normalized;

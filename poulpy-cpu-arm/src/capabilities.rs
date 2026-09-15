@@ -1,6 +1,6 @@
 //! Which of this crate's backends the running CPU can use.
 
-use poulpy_cpu_ref::capabilities::BackendCapability;
+use poulpy_cpu_portable::capabilities::BackendCapability;
 
 /// The NEON backends. AArch64 always implements NEON, so support is decided by
 /// the target architecture alone.
@@ -32,8 +32,8 @@ mod tests {
     #[test]
     #[ignore = "diagnostic: prints this machine's backend support"]
     fn print_report() {
-        let mut caps = poulpy_cpu_ref::capabilities::reference_backends();
+        let mut caps = poulpy_cpu_portable::capabilities::portable_backends();
         caps.extend(super::capabilities());
-        println!("{}", poulpy_cpu_ref::capabilities::report(&caps));
+        println!("{}", poulpy_cpu_portable::capabilities::report(&caps));
     }
 }

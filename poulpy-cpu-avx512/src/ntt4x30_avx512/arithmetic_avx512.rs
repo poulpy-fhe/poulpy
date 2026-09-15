@@ -44,9 +44,9 @@ use core::arch::x86_64::{
     _mm512_mul_epu32, _mm512_or_si512, _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512,
     _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64, _mm512_test_epi64_mask,
 };
-use poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSetCrt4;
+use poulpy_cpu_portable::reference::ntt4x30::primes::PrimeSetCrt4;
 
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     mat_vec::BbbMeta,
     primes::{PrimeSet, Primes30},
 };
@@ -1222,7 +1222,7 @@ pub(crate) unsafe fn b_to_znx128_avx512(nn: usize, res: &mut [i128], a: &[u64]) 
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
     use super::*;
-    use poulpy_cpu_ref::reference::ntt4x30::{
+    use poulpy_cpu_portable::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref},
         mat_vec::{BbbMeta, vec_mat1col_product_bbb_ref},
         primes::Primes30,
@@ -1289,7 +1289,7 @@ mod tests {
     /// Fused `reduce_b_and_apply_crt` matches two-step `reduce_b_to_canonical` + barrett.
     #[test]
     fn reduce_b_and_apply_crt_vs_two_step() {
-        use poulpy_cpu_ref::reference::ntt4x30::arithmetic::b_from_znx64_ref;
+        use poulpy_cpu_portable::reference::ntt4x30::arithmetic::b_from_znx64_ref;
         let n = 64usize;
         let coeffs: Vec<i64> = (0..n as i64).map(|i| i * 5 - 160).collect();
         let mut b = vec![0u64; 4 * n];

@@ -4,9 +4,9 @@
 // `Primes30::Q[prime]`); on aarch64 the NEON kernels never reference it,
 // hence the allow(unused_imports).
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_ref::reference::ntt4x30::arithmetic::{b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref};
+use poulpy_cpu_portable::reference::ntt4x30::arithmetic::{b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref};
 #[allow(unused_imports)]
-use poulpy_cpu_ref::reference::ntt4x30::{
+use poulpy_cpu_portable::reference::ntt4x30::{
     NttAdd, NttAddAssign, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
     NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2,
     NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign, NttToZnx128, NttZero,
@@ -41,7 +41,7 @@ use crate::neon::{
     ntt4x30_ntt::{intt_neon, ntt_neon},
 };
 #[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_ref::reference::ntt4x30::{arithmetic::add_bbb_ref, types::Q_SHIFTED};
+use poulpy_cpu_portable::reference::ntt4x30::{arithmetic::add_bbb_ref, types::Q_SHIFTED};
 
 impl NttDFTExecute<NttTable<Primes30>> for NTT4x30Neon {
     #[inline(always)]

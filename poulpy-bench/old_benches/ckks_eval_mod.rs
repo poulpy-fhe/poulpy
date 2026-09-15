@@ -163,7 +163,7 @@ fn tsk_layout() -> GLWETensorKeyLayout {
 }
 
 fn bench_ntt4x30_ref(c: &mut Criterion) {
-    type BE = poulpy_cpu_ref::NTT4x30Ref;
+    type BE = poulpy_cpu_portable::NTT4x30Portable;
     let label = "ntt4x30-ref";
 
     let module = Module::<BE>::new(N as u64);

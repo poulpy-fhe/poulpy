@@ -11,7 +11,7 @@ use core::arch::aarch64::{
 };
 
 #[allow(unused_imports)]
-use poulpy_cpu_ref::reference::fft64::reim::{
+use poulpy_cpu_portable::reference::fft64::reim::{
     reim_add_assign_ref, reim_add_ref, reim_addmul_ref, reim_from_znx_i64_ref, reim_mul_assign_ref, reim_mul_ref,
     reim_negate_assign_ref, reim_negate_ref, reim_sub_assign_ref, reim_sub_negate_assign_ref, reim_sub_ref,
     reim_to_znx_i64_assign_ref, reim_to_znx_i64_ref,
