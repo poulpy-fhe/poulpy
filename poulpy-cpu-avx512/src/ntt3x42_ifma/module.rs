@@ -32,8 +32,23 @@ use poulpy_hal::{
 pub struct NTT3x42IfmaHandle {
     pub(crate) table_ntt: Ntt3x42IfmaTable<Primes42>,
     pub(crate) table_intt: Ntt3x42IfmaTableInv<Primes42>,
+    /// Forward tables for the sparse degrees `8, 16, ..., n / 2`, indexed by
+    /// `log2(degree) - 3`; empty when `n == 8` (spec 4.5, #266).
+    pub(crate) table_ntt_sparse: Vec<Ntt3x42IfmaTable<Primes42>>,
     pub(crate) meta_bbc: Bbc126IfmaMeta<Primes42>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
+}
+
+impl NTT3x42IfmaHandle {
+    /// The forward table for degree `n`: the module's own, or one of the sparse
+    /// degrees below it. `n` has been checked by `sparse_log_gap` at the call site.
+    pub(crate) fn table_ntt_for(&self, n: usize) -> &Ntt3x42IfmaTable<Primes42> {
+        if n == self.table_ntt.n {
+            &self.table_ntt
+        } else {
+            &self.table_ntt_sparse[n.ilog2() as usize - 3]
+        }
+    }
 }
 
 impl Backend for NTT3x42Ifma {
@@ -238,6 +253,9 @@ pub(crate) fn module_new(n: u64) -> Module<NTT3x42Ifma> {
         table_cache: Default::default(),
         table_ntt: Ntt3x42IfmaTable::new(n as usize),
         table_intt: Ntt3x42IfmaTableInv::new(n as usize),
+        table_ntt_sparse: (3..(n as usize).ilog2() as usize)
+            .map(|log_degree| Ntt3x42IfmaTable::new(1usize << log_degree))
+            .collect(),
         meta_bbc: Bbc126IfmaMeta::new(),
     };
     let ptr: NonNull<NTT3x42IfmaHandle> = NonNull::from(Box::leak(Box::new(handle)));
