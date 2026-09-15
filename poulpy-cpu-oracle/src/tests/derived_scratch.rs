@@ -36,8 +36,6 @@ where
     test_cnv_by_const_apply_add_derived(&PARAMS, module);
 }
 
-/// The VMP composites. The FFT64 prepare kernel requires `n >= 8`, so only the
-/// NTT backend runs them at `n = 4`.
 fn run_vmp<BE>(module: &Module<BE>)
 where
     BE: poulpy_hal::test_suite::TestBackend + poulpy_hal::oep::HalVmpImpl,
@@ -50,6 +48,7 @@ where
 fn derived_scratch_fft64_ref_n4() {
     let module = Module::<FFT64Oracle>::new(4);
     run(&module);
+    run_vmp(&module);
     test_convolution_add(&module, 17);
     test_convolution_by_const_add(&module, 17);
 }

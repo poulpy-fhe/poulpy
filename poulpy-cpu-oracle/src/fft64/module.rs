@@ -1,16 +1,4 @@
-//! Backend handle and module initialization for [`FFT64Oracle`](crate::FFT64Oracle).
-//!
-//! This module defines:
-//!
-//! - [`FFT64OracleHandle`]: the opaque handle stored inside a `Module<FFT64Oracle>`,
-//!   holding precomputed FFT and IFFT twiddle-factor tables.
-//! - The [`Backend`] trait implementation, which defines scalar types and the
-//!   handle destruction path.
-//! - The [`FFT64HandleFactory`] implementation, which builds the handle stored
-//!   inside the `Module`.
-//! - The shared [`FFT64ModuleHandle`](crate::reference::fft64::module::FFT64ModuleHandle)
-//!   trait from `poulpy-hal`, which provides typed access to the FFT tables from
-//!   a `Module<FFT64Oracle>` and other FFT64-family backends.
+//! FFT backend storage and transform tables.
 
 use std::ptr::NonNull;
 
@@ -23,7 +11,7 @@ use crate::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSe
 
 use super::FFT64Oracle;
 
-/// Opaque handle for the [`FFT64Oracle`](crate::FFT64Oracle) backend.
+/// Opaque handle for the [`FFT64Oracle`] backend.
 ///
 /// Holds precomputed twiddle-factor tables for the forward FFT and inverse FFT
 /// of size `m = n / 2`, where `n` is the ring dimension passed to

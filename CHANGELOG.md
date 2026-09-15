@@ -2,17 +2,6 @@
 
 ## [Unreleased]
 
-- **Breaking:** rename `poulpy-cpu-ref` to `poulpy-cpu-portable`,
-  `FFT64Ref` to `FFT64Portable`, and `NTT4x30Ref` to `NTT4x30Portable`.
-  Update production fallback dependencies and backend imports throughout the
-  workspace. Existing scalar kernels and behavior are preserved.
-- Add the unpublished `poulpy-cpu-oracle` crate with `FFT64Oracle` and
-  `NTT4x30Oracle`. The oracle owns its transform arithmetic, tables, dot products,
-  and CRT reconstruction; generic HAL/Core/CKKS compositions remain shared.
-  Public-operation parity suites use the oracle through path-only development
-  dependencies. Production fallbacks and raw-buffer compatibility tests use the
-  portable backend.
-
 The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/poulpy/issues/234): a smaller operation basis with a contract block on every api trait, derived operations as backend-generic default bodies on the OEP traits, sampling moved into `poulpy-core`, and CKKS ciphertexts canonical at the `k` they report.
 
 ### `poulpy-hal`
@@ -66,6 +55,8 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### CPU backends
 
+- **Breaking:** rename `poulpy-cpu-ref` to `poulpy-cpu-portable`, `FFT64Ref` to `FFT64Portable`, and `NTT4x30Ref` to `NTT4x30Portable`. Update production fallback dependencies and backend imports throughout the workspace. Existing scalar kernels and behavior are preserved.
+- Add the unpublished `poulpy-cpu-oracle` crate with `FFT64Oracle` and `NTT4x30Oracle`. The oracle implements only the required HAL primitives, with scalar transforms, direct products, independent CRT reconstruction, and arbitrary-precision integer normalization. Optional HAL operations and generic Core/CKKS compositions use their default implementations. Public-operation parity suites use the oracle through path-only development dependencies. Production fallbacks and raw-buffer compatibility tests use the portable backend.
 - `poulpy-cpu-ref`: `hal_defaults` loses every composite that now has an OEP default body, and the `hal_impl_*!` macros shrink to the basis plus the fused kernels a backend still overrides; the reference `lsh`, `rsh`, `lsh_add`/`lsh_sub`/`rsh_add`/`rsh_sub`, `rsh_assign`, out-of-place `mul_xp_minus_one` and `add_scalar` kernels are deleted. `lsh_assign`, `mul_xp_minus_one_assign`, `big_add_small`, `big_sub_small_a` and `big_sub_small_b` keep their fused kernels as explicit backend overrides (bit-exact with the OEP defaults, pinned by `test_suite::derived`) because the default bodies measured 23% to 88% slower on the AVX-512 backends, and `vec_znx_mul_xp_minus_one_assign_tmp_bytes` returns the one-limb temporary on CPU.
 - `poulpy-cpu-ref` gains `ScalarZnxFill`, the host secret-distribution samplers moved from the HAL; `impl_sampling_host!` dispatches to them.
 - **Fix, behaviour:** `poulpy-cpu-ref`'s FFT64 `vec_znx_dft_apply` left a destination limb untouched when its source index `offset + j * step` fell past the input, so the limb kept whatever the buffer held. It now zeroes it, as the NTT4x30 and IFMA kernels already did and as the limb rule requires. Only calls with a non-zero `offset` could reach it.

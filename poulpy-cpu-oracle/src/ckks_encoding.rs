@@ -5,7 +5,7 @@
 //! quantization codec, the plan geometry) is backend- and precision-agnostic.
 //! A backend selects its transform by implementing [`CKKSEncodingTransform`]
 //! for each scalar precision it supports, and instantiates the encoder with
-//! [`impl_ckks_encoding!`](crate::impl_ckks_encoding).
+//! [`impl_ckks_encoding!`](crate::ckks_encoding::impl_ckks_encoding).
 //!
 //! A plan-cache entry holds the complete geometric family for one scalar
 //! precision. The encoder owns its twiddle tables rather than borrowing the
@@ -370,10 +370,9 @@ where
 /// Instantiates the generic CKKS encoder for a backend.
 ///
 /// The encoder body is written once in this module; the backend only supplies
-/// its transform through [`CKKSEncodingTransform`](crate::ckks_encoding::CKKSEncodingTransform),
+/// its transform through [`CKKSEncodingTransform`],
 /// so this expands to a single implementation covering every precision that
 /// backend selects a transform for.
-#[macro_export]
 macro_rules! impl_ckks_encoding {
     ($be:ty) => {
         unsafe impl<F> ::poulpy_ckks::oep::CKKSEncodingImpl<F> for $be
@@ -440,6 +439,8 @@ macro_rules! impl_ckks_encoding {
         }
     };
 }
+
+pub(crate) use impl_ckks_encoding;
 
 #[cfg(test)]
 mod tests {

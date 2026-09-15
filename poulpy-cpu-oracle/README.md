@@ -5,7 +5,12 @@ Correctness-testing backends for Poulpy. Applications should use
 
 - `FFT64Oracle`: scalar radix-2 FFT with independently generated tables.
 - `NTT4x30Oracle`: scalar negacyclic NTT with modular reduction after every
-  butterfly, wide-integer dot products, and independently computed CRT inverses.
+  butterfly, direct modular products, and independently computed CRT inverses.
+
+The backends implement the required HAL primitives and inherit all optional
+operations from HAL. Prepared products use ordinary transform order and direct
+scalar loops. Normalization reconstructs each coefficient as an arbitrary-precision
+integer, rounds once, and writes centered radix digits; it uses heap storage.
 
 This crate does not import production CPU kernels or their generated tables.
 Some scalar support routines share source ancestry with the portable backend

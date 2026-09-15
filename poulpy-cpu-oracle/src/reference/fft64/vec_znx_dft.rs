@@ -1,12 +1,9 @@
-use bytemuck::cast_slice_mut;
-
 use crate::{
     layouts::{
         Backend, HostDataMut, HostDataRef, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
         ZnxView, ZnxViewMut,
     },
     reference::{
-        SendPtr,
         fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
         znx::ZnxZero,
     },
@@ -186,10 +183,9 @@ pub fn vec_znx_idft_apply<BE>(
     let divisor: f64 = table.m() as f64;
 
     for j in 0..min_size {
-        let res_slice_f64: &mut [f64] = cast_slice_mut(res.at_mut(res_col, j));
-        BE::reim_copy(res_slice_f64, a.at(a_col, j));
-        BE::reim_dft_execute(table, res_slice_f64);
-        BE::reim_to_znx_assign(res_slice_f64, divisor);
+        let mut values = a.at(a_col, j).to_vec();
+        BE::reim_dft_execute(table, &mut values);
+        BE::reim_to_znx(res.at_mut(res_col, j), divisor, &values);
     }
 
     for j in min_size..res_size {
@@ -226,35 +222,6 @@ pub fn vec_znx_idft_apply_tmpa<BE>(
     for j in min_size..res_size {
         BE::znx_zero(res.at_mut(res_col, j));
     }
-}
-
-// Kept as dormant internal code for the removed consume path.
-// It is intentionally retained because the in-place DFT -> big conversion
-// may still be useful as a future optimization, even though the current
-// public API now applies IDFT into a separately allocated VecZnxBig.
-#[allow(dead_code)]
-pub fn vec_znx_idft_apply_consume<'a, BE>(
-    table: &ReimIFFTTable<f64>,
-    mut res: VecZnxDftBackendMut<'a, BE>,
-) -> VecZnxBigBackendMut<'a, BE>
-where
-    BE: Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64>,
-    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-{
-    {
-        assert_eq!(table.m() << 1, res.n());
-    }
-
-    let divisor: f64 = table.m() as f64;
-
-    for i in 0..res.cols() {
-        for j in 0..res.size() {
-            BE::reim_dft_execute(table, res.at_mut(i, j));
-            BE::reim_to_znx_assign(res.at_mut(i, j), divisor);
-        }
-    }
-
-    res.into_big()
 }
 
 pub fn vec_znx_dft_sub<BE>(
@@ -473,41 +440,5 @@ pub fn vec_znx_dft_automorphism<BE>(
 
     for limb in min_size..res_size {
         BE::reim_zero(res.at_mut(res_col, limb));
-    }
-}
-
-pub fn vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskExecutor>(
-    plan: &Fft64AutomorphismPlan,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    a_col: usize,
-) where
-    BE: Backend<DftWord = f64, ZnxWord = i64>,
-    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
-{
-    let n = res.n();
-    let m = n >> 1;
-    let cols = res.cols();
-    let size = res.size().min(a.size());
-    let res_ptr = SendPtr::new(res.raw_mut().as_mut_ptr());
-    let apply = |limb: usize| {
-        let start = n * (limb * cols + res_col);
-        let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), n) };
-        let (res_re, res_im) = res_limb.split_at_mut(m);
-        let (a_re, a_im) = a.at(a_col, limb).split_at(m);
-        for (i, &source) in plan.perm.iter().enumerate() {
-            let source = source as usize;
-            res_re[i] += a_re[source];
-            res_im[i] += if plan.conj { -a_im[source] } else { a_im[source] };
-        }
-    };
-    if E::IS_PARALLEL {
-        E::for_each(size, apply);
-    } else {
-        for limb in 0..size {
-            apply(limb);
-        }
     }
 }

@@ -1,6 +1,6 @@
 //! Host kernels for the secret distributions of [`poulpy_core`].
 //!
-//! These are the primitives [`impl_sampling_host!`](crate::impl_sampling_host)
+//! These are the primitives [`impl_sampling_host!`](crate::sampling::impl_sampling_host)
 //! dispatches to for each variant of
 //! [`Distribution`](poulpy_core::Distribution). They run on the CPU backend's
 //! own buffer, which is host memory; a backend whose buffers are not host

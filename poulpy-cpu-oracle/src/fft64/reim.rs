@@ -1,26 +1,6 @@
-//! Real/imaginary interleaved FFT primitives for [`FFT64Oracle`](crate::FFT64Oracle).
-//!
-//! Implements the `ReimArith`, `Reim4BlkMatVec`, `Reim4Convolution`, and `I64Ops`
-//! traits from `crate::reference::fft64`, covering:
-//!
-//! - **FFT/IFFT execution**: forward and inverse transforms using precomputed twiddle tables.
-//! - **Domain conversion**: `Z[X]/(X^n+1)` integer coefficients to/from `f64` REIM layout.
-//! - **Frequency-domain arithmetic**: pointwise add, sub, negate, mul, and fused multiply-add.
-//! - **4-block batch operations**: `Reim4` variants that process 4 interleaved coefficient
-//!   blocks in a single pass, used internally by convolution and VMP kernels. These include
-//!   block extraction/save, matrix-vector products, and convolution-by-constant.
-//! - **Integer block operations**: `I64` variants for constant-coefficient convolution
-//!   and block save/extract in the integer domain.
-//!
-//! All implementations use the default `_ref` implementations.
-
 use std::fmt::Debug;
 
-use crate::reference::fft64::{
-    convolution::I64Ops,
-    reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, fft_ref, ifft_ref},
-    reim4::{Reim4BlkMatVec, Reim4Convolution},
-};
+use crate::reference::fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, fft_ref, ifft_ref};
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 use rand_distr::num_traits::{Float, FloatConst};
 
@@ -29,7 +9,7 @@ use crate::reference::fft64::module::FFT64Plan;
 
 /// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT.
 ///
-/// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
+/// Wraps forward and inverse transform tables into a single object that
 /// implements [`NegacyclicFFT`], suitable for use as the transform provider
 /// in the CPU CKKS encoding implementation.
 pub struct FFT64ReimTable<F: Float + FloatConst + Debug> {
@@ -87,9 +67,3 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Oracle {
 }
 
 impl ReimArith for FFT64Oracle {}
-
-impl Reim4BlkMatVec for FFT64Oracle {}
-
-impl Reim4Convolution for FFT64Oracle {}
-
-impl I64Ops for FFT64Oracle {}

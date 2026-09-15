@@ -15,8 +15,6 @@
 //
 // ----------------------------------------------------------------------
 
-#![allow(bad_asm_style)]
-
 mod conversion;
 mod fft_ref;
 mod fft_vec;
@@ -32,15 +30,6 @@ pub use ifft_ref::*;
 pub use table_fft::*;
 pub use table_ifft::*;
 pub use zero::*;
-
-pub(crate) fn as_arr<const SIZE: usize, R>(x: &[R]) -> &[R; SIZE] {
-    x[..SIZE].try_into().unwrap()
-}
-
-pub(crate) fn as_arr_mut<const SIZE: usize, R>(x: &mut [R]) -> &mut [R; SIZE] {
-    (&mut x[..SIZE]).try_into().unwrap()
-}
-
 pub trait ReimFFTExecute<D, T> {
     fn reim_dft_execute(table: &D, data: &mut [T]);
 }
@@ -52,10 +41,6 @@ pub trait ReimArith {
 
     fn reim_to_znx(res: &mut [i64], divisor: f64, a: &[f64]) {
         reim_to_znx_i64_ref(res, divisor, a)
-    }
-
-    fn reim_to_znx_assign(res: &mut [f64], divisor: f64) {
-        reim_to_znx_i64_assign_ref(res, divisor)
     }
 
     fn reim_add(res: &mut [f64], a: &[f64], b: &[f64]) {
@@ -84,18 +69,6 @@ pub trait ReimArith {
 
     fn reim_negate_assign(res: &mut [f64]) {
         reim_negate_assign_ref(res)
-    }
-
-    fn reim_mul(res: &mut [f64], a: &[f64], b: &[f64]) {
-        reim_mul_ref(res, a, b)
-    }
-
-    fn reim_mul_assign(res: &mut [f64], a: &[f64]) {
-        reim_mul_assign_ref(res, a)
-    }
-
-    fn reim_addmul(res: &mut [f64], a: &[f64], b: &[f64]) {
-        reim_addmul_ref(res, a, b)
     }
 
     fn reim_copy(res: &mut [f64], a: &[f64]) {

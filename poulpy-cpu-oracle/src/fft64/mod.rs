@@ -4,7 +4,6 @@ mod module;
 mod reim;
 mod znx;
 
-pub use crate::reference::fft64::module::FFTModuleHandle;
 pub use reim::FFT64ReimTable;
 
 /// Scalar correctness oracle using scalar f64 FFT.

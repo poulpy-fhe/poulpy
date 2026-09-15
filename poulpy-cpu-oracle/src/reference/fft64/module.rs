@@ -65,10 +65,6 @@ where
         Self { plans, max_n }
     }
 
-    pub fn max_n(&self) -> usize {
-        self.max_n
-    }
-
     pub fn for_ring(&self, n: usize) -> &FFT64Plan<F> {
         assert!(
             n >= 2 && n.is_power_of_two() && n <= self.max_n,
@@ -77,17 +73,9 @@ where
         );
         &self.plans[n.ilog2() as usize - 1]
     }
-
-    pub fn for_slots(&self, slots: usize) -> &FFT64Plan<F> {
-        self.for_ring(slots.checked_mul(2).expect("slot count overflow"))
-    }
 }
 
-/// Access to the precomputed FFT/iFFT tables stored inside a `Module<B>` handle.
-///
-/// Backend crates implement [`FFTHandleProvider`] for their concrete handle type.
-/// `poulpy-hal` then provides this blanket trait on `Module<B>`, which lets family
-/// defaults share the same FFT64 handle contract across scalar and accelerated backends.
+/// Access to the forward and inverse FFT tables.
 pub trait FFTModuleHandle<F>: poulpy_hal::api::ModuleN
 where
     F: Float + FloatConst + Debug,
@@ -124,7 +112,7 @@ where
     fn get_fft_plan(&self, n: usize) -> &FFT64Plan<F>;
 }
 
-/// Construct FFT64 backend handles for [`Module::new`](crate::api::ModuleNew::new).
+/// Construct FFT64 backend handles for [`Module::new`](poulpy_hal::api::ModuleNew::new).
 ///
 /// # Safety
 ///
@@ -134,9 +122,6 @@ where
 pub unsafe trait FFT64HandleFactory: Sized {
     /// Builds a fully initialized handle for ring dimension `n`.
     fn create_fft64_handle(n: usize) -> Self;
-
-    /// Optional runtime capability check (default: no-op).
-    fn assert_fft64_runtime_support() {}
 }
 
 impl<BE: Backend<ZnxWord = i64>> FFTModuleHandle<BE::DftWord> for Module<BE>

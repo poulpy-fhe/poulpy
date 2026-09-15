@@ -1,6 +1,8 @@
+#[cfg(feature = "enable-core")]
+use crate::reference::znx::znx_add_normal_f64_ref;
 use crate::{
     layouts::{Backend, HostDataMut, VecZnxBackendMut, ZnxViewMut},
-    reference::znx::{znx_add_normal_f64_ref, znx_fill_uniform_ref},
+    reference::znx::znx_fill_uniform_ref,
     source::Source,
 };
 
@@ -33,6 +35,7 @@ pub fn vec_znx_fill_uniform_ref<'r, BE>(
     }
 }
 
+#[cfg(feature = "enable-core")]
 pub fn vec_znx_add_normal_ref<'r, BE>(
     base2k: usize,
     res: &mut VecZnxBackendMut<'r, BE>,

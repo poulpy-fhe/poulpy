@@ -1,24 +1,11 @@
 //! Host implementation of the `poulpy-core` sampling extension point.
 
-/// Implements [`SamplingImpl`](poulpy_core::oep::SamplingImpl) for a CPU
-/// backend with this crate's host [`ScalarZnxFill`](crate::ScalarZnxFill)
-/// methods and reference noise kernels, all applied straight to the backend
-/// buffer.
-///
-/// The second argument selects the `VecZnxBig` word family: `fft64` for
-/// `BigWord = i64`, `ntt4x30` for `BigWord = i128`.
-///
-/// ```ignore
-/// poulpy_cpu_oracle::impl_sampling_host!(FFT64Avx, fft64);
-/// poulpy_cpu_oracle::impl_sampling_host!(NTT4x30Avx, ntt4x30);
-/// ```
-#[macro_export]
 macro_rules! impl_sampling_host {
     ($be:ty, fft64) => {
-        $crate::impl_sampling_host!(@impl $be, $crate::reference::fft64::vec_znx_big::vec_znx_big_add_normal_ref::<_, $be>);
+        $crate::sampling::impl_sampling_host!(@impl $be, $crate::reference::fft64::vec_znx_big::vec_znx_big_add_normal_ref::<_, $be>);
     };
     ($be:ty, ntt4x30) => {
-        $crate::impl_sampling_host!(@impl $be, $crate::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_normal_ref::<_, $be>);
+        $crate::sampling::impl_sampling_host!(@impl $be, $crate::reference::ntt4x30::vec_znx_big::ntt4x30_vec_znx_big_add_normal_ref::<_, $be>);
     };
     (@impl $be:ty, $big_kernel:expr) => {
         unsafe impl ::poulpy_core::oep::SamplingImpl for $be {
@@ -94,3 +81,5 @@ macro_rules! impl_sampling_host {
         }
     };
 }
+
+pub(crate) use impl_sampling_host;

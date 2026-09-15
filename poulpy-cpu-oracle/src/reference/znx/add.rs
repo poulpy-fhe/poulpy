@@ -1,4 +1,3 @@
-#[inline(always)]
 pub fn znx_add_ref(res: &mut [i64], a: &[i64], b: &[i64]) {
     {
         assert_eq!(res.len(), a.len());

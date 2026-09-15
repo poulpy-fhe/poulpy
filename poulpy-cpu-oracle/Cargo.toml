@@ -14,24 +14,19 @@ enable-core = []
 enable-ckks = ["dep:poulpy-ckks", "enable-core"]
 
 [dependencies]
+dashu-int = {workspace = true}
 anyhow = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-core = {workspace = true}
 poulpy-hal = {workspace = true}
-dashu-float = {workspace = true}
 bytemuck = {workspace = true}
-itertools = {workspace = true}
 rand = {workspace = true}
 rand_distr = {workspace = true}
-rand_core = {workspace = true}
-byteorder = {workspace = true}
-once_cell = {workspace = true}
-rand_chacha = {workspace = true}
 
 [lib]
 doctest = false
 
 [dev-dependencies]
-dashu-int = {workspace = true}
+once_cell = {workspace = true}
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
 poulpy-bin-fhe = {workspace = true}

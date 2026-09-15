@@ -40,12 +40,12 @@ where
     type Fft = crate::FFT64ReimTable<F>;
 }
 
-crate::impl_ckks_encoding!(FFT64Oracle);
-crate::impl_ckks_paco_coeff_encoding!(FFT64Oracle);
-crate::impl_ckks_ship_coeff_encoding!(FFT64Oracle);
-crate::impl_ckks_encoding!(NTT4x30Oracle);
-crate::impl_ckks_paco_coeff_encoding!(NTT4x30Oracle);
-crate::impl_ckks_ship_coeff_encoding!(NTT4x30Oracle);
+crate::ckks_encoding::impl_ckks_encoding!(FFT64Oracle);
+crate::ckks_paco::impl_ckks_paco_coeff_encoding!(FFT64Oracle);
+crate::ckks_ship::impl_ckks_ship_coeff_encoding!(FFT64Oracle);
+crate::ckks_encoding::impl_ckks_encoding!(NTT4x30Oracle);
+crate::ckks_paco::impl_ckks_paco_coeff_encoding!(NTT4x30Oracle);
+crate::ckks_ship::impl_ckks_ship_coeff_encoding!(NTT4x30Oracle);
 impl_ckks_add_defaults!(FFT64Oracle);
 impl_ckks_add_defaults!(NTT4x30Oracle);
 impl_ckks_sub_defaults!(FFT64Oracle);

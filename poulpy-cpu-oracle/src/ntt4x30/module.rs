@@ -1,15 +1,4 @@
-//! Backend handle and module initialisation for [`NTT4x30Oracle`](crate::NTT4x30Oracle).
-//!
-//! This module defines:
-//!
-//! - [`NTT4x30OracleHandle`]: the opaque handle stored inside a `Module<NTT4x30Oracle>`,
-//!   holding precomputed NTT and iNTT twiddle-factor tables and multiply-accumulate metadata.
-//! - The [`Backend`] trait implementation, which defines scalar types and the
-//!   handle destruction path.
-//! - The [`NttHandleFactory`] implementation, which builds the handle stored
-//!   inside the `Module`.
-//! - The [`NttHandleProvider`] impl for [`NTT4x30OracleHandle`], wiring the handle into
-//!   the blanket `NttModuleHandle` impl provided by `poulpy-hal`.
+//! NTT backend storage and transform tables.
 
 use std::ptr::NonNull;
 
@@ -19,7 +8,6 @@ use poulpy_hal::{
 };
 
 use crate::reference::ntt4x30::{
-    mat_vec::{BbbMeta, BbcMeta},
     primes::Primes30,
     types::Q120bScalar,
     vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
@@ -27,19 +15,10 @@ use crate::reference::ntt4x30::{
 
 use crate::NTT4x30Oracle;
 
-/// Opaque handle for the [`NTT4x30Oracle`](crate::NTT4x30Oracle) backend.
-///
-/// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
-/// of size `n`, and the lazy-accumulation metadata for `q120b × q120c` and
-/// `q120b × q120b` products.
-///
-/// This struct is heap-allocated during module creation and freed when the
-/// `Module<NTT4x30Oracle>` is dropped (via [`Backend::destroy`]).
+/// Transform plans and cached scheme tables owned by a module.
 #[repr(C)]
 pub struct NTT4x30OracleHandle {
     ring_plans: NttPlanSet<Primes30>,
-    meta_bbc: BbcMeta<Primes30>,
-    meta_bbb: BbbMeta<Primes30>,
     table_cache: crate::table_cache::ModuleTableCache,
 }
 
@@ -168,8 +147,6 @@ unsafe impl NttHandleFactory for NTT4x30OracleHandle {
         NTT4x30OracleHandle {
             table_cache: Default::default(),
             ring_plans: NttPlanSet::new(n),
-            meta_bbc: BbcMeta::new(),
-            meta_bbb: BbbMeta::new(),
         }
     }
 }
@@ -181,14 +158,6 @@ unsafe impl NttHandleFactory for NTT4x30OracleHandle {
 unsafe impl NttHandleProvider for NTT4x30OracleHandle {
     fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
         self.ring_plans.for_ring(n)
-    }
-
-    fn get_bbc_meta(&self) -> &BbcMeta<Primes30> {
-        &self.meta_bbc
-    }
-
-    fn get_bbb_meta(&self) -> &BbbMeta<Primes30> {
-        &self.meta_bbb
     }
 }
 

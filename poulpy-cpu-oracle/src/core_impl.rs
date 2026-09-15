@@ -41,9 +41,9 @@ impl_lwe_keyswitch_defaults_full!(FFT64Oracle);
 impl_lwe_keyswitch_defaults_full!(NTT4x30Oracle);
 
 impl_encryption_defaults_full!(FFT64Oracle);
-crate::impl_sampling_host!(FFT64Oracle, fft64);
+crate::sampling::impl_sampling_host!(FFT64Oracle, fft64);
 impl_encryption_defaults_full!(NTT4x30Oracle);
-crate::impl_sampling_host!(NTT4x30Oracle, ntt4x30);
+crate::sampling::impl_sampling_host!(NTT4x30Oracle, ntt4x30);
 
 impl_glwe_external_product_defaults_full!(FFT64Oracle);
 impl_glwe_external_product_defaults_full!(NTT4x30Oracle);

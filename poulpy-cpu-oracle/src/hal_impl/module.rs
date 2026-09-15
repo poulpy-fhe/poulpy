@@ -1,4 +1,3 @@
-#[macro_export]
 macro_rules! hal_impl_module {
     ($defaults:ident) => {
         fn new(n: u64) -> Module<Self> {

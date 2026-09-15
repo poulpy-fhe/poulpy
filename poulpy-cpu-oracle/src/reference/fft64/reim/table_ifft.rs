@@ -2,15 +2,7 @@ use std::fmt::Debug;
 
 use rand_distr::num_traits::{Float, FloatConst};
 
-use super::{ReimFFTExecute, ifft_ref};
-
-pub struct ReimIFFTRef;
-
-impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTRef {
-    fn reim_dft_execute(table: &ReimIFFTTable<f64>, data: &mut [f64]) {
-        table.execute(data);
-    }
-}
+use super::ifft_ref;
 
 pub struct ReimIFFTTable<R: Float + FloatConst + Debug> {
     m: usize,

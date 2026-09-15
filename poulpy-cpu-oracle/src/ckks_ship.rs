@@ -4,7 +4,7 @@
 //! The scheme-defining transformation lives in `poulpy-ckks`
 //! ([`ship_coeff_encodings_host`]); this module only stages generic inputs
 //! (e.g. scratch-carved views) into an owned buffer before their residues are
-//! read. Invoke [`impl_ckks_ship_coeff_encoding`](crate::impl_ckks_ship_coeff_encoding)
+//! read. Invoke [`impl_ckks_ship_coeff_encoding`]
 //! after installing the backend's CKKS encoding implementation; a backend
 //! with a fused native kernel implements the OEP directly instead.
 
@@ -56,7 +56,6 @@ where
 
 /// Opts a CPU backend into the reference SHIP coefficient encoding. Requires
 /// the backend's CKKS encoding implementation.
-#[macro_export]
 macro_rules! impl_ckks_ship_coeff_encoding {
     ($be:ty) => {
         unsafe impl ::poulpy_ckks::oep::CKKSShipCoeffEncodingImpl for $be {
@@ -99,3 +98,5 @@ macro_rules! impl_ckks_ship_coeff_encoding {
         }
     };
 }
+
+pub(crate) use impl_ckks_ship_coeff_encoding;
