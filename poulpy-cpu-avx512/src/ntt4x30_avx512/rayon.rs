@@ -859,7 +859,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         if RayonTaskExecutor::should_serialize_inner() {
-            super::convolution::cnv_by_const_apply::<SerialTaskExecutor>(
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<NTT4x30Avx512, SerialTaskExecutor>(
                 cnv_offset,
                 &mut base_big_mut(res),
                 res_col,
@@ -868,9 +868,10 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
                 &base_znx_ref(b),
                 b_col,
                 b_coeff,
+                &mut [],
             );
         } else {
-            super::convolution::cnv_by_const_apply::<RayonTaskExecutor>(
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<NTT4x30Avx512, RayonTaskExecutor>(
                 cnv_offset,
                 &mut base_big_mut(res),
                 res_col,
@@ -879,6 +880,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
                 &base_znx_ref(b),
                 b_col,
                 b_coeff,
+                &mut [],
             );
         }
     }
@@ -907,7 +909,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         if RayonTaskExecutor::should_serialize_inner() {
-            super::convolution::cnv_by_const_apply_add::<SerialTaskExecutor>(
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<NTT4x30Avx512, SerialTaskExecutor>(
                 cnv_offset,
                 &mut base_big_mut(res),
                 res_col,
@@ -916,9 +918,10 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
                 &base_znx_ref(b),
                 b_col,
                 b_coeff,
+                &mut [],
             );
         } else {
-            super::convolution::cnv_by_const_apply_add::<RayonTaskExecutor>(
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<NTT4x30Avx512, RayonTaskExecutor>(
                 cnv_offset,
                 &mut base_big_mut(res),
                 res_col,
@@ -927,6 +930,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512Rayon {
                 &base_znx_ref(b),
                 b_col,
                 b_coeff,
+                &mut [],
             );
         }
     }

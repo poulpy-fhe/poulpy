@@ -245,8 +245,16 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        crate::ntt4x30::convolution::cnv_by_const_apply::<_, SerialTaskExecutor>(
-            cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff,
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, SerialTaskExecutor>(
+            cnv_offset,
+            res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            b_coeff,
+            &mut [],
         );
     }
 
@@ -274,8 +282,16 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        crate::ntt4x30::convolution::cnv_by_const_apply_add::<_, SerialTaskExecutor>(
-            cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff,
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<Self, SerialTaskExecutor>(
+            cnv_offset,
+            res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            b_coeff,
+            &mut [],
         );
     }
 

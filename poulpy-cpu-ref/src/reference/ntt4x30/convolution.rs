@@ -14,8 +14,8 @@ use poulpy_hal::execution::TaskExecutor;
 
 use crate::{
     layouts::{
-        Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, VecZnxBackendRef,
-        VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
+        Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataMut, HostDataRef,
+        VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
     },
     reference::ntt4x30::{
         NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
@@ -460,6 +460,11 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
             )
         })
         .collect();
+    #[allow(clippy::type_complexity)]
+    let term_rows: Vec<(&[[u32; 8]], &[[u32; 8]])> = term_cols
+        .iter()
+        .map(|&(a_col, b_col, _, _)| (cast_slice(a_col), cast_slice(b_col)))
+        .collect();
     let sched = cnv_accumulate_schedule(
         cnv_offset,
         res_size,
@@ -470,6 +475,7 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
     assert!(prefix.is_empty());
     assert!(suffix.is_empty());
     let stage = &mut tmp_u64[..8 * CNV_ACC_GROUP * res_size];
+    let stage4: &mut [[u64; 4]] = cast_slice_mut(stage);
 
     for blk in 0..n_blks {
         let grp_pos = blk % CNV_ACC_GROUP;
@@ -477,19 +483,18 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
         for (k, sched_k) in sched.iter().enumerate() {
             let mut s = [[0u64; 8]; 2];
             for e in sched_k {
-                let (a_col, b_col, a_size, b_size) = term_cols[e.term];
-                let a_blk = &a_col[blk * 16 * a_size..];
-                let b_blk = &b_col[blk * 16 * b_size..];
+                let (_, _, a_size, b_size) = term_cols[e.term];
+                let (a_rows, b_rows) = term_rows[e.term];
                 for i in 0..e.len {
-                    let x = &a_blk[16 * (e.a_row + i)..16 * (e.a_row + i) + 16];
-                    let y = &b_blk[16 * (e.b_row + i)..16 * (e.b_row + i) + 16];
-                    accum_mul_q120_bc(&mut s[0], x[..8].try_into().unwrap(), y[..8].try_into().unwrap());
-                    accum_mul_q120_bc(&mut s[1], x[8..].try_into().unwrap(), y[8..].try_into().unwrap());
+                    let r = 2 * (blk * a_size + e.a_row + i);
+                    let q = 2 * (blk * b_size + e.b_row + i);
+                    accum_mul_q120_bc(&mut s[0], &a_rows[r], &b_rows[q]);
+                    accum_mul_q120_bc(&mut s[1], &a_rows[r + 1], &b_rows[q + 1]);
                 }
             }
-            let out = &mut stage[8 * (k * CNV_ACC_GROUP + grp_pos)..];
-            accum_to_q120b::<Primes30>((&mut out[..4]).try_into().unwrap(), &s[0], meta);
-            accum_to_q120b::<Primes30>((&mut out[4..8]).try_into().unwrap(), &s[1], meta);
+            let o = 2 * (k * CNV_ACC_GROUP + grp_pos);
+            accum_to_q120b::<Primes30>(&mut stage4[o], &s[0], meta);
+            accum_to_q120b::<Primes30>(&mut stage4[o + 1], &s[1], meta);
         }
 
         // Flush the group per limb as one contiguous run.
@@ -498,8 +503,8 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
             let grp_base = blk + 1 - in_group;
             for k in 0..res_size {
                 let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
-                res_u64[8 * grp_base..8 * (grp_base + in_group)]
-                    .copy_from_slice(&stage[8 * k * CNV_ACC_GROUP..8 * (k * CNV_ACC_GROUP + in_group)]);
+                let run: &[u64] = cast_slice(&stage4[2 * k * CNV_ACC_GROUP..2 * (k * CNV_ACC_GROUP + in_group)]);
+                res_u64[8 * grp_base..8 * (grp_base + in_group)].copy_from_slice(run);
             }
         }
     }
@@ -848,10 +853,13 @@ pub fn ntt4x30_cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b
     0
 }
 
-/// Coefficient-domain negacyclic convolution: `res[k] = Σ a[k_abs−j] * b[j]`.
+/// Coefficient-domain convolution by a constant: `res[k] = Σ_j a[k_abs − j] · b[j][b_coeff]`.
 ///
-/// Each output limb is computed as an `i128` inner product. Output limbs
-/// `min_size..res.size()` are zeroed. `_tmp` is unused.
+/// Shared by every backend with `BigWord = i128`: each output limb is an
+/// `i128` accumulation over the `a` limbs, taken one slice at a time (no
+/// per-coefficient accessor calls, no checks inside the coefficient loop).
+/// Output limbs `min_size..res.size()` are zeroed by `ntt4x30_cnv_by_const_apply`
+/// and left untouched by `ntt4x30_cnv_by_const_apply_add`. `_tmp` is unused.
 #[allow(clippy::too_many_arguments)]
 pub fn ntt4x30_cnv_by_const_apply<BE, E: TaskExecutor>(
     cnv_offset: usize,
@@ -864,9 +872,9 @@ pub fn ntt4x30_cnv_by_const_apply<BE, E: TaskExecutor>(
     b_coeff: usize,
     _tmp: &mut [u8],
 ) where
-    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + 'static,
-    for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
-    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+    BE: Backend<BigWord = i128, ZnxWord = i64>,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    for<'x> BE::BufMut<'x>: HostDataMut,
 {
     ntt4x30_cnv_by_const_apply_impl::<BE, E, false>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff)
 }
@@ -883,9 +891,9 @@ pub fn ntt4x30_cnv_by_const_apply_add<BE, E: TaskExecutor>(
     b_coeff: usize,
     _tmp: &mut [u8],
 ) where
-    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + 'static,
-    for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
-    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+    BE: Backend<BigWord = i128, ZnxWord = i64>,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    for<'x> BE::BufMut<'x>: HostDataMut,
 {
     ntt4x30_cnv_by_const_apply_impl::<BE, E, true>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff)
 }
@@ -901,20 +909,33 @@ fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool>(
     b_col: usize,
     b_coeff: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + 'static,
-    for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
-    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+    BE: Backend<BigWord = i128, ZnxWord = i64>,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    for<'x> BE::BufMut<'x>: HostDataMut,
 {
     poulpy_hal::layouts::assert_dense(res, "ntt4x30_cnv_by_const_apply_impl");
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_by_const_apply_impl");
     poulpy_hal::layouts::assert_dense(b, "ntt4x30_cnv_by_const_apply_impl");
-    let res_size = res.size();
-    let a_size = a.size();
-    let b_size = b.size();
+    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
+    let n = res.n();
+    let res_cols = res.cols();
+    assert!(
+        res_col < res_cols,
+        "ntt4x30_cnv_by_const_apply_impl: res_col {res_col} >= cols {res_cols}"
+    );
+    assert!(a.n() == n, "ntt4x30_cnv_by_const_apply_impl: a.n() {} != res.n() {n}", a.n());
+    debug_assert!(
+        b_coeff < b.n(),
+        "ntt4x30_cnv_by_const_apply_impl: b_coeff {b_coeff} >= b.n() {}",
+        b.n()
+    );
+    let res_ptr = crate::reference::SendPtr::new(res.raw_mut().as_mut_ptr());
+    let res_limb = |k: usize| unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * res_cols + res_col)), n) };
+
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ADD {
-            for j in 0..res_size {
-                res.at_mut(res_col, j).fill(0i128);
+            for k in 0..res_size {
+                res_limb(k).fill(0);
             }
         }
         return;
@@ -922,29 +943,32 @@ fn ntt4x30_cnv_by_const_apply_impl<BE, E: TaskExecutor, const ADD: bool>(
 
     let bound = a_size + b_size - 1;
     let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    // Every k < min_size has k_abs < bound, hence a non-empty j range.
+    let min_size = res_size.min(bound - offset);
 
-    let n = res.n();
-    let res_cols = res.cols();
-    let res_ptr = crate::reference::SendPtr::new(res.raw_mut().as_mut_ptr());
     let process = |k: usize| {
-        let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * res_cols + res_col)), n) };
+        let out = res_limb(k);
         if k >= min_size {
             if !ADD {
-                res_limb.fill(0);
+                out.fill(0);
             }
             return;
         }
         let k_abs = k + offset;
         let j_min = k_abs.saturating_sub(a_size - 1);
         let j_max = (k_abs + 1).min(b_size);
-        for (n_i, r) in res_limb.iter_mut().enumerate() {
-            let mut acc: i128 = 0;
-            for j in j_min..j_max {
-                let b_j = b.at(b_col, j)[b_coeff];
-                acc += a.at(a_col, k_abs - j)[n_i] as i128 * b_j as i128;
+        for j in j_min..j_max {
+            let a_limb: &[i64] = a.at(a_col, k_abs - j);
+            let b_j = b.at(b_col, j)[b_coeff] as i128;
+            if !ADD && j == j_min {
+                for (r, &x) in out.iter_mut().zip(a_limb) {
+                    *r = x as i128 * b_j;
+                }
+            } else {
+                for (r, &x) in out.iter_mut().zip(a_limb) {
+                    *r = r.wrapping_add(x as i128 * b_j);
+                }
             }
-            *r = if ADD { (*r).wrapping_add(acc) } else { acc };
         }
     };
 

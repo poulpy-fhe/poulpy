@@ -1166,7 +1166,7 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
         let bytes = super::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
-            super::convolution::cnv_by_const_apply::<SerialTaskExecutor>(
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<NTT3x42Ifma, SerialTaskExecutor>(
                 cnv_offset,
                 &mut base_big_mut(res),
                 res_col,
@@ -1178,7 +1178,7 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
                 tmp,
             )
         } else {
-            super::convolution::cnv_by_const_apply::<NTT3x42IfmaRayonExecutor>(
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<NTT3x42Ifma, NTT3x42IfmaRayonExecutor>(
                 cnv_offset,
                 &mut base_big_mut(res),
                 res_col,
@@ -1218,7 +1218,7 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
         let bytes = super::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         if NTT3x42IfmaRayonExecutor::should_serialize_inner() {
-            super::convolution::cnv_by_const_apply_add::<SerialTaskExecutor>(
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<NTT3x42Ifma, SerialTaskExecutor>(
                 cnv_offset,
                 &mut base_big_mut(res),
                 res_col,
@@ -1230,7 +1230,7 @@ unsafe impl HalConvolutionImpl for NTT3x42IfmaRayon {
                 tmp,
             )
         } else {
-            super::convolution::cnv_by_const_apply_add::<NTT3x42IfmaRayonExecutor>(
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<NTT3x42Ifma, NTT3x42IfmaRayonExecutor>(
                 cnv_offset,
                 &mut base_big_mut(res),
                 res_col,

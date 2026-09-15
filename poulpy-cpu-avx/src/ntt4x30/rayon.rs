@@ -832,11 +832,29 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         if RayonTaskExecutor::should_serialize_inner() {
-            super::convolution::cnv_by_const_apply::<_, SerialTaskExecutor>(
-                cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff,
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, SerialTaskExecutor>(
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_coeff,
+                &mut [],
             );
         } else {
-            super::convolution::cnv_by_const_apply::<_, RayonTaskExecutor>(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff);
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, RayonTaskExecutor>(
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_coeff,
+                &mut [],
+            );
         }
     }
 
@@ -864,12 +882,28 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
         if RayonTaskExecutor::should_serialize_inner() {
-            super::convolution::cnv_by_const_apply_add::<_, SerialTaskExecutor>(
-                cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff,
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<Self, SerialTaskExecutor>(
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_coeff,
+                &mut [],
             );
         } else {
-            super::convolution::cnv_by_const_apply_add::<_, RayonTaskExecutor>(
-                cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff,
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<Self, RayonTaskExecutor>(
+                cnv_offset,
+                res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                b_coeff,
+                &mut [],
             );
         }
     }

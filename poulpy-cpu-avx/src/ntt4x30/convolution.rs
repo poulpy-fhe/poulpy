@@ -11,7 +11,7 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
-    Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
+    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
 };
 use std::mem::size_of;
 
@@ -510,94 +510,4 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
 
 pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
     0
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply<BE, E: TaskExecutor>(
-    cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
-    res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
-    a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
-    b_col: usize,
-    b_coeff: usize,
-) where
-    BE: Backend<BigWord = i128, ZnxWord = i64>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply");
-    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply");
-    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
-    if res_size == 0 || a_size == 0 || b_size == 0 {
-        let n = res.n();
-        let cols = res.cols();
-        let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
-        E::for_each(res_size, |limb| unsafe {
-            std::slice::from_raw_parts_mut(res_ptr.get().add(n * (limb * cols + res_col)), n).fill(0)
-        });
-        return;
-    }
-    let bound = a_size + b_size - 1;
-    let min_size = res_size.min(bound);
-    let offset = cnv_offset.min(bound);
-    let n = res.n();
-    let cols = res.cols();
-    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
-    E::for_each(res_size, |k| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * cols + res_col)), n) };
-        if k < min_size {
-            let k_abs = k + offset;
-            let j_min = k_abs.saturating_sub(a_size - 1);
-            let j_max = (k_abs + 1).min(b_size);
-            for (coeff, out) in dst.iter_mut().enumerate() {
-                *out = (j_min..j_max)
-                    .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
-                    .sum();
-            }
-        } else {
-            dst.fill(0);
-        }
-    });
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply_add<BE, E: TaskExecutor>(
-    cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
-    res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
-    a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
-    b_col: usize,
-    b_coeff: usize,
-) where
-    BE: Backend<BigWord = i128, ZnxWord = i64>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply_add");
-    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply_add");
-    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
-    if res_size == 0 || a_size == 0 || b_size == 0 {
-        return;
-    }
-    let bound = a_size + b_size - 1;
-    let min_size = res_size.min(bound);
-    let offset = cnv_offset.min(bound);
-    let n = res.n();
-    let cols = res.cols();
-    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
-    E::for_each(min_size, |k| {
-        let k_abs = k + offset;
-        let j_min = k_abs.saturating_sub(a_size - 1);
-        let j_max = (k_abs + 1).min(b_size);
-        let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * cols + res_col)), n) };
-        for (coeff, out) in dst.iter_mut().enumerate() {
-            *out += (j_min..j_max)
-                .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
-                .sum::<i128>();
-        }
-    });
 }

@@ -993,3 +993,67 @@ pub fn test_convolution_prepare_shape_rejected<BE: crate::test_suite::TestBacken
         "cnv_prepare_self accepted right.cols() != left.cols() instead of panicking"
     );
 }
+
+/// `cnv_by_const_apply` and `cnv_by_const_apply_add` reject a first operand
+/// whose degree is not the module degree, in release builds too: the kernels
+/// would otherwise truncate the coefficient loop to the shorter operand.
+pub fn test_convolution_by_const_degree_rejected<BE: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module: &crate::layouts::Module<BE>,
+) where
+    crate::layouts::Module<BE>: Convolution<BE> + VecZnxBigAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let size = 2usize;
+    let mut source = Source::new([6u8; 32]);
+    let mut a = VecZnxOwned::<i64>::alloc(params.size / 2, 1, size);
+    a.fill_uniform(params.base2k, &mut source);
+    let mut b = VecZnxOwned::<i64>::alloc(params.size, 1, size);
+    b.fill_uniform(params.base2k, &mut source);
+    let a_be = upload_vec_znx::<BE>(&a);
+    let b_be = upload_vec_znx::<BE>(&b);
+    let mut res: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, size);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_by_const_apply_tmp_bytes(0, size, size, size)
+            .max(module.cnv_by_const_apply_add_tmp_bytes(0, size, size, size)),
+    );
+
+    let apply_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_by_const_apply(
+            0,
+            &mut res.to_backend_mut(),
+            0,
+            &vec_znx_backend_ref::<BE>(&a_be),
+            0,
+            &vec_znx_backend_ref::<BE>(&b_be),
+            0,
+            0,
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        apply_panicked,
+        "cnv_by_const_apply accepted a.n() != res.n() instead of panicking"
+    );
+
+    let add_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_by_const_apply_add(
+            0,
+            &mut res.to_backend_mut(),
+            0,
+            &vec_znx_backend_ref::<BE>(&a_be),
+            0,
+            &vec_znx_backend_ref::<BE>(&b_be),
+            0,
+            0,
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        add_panicked,
+        "cnv_by_const_apply_add accepted a.n() != res.n() instead of panicking"
+    );
+}

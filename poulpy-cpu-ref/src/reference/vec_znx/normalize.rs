@@ -323,18 +323,25 @@ pub unsafe fn vec_znx_normalize_range_raw<'a, BE>(
         normalize_cross_needs_exact(a.size(), a_base2k, res_base2k, res_k, res_offset)
     };
     if needs_exact {
-        for i in 0..coeff_len {
+        let a_limbs: Vec<&[i64]> = (0..a.size())
+            .map(|j| &a.at(a_col, j)[coeff_start..coeff_start + coeff_len])
+            .collect();
+        // One base pointer per output limb of the range; limbs are disjoint and
+        // each holds `coeff_len` writable scalars, so `add(i)` with `i < coeff_len`
+        // stays inside limb `j`.
+        let res_limbs: Vec<*mut i64> = (0..size).map(|j| res.at_mut(j).as_mut_ptr()).collect();
+        (0..coeff_len).for_each(|i| {
             normalize_exact::<true, _, _>(
-                |j| a.at(a_col, j)[coeff_start + i] as i128,
+                |j| a_limbs[j][i] as i128,
                 a.size(),
                 a_base2k,
                 size,
                 res_base2k,
                 res_k,
                 res_offset,
-                |j, digit| res.at_mut(j)[i] = digit,
+                |j, digit| unsafe { *res_limbs[j].add(i) = digit },
             );
-        }
+        });
         return;
     }
     match res_base2k == a_base2k {
@@ -930,17 +937,21 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
         // Reading walks the coefficient from its least significant limb upward
         // and a negative offset sends every source limb to an index at least as
         // high, so each limb is consumed before it is written.
-        let mut res = unsafe { VecZnxRangeMut::new(res_ptr, res_shape, res_col, coeff_start, coeff_len) };
+        // One base pointer per limb of the range: reads and writes of coefficient
+        // `i` touch `limbs[j].add(i)`, the same element `at_mut(j)[i]` addressed.
+        let limbs: Vec<*mut i64> = (0..size)
+            .map(|j| unsafe { res_ptr.add(res_shape.scalar_offset(res_col, j) + coeff_start) })
+            .collect();
         for i in 0..coeff_len {
             normalize_exact::<true, _, _>(
-                |j| unsafe { *res_ptr.add(res_shape.scalar_offset(res_col, j) + coeff_start + i) } as i128,
+                |j| unsafe { *limbs[j].add(i) } as i128,
                 size,
                 base2k,
                 size,
                 base2k,
                 res_k,
                 res_offset,
-                |j, digit| res.at_mut(j)[i] = digit,
+                |j, digit| unsafe { *limbs[j].add(i) = digit },
             );
         }
         return;
@@ -957,16 +968,21 @@ pub unsafe fn vec_znx_normalize_assign_range_raw<BE>(
     // extraction never shifts by the word width. Reads use the same offset
     // `at_mut` computes, on the element written below.
     if base2k == 64 {
+        // One base pointer per limb of the range: reads and writes of coefficient
+        // `i` touch `limbs[j].add(i)`, the same element `at_mut(j)[i]` addressed.
+        let limbs: Vec<*mut i64> = (0..size)
+            .map(|j| unsafe { res_ptr.add(res_shape.scalar_offset(res_col, j) + coeff_start) })
+            .collect();
         for i in 0..coeff_len {
             normalize_exact::<true, _, _>(
-                |j| unsafe { *res_ptr.add(res_shape.scalar_offset(res_col, j) + coeff_start + i) } as i128,
+                |j| unsafe { *limbs[j].add(i) } as i128,
                 size,
                 base2k,
                 size,
                 base2k,
                 res_k,
                 0,
-                |j, digit| res.at_mut(j)[i] = digit,
+                |j, digit| unsafe { *limbs[j].add(i) = digit },
             );
         }
         return;
