@@ -10,7 +10,7 @@ use crate::FFT64Neon;
 
 cross_backend_test_suite! {
     mod vec_znx,
-    backend_ref =  poulpy_cpu_portable::FFT64Portable,
+    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Neon,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -41,7 +41,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod svp,
-    backend_ref =  poulpy_cpu_portable::FFT64Portable,
+    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Neon,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -53,7 +53,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_big,
-    backend_ref =  poulpy_cpu_portable::FFT64Portable,
+    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Neon,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -82,7 +82,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vec_znx_dft,
-    backend_ref =  poulpy_cpu_portable::FFT64Portable,
+    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Neon,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -103,7 +103,7 @@ cross_backend_test_suite! {
 
 cross_backend_test_suite! {
     mod vmp,
-    backend_ref =  poulpy_cpu_portable::FFT64Portable,
+    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64Neon,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
@@ -215,7 +215,7 @@ cross_backend_test_suite! {
 #[cfg(feature = "enable-rayon")]
 cross_backend_test_suite! {
     mod vec_znx_dft_rayon,
-    backend_ref =  poulpy_cpu_portable::FFT64Portable,
+    backend_ref =  poulpy_cpu_oracle::FFT64Oracle,
     backend_test = crate::FFT64NeonRayon,
     params = TestParams { size: 1<<14, base2k: 12 },
     tests = {

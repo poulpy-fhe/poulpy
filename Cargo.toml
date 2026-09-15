@@ -1,5 +1,5 @@
 [workspace]
-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-cpu-rayon", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks"]
+members = ["poulpy-cpu-oracle", "poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-cpu-rayon", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks"]
 default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-portable", "poulpy-bench", "poulpy-ckks"]
 resolver = "3"
 
@@ -15,6 +15,7 @@ debug = true
 strip = false
 
 [workspace.dependencies]
+poulpy-cpu-oracle = {path = "poulpy-cpu-oracle"}
 poulpy-hal = {path = "poulpy-hal", version = "0.8.3"}
 poulpy-core = {path = "poulpy-core", version = "0.8.3"}
 poulpy-cpu-avx = {path = "poulpy-cpu-avx", version = "0.8.3"}

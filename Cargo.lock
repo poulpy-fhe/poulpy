@@ -637,6 +637,7 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-oracle",
  "poulpy-cpu-portable",
  "poulpy-cpu-rayon",
  "poulpy-hal",
@@ -662,6 +663,7 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-oracle",
  "poulpy-cpu-portable",
  "poulpy-cpu-rayon",
  "poulpy-hal",
@@ -687,6 +689,7 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-oracle",
  "poulpy-cpu-portable",
  "poulpy-cpu-rayon",
  "poulpy-hal",
@@ -695,6 +698,27 @@ dependencies = [
  "rand_core",
  "rand_distr",
  "rayon",
+]
+
+[[package]]
+name = "poulpy-cpu-oracle"
+version = "0.8.3"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "byteorder",
+ "dashu-float",
+ "dashu-int",
+ "itertools 0.15.0",
+ "once_cell",
+ "poulpy-bin-fhe",
+ "poulpy-ckks",
+ "poulpy-core",
+ "poulpy-hal",
+ "rand",
+ "rand_chacha",
+ "rand_core",
+ "rand_distr",
 ]
 
 [[package]]
@@ -713,6 +737,7 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-oracle",
  "poulpy-hal",
  "rand",
  "rand_chacha",

@@ -1,3 +1,4 @@
+mod oracle;
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
