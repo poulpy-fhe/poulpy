@@ -243,8 +243,16 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        crate::ntt4x30_avx512::convolution::cnv_by_const_apply::<SerialTaskExecutor>(
-            cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff,
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<Self, SerialTaskExecutor>(
+            cnv_offset,
+            res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            b_coeff,
+            &mut [],
         );
     }
 
@@ -272,8 +280,16 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let _ = (module, scratch);
-        crate::ntt4x30_avx512::convolution::cnv_by_const_apply_add::<SerialTaskExecutor>(
-            cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff,
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<Self, SerialTaskExecutor>(
+            cnv_offset,
+            res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            b_coeff,
+            &mut [],
         );
     }
 
@@ -1126,9 +1142,10 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            crate::ntt3x42_ifma::convolution::cnv_by_const_apply::<poulpy_hal::execution::SerialTaskExecutor>(
-                cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp,
-            );
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply::<
+                Self,
+                poulpy_hal::execution::SerialTaskExecutor,
+            >(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp);
         }
 
         fn cnv_by_const_apply_add_tmp_bytes(
@@ -1156,9 +1173,10 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            crate::ntt3x42_ifma::convolution::cnv_by_const_apply_add::<poulpy_hal::execution::SerialTaskExecutor>(
-                cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp,
-            );
+            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_by_const_apply_add::<
+                Self,
+                poulpy_hal::execution::SerialTaskExecutor,
+            >(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, tmp);
         }
 
         #[allow(clippy::too_many_arguments)]
