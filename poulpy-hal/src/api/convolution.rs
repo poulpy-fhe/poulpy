@@ -135,8 +135,6 @@ pub trait Convolution<BE: Backend> {
     /// b = 1 [b0] = (b00 + b01 * 2^-K)
     ///     Y [b0]
     /// ```
-    /// This method is intended to be used for multiplications by constants that are greater than the base2k.
-    ///
     /// Required of every backend, never derived: the constant `b` can exceed
     /// the operand bound of the DFT domain, so the product with one
     /// coefficient column of `b` is taken directly in the big domain.
