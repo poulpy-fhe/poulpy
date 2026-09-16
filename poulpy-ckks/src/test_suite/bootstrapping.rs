@@ -916,6 +916,11 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
             );
         }
     }
+    let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, 35, 13, FMOD_INTERVAL, false, 6);
+    for (avg, tag) in [(re, "re"), (im, "im")] {
+        println!("[s2c_first/guard_precision] BOOTSTRAP-PREC ({tag}) avg={avg:.2} bits");
+        assert!(avg >= 24.0, "S2C guard-bit precision ({tag}): {avg:.1} bits < 24.0");
+    }
 }
 
 fn run_s2c_first_case<BE, F, E>(
@@ -1137,8 +1142,10 @@ where
             assert_eq!(ct_bs.log_delta(), log_delta);
             decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
         };
-        assert!(precision_stats(&real_bs_re, &re, log_delta).avg_log2_prec >= 5.0);
-        assert!(precision_stats(&real_bs_im, &im_zero, log_delta).avg_log2_prec >= 5.0);
+        for (got, want) in [(&real_bs_re, &re), (&real_bs_im, &im_zero)] {
+            let avg = precision_stats(got, want, log_delta).avg_log2_prec;
+            assert!(avg >= 24.0, "real-slot S2C precision: {avg:.1} bits < 24.0");
+        }
     }
 
     let insufficient_k = log_delta + plan.pre_mod_up_consumed_bits() - 1;

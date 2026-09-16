@@ -168,8 +168,8 @@ impl BootstrappingPlan {
         self.pipeline
     }
 
-    /// Lifts S2C-first ciphertexts at ModUp to protect CoeffsToSlots from rounding.
-    /// The lift is removed after the transform and charged to the raised width.
+    /// Adds scale bits at ModUp to reduce CoeffsToSlots rounding error.
+    /// Charged to the raised width and removed at the ordinary bootstrap output.
     pub fn with_c2s_guard_bits(mut self, bits: usize) -> Result<Self> {
         ensure!(
             self.pipeline == BootstrappingPipeline::S2CFirst,
@@ -236,7 +236,7 @@ impl BootstrappingPlan {
     /// EvalRound+ evaluates its bypass in parallel with the low-precision
     /// CoeffsToSlots + EvalMod branch, so the wider of the two branch costs is
     /// charged before any trailing SlotsToCoeffs.
-    /// S2C-first also charges the guard bits removed after CoeffsToSlots.
+    /// S2C-first also charges the CoeffsToSlots guard bits.
     pub fn post_mod_up_consumed_bits(&self) -> usize {
         let c2s_eval_mod = self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits();
         let eval_round = self
@@ -342,7 +342,7 @@ pub struct BootstrappingContext<BE: Backend, F> {
 }
 
 impl<BE: Backend, F> BootstrappingContext<BE, F> {
-    /// Extra internal scale bits removed after CoeffsToSlots.
+    /// Extra scale bits used during CoeffsToSlots.
     pub fn c2s_guard_bits(&self) -> usize {
         self.c2s_guard_bits
     }

@@ -179,14 +179,14 @@ where
             if bsgs.input_transform() == PolynomialInputTransform::Identity {
                 // The generic one-shot evaluator would copy this input again
                 // before building its power basis. Hand ownership over directly.
-                let x1 = eval_mod_input(module, ct, &work_layout, work_meta);
+                let x1 = eval_mod_input(module, ct, &work_layout, work_meta, scratch);
                 let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
                 power_basis.populate(bsgs.degree(), bsgs.log_split(), bsgs.parity(), module, tsk, scratch)?;
                 module.ckks_eval_poly_real_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
             } else {
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
-                    module.glwe_copy(&mut input, ct);
+                    eval_mod_copy_input(module, &mut input, ct, &mut nested);
                     if let Some(offset) = params.f_mod_input_offset.as_ref() {
                         module.ckks_add_pt_const_assign(&mut input, 0, offset, 0, &mut nested)?;
                     }
@@ -216,14 +216,14 @@ where
             if bsgs.re.input_transform() == PolynomialInputTransform::Identity
                 && bsgs.im.input_transform() == PolynomialInputTransform::Identity
             {
-                let x1 = eval_mod_input(module, ct, &work_layout, work_meta);
+                let x1 = eval_mod_input(module, ct, &work_layout, work_meta, scratch);
                 let mut power_basis = PowerBasis::new(bsgs.re.basis(), x1);
                 power_basis.populate(bsgs.re.degree(), bsgs.re.log_split(), bsgs.re.parity(), module, tsk, scratch)?;
                 module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
             } else {
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
-                    module.glwe_copy(&mut input, ct);
+                    eval_mod_copy_input(module, &mut input, ct, &mut nested);
                     module.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;
             }
@@ -253,14 +253,34 @@ where
 /// Allocates the single owned EvalMod input that becomes power-basis element 1.
 /// Copying directly from `ct` avoids the scratch copy followed by the generic
 /// polynomial evaluator's second owned copy.
-fn eval_mod_input<BE, C>(module: &Module<BE>, ct: &C, layout: &GLWELayout, meta: CKKSMeta) -> CKKSCiphertextOwned<BE>
+fn eval_mod_input<BE, C>(
+    module: &Module<BE>,
+    ct: &C,
+    layout: &GLWELayout,
+    meta: CKKSMeta,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSCiphertextOwned<BE>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE>,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE> + GLWENormalize<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let mut input = module.ckks_ciphertext_alloc(layout.base2k, layout.k);
-    module.glwe_copy(&mut input, ct);
+    eval_mod_copy_input(module, &mut input, ct, scratch);
     input.set_meta(meta);
     input
+}
+
+fn eval_mod_copy_input<BE, R, C>(module: &Module<BE>, input: &mut R, ct: &C, scratch: &mut ScratchArena<'_, BE>)
+where
+    BE: Backend,
+    Module<BE>: GLWECopy<BE> + GLWENormalize<BE>,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds,
+    C: GLWEToBackendRef<BE> + CKKSCtBounds,
+{
+    if input.k() < ct.k() {
+        module.glwe_normalize(input, ct, scratch);
+    } else {
+        module.glwe_copy(input, ct);
+    }
 }

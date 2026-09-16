@@ -41,6 +41,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-ckks`
 
+- Restore S2C-first bootstrapping precision after #285 without changing the modulus budget.
 - `ckks_add_pt_const` / `ckks_sub_pt_const` and the polynomial-evaluation constant shift use the shift operations on window views; the `pt_const_bounds` field of the carry-verb macros is gone.
 - `ckks_extract_pt_tmp_bytes`, the `carry_verb` tmp-bytes helpers, `ckks_add_many_tmp_bytes` and the `ckks_{copy,neg,mul_pow2,div_pow2,mul_i,div_i,mod_up}_tmp_bytes` families take the destination size, the same cascade as `poulpy-core`; `eval_baby_linear_combination_tmp_bytes` folds in `cnv_by_const_apply_add_tmp_bytes`.
 - **Breaking:** the OEP traits of `poulpy_ckks::oep` lose their backend type parameter, as the HAL and core ones did; `CKKSEncodingImpl<F>` and `DFTMatrixImpl<F>` keep their scalar parameter only. The `ckks_carry_verb_oep!` template declares `$Impl: Backend` and implements it for `BE`.

@@ -251,7 +251,7 @@ The current presets both take inputs at scale `2^35`, offer 560 usable bits (16 
 
 C2S-first internally reaches 623 bits at scale `2^58`; `ckks_bootstrap` restores scale `2^35` and returns 600 bits automatically. This leaves exactly `600 - 40 = 560` bits before the next bootstrap. No caller-side scale adjustment is needed.
 
-The S2C-first preset uses six internal guard bits between ModUp and CoeffsToSlots, log message ratio 13, and C2S matrix scale 48. The guard bits are removed before EvalMod; the application scale remains `2^35`. Custom S2C-first plans can select this lift with `with_c2s_guard_bits`; width accounting includes its cost.
+The S2C-first preset uses six internal guard bits for CoeffsToSlots, log message ratio 13, and C2S matrix scale 48. The guard bits are removed at the bootstrap output; the application scale remains `2^35`. Custom S2C-first plans can select this lift with `with_c2s_guard_bits`; width accounting includes its cost.
 
 Both use weight 1024 for the dense secret, weight 32 for sparse-secret encapsulation, `dsize = 4` for the high-modulus keys, and `dsize = 1` for the dense-to-sparse key. That small key uses 52 gadget bits plus 68 auxiliary bits, ofr a 120-bit modulus cap.
 Preset construction validates the ciphertext, gadget, auxiliary, and total key moduli against the configured bounds.
