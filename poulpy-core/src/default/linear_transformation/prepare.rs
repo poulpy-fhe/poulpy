@@ -12,7 +12,7 @@
 
 use poulpy_hal::layouts::{CnvPVecROwned, CnvPVecRToBackendMut};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, ModuleN, ModuleNew},
+    api::{Convolution, ModuleN, ModuleNew},
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
@@ -93,6 +93,9 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
 }
 
 /// Reference impl: scratch bytes for `glwe_prepare_linear_transformation_rhs`.
+///
+/// The budget is sized at the module degree, an upper bound for a compact
+/// diagonal, which is prepared under a module of its own degree.
 pub fn glwe_prepare_linear_transformation_rhs_tmp_bytes_default<BE, M, P>(module: &M, pt_infos: &P) -> usize
 where
     BE: Backend,
@@ -116,7 +119,7 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecAlloc<BE> + Convolution<BE> + ModuleN + ModuleNew<BE>,
+    M: Convolution<BE> + ModuleN + ModuleNew<BE>,
     P: GLWEToBackendRef<BE> + GLWEInfos,
 {
     if !lt.baby_steps.is_empty() {
@@ -134,10 +137,10 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
     let pt_k = first.k();
     let pt_base2k_usize = pt_base2k.as_usize();
     let pt_k_usize = pt_k.as_usize();
+    let pt_n = first.n().as_usize();
     // The diagonal is an integer poly encoded across its full physical width
     // (`max_k`), so it is consumed at `max_k`, not the (possibly smaller)
     // effective `k`, otherwise the low limb's data is truncated.
-    let pt_n = first.n().as_usize();
     // A compact diagonal is prepared under a module of its own degree: the
     // prepares are degree-blind, only the apply forms read a degree below the
     // module's. Built once per call; every diagonal shares the degree.

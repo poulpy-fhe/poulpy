@@ -62,7 +62,7 @@ where
     (upload_pt(module, &dense), upload_pt(module, &compact))
 }
 
-/// `switch_ring` of the compact plaintext is the dense plaintext, limb for limb.
+/// `switch_ring` of the compact plaintext decodes to the dense plaintext's slots.
 pub fn test_compact_plaintext_embedding<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,

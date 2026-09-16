@@ -88,6 +88,10 @@ pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf,
     where
         Self: GetDegree,
     {
+        debug_assert!(
+            slots.is_power_of_two(),
+            "a compact plaintext holds a power-of-two slot count, got {slots}"
+        );
         let ring = self.ring_degree().as_usize();
         let n = (2 * slots).max(BE::MIN_SPARSE_DEGREE).min(ring);
         self.ckks_plaintext_alloc(n.into(), base2k, k)

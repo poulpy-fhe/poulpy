@@ -203,7 +203,7 @@ impl fmt::Display for CKKSCompositionError {
             Self::PlaintextDegreeMismatch { op, ct_n, pt_n } => {
                 write!(
                     f,
-                    "{op} requires a plaintext of degree {ct_n} or a power-of-two divisor of it from the backend's minimum sparse degree, got plaintext degree {pt_n}"
+                    "{op} cannot read a plaintext of degree {pt_n} against a ciphertext of degree {ct_n}"
                 )
             }
             Self::PlaintextCoefficientOutOfRange { op, role, coeff, n } => {
