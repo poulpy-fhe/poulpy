@@ -10,7 +10,7 @@ use crate::layouts::{
 /// class      support
 /// mutation   none
 /// domain     cols >= 1, size >= 1; hint: the PrepareHint the destination will be written under
-/// ensures    returns an owned degree-N CnvPVecL or CnvPVecR of those dimensions in the backend's prepared representation, which is opaque; its contents are unspecified
+/// ensures    returns an owned CnvPVecL or CnvPVecR of the module degree and those dimensions in the backend's prepared representation, which is opaque; its contents are unspecified
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait CnvPVecAlloc<BE: Backend> {
@@ -56,9 +56,9 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_prepare_left(res, a, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// domain     res: a CnvPVecL with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
+    /// domain     res: a CnvPVecL of the module degree with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_left_tmp_bytes(res.size(), a.size())
-    /// ensures    res holds prep_L(a) in the representation res's PrepareHint names. The representation is opaque, so the statement is on the observable: cnv_apply_dft with it is the bivariate convolution by a
+    /// ensures    res holds prep_L(a) in the representation res's PrepareHint names, observed through cnv_apply_dft
     /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
     fn cnv_prepare_left(
@@ -140,7 +140,7 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// domain     res: a VecZnxBig; a: a dense VecZnx of the module degree; b: a dense VecZnx of any degree, b_coeff < b.n()
+    /// domain     res: a VecZnxBig of the module degree; a: a dense VecZnx of the module degree; b: a dense VecZnx of any degree, b_coeff < b.n()
     /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    res[res_col] is the bivariate convolution of a[a_col] with coefficient b_coeff of b[b_col], read as a constant in X, scaled by 2^(cnv_offset * base2k); limbs past the convolution bound are zero-filled
     /// test       test_convolution_by_const, test_convolution_by_const_degree_rejected
@@ -230,7 +230,7 @@ pub trait Convolution<BE: Backend> {
     ///       Y^2[r03, r13, r23, r33]
     ///       Y^3[  0,   0,   0 ,  0]
     /// ```
-    /// If res.size() < a.size() + b.size() + k, result is truncated accordingly in the Y dimension.
+    /// A res with fewer than a.size() + b.size() - 1 - cnv_offset limbs truncates the result in Y; the limbs past that bound are zero-filled.
     ///
     /// ```text
     /// op         cnv_apply_dft(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
@@ -238,8 +238,8 @@ pub trait Convolution<BE: Backend> {
     /// mutation   out-of-place
     /// domain     res: a VecZnxDft and a: a CnvPVecL, both of the module degree; b: a CnvPVecR of the module degree or of a degree dividing it
     /// requires   scratch >= cnv_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
-    /// ensures    idft(res[res_col]) is the bivariate convolution of a[a_col] and b[b_col] over Z[X, Y] mod (X^N + 1), Y = 2^-base2k, scaled by 2^(cnv_offset * base2k); a res shorter than a.size() + b.size() truncates in Y, and the limbs past the convolution bound are zero-filled
-    /// sparse     b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum sparse degree, prepared under a degree-n module; res and a take the module degree; the degree embedding of the api module docs defines the slot correspondence that reads it, a basis-kernel obligation
+    /// ensures    idft(res[res_col]) is the bivariate convolution of a[a_col] and b[b_col] over Z[X, Y] mod (X^N + 1), Y = 2^-base2k, scaled by 2^(cnv_offset * base2k); a res with fewer than a.size() + b.size() - 1 - cnv_offset limbs truncates in Y, and the limbs past that bound are zero-filled
+    /// sparse     b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum sparse degree, prepared under a degree-n module; res and a take the module degree; the degree embedding of the api module docs defines the correspondence that reads it
     /// test       test_convolution, test_convolution_sparse
     /// ```
     fn cnv_apply_dft(
@@ -268,8 +268,8 @@ pub trait Convolution<BE: Backend> {
 
     /// Accumulating variant of [`cnv_apply_dft`](Convolution::cnv_apply_dft):
     /// `res[res_col] += a[a_col] (x) b[b_col]`, bit-identical to `cnv_apply_dft`
-    /// followed by a DFT-domain add. Limbs `>= min(res.size(), a.size() + b.size())`
-    /// are left untouched. Scratch requirement is
+    /// followed by a DFT-domain add. Limbs past the convolution bound are left
+    /// untouched. Scratch requirement is
     /// [`cnv_apply_dft_add_tmp_bytes`](Convolution::cnv_apply_dft_add_tmp_bytes).
     #[allow(clippy::too_many_arguments)]
     /// ```text
@@ -279,7 +279,7 @@ pub trait Convolution<BE: Backend> {
     /// definition vec_znx_dft_add_assign(res, res_col, cnv_apply_dft(cnv_offset, tmp, a, a_col, b, b_col), 0), tmp of res.size() limbs
     /// domain     as for cnv_apply_dft
     /// requires   scratch >= cnv_apply_dft_add_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
-    /// ensures    res[res_col] gains the cnv_apply_dft result, bit-identically to that call followed by a DFT-domain add; the limbs past min(res.size(), a.size() + b.size()) gain zero and so keep their value
+    /// ensures    res[res_col] gains the cnv_apply_dft result, bit-identically to that call followed by a DFT-domain add; the limbs past the convolution bound gain zero and so keep their value
     /// sparse     as for cnv_apply_dft
     /// fallback   OEP default body: the convolution into a carved res.size()-limb VecZnxDft, then vec_znx_dft_add_assign
     /// override   allowed, with cnv_apply_dft_add_tmp_bytes
@@ -316,19 +316,19 @@ pub trait Convolution<BE: Backend> {
     ///
     /// Each term behaves like one [`Convolution::cnv_apply_dft`] call over the
     /// selected columns and the per-term results are summed; with an empty
-    /// `terms` slice the output column is zeroed. Backends may fuse the
-    /// accumulation (one lazy reduction per output limb, destination written
-    /// once), so the result is congruent to — but not necessarily bit-identical
-    /// with — a sequence of [`Convolution::cnv_apply_dft_add`] calls.
+    /// `terms` slice the output column is zeroed. A backend may fuse the
+    /// accumulation (one lazy reduction per output limb, the destination written
+    /// once); the DFT-domain bytes may then differ from a sequence of
+    /// [`Convolution::cnv_apply_dft_add`] calls, idft of the result is the same.
     ///
     /// ```text
     /// op         cnv_apply_dft_sum(cnv_offset, res, res_col, terms, scratch)
     /// class      derived
     /// mutation   out-of-place
     /// definition cnv_apply_dft on the first term, then cnv_apply_dft_add on each of the rest
-    /// domain     res: a VecZnxDft of the module degree; terms: prepared left and right operands with their column indices
+    /// domain     res: a VecZnxDft of the module degree; terms: prepared left operands of the module degree and right operands of the module degree or of a degree dividing it, with their column indices
     /// requires   scratch >= cnv_apply_dft_sum_tmp_bytes(cnv_offset, res.size(), a_size, b_size)
-    /// ensures    idft(res[res_col]) is the sum over the terms of their bivariate convolutions, overwriting the column; an empty slice zeroes it. A backend may fuse the accumulation with one lazy reduction per output limb, so the result is congruent to a chain of cnv_apply_dft_add calls without being bit-identical to it
+    /// ensures    idft(res[res_col]) is the sum over the terms of their bivariate convolutions, overwriting the column; an empty slice zeroes it. A backend may fuse the accumulation with one lazy reduction per output limb, so the DFT-domain bytes may differ from a chain of cnv_apply_dft_add calls while idft of the result is the same
     /// sparse     per term, as for cnv_apply_dft
     /// fallback   OEP default body: the first term overwrites with cnv_apply_dft, which also zeroes the limbs past the convolution bound, and the remaining terms fold in with cnv_apply_dft_add
     /// override   allowed, with cnv_apply_dft_sum_tmp_bytes
@@ -399,8 +399,7 @@ pub trait Convolution<BE: Backend> {
     fn cnv_prepare_self_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
 
     /// Prepares both left and right convolution operands from the same input polynomial,
-    /// sharing the FFT/NTT computation. This is an optimization for self-convolution
-    /// (squaring) where both operands are the same polynomial.
+    /// so a backend can share the transform between the two.
     ///
     /// ```text
     /// op         cnv_prepare_self(left, right, a, scratch)
