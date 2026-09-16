@@ -66,13 +66,16 @@
 //!
 //! The `definition` lines use the notation below and nothing else.
 //!
-//! - `a[c]` is column `c` of the object `a`, `a[c][j]` its limb `j` and
-//!   `a[c][j][i]` coefficient `i` of that limb, an integer. A limb
-//!   `j >= a.size()` reads as zero. Unless it says otherwise, a definition
-//!   holds for every limb `j < res.size()` of the column of `res` it names
-//!   and fully defines that column: an input shorter than `res` is
-//!   zero-extended, a `res` shorter than the result truncates it, and every
-//!   other column of `res` is untouched. Sums over an empty index set are
+//! - `a.n()` is the degree of the object `a`, the width of a window;
+//!   `a.size()` is its limb count and `a.cols()` its column count. `a[c]` is
+//!   column `c` of `a`, `a[c][j]` its limb `j` and `a[c][j][i]` coefficient
+//!   `i` of that limb, an integer. A limb `j >= a.size()` reads as zero.
+//!   Unless it says otherwise, a definition holds for every limb
+//!   `j < res.size()` of the column of `res` it names and fully defines that
+//!   column: an input shorter than `res` is zero-extended, a `res` shorter
+//!   than the result truncates it, and every other column of `res` is
+//!   untouched. In an in-place or accumulating definition `res` on the right
+//!   of `=` is its value before the call. Sums over an empty index set are
 //!   zero. The index letters a definition uses are local to that line.
 //! - On a ring operation `a[c][j]` is the polynomial
 //!   `sum_{i < n} a[c][j][i] * X^i` of `R_n = Z[X]/(X^n + 1)`, `n` the
@@ -105,7 +108,8 @@
 //!   prepare is defined by what its result reads as: an `SvpPPol` column is
 //!   a polynomial, a `CnvPVecL` or `CnvPVecR` column is a `VecZnx` column,
 //!   and a `VmpPMat` is a `MatZnx`, indexed `pmat[row][col_in][col_out][limb]`
-//!   with the limbs past `pmat.size()` zero.
+//!   with the limbs past `pmat.size()` zero. `prep(x)`, `prep_L(x)` and
+//!   `prep_R(x)` name the prepared object that reads as `x`.
 //! - `U(S)` is a value drawn uniformly from the finite set `S`, each draw
 //!   independent of the others.
 //!
@@ -126,10 +130,13 @@
 //!
 //! # Limb rule
 //!
-//! Every operation fully defines every visible element of `res`. Inputs
-//! shorter than `res` are zero-extended; a `res` shorter than the exact
-//! result truncates in the `2^(-base2k)` expansion. No operation leaves
-//! limbs of `res` untouched.
+//! An out-of-place operation fully defines every visible element of `res`.
+//! Inputs shorter than `res` are zero-extended; a `res` shorter than the
+//! exact result truncates in the `2^(-base2k)` expansion. An in-place or
+//! accumulating operation reads the destination's value before the call, so
+//! the limbs an operand does not reach keep their value, which is the same
+//! rule with the operand zero-extended. The coefficient-wise operations name
+//! the coefficients they write; the others are unchanged.
 //!
 //! # Columns
 //!
@@ -171,7 +178,8 @@
 //! `switch_ring`; the compact storage, `N/n` smaller, is a representation
 //! choice the contracts never mention. Only the operand slots a contract's
 //! `sparse` line names accept a degree other than the module's; `res` and
-//! every other operand share `N`. The coefficient-domain `add` and `sub`
+//! every other operand share `N`. Only a dense operand takes such a degree:
+//! a window in a sparse-capable slot has the width of `res`. The coefficient-domain `add` and `sub`
 //! families read such an operand with a stride, and `vec_znx_big_from_small`
 //! embeds it the same way, so the derived small-operand forms inherit the
 //! slot. In the convolution only the prepared right operand is sparse-capable,

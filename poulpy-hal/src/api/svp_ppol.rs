@@ -24,7 +24,7 @@ pub trait SvpPPolAlloc<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     cols >= 1
-/// ensures    returns the byte size of such an SvpPPol, the amount take_svp_ppol_scratch carves. The hint never changes the value a prepared operand denotes, and every backend gives it the same size
+/// ensures    returns the byte size of such an SvpPPol, the amount take_svp_ppol_scratch carves. The hint changes neither the value a prepared operand denotes nor the size
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_svp_prepare_bytes
 /// ```
 pub trait SvpPPolBytesOf {
@@ -39,7 +39,7 @@ pub trait SvpPPolBytesOf {
 /// mutation   out-of-place
 /// definition res[res_col] = a[a_col][0]
 /// domain     res: an SvpPPol; a: a ScalarZnx of the module degree
-/// ensures    res[res_col] holds prep(a[a_col]) in the representation res's PrepareHint names. The representation is opaque, so the statement is on the observable: svp_apply_dft_to_dft with it multiplies by a[a_col] in the ring
+/// ensures    res[res_col] holds prep(a[a_col]) in the representation res's PrepareHint names; svp_apply_dft_to_dft with it multiplies by a[a_col] in the ring
 /// test       test_svp_apply_dft_to_dft
 /// ```
 pub trait SvpPrepare<B: Backend> {
@@ -56,7 +56,7 @@ pub trait SvpPrepare<B: Backend> {
 /// class      basis
 /// mutation   out-of-place
 /// definition res[res_col] = a[a_col]
-/// domain     res, a: SvpPPol of the same degree and the same PrepareHint, both asserted by the kernel, since the copy moves representation bytes
+/// domain     res, a: SvpPPol of the same degree and the same PrepareHint
 /// ensures    res[res_col] denotes what a[a_col] denotes
 /// test       test_svp_apply_dft_to_dft
 /// ```
@@ -71,7 +71,7 @@ pub trait SvpPPolCopy<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     b_size: the coefficient-domain operand's limb count
-/// ensures    returns the scratch bytes svp_apply_dft needs: one b_size-limb, one-column VecZnxDft for the transformed right operand
+/// ensures    returns the scratch bytes svp_apply_dft needs; the fallback body carves one b_size-limb, one-column VecZnxDft for the transformed right operand, and a backend that overrides the operation overrides this too, and may report less
 /// test       test_svp_apply_dft
 /// ```
 pub trait SvpApplyDftTmpBytes {
@@ -84,7 +84,7 @@ pub trait SvpApplyDftTmpBytes {
 /// op         svp_apply_dft(res, res_col, a, a_col, b, b_col, scratch)
 /// class      derived
 /// mutation   out-of-place
-/// definition svp_apply_dft_to_dft(res, res_col, a, a_col, vec_znx_dft_apply(1, 0, b, b_col), 0)
+/// definition idft(res[res_col])[j] = a[a_col] * b[b_col][j]
 /// domain     res: a VecZnxDft; a: an SvpPPol; b: a dense VecZnx of the module degree
 /// requires   scratch >= svp_apply_dft_tmp_bytes(b.size())
 /// ensures    idft(res[res_col]) = a[a_col] * b[b_col] in the ring, over min(res.size(), b.size()) limbs; the limbs of res past that are zero

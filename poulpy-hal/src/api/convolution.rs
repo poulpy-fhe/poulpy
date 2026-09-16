@@ -25,7 +25,7 @@ pub trait CnvPVecAlloc<BE: Backend> {
 /// class      support
 /// mutation   none
 /// domain     cols >= 1, size >= 1
-/// ensures    returns the byte size of such a prepared operand, the amount take_cnv_pvec_left_scratch and its right twin carve. The hint never changes the value a prepared operand denotes, and every backend gives it the same size
+/// ensures    returns the byte size of such a prepared operand, the amount take_cnv_pvec_left_scratch and its right twin carve. The hint changes neither the value a prepared operand denotes nor the size
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait CnvPVecBytesOf {
@@ -168,7 +168,7 @@ pub trait Convolution<BE: Backend> {
     /// class      support
     /// mutation   none
     /// domain     the sizes of the destination and of the two coefficient-domain operands
-    /// ensures    returns the scratch bytes cnv_by_const_apply_add needs: one res_size-limb VecZnxBig plus the product's own scratch. It is not cnv_by_const_apply_tmp_bytes
+    /// ensures    returns the scratch bytes cnv_by_const_apply_add needs: the fallback body carves one res_size-limb VecZnxBig plus the product's own scratch, and a backend that overrides the operation with a fused kernel overrides this too, and may report less
     /// test       test_convolution_by_const_add
     /// ```
     fn cnv_by_const_apply_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
@@ -183,7 +183,7 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_by_const_apply_add(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     /// class      derived
     /// mutation   accumulate
-    /// definition vec_znx_big_add_assign(res, res_col, cnv_by_const_apply(cnv_offset, tmp, a, a_col, b, b_col, b_coeff), 0), tmp of res.size() limbs
+    /// definition vec_znx_big_add_assign(res, res_col, cnv_by_const_apply(cnv_offset, tmp, 0, a, a_col, b, b_col, b_coeff), 0), tmp of res.size() limbs
     /// domain     as for cnv_by_const_apply
     /// requires   scratch >= cnv_by_const_apply_add_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    res[res_col] gains the cnv_by_const_apply result; the limbs the product would zero-fill gain zero and so keep their value
@@ -265,7 +265,7 @@ pub trait Convolution<BE: Backend> {
     /// class      support
     /// mutation   none
     /// domain     the sizes of the destination and of the two prepared operands
-    /// ensures    returns the scratch bytes cnv_apply_dft_add needs: one res_size-limb VecZnxDft plus the convolution's own scratch. It is not cnv_apply_dft_tmp_bytes
+    /// ensures    returns the scratch bytes cnv_apply_dft_add needs: the fallback body carves one res_size-limb VecZnxDft plus the convolution's own scratch, and a backend that overrides the operation with a fused kernel overrides this too, and may report less
     /// test       test_convolution_add
     /// ```
     fn cnv_apply_dft_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
@@ -280,7 +280,7 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_apply_dft_add(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     /// class      derived
     /// mutation   accumulate
-    /// definition vec_znx_dft_add_assign(res, res_col, cnv_apply_dft(cnv_offset, tmp, a, a_col, b, b_col), 0), tmp of res.size() limbs
+    /// definition vec_znx_dft_add_assign(res, res_col, cnv_apply_dft(cnv_offset, tmp, 0, a, a_col, b, b_col), 0), tmp of res.size() limbs
     /// domain     as for cnv_apply_dft
     /// requires   scratch >= cnv_apply_dft_add_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    res[res_col] gains the cnv_apply_dft result, bit-identically to that call followed by a DFT-domain add; the limbs past the convolution bound gain zero and so keep their value
@@ -329,7 +329,7 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_apply_dft_sum(cnv_offset, res, res_col, terms, scratch)
     /// class      derived
     /// mutation   out-of-place
-    /// definition idft(res[res_col])[j] = sum_{t < terms.len()} sum_{u + v = j + cnv_offset} terms[t].a[terms[t].a_col][u] * terms[t].b[terms[t].b_col][v]
+    /// definition idft(res[res_col])[j] = sum over the terms (a, a_col, b, b_col) of sum_{u + v = j + cnv_offset} a[a_col][u] * b[b_col][v], u < a.size() and v < b.size()
     /// domain     res: a VecZnxDft of the module degree; terms: prepared left operands of the module degree and right operands of the module degree or of a degree dividing it, with their column indices
     /// requires   scratch >= cnv_apply_dft_sum_tmp_bytes(cnv_offset, res.size(), a_size, b_size)
     /// ensures    idft(res[res_col]) is the sum over the terms of their bivariate convolutions, overwriting the column; an empty slice zeroes it. A backend may fuse the accumulation with one lazy reduction per output limb, so the DFT-domain bytes may differ from a chain of cnv_apply_dft_add calls while idft of the result is the same
@@ -413,7 +413,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     left: a CnvPVecL of the module degree; right: a CnvPVecR of the module degree, with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of the module degree with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_self_tmp_bytes(left.size(), a.size())
     /// ensures    left holds prep_L(a) and right holds prep_R(a), the pair a self-convolution needs
-    /// fallback   OEP default body: the two prepares in sequence
+    /// fallback   OEP default body: the shape check, then the two prepares in sequence
     /// override   allowed, with cnv_prepare_self_tmp_bytes; a backend that shares the transform between the two does it here
     /// test       test_cnv_prepare_self_derived, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```

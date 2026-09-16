@@ -24,7 +24,7 @@ pub trait VmpPMatAlloc<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     every dimension >= 1
-/// ensures    returns the byte size of such a VmpPMat, the amount take_vmp_pmat_scratch carves. The hint never changes the value a prepared matrix denotes, and every backend gives it the same size
+/// ensures    returns the byte size of such a VmpPMat, the amount take_vmp_pmat_scratch carves. The hint changes neither the value a prepared matrix denotes nor the size
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_vmp_prepare_bytes
 /// ```
 pub trait VmpPMatBytesOf {
@@ -55,7 +55,7 @@ pub trait VmpPrepareTmpBytes {
 /// definition pmat[i][ci][co][j] = mat[i][ci][co][j] for every index
 /// domain     pmat: a VmpPMat; mat: a MatZnx of the same degree and dimensions
 /// requires   scratch >= vmp_prepare_tmp_bytes(...)
-/// ensures    pmat holds prep(mat) in the representation pmat's PrepareHint names. The representation is opaque, so the statement is on the observable: vmp_apply_dft_to_dft with it is the vector-matrix product by mat
+/// ensures    pmat holds prep(mat) in the representation pmat's PrepareHint names; vmp_apply_dft_to_dft with it is the vector-matrix product by mat
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpPrepare<B: Backend> {
@@ -94,7 +94,7 @@ pub trait VmpApplyDftTmpBytes {
 /// definition vmp_apply_dft_to_dft(res, a', pmat, 0), a' the pmat.cols_in()-column, min(a.size(), pmat.rows())-limb operand with a'[c] = dft(a[c + a.cols() - pmat.cols_in()]) when that index lies in 0..a.cols() and 0 otherwise
 /// domain     res: a VecZnxDft of pmat.cols_out() columns; a: a dense VecZnx of the module degree; pmat: a VmpPMat
 /// requires   scratch >= vmp_apply_dft_tmp_bytes(...)
-/// ensures    idft(res) = [[a]] * M, the matrix pmat was prepared from; the min(a.size(), pmat.rows()) leading limbs of a are consumed and a's trailing columns are aligned with pmat.cols_in(), the leading ones zeroed
+/// ensures    idft(res) = a * M, the matrix pmat was prepared from; the min(a.size(), pmat.rows()) leading limbs of a are consumed and a's trailing columns are aligned with pmat.cols_in(), the leading ones zeroed
 /// fallback   OEP default body: zero the unaligned leading columns, transform the consumed limbs into a carved VecZnxDft, then apply in the DFT domain
 /// override   allowed, with vmp_apply_dft_tmp_bytes
 /// test       test_vmp_apply_dft, test_vmp_apply_dft_derived
@@ -161,7 +161,7 @@ pub trait VmpApplyDftToDftAddTmpBytes {
 /// class      basis
 /// mutation   out-of-place
 /// definition idft(res[co])[j] = sum_{i < min(a.size(), pmat.rows())} sum_{ci < pmat.cols_in()} idft(a[ci])[i] * pmat[i][ci][co][j + limb_offset] for every co < pmat.cols_out()
-/// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat; where a dimension disagrees the largest valid one is used
+/// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat with pmat.cols_out() == res.cols() and pmat.cols_in() == a.cols(); min(a.size(), pmat.rows()) limbs of a are consumed and the matrix limbs from limb_offset to min(pmat.size(), res.size() + limb_offset) are read
 /// requires   scratch >= vmp_apply_dft_to_dft_tmp_bytes(...)
 /// ensures    idft(res) = idft(a) * M, the matrix pmat was prepared from, reading pmat's limbs from limb_offset on; row i of the product weighs limb i of a; the limbs of res from max(pmat.size() - limb_offset, 0) on are zero
 /// test       test_vmp_apply_dft_to_dft
@@ -206,10 +206,10 @@ pub trait VmpApplyDftToDft<B: Backend> {
 /// class      derived
 /// mutation   accumulate
 /// definition vec_znx_dft_add_assign(res, c, vmp_apply_dft_to_dft(tmp, a, pmat, limb_offset), c) for every c < res.cols(), tmp of res.size() limbs
-/// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat
+/// domain     as for vmp_apply_dft_to_dft
 /// requires   scratch >= vmp_apply_dft_to_dft_add_tmp_bytes(...)
 /// ensures    res gains idft(a) * M over the same limb window vmp_apply_dft_to_dft writes; limbs the product does not reach gain zero and so keep their value
-/// fallback   OEP default body: a zeroed res.size()-limb staging accumulator, the product into it, then a column-wise dft_add_assign. The zeroing is load-bearing: the product may leave the limbs past its bound untouched, and an unzeroed accumulator would fold scratch into res there
+/// fallback   OEP default body: a zeroed res.size()-limb staging accumulator, the product into it, then a column-wise dft_add_assign
 /// override   allowed, with vmp_apply_dft_to_dft_add_tmp_bytes
 /// test       test_vmp_apply_dft_to_dft_add, test_vmp_apply_dft_to_dft_add_derived
 /// ```

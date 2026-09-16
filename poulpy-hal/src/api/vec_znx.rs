@@ -8,7 +8,7 @@ use crate::{
 /// class      support
 /// mutation   none
 /// domain     -
-/// ensures    returns the scratch bytes vec_znx_normalize and vec_znx_normalize_assign need; the carry chain is one ring element wide, so the answer does not depend on the operand sizes
+/// ensures    returns the scratch bytes vec_znx_normalize and vec_znx_normalize_assign need; the answer does not depend on the operand sizes
 /// test       test_vec_znx_normalize
 /// ```
 pub trait VecZnxNormalizeTmpBytes {
@@ -41,9 +41,9 @@ pub trait VecZnxZero<B: Backend> {
 /// class      basis
 /// mutation   out-of-place
 /// definition [[res]]_res_base2k = rnd([[a]]_a_base2k * 2^res_offset, res_k) (mod 1), canonical at res_base2k and res_k
-/// domain     res, a: VecZnx or windows of one, read at res_base2k and a_base2k; both radix widths in 1..=62; every input digit in [-2^62, 2^62]
+/// domain     res, a: VecZnx or windows of one, read at res_base2k and a_base2k; both radix widths in 1..=62; res_k <= res.size() * res_base2k; every input digit in [-2^62, 2^62]
 /// requires   scratch >= vec_znx_normalize_tmp_bytes()
-/// ensures    [[res]]_res_base2k = [[a]]_a_base2k * 2^res_offset, rounded once at precision res_k and canonical there; every limb of res[res_col] is written and the limbs past res_k are zero
+/// ensures    [[res]]_res_base2k = [[a]]_a_base2k * 2^res_offset (mod 1), rounded once at precision res_k and canonical there; every limb of res[res_col] is written and the limbs past res_k are zero
 /// test       test_vec_znx_normalize, test_vec_znx_window_normalize_ops
 /// ```
 pub trait VecZnxNormalize<B: Backend> {
@@ -70,9 +70,9 @@ pub trait VecZnxNormalize<B: Backend> {
 /// class      variant
 /// mutation   in-place
 /// definition vec_znx_normalize(a, base2k, k, a_offset, a_col, a, base2k, a_col)
-/// domain     a: a VecZnx or a window of one, read at base2k, with the input and radix bounds of VecZnxNormalize; a_offset <= 0, and a_offset != 0 also requires k == a.size() * base2k, since a positive offset would write a limb before reading it
+/// domain     a: a VecZnx or a window of one, read at base2k, with the input and radix bounds of VecZnxNormalize; k <= a.size() * base2k; a_offset <= 0, and a_offset != 0 also requires k == a.size() * base2k, since a positive offset would write a limb before reading it
 /// requires   scratch >= vec_znx_normalize_tmp_bytes()
-/// ensures    [[a]] after the call is [[a]] before the call times 2^a_offset, rounded once at precision k and canonical there
+/// ensures    [[a]] after the call is [[a]] before the call times 2^a_offset (mod 1), rounded once at precision k and canonical there
 /// fallback   none, the kernel is required of every backend
 /// override   required
 /// test       test_vec_znx_normalize_assign, test_vec_znx_window_normalize_ops
@@ -96,7 +96,7 @@ pub trait VecZnxNormalizeAssign<B: Backend> {
 /// definition res[res_col][j] = a[a_col][j] + b[b_col][j]
 /// domain     res, a, b: VecZnx or windows of one, read at one shared base2k
 /// ensures    res[res_col] = a[a_col] + b[b_col] limb by limb; operands shorter than res are zero-extended, every limb of res is written, and the digits are not renormalized
-/// sparse     a and b are the sparse-capable slots: a degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself. The kernels read it with a stride
+/// sparse     a and b are the sparse-capable slots: a dense degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself; a window in these slots has the width of res
 /// test       test_vec_znx_add_matches_reference, test_vec_znx_window_ops, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxAdd<B: Backend> {
@@ -255,7 +255,7 @@ pub trait VecZnxLshTmpBytes {
 /// definition vec_znx_normalize(res, base2k, res.size() * base2k, +k, res_col, a, base2k, a_col)
 /// domain     res, a: VecZnx or windows of one, read at one shared base2k
 /// requires   scratch >= vec_znx_lsh_tmp_bytes(res.size())
-/// ensures    [[res]] = [[a]] * 2^k at precision res.size() * base2k, canonical there. A destination shorter than the source is not a truncation: the bits res cannot hold are rounded into its last limb jointly, as the normalization does
+/// ensures    [[res]] = [[a]] * 2^k (mod 1) at precision res.size() * base2k, canonical there. A destination shorter than the source is not a truncation: the bits res cannot hold are rounded into its last limb jointly, as the normalization does
 /// fallback   OEP default body: the normalization with offset = +k
 /// override   allowed, with vec_znx_lsh_tmp_bytes
 /// test       test_vec_znx_lsh, test_vec_znx_lsh_derived
@@ -291,7 +291,7 @@ pub trait VecZnxLsh<B: Backend> {
 /// op         vec_znx_lsh_add(base2k, k, res, res_col, a, a_col, scratch)
 /// class      derived
 /// mutation   accumulate
-/// definition vec_znx_add_assign(res, res_col, vec_znx_lsh(base2k, k, tmp, a, a_col), 0), tmp of res.size() limbs
+/// definition vec_znx_add_assign(res, res_col, vec_znx_lsh(base2k, k, tmp, 0, a, a_col), 0), tmp of res.size() limbs
 /// domain     res, a: VecZnx or windows of one, read at one shared base2k
 /// requires   scratch >= vec_znx_lsh_tmp_bytes(res.size())
 /// ensures    res[res_col] gains the canonical vec_znx_lsh of a on a res.size()-limb destination. The addend is normalized, the sum is not: a digit of res may end one bit past the base2k range, and a caller that needs a canonical res normalizes it
@@ -358,7 +358,7 @@ pub trait VecZnxRshTmpBytes {
 /// definition vec_znx_normalize(res, base2k, res.size() * base2k, -k, res_col, a, base2k, a_col)
 /// domain     res, a: VecZnx or windows of one, read at one shared base2k
 /// requires   scratch >= vec_znx_rsh_tmp_bytes(res.size())
-/// ensures    [[res]] = [[a]] / 2^k at precision res.size() * base2k, canonical there; the bits res cannot hold are rounded into its last limb jointly. A k beyond res.size() * base2k has moved every bit past the last limb, so res is zero
+/// ensures    [[res]] = [[a]] / 2^k (mod 1) at precision res.size() * base2k, canonical there; the bits res cannot hold are rounded into its last limb jointly. A k of res.size() * base2k + 64 or more zeroes res
 /// fallback   OEP default body: the normalization with offset = -k
 /// override   allowed, with vec_znx_rsh_tmp_bytes
 /// test       test_vec_znx_rsh, test_vec_znx_rsh_derived
@@ -394,10 +394,10 @@ pub trait VecZnxRsh<B: Backend> {
 /// op         vec_znx_rsh_add(base2k, k, res, res_col, a, a_col, scratch)
 /// class      derived
 /// mutation   accumulate
-/// definition vec_znx_add_assign(res, res_col, vec_znx_rsh(base2k, k, tmp, a, a_col), 0), tmp of res.size() limbs
+/// definition vec_znx_add_assign(res, res_col, vec_znx_rsh(base2k, k, tmp, 0, a, a_col), 0), tmp of res.size() limbs
 /// domain     res, a: VecZnx or windows of one, read at one shared base2k
 /// requires   scratch >= vec_znx_rsh_tmp_bytes(res.size())
-/// ensures    res[res_col] gains the canonical vec_znx_rsh of a on a res.size()-limb destination; a k beyond res.size() * base2k adds nothing. The addend is normalized, the sum is not
+/// ensures    res[res_col] gains the canonical vec_znx_rsh of a on a res.size()-limb destination; a k of res.size() * base2k + 64 or more adds nothing. The addend is normalized, the sum is not
 /// fallback   OEP default body: the shift into a res.size()-limb temporary, then add_assign
 /// override   allowed, with vec_znx_rsh_tmp_bytes
 /// test       test_vec_znx_rsh_add_derived
@@ -442,7 +442,7 @@ pub trait VecZnxRshAdd<B: Backend> {
 /// op         vec_znx_lsh_sub(base2k, k, res, res_col, a, a_col, scratch)
 /// class      derived
 /// mutation   accumulate
-/// definition vec_znx_sub_assign(res, res_col, vec_znx_lsh(base2k, k, tmp, a, a_col), 0), tmp of res.size() limbs
+/// definition vec_znx_sub_assign(res, res_col, vec_znx_lsh(base2k, k, tmp, 0, a, a_col), 0), tmp of res.size() limbs
 /// domain     res, a: VecZnx or windows of one, read at one shared base2k
 /// requires   scratch >= vec_znx_lsh_tmp_bytes(res.size())
 /// ensures    res[res_col] loses the canonical vec_znx_lsh of a on a res.size()-limb destination. The subtrahend is normalized, the difference is not
@@ -485,10 +485,10 @@ pub trait VecZnxLshSub<B: Backend> {
 /// op         vec_znx_rsh_sub(base2k, k, res, res_col, a, a_col, scratch)
 /// class      derived
 /// mutation   accumulate
-/// definition vec_znx_sub_assign(res, res_col, vec_znx_rsh(base2k, k, tmp, a, a_col), 0), tmp of res.size() limbs
+/// definition vec_znx_sub_assign(res, res_col, vec_znx_rsh(base2k, k, tmp, 0, a, a_col), 0), tmp of res.size() limbs
 /// domain     res, a: VecZnx or windows of one, read at one shared base2k
 /// requires   scratch >= vec_znx_rsh_tmp_bytes(res.size())
-/// ensures    res[res_col] loses the canonical vec_znx_rsh of a on a res.size()-limb destination; a k beyond res.size() * base2k subtracts nothing. The subtrahend is normalized, the difference is not
+/// ensures    res[res_col] loses the canonical vec_znx_rsh of a on a res.size()-limb destination; a k of res.size() * base2k + 64 or more subtracts nothing. The subtrahend is normalized, the difference is not
 /// fallback   OEP default body: the shift into a res.size()-limb temporary, then sub_assign
 /// override   allowed, with vec_znx_rsh_tmp_bytes
 /// test       test_vec_znx_rsh_sub_derived
@@ -533,9 +533,9 @@ pub trait VecZnxRshSub<B: Backend> {
 /// definition vec_znx_lsh(base2k, k, a, a_col, a, a_col)
 /// domain     a: a VecZnx or a window of one, read at base2k
 /// requires   scratch >= vec_znx_lsh_tmp_bytes(a.size())
-/// ensures    [[a]] after the call is [[a]] before the call times 2^k, canonical at a.size() * base2k; the other columns of a are untouched
+/// ensures    [[a]] after the call is [[a]] before the call times 2^k (mod 1), canonical at a.size() * base2k; the other columns of a are untouched
 /// fallback   OEP default body: the shift into an a.size()-limb temporary, then copy back, since a positive offset cannot be taken in place
-/// override   allowed, with vec_znx_lsh_tmp_bytes; the CPU families override it with a fused kernel
+/// override   allowed, with vec_znx_lsh_tmp_bytes
 /// test       test_vec_znx_lsh_assign, test_vec_znx_lsh_assign_derived
 /// ```
 pub trait VecZnxLshAssign<B: Backend> {
@@ -564,7 +564,7 @@ pub trait VecZnxLshAssign<B: Backend> {
 /// definition vec_znx_normalize_assign(base2k, a.size() * base2k, -k, a, a_col)
 /// domain     a: a VecZnx or a window of one, read at base2k
 /// requires   scratch >= vec_znx_rsh_tmp_bytes(a.size())
-/// ensures    [[a]] after the call is [[a]] before the call divided by 2^k, canonical at a.size() * base2k; a k beyond a.size() * base2k zeroes the column; the other columns of a are untouched
+/// ensures    [[a]] after the call is [[a]] before the call divided by 2^k (mod 1), canonical at a.size() * base2k; a k of a.size() * base2k + 64 or more zeroes the column; the other columns of a are untouched
 /// fallback   OEP default body: one in-place normalization with offset = -k, no temporary
 /// override   allowed, with vec_znx_rsh_tmp_bytes
 /// test       test_vec_znx_rsh_assign, test_vec_znx_rsh_assign_derived
@@ -698,7 +698,7 @@ pub trait VecZnxAutomorphismAssign<B: Backend> {
 
 /// ```text
 /// op         scalar_znx_automorphism(k, res, res_col, a, a_col)
-/// class      basis
+/// class      variant
 /// mutation   out-of-place
 /// definition res[res_col][0] = tau_k(a[a_col][0])
 /// domain     res, a: ScalarZnx of the module degree; k odd
@@ -766,7 +766,7 @@ pub trait VecZnxMulXpMinusOneAssignTmpBytes {
 /// requires   scratch >= vec_znx_mul_xp_minus_one_assign_tmp_bytes(res.size())
 /// ensures    res[res_col] = (X^p - 1) * res[res_col]; the other columns are untouched; the digits are not renormalized
 /// fallback   OEP default body: the product into a res.size()-limb temporary, then copy back
-/// override   allowed, with vec_znx_mul_xp_minus_one_assign_tmp_bytes; the CPU families override it with a fused kernel
+/// override   allowed, with vec_znx_mul_xp_minus_one_assign_tmp_bytes
 /// test       test_vec_znx_mul_xp_minus_one_assign, test_vec_znx_mul_xp_minus_one_assign_derived
 /// ```
 pub trait VecZnxMulXpMinusOneAssign<B: Backend> {
@@ -787,7 +787,7 @@ pub trait VecZnxMulXpMinusOneAssign<B: Backend> {
 /// mutation   out-of-place
 /// definition res[res_col][j] = switch_ring_{a.n()->res.n()}(a[a_col][j])
 /// domain     res, a: dense VecZnx whose degrees divide one another
-/// ensures    res[res_col] is a[a_col] moved between the two degrees, limb by limb: growing by a factor g sends coefficient j of a to coefficient j * g of res and zeroes the rest, shrinking by g keeps the coefficients of a at multiples of g. Limbs of res past a.size() are zero. Growing is the ring embedding a degree-n operand denotes
+/// ensures    res[res_col] is a[a_col] moved between the two degrees, limb by limb: growing by a factor g sends coefficient i of a to coefficient i * g of res and zeroes the rest, shrinking by g keeps the coefficients of a at multiples of g. Limbs of res past a.size() are zero. Growing is the ring embedding a degree-n operand denotes
 /// test       test_vec_znx_switch_ring, test_vec_znx_switch_ring_matches_wrapper
 /// ```
 pub trait VecZnxSwitchRing<B: Backend> {
@@ -812,7 +812,7 @@ pub trait VecZnxCopy<B: Backend> {
 /// class      basis
 /// mutation   out-of-place
 /// definition L = ceil(k / base2k), pad = L * base2k - k, u[j][i] = U([-2^(base2k - 1), 2^(base2k - 1))) drawn from source in the order of (j, i) for j < L: res[res_col][j][i] = u[j][i] for j < L - 1, 2^pad * floor(u[j][i] / 2^pad) for j = L - 1, and 0 for j >= L
-/// domain     res: a dense VecZnx; base2k in 1..=62; source: the caller's pseudorandom stream
+/// domain     res: a dense VecZnx; base2k in 1..=62; k != 0 and ceil(k / base2k) <= res.size(); source: the caller's pseudorandom stream
 /// ensures    [[res]] is uniform over the torus at precision k and canonical there: the digits are uniform in the centered base2k range, the low (-k) mod base2k bits of the last live limb are zero and the limbs past k are zero. The byte-to-digit mapping is fixed, so a device generator can reproduce the stream bit for bit
 /// test       test_vec_znx_fill_uniform
 /// ```
