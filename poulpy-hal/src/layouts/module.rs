@@ -26,6 +26,11 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// the [`DftWord`](crate::layouts::DftWord) byte-layout marker.
     const DFT_IS_EXACT: bool = false;
 
+    /// The smallest degree a sparse operand may have under this backend: the
+    /// slot block width its transforms read, so a degree below it cannot be
+    /// gathered per block.
+    const MIN_SPARSE_DEGREE: usize = 8;
+
     /// Task executor selected by this backend.
     type TaskExecutor: crate::execution::TaskExecutor;
     /// Word type for coefficient-domain (small) polynomial representations.

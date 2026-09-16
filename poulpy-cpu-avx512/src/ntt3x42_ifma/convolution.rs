@@ -17,7 +17,7 @@ use poulpy_cpu_ref::reference::sparse_log_gap;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
-    CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
+    Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
     VecZnxBackendRef, VecZnxDftBackendMut, ZnxView,
 };
 
@@ -833,7 +833,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<E: TaskExecutor>(
 ) {
     let n = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap(n, b.n(), <NTT3x42Ifma as Backend>::MIN_SPARSE_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -872,7 +872,7 @@ pub(crate) unsafe fn cnv_apply_dft_add_ifma<E: TaskExecutor>(
 ) {
     let n = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap(n, b.n(), <NTT3x42Ifma as Backend>::MIN_SPARSE_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -1102,7 +1102,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<'a, E: TaskExecutor>(
                 a_size,
                 b_col: col_slice(cast_slice(term.b.data()), term.b.n(), b_size, term.b_col),
                 b_size,
-                b_log_gap: sparse_log_gap(n, term.b.n()),
+                b_log_gap: sparse_log_gap(n, term.b.n(), <NTT3x42Ifma as Backend>::MIN_SPARSE_DEGREE),
                 offset,
                 min_size,
             }
@@ -1240,7 +1240,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<E: TaskExecutor>(
 
     let n = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap(n, b.n(), <NTT3x42Ifma as Backend>::MIN_SPARSE_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();

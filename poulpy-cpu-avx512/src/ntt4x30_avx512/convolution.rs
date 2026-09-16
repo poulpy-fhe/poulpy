@@ -10,7 +10,7 @@ use poulpy_cpu_ref::reference::ntt4x30::{
 use poulpy_cpu_ref::reference::sparse_log_gap;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
-    CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
+    Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
     VecZnxBackendRef, VecZnxDftBackendMut, ZnxView,
 };
 use std::mem::size_of;
@@ -405,7 +405,7 @@ unsafe fn apply<E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
     assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap(n, b.n(), <NTT4x30Avx512 as Backend>::MIN_SPARSE_DEGREE);
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {

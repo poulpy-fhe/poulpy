@@ -9,7 +9,8 @@ use crate::{
         ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall,
         VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallAssign,
-        VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing,
+        VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxLshAdd, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxRshAdd,
+        VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing,
     },
     layouts::{
         FillUniform, Module, ScratchOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut,
@@ -20,9 +21,9 @@ use crate::{
 };
 
 /// The sparse degrees exercised under a module of degree `n`: `n/2` down to
-/// `n/16`, never below 8 (the CPU floor).
-fn sparse_degrees(n: usize) -> Vec<usize> {
-    (1..=4).map(|g| n >> g).filter(|&d| d >= 8).collect()
+/// `n/16`, never below the backend's minimum sparse degree.
+fn sparse_degrees<BE: TestBackend>(n: usize) -> Vec<usize> {
+    (1..=4).map(|g| n >> g).filter(|&d| d >= BE::MIN_SPARSE_DEGREE).collect()
 }
 
 /// The (a_size, b_size, res_size) triples: overlap, longer operand, shorter destination.
@@ -141,8 +142,9 @@ fn check_assign<BE: TestBackend>(
     );
 }
 
-/// `vec_znx_add`, `sub` and their in-place forms with a degree-`n` operand in
-/// each sparse-capable slot equal the same operation on the embedded operand.
+/// `vec_znx_add`, `sub`, their in-place forms and the shift-add family with a
+/// degree-`n` operand in each sparse-capable slot equal the same operation on
+/// the embedded operand.
 pub fn test_vec_znx_sparse_add_sub<BE: TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
@@ -151,16 +153,23 @@ where
         + VecZnxAddAssign<BE>
         + VecZnxSub<BE>
         + VecZnxSubAssign<BE>
-        + VecZnxSubNegateAssign<BE>,
+        + VecZnxSubNegateAssign<BE>
+        + VecZnxRshAdd<BE>
+        + VecZnxLshAdd<BE>
+        + VecZnxRshSub<BE>
+        + VecZnxLshSub<BE>
+        + VecZnxRshTmpBytes
+        + VecZnxLshTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = module.n();
     let base2k = params.base2k;
     let cols = 2;
     let mut source = Source::new([7u8; 32]);
-    for sparse_n in sparse_degrees(n) {
+    for sparse_n in sparse_degrees::<BE>(n) {
         for (a_size, b_size, res_size) in SIZES {
             for (a_n, b_n) in [(sparse_n, n), (n, sparse_n), (sparse_n, sparse_n), (sparse_n, sparse_n / 2)] {
-                if b_n < 8 {
+                if b_n < BE::MIN_SPARSE_DEGREE {
                     continue;
                 }
                 let a = random_host(a_n, cols, a_size, base2k, &mut source);
@@ -200,6 +209,52 @@ where
                 &mut source,
                 |r, rc, x, xc| module.vec_znx_sub_negate_assign(r, rc, x, xc),
             );
+
+            // The shift family: the temporary of the default body takes a's degree.
+            let scratch = core::cell::RefCell::new(ScratchOwned::<BE>::alloc(
+                module
+                    .vec_znx_rsh_tmp_bytes(res_size)
+                    .max(module.vec_znx_lsh_tmp_bytes(res_size)),
+            ));
+            for k in [0usize, 3, base2k, base2k + 5] {
+                let a = random_host(sparse_n, cols, a_size, base2k, &mut source);
+                check_assign(
+                    module,
+                    "vec_znx_rsh_add",
+                    res_size,
+                    &a,
+                    base2k,
+                    &mut source,
+                    |r, rc, x, xc| module.vec_znx_rsh_add(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                );
+                check_assign(
+                    module,
+                    "vec_znx_lsh_add",
+                    res_size,
+                    &a,
+                    base2k,
+                    &mut source,
+                    |r, rc, x, xc| module.vec_znx_lsh_add(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                );
+                check_assign(
+                    module,
+                    "vec_znx_rsh_sub",
+                    res_size,
+                    &a,
+                    base2k,
+                    &mut source,
+                    |r, rc, x, xc| module.vec_znx_rsh_sub(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                );
+                check_assign(
+                    module,
+                    "vec_znx_lsh_sub",
+                    res_size,
+                    &a,
+                    base2k,
+                    &mut source,
+                    |r, rc, x, xc| module.vec_znx_lsh_sub(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                );
+            }
         }
     }
 
@@ -339,7 +394,7 @@ where
         }),
     ];
 
-    for sparse_n in sparse_degrees(n) {
+    for sparse_n in sparse_degrees::<BE>(n) {
         for (a_size, b_size, res_size) in SIZES {
             for (a_n, b_n) in [(sparse_n, n), (n, sparse_n)] {
                 let a = random_host(a_n, cols, a_size, base2k, &mut source);

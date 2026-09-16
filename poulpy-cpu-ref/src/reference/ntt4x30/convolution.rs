@@ -356,7 +356,7 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
     let n = res.n();
     assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap(n, b.n(), BE::MIN_SPARSE_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -396,7 +396,7 @@ pub fn ntt4x30_cnv_apply_dft_add<BE>(
     let n = res.n();
     assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap(n, b.n(), BE::MIN_SPARSE_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -496,7 +496,7 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
                 col_slice_u32(t.b.raw(), t.b.n(), b_size, t.b_col),
                 a_size,
                 b_size,
-                sparse_log_gap(n, t.b.n()),
+                sparse_log_gap(n, t.b.n(), BE::MIN_SPARSE_DEGREE),
             )
         })
         .collect();
@@ -605,7 +605,7 @@ pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
     let n = res.n();
     assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap = sparse_log_gap(n, b.n());
+    let b_log_gap = sparse_log_gap(n, b.n(), BE::MIN_SPARSE_DEGREE);
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();

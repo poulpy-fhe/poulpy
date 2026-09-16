@@ -326,7 +326,7 @@ pub fn convolution_apply_dft<BE>(
 {
     let n: usize = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap: usize = sparse_log_gap(n, b.n());
+    let b_log_gap: usize = sparse_log_gap(n, b.n(), BE::MIN_SPARSE_DEGREE);
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -382,7 +382,7 @@ pub fn convolution_apply_dft_add<BE>(
 {
     let n: usize = res.n();
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap: usize = sparse_log_gap(n, b.n());
+    let b_log_gap: usize = sparse_log_gap(n, b.n(), BE::MIN_SPARSE_DEGREE);
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -443,7 +443,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
     let m: usize = n >> 1;
 
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let b_log_gap: usize = sparse_log_gap(n, b.n());
+    let b_log_gap: usize = sparse_log_gap(n, b.n(), BE::MIN_SPARSE_DEGREE);
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();

@@ -248,9 +248,10 @@ pub fn vec_znx_lsh_add_derived<BE>(
     BE: HalVecZnxImpl,
 {
     let res_size: usize = ZnxInfos::size(res);
-    // The temporary matches the destination's *visible* degree: the shift
-    // family is also driven on `window_coeffs` views, where `res.n() < module.n()`.
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
+    // The temporary takes a's degree: for a window it is the destination's
+    // visible degree, for a dense degree-n operand it is n, and the add or sub
+    // that follows reads it through its sparse-capable slot.
+    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
     BE::vec_znx_lsh(module, base2k, k, &mut tmp, 0, a, a_col, &mut scratch);
     BE::vec_znx_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -270,9 +271,10 @@ pub fn vec_znx_lsh_sub_derived<BE>(
     BE: HalVecZnxImpl,
 {
     let res_size: usize = ZnxInfos::size(res);
-    // The temporary matches the destination's *visible* degree: the shift
-    // family is also driven on `window_coeffs` views, where `res.n() < module.n()`.
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
+    // The temporary takes a's degree: for a window it is the destination's
+    // visible degree, for a dense degree-n operand it is n, and the add or sub
+    // that follows reads it through its sparse-capable slot.
+    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
     BE::vec_znx_lsh(module, base2k, k, &mut tmp, 0, a, a_col, &mut scratch);
     BE::vec_znx_sub_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -292,9 +294,10 @@ pub fn vec_znx_rsh_add_derived<BE>(
     BE: HalVecZnxImpl,
 {
     let res_size: usize = ZnxInfos::size(res);
-    // The temporary matches the destination's *visible* degree: the shift
-    // family is also driven on `window_coeffs` views, where `res.n() < module.n()`.
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
+    // The temporary takes a's degree: for a window it is the destination's
+    // visible degree, for a dense degree-n operand it is n, and the add or sub
+    // that follows reads it through its sparse-capable slot.
+    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
     BE::vec_znx_rsh(module, base2k, k, &mut tmp, 0, a, a_col, &mut scratch);
     BE::vec_znx_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -314,9 +317,10 @@ pub fn vec_znx_rsh_sub_derived<BE>(
     BE: HalVecZnxImpl,
 {
     let res_size: usize = ZnxInfos::size(res);
-    // The temporary matches the destination's *visible* degree: the shift
-    // family is also driven on `window_coeffs` views, where `res.n() < module.n()`.
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
+    // The temporary takes a's degree: for a window it is the destination's
+    // visible degree, for a dense degree-n operand it is n, and the add or sub
+    // that follows reads it through its sparse-capable slot.
+    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_scratch(scratch.borrow(), ZnxInfos::n(a), 1, res_size);
     BE::vec_znx_rsh(module, base2k, k, &mut tmp, 0, a, a_col, &mut scratch);
     BE::vec_znx_sub_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }

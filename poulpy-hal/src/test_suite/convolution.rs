@@ -1163,7 +1163,7 @@ where
         &mut scratch.arena(),
     );
 
-    for b_n in (1..=4).map(|g| n >> g).filter(|&d| d >= 8) {
+    for b_n in (1..=4).map(|g| n >> g).filter(|&d| d >= BE::MIN_SPARSE_DEGREE) {
         let mut b_host = VecZnx::alloc(b_n, cols, b_size);
         b_host.fill_uniform(base2k, &mut source);
         let b_be = upload_vec_znx::<BE>(&b_host);
