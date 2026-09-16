@@ -11,7 +11,7 @@ use rand::Rng;
 
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxBigAlloc, VecZnxBigNormalize,
+        CnvPVecAlloc, Convolution, ModuleN, ModuleNew, ScratchOwnedAlloc, VecZnxAdd, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
         VecZnxNormalizeAssign, VecZnxSwitchRing,
     },
@@ -1110,14 +1110,15 @@ where
 /// arena.
 type ConvolutionForm<'a, BE> = dyn Fn(&mut VecZnxDftOwned<BE>, &CnvPVecROwned<BE>, &mut ScratchOwned<BE>) + 'a;
 
-/// Sparse operands (#266): a degree-`n` prepared right operand gives the
-/// convolution that the dense prepare of `switch_ring_{n->N}` of the same input
-/// gives, through `cnv_apply_dft`, `cnv_apply_dft_add`, `cnv_apply_dft_sum` and
-/// `cnv_pairwise_apply_dft`, compared after `idft` and normalization. The left
-/// operand and the result take the module degree: `cnv_prepare_left` and
-/// `cnv_prepare_self` reject a degree-`N/2` input, `cnv_prepare_self` rejects a
-/// `right` whose degree differs from `left`'s, `cnv_prepare_right` rejects a
-/// degree-`N/2` input into a degree-`N` prepared operand, and `cnv_apply_dft`
+/// Sparse operands (#266): a degree-`n` right operand, prepared under a degree-`n`
+/// module, gives the convolution that the dense prepare of `switch_ring_{n->N}` of
+/// the same input gives, through `cnv_apply_dft`, `cnv_apply_dft_add`,
+/// `cnv_apply_dft_sum` and `cnv_pairwise_apply_dft`, compared after `idft` and
+/// normalization. The prepares are not sparsity-aware, `res` and `a` take the
+/// module degree: `cnv_prepare_left`, `cnv_prepare_right` and `cnv_prepare_self`
+/// with a degree-`N/2` input under the degree-`N` module panic, so does
+/// `cnv_prepare_right` into a degree-`N/2` result under it, `cnv_prepare_self`
+/// rejects a `right` whose degree differs from `left`'s, and `cnv_apply_dft`
 /// rejects a degree-`N/2` prepared left operand.
 pub fn test_convolution_sparse<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -1129,7 +1130,8 @@ where
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxSwitchRing<BE>,
+        + VecZnxSwitchRing<BE>
+        + ModuleNew<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = module.n();
@@ -1173,12 +1175,15 @@ where
             &vec_znx_backend_ref::<BE>(&b_dense),
             &mut scratch.arena(),
         );
-        // The compact operand at its own degree, prepared under the degree-N module.
-        let mut b_prep: CnvPVecROwned<BE> = CnvPVecR::alloc(b_n, cols, b_size, PrepareHint::Reuse);
-        module.cnv_prepare_right(
+        // The compact operand at its own degree, prepared under a degree-n module like
+        // any dense prepare; only the apply below crosses the two degrees.
+        let small: Module<BE> = Module::<BE>::new(b_n as u64);
+        let mut small_scratch: ScratchOwned<BE> = ScratchOwned::alloc(small.cnv_prepare_right_tmp_bytes(b_size, b_size));
+        let mut b_prep: CnvPVecROwned<BE> = small.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
+        small.cnv_prepare_right(
             &mut b_prep.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&b_be),
-            &mut scratch.arena(),
+            &mut small_scratch.arena(),
         );
 
         let label = format!("b.n()={b_n}");
@@ -1264,8 +1269,8 @@ where
         }
     }
 
-    // A degree-N/2 input takes neither the left prepare nor the self prepare, both of
-    // which produce a left operand, and does not fit a degree-N prepared right operand.
+    // No prepare is sparsity-aware: under the degree-N module a degree-N/2 input is
+    // rejected by all three forms.
     let mut half = VecZnx::alloc(n / 2, cols, a_size);
     half.fill_uniform(base2k, &mut source);
     let half_be = upload_vec_znx::<BE>(&half);
@@ -1298,14 +1303,24 @@ where
         );
     }))
     .is_err();
-    assert!(panicked, "cnv_prepare_right accepted a.n() != res.n()");
+    assert!(panicked, "cnv_prepare_right accepted a.n() != module.n()");
+    // A degree-n prepared right operand comes from a degree-n module, never from this one.
+    let mut half_right: CnvPVecROwned<BE> = CnvPVecR::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_right(
+            &mut half_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&half_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(panicked, "cnv_prepare_right accepted res.n() != module.n()");
 
     // `cnv_prepare_self` prepares one input into both halves, so the two must share a degree:
     // the parallel path writes into `right` at offsets computed from `left`'s degree.
     let mut full = VecZnx::alloc(n, cols, a_size);
     full.fill_uniform(base2k, &mut source);
     let full_be = upload_vec_znx::<BE>(&full);
-    let mut half_right: CnvPVecROwned<BE> = CnvPVecR::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_prepare_self(
             &mut full_left.to_backend_mut(),

@@ -6,7 +6,7 @@ use core::arch::x86_64::{
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
-use poulpy_cpu_ref::reference::{assert_sparse_degree, sparse_log_gap};
+use poulpy_cpu_ref::reference::sparse_log_gap;
 use poulpy_hal::execution::TaskExecutor;
 #[cfg(feature = "enable-rayon")]
 use poulpy_hal::layouts::CnvDftAccTerm;
@@ -231,12 +231,7 @@ fn prepare<BE, E: TaskExecutor>(
         let res = right.as_ref().unwrap();
         (res.n(), res.cols(), res.size())
     };
-    assert_sparse_degree(module.n(), n);
-    assert!(
-        left.is_none() || n == module.n(),
-        "prepare: a left operand takes the module degree, res.n():{n} != module.n():{}",
-        module.n()
-    );
+    assert_eq!(n, module.n(), "prepare: res.n():{n} != module.n():{}", module.n());
     assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
@@ -259,7 +254,7 @@ fn prepare<BE, E: TaskExecutor>(
             let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             if limb < min_size {
                 BE::ntt_from_znx64(tmp, a.at(col, limb));
-                BE::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
+                BE::ntt_dft_execute(module.get_ntt_table(), tmp);
                 if let Some(dst) = dst_l.as_deref_mut() {
                     unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
                 }
@@ -288,7 +283,7 @@ fn prepare<BE, E: TaskExecutor>(
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         for limb in 0..min_size {
             BE::ntt_from_znx64(tmp, a.at(col, limb));
-            BE::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
+            BE::ntt_dft_execute(module.get_ntt_table(), tmp);
             if let Some(dst) = dst_l.as_deref_mut() {
                 unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
             }

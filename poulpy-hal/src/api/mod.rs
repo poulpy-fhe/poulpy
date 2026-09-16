@@ -120,14 +120,14 @@
 //! `sparse` line names accept a degree other than the module's; `res` and
 //! every other operand share `N`. The coefficient-domain `add` and `sub`
 //! families read such an operand with a stride. In the convolution only the
-//! right operand is sparse-capable: a degree-`n` input to `cnv_prepare_right`
-//! yields a degree-`n` prepared operand that every apply form reads through the
-//! backend's slot correspondence, while the left operand and the result take
-//! the module degree (sparse operands,
+//! prepared right operand is sparse-capable, and the prepares are not
+//! sparsity-aware: a degree-`n` right operand is prepared under a degree-`n`
+//! module, like any dense prepare, and the apply forms of a degree-`N` module
+//! read it through the backend's slot correspondence, while the left operand
+//! and the result take the module degree (sparse operands,
 //! <https://github.com/poulpy-fhe/poulpy/issues/266>). A backend may reject a
-//! sparse degree below its transform block width for that slot, prepare and
-//! apply; the coefficient-domain add and sub families accept any power-of-two
-//! divisor.
+//! sparse degree below its transform block width in the apply; the
+//! coefficient-domain add and sub families accept any power-of-two divisor.
 //!
 //! The coefficient-wise operations are outside that rule: `vec_znx_big_inner_sum`,
 //! `vec_znx_big_col_weighted_sum` and `vec_znx_scalar_product` act on

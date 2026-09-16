@@ -62,7 +62,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a CnvPVecL with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_left_tmp_bytes(res.size(), a.size())
     /// ensures    res holds prep_L(a) in the representation res's PrepareHint names. The representation is opaque, so the statement is on the observable: cnv_apply_dft with it is the bivariate convolution by a
-    /// sparse     none: a takes the module degree; the sparse-capable prepare is cnv_prepare_right (4.5, #266)
+    /// sparse     none: res and a take the module degree; the sparse-capable slot of the convolution is the prepared right operand an apply form reads (4.5, #266)
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
@@ -92,10 +92,10 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_prepare_right(res, a, scratch)
     /// class      basis
     /// mutation   out-of-place
-    /// domain     res: a CnvPVecR with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
+    /// domain     res: a CnvPVecR of the module degree with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_right_tmp_bytes(res.size(), a.size())
     /// ensures    res holds prep_R(a) in the representation res's PrepareHint names, observed through cnv_apply_dft
-    /// sparse     a is the sparse-capable slot: a degree-n input, n dividing N, n not below the backend's minimum sparse degree, produces a degree-n prepared operand standing for prep_R(switch_ring_{n->N}(a)) (4.5, #266)
+    /// sparse     none: res and a take the module degree; a degree-n right operand is prepared under a degree-n module and consumed by the apply forms of a degree-N module (4.5, #266)
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
@@ -259,7 +259,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a VecZnxDft and a: a CnvPVecL, both of the module degree; b: a CnvPVecR of the module degree or of a degree dividing it
     /// requires   scratch >= cnv_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    idft(res[res_col]) is the bivariate convolution of a[a_col] and b[b_col] over Z[X, Y] mod (X^N + 1), Y = 2^-base2k, scaled by 2^(cnv_offset * base2k); a res shorter than a.size() + b.size() truncates in Y, and the limbs past the convolution bound are zero-filled
-    /// sparse     b may be a degree-n prepared right operand, n dividing N, under the substitution of 4.5; res and a take the module degree; there is no backend-generic body for it, so the mixed-degree sweep is a basis-kernel obligation (#266)
+    /// sparse     b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum sparse degree, prepared under a degree-n module; res and a take the module degree; the slot correspondence of 4.5 reads it, a basis-kernel obligation (#266)
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution, test_convolution_sparse
     /// ```
@@ -438,7 +438,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     left: a CnvPVecL of the module degree; right: a CnvPVecR of the module degree, with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of the module degree with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_self_tmp_bytes(left.size(), a.size())
     /// ensures    left holds prep_L(a) and right holds prep_R(a), the pair a self-convolution needs
-    /// sparse     none: a takes the module degree, as for cnv_prepare_left (4.5)
+    /// sparse     none: left, right and a take the module degree (4.5)
     /// fallback   OEP default body: the two prepares in sequence
     /// override   allowed, with cnv_prepare_self_tmp_bytes; a backend that shares the transform between the two does it here
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend

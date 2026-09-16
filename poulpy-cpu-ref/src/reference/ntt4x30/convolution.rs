@@ -18,7 +18,6 @@ use crate::{
         VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
     },
     reference::{
-        assert_sparse_degree,
         ntt4x30::{
             NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
             ntt::NttTable,
@@ -745,9 +744,9 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_right");
     let n = res.n();
-    assert_sparse_degree(module.n(), n);
+    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let table = module.get_ntt_table_for(n);
+    let table = module.get_ntt_table();
     let cols = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     let res_size = res.size();

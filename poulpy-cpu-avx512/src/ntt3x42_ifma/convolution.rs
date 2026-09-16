@@ -13,7 +13,7 @@ use crate::ntt3x42_ifma::{
     primes::Primes42,
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
 };
-use poulpy_cpu_ref::reference::{assert_sparse_degree, sparse_log_gap};
+use poulpy_cpu_ref::reference::sparse_log_gap;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
@@ -1387,9 +1387,9 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
 ) {
     poulpy_hal::layouts::assert_dense(a, "cnv_prepare_right");
     let n = res.n();
-    assert_sparse_degree(module.n(), n);
+    assert_eq!(n, module.n(), "cnv_prepare_right: res.n():{n} != module.n():{}", module.n());
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let table = handle(module).table_ntt_for(n);
+    let table = &handle(module).table_ntt;
     let cols = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     let res_size = res.size();
