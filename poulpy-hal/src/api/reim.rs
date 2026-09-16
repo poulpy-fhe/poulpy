@@ -10,7 +10,6 @@
 /// mutation   in-place
 /// domain     data: 2m floats in the table's interleaved real/imaginary layout
 /// ensures    fft is the negacyclic forward transform for degree m and ifft its inverse, both in place; the pair round-trips up to the float error of the implementation
-/// exact      host float, backend-internal; never compared across backends
 /// test       none
 /// ```
 pub trait NegacyclicFFT<F> {
@@ -31,7 +30,6 @@ pub trait NegacyclicFFT<F> {
 /// mutation   none
 /// domain     m: a power of two
 /// ensures    returns a table of twiddle factors for degree m; split from NegacyclicFFT so a bound can ask for "transforms" without asking for "builds a table"
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait NegacyclicFFTNew<F>: NegacyclicFFT<F> + Sized {

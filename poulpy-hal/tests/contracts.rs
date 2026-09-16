@@ -9,7 +9,6 @@
 //! mutation   out-of-place
 //! domain     res, a, b: VecZnx read at one shared base2k
 //! ensures    [[res]] = [[a]] + [[b]]
-//! exact      exact
 //! test       test_vec_znx_add_matches_reference
 //! ```
 //!
@@ -23,7 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Keys every contract block must carry.
-const REQUIRED: [&str; 7] = ["op", "class", "mutation", "domain", "ensures", "exact", "test"];
+const REQUIRED: [&str; 6] = ["op", "class", "mutation", "domain", "ensures", "test"];
 /// Keys a block may carry in addition to [`REQUIRED`].
 const OPTIONAL: [&str; 5] = ["definition", "requires", "fallback", "override", "sparse"];
 /// Accepted values of the `class` line.

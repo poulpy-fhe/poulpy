@@ -656,12 +656,13 @@ impl Reim4Convolution for FFT64Avx512 {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
-        assert!(tmp.len() >= 8 * (a_size + 6 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_avx512(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
+        assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
+        unsafe { reim4_convolution_apply_avx512(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp) }
     }
 
     #[inline(always)]
@@ -675,12 +676,15 @@ impl Reim4Convolution for FFT64Avx512 {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
-        assert!(tmp.len() >= 8 * (a_size + 6 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_accumulate_avx512(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
+        assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
+        unsafe {
+            reim4_convolution_apply_accumulate_avx512(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp)
+        }
     }
 
     #[inline(always)]
@@ -696,13 +700,16 @@ impl Reim4Convolution for FFT64Avx512 {
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
         unsafe {
-            reim4_convolution_pairwise_apply_avx512(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp)
+            reim4_convolution_pairwise_apply_avx512(
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+            )
         }
     }
 

@@ -4,9 +4,10 @@
 //! match; the only zero-copy way to move a buffer between backends is the
 //! `into_backend` re-tag on each container, guarded by the markers below.
 //! A backend pair declares a marker **per container family** — sharing a word
-//! (sizing/element view) does not imply sharing a prepared layout, as the
-//! `VmpPMat` split between the reference and accelerated NTT4x30 backends
-//! shows (block-interleaved q120c vs prime-major planar).
+//! (sizing/element view) does not imply sharing a prepared layout, as two
+//! backends sharing a DFT word can still pack `VmpPMat` differently (a
+//! block-interleaved layout on one side, a prime-major planar layout on the
+//! other).
 //!
 //! # Safety
 //!
@@ -51,8 +52,8 @@ unsafe impl<B: Backend> SvpPPolLayoutCompatible<B> for B {}
 /// `B: VmpPMatLayoutCompatible<B2>` asserts `VmpPMat` buffers of `B` are
 /// byte-layout-identical to those of `B2`.
 ///
-/// Deliberately NOT declared between the reference and accelerated NTT4x30
-/// backends: their prepared-matrix layouts differ under the shared word.
+/// Deliberately NOT declared between two backends whose prepared-matrix
+/// layouts differ under a shared word.
 ///
 /// # Safety
 ///

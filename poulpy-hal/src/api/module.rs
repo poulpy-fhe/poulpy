@@ -8,7 +8,6 @@ use crate::layouts::{Backend, MatZnx, ScalarZnx, VecZnx};
 /// mutation   none
 /// domain     n: a power of two, the ring degree N
 /// ensures    returns the backend's module for R_N = Z[X]/(X^N + 1), carrying its precomputed transform tables
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait ModuleNew<B: Backend> {
@@ -23,7 +22,6 @@ pub trait ModuleNew<B: Backend> {
 /// mutation   none
 /// domain     -
 /// ensures    returns the ring degree N the module was built for
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait ModuleN {
@@ -38,7 +36,6 @@ pub trait ModuleN {
 /// mutation   none
 /// domain     -
 /// ensures    returns log2(N)
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait ModuleLogN
@@ -58,7 +55,6 @@ where
 /// mutation   none
 /// domain     cols >= 1
 /// ensures    returns an owned degree-N ScalarZnx of `cols` columns in the backend's memory; its contents are unspecified
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait ScalarZnxAlloc<B: Backend>: ModuleN {
@@ -73,7 +69,6 @@ pub trait ScalarZnxAlloc<B: Backend>: ModuleN {
 /// mutation   none
 /// domain     cols >= 1, size >= 1
 /// ensures    returns an owned degree-N VecZnx of `cols` columns and `size` limbs in the backend's memory; its contents are unspecified
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait VecZnxAlloc<B: Backend>: ModuleN {
@@ -88,7 +83,6 @@ pub trait VecZnxAlloc<B: Backend>: ModuleN {
 /// mutation   none
 /// domain     every dimension >= 1
 /// ensures    returns an owned degree-N MatZnx of those dimensions in the backend's memory; its contents are unspecified
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait MatZnxAlloc<B: Backend>: ModuleN {

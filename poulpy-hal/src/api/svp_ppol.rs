@@ -11,7 +11,6 @@ use crate::layouts::{
 /// mutation   none
 /// domain     cols >= 1; hint: the PrepareHint the destination will be written under
 /// ensures    returns an owned degree-N SvpPPol of `cols` columns in the backend's prepared representation, which is opaque; its contents are unspecified
-/// exact      not an arithmetic operation
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait SvpPPolAlloc<B: Backend> {
@@ -25,8 +24,7 @@ pub trait SvpPPolAlloc<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     cols >= 1
-/// ensures    returns the byte size of such an SvpPPol, the amount take_svp_ppol_scratch carves. The hint never changes the value a prepared operand denotes, and the in-tree backends give it the same size
-/// exact      not an arithmetic operation
+/// ensures    returns the byte size of such an SvpPPol, the amount take_svp_ppol_scratch carves. The hint never changes the value a prepared operand denotes, and every backend gives it the same size
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_svp_prepare_bytes
 /// ```
 pub trait SvpPPolBytesOf {
@@ -41,7 +39,6 @@ pub trait SvpPPolBytesOf {
 /// mutation   out-of-place
 /// domain     res: an SvpPPol; a: a ScalarZnx of the module degree
 /// ensures    res[res_col] holds prep(a[a_col]) in the representation res's PrepareHint names. The representation is opaque, so the statement is on the observable: svp_apply_dft_to_dft with it multiplies by a[a_col] in the ring
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
 /// test       test_svp_apply_dft_to_dft
 /// ```
 pub trait SvpPrepare<B: Backend> {
@@ -59,7 +56,6 @@ pub trait SvpPrepare<B: Backend> {
 /// mutation   out-of-place
 /// domain     res, a: SvpPPol of the same degree and the same PrepareHint, both asserted by the kernel, since the copy moves representation bytes
 /// ensures    res[res_col] denotes what a[a_col] denotes
-/// exact      exact, it copies
 /// test       test_svp_apply_dft_to_dft
 /// ```
 pub trait SvpPPolCopy<B: Backend> {
@@ -74,7 +70,6 @@ pub trait SvpPPolCopy<B: Backend> {
 /// mutation   none
 /// domain     b_size: the coefficient-domain operand's limb count
 /// ensures    returns the scratch bytes svp_apply_dft needs: one b_size-limb, one-column VecZnxDft for the transformed right operand
-/// exact      not an arithmetic operation
 /// test       test_svp_apply_dft
 /// ```
 pub trait SvpApplyDftTmpBytes {
@@ -93,7 +88,6 @@ pub trait SvpApplyDftTmpBytes {
 /// ensures    idft(res[res_col]) = a[a_col] * b[b_col] in the ring, over min(res.size(), b.size()) limbs; the limbs of res past that are zero
 /// fallback   OEP default body: transform b into a carved VecZnxDft, then apply in the DFT domain
 /// override   allowed, with svp_apply_dft_tmp_bytes
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
 /// test       test_svp_apply_dft, test_svp_apply_dft_derived
 /// ```
 pub trait SvpApplyDft<B: Backend> {
@@ -125,7 +119,6 @@ pub trait SvpApplyDft<B: Backend> {
 /// mutation   out-of-place
 /// domain     res, b: VecZnxDft of the module degree; a: an SvpPPol
 /// ensures    idft(res[res_col]) = a[a_col] * idft(b[b_col]) in the ring, limb by limb; limbs of res past b.size() are zero
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
 /// test       test_svp_apply_dft_to_dft
 /// ```
 pub trait SvpApplyDftToDft<B: Backend> {
@@ -149,7 +142,6 @@ pub trait SvpApplyDftToDft<B: Backend> {
 /// definition svp_apply_dft_to_dft(res, res_col, a, a_col, res, res_col)
 /// domain     res: a VecZnxDft of the module degree; a: an SvpPPol
 /// ensures    idft(res[res_col]) is multiplied by a[a_col] in the ring, limb by limb
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
 /// test       test_svp_apply_dft_to_dft_assign
 /// ```
 pub trait SvpApplyDftToDftAssign<B: Backend> {

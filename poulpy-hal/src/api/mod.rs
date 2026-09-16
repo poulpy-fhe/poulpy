@@ -16,11 +16,10 @@
 //! mutation   out-of-place
 //! domain     res, a, b: VecZnx or windows of one, read at one shared base2k
 //! ensures    res[res_col] = a[a_col] + b[b_col] limb by limb
-//! exact      exact
 //! test       test_vec_znx_add_matches_reference
 //! ```
 //!
-//! `op`, `class`, `mutation`, `domain`, `ensures`, `exact` and `test` are
+//! `op`, `class`, `mutation`, `domain`, `ensures` and `test` are
 //! always present; `definition`, `requires`, `fallback`, `override` and
 //! `sparse` appear where they have something to say.
 //!
@@ -61,7 +60,7 @@
 //! A column is canonical at radix `base2k` and precision `k` when both hold:
 //!
 //! - every digit lies in the centered range `[-2^(base2k-1), 2^(base2k-1))`,
-//!   the range the `znx_normalize_*` step kernels of `poulpy-cpu-ref` produce;
+//!   the range the backend's normalize step kernels produce;
 //! - nothing lives below precision `k`: limbs `ceil(k / base2k)..size` are
 //!   zero, and the low `(-k) mod base2k` bits of limb `ceil(k / base2k) - 1`
 //!   are zero.
@@ -102,13 +101,14 @@
 //!
 //! # Exactness
 //!
-//! Coefficient-domain and big-domain operations are exact and bit-identical
-//! across backends. DFT-domain operations carry the backend's exactness class:
-//! exact for NTT backends, approximate for FFT64, whose error bound is a
-//! function of `N`, `base2k` and the operand sizes. Their contracts are stated
-//! on `idft(...)`: `idft(dft(a)) = a`, `idft(svp_apply(dft(a), prep(s))) =
-//! a * s`, `idft(vmp_apply(dft(a), prep(M))) = a * M`, and the DFT-domain
-//! `add`, `sub`, `automorphism` are the images of the ring operations.
+//! Every operation's result is the exact integer result under the operand
+//! bounds its contract states. A backend whose transform is floating point
+//! rounds back to those integers within the bounds it documents, so the
+//! result does not depend on the backend. The DFT-domain types are opaque;
+//! their contracts are stated on `idft(...)`: `idft(dft(a)) = a`,
+//! `idft(svp_apply(dft(a), prep(s))) = a * s`, `idft(vmp_apply(dft(a),
+//! prep(M))) = a * M`, and the DFT-domain `add`, `sub`, `automorphism` are
+//! the images of the ring operations.
 //!
 //! # Degree embedding
 //!
@@ -117,9 +117,17 @@
 //! `switch_ring`; the compact storage, `N/n` smaller, is a representation
 //! choice the contracts never mention. Only the operand slots a contract's
 //! `sparse` line names accept a degree other than the module's; `res` and
-//! every other operand share `N`. The kernels that read those slots land with
-//! sparse operands (<https://github.com/poulpy-fhe/poulpy/issues/266>), so a
-//! mixed-degree call is rejected until then.
+//! every other operand share `N`. The coefficient-domain `add` and `sub`
+//! families read such an operand with a stride, and `vec_znx_big_from_small`
+//! embeds it the same way, so the derived small-operand forms inherit the
+//! slot. In the convolution only the prepared right operand is sparse-capable,
+//! and the prepares are not sparsity-aware: a degree-`n` right operand is
+//! prepared under a degree-`n` module, like any dense prepare, and the apply
+//! forms of a degree-`N` module read it through the backend's slot
+//! correspondence, while the left operand and the result take the module
+//! degree. A backend may reject a sparse degree below its transform block
+//! width in the apply; the coefficient-domain add and sub families accept any
+//! power-of-two divisor.
 //!
 //! The coefficient-wise operations are outside that rule: `vec_znx_big_inner_sum`,
 //! `vec_znx_big_col_weighted_sum` and `vec_znx_scalar_product` act on

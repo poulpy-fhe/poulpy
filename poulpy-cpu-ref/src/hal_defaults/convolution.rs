@@ -90,6 +90,13 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
+        assert_eq!(
+            res.n(),
+            module.n(),
+            "cnv_prepare_left: res.n():{} != module.n():{}",
+            res.n(),
+            module.n()
+        );
         let tmp_size = res.size().min(a.size());
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
@@ -116,6 +123,13 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
+        assert_eq!(
+            res.n(),
+            module.n(),
+            "cnv_prepare_right: res.n():{} != module.n():{}",
+            res.n(),
+            module.n()
+        );
         let tmp_size = res.size().min(a.size());
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);
@@ -307,6 +321,13 @@ where
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
+        assert_eq!(
+            left.n(),
+            module.n(),
+            "cnv_prepare_self: left.n():{} != module.n():{}",
+            left.n(),
+            module.n()
+        );
         let tmp_size = left.size().min(a.size());
         let (tmp_bytes, _) = take_host_typed::<Self, u8>(scratch.borrow(), Self::bytes_of_vec_znx_dft(module.n(), 1, tmp_size));
         let mut tmp = VecZnxDft::from_data(tmp_bytes, module.n(), 1, tmp_size);

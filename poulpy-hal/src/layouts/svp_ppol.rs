@@ -312,7 +312,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`SvpPPolLayoutCompatible`](crate::layouts::SvpPPolLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
-    /// types must match `D` (true for all current CPU backends).
+    /// types must match `D` (true for every backend in the workspace).
     pub fn into_backend<B2>(self) -> SvpPPol<D, W, B2>
     where
         B2: Backend<DftWord = W>,

@@ -10,10 +10,10 @@ use crate::layouts::{
 /// op         vec_znx_big_from_small(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one, of the same degree
+/// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one, of the same degree or of a power-of-two degree dividing it
 /// ensures    res[res_col] holds a[a_col] limb by limb, each coefficient widened to a big word; limbs of res past a.size() are zero, so [[res]] = [[a]] at the shared radix
-/// exact      exact
-/// test       test_vec_znx_big_from_small, test_vec_znx_big_window_ops
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_from_small, test_vec_znx_big_window_ops, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigFromSmall<B: Backend> {
     fn vec_znx_big_from_small(
@@ -33,7 +33,6 @@ pub trait VecZnxBigFromSmall<B: Backend> {
 /// mutation   none
 /// domain     cols >= 1, size >= 1
 /// ensures    returns an owned degree-N VecZnxBig of those dimensions in the backend's memory; its contents are unspecified
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait VecZnxBigAlloc<B: Backend> {
@@ -48,7 +47,6 @@ pub trait VecZnxBigAlloc<B: Backend> {
 /// mutation   none
 /// domain     cols >= 1, size >= 1; the `_n` form takes a degree other than the module's
 /// ensures    returns the byte size of such a VecZnxBig in this backend's representation, the amount take_vec_znx_big_scratch carves
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait VecZnxBigBytesOf {
@@ -63,9 +61,8 @@ pub trait VecZnxBigBytesOf {
 /// mutation   out-of-place
 /// domain     res, a, b: VecZnxBig or windows of one
 /// ensures    res[res_col] = a[a_col] + b[b_col] limb by limb; operands shorter than res are zero-extended and every limb of res is written. Big words wrap, so the caller keeps the sum inside the backend's big-word bound
-/// sparse     a and b are the sparse-capable slots: a degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself (4.5). Implemented in PR7 (#266)
-/// exact      exact
-/// test       test_vec_znx_big_add
+/// sparse     a and b are the sparse-capable slots: a degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself. The kernels read it with a stride
+/// test       test_vec_znx_big_add, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigAdd<B: Backend> {
     /// Adds `a` and `b` into `res`.
@@ -87,9 +84,8 @@ pub trait VecZnxBigAdd<B: Backend> {
 /// definition vec_znx_big_add(res, res_col, res, res_col, a, a_col)
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] += a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
-/// exact      exact
-/// test       test_vec_znx_big_add_assign
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_add_assign, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigAddAssign<B: Backend> {
     /// Adds `a` into `res`.
@@ -109,11 +105,10 @@ pub trait VecZnxBigAddAssign<B: Backend> {
 /// definition vec_znx_big_add(res, res_col, a, a_col, vec_znx_big_from_small(b, b_col), 0)
 /// domain     res, a: VecZnxBig or windows of one; b: a VecZnx or a window of one; res distinct from a and b
 /// ensures    res[res_col] = a[a_col] + b[b_col]: limbs only b reaches hold b, limbs only a reaches hold a, limbs neither reaches are zero
-/// sparse     b is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     b is the sparse-capable slot, as for vec_znx_big_add
 /// fallback   OEP default body: promote b into res with vec_znx_big_from_small, then fold a in with add_assign. Scratch-free, and it writes res before reading the operands, so res must not alias them
 /// override   allowed, scratch-free; the CPU families override it with a fused kernel, which also tolerates aliasing
-/// exact      exact
-/// test       test_vec_znx_big_add_small, test_vec_znx_big_add_small_derived
+/// test       test_vec_znx_big_add_small, test_vec_znx_big_add_small_derived, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigAddSmall<B: Backend> {
     /// Adds `a` and the coefficient-domain `b` into `res`.
@@ -135,9 +130,8 @@ pub trait VecZnxBigAddSmall<B: Backend> {
 /// definition vec_znx_big_add_small(res, res_col, res, res_col, a, a_col)
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] += a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
-/// exact      exact
-/// test       test_vec_znx_big_add_small_assign
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_add_small_assign, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigAddSmallAssign<B: Backend> {
     /// Adds the coefficient-domain `a` into `res`.
@@ -156,9 +150,8 @@ pub trait VecZnxBigAddSmallAssign<B: Backend> {
 /// mutation   out-of-place
 /// domain     res, a, b: VecZnxBig or windows of one
 /// ensures    res[res_col] = a[a_col] - b[b_col] limb by limb; operands shorter than res are zero-extended and every limb of res is written
-/// sparse     a and b are the sparse-capable slots, as for vec_znx_big_add (4.5)
-/// exact      exact
-/// test       test_vec_znx_big_sub
+/// sparse     a and b are the sparse-capable slots, as for vec_znx_big_add
+/// test       test_vec_znx_big_sub, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSub<B: Backend> {
     /// Subtracts `b` from `a` into `res`.
@@ -180,9 +173,8 @@ pub trait VecZnxBigSub<B: Backend> {
 /// definition vec_znx_big_sub(res, res_col, res, res_col, a, a_col)
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] -= a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
-/// exact      exact
-/// test       test_vec_znx_big_sub_assign
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_sub_assign, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSubAssign<B: Backend> {
     /// Subtracts `a` from `res`.
@@ -202,9 +194,8 @@ pub trait VecZnxBigSubAssign<B: Backend> {
 /// definition vec_znx_big_sub(res, res_col, a, a_col, res, res_col)
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] = a[a_col] - res[res_col] limb by limb; limbs of res past a.size() are negated in place
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
-/// exact      exact
-/// test       test_vec_znx_big_sub_negate_assign
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_sub_negate_assign, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSubNegateAssign<B: Backend> {
     /// Subtracts `res` from `a` into `res`.
@@ -224,11 +215,10 @@ pub trait VecZnxBigSubNegateAssign<B: Backend> {
 /// definition vec_znx_big_sub(res, res_col, vec_znx_big_from_small(a, a_col), 0, b, b_col)
 /// domain     res, b: VecZnxBig or windows of one; a: a VecZnx or a window of one, the coefficient-domain operand; res distinct from a and b
 /// ensures    res[res_col] = a[a_col] - b[b_col]: limbs only a reaches hold a, limbs only b reaches hold -b, limbs neither reaches are zero
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
 /// fallback   OEP default body: promote a into res with vec_znx_big_from_small, then subtract b in place. Scratch-free, and it writes res before reading the operands, so res must not alias them
 /// override   allowed, scratch-free; the CPU families override it with a fused kernel, which also tolerates aliasing
-/// exact      exact
-/// test       test_vec_znx_big_sub_small_a, test_vec_znx_big_sub_small_a_derived
+/// test       test_vec_znx_big_sub_small_a, test_vec_znx_big_sub_small_a_derived, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSubSmallA<B: Backend> {
     /// Subtracts `b` from the coefficient-domain `a` into `res`.
@@ -250,9 +240,8 @@ pub trait VecZnxBigSubSmallA<B: Backend> {
 /// definition vec_znx_big_sub_small_b(res, res_col, res, res_col, a, a_col): res is the big operand, a the small one
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] -= a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
-/// exact      exact
-/// test       test_vec_znx_big_sub_small_a_assign
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_sub_small_a_assign, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSubSmallAssign<B: Backend> {
     /// Subtracts the coefficient-domain `a` from `res`.
@@ -272,11 +261,10 @@ pub trait VecZnxBigSubSmallAssign<B: Backend> {
 /// definition vec_znx_big_sub(res, res_col, a, a_col, vec_znx_big_from_small(b, b_col), 0)
 /// domain     res, a: VecZnxBig or windows of one; b: a VecZnx or a window of one, the coefficient-domain operand; res distinct from a and b
 /// ensures    res[res_col] = a[a_col] - b[b_col]: limbs only a reaches hold a, limbs only b reaches hold -b, limbs neither reaches are zero
-/// sparse     b is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     b is the sparse-capable slot, as for vec_znx_big_add
 /// fallback   OEP default body: promote b into res with vec_znx_big_from_small, then negate it against a with sub_negate_assign. Scratch-free, and it writes res before reading the operands, so res must not alias them
 /// override   allowed, scratch-free; the CPU families override it with a fused kernel, which also tolerates aliasing
-/// exact      exact
-/// test       test_vec_znx_big_sub_small_b, test_vec_znx_big_sub_small_b_derived
+/// test       test_vec_znx_big_sub_small_b, test_vec_znx_big_sub_small_b_derived, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSubSmallB<B: Backend> {
     /// Subtracts the coefficient-domain `b` from `a` into `res`.
@@ -298,9 +286,8 @@ pub trait VecZnxBigSubSmallB<B: Backend> {
 /// definition vec_znx_big_sub_small_a(res, res_col, a, a_col, res, res_col): a is the small operand, res the big one
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] = a[a_col] - res[res_col] limb by limb; limbs of res past a.size() are negated in place
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
-/// exact      exact
-/// test       test_vec_znx_big_sub_small_b_assign
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_sub_small_b_assign, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
     /// Subtracts `res` from the coefficient-domain `a` into `res`.
@@ -322,7 +309,6 @@ pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
 /// mutation   out-of-place
 /// domain     res, a: dense VecZnxBig of any degree, the module's does not enter; res_coeff < res.n(); res.size() <= a.size()
 /// ensures    for every limb of res, coefficient res_coeff of res[res_col] is the wrapping sum of all n coefficients of that limb of a[a_col]; every other coefficient of res is untouched. This is the trace-like reduction the LWE path uses, not a ring operation
-/// exact      exact modulo the big word, which wraps
 /// test       test_vec_znx_big_inner_sum
 /// ```
 pub trait VecZnxBigInnerSum<B: Backend> {
@@ -346,7 +332,6 @@ pub trait VecZnxBigInnerSum<B: Backend> {
 /// mutation   out-of-place
 /// domain     res: a dense VecZnxBig; a: a dense VecZnx; both of any degree, the module's does not enter; weights: a ScalarZnx with cols <= weights.n() and weights_col < weights.cols(); coeffs <= min(a.n(), res.n()); res.size() <= a.size()
 /// ensures    res[res_col][limb][k] = sum over col < cols of a[col][limb][k] * weights[weights_col][0][col], for every k < coeffs and every limb of res; the coefficients from coeffs on are zero. Coefficient-wise, not a ring product
-/// exact      exact modulo the big word, which wraps
 /// test       test_vec_znx_big_col_weighted_sum
 /// ```
 pub trait VecZnxBigColWeightedSum<B: Backend> {
@@ -372,7 +357,6 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
 /// mutation   out-of-place
 /// domain     res: a dense VecZnxBig with res.n() >= a.n() and res.size() <= a.size(); a: a dense VecZnx of any degree, the module's does not enter; b: a ScalarZnx of a's degree
 /// ensures    res[res_col][limb][k] = a[a_col][limb][k] * b[b_col][0][k] for every k < a.n() and every limb of res, the coefficient-wise Hadamard product widened to big words. Follow with vec_znx_big_inner_sum to reduce it to one coefficient
-/// exact      exact modulo the big word, which wraps
 /// test       test_vec_znx_scalar_product
 /// ```
 pub trait VecZnxScalarProduct<B: Backend> {
@@ -395,7 +379,6 @@ pub trait VecZnxScalarProduct<B: Backend> {
 /// mutation   out-of-place
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] = -a[a_col] limb by limb; limbs of res past a.size() are zero
-/// exact      exact
 /// test       test_vec_znx_big_negate
 /// ```
 pub trait VecZnxBigNegate<B: Backend> {
@@ -417,7 +400,6 @@ pub trait VecZnxBigNegate<B: Backend> {
 /// definition vec_znx_big_negate(res, res_col, res, res_col)
 /// domain     res: a VecZnxBig or a window of one
 /// ensures    every limb of res[res_col] is negated in place
-/// exact      exact
 /// test       test_vec_znx_big_negate_assign
 /// ```
 pub trait VecZnxBigNegateAssign<B: Backend> {
@@ -432,7 +414,6 @@ pub trait VecZnxBigNegateAssign<B: Backend> {
 /// mutation   none
 /// domain     -
 /// ensures    returns the scratch bytes vec_znx_big_normalize needs; the carry chain is one ring element wide, so the answer does not depend on the operand sizes
-/// exact      not an arithmetic operation
 /// test       test_vec_znx_big_normalize
 /// ```
 pub trait VecZnxBigNormalizeTmpBytes {
@@ -446,7 +427,7 @@ pub trait VecZnxBigNormalizeTmpBytes {
 /// For i64 big words, the input and radix bounds of [`super::VecZnxNormalize`]
 /// apply. For i128 big words, input coefficients must lie in `[-2^126, 2^126]`,
 /// with input radix width in `1..=127` and output radix width in `1..=64`.
-/// NTT4x30 IDFT coefficients have the tighter bound `abs(a) < 2^119`.
+/// An NTT backend's IDFT output may have the tighter bound `abs(a) < 2^119`.
 /// Additions before normalization must preserve the applicable coefficient
 /// bound. These are caller preconditions and are not checked by an input scan.
 ///
@@ -457,7 +438,6 @@ pub trait VecZnxBigNormalizeTmpBytes {
 /// domain     res: a VecZnx or a window of one; a: a VecZnxBig or a window of one; the input and radix bounds stated above, which depend on the backend's big word
 /// requires   scratch >= vec_znx_big_normalize_tmp_bytes()
 /// ensures    [[res]]_res_base2k = [[a]]_a_base2k * 2^res_offset, rounded once at precision res_k and canonical there; every limb of res[res_col] is written and the limbs past res_k are zero. This is the one operation that leaves the big domain
-/// exact      exact
 /// test       test_vec_znx_big_normalize, test_vec_znx_big_window_normalize
 /// ```
 pub trait VecZnxBigNormalize<B: Backend> {
@@ -483,7 +463,6 @@ pub trait VecZnxBigNormalize<B: Backend> {
 /// mutation   none
 /// domain     -
 /// ensures    returns the scratch bytes vec_znx_big_automorphism_assign needs, one ring element wide and independent of the limb count
-/// exact      not an arithmetic operation
 /// test       test_vec_znx_big_automorphism_assign
 /// ```
 pub trait VecZnxBigAutomorphismAssignTmpBytes {
@@ -496,7 +475,6 @@ pub trait VecZnxBigAutomorphismAssignTmpBytes {
 /// mutation   out-of-place
 /// domain     res, a: dense VecZnxBig of the module degree; p odd
 /// ensures    res[res_col] = tau_p(a[a_col]), the ring automorphism X -> X^p, limb by limb; limbs of res past a.size() are zero
-/// exact      exact
 /// test       test_vec_znx_big_automorphism
 /// ```
 pub trait VecZnxBigAutomorphism<B: Backend> {
@@ -521,7 +499,6 @@ pub trait VecZnxBigAutomorphism<B: Backend> {
 /// ensures    res[res_col] = tau_p(res[res_col]); the other columns are untouched
 /// fallback   none, the kernel is required of every backend
 /// override   required
-/// exact      exact
 /// test       test_vec_znx_big_automorphism_assign
 /// ```
 pub trait VecZnxBigAutomorphismAssign<B: Backend> {
