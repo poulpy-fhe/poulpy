@@ -41,6 +41,7 @@ pub trait VecZnxDftBytesOf {
 /// op         vec_znx_dft_apply(step, offset, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition idft(res[res_col])[j] = a[a_col][offset + j * step]
 /// domain     res: a VecZnxDft; a: a dense VecZnx of the module degree; step >= 1
 /// ensures    limb j of res[res_col] is the forward transform of limb offset + j * step of a[a_col], for as many limbs as res holds; limbs whose source is past a.size() are zero. The representation is opaque, so the statement is on the observable: idft(res) reproduces those limbs of a
 /// test       test_vec_znx_dft_apply, test_vec_znx_idft_apply, test_vec_znx_dft_step_zero_rejected
@@ -78,6 +79,7 @@ pub trait VecZnxIdftApplyTmpBytes {
 /// op         vec_znx_idft_apply(res, res_col, a, a_col, scratch)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = idft(a[a_col])[j]
 /// domain     res: a VecZnxBig; a: a VecZnxDft of the same degree; a is read, not clobbered
 /// requires   scratch >= vec_znx_idft_apply_tmp_bytes()
 /// ensures    res[res_col] is the inverse transform of a[a_col], limb by limb, in big words; limbs of res past a.size() are zero. idft(dft(x)) = x is the round trip the DFT-domain contracts are stated through
@@ -100,7 +102,7 @@ pub trait VecZnxIdftApply<B: Backend> {
 /// op         vec_znx_idft_apply_tmpa(res, res_col, a, a_col)
 /// class      variant
 /// mutation   out-of-place
-/// definition vec_znx_idft_apply(res, res_col, a, a_col), with a spent as the transform's workspace
+/// definition vec_znx_idft_apply(res, res_col, a, a_col)
 /// domain     res: a VecZnxBig; a: a VecZnxDft of the same degree, taken mutably
 /// ensures    res[res_col] holds idft(a[a_col]) as for vec_znx_idft_apply, and a[a_col] is left unspecified. Kept beside the basis form because it carries temporary-lifetime information a composition loses: the caller states that a is dead, which buys the backend the scratch
 /// test       test_vec_znx_idft_apply_tmpa
@@ -136,10 +138,10 @@ pub trait VecZnxIdftNormalizeConsumeTmpBytes {
 /// op         vec_znx_idft_normalize_consume(res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch)
 /// class      derived
 /// mutation   out-of-place
-/// definition vec_znx_big_normalize(res, res_base2k, res_k, 0, res_col, vec_znx_idft_apply_tmpa(a, a_col) plus the optional addend, a_base2k)
+/// definition [[res]]_res_base2k = rnd([[idft(a[a_col])]]_a_base2k + sum_{j < a.size()} addend[addend_col][j] * 2^(-a_base2k * (j + 1)), res_k) (mod 1), canonical at res_base2k and res_k; the sum is 0 when no addend is given
 /// domain     res: a VecZnx; a: a VecZnxDft taken mutably; addend: an optional VecZnx column read at a_base2k
 /// requires   scratch >= vec_znx_idft_normalize_consume_tmp_bytes(res.size(), a.size())
-/// ensures    [[res]] = [[idft(a)]] + [[addend]] at radix res_base2k, rounded once at precision res_k and canonical there; a[a_col] is left unspecified
+/// ensures    [[res]] = [[idft(a)]] + [[addend]] at radix res_base2k, rounded once at precision res_k and canonical there, the addend read over its first a.size() limbs; a[a_col] is left unspecified
 /// fallback   OEP default body: idft_apply_tmpa into a carved VecZnxBig, the optional add_small_assign, then big_normalize
 /// override   allowed, with vec_znx_idft_normalize_consume_tmp_bytes
 /// test       test_vec_znx_idft_normalize_consume, test_vec_znx_idft_normalize_consume_derived
@@ -166,6 +168,7 @@ pub trait VecZnxIdftNormalizeConsume<B: Backend> {
 /// op         vec_znx_dft_add(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition idft(res[res_col])[j] = idft(a[a_col])[j] + idft(b[b_col])[j]
 /// domain     res, a, b: VecZnxDft of the same degree
 /// ensures    idft(res[res_col]) = idft(a[a_col]) + idft(b[b_col]) limb by limb, the image of the ring addition; operands shorter than res are zero-extended and every limb of res is written
 /// test       test_vec_znx_dft_add
@@ -209,6 +212,7 @@ pub trait VecZnxDftAddAssign<B: Backend> {
 /// op         vec_znx_dft_sub(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition idft(res[res_col])[j] = idft(a[a_col])[j] - idft(b[b_col])[j]
 /// domain     res, a, b: VecZnxDft of the same degree
 /// ensures    idft(res[res_col]) = idft(a[a_col]) - idft(b[b_col]) limb by limb; operands shorter than res are zero-extended and every limb of res is written
 /// test       test_vec_znx_dft_sub
@@ -275,6 +279,7 @@ pub trait VecZnxDftSubNegateAssign<B: Backend> {
 /// op         vec_znx_dft_copy(step, offset, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition idft(res[res_col])[j] = idft(a[a_col])[offset + j * step]
 /// domain     res, a: VecZnxDft of the same degree; step >= 1
 /// ensures    limb j of res[res_col] holds limb offset + j * step of a[a_col], for as many limbs as res holds; limbs whose source is past a.size() are zero. It moves representation bytes, so both operands are the same backend's
 /// test       test_vec_znx_dft_copy, test_vec_znx_dft_step_zero_rejected
@@ -297,6 +302,7 @@ pub trait VecZnxDftCopy<B: Backend> {
 /// op         vec_znx_dft_zero(res, res_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition idft(res[res_col])[j] = 0
 /// domain     res: a VecZnxDft
 /// ensures    every limb of res[res_col] is the representation of zero, so idft(res) = 0; the other columns are untouched
 /// test       test_vec_znx_dft_zero
@@ -351,6 +357,7 @@ pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
 /// op         vec_znx_dft_automorphism_with_plan(plan, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition idft(res[res_col])[j] = tau_p(idft(a[a_col])[j]), p the one the plan was built for
 /// domain     res, a: VecZnxDft of the module degree; plan: built by vec_znx_dft_automorphism_plan for an odd p
 /// ensures    idft(res[res_col]) = tau_p(idft(a[a_col])) limb by limb; limbs of res past a.size() are zero
 /// test       test_vec_znx_dft_automorphism

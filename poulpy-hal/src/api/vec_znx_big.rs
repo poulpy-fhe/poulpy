@@ -10,6 +10,7 @@ use crate::layouts::{
 /// op         vec_znx_big_from_small(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = a[a_col][j]
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one, of the same degree or of a power-of-two degree dividing it
 /// ensures    res[res_col] holds a[a_col] limb by limb, each coefficient widened to a big word; limbs of res past a.size() are zero, so [[res]] = [[a]] at the shared radix
 /// sparse     a is the sparse-capable slot, as for vec_znx_big_add
@@ -59,6 +60,7 @@ pub trait VecZnxBigBytesOf {
 /// op         vec_znx_big_add(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = a[a_col][j] + b[b_col][j]
 /// domain     res, a, b: VecZnxBig or windows of one
 /// ensures    res[res_col] = a[a_col] + b[b_col] limb by limb; operands shorter than res are zero-extended and every limb of res is written. Big words wrap, so the caller keeps the sum inside the backend's big-word bound
 /// sparse     a and b are the sparse-capable slots: a degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself. The kernels read it with a stride
@@ -148,6 +150,7 @@ pub trait VecZnxBigAddSmallAssign<B: Backend> {
 /// op         vec_znx_big_sub(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = a[a_col][j] - b[b_col][j]
 /// domain     res, a, b: VecZnxBig or windows of one
 /// ensures    res[res_col] = a[a_col] - b[b_col] limb by limb; operands shorter than res are zero-extended and every limb of res is written
 /// sparse     a and b are the sparse-capable slots, as for vec_znx_big_add
@@ -307,6 +310,7 @@ pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
 /// op         vec_znx_big_inner_sum(res, res_col, res_coeff, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j][res_coeff] = sum_{i < a.n()} a[a_col][j][i]; every other coefficient of res is unchanged
 /// domain     res, a: dense VecZnxBig of any degree, the module's does not enter; res_coeff < res.n(); res.size() <= a.size()
 /// ensures    for every limb of res, coefficient res_coeff of res[res_col] is the wrapping sum of all n coefficients of that limb of a[a_col]; every other coefficient of res is untouched. This is the trace-like reduction the LWE path uses, not a ring operation
 /// test       test_vec_znx_big_inner_sum
@@ -330,6 +334,7 @@ pub trait VecZnxBigInnerSum<B: Backend> {
 /// op         vec_znx_big_col_weighted_sum(res, res_col, a, weights, weights_col, cols, coeffs)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j][i] = sum_{c < cols} a[c][j][i] * weights[weights_col][0][c] for i < coeffs, and 0 for coeffs <= i < res.n()
 /// domain     res: a dense VecZnxBig; a: a dense VecZnx; both of any degree, the module's does not enter; weights: a ScalarZnx with cols <= weights.n() and weights_col < weights.cols(); coeffs <= min(a.n(), res.n()); res.size() <= a.size()
 /// ensures    res[res_col][limb][k] = sum over col < cols of a[col][limb][k] * weights[weights_col][0][col], for every k < coeffs and every limb of res; the coefficients from coeffs on are zero. Coefficient-wise, not a ring product
 /// test       test_vec_znx_big_col_weighted_sum
@@ -355,6 +360,7 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
 /// op         vec_znx_scalar_product(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j][i] = a[a_col][j][i] * b[b_col][0][i] for i < a.n(); the coefficients from a.n() on are unchanged
 /// domain     res: a dense VecZnxBig with res.n() >= a.n() and res.size() <= a.size(); a: a dense VecZnx of any degree, the module's does not enter; b: a ScalarZnx of a's degree
 /// ensures    res[res_col][limb][k] = a[a_col][limb][k] * b[b_col][0][k] for every k < a.n() and every limb of res, the coefficient-wise Hadamard product widened to big words. Follow with vec_znx_big_inner_sum to reduce it to one coefficient
 /// test       test_vec_znx_scalar_product
@@ -377,6 +383,7 @@ pub trait VecZnxScalarProduct<B: Backend> {
 /// op         vec_znx_big_negate(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = -a[a_col][j]
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] = -a[a_col] limb by limb; limbs of res past a.size() are zero
 /// test       test_vec_znx_big_negate
@@ -435,6 +442,7 @@ pub trait VecZnxBigNormalizeTmpBytes {
 /// op         vec_znx_big_normalize(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, scratch)
 /// class      basis
 /// mutation   out-of-place
+/// definition [[res]]_res_base2k = rnd([[a]]_a_base2k * 2^res_offset, res_k) (mod 1), canonical at res_base2k and res_k
 /// domain     res: a VecZnx or a window of one; a: a VecZnxBig or a window of one; the input and radix bounds stated above, which depend on the backend's big word
 /// requires   scratch >= vec_znx_big_normalize_tmp_bytes()
 /// ensures    [[res]]_res_base2k = [[a]]_a_base2k * 2^res_offset, rounded once at precision res_k and canonical there; every limb of res[res_col] is written and the limbs past res_k are zero. This is the one operation that leaves the big domain
@@ -473,6 +481,7 @@ pub trait VecZnxBigAutomorphismAssignTmpBytes {
 /// op         vec_znx_big_automorphism(p, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = tau_p(a[a_col][j])
 /// domain     res, a: dense VecZnxBig of the module degree; p odd
 /// ensures    res[res_col] = tau_p(a[a_col]), the ring automorphism X -> X^p, limb by limb; limbs of res past a.size() are zero
 /// test       test_vec_znx_big_automorphism

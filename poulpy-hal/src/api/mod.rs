@@ -30,8 +30,15 @@
 //!   scratch reports: nothing arithmetic).
 //! - `mutation` is one of the three classes below, or `none` on a support
 //!   trait, which computes nothing.
-//! - `definition` is the composition a variant or a derived operation stands
-//!   for, `fallback` the body a backend inherits, `override` whether a backend
+//! - `definition` is the mathematical statement of the result: a formula in
+//!   the notation below, or the composition of other operations the
+//!   operation stands for, whose meaning is the meaning of that composition.
+//!   A basis operation states a formula; a variant or a derived operation
+//!   states either. Every operation that computes carries one; a support
+//!   trait computes nothing and carries none.
+//!   `ensures` describes the same result in words: which limbs are written,
+//!   what wraps, what is left untouched.
+//! - `fallback` is the body a backend inherits, `override` whether a backend
 //!   may replace it and which `_tmp_bytes` it must replace with it.
 //! - `test` names the `pub fn` of [`test_suite`](crate::test_suite) that pins
 //!   the operation. A test in this crate reads every block, checks that each
@@ -54,6 +61,53 @@
 //! [`VecZnxBig`](crate::layouts::VecZnxBig) denotes the same quantity with
 //! wider limbs. [`VecZnxDft`](crate::layouts::VecZnxDft) and the prepared
 //! types are opaque; their contracts are stated through `idft`.
+//!
+//! # Notation
+//!
+//! The `definition` lines use the notation below and nothing else.
+//!
+//! - `a[c]` is column `c` of the object `a`, `a[c][j]` its limb `j` and
+//!   `a[c][j][i]` coefficient `i` of that limb, an integer. A limb
+//!   `j >= a.size()` reads as zero. Unless it says otherwise, a definition
+//!   holds for every limb `j < res.size()` of the column of `res` it names
+//!   and fully defines that column: an input shorter than `res` is
+//!   zero-extended, a `res` shorter than the result truncates it, and every
+//!   other column of `res` is untouched. Sums over an empty index set are
+//!   zero. The index letters a definition uses are local to that line.
+//! - On a ring operation `a[c][j]` is the polynomial
+//!   `sum_{i < n} a[c][j][i] * X^i` of `R_n = Z[X]/(X^n + 1)`, `n` the
+//!   object's degree; `+`, `-` and `*` between limbs are the ring operations
+//!   on integer coefficients, an integer times a limb scales every
+//!   coefficient, and the digits are not renormalized. `X^e`,
+//!   `e` any integer, is `(-1)^floor(e / n) * X^(e mod n)` with `e mod n`
+//!   in `0..n`. `tau_p(a)`, `p` odd, is the automorphism `X -> X^p`: the
+//!   coefficient of `X^i` moves to `X^(i * p)`, reduced by that rule.
+//! - `switch_ring_{n->m}(a)`, `n` and `m` powers of two, sends coefficient
+//!   `i` of each limb to coefficient `i * m / n` and zeroes the rest when
+//!   `m > n`, and keeps coefficient `i * n / m` of `a` as coefficient `i`
+//!   and drops the others when `m < n`. A degree-`n` operand in a
+//!   sparse-capable slot reads as `switch_ring_{n->N}` of itself, as Degree
+//!   embedding states.
+//! - `[[a]]_base2k` is the value of the column the operation names, defined
+//!   above; `[[a]]` alone is at the radix the call passes. `rnd(x, k)`, `x`
+//!   real, is `floor(x * 2^k + 1/2) / 2^k`, the multiple of `2^(-k)` nearest
+//!   to `x`, ties toward `+inf`. `x = y (mod 1)` means that `x - y` is an
+//!   integer. A column canonical at a radix and a precision, as Canonical
+//!   form defines it, is determined by its value modulo 1, so
+//!   `[[res]] = y (mod 1), canonical at res_base2k and res_k` defines every
+//!   digit of `res`.
+//! - `idft(A)`, `A` a DFT-domain column, is the coefficient-domain column it
+//!   denotes: `idft(A)[j]` is the ring element limb `j` of `A` transforms
+//!   back to, and `dft(a)` is the DFT-domain column with `idft(dft(a)) = a`.
+//!   A DFT-domain operation is defined by `idft` of its result; the bytes of
+//!   the representation never enter a definition.
+//! - A prepared operand reads as the object it was prepared from, and a
+//!   prepare is defined by what its result reads as: an `SvpPPol` column is
+//!   a polynomial, a `CnvPVecL` or `CnvPVecR` column is a `VecZnx` column,
+//!   and a `VmpPMat` is a `MatZnx`, indexed `pmat[row][col_in][col_out][limb]`
+//!   with the limbs past `pmat.size()` zero.
+//! - `U(S)` is a value drawn uniformly from the finite set `S`, each draw
+//!   independent of the others.
 //!
 //! # Canonical form
 //!

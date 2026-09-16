@@ -20,6 +20,7 @@ pub trait VecZnxNormalizeTmpBytes {
 /// op         vec_znx_zero(res, res_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = 0
 /// domain     res: a VecZnx or a window of one; res_col < res.cols()
 /// ensures    every limb of res[res_col] is zero, so [[res]] = 0; the other columns are untouched
 /// test       test_vec_znx_zero_matches_wrapper, test_vec_znx_window_ops
@@ -39,6 +40,7 @@ pub trait VecZnxZero<B: Backend> {
 /// op         vec_znx_normalize(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, scratch)
 /// class      basis
 /// mutation   out-of-place
+/// definition [[res]]_res_base2k = rnd([[a]]_a_base2k * 2^res_offset, res_k) (mod 1), canonical at res_base2k and res_k
 /// domain     res, a: VecZnx or windows of one, read at res_base2k and a_base2k; both radix widths in 1..=62; every input digit in [-2^62, 2^62]
 /// requires   scratch >= vec_znx_normalize_tmp_bytes()
 /// ensures    [[res]]_res_base2k = [[a]]_a_base2k * 2^res_offset, rounded once at precision res_k and canonical there; every limb of res[res_col] is written and the limbs past res_k are zero
@@ -91,6 +93,7 @@ pub trait VecZnxNormalizeAssign<B: Backend> {
 /// op         vec_znx_add(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = a[a_col][j] + b[b_col][j]
 /// domain     res, a, b: VecZnx or windows of one, read at one shared base2k
 /// ensures    res[res_col] = a[a_col] + b[b_col] limb by limb; operands shorter than res are zero-extended, every limb of res is written, and the digits are not renormalized
 /// sparse     a and b are the sparse-capable slots: a degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself. The kernels read it with a stride
@@ -127,7 +130,7 @@ pub trait VecZnxAddAssign<B: Backend> {
 /// op         vec_znx_add_scalar_assign(res, res_col, res_limb, a, a_col)
 /// class      derived
 /// mutation   accumulate
-/// definition vec_znx_add_assign(window_limbs(res, res_limb, 1, 1), res_col, a as a one-limb VecZnx, a_col)
+/// definition res[res_col][res_limb] = res[res_col][res_limb] + a[a_col][0]; every other limb of res is unchanged
 /// domain     res: a VecZnx; res_limb < res.size(); a: a ScalarZnx of the module degree
 /// ensures    limb res_limb of res[res_col] gains the coefficients of a[a_col]; every other limb of res is untouched; the digits are not renormalized
 /// fallback   OEP default body: an add_assign on the one-limb window of res, the scalar read as a one-limb VecZnx
@@ -149,6 +152,7 @@ pub trait VecZnxAddScalarAssign<B: Backend> {
 /// op         vec_znx_sub(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = a[a_col][j] - b[b_col][j]
 /// domain     res, a, b: VecZnx or windows of one, read at one shared base2k
 /// ensures    res[res_col] = a[a_col] - b[b_col] limb by limb; operands shorter than res are zero-extended, every limb of res is written, and the digits are not renormalized
 /// sparse     a and b are the sparse-capable slots, as for vec_znx_add
@@ -204,6 +208,7 @@ pub trait VecZnxSubNegateAssign<B: Backend> {
 /// op         vec_znx_negate(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = -a[a_col][j]
 /// domain     res, a: VecZnx or windows of one
 /// ensures    res[res_col] = -a[a_col] limb by limb; limbs of res past a.size() are zero
 /// test       test_vec_znx_negate, test_vec_znx_negate_matches_wrapper
@@ -525,7 +530,7 @@ pub trait VecZnxRshSub<B: Backend> {
 /// op         vec_znx_lsh_assign(base2k, k, a, a_col, scratch)
 /// class      derived
 /// mutation   in-place
-/// definition vec_znx_lsh(base2k, k, a, a_col, a, a_col) over a.size() limbs
+/// definition vec_znx_lsh(base2k, k, a, a_col, a, a_col)
 /// domain     a: a VecZnx or a window of one, read at base2k
 /// requires   scratch >= vec_znx_lsh_tmp_bytes(a.size())
 /// ensures    [[a]] after the call is [[a]] before the call times 2^k, canonical at a.size() * base2k; the other columns of a are untouched
@@ -589,6 +594,7 @@ pub trait VecZnxRshAssign<B: Backend> {
 /// op         vec_znx_rotate(p, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = X^p * a[a_col][j] in R_N
 /// domain     res, a: dense VecZnx of the module degree; a ring operation, so windows are rejected
 /// ensures    res[res_col] = X^p * a[a_col] in Z[X]/(X^N + 1), limb by limb, p taken modulo 2N; limbs of res past a.size() are zero
 /// test       test_vec_znx_rotate
@@ -638,6 +644,7 @@ pub trait VecZnxRotateAssign<B: Backend> {
 /// op         vec_znx_automorphism(k, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = tau_k(a[a_col][j])
 /// domain     res, a: dense VecZnx of the module degree; k odd
 /// ensures    res[res_col] = tau_k(a[a_col]), the ring automorphism X -> X^k, limb by limb; limbs of res past a.size() are zero
 /// test       test_vec_znx_automorphism
@@ -693,6 +700,7 @@ pub trait VecZnxAutomorphismAssign<B: Backend> {
 /// op         scalar_znx_automorphism(k, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][0] = tau_k(a[a_col][0])
 /// domain     res, a: ScalarZnx of the module degree; k odd
 /// ensures    res[res_col] = tau_k(a[a_col]), the ring automorphism X -> X^k on the single limb
 /// test       test_scalar_znx_automorphism
@@ -777,6 +785,7 @@ pub trait VecZnxMulXpMinusOneAssign<B: Backend> {
 /// op         vec_znx_switch_ring(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = switch_ring_{a.n()->res.n()}(a[a_col][j])
 /// domain     res, a: dense VecZnx whose degrees divide one another
 /// ensures    res[res_col] is a[a_col] moved between the two degrees, limb by limb: growing by a factor g sends coefficient j of a to coefficient j * g of res and zeroes the rest, shrinking by g keeps the coefficients of a at multiples of g. Limbs of res past a.size() are zero. Growing is the ring embedding a degree-n operand denotes
 /// test       test_vec_znx_switch_ring, test_vec_znx_switch_ring_matches_wrapper
@@ -789,6 +798,7 @@ pub trait VecZnxSwitchRing<B: Backend> {
 /// op         vec_znx_copy(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col][j] = a[a_col][j]
 /// domain     res, a: VecZnx or windows of one, of equal degree
 /// ensures    res[res_col] holds a[a_col] limb by limb; limbs of res past a.size() are zero
 /// test       test_vec_znx_copy, test_vec_znx_copy_matches_wrapper, test_vec_znx_window_ops
@@ -801,6 +811,7 @@ pub trait VecZnxCopy<B: Backend> {
 /// op         vec_znx_fill_uniform_source(base2k, k, res, res_col, source)
 /// class      basis
 /// mutation   out-of-place
+/// definition L = ceil(k / base2k), pad = L * base2k - k, u[j][i] = U([-2^(base2k - 1), 2^(base2k - 1))) drawn from source in the order of (j, i) for j < L: res[res_col][j][i] = u[j][i] for j < L - 1, 2^pad * floor(u[j][i] / 2^pad) for j = L - 1, and 0 for j >= L
 /// domain     res: a dense VecZnx; base2k in 1..=62; source: the caller's pseudorandom stream
 /// ensures    [[res]] is uniform over the torus at precision k and canonical there: the digits are uniform in the centered base2k range, the low (-k) mod base2k bits of the last live limb are zero and the limbs past k are zero. The byte-to-digit mapping is fixed, so a device generator can reproduce the stream bit for bit
 /// test       test_vec_znx_fill_uniform

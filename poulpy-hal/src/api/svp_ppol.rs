@@ -37,6 +37,7 @@ pub trait SvpPPolBytesOf {
 /// op         svp_prepare(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col] = a[a_col][0]
 /// domain     res: an SvpPPol; a: a ScalarZnx of the module degree
 /// ensures    res[res_col] holds prep(a[a_col]) in the representation res's PrepareHint names. The representation is opaque, so the statement is on the observable: svp_apply_dft_to_dft with it multiplies by a[a_col] in the ring
 /// test       test_svp_apply_dft_to_dft
@@ -54,6 +55,7 @@ pub trait SvpPrepare<B: Backend> {
 /// op         svp_ppol_copy(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[res_col] = a[a_col]
 /// domain     res, a: SvpPPol of the same degree and the same PrepareHint, both asserted by the kernel, since the copy moves representation bytes
 /// ensures    res[res_col] denotes what a[a_col] denotes
 /// test       test_svp_apply_dft_to_dft
@@ -117,6 +119,7 @@ pub trait SvpApplyDft<B: Backend> {
 /// op         svp_apply_dft_to_dft(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
+/// definition idft(res[res_col])[j] = a[a_col] * idft(b[b_col])[j]
 /// domain     res, b: VecZnxDft of the module degree; a: an SvpPPol
 /// ensures    idft(res[res_col]) = a[a_col] * idft(b[b_col]) in the ring, limb by limb; limbs of res past b.size() are zero
 /// test       test_svp_apply_dft_to_dft

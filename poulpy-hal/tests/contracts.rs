@@ -258,12 +258,16 @@ fn check(owner: &str, contract: &Contract, suite: &BTreeSet<String>, errors: &mu
         ));
     }
 
-    // A derived operation states the composition it stands for; so does a
-    // variant, which shares a basis definition. Both, plus any variant that
-    // takes scratch, state the fallback body and whether a backend may
-    // override it.
+    // Every arithmetic operation states the mathematical definition of its
+    // result, a formula or the composition it stands for. A support trait
+    // computes nothing and carries none. Derived operations and scratch-taking variants also
+    // state the fallback body and whether a backend may override it.
     let takes_scratch: bool = contract.get("requires").is_some_and(|r| r.contains("_tmp_bytes"));
-    if matches!(class, "derived" | "variant") && !seen.contains("definition") {
+    if class == "support" {
+        if seen.contains("definition") {
+            errors.push(format!("{at}: {owner}: a support trait carries no `definition` line"));
+        }
+    } else if !seen.contains("definition") {
         errors.push(format!("{at}: {owner}: class `{class}` needs a `definition` line"));
     }
     if class == "derived" || (class == "variant" && takes_scratch) {

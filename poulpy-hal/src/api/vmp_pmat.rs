@@ -52,6 +52,7 @@ pub trait VmpPrepareTmpBytes {
 /// op         vmp_prepare(pmat, mat, scratch)
 /// class      basis
 /// mutation   out-of-place
+/// definition pmat[i][ci][co][j] = mat[i][ci][co][j] for every index
 /// domain     pmat: a VmpPMat; mat: a MatZnx of the same degree and dimensions
 /// requires   scratch >= vmp_prepare_tmp_bytes(...)
 /// ensures    pmat holds prep(mat) in the representation pmat's PrepareHint names. The representation is opaque, so the statement is on the observable: vmp_apply_dft_to_dft with it is the vector-matrix product by mat
@@ -90,7 +91,7 @@ pub trait VmpApplyDftTmpBytes {
 /// op         vmp_apply_dft(res, a, pmat, scratch)
 /// class      derived
 /// mutation   out-of-place
-/// definition vmp_apply_dft_to_dft(res, vec_znx_dft_apply(1, 0, a), pmat, limb_offset = 0)
+/// definition vmp_apply_dft_to_dft(res, a', pmat, 0), a' the pmat.cols_in()-column, min(a.size(), pmat.rows())-limb operand with a'[c] = dft(a[c + a.cols() - pmat.cols_in()]) when that index lies in 0..a.cols() and 0 otherwise
 /// domain     res: a VecZnxDft of pmat.cols_out() columns; a: a dense VecZnx of the module degree; pmat: a VmpPMat
 /// requires   scratch >= vmp_apply_dft_tmp_bytes(...)
 /// ensures    idft(res) = [[a]] * M, the matrix pmat was prepared from; the min(a.size(), pmat.rows()) leading limbs of a are consumed and a's trailing columns are aligned with pmat.cols_in(), the leading ones zeroed
@@ -159,9 +160,10 @@ pub trait VmpApplyDftToDftAddTmpBytes {
 /// op         vmp_apply_dft_to_dft(res, a, pmat, limb_offset, scratch)
 /// class      basis
 /// mutation   out-of-place
+/// definition idft(res[co])[j] = sum_{i < min(a.size(), pmat.rows())} sum_{ci < pmat.cols_in()} idft(a[ci])[i] * pmat[i][ci][co][j + limb_offset] for every co < pmat.cols_out()
 /// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat; where a dimension disagrees the largest valid one is used
 /// requires   scratch >= vmp_apply_dft_to_dft_tmp_bytes(...)
-/// ensures    idft(res) = idft(a) * M, the matrix pmat was prepared from, reading pmat's limbs from limb_offset on; row i of the product weighs limb i of a. Only the limbs the product reaches are written
+/// ensures    idft(res) = idft(a) * M, the matrix pmat was prepared from, reading pmat's limbs from limb_offset on; row i of the product weighs limb i of a; the limbs of res from max(pmat.size() - limb_offset, 0) on are zero
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpApplyDftToDft<B: Backend> {
@@ -203,7 +205,7 @@ pub trait VmpApplyDftToDft<B: Backend> {
 /// op         vmp_apply_dft_to_dft_add(res, a, pmat, limb_offset, scratch)
 /// class      derived
 /// mutation   accumulate
-/// definition vec_znx_dft_add_assign(res, vmp_apply_dft_to_dft(tmp, a, pmat, limb_offset)) over every output column, tmp of res.size() limbs
+/// definition vec_znx_dft_add_assign(res, c, vmp_apply_dft_to_dft(tmp, a, pmat, limb_offset), c) for every c < res.cols(), tmp of res.size() limbs
 /// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat
 /// requires   scratch >= vmp_apply_dft_to_dft_add_tmp_bytes(...)
 /// ensures    res gains idft(a) * M over the same limb window vmp_apply_dft_to_dft writes; limbs the product does not reach gain zero and so keep their value
@@ -241,6 +243,7 @@ pub trait VmpApplyDftToDftAdd<B: Backend> {
 /// op         vmp_extract_selected_rows(res, a, first_row, row_step)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[i][ci][co][j] = a[first_row + i * row_step][ci][co][j] for every i < res.rows(), ci, co and j < res.size()
 /// domain     res, a: VmpPMat of the same degree, the same column counts and the same PrepareHint, with res.size() <= a.size(), row_step > 0 and a last selected row inside a; assert_extractable checks all of it before the kernel indexes on those facts
 /// ensures    row i of res is row first_row + i * row_step of a, truncated to res.size() limbs, so res is a dense prepared matrix over exactly the material a coarsened gadget decomposition uses. It moves representation bytes
 /// test       test_vmp_extract_selected_rows
@@ -261,6 +264,7 @@ pub trait VmpExtractSelectedRows<B: Backend> {
 /// op         vmp_zero(res)
 /// class      basis
 /// mutation   out-of-place
+/// definition res[i][ci][co][j] = 0 for every index
 /// domain     res: a VmpPMat
 /// ensures    every entry of res is the representation of zero, so a vector-matrix product through it yields zero
 /// test       test_vmp_zero

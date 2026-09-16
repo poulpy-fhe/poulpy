@@ -56,6 +56,7 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_prepare_left(res, a, scratch)
     /// class      basis
     /// mutation   out-of-place
+    /// definition res[c][j] = a[c][j] for every c < a.cols()
     /// domain     res: a CnvPVecL of the module degree with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_left_tmp_bytes(res.size(), a.size())
     /// ensures    res holds prep_L(a) in the representation res's PrepareHint names, observed through cnv_apply_dft
@@ -86,6 +87,7 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_prepare_right(res, a, scratch)
     /// class      basis
     /// mutation   out-of-place
+    /// definition res[c][j] = a[c][j] for every c < a.cols()
     /// domain     res: a CnvPVecR of the module degree with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_right_tmp_bytes(res.size(), a.size())
     /// ensures    res holds prep_R(a) in the representation res's PrepareHint names, observed through cnv_apply_dft
@@ -140,9 +142,10 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     /// class      basis
     /// mutation   out-of-place
+    /// definition res[res_col][j] = sum_{u + v = j + cnv_offset} b[b_col][v][b_coeff] * a[a_col][u], u < a.size() and v < b.size()
     /// domain     res: a VecZnxBig of the module degree; a: a dense VecZnx of the module degree; b: a dense VecZnx of any degree, b_coeff < b.n()
     /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
-    /// ensures    res[res_col] is the bivariate convolution of a[a_col] with coefficient b_coeff of b[b_col], read as a constant in X, scaled by 2^(cnv_offset * base2k); limbs past the convolution bound are zero-filled
+    /// ensures    res[res_col] is the bivariate convolution of a[a_col] with coefficient b_coeff of b[b_col], read as a constant in X, so [[res]] = [[a]] * [[b]] * 2^((cnv_offset + 1) * base2k) for a b of one coefficient; limbs past the convolution bound are zero-filled
     /// test       test_convolution_by_const, test_convolution_by_const_degree_rejected
     /// ```
     fn cnv_by_const_apply(
@@ -236,9 +239,10 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_apply_dft(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     /// class      basis
     /// mutation   out-of-place
+    /// definition idft(res[res_col])[j] = sum_{u + v = j + cnv_offset} a[a_col][u] * b[b_col][v], u < a.size() and v < b.size()
     /// domain     res: a VecZnxDft and a: a CnvPVecL, both of the module degree; b: a CnvPVecR of the module degree or of a degree dividing it
     /// requires   scratch >= cnv_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
-    /// ensures    idft(res[res_col]) is the bivariate convolution of a[a_col] and b[b_col] over Z[X, Y] mod (X^N + 1), Y = 2^-base2k, scaled by 2^(cnv_offset * base2k); a res with fewer than a.size() + b.size() - 1 - cnv_offset limbs truncates in Y, and the limbs past that bound are zero-filled
+    /// ensures    idft(res[res_col]) is the bivariate convolution of a[a_col] and b[b_col] over Z[X, Y] mod (X^N + 1), Y = 2^-base2k, so [[res]] = [[a]] * [[b]] * 2^((cnv_offset + 1) * base2k); a res with fewer than a.size() + b.size() - 1 - cnv_offset limbs truncates in Y, and the limbs past that bound are zero-filled
     /// sparse     b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum sparse degree, prepared under a degree-n module; res and a take the module degree; the degree embedding of the api module docs defines the correspondence that reads it
     /// test       test_convolution, test_convolution_sparse
     /// ```
@@ -325,7 +329,7 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_apply_dft_sum(cnv_offset, res, res_col, terms, scratch)
     /// class      derived
     /// mutation   out-of-place
-    /// definition cnv_apply_dft on the first term, then cnv_apply_dft_add on each of the rest
+    /// definition idft(res[res_col])[j] = sum_{t < terms.len()} sum_{u + v = j + cnv_offset} terms[t].a[terms[t].a_col][u] * terms[t].b[terms[t].b_col][v]
     /// domain     res: a VecZnxDft of the module degree; terms: prepared left operands of the module degree and right operands of the module degree or of a degree dividing it, with their column indices
     /// requires   scratch >= cnv_apply_dft_sum_tmp_bytes(cnv_offset, res.size(), a_size, b_size)
     /// ensures    idft(res[res_col]) is the sum over the terms of their bivariate convolutions, overwriting the column; an empty slice zeroes it. A backend may fuse the accumulation with one lazy reduction per output limb, so the DFT-domain bytes may differ from a chain of cnv_apply_dft_add calls while idft of the result is the same
@@ -365,7 +369,7 @@ pub trait Convolution<BE: Backend> {
     /// op         cnv_pairwise_apply_dft(cnv_offset, res, res_col, a, b, i, j, scratch)
     /// class      derived
     /// mutation   out-of-place
-    /// definition cnv_apply_dft(a[i], b[i]) then cnv_apply_dft_add of (a[i], b[j]), (a[j], b[i]) and (a[j], b[j]); i == j degenerates to the single product
+    /// definition i and j the column arguments: idft(res[res_col])[m] = sum_{u + v = m + cnv_offset} (a[i][u] + a[j][u]) * (b[i][v] + b[j][v]) for i != j, and sum_{u + v = m + cnv_offset} a[i][u] * b[i][v] for i == j, for every m < res.size()
     /// domain     res: a VecZnxDft and a: a CnvPVecL, both of the module degree; b: a CnvPVecR of the module degree or of a degree dividing it; i, j column indices
     /// requires   scratch >= cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    for i != j, idft(res[res_col]) is the convolution of (a[i] + a[j]) with (b[i] + b[j]), expanded in the DFT domain where the prepared operands are linear; for i == j it is the single product a[i] * b[i], not the four-fold one the sum would give
