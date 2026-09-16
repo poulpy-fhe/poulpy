@@ -415,7 +415,7 @@ pub unsafe trait HalVecZnxBigImpl: Backend {
     }
 
     /// Required, not derived: the composition would need a `VecZnxBig`
-    /// temporary and this form takes no scratch (spec section 4.2).
+    /// temporary and this form takes no scratch, so the derived body cannot be used.
     fn vec_znx_big_add_small_assign(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -467,7 +467,7 @@ pub unsafe trait HalVecZnxBigImpl: Backend {
     }
 
     /// Required, not derived: the composition would need a `VecZnxBig`
-    /// temporary and this form takes no scratch (spec section 4.2).
+    /// temporary and this form takes no scratch, so the derived body cannot be used.
     fn vec_znx_big_sub_small_assign(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -493,7 +493,7 @@ pub unsafe trait HalVecZnxBigImpl: Backend {
     }
 
     /// Required, not derived: the composition would need a `VecZnxBig`
-    /// temporary and this form takes no scratch (spec section 4.2).
+    /// temporary and this form takes no scratch, so the derived body cannot be used.
     fn vec_znx_big_sub_small_negate_assign(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -607,7 +607,7 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
 
     /// Required, not derived: the composition is `vec_znx_idft_apply(res, a)`,
     /// which needs `vec_znx_idft_apply_tmp_bytes` scratch this signature does
-    /// not carry (spec section 4.3, PR4 deviation).
+    /// not carry.
     fn vec_znx_idft_apply_tmpa(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -817,7 +817,7 @@ pub unsafe trait HalSvpImpl: Backend + HalVecZnxDftImpl {
     );
 
     /// Required, not derived: a default body would need a `VecZnxDft` temporary
-    /// the scratch-free signature does not carry (spec section 4.2).
+    /// the scratch-free signature does not carry, so the derived body cannot be used.
     fn svp_apply_dft_to_dft_assign(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
@@ -974,8 +974,7 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
 
     /// Required, not derived: this is an exact big-domain product of `a` with
     /// one coefficient column of `b`. The spec's DFT decomposition would route
-    /// it through an approximate transform on a floating-point FFT backend
-    /// (spec section 4.3, PR4 deviation).
+    /// it through an approximate transform on a floating-point FFT backend.
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
         module: &Module<Self>,

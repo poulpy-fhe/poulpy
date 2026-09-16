@@ -124,8 +124,7 @@
 //! sparsity-aware: a degree-`n` right operand is prepared under a degree-`n`
 //! module, like any dense prepare, and the apply forms of a degree-`N` module
 //! read it through the backend's slot correspondence, while the left operand
-//! and the result take the module degree (sparse operands,
-//! <https://github.com/poulpy-fhe/poulpy/issues/266>). A backend may reject a
+//! and the result take the module degree. A backend may reject a
 //! sparse degree below its transform block width in the apply; the
 //! coefficient-domain add and sub families accept any power-of-two divisor.
 //!

@@ -19,7 +19,7 @@
 //!
 //! Where the two sides are allowed to distribute the same value over
 //! different non-canonical digits, the accumulating shifts, the comparison
-//! is on canonical forms, as in PR2's `rsh_sub` proof.
+//! is on canonical forms, as in the `rsh_sub` argument.
 
 use crate::{
     api::{

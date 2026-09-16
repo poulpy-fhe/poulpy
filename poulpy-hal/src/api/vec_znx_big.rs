@@ -63,7 +63,7 @@ pub trait VecZnxBigBytesOf {
 /// mutation   out-of-place
 /// domain     res, a, b: VecZnxBig or windows of one
 /// ensures    res[res_col] = a[a_col] + b[b_col] limb by limb; operands shorter than res are zero-extended and every limb of res is written. Big words wrap, so the caller keeps the sum inside the backend's big-word bound
-/// sparse     a and b are the sparse-capable slots: a degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself (4.5). The kernels read it with a stride (#266)
+/// sparse     a and b are the sparse-capable slots: a degree-n operand, n dividing N, stands for switch_ring_{n->N} of itself. The kernels read it with a stride
 /// exact      exact
 /// test       test_vec_znx_big_add, test_vec_znx_big_sparse_add_sub
 /// ```
@@ -87,7 +87,7 @@ pub trait VecZnxBigAdd<B: Backend> {
 /// definition vec_znx_big_add(res, res_col, res, res_col, a, a_col)
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] += a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
 /// exact      exact
 /// test       test_vec_znx_big_add_assign, test_vec_znx_big_sparse_add_sub
 /// ```
@@ -109,7 +109,7 @@ pub trait VecZnxBigAddAssign<B: Backend> {
 /// definition vec_znx_big_add(res, res_col, a, a_col, vec_znx_big_from_small(b, b_col), 0)
 /// domain     res, a: VecZnxBig or windows of one; b: a VecZnx or a window of one; res distinct from a and b
 /// ensures    res[res_col] = a[a_col] + b[b_col]: limbs only b reaches hold b, limbs only a reaches hold a, limbs neither reaches are zero
-/// sparse     b is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     b is the sparse-capable slot, as for vec_znx_big_add
 /// fallback   OEP default body: promote b into res with vec_znx_big_from_small, then fold a in with add_assign. Scratch-free, and it writes res before reading the operands, so res must not alias them
 /// override   allowed, scratch-free; the CPU families override it with a fused kernel, which also tolerates aliasing
 /// exact      exact
@@ -135,7 +135,7 @@ pub trait VecZnxBigAddSmall<B: Backend> {
 /// definition vec_znx_big_add_small(res, res_col, res, res_col, a, a_col)
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] += a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
 /// exact      exact
 /// test       test_vec_znx_big_add_small_assign, test_vec_znx_big_sparse_add_sub
 /// ```
@@ -156,7 +156,7 @@ pub trait VecZnxBigAddSmallAssign<B: Backend> {
 /// mutation   out-of-place
 /// domain     res, a, b: VecZnxBig or windows of one
 /// ensures    res[res_col] = a[a_col] - b[b_col] limb by limb; operands shorter than res are zero-extended and every limb of res is written
-/// sparse     a and b are the sparse-capable slots, as for vec_znx_big_add (4.5)
+/// sparse     a and b are the sparse-capable slots, as for vec_znx_big_add
 /// exact      exact
 /// test       test_vec_znx_big_sub, test_vec_znx_big_sparse_add_sub
 /// ```
@@ -180,7 +180,7 @@ pub trait VecZnxBigSub<B: Backend> {
 /// definition vec_znx_big_sub(res, res_col, res, res_col, a, a_col)
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] -= a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
 /// exact      exact
 /// test       test_vec_znx_big_sub_assign, test_vec_znx_big_sparse_add_sub
 /// ```
@@ -202,7 +202,7 @@ pub trait VecZnxBigSubAssign<B: Backend> {
 /// definition vec_znx_big_sub(res, res_col, a, a_col, res, res_col)
 /// domain     res, a: VecZnxBig or windows of one
 /// ensures    res[res_col] = a[a_col] - res[res_col] limb by limb; limbs of res past a.size() are negated in place
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
 /// exact      exact
 /// test       test_vec_znx_big_sub_negate_assign, test_vec_znx_big_sparse_add_sub
 /// ```
@@ -224,7 +224,7 @@ pub trait VecZnxBigSubNegateAssign<B: Backend> {
 /// definition vec_znx_big_sub(res, res_col, vec_znx_big_from_small(a, a_col), 0, b, b_col)
 /// domain     res, b: VecZnxBig or windows of one; a: a VecZnx or a window of one, the coefficient-domain operand; res distinct from a and b
 /// ensures    res[res_col] = a[a_col] - b[b_col]: limbs only a reaches hold a, limbs only b reaches hold -b, limbs neither reaches are zero
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
 /// fallback   OEP default body: promote a into res with vec_znx_big_from_small, then subtract b in place. Scratch-free, and it writes res before reading the operands, so res must not alias them
 /// override   allowed, scratch-free; the CPU families override it with a fused kernel, which also tolerates aliasing
 /// exact      exact
@@ -250,7 +250,7 @@ pub trait VecZnxBigSubSmallA<B: Backend> {
 /// definition vec_znx_big_sub_small_b(res, res_col, res, res_col, a, a_col): res is the big operand, a the small one
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] -= a[a_col] limb by limb; limbs of res past a.size() keep their value
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
 /// exact      exact
 /// test       test_vec_znx_big_sub_small_a_assign, test_vec_znx_big_sparse_add_sub
 /// ```
@@ -272,7 +272,7 @@ pub trait VecZnxBigSubSmallAssign<B: Backend> {
 /// definition vec_znx_big_sub(res, res_col, a, a_col, vec_znx_big_from_small(b, b_col), 0)
 /// domain     res, a: VecZnxBig or windows of one; b: a VecZnx or a window of one, the coefficient-domain operand; res distinct from a and b
 /// ensures    res[res_col] = a[a_col] - b[b_col]: limbs only a reaches hold a, limbs only b reaches hold -b, limbs neither reaches are zero
-/// sparse     b is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     b is the sparse-capable slot, as for vec_znx_big_add
 /// fallback   OEP default body: promote b into res with vec_znx_big_from_small, then negate it against a with sub_negate_assign. Scratch-free, and it writes res before reading the operands, so res must not alias them
 /// override   allowed, scratch-free; the CPU families override it with a fused kernel, which also tolerates aliasing
 /// exact      exact
@@ -298,7 +298,7 @@ pub trait VecZnxBigSubSmallB<B: Backend> {
 /// definition vec_znx_big_sub_small_a(res, res_col, a, a_col, res, res_col): a is the small operand, res the big one
 /// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one
 /// ensures    res[res_col] = a[a_col] - res[res_col] limb by limb; limbs of res past a.size() are negated in place
-/// sparse     a is the sparse-capable slot, as for vec_znx_big_add (4.5)
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
 /// exact      exact
 /// test       test_vec_znx_big_sub_small_b_assign, test_vec_znx_big_sparse_add_sub
 /// ```

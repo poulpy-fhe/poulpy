@@ -62,7 +62,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a CnvPVecL with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_left_tmp_bytes(res.size(), a.size())
     /// ensures    res holds prep_L(a) in the representation res's PrepareHint names. The representation is opaque, so the statement is on the observable: cnv_apply_dft with it is the bivariate convolution by a
-    /// sparse     none: res and a take the module degree; the sparse-capable slot of the convolution is the prepared right operand an apply form reads (4.5, #266)
+    /// sparse     none: res and a take the module degree; the sparse-capable slot of the convolution is the prepared right operand an apply form reads
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
@@ -95,7 +95,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a CnvPVecR of the module degree with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_right_tmp_bytes(res.size(), a.size())
     /// ensures    res holds prep_R(a) in the representation res's PrepareHint names, observed through cnv_apply_dft
-    /// sparse     none: res and a take the module degree; a degree-n right operand is prepared under a degree-n module and consumed by the apply forms of a degree-N module (4.5, #266)
+    /// sparse     none: res and a take the module degree; a degree-n right operand is prepared under a degree-n module and consumed by the apply forms of a degree-N module
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
@@ -159,7 +159,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a VecZnxBig; a: a dense VecZnx of the module degree; b: a dense VecZnx of any degree, b_coeff < b.n()
     /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    res[res_col] is the bivariate convolution of a[a_col] with coefficient b_coeff of b[b_col], read as a constant in X, scaled by 2^(cnv_offset * base2k); limbs past the convolution bound are zero-filled
-    /// sparse     none: a takes the module degree; a degree-n a is embedded by the caller with vec_znx_switch_ring first, nothing consumes more (#266)
+    /// sparse     none: a takes the module degree; a degree-n a is embedded by the caller with vec_znx_switch_ring first, nothing consumes more
     /// exact      exact: it is a big-domain product, which is why it is required of every backend rather than routed through the lossy DFT decomposition on a floating-point FFT backend
     /// test       test_convolution_by_const, test_convolution_by_const_degree_rejected
     /// ```
@@ -259,7 +259,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a VecZnxDft and a: a CnvPVecL, both of the module degree; b: a CnvPVecR of the module degree or of a degree dividing it
     /// requires   scratch >= cnv_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    idft(res[res_col]) is the bivariate convolution of a[a_col] and b[b_col] over Z[X, Y] mod (X^N + 1), Y = 2^-base2k, scaled by 2^(cnv_offset * base2k); a res shorter than a.size() + b.size() truncates in Y, and the limbs past the convolution bound are zero-filled
-    /// sparse     b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum sparse degree, prepared under a degree-n module; res and a take the module degree; the slot correspondence of 4.5 reads it, a basis-kernel obligation (#266)
+    /// sparse     b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum sparse degree, prepared under a degree-n module; res and a take the module degree; the degree embedding of the api module docs defines the slot correspondence that reads it, a basis-kernel obligation
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution, test_convolution_sparse
     /// ```
@@ -302,7 +302,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     as for cnv_apply_dft
     /// requires   scratch >= cnv_apply_dft_add_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    res[res_col] gains the cnv_apply_dft result, bit-identically to that call followed by a DFT-domain add; the limbs past min(res.size(), a.size() + b.size()) gain zero and so keep their value
-    /// sparse     as for cnv_apply_dft (4.5)
+    /// sparse     as for cnv_apply_dft
     /// fallback   OEP default body: the convolution into a carved res.size()-limb VecZnxDft, then vec_znx_dft_add_assign
     /// override   allowed, with cnv_apply_dft_add_tmp_bytes
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
@@ -353,7 +353,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a VecZnxDft of the module degree; terms: prepared left and right operands with their column indices
     /// requires   scratch >= cnv_apply_dft_sum_tmp_bytes(cnv_offset, res.size(), a_size, b_size)
     /// ensures    idft(res[res_col]) is the sum over the terms of their bivariate convolutions, overwriting the column; an empty slice zeroes it. A backend may fuse the accumulation with one lazy reduction per output limb, so the result is congruent to a chain of cnv_apply_dft_add calls without being bit-identical to it
-    /// sparse     per term, as for cnv_apply_dft (4.5)
+    /// sparse     per term, as for cnv_apply_dft
     /// fallback   OEP default body: the first term overwrites with cnv_apply_dft, which also zeroes the limbs past the convolution bound, and the remaining terms fold in with cnv_apply_dft_add
     /// override   allowed, with cnv_apply_dft_sum_tmp_bytes
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
@@ -395,7 +395,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a VecZnxDft and a: a CnvPVecL, both of the module degree; b: a CnvPVecR of the module degree or of a degree dividing it; i, j column indices
     /// requires   scratch >= cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    for i != j, idft(res[res_col]) is the convolution of (a[i] + a[j]) with (b[i] + b[j]), expanded in the DFT domain where the prepared operands are linear; for i == j it is the single product a[i] * b[i], not the four-fold one the sum would give
-    /// sparse     per product, as for cnv_apply_dft (4.5)
+    /// sparse     per product, as for cnv_apply_dft
     /// fallback   OEP default body: the four-product expansion above
     /// override   allowed, with cnv_pairwise_apply_dft_tmp_bytes
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
@@ -438,7 +438,7 @@ pub trait Convolution<BE: Backend> {
     /// domain     left: a CnvPVecL of the module degree; right: a CnvPVecR of the module degree, with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of the module degree with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_self_tmp_bytes(left.size(), a.size())
     /// ensures    left holds prep_L(a) and right holds prep_R(a), the pair a self-convolution needs
-    /// sparse     none: left, right and a take the module degree (4.5)
+    /// sparse     none: left, right and a take the module degree
     /// fallback   OEP default body: the two prepares in sequence
     /// override   allowed, with cnv_prepare_self_tmp_bytes; a backend that shares the transform between the two does it here
     /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend

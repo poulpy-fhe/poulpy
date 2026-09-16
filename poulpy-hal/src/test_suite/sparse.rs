@@ -1,4 +1,4 @@
-//! Sparse operands (#266): a degree-`n` operand, `n` a power-of-two divisor of
+//! Sparse operands: a degree-`n` operand, `n` a power-of-two divisor of
 //! the module degree `N`, stands for its ring embedding `switch_ring_{n->N}`.
 //! Every sparse-capable slot must give the result the embedded dense operand
 //! gives, bit for bit in the coefficient domain and after normalization in the

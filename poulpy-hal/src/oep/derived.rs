@@ -446,7 +446,7 @@ pub fn vec_znx_add_scalar_assign_derived<BE>(
 /// Caller precondition: `res` must not alias `a` or `b`. The body writes `res`
 /// before reading them, and nothing checks it: the backend view types do not
 /// enforce it (`vec_znx_big_backend_ref_from_mut` hands out a shared view of a
-/// mutable one). This is new relative to the fused kernels PR4 deleted, which
+/// mutable one). This is new relative to the fused kernels that preceded the derived bodies, which
 /// read both operands per limb before writing and so tolerated aliasing.
 #[doc(hidden)]
 pub fn vec_znx_big_add_small_derived<BE>(
@@ -474,7 +474,7 @@ pub fn vec_znx_big_add_small_derived<BE>(
 /// Caller precondition: `res` must not alias `a` or `b`. The body writes `res`
 /// before reading them, and nothing checks it: the backend view types do not
 /// enforce it (`vec_znx_big_backend_ref_from_mut` hands out a shared view of a
-/// mutable one). This is new relative to the fused kernels PR4 deleted, which
+/// mutable one). This is new relative to the fused kernels that preceded the derived bodies, which
 /// read both operands per limb before writing and so tolerated aliasing.
 #[doc(hidden)]
 pub fn vec_znx_big_sub_small_a_derived<BE>(
@@ -502,7 +502,7 @@ pub fn vec_znx_big_sub_small_a_derived<BE>(
 /// Caller precondition: `res` must not alias `a` or `b`. The body writes `res`
 /// before reading them, and nothing checks it: the backend view types do not
 /// enforce it (`vec_znx_big_backend_ref_from_mut` hands out a shared view of a
-/// mutable one). This is new relative to the fused kernels PR4 deleted, which
+/// mutable one). This is new relative to the fused kernels that preceded the derived bodies, which
 /// read both operands per limb before writing and so tolerated aliasing.
 #[doc(hidden)]
 pub fn vec_znx_big_sub_small_b_derived<BE>(

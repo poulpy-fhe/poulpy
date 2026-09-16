@@ -1110,7 +1110,7 @@ where
 /// arena.
 type ConvolutionForm<'a, BE> = dyn Fn(&mut VecZnxDftOwned<BE>, &CnvPVecROwned<BE>, &mut ScratchOwned<BE>) + 'a;
 
-/// Sparse operands (#266): a degree-`n` right operand, prepared under a degree-`n`
+/// Sparse operands: a degree-`n` right operand, prepared under a degree-`n`
 /// module, gives the convolution that the dense prepare of `switch_ring_{n->N}` of
 /// the same input gives, through `cnv_apply_dft`, `cnv_apply_dft_add`,
 /// `cnv_apply_dft_sum` and `cnv_pairwise_apply_dft`, compared after `idft` and
