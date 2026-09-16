@@ -118,14 +118,16 @@
 //! choice the contracts never mention. Only the operand slots a contract's
 //! `sparse` line names accept a degree other than the module's; `res` and
 //! every other operand share `N`. The coefficient-domain `add` and `sub`
-//! families read such an operand with a stride. In the convolution only the
-//! prepared right operand is sparse-capable, and the prepares are not
-//! sparsity-aware: a degree-`n` right operand is prepared under a degree-`n`
-//! module, like any dense prepare, and the apply forms of a degree-`N` module
-//! read it through the backend's slot correspondence, while the left operand
-//! and the result take the module degree. A backend may reject a
-//! sparse degree below its transform block width in the apply; the
-//! coefficient-domain add and sub families accept any power-of-two divisor.
+//! families read such an operand with a stride, and `vec_znx_big_from_small`
+//! embeds it the same way, so the derived small-operand forms inherit the
+//! slot. In the convolution only the prepared right operand is sparse-capable,
+//! and the prepares are not sparsity-aware: a degree-`n` right operand is
+//! prepared under a degree-`n` module, like any dense prepare, and the apply
+//! forms of a degree-`N` module read it through the backend's slot
+//! correspondence, while the left operand and the result take the module
+//! degree. A backend may reject a sparse degree below its transform block
+//! width in the apply; the coefficient-domain add and sub families accept any
+//! power-of-two divisor.
 //!
 //! The coefficient-wise operations are outside that rule: `vec_znx_big_inner_sum`,
 //! `vec_znx_big_col_weighted_sum` and `vec_znx_scalar_product` act on

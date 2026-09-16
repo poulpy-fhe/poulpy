@@ -85,6 +85,42 @@ pub fn znx_sub_strided<T: SparseWord, U: Copy + Into<T>>(res: &mut [T], a: &[U])
         .for_each(|(r, &x)| *r = r.wsub(x.into()));
 }
 
+/// `res[k * gap] = a[k]` for every coefficient `k` of `a`, `gap = res.len() / a.len()`;
+/// every coefficient of `res` off the stride is zero.
+#[inline(always)]
+pub fn znx_set_strided<T: SparseWord, U: Copy + Into<T>>(res: &mut [T], a: &[U]) {
+    debug_assert!(
+        res.len().is_multiple_of(a.len()),
+        "res.len():{} not a multiple of a.len():{}",
+        res.len(),
+        a.len()
+    );
+    let gap = res.len() / a.len();
+    res.fill(T::ZERO);
+    res.iter_mut().step_by(gap).zip(a.iter()).for_each(|(r, &x)| *r = x.into());
+}
+
+/// `res[res_col] = a[a_col]`, `a` embedded into `res`'s degree and each
+/// coefficient widened; limbs of `res` past `a.size()` are zero.
+pub fn vec_znx_from_small_mixed<R, A>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+where
+    R: ZnxViewMut,
+    A: ZnxView,
+    R::Scalar: SparseWord,
+    A::Scalar: Into<R::Scalar>,
+{
+    embedding_gap(res.n(), a.n());
+    let a_size = a.size();
+    for j in 0..res.size() {
+        let r = res.at_mut(res_col, j);
+        if j < a_size {
+            znx_set_strided(r, a.at(a_col, j));
+        } else {
+            r.fill(R::Scalar::ZERO);
+        }
+    }
+}
+
 /// `res[res_col] = a[a_col] + b[b_col]`, each operand embedded into `res`'s degree;
 /// limbs past an operand's size read as zero, every limb of `res` is written.
 pub fn vec_znx_add_mixed<R, A, B>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)

@@ -471,6 +471,25 @@ where
             }
             let a_small = upload_vec_znx::<BE>(&a);
             let a_small_dense = embed(module, &a);
+
+            // The basis promotion is a sparse-capable slot too: the degree-n
+            // operand and its embedding promote to the same Big.
+            let mut want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(cols, res_size);
+            let mut have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(cols, res_size);
+            for col in 0..cols {
+                module.vec_znx_big_from_small(
+                    &mut want.to_backend_mut(),
+                    col,
+                    &vec_znx_backend_ref::<BE>(&a_small_dense),
+                    col,
+                );
+                module.vec_znx_big_from_small(&mut have.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&a_small), col);
+            }
+            assert_eq!(
+                normalized(module, base2k, &want, &mut scratch),
+                normalized(module, base2k, &have, &mut scratch),
+                "vec_znx_big_from_small: a.n()={sparse_n} sizes=({a_size}, {res_size})"
+            );
             for (what, op) in small_assign.iter() {
                 let mut want = big_embedded(module, &seed);
                 let mut have = big_embedded(module, &seed);

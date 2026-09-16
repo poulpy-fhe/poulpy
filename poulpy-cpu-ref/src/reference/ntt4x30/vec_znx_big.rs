@@ -40,8 +40,8 @@ use crate::{
     reference::{
         normalization::I64NormalizeOps,
         vec_znx::{
-            VecZnxRangeMut, vec_znx_add_assign_mixed, vec_znx_add_mixed, vec_znx_sub_assign_mixed, vec_znx_sub_mixed,
-            vec_znx_sub_negate_assign_mixed,
+            VecZnxRangeMut, vec_znx_add_assign_mixed, vec_znx_add_mixed, vec_znx_from_small_mixed, vec_znx_sub_assign_mixed,
+            vec_znx_sub_mixed, vec_znx_sub_negate_assign_mixed,
         },
         znx::{
             ZnxNormalizeMiddleStepAssign, get_carry_i128, get_digit_i128, znx_extract_digit_addmul_normalize_i128_ref,
@@ -1191,6 +1191,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_from_small_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let res_size = res.size();
     let min_size = res_size.min(a.size());
 

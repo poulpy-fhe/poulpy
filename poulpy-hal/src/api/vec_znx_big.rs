@@ -10,9 +10,10 @@ use crate::layouts::{
 /// op         vec_znx_big_from_small(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one, of the same degree
+/// domain     res: a VecZnxBig or a window of one; a: a VecZnx or a window of one, of the same degree or of a power-of-two degree dividing it
 /// ensures    res[res_col] holds a[a_col] limb by limb, each coefficient widened to a big word; limbs of res past a.size() are zero, so [[res]] = [[a]] at the shared radix
-/// test       test_vec_znx_big_from_small, test_vec_znx_big_window_ops
+/// sparse     a is the sparse-capable slot, as for vec_znx_big_add
+/// test       test_vec_znx_big_from_small, test_vec_znx_big_window_ops, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigFromSmall<B: Backend> {
     fn vec_znx_big_from_small(

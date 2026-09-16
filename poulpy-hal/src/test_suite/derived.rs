@@ -37,9 +37,9 @@ use crate::{
     layouts::{
         CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
         CnvPVecRToBackendRef, FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint,
-        ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView,
-        ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
+        ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxOwned, VmpPMatToBackendMut,
+        VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
     oep::{
         HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, cnv_apply_dft_add_derived,
@@ -1262,17 +1262,23 @@ where
     // (big operand size, small operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    for (a_size, b_size, res_size) in [
-        (3usize, 3usize, 3usize),
-        (4, 2, 3),
-        (2, 4, 3),
-        (3, 3, 5),
-        (4, 4, 2),
-        (4, 2, 5),
+    // The small operand is the sparse-capable slot: the last two cases give it
+    // half the module's degree, the degree the default body has to embed. Under
+    // a module too small to halve below the degree floor they stay dense.
+    let sparse_n: usize = if module.n() >= 16 { module.n() / 2 } else { module.n() };
+    for (a_size, b_size, res_size, small_n) in [
+        (3usize, 3usize, 3usize, module.n()),
+        (4, 2, 3, module.n()),
+        (2, 4, 3, module.n()),
+        (3, 3, 5, module.n()),
+        (4, 4, 2, module.n()),
+        (4, 2, 5, module.n()),
+        (3, 3, 3, sparse_n),
+        (4, 2, 5, sparse_n),
     ] {
         let mut a_small = module_host.vec_znx_alloc(1, a_size);
         a_small.fill_uniform(base2k, &mut source);
-        let mut b = module_host.vec_znx_alloc(1, b_size);
+        let mut b: VecZnxOwned<i64> = VecZnx::alloc(small_n, 1, b_size);
         b.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a_small);
         let b_backend = upload_vec_znx::<BE>(&b);
@@ -1366,13 +1372,13 @@ where
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&have_backend),
-            "vec_znx_big_add_small: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_add_small: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&got_backend),
-            "vec_znx_big_add_small: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_add_small: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
 }
@@ -1401,15 +1407,21 @@ where
     // (small operand size, big operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    for (a_size, b_size, res_size) in [
-        (3usize, 3usize, 3usize),
-        (2, 4, 3),
-        (4, 2, 3),
-        (3, 3, 5),
-        (4, 4, 2),
-        (4, 2, 5),
+    // The small operand is the sparse-capable slot: the last two cases give it
+    // half the module's degree, the degree the default body has to embed. Under
+    // a module too small to halve below the degree floor they stay dense.
+    let sparse_n: usize = if module.n() >= 16 { module.n() / 2 } else { module.n() };
+    for (a_size, b_size, res_size, small_n) in [
+        (3usize, 3usize, 3usize, module.n()),
+        (2, 4, 3, module.n()),
+        (4, 2, 3, module.n()),
+        (3, 3, 5, module.n()),
+        (4, 4, 2, module.n()),
+        (4, 2, 5, module.n()),
+        (3, 3, 3, sparse_n),
+        (4, 2, 5, sparse_n),
     ] {
-        let mut a_small = module_host.vec_znx_alloc(1, a_size);
+        let mut a_small: VecZnxOwned<i64> = VecZnx::alloc(small_n, 1, a_size);
         a_small.fill_uniform(base2k, &mut source);
         let mut b = module_host.vec_znx_alloc(1, b_size);
         b.fill_uniform(base2k, &mut source);
@@ -1505,13 +1517,13 @@ where
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&have_backend),
-            "vec_znx_big_sub_small_a: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_a: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&got_backend),
-            "vec_znx_big_sub_small_a: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_a: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
 }
@@ -1540,17 +1552,23 @@ where
     // (big operand size, small operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    for (a_size, b_size, res_size) in [
-        (3usize, 3usize, 3usize),
-        (4, 2, 3),
-        (2, 4, 3),
-        (3, 3, 5),
-        (4, 4, 2),
-        (4, 2, 5),
+    // The small operand is the sparse-capable slot: the last two cases give it
+    // half the module's degree, the degree the default body has to embed. Under
+    // a module too small to halve below the degree floor they stay dense.
+    let sparse_n: usize = if module.n() >= 16 { module.n() / 2 } else { module.n() };
+    for (a_size, b_size, res_size, small_n) in [
+        (3usize, 3usize, 3usize, module.n()),
+        (4, 2, 3, module.n()),
+        (2, 4, 3, module.n()),
+        (3, 3, 5, module.n()),
+        (4, 4, 2, module.n()),
+        (4, 2, 5, module.n()),
+        (3, 3, 3, sparse_n),
+        (4, 2, 5, sparse_n),
     ] {
         let mut a_small = module_host.vec_znx_alloc(1, a_size);
         a_small.fill_uniform(base2k, &mut source);
-        let mut b = module_host.vec_znx_alloc(1, b_size);
+        let mut b: VecZnxOwned<i64> = VecZnx::alloc(small_n, 1, b_size);
         b.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a_small);
         let b_backend = upload_vec_znx::<BE>(&b);
@@ -1644,13 +1662,13 @@ where
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&have_backend),
-            "vec_znx_big_sub_small_b: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_b: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&got_backend),
-            "vec_znx_big_sub_small_b: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_b: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
 }
