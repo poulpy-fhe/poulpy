@@ -83,7 +83,7 @@ impl<'a> HostBufMut<'a> for &'a mut [u8] {
 /// Arena allocation of typed layouts out of a [`ScratchArena`].
 ///
 /// ```text
-/// op         take_*_scratch(dimensions)
+/// op         take_*_scratch(dimensions) / take_vec_znx_big_scratch_n(n, dimensions)
 /// class      support
 /// mutation   none
 /// domain     the arena holds at least the matching `bytes_of_*`

@@ -13,10 +13,12 @@
 //! test       test_vec_znx_add_matches_reference
 //! ```
 //!
-//! This test reads the sources and checks that the blocks are there, that they
-//! carry the lines their class requires, and that every test they name exists
-//! in `src/test_suite`. It is the mechanical half of the specification; the
-//! vocabulary the values use is defined in the `api` module documentation.
+//! This test reads the sources and checks that every method of every trait is
+//! named by exactly one block's `op` line (`a(..) / b(..)` names two methods,
+//! `Type::method(..)` its last segment, `*` any run of characters), that each
+//! block carries the lines its class requires, and that every test it names
+//! exists in `src/test_suite`. It is the mechanical half of the specification;
+//! the vocabulary the values use is defined in the `api` module documentation.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -189,6 +191,71 @@ fn test_suite_functions() -> BTreeSet<String> {
     out
 }
 
+/// The `fn` names a trait declares at the top level of its body, none for a
+/// trait without a body.
+fn trait_methods(lines: &[&str], trait_line: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let header: &str = lines[trait_line].trim_end();
+    if header.ends_with(';') || header.ends_with("{}") {
+        return out;
+    }
+    for line in &lines[trait_line + 1..] {
+        if *line == "}" {
+            break;
+        }
+        // Methods sit at one indentation level; anything deeper is a default body.
+        let Some(rest) = line.strip_prefix("    ") else {
+            continue;
+        };
+        if rest.starts_with(' ') {
+            continue;
+        }
+        let rest: &str = rest.strip_prefix("unsafe ").unwrap_or(rest);
+        let Some(rest) = rest.strip_prefix("fn ") else {
+            continue;
+        };
+        let name: &str = rest
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .next()
+            .unwrap_or_default();
+        if !name.is_empty() {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
+/// The method names an `op` line covers: `a(..) / b(..)` names two, a
+/// `Type::method(..)` path names its last segment.
+fn op_names(op: &str) -> Vec<&str> {
+    op.split(" / ")
+        .map(|one| one.split('(').next().unwrap_or_default().trim())
+        .map(|name| name.rsplit("::").next().unwrap_or_default())
+        .filter(|name| !name.is_empty())
+        .collect()
+}
+
+/// Whether an `op` name, with `*` standing for any run of characters, names `method`.
+fn op_matches(pattern: &str, method: &str) -> bool {
+    let pieces: Vec<&str> = pattern.split('*').collect();
+    if pieces.len() == 1 {
+        return pattern == method;
+    }
+    let Some(rest) = method.strip_prefix(pieces[0]) else {
+        return false;
+    };
+    let Some(mut rest) = rest.strip_suffix(pieces[pieces.len() - 1]) else {
+        return false;
+    };
+    pieces[1..pieces.len() - 1].iter().all(|piece| match rest.find(piece) {
+        Some(at) => {
+            rest = &rest[at + piece.len()..];
+            true
+        }
+        None => false,
+    })
+}
+
 #[test]
 fn every_api_trait_carries_a_contract() {
     let suite: BTreeSet<String> = test_suite_functions();
@@ -202,9 +269,10 @@ fn every_api_trait_carries_a_contract() {
     for path in rust_files(&api_dir()) {
         let text: String = fs::read_to_string(&path).expect("readable source file");
         let file: String = path.file_name().expect("named file").to_string_lossy().into_owned();
+        let lines: Vec<&str> = text.lines().collect();
         let contracts: Vec<(String, Contract)> = contracts_of(&path);
 
-        for line in text.lines() {
+        for (i, line) in lines.iter().enumerate() {
             let Some(rest) = line.strip_prefix("pub trait ") else {
                 continue;
             };
@@ -212,8 +280,38 @@ fn every_api_trait_carries_a_contract() {
                 .split(|c: char| !(c.is_alphanumeric() || c == '_'))
                 .next()
                 .unwrap_or_default();
-            if !contracts.iter().any(|(owner, _)| owner == name) {
+            let blocks: Vec<&Contract> = contracts
+                .iter()
+                .filter(|(owner, _)| owner == name)
+                .map(|(_, contract)| contract)
+                .collect();
+            if blocks.is_empty() {
                 errors.push(format!("{file}: `pub trait {name}` has no contract block"));
+                continue;
+            }
+            let methods: Vec<String> = trait_methods(&lines, i);
+            for contract in &blocks {
+                for op in op_names(contract.get("op").unwrap_or_default()) {
+                    if !methods.iter().any(|method| op_matches(op, method)) {
+                        errors.push(format!("{}: {name}: `op {op}` names no method of the trait", contract.at()));
+                    }
+                }
+            }
+            for method in &methods {
+                let covering: usize = blocks
+                    .iter()
+                    .filter(|contract| {
+                        op_names(contract.get("op").unwrap_or_default())
+                            .iter()
+                            .any(|op| op_matches(op, method))
+                    })
+                    .count();
+                if covering != 1 {
+                    errors.push(format!(
+                        "{file}:{}: {name}::{method} is named by {covering} contract blocks, needs exactly one",
+                        i + 1
+                    ));
+                }
             }
         }
 
@@ -339,4 +437,32 @@ fn computing_and_support_definition_rules() {
             );
         }
     }
+}
+
+#[test]
+fn op_lines_name_trait_methods() {
+    assert_eq!(op_names("vec_znx_add(res, a, b)"), ["vec_znx_add"]);
+    assert_eq!(op_names("Module::<BE>::new(n)"), ["new"]);
+    assert_eq!(op_names("n()"), ["n"]);
+    assert_eq!(
+        op_names("left_alloc(cols) / right_alloc(cols)"),
+        ["left_alloc", "right_alloc"]
+    );
+    assert!(op_matches("take_*_scratch", "take_vec_znx_scratch"));
+    assert!(!op_matches("take_*_scratch", "take_vec_znx"));
+    assert!(!op_matches("vec_znx_add", "vec_znx_add_assign"));
+
+    let lines = [
+        "pub trait Example {",
+        "    fn one(&self);",
+        "    unsafe fn two(",
+        "        &self,",
+        "    ) {",
+        "        fn nested() {}",
+        "    }",
+        "}",
+        "pub trait Marker: Example {}",
+    ];
+    assert_eq!(trait_methods(&lines, 0), ["one", "two"]);
+    assert!(trait_methods(&lines, 8).is_empty());
 }
