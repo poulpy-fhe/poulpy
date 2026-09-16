@@ -254,3 +254,17 @@ impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for FFT64Neon {
         <Self as I64Ops>::i64_hadamard_product(res, a, b)
     }
 }
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use poulpy_hal::api::NegacyclicFFTNew;
+
+    #[test]
+    fn raw_transform_matches_contract() {
+        for m in [16, 32, 64, 128, 256] {
+            let table = FFT64NeonReimTable::new(m);
+            poulpy_hal::test_suite::reim::test_negacyclic_fft(&table);
+        }
+    }
+}

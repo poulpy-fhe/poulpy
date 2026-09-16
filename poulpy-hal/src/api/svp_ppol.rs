@@ -10,7 +10,7 @@ use crate::layouts::{
 /// class      support
 /// mutation   none
 /// domain     cols >= 1; hint: the PrepareHint the destination will be written under
-/// ensures    returns an owned degree-N SvpPPol of `cols` columns in the backend's prepared representation, which is opaque; its contents are unspecified
+/// ensures    returns an owned degree-N SvpPPol with cols columns and the requested hint; its contents are unspecified
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait SvpPPolAlloc<B: Backend> {
@@ -24,7 +24,7 @@ pub trait SvpPPolAlloc<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     cols >= 1
-/// ensures    returns the byte size of such an SvpPPol, the amount take_svp_ppol_scratch carves. The hint changes neither the value a prepared operand denotes nor the size
+/// ensures    returns the bytes required for a degree-N SvpPPol with cols columns and the requested hint
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_svp_prepare_bytes
 /// ```
 pub trait SvpPPolBytesOf {
@@ -37,9 +37,9 @@ pub trait SvpPPolBytesOf {
 /// op         svp_prepare(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition res[res_col] = a[a_col][0]
+/// definition res[res_col] reads as the polynomial a[a_col]; other columns of res are unchanged
 /// domain     res: an SvpPPol; a: a ScalarZnx of the module degree
-/// ensures    res[res_col] holds prep(a[a_col]) in the representation res's PrepareHint names; svp_apply_dft_to_dft with it multiplies by a[a_col] in the ring
+/// ensures    the selected scalar polynomial is prepared for multiplication
 /// test       test_svp_apply_dft_to_dft
 /// ```
 pub trait SvpPrepare<B: Backend> {
@@ -55,9 +55,9 @@ pub trait SvpPrepare<B: Backend> {
 /// op         svp_ppol_copy(res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition res[res_col] = a[a_col]
+/// definition res[res_col] reads as the polynomial a[a_col]; other columns of res are unchanged
 /// domain     res, a: SvpPPol of the same degree and the same PrepareHint
-/// ensures    res[res_col] denotes what a[a_col] denotes
+/// ensures    the selected prepared scalar polynomial is copied
 /// test       test_svp_apply_dft_to_dft
 /// ```
 pub trait SvpPPolCopy<B: Backend> {
@@ -71,7 +71,7 @@ pub trait SvpPPolCopy<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     b_size: the coefficient-domain operand's limb count
-/// ensures    returns the scratch bytes svp_apply_dft needs; the fallback body carves one b_size-limb, one-column VecZnxDft for the transformed right operand, and a backend that overrides the operation overrides this too, and may report less
+/// ensures    returns the scratch bytes required by svp_apply_dft for this source limb count
 /// test       test_svp_apply_dft
 /// ```
 pub trait SvpApplyDftTmpBytes {
@@ -84,16 +84,16 @@ pub trait SvpApplyDftTmpBytes {
 /// op         svp_apply_dft(res, res_col, a, a_col, b, b_col, scratch)
 /// class      derived
 /// mutation   out-of-place
-/// definition idft(res[res_col])[j] = a[a_col] * b[b_col][j]
-/// domain     res: a VecZnxDft; a: an SvpPPol; b: a dense VecZnx of the module degree
+/// definition idft(res)[res_col,j] = a[a_col] * b[b_col,j] in R_N; other columns of res are unchanged
+/// domain     res: a VecZnxDft; a: an SvpPPol; b: a dense VecZnx; all operands have the module degree
 /// requires   scratch >= svp_apply_dft_tmp_bytes(b.size())
-/// ensures    idft(res[res_col]) = a[a_col] * b[b_col] in the ring, over min(res.size(), b.size()) limbs; the limbs of res past that are zero
-/// fallback   OEP default body: transform b into a carved VecZnxDft, then apply in the DFT domain
+/// ensures    the selected source limbs are multiplied by the prepared scalar polynomial; result limbs from b.size() onward are zero
+/// fallback   transform b[b_col] into a one-column VecZnxDft with b.size() limbs, then multiply it by a[a_col]
 /// override   allowed, with svp_apply_dft_tmp_bytes
 /// test       test_svp_apply_dft, test_svp_apply_dft_derived
 /// ```
 pub trait SvpApplyDft<B: Backend> {
-    /// `res[res_col] = a[a_col] * dft(b[b_col])`. Limbs of `res` beyond
+    /// `idft(res)[res_col,j] = a[a_col] * b[b_col,j]`. Limbs of `res` beyond
     /// `min(res.size(), b.size())` are zeroed.
     ///
     /// `scratch` must hold at least
@@ -119,9 +119,9 @@ pub trait SvpApplyDft<B: Backend> {
 /// op         svp_apply_dft_to_dft(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition idft(res[res_col])[j] = a[a_col] * idft(b[b_col])[j]
-/// domain     res, b: VecZnxDft of the module degree; a: an SvpPPol
-/// ensures    idft(res[res_col]) = a[a_col] * idft(b[b_col]) in the ring, limb by limb; limbs of res past b.size() are zero
+/// definition idft(res)[res_col,j] = a[a_col] * idft(b)[b_col,j] in R_N; other columns of res are unchanged
+/// domain     res, b: VecZnxDft; a: an SvpPPol; all operands have the module degree
+/// ensures    the selected source limbs are multiplied by the prepared scalar polynomial; result limbs from b.size() onward are zero
 /// test       test_svp_apply_dft_to_dft
 /// ```
 pub trait SvpApplyDftToDft<B: Backend> {
@@ -142,9 +142,9 @@ pub trait SvpApplyDftToDft<B: Backend> {
 /// op         svp_apply_dft_to_dft_assign(res, res_col, a, a_col)
 /// class      variant
 /// mutation   in-place
-/// definition svp_apply_dft_to_dft(res, res_col, a, a_col, res, res_col)
-/// domain     res: a VecZnxDft of the module degree; a: an SvpPPol
-/// ensures    idft(res[res_col]) is multiplied by a[a_col] in the ring, limb by limb
+/// definition idft(res)[res_col,j] = a[a_col] * idft(old(res))[res_col,j] in R_N; other columns of res are unchanged
+/// domain     res: a VecZnxDft; a: an SvpPPol; both operands have the module degree
+/// ensures    every limb of the selected result column is multiplied by the prepared scalar polynomial
 /// test       test_svp_apply_dft_to_dft_assign
 /// ```
 pub trait SvpApplyDftToDftAssign<B: Backend> {

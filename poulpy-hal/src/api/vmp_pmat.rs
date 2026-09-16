@@ -24,7 +24,7 @@ pub trait VmpPMatAlloc<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     every dimension >= 1
-/// ensures    returns the byte size of such a VmpPMat, the amount take_vmp_pmat_scratch carves. The hint changes neither the value a prepared matrix denotes nor the size
+/// ensures    returns the byte size required for the given prepared matrix dimensions and hint
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_vmp_prepare_bytes
 /// ```
 pub trait VmpPMatBytesOf {
@@ -52,10 +52,10 @@ pub trait VmpPrepareTmpBytes {
 /// op         vmp_prepare(pmat, mat, scratch)
 /// class      basis
 /// mutation   out-of-place
-/// definition pmat[i][ci][co][j] = mat[i][ci][co][j] for every index
+/// definition pmat[r,c,d,j] reads as mat[r,c,d,j] for every 0 <= r < pmat.rows(), 0 <= c < pmat.cols_in(), 0 <= d < pmat.cols_out() and 0 <= j < pmat.size()
 /// domain     pmat: a VmpPMat; mat: a MatZnx of the same degree and dimensions
-/// requires   scratch >= vmp_prepare_tmp_bytes(...)
-/// ensures    pmat holds prep(mat) in the representation pmat's PrepareHint names; vmp_apply_dft_to_dft with it is the vector-matrix product by mat
+/// requires   scratch >= vmp_prepare_tmp_bytes(pmat.rows(), pmat.cols_in(), pmat.cols_out(), pmat.size())
+/// ensures    every prepared matrix entry reads the corresponding source entry
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpPrepare<B: Backend> {
@@ -70,7 +70,7 @@ pub trait VmpPrepare<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     every dimension >= 1
-/// ensures    returns the scratch bytes vmp_apply_dft needs: a min(a_size, b_rows)-limb, b_cols_in-column VecZnxDft for the transformed input, plus whatever vmp_apply_dft_to_dft asks for on the same shapes
+/// ensures    returns the scratch bytes vmp_apply_dft needs on those shapes
 /// test       test_vmp_apply_dft
 /// ```
 pub trait VmpApplyDftTmpBytes {
@@ -91,11 +91,11 @@ pub trait VmpApplyDftTmpBytes {
 /// op         vmp_apply_dft(res, a, pmat, scratch)
 /// class      derived
 /// mutation   out-of-place
-/// definition vmp_apply_dft_to_dft(res, a', pmat, 0), a' the pmat.cols_in()-column, min(a.size(), pmat.rows())-limb operand with a'[c] = dft(a[c + a.cols() - pmat.cols_in()]) when that index lies in 0..a.cols() and 0 otherwise
-/// domain     res: a VecZnxDft of pmat.cols_out() columns; a: a dense VecZnx of the module degree; pmat: a VmpPMat
-/// requires   scratch >= vmp_apply_dft_tmp_bytes(...)
-/// ensures    idft(res) = a * M, the matrix pmat was prepared from; the min(a.size(), pmat.rows()) leading limbs of a are consumed and a's trailing columns are aligned with pmat.cols_in(), the leading ones zeroed
-/// fallback   OEP default body: zero the unaligned leading columns, transform the consumed limbs into a carved VecZnxDft, then apply in the DFT domain
+/// definition idft(res)[d,j] = sum_{0 <= i < min(a.size(), pmat.rows()), max(pmat.cols_in() - a.cols(), 0) <= c < pmat.cols_in()} a[c + a.cols() - pmat.cols_in(),i] * pmat[i,c,d,j] for every 0 <= d < res.cols()
+/// domain     res: a VecZnxDft of pmat.cols_out() columns; a: a dense VecZnx; pmat: a VmpPMat; all operands have the module degree
+/// requires   scratch >= vmp_apply_dft_tmp_bytes(res.size(), a.size(), pmat.rows(), pmat.cols_in(), pmat.cols_out(), pmat.size())
+/// ensures    leading input limbs pair with matrix rows, trailing input columns align with the highest matrix input columns, and output limbs past pmat.size() are zero
+/// fallback   zero unaligned leading columns, transform the consumed limbs into a temporary VecZnxDft, then apply in the DFT domain
 /// override   allowed, with vmp_apply_dft_tmp_bytes
 /// test       test_vmp_apply_dft, test_vmp_apply_dft_derived
 /// ```
@@ -141,7 +141,7 @@ pub trait VmpApplyDftToDftTmpBytes {
 /// class      support
 /// mutation   none
 /// domain     every dimension >= 1
-/// ensures    returns the scratch bytes vmp_apply_dft_to_dft_add needs: a res_size-limb, b_cols_out-column staging accumulator plus the product's own scratch. A backend that overrides the operation with a fused kernel overrides this too, and may report less
+/// ensures    returns the scratch bytes required by vmp_apply_dft_to_dft_add for the given shapes
 /// test       test_vmp_apply_dft_to_dft_add
 /// ```
 pub trait VmpApplyDftToDftAddTmpBytes {
@@ -160,10 +160,10 @@ pub trait VmpApplyDftToDftAddTmpBytes {
 /// op         vmp_apply_dft_to_dft(res, a, pmat, limb_offset, scratch)
 /// class      basis
 /// mutation   out-of-place
-/// definition idft(res[co])[j] = sum_{i < min(a.size(), pmat.rows())} sum_{ci < pmat.cols_in()} idft(a[ci])[i] * pmat[i][ci][co][j + limb_offset] for every co < pmat.cols_out()
-/// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat with pmat.cols_out() == res.cols() and pmat.cols_in() == a.cols(); min(a.size(), pmat.rows()) limbs of a are consumed and the matrix limbs from limb_offset to min(pmat.size(), res.size() + limb_offset) are read
-/// requires   scratch >= vmp_apply_dft_to_dft_tmp_bytes(...)
-/// ensures    idft(res) = idft(a) * M, the matrix pmat was prepared from, reading pmat's limbs from limb_offset on; row i of the product weighs limb i of a; the limbs of res from max(pmat.size() - limb_offset, 0) on are zero
+/// definition idft(res)[d,j] = sum_{0 <= i < min(a.size(), pmat.rows()), 0 <= c < pmat.cols_in()} idft(a)[c,i] * pmat[i,c,d,j + limb_offset] for every 0 <= d < res.cols()
+/// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat of the same degree; a.cols() == pmat.cols_in(), res.cols() == pmat.cols_out()
+/// requires   scratch >= vmp_apply_dft_to_dft_tmp_bytes(res.size(), a.size(), pmat.rows(), pmat.cols_in(), pmat.cols_out(), pmat.size())
+/// ensures    limb i of a pairs with matrix row i; result limb j reads matrix limb j + limb_offset; limbs j >= max(pmat.size() - limb_offset, 0) are zero
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpApplyDftToDft<B: Backend> {
@@ -176,7 +176,9 @@ pub trait VmpApplyDftToDft<B: Backend> {
     /// As such, given an input [crate::layouts::VecZnx] of `i` size and a [crate::layouts::VmpPMat] of `i` rows and
     /// `j` size, the output is a [crate::layouts::VecZnx] of `j` size.
     ///
-    /// If there is a mismatch between the dimensions the largest valid ones are used.
+    /// Input and output column counts must match the matrix. Input limbs
+    /// beyond its row count are ignored, and output limbs beyond the selected
+    /// matrix window are zero.
     ///
     /// ```text
     /// |a b c d| x |e f g| = (a * |e f g| + b * |h i j| + c * |k l m|) = |n o p|
@@ -205,11 +207,11 @@ pub trait VmpApplyDftToDft<B: Backend> {
 /// op         vmp_apply_dft_to_dft_add(res, a, pmat, limb_offset, scratch)
 /// class      derived
 /// mutation   accumulate
-/// definition vec_znx_dft_add_assign(res, c, vmp_apply_dft_to_dft(tmp, a, pmat, limb_offset), c) for every c < res.cols(), tmp of res.size() limbs
-/// domain     as for vmp_apply_dft_to_dft
-/// requires   scratch >= vmp_apply_dft_to_dft_add_tmp_bytes(...)
-/// ensures    res gains idft(a) * M over the same limb window vmp_apply_dft_to_dft writes; limbs the product does not reach gain zero and so keep their value
-/// fallback   OEP default body: a zeroed res.size()-limb staging accumulator, the product into it, then a column-wise dft_add_assign
+/// definition idft(res)[d,j] = idft(old(res))[d,j] + sum_{0 <= i < min(a.size(), pmat.rows()), 0 <= c < pmat.cols_in()} idft(a)[c,i] * pmat[i,c,d,j + limb_offset] for every 0 <= d < res.cols(); limbs j >= max(pmat.size() - limb_offset, 0) are unchanged, and all of res is unchanged when the sum index set is empty
+/// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat of the same degree; a.cols() == pmat.cols_in(), res.cols() == pmat.cols_out()
+/// requires   scratch >= vmp_apply_dft_to_dft_add_tmp_bytes(res.size(), a.size(), pmat.rows(), pmat.cols_in(), pmat.cols_out(), pmat.size())
+/// ensures    every output column gains the matrix product; limbs j >= max(pmat.size() - limb_offset, 0) retain their old value
+/// fallback   zero a res.cols()-column res.size()-limb temporary, apply the product into it, then add each temporary column to its corresponding destination column
 /// override   allowed, with vmp_apply_dft_to_dft_add_tmp_bytes
 /// test       test_vmp_apply_dft_to_dft_add, test_vmp_apply_dft_to_dft_add_derived
 /// ```
@@ -233,19 +235,17 @@ pub trait VmpApplyDftToDftAdd<B: Backend> {
 /// is a dense prepared matrix over exactly the material a coarsened gadget
 /// decomposition uses.
 ///
-/// Every kernel validates the selection first via `assert_extractable`:
-/// matching [`PrepareHint`](crate::layouts::PrepareHint) (the copy moves
-/// representation bytes), matching `n` and both column counts, `res.size() <= a.size()`,
-/// `row_step > 0`, and a last row that is inside `a` without overflowing. Past
-/// that check the kernel may index on those facts without bounds checks.
+/// The degree, column counts and [`PrepareHint`](crate::layouts::PrepareHint)
+/// must match, and `res.size() <= a.size()`. The row step is positive and
+/// the final selected row must lie inside `a` without index overflow.
 ///
 /// ```text
 /// op         vmp_extract_selected_rows(res, a, first_row, row_step)
 /// class      basis
 /// mutation   out-of-place
-/// definition res[i][ci][co][j] = a[first_row + i * row_step][ci][co][j] for every i < res.rows(), ci, co and j < res.size()
-/// domain     res, a: VmpPMat of the same degree, the same column counts and the same PrepareHint, with res.size() <= a.size(), row_step > 0 and a last selected row inside a; assert_extractable checks all of it before the kernel indexes on those facts
-/// ensures    row i of res is row first_row + i * row_step of a, truncated to res.size() limbs, so res is a dense prepared matrix over exactly the material a coarsened gadget decomposition uses. It moves representation bytes
+/// definition res[r,c,d,j] reads as a[first_row + r * row_step,c,d,j] for every 0 <= r < res.rows(), 0 <= c < res.cols_in() and 0 <= d < res.cols_out()
+/// domain     res, a: VmpPMat of the same degree, column counts and PrepareHint; res.size() <= a.size(), row_step > 0; res.rows() == 0 or first_row + (res.rows() - 1) * row_step < a.rows() without index overflow
+/// ensures    the selected rows and leading res.size() limbs retain their source values
 /// test       test_vmp_extract_selected_rows
 /// ```
 pub trait VmpExtractSelectedRows<B: Backend> {
@@ -264,9 +264,9 @@ pub trait VmpExtractSelectedRows<B: Backend> {
 /// op         vmp_zero(res)
 /// class      basis
 /// mutation   out-of-place
-/// definition res[i][ci][co][j] = 0 for every index
+/// definition res[r,c,d,j] reads as 0 for every 0 <= r < res.rows(), 0 <= c < res.cols_in() and 0 <= d < res.cols_out()
 /// domain     res: a VmpPMat
-/// ensures    every entry of res is the representation of zero, so a vector-matrix product through it yields zero
+/// ensures    every prepared matrix entry reads as zero
 /// test       test_vmp_zero
 /// ```
 pub trait VmpZero<B: Backend> {

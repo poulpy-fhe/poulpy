@@ -7,8 +7,9 @@
 //! op         vec_znx_add(res, res_col, a, a_col, b, b_col)
 //! class      basis
 //! mutation   out-of-place
+//! definition res[res_col,j] = a[a_col,j] + b[b_col,j]; other columns of res are unchanged
 //! domain     res, a, b: VecZnx read at one shared base2k
-//! ensures    [[res]] = [[a]] + [[b]]
+//! ensures    the selected output column is the limbwise sum
 //! test       test_vec_znx_add_matches_reference
 //! ```
 //!
@@ -232,7 +233,10 @@ fn every_api_trait_carries_a_contract() {
 fn check(owner: &str, contract: &Contract, suite: &BTreeSet<String>, errors: &mut Vec<String>) {
     let at: String = contract.at();
     let mut seen: BTreeSet<&str> = BTreeSet::new();
-    for (key, _) in &contract.fields {
+    for (key, value) in &contract.fields {
+        if value.trim().is_empty() {
+            errors.push(format!("{at}: {owner}: empty contract line `{key}`"));
+        }
         if !REQUIRED.contains(&key.as_str()) && !OPTIONAL.contains(&key.as_str()) {
             errors.push(format!("{at}: {owner}: unknown contract line `{key}`"));
         }
@@ -258,17 +262,14 @@ fn check(owner: &str, contract: &Contract, suite: &BTreeSet<String>, errors: &mu
         ));
     }
 
-    // Every arithmetic operation states the mathematical definition of its
-    // result, a formula or the composition it stands for. A support trait
-    // computes nothing and carries none. Derived operations and scratch-taking variants also
-    // state the fallback body and whether a backend may override it.
+    // Every computing operation defines its result; support operations do not.
+    // Duplicate keys are rejected above, so presence also implies uniqueness.
     let takes_scratch: bool = contract.get("requires").is_some_and(|r| r.contains("_tmp_bytes"));
-    if class == "support" {
-        if seen.contains("definition") {
-            errors.push(format!("{at}: {owner}: a support trait carries no `definition` line"));
-        }
-    } else if !seen.contains("definition") {
+    if matches!(class, "basis" | "derived" | "variant") && !seen.contains("definition") {
         errors.push(format!("{at}: {owner}: class `{class}` needs a `definition` line"));
+    }
+    if class == "support" && seen.contains("definition") {
+        errors.push(format!("{at}: {owner}: support class must not have a `definition` line"));
     }
     if class == "derived" || (class == "variant" && takes_scratch) {
         for key in ["fallback", "override"] {
@@ -292,6 +293,50 @@ fn check(owner: &str, contract: &Contract, suite: &BTreeSet<String>, errors: &mu
         }
         if !suite.contains(name) {
             errors.push(format!("{at}: {owner}: `test {name}` is not a `pub fn` of src/test_suite"));
+        }
+    }
+}
+
+#[test]
+fn computing_and_support_definition_rules() {
+    let suite = BTreeSet::from(["test_operation".to_string()]);
+    for class in CLASSES {
+        for definitions in [vec![], vec!["res = 0"], vec!["res = 0", "res = 1"], vec![""]] {
+            let mut contract = Contract {
+                file: "example.rs".into(),
+                line: 1,
+                fields: vec![
+                    ("op".into(), "operation(res)".into()),
+                    ("class".into(), class.into()),
+                    (
+                        "mutation".into(),
+                        if class == "support" { "none" } else { "out-of-place" }.into(),
+                    ),
+                    ("domain".into(), "res: an integer".into()),
+                    ("ensures".into(), "res is zero".into()),
+                    ("test".into(), "test_operation".into()),
+                ],
+            };
+            if class == "derived" {
+                contract
+                    .fields
+                    .extend([("fallback".into(), "zero(res)".into()), ("override".into(), "allowed".into())]);
+            }
+            for definition in &definitions {
+                contract.fields.push(("definition".into(), (*definition).into()));
+            }
+            let mut errors = Vec::new();
+            check("Example", &contract, &suite, &mut errors);
+            let valid = if class == "support" {
+                definitions.is_empty()
+            } else {
+                definitions == ["res = 0"]
+            };
+            assert_eq!(
+                errors.is_empty(),
+                valid,
+                "class={class}, definitions={definitions:?}: {errors:?}"
+            );
         }
     }
 }

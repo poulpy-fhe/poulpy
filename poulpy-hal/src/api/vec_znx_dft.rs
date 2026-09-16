@@ -10,7 +10,7 @@ use crate::layouts::{
 /// class      support
 /// mutation   none
 /// domain     cols >= 1, size >= 1
-/// ensures    returns an owned degree-N VecZnxDft of those dimensions in the backend's representation, which is opaque; its contents are unspecified
+/// ensures    returns an owned degree-N VecZnxDft with cols columns and size limbs; its contents are unspecified
 /// test       none
 /// ```
 pub trait VecZnxDftAlloc<B: Backend> {
@@ -24,7 +24,7 @@ pub trait VecZnxDftAlloc<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     cols >= 1, size >= 1
-/// ensures    returns the byte size of such a VecZnxDft in this backend's representation, the amount take_vec_znx_dft_scratch carves
+/// ensures    returns the bytes required for a degree-N VecZnxDft with cols columns and size limbs
 /// test       test_word_compat_dft_bytes
 /// ```
 pub trait VecZnxDftBytesOf {
@@ -41,9 +41,9 @@ pub trait VecZnxDftBytesOf {
 /// op         vec_znx_dft_apply(step, offset, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition idft(res[res_col])[j] = a[a_col][offset + j * step]
-/// domain     res: a VecZnxDft; a: a dense VecZnx of the module degree; step >= 1
-/// ensures    limb j of res[res_col] is the forward transform of limb offset + j * step of a[a_col], for as many limbs as res holds; limbs whose source is past a.size() are zero
+/// definition idft(res)[res_col,j] = a[a_col,offset + j * step]; other columns of res are unchanged
+/// domain     res: a VecZnxDft; a: a dense VecZnx of the module degree; step >= 1; offset + j * step fits usize for every 0 <= j < min(res.size(), ceil(a.size() / step))
+/// ensures    the selected source limbs are transformed; result limbs whose source index is at least a.size() are zero
 /// test       test_vec_znx_dft_apply, test_vec_znx_idft_apply, test_vec_znx_dft_step_zero_rejected
 /// ```
 pub trait VecZnxDftApply<B: Backend> {
@@ -65,7 +65,7 @@ pub trait VecZnxDftApply<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     -
-/// ensures    returns the scratch bytes vec_znx_idft_apply needs, independent of the limb count
+/// ensures    returns the scratch bytes required by vec_znx_idft_apply, independent of the limb count
 /// test       test_vec_znx_idft_apply
 /// ```
 pub trait VecZnxIdftApplyTmpBytes {
@@ -79,10 +79,10 @@ pub trait VecZnxIdftApplyTmpBytes {
 /// op         vec_znx_idft_apply(res, res_col, a, a_col, scratch)
 /// class      basis
 /// mutation   out-of-place
-/// definition res[res_col][j] = idft(a[a_col])[j]
-/// domain     res: a VecZnxBig; a: a VecZnxDft of the same degree; a is read, not clobbered
+/// definition res[res_col,j] = idft(a)[a_col,j]; other columns of res are unchanged
+/// domain     res: a dense VecZnxBig; a: a VecZnxDft of the same degree; a is read, not clobbered
 /// requires   scratch >= vec_znx_idft_apply_tmp_bytes()
-/// ensures    res[res_col] is the inverse transform of a[a_col], limb by limb, in big words; limbs of res past a.size() are zero
+/// ensures    the selected column is inverse-transformed into big words; result limbs from a.size() onward are zero and a is unchanged
 /// test       test_vec_znx_idft_apply, test_vec_znx_idft_apply_alloc
 /// ```
 pub trait VecZnxIdftApply<B: Backend> {
@@ -102,9 +102,9 @@ pub trait VecZnxIdftApply<B: Backend> {
 /// op         vec_znx_idft_apply_tmpa(res, res_col, a, a_col)
 /// class      variant
 /// mutation   out-of-place
-/// definition vec_znx_idft_apply(res, res_col, a, a_col)
-/// domain     res: a VecZnxBig; a: a VecZnxDft of the same degree, taken mutably
-/// ensures    res[res_col] holds idft(a[a_col]) as for vec_znx_idft_apply, and a[a_col] is left unspecified
+/// definition res[res_col,j] = idft(old(a))[a_col,j]; a[a_col] is unspecified afterwards; columns of res other than res_col and columns of a other than a_col are unchanged
+/// domain     res: a dense VecZnxBig; a: a VecZnxDft of the same degree, taken mutably
+/// ensures    the pre-call selected source column is inverse-transformed into big words; result limbs from a.size() onward are zero
 /// test       test_vec_znx_idft_apply_tmpa
 /// ```
 pub trait VecZnxIdftApplyTmpA<B: Backend> {
@@ -124,25 +124,25 @@ pub trait VecZnxIdftApplyTmpA<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     res_size, a_size: the destination's and the source's limb counts
-/// ensures    returns the scratch bytes vec_znx_idft_normalize_consume needs; the fallback body carves the a_size-limb VecZnxBig the inverse transform lands in plus the big normalization's own carry, and a backend that overrides the operation overrides this too, and may report less
+/// ensures    returns the scratch bytes required by vec_znx_idft_normalize_consume for these limb counts
 /// test       test_vec_znx_idft_normalize_consume
 /// ```
 pub trait VecZnxIdftNormalizeConsumeTmpBytes {
     fn vec_znx_idft_normalize_consume_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
 }
 
-/// Inverse DFT fused with normalization: `res[res_col] = normalize(idft(a[a_col]) + addend)`,
-/// clobbering `a[a_col]`, at precision `res_k`.
+/// Inverse DFT fused with normalization at precision `res_k`, consuming `a[a_col]`.
+/// The optional addend contributes only its first `a.size()` limbs.
 ///
 /// ```text
-/// op         vec_znx_idft_normalize_consume(res, res_base2k, res_k, res_col, a, a_col, a_base2k, (addend, addend_col), scratch)
+/// op         vec_znx_idft_normalize_consume(res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch)
 /// class      derived
 /// mutation   out-of-place
-/// definition [[res]]_res_base2k = rnd([[idft(a[a_col])]]_a_base2k + sum_{j < a.size()} addend[addend_col][j] * 2^(-a_base2k * (j + 1)), res_k) (mod 1), canonical at res_base2k and res_k; the sum is 0 when no addend is given
-/// domain     res: a VecZnx; a: a VecZnxDft taken mutably; addend: an optional VecZnx column read at a_base2k
+/// definition res[res_col] = canon(sum_{0 <= t < a.size()} (idft(old(a))[a_col,t] + addend_limb(addend,t)) * 2^(-a_base2k * (t + 1)), res_base2k, res_k, res.size()); a[a_col] is unspecified afterwards; columns of res other than res_col and columns of a other than a_col are unchanged
+/// domain     res: a VecZnx; a: a VecZnxDft taken mutably; addend: an optional VecZnx column read at a_base2k; all operands have the module degree; res_k <= res.size() * res_base2k; normalization input and radix bounds apply
 /// requires   scratch >= vec_znx_idft_normalize_consume_tmp_bytes(res.size(), a.size())
-/// ensures    [[res]] = [[idft(a)]] + [[addend]] (mod 1) at radix res_base2k, rounded once at precision res_k and canonical there, the addend read over its first a.size() limbs; a[a_col] is left unspecified
-/// fallback   OEP default body: idft_apply_tmpa into a carved VecZnxBig, the optional add_small_assign, then big_normalize
+/// ensures    the inverse-transformed source and the first a.size() limbs of the optional addend are read at a_base2k, rounded once at precision res_k, and represented canonically at res_base2k modulo 1
+/// fallback   inverse-transform into an a.size()-limb VecZnxBig, add the optional selected column, then normalize
 /// override   allowed, with vec_znx_idft_normalize_consume_tmp_bytes
 /// test       test_vec_znx_idft_normalize_consume, test_vec_znx_idft_normalize_consume_derived
 /// ```
@@ -168,9 +168,9 @@ pub trait VecZnxIdftNormalizeConsume<B: Backend> {
 /// op         vec_znx_dft_add(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition idft(res[res_col])[j] = idft(a[a_col])[j] + idft(b[b_col])[j]
+/// definition idft(res)[res_col,j] = idft(a)[a_col,j] + idft(b)[b_col,j]; other columns of res are unchanged
 /// domain     res, a, b: VecZnxDft of the same degree
-/// ensures    idft(res[res_col]) = idft(a[a_col]) + idft(b[b_col]) limb by limb, the image of the ring addition; operands shorter than res are zero-extended and every limb of res is written
+/// ensures    the selected columns are added limb by limb with zero extension and destination truncation
 /// test       test_vec_znx_dft_add
 /// ```
 pub trait VecZnxDftAdd<B: Backend> {
@@ -191,9 +191,9 @@ pub trait VecZnxDftAdd<B: Backend> {
 /// op         vec_znx_dft_add_assign(res, res_col, a, a_col)
 /// class      variant
 /// mutation   in-place
-/// definition vec_znx_dft_add(res, res_col, res, res_col, a, a_col)
+/// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] + idft(a)[a_col,j]; result limbs from a.size() onward and other columns of res are unchanged
 /// domain     res, a: VecZnxDft of the same degree
-/// ensures    idft(res[res_col]) gains idft(a[a_col]) limb by limb; limbs of res past a.size() keep their value
+/// ensures    the selected result column gains the selected source column limb by limb
 /// test       test_vec_znx_dft_add_assign
 /// ```
 pub trait VecZnxDftAddAssign<B: Backend> {
@@ -212,9 +212,9 @@ pub trait VecZnxDftAddAssign<B: Backend> {
 /// op         vec_znx_dft_sub(res, res_col, a, a_col, b, b_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition idft(res[res_col])[j] = idft(a[a_col])[j] - idft(b[b_col])[j]
+/// definition idft(res)[res_col,j] = idft(a)[a_col,j] - idft(b)[b_col,j]; other columns of res are unchanged
 /// domain     res, a, b: VecZnxDft of the same degree
-/// ensures    idft(res[res_col]) = idft(a[a_col]) - idft(b[b_col]) limb by limb; operands shorter than res are zero-extended and every limb of res is written
+/// ensures    the selected columns are subtracted limb by limb with zero extension and destination truncation
 /// test       test_vec_znx_dft_sub
 /// ```
 pub trait VecZnxDftSub<B: Backend> {
@@ -235,9 +235,9 @@ pub trait VecZnxDftSub<B: Backend> {
 /// op         vec_znx_dft_sub_assign(res, res_col, a, a_col)
 /// class      variant
 /// mutation   in-place
-/// definition vec_znx_dft_sub(res, res_col, res, res_col, a, a_col)
+/// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] - idft(a)[a_col,j]; result limbs from a.size() onward and other columns of res are unchanged
 /// domain     res, a: VecZnxDft of the same degree
-/// ensures    idft(res[res_col]) loses idft(a[a_col]) limb by limb; limbs of res past a.size() keep their value
+/// ensures    the selected result column loses the selected source column limb by limb
 /// test       test_vec_znx_dft_sub_assign
 /// ```
 pub trait VecZnxDftSubAssign<B: Backend> {
@@ -256,9 +256,9 @@ pub trait VecZnxDftSubAssign<B: Backend> {
 /// op         vec_znx_dft_sub_negate_assign(res, res_col, a, a_col)
 /// class      variant
 /// mutation   in-place
-/// definition vec_znx_dft_sub(res, res_col, a, a_col, res, res_col)
+/// definition idft(res)[res_col,j] = idft(a)[a_col,j] - idft(old(res))[res_col,j]; other columns of res are unchanged
 /// domain     res, a: VecZnxDft of the same degree
-/// ensures    idft(res[res_col]) = idft(a[a_col]) - idft(res[res_col]) limb by limb; limbs of res past a.size() are negated in place
+/// ensures    the pre-call selected result column is subtracted from the selected source column; result limbs from a.size() onward are negated
 /// test       test_vec_znx_dft_sub_negate_assign
 /// ```
 pub trait VecZnxDftSubNegateAssign<B: Backend> {
@@ -279,9 +279,9 @@ pub trait VecZnxDftSubNegateAssign<B: Backend> {
 /// op         vec_znx_dft_copy(step, offset, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition idft(res[res_col])[j] = idft(a[a_col])[offset + j * step]
-/// domain     res, a: VecZnxDft of the same degree; step >= 1
-/// ensures    limb j of res[res_col] holds limb offset + j * step of a[a_col], for as many limbs as res holds; limbs whose source is past a.size() are zero
+/// definition idft(res)[res_col,j] = idft(a)[a_col,offset + j * step]; other columns of res are unchanged
+/// domain     res, a: VecZnxDft of the same degree; step >= 1; offset + j * step fits usize for every 0 <= j < min(res.size(), ceil(a.size() / step))
+/// ensures    the selected source limbs are copied; result limbs whose source index is at least a.size() are zero
 /// test       test_vec_znx_dft_copy, test_vec_znx_dft_step_zero_rejected
 /// ```
 pub trait VecZnxDftCopy<B: Backend> {
@@ -302,9 +302,9 @@ pub trait VecZnxDftCopy<B: Backend> {
 /// op         vec_znx_dft_zero(res, res_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition idft(res[res_col])[j] = 0
+/// definition idft(res)[res_col,j] = 0; other columns of res are unchanged
 /// domain     res: a VecZnxDft
-/// ensures    every limb of res[res_col] is the representation of zero, so idft(res) = 0; the other columns are untouched
+/// ensures    every limb of the selected result column reads as zero
 /// test       test_vec_znx_dft_zero
 /// ```
 pub trait VecZnxDftZero<B: Backend> {
@@ -313,8 +313,8 @@ pub trait VecZnxDftZero<B: Backend> {
 
 /// Builds a backend-specific permutation plan that implements the DFT-domain
 /// automorphism `tau_p: X -> X^p` for odd `p`. The plan captures the
-/// slot↔slot permutation (plus any backend-specific bookkeeping such as a
-/// half-spectrum conjugate flag) and is reusable across columns and limbs.
+/// slot permutation, plus any implementation bookkeeping, and is reusable
+/// across columns and limbs.
 ///
 /// The associated `Plan` type is the only point in the public API where
 /// the backend leaks its automorphism representation. Callers that want to
@@ -326,7 +326,7 @@ pub trait VecZnxDftZero<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     p odd
-/// ensures    returns the backend's plan for tau_p in the DFT domain, reusable across columns and limbs
+/// ensures    returns a reusable plan for the substitution X -> X^p in R_N
 /// test       test_vec_znx_dft_automorphism
 /// ```
 pub trait VecZnxDftAutomorphismPlan<B: Backend> {
@@ -343,7 +343,7 @@ pub trait VecZnxDftAutomorphismPlan<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     res_size, a_size: the destination's and the source's limb counts
-/// ensures    returns the scratch bytes vec_znx_dft_automorphism_add_with_plan needs; the fallback body carves one min(res_size, a_size)-limb, one-column VecZnxDft for the rotated operand, and a backend that overrides the operation overrides this too, and may report less
+/// ensures    returns the scratch bytes required by vec_znx_dft_automorphism_add_with_plan for these limb counts
 /// test       test_vec_znx_dft_automorphism_add
 /// ```
 pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
@@ -357,9 +357,9 @@ pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
 /// op         vec_znx_dft_automorphism_with_plan(plan, res, res_col, a, a_col)
 /// class      basis
 /// mutation   out-of-place
-/// definition idft(res[res_col])[j] = tau_p(idft(a[a_col])[j]), p the one the plan was built for
-/// domain     res, a: VecZnxDft of the module degree; plan: built by vec_znx_dft_automorphism_plan for an odd p
-/// ensures    idft(res[res_col]) = tau_p(idft(a[a_col])) limb by limb; limbs of res past a.size() are zero
+/// definition idft(res)[res_col,j] = sum_{0 <= i < N} idft(a)[a_col,j,i] * X^(i * plan.p) in R_N; other columns of res are unchanged
+/// domain     res, a: VecZnxDft of the module degree; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
+/// ensures    the planned substitution is applied to the selected source column limb by limb; result limbs from a.size() onward are zero
 /// test       test_vec_znx_dft_automorphism
 /// ```
 pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
@@ -380,19 +380,19 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     /// on the same sizes: the derived body carves one
     /// `min(res.size(), a.size())`-limb, one-column `VecZnxDft` for the
     /// rotated operand.
-    #[allow(clippy::too_many_arguments)]
     /// ```text
     /// op         vec_znx_dft_automorphism_add_with_plan(plan, res, res_col, a, a_col, scratch)
     /// class      derived
     /// mutation   accumulate
-    /// definition idft(res[res_col])[j] = idft(res[res_col])[j] + tau_p(idft(a[a_col])[j]), p the one the plan was built for
-    /// domain     res, a: VecZnxDft of the module degree
+    /// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] + sum_{0 <= i < N} idft(a)[a_col,j,i] * X^(i * plan.p) in R_N; result limbs from a.size() onward and other columns of res are unchanged
+    /// domain     res, a: VecZnxDft of the module degree; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
     /// requires   scratch >= vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res.size(), a.size())
-    /// ensures    idft(res[res_col]) gains tau_p(idft(a[a_col])) over min(res.size(), a.size()) limbs; the limbs of res past that are untouched
-    /// fallback   OEP default body: the automorphism into a carved one-column VecZnxDft, then dft_add_assign
+    /// ensures    the selected result column gains the planned substitution of the selected source column limb by limb
+    /// fallback   apply the plan into a one-column VecZnxDft with min(res.size(), a.size()) limbs, then add its column 0 into res[res_col]
     /// override   allowed, with vec_znx_dft_automorphism_add_with_plan_tmp_bytes
     /// test       test_vec_znx_dft_automorphism_add, test_vec_znx_dft_automorphism_add_with_plan_derived
     /// ```
+    #[allow(clippy::too_many_arguments)]
     fn vec_znx_dft_automorphism_add_with_plan(
         &self,
         plan: &Self::Plan,
@@ -411,10 +411,10 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     /// op         vec_znx_dft_automorphism(p, res, res_col, a, a_col)
     /// class      derived
     /// mutation   out-of-place
-    /// definition vec_znx_dft_automorphism_with_plan(vec_znx_dft_automorphism_plan(p), res, res_col, a, a_col)
+    /// definition idft(res)[res_col,j] = sum_{0 <= i < N} idft(a)[a_col,j,i] * X^(i * p) in R_N; other columns of res are unchanged
     /// domain     res, a: VecZnxDft of the module degree; p odd
-    /// ensures    as for vec_znx_dft_automorphism_with_plan, with the plan built and dropped inside the call
-    /// fallback   OEP default body: build the plan, apply it, drop it
+    /// ensures    the substitution X -> X^p is applied to the selected source column limb by limb; result limbs from a.size() onward are zero
+    /// fallback   build the plan for p, apply it, then drop it
     /// override   allowed, scratch-free
     /// test       test_vec_znx_dft_automorphism, test_vec_znx_dft_automorphism_derived
     /// ```
