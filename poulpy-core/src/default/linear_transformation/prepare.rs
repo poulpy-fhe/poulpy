@@ -10,9 +10,9 @@
 //! Backends forward to them from their [`crate::oep::LinearTransformationDefault`]
 //! impl.
 
-use poulpy_hal::layouts::CnvPVecRToBackendMut;
+use poulpy_hal::layouts::{CnvPVecROwned, CnvPVecRToBackendMut};
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution},
+    api::{CnvPVecAlloc, Convolution, ModuleN, ModuleNew},
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
@@ -27,25 +27,24 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
     ///
     /// Convenience for the layout-driven flow: builds the BSGS index via
     /// `layout.index()` and forwards to [`Self::alloc_prepared_from_index`].
-    pub fn alloc_prepared<M, P>(module: &M, layout: &LinearTransformationLayout, pt_infos: &P) -> Self
+    pub fn alloc_prepared<P>(layout: &LinearTransformationLayout, pt_infos: &P) -> Self
     where
-        M: CnvPVecAlloc<BE>,
         P: LWEInfos,
     {
-        Self::alloc_prepared_from_index(module, &layout.index(), pt_infos)
+        Self::alloc_prepared_from_index(&layout.index(), pt_infos)
     }
 
     /// Pre-allocates a resident transform sized for an explicit BSGS `index`.
     ///
-    /// Each diagonal carries the plaintext's `base2k` / `k` so the evaluator
-    /// never needs the raw plaintext transform again; the convolution buffers are
+    /// Each slot takes the plaintext's degree, `base2k` and `k`, so a compact
+    /// (degree-`n`) diagonal gets a degree-`n` slot; the convolution buffers are
     /// zeroed and populated by `glwe_prepare_linear_transformation_rhs`. The
     /// per-diagonal `log_scale` is left at `0` for the scheme layer to set.
-    pub fn alloc_prepared_from_index<M, P>(module: &M, index: &LinearTransformationPlan, pt_infos: &P) -> Self
+    pub fn alloc_prepared_from_index<P>(index: &LinearTransformationPlan, pt_infos: &P) -> Self
     where
-        M: CnvPVecAlloc<BE>,
         P: LWEInfos,
     {
+        let pt_n = pt_infos.n().as_usize();
         let pt_size = pt_infos.size();
         let base2k = pt_infos.base2k();
         let k = pt_infos.k();
@@ -58,7 +57,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
                 diagonals.push(LinearTransformationDiagonal {
                     baby,
                     plaintext: PreparedDiagonal {
-                        cnv: module.cnv_pvec_right_alloc(1, pt_size, PrepareHint::Reuse),
+                        cnv: CnvPVecROwned::<BE>::alloc(pt_n, 1, pt_size, PrepareHint::Reuse),
                         base2k,
                         k,
                         log_scale: 0,
@@ -117,7 +116,7 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecAlloc<BE> + Convolution<BE>,
+    M: CnvPVecAlloc<BE> + Convolution<BE> + ModuleN + ModuleNew<BE>,
     P: GLWEToBackendRef<BE> + GLWEInfos,
 {
     if !lt.baby_steps.is_empty() {
@@ -138,6 +137,12 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
     // The diagonal is an integer poly encoded across its full physical width
     // (`max_k`), so it is consumed at `max_k`, not the (possibly smaller)
     // effective `k`, otherwise the low limb's data is truncated.
+    let pt_n = first.n().as_usize();
+    // A compact diagonal is prepared under a module of its own degree: the
+    // prepares are degree-blind, only the apply forms read a degree below the
+    // module's. Built once per call; every diagonal shares the degree.
+    let small: Option<M> = (pt_n < module.n()).then(|| M::new(pt_n as u64));
+    let prepare_module: &M = small.as_ref().unwrap_or(module);
 
     for gs in &lt.giant_steps {
         if gs.diagonals.is_empty() {
@@ -166,6 +171,11 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
                 plaintext.size(),
                 "linear transformation plaintext size does not match its effective precision"
             );
+            assert_eq!(
+                plaintext.n().as_usize(),
+                pt_n,
+                "linear transformation diagonal degree does not match prepared cache"
+            );
 
             let prepared_slot = prepared_gs
                 .diagonals
@@ -173,7 +183,7 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
                 .find(|p| p.baby == d.baby)
                 .unwrap_or_else(|| panic!("prepared cache has no diagonal slot for baby {} at giant {}", d.baby, gs.rot));
             let plaintext_backend = plaintext.to_backend_ref();
-            module.cnv_prepare_right(
+            prepare_module.cnv_prepare_right(
                 &mut prepared_slot.plaintext.cnv_mut().to_backend_mut(),
                 &plaintext_backend.data,
                 scratch,

@@ -23,7 +23,7 @@
 //!
 //! ```ignore
 //! // setup, once per transform / per input shape
-//! let mut prepared = LinearTransformation::alloc_prepared(module, &layout, &pt_proxy);
+//! let mut prepared = LinearTransformation::alloc_prepared(&layout, &pt_proxy);
 //! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch);
 //! let mut babies = LinearTransformationBabySteps::alloc(module, prepared.baby_steps(), &ct);
 //!

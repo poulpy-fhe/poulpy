@@ -43,6 +43,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - **Fix:** `glwe_shift_tmp_bytes` counts the one-column temporary and the normalization scratch the partial-width `glwe_rsh` and `glwe_lsh_assign` paths use, not only the HAL shift scratch, so a backend advertising exact shift sizes no longer runs out.
 - The GLWE layout documents its normalized form: a normalized GLWE is canonical at its `k`, which every operation returns and expects; `GLWEMulConst`, `GLWEMulPlain` and `GLWETensoring` say so, being where an unnormalized operand has changed the result since the `mask` removal.
 - **Breaking:** `poulpy_core::default::operations::msb_mask_bottom_limb` is removed with the HAL `mask` parameter it computed. The parity suite's reference operands are canonical at their `k`, which the operations now require.
+- **Breaking:** `LinearTransformation::alloc_prepared` and `alloc_prepared_from_index` no longer take a module: each prepared slot is a `CnvPVecR` at the plaintext proxy's own degree, so a compact diagonal (a plaintext stored at degree `n < N`) gets a degree-`n` slot, `N/n` times smaller. `glwe_prepare_linear_transformation_rhs` prepares such diagonals under a degree-`n` module it builds once per call, and asserts every diagonal has the slot's degree.
 
 ### `poulpy-ckks`
 

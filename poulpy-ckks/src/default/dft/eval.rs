@@ -143,7 +143,7 @@ where
     let mut factors = Vec::with_capacity(inner.factors.len());
     for lt in &inner.factors {
         let first_pt = lt.first_diagonal_plaintext().expect("dft factor has no diagonals");
-        let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first_pt);
+        let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(&lt.index(), first_pt);
         module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
         factors.push(prepared);
     }

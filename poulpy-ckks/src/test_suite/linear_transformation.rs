@@ -100,7 +100,7 @@ where
     Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
 {
     let first = lt.first_diagonal_plaintext().expect("linear transformation has no diagonals");
-    let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
+    let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(&lt.index(), first);
     module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
     prepared
 }

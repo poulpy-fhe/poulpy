@@ -583,6 +583,10 @@ macro_rules! ckks_backend_test_suite {
                 compact_plaintext_add_sub,
                 $crate::test_suite::compact::test_compact_plaintext_add_sub
             );
+            run_test!(
+                compact_linear_transformation,
+                $crate::test_suite::compact::test_compact_linear_transformation
+            );
             run_test!(paco_partial_c2s, $crate::test_suite::paco_lt::test_paco_partial_c2s);
             run_test!(paco_packing, $crate::test_suite::paco_lt::test_paco_packing);
             run_test!(
