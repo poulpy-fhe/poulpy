@@ -3,6 +3,8 @@ use crate::{
     source::Source,
 };
 
+/// Scratch requirement of the normalization operations.
+///
 /// ```text
 /// op         vec_znx_normalize_tmp_bytes()
 /// class      support
@@ -12,10 +14,12 @@ use crate::{
 /// test       test_vec_znx_normalize
 /// ```
 pub trait VecZnxNormalizeTmpBytes {
-    /// Returns the minimum number of bytes necessary for normalization.
+    /// Returns the scratch byte count the normalization operations require.
     fn vec_znx_normalize_tmp_bytes(&self) -> usize;
 }
 
+/// Zeroing of one column of a vector.
+///
 /// ```text
 /// op         vec_znx_zero(res, res_col)
 /// class      basis
@@ -26,15 +30,11 @@ pub trait VecZnxNormalizeTmpBytes {
 /// test       test_vec_znx_zero_matches_wrapper, test_vec_znx_window_ops
 /// ```
 pub trait VecZnxZero<B: Backend> {
+    /// Writes zero into every limb of `res[res_col]`.
     fn vec_znx_zero(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize);
 }
 
-/// Converts a column to centered digits, rounding once at the destination precision.
-///
-/// Each input limb coefficient must lie in `[-2^62, 2^62]`,
-/// and both radix widths must lie in `1..=62`. These bounds leave room for
-/// shifted digits and propagated carries. They are caller preconditions;
-/// normalization does not scan the input to validate them.
+/// Normalization of a column at a destination radix and precision, with a power-of-two offset.
 ///
 /// ```text
 /// op         vec_znx_normalize(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, scratch)
@@ -48,7 +48,7 @@ pub trait VecZnxZero<B: Backend> {
 /// ```
 pub trait VecZnxNormalize<B: Backend> {
     #[allow(clippy::too_many_arguments)]
-    /// Normalizes the selected column of `a` at `res_k` bits into `res`.
+    /// Writes `a[a_col]`, scaled by `2^res_offset` and normalized at `res_base2k` and `res_k`, into `res[res_col]`.
     fn vec_znx_normalize(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -63,7 +63,7 @@ pub trait VecZnxNormalize<B: Backend> {
     );
 }
 
-/// In-place normalization with the input and radix bounds of [`VecZnxNormalize`].
+/// In-place normalization of a column at a radix and precision, with a power-of-two offset.
 ///
 /// ```text
 /// op         vec_znx_normalize_assign(base2k, k, a_offset, a, a_col, scratch)
@@ -78,6 +78,7 @@ pub trait VecZnxNormalize<B: Backend> {
 /// test       test_vec_znx_normalize_assign, test_vec_znx_window_normalize_ops
 /// ```
 pub trait VecZnxNormalizeAssign<B: Backend> {
+    /// Replaces `a[a_col]` with its value scaled by `2^a_offset` and normalized at `base2k` and `k`.
     fn vec_znx_normalize_assign(
         &self,
         base2k: usize,
@@ -89,6 +90,8 @@ pub trait VecZnxNormalizeAssign<B: Backend> {
     );
 }
 
+/// Limbwise sum of two columns.
+///
 /// ```text
 /// op         vec_znx_add(res, res_col, a, a_col, b, b_col)
 /// class      basis
@@ -100,7 +103,7 @@ pub trait VecZnxNormalizeAssign<B: Backend> {
 /// test       test_vec_znx_add_matches_reference, test_vec_znx_window_ops, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxAdd<B: Backend> {
-    /// Writes the sum of the selected column of `a` and the selected column of `b` into the selected column of `res`.
+    /// Writes the sum of `a[a_col]` and `b[b_col]` into `res[res_col]`.
     fn vec_znx_add(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -112,6 +115,8 @@ pub trait VecZnxAdd<B: Backend> {
     );
 }
 
+/// In-place limbwise addition of a column.
+///
 /// ```text
 /// op         vec_znx_add_assign(res, res_col, a, a_col)
 /// class      variant
@@ -123,9 +128,12 @@ pub trait VecZnxAdd<B: Backend> {
 /// test       test_vec_znx_add_assign, test_vec_znx_add_assign_matches_wrapper, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxAddAssign<B: Backend> {
+    /// Adds `a[a_col]` into `res[res_col]`.
     fn vec_znx_add_assign(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
+/// Addition of a scalar polynomial into one limb of a column.
+///
 /// ```text
 /// op         vec_znx_add_scalar_assign(res, res_col, res_limb, a, a_col)
 /// class      derived
@@ -138,6 +146,7 @@ pub trait VecZnxAddAssign<B: Backend> {
 /// test       test_vec_znx_add_scalar_assign, test_vec_znx_add_scalar_assign_derived
 /// ```
 pub trait VecZnxAddScalarAssign<B: Backend> {
+    /// Adds `a[a_col]` into limb `res_limb` of `res[res_col]`.
     fn vec_znx_add_scalar_assign(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -148,6 +157,8 @@ pub trait VecZnxAddScalarAssign<B: Backend> {
     );
 }
 
+/// Limbwise difference of two columns.
+///
 /// ```text
 /// op         vec_znx_sub(res, res_col, a, a_col, b, b_col)
 /// class      basis
@@ -159,6 +170,7 @@ pub trait VecZnxAddScalarAssign<B: Backend> {
 /// test       test_vec_znx_sub, test_vec_znx_window_ops, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxSub<B: Backend> {
+    /// Writes the difference of `a[a_col]` and `b[b_col]` into `res[res_col]`.
     fn vec_znx_sub(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -170,6 +182,8 @@ pub trait VecZnxSub<B: Backend> {
     );
 }
 
+/// In-place limbwise subtraction of a column.
+///
 /// ```text
 /// op         vec_znx_sub_assign(res, res_col, a, a_col)
 /// class      variant
@@ -181,9 +195,12 @@ pub trait VecZnxSub<B: Backend> {
 /// test       test_vec_znx_sub_assign, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxSubAssign<B: Backend> {
+    /// Subtracts `a[a_col]` from `res[res_col]`.
     fn vec_znx_sub_assign(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
+/// In-place limbwise subtraction of the destination from a column.
+///
 /// ```text
 /// op         vec_znx_sub_negate_assign(res, res_col, a, a_col)
 /// class      variant
@@ -195,6 +212,7 @@ pub trait VecZnxSubAssign<B: Backend> {
 /// test       test_vec_znx_sub_negate_assign, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxSubNegateAssign<B: Backend> {
+    /// Replaces `res[res_col]` with `a[a_col]` minus its pre-call value.
     fn vec_znx_sub_negate_assign(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -204,6 +222,8 @@ pub trait VecZnxSubNegateAssign<B: Backend> {
     );
 }
 
+/// Limbwise negation of a column.
+///
 /// ```text
 /// op         vec_znx_negate(res, res_col, a, a_col)
 /// class      basis
@@ -214,9 +234,12 @@ pub trait VecZnxSubNegateAssign<B: Backend> {
 /// test       test_vec_znx_negate, test_vec_znx_negate_matches_wrapper
 /// ```
 pub trait VecZnxNegate<B: Backend> {
+    /// Writes the negation of `a[a_col]` into `res[res_col]`.
     fn vec_znx_negate(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
+/// In-place limbwise negation of a column.
+///
 /// ```text
 /// op         vec_znx_negate_assign(a, a_col)
 /// class      variant
@@ -227,14 +250,11 @@ pub trait VecZnxNegate<B: Backend> {
 /// test       test_vec_znx_negate_assign, test_vec_znx_negate_assign_matches_wrapper
 /// ```
 pub trait VecZnxNegateAssign<B: Backend> {
+    /// Negates every limb of `a[a_col]` in place.
     fn vec_znx_negate_assign(&self, a: &mut VecZnxBackendMut<'_, B>, a_col: usize);
 }
 
-/// Returns scratch bytes required for the left-shift family:
-/// [`VecZnxLsh::vec_znx_lsh`], [`VecZnxLshAdd::vec_znx_lsh_add`],
-/// [`VecZnxLshSub::vec_znx_lsh_sub`] and
-/// [`VecZnxLshAssign::vec_znx_lsh_assign`], on a destination of `res_size`
-/// limbs.
+/// Scratch requirement of the left-shift operations.
 ///
 /// ```text
 /// op         vec_znx_lsh_tmp_bytes(res_size)
@@ -245,9 +265,12 @@ pub trait VecZnxNegateAssign<B: Backend> {
 /// test       test_vec_znx_lsh
 /// ```
 pub trait VecZnxLshTmpBytes {
+    /// Returns the scratch byte count the left-shift operations require on a destination of `res_size` limbs.
     fn vec_znx_lsh_tmp_bytes(&self, res_size: usize) -> usize;
 }
 
+/// Left shift of a column by a power of two, normalized into the destination.
+///
 /// ```text
 /// op         vec_znx_lsh(base2k, k, res, res_col, a, a_col, scratch)
 /// class      derived
@@ -261,19 +284,7 @@ pub trait VecZnxLshTmpBytes {
 /// test       test_vec_znx_lsh, test_vec_znx_lsh_derived
 /// ```
 pub trait VecZnxLsh<B: Backend> {
-    /// Normalizes `a[a_col] * 2^k` modulo one into `res[res_col]`: the
-    /// operation is exactly `vec_znx_normalize` with `res_base2k = a_base2k =
-    /// base2k`, `res_k = res.size() * base2k` and `offset = +k`.
-    ///
-    /// A destination shorter than the source is not a truncation: the limbs of
-    /// the shifted value that `res` cannot hold are rounded into its last limb
-    /// jointly, as the normalization does.
-    /// A `k` beyond `a.size() * base2k` has shifted every bit of `a` past the
-    /// integer part, so `res` is zeroed whatever its own width.
-    ///
-    /// Scratch is the family's
-    /// [`vec_znx_lsh_tmp_bytes`](VecZnxLshTmpBytes::vec_znx_lsh_tmp_bytes) on
-    /// `res.size()`.
+    /// Writes `a[a_col]` shifted up by `k` bits and normalized at `base2k` into `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_lsh(
         &self,
@@ -287,6 +298,8 @@ pub trait VecZnxLsh<B: Backend> {
     );
 }
 
+/// Accumulation of a left-shifted column into a destination.
+///
 /// ```text
 /// op         vec_znx_lsh_add(base2k, k, res, res_col, a, a_col, scratch)
 /// class      derived
@@ -300,26 +313,7 @@ pub trait VecZnxLsh<B: Backend> {
 /// test       test_vec_znx_lsh_add_derived
 /// ```
 pub trait VecZnxLshAdd<B: Backend> {
-    /// Adds the canonical shift of `a[a_col]` by `k` bits to `res[res_col]`: the
-    /// addend is exactly [`vec_znx_lsh`](VecZnxLsh::vec_znx_lsh) on a
-    /// `res.size()`-limb destination, the shift followed by a normalize at
-    /// `base2k`.
-    ///
-    /// An addend shorter than the source is not a truncation: the limbs of the
-    /// shifted value that `res.size()` cannot hold are rounded into the last
-    /// one jointly, as the normalization does.
-    ///
-    /// Scratch is the family's
-    /// [`vec_znx_lsh_tmp_bytes`](VecZnxLshTmpBytes::vec_znx_lsh_tmp_bytes) on
-    /// `res.size()`.
-    ///
-    /// Normalization contract: the shifted operand `a` is normalized on the fly
-    /// (its own inter-limb carries are propagated), so the addend is in the
-    /// canonical `base2k` digit range. The addition into `res` is **not**
-    /// re-normalized: adding a normalized digit onto an already-normalized `res`
-    /// limb can leave that limb one bit beyond the `base2k` range. Callers that
-    /// require a normalized `res` afterwards must normalize it themselves; this
-    /// op alone does not restore the digit contract on `res`.
+    /// Adds `a[a_col]`, shifted up by `k` bits and normalized at `base2k`, into `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_lsh_add(
         &self,
@@ -333,11 +327,7 @@ pub trait VecZnxLshAdd<B: Backend> {
     );
 }
 
-/// Returns scratch bytes required for the right-shift family:
-/// [`VecZnxRsh::vec_znx_rsh`], [`VecZnxRshAdd::vec_znx_rsh_add`],
-/// [`VecZnxRshSub::vec_znx_rsh_sub`] and
-/// [`VecZnxRshAssign::vec_znx_rsh_assign`], on a destination of `res_size`
-/// limbs.
+/// Scratch requirement of the right-shift operations.
 ///
 /// ```text
 /// op         vec_znx_rsh_tmp_bytes(res_size)
@@ -348,9 +338,12 @@ pub trait VecZnxLshAdd<B: Backend> {
 /// test       test_vec_znx_rsh
 /// ```
 pub trait VecZnxRshTmpBytes {
+    /// Returns the scratch byte count the right-shift operations require on a destination of `res_size` limbs.
     fn vec_znx_rsh_tmp_bytes(&self, res_size: usize) -> usize;
 }
 
+/// Right shift of a column by a power of two, normalized into the destination.
+///
 /// ```text
 /// op         vec_znx_rsh(base2k, k, res, res_col, a, a_col, scratch)
 /// class      derived
@@ -364,18 +357,7 @@ pub trait VecZnxRshTmpBytes {
 /// test       test_vec_znx_rsh, test_vec_znx_rsh_derived
 /// ```
 pub trait VecZnxRsh<B: Backend> {
-    /// Rounds and normalizes `a[a_col] / 2^k` modulo one into `res[res_col]`: the
-    /// operation is exactly `vec_znx_normalize` with `res_base2k = a_base2k =
-    /// base2k`, `res_k = res.size() * base2k` and `offset = -k`.
-    ///
-    /// A destination shorter than the source is not a truncation: the limbs of
-    /// the shifted value that `res` cannot hold are rounded into its last limb
-    /// jointly, as the normalization does. Unnormalized input digits may
-    /// leave a nonzero result even when `k` exceeds the destination precision.
-    ///
-    /// Scratch is the family's
-    /// [`vec_znx_rsh_tmp_bytes`](VecZnxRshTmpBytes::vec_znx_rsh_tmp_bytes) on
-    /// `res.size()`.
+    /// Writes `a[a_col]` shifted down by `k` bits and normalized at `base2k` into `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_rsh(
         &self,
@@ -389,6 +371,8 @@ pub trait VecZnxRsh<B: Backend> {
     );
 }
 
+/// Accumulation of a right-shifted column into a destination.
+///
 /// ```text
 /// op         vec_znx_rsh_add(base2k, k, res, res_col, a, a_col, scratch)
 /// class      derived
@@ -402,27 +386,7 @@ pub trait VecZnxRsh<B: Backend> {
 /// test       test_vec_znx_rsh_add_derived
 /// ```
 pub trait VecZnxRshAdd<B: Backend> {
-    /// Adds the canonical right shift of `a[a_col]` to `res[res_col]`: the
-    /// addend is exactly [`vec_znx_rsh`](VecZnxRsh::vec_znx_rsh) on a
-    /// `res.size()`-limb destination, the shift followed by a normalize at
-    /// `base2k`.
-    ///
-    /// An addend shorter than the source is not a truncation: the limbs of the
-    /// shifted value that `res.size()` cannot hold are rounded into the last
-    /// one jointly, as the normalization does. Unnormalized input digits may
-    /// contribute even when `k` exceeds the destination precision.
-    ///
-    /// Scratch is the family's
-    /// [`vec_znx_rsh_tmp_bytes`](VecZnxRshTmpBytes::vec_znx_rsh_tmp_bytes) on
-    /// `res.size()`.
-    ///
-    /// Normalization contract: the shifted operand `a` is normalized on the fly
-    /// (its own inter-limb carries are propagated), so the addend is in the
-    /// canonical `base2k` digit range. The addition into `res` is **not**
-    /// re-normalized: adding a normalized digit onto an already-normalized `res`
-    /// limb can leave that limb one bit beyond the `base2k` range. Callers that
-    /// require a normalized `res` afterwards must normalize it themselves; this
-    /// op alone does not restore the digit contract on `res`.
+    /// Adds `a[a_col]`, shifted down by `k` bits and normalized at `base2k`, into `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_rsh_add(
         &self,
@@ -436,6 +400,8 @@ pub trait VecZnxRshAdd<B: Backend> {
     );
 }
 
+/// Subtraction of a left-shifted column from a destination.
+///
 /// ```text
 /// op         vec_znx_lsh_sub(base2k, k, res, res_col, a, a_col, scratch)
 /// class      derived
@@ -449,23 +415,7 @@ pub trait VecZnxRshAdd<B: Backend> {
 /// test       test_vec_znx_lsh_sub_derived
 /// ```
 pub trait VecZnxLshSub<B: Backend> {
-    /// Subtracts the canonical left shift of `a[a_col]` from `res[res_col]`: the
-    /// subtrahend is exactly [`vec_znx_lsh`](VecZnxLsh::vec_znx_lsh) on a
-    /// `res.size()`-limb destination, the shift followed by a normalize at
-    /// `base2k`.
-    ///
-    /// A subtrahend shorter than the source is not a truncation: the limbs of
-    /// the shifted value that `res.size()` cannot hold are rounded into the
-    /// last one jointly, as the normalization does.
-    ///
-    /// Scratch is the family's
-    /// [`vec_znx_lsh_tmp_bytes`](VecZnxLshTmpBytes::vec_znx_lsh_tmp_bytes) on
-    /// `res.size()`.
-    ///
-    /// Normalization contract: as for
-    /// [`vec_znx_lsh_add`](VecZnxLshAdd::vec_znx_lsh_add), the subtraction into
-    /// `res` is **not** re-normalized; callers that need a normalized `res`
-    /// afterwards must normalize it themselves.
+    /// Subtracts `a[a_col]`, shifted up by `k` bits and normalized at `base2k`, from `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_lsh_sub(
         &self,
@@ -479,6 +429,8 @@ pub trait VecZnxLshSub<B: Backend> {
     );
 }
 
+/// Subtraction of a right-shifted column from a destination.
+///
 /// ```text
 /// op         vec_znx_rsh_sub(base2k, k, res, res_col, a, a_col, scratch)
 /// class      derived
@@ -492,24 +444,7 @@ pub trait VecZnxLshSub<B: Backend> {
 /// test       test_vec_znx_rsh_sub_derived
 /// ```
 pub trait VecZnxRshSub<B: Backend> {
-    /// Subtracts the canonical right shift of `a[a_col]` from `res[res_col]`: the
-    /// subtrahend is exactly [`vec_znx_rsh`](VecZnxRsh::vec_znx_rsh) on a
-    /// `res.size()`-limb destination, the shift followed by a normalize at
-    /// `base2k`.
-    ///
-    /// A subtrahend shorter than the source is not a truncation: the limbs of
-    /// the shifted value that `res.size()` cannot hold are rounded into the
-    /// last one jointly, as the normalization does. Unnormalized input digits
-    /// may contribute even when `k` exceeds the destination precision.
-    ///
-    /// Scratch is the family's
-    /// [`vec_znx_rsh_tmp_bytes`](VecZnxRshTmpBytes::vec_znx_rsh_tmp_bytes) on
-    /// `res.size()`.
-    ///
-    /// Normalization contract: as for
-    /// [`vec_znx_rsh_add`](VecZnxRshAdd::vec_znx_rsh_add), the subtraction into
-    /// `res` is **not** re-normalized; callers that need a normalized `res`
-    /// afterwards must normalize it themselves.
+    /// Subtracts `a[a_col]`, shifted down by `k` bits and normalized at `base2k`, from `res[res_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_rsh_sub(
         &self,
@@ -523,6 +458,8 @@ pub trait VecZnxRshSub<B: Backend> {
     );
 }
 
+/// In-place left shift of a column by a power of two, normalized at its own width.
+///
 /// ```text
 /// op         vec_znx_lsh_assign(base2k, k, a, a_col, scratch)
 /// class      derived
@@ -536,14 +473,7 @@ pub trait VecZnxRshSub<B: Backend> {
 /// test       test_vec_znx_lsh_assign, test_vec_znx_lsh_assign_derived
 /// ```
 pub trait VecZnxLshAssign<B: Backend> {
-    /// Normalizes `a[a_col] * 2^k` modulo one in place: the operation
-    /// is exactly [`vec_znx_lsh`](VecZnxLsh::vec_znx_lsh) with `a` as both
-    /// source and destination, the shift followed by a normalize at `base2k`
-    /// over `a.size()` limbs. The other columns of `a` are untouched.
-    ///
-    /// Scratch is the family's
-    /// [`vec_znx_lsh_tmp_bytes`](VecZnxLshTmpBytes::vec_znx_lsh_tmp_bytes) on
-    /// `a.size()`.
+    /// Replaces `a[a_col]` with its value shifted up by `k` bits and normalized at `base2k`.
     fn vec_znx_lsh_assign(
         &self,
         base2k: usize,
@@ -554,6 +484,8 @@ pub trait VecZnxLshAssign<B: Backend> {
     );
 }
 
+/// In-place right shift of a column by a power of two, normalized at its own width.
+///
 /// ```text
 /// op         vec_znx_rsh_assign(base2k, k, a, a_col, scratch)
 /// class      derived
@@ -567,16 +499,7 @@ pub trait VecZnxLshAssign<B: Backend> {
 /// test       test_vec_znx_rsh_assign, test_vec_znx_rsh_assign_derived
 /// ```
 pub trait VecZnxRshAssign<B: Backend> {
-    /// Rounds and normalizes `a[a_col] / 2^k` modulo one in place: the operation
-    /// is exactly [`vec_znx_rsh`](VecZnxRsh::vec_znx_rsh) with `a` as both
-    /// source and destination, the shift followed by a normalize at `base2k`
-    /// over `a.size()` limbs. Unnormalized input digits may leave a nonzero
-    /// result even when `k` exceeds the destination precision. The other
-    /// columns of `a` are untouched.
-    ///
-    /// Scratch is the family's
-    /// [`vec_znx_rsh_tmp_bytes`](VecZnxRshTmpBytes::vec_znx_rsh_tmp_bytes) on
-    /// `a.size()`.
+    /// Replaces `a[a_col]` with its value shifted down by `k` bits and normalized at `base2k`.
     fn vec_znx_rsh_assign(
         &self,
         base2k: usize,
@@ -587,6 +510,8 @@ pub trait VecZnxRshAssign<B: Backend> {
     );
 }
 
+/// Multiplication of a column by a power of `X` in the ring.
+///
 /// ```text
 /// op         vec_znx_rotate(p, res, res_col, a, a_col)
 /// class      basis
@@ -597,7 +522,7 @@ pub trait VecZnxRshAssign<B: Backend> {
 /// test       test_vec_znx_rotate
 /// ```
 pub trait VecZnxRotate<B: Backend> {
-    /// Multiplies the selected column of `a` by X^p and stores the result in `res_col` of `res`.
+    /// Writes `X^p` times `a[a_col]` into `res[res_col]`.
     fn vec_znx_rotate(
         &self,
         p: i64,
@@ -608,6 +533,8 @@ pub trait VecZnxRotate<B: Backend> {
     );
 }
 
+/// Scratch requirement of the in-place rotation.
+///
 /// ```text
 /// op         vec_znx_rotate_assign_tmp_bytes()
 /// class      support
@@ -617,9 +544,12 @@ pub trait VecZnxRotate<B: Backend> {
 /// test       test_vec_znx_rotate_assign
 /// ```
 pub trait VecZnxRotateAssignTmpBytes {
+    /// Returns the scratch byte count the in-place rotation requires.
     fn vec_znx_rotate_assign_tmp_bytes(&self) -> usize;
 }
 
+/// In-place multiplication of a column by a power of `X` in the ring.
+///
 /// ```text
 /// op         vec_znx_rotate_assign(p, a, a_col, scratch)
 /// class      variant
@@ -633,10 +563,12 @@ pub trait VecZnxRotateAssignTmpBytes {
 /// test       test_vec_znx_rotate_assign
 /// ```
 pub trait VecZnxRotateAssign<B: Backend> {
-    /// Multiplies the selected column of `a` by X^p in place.
+    /// Multiplies every limb of `a[a_col]` by `X^p` in place.
     fn vec_znx_rotate_assign(&self, p: i64, a: &mut VecZnxBackendMut<'_, B>, a_col: usize, scratch: &mut ScratchArena<'_, B>);
 }
 
+/// Substitution `X -> X^k` on a column.
+///
 /// ```text
 /// op         vec_znx_automorphism(k, res, res_col, a, a_col)
 /// class      basis
@@ -647,7 +579,7 @@ pub trait VecZnxRotateAssign<B: Backend> {
 /// test       test_vec_znx_automorphism
 /// ```
 pub trait VecZnxAutomorphism<B: Backend> {
-    /// Applies the automorphism X -> X^k on the selected column of `a` and stores the result in `res_col` of `res`.
+    /// Writes the image of `a[a_col]` under `X -> X^k` into `res[res_col]`.
     fn vec_znx_automorphism(
         &self,
         k: i64,
@@ -658,6 +590,8 @@ pub trait VecZnxAutomorphism<B: Backend> {
     );
 }
 
+/// Scratch requirement of the in-place automorphism.
+///
 /// ```text
 /// op         vec_znx_automorphism_assign_tmp_bytes()
 /// class      support
@@ -667,9 +601,12 @@ pub trait VecZnxAutomorphism<B: Backend> {
 /// test       test_vec_znx_automorphism_assign
 /// ```
 pub trait VecZnxAutomorphismAssignTmpBytes {
+    /// Returns the scratch byte count the in-place automorphism requires.
     fn vec_znx_automorphism_assign_tmp_bytes(&self) -> usize;
 }
 
+/// In-place substitution `X -> X^k` on a column.
+///
 /// ```text
 /// op         vec_znx_automorphism_assign(k, res, res_col, scratch)
 /// class      variant
@@ -683,7 +620,7 @@ pub trait VecZnxAutomorphismAssignTmpBytes {
 /// test       test_vec_znx_automorphism_assign
 /// ```
 pub trait VecZnxAutomorphismAssign<B: Backend> {
-    /// Applies the automorphism X -> X^k on the selected column of `res` in place.
+    /// Replaces `res[res_col]` with its image under `X -> X^k`.
     fn vec_znx_automorphism_assign(
         &self,
         k: i64,
@@ -693,6 +630,8 @@ pub trait VecZnxAutomorphismAssign<B: Backend> {
     );
 }
 
+/// Substitution `X -> X^k` on a column of a scalar vector.
+///
 /// ```text
 /// op         scalar_znx_automorphism(k, res, res_col, a, a_col)
 /// class      variant
@@ -703,7 +642,7 @@ pub trait VecZnxAutomorphismAssign<B: Backend> {
 /// test       test_scalar_znx_automorphism
 /// ```
 pub trait ScalarZnxAutomorphism<B: Backend> {
-    /// Applies the automorphism X -> X^k on the selected column of `a` and stores the result in `res_col` of `res`.
+    /// Writes the image of `a[a_col]` under `X -> X^k` into `res[res_col]`.
     fn scalar_znx_automorphism(
         &self,
         k: i64,
@@ -714,7 +653,7 @@ pub trait ScalarZnxAutomorphism<B: Backend> {
     );
 }
 
-/// Multiplies the selected column by `(X^p - 1)` in `Z[X]/(X^N + 1)`.
+/// Multiplication of a column by `X^p - 1` in the ring.
 ///
 /// ```text
 /// op         vec_znx_mul_xp_minus_one(p, res, res_col, a, a_col)
@@ -728,6 +667,7 @@ pub trait ScalarZnxAutomorphism<B: Backend> {
 /// test       test_vec_znx_mul_xp_minus_one, test_vec_znx_mul_xp_minus_one_derived
 /// ```
 pub trait VecZnxMulXpMinusOne<B: Backend> {
+    /// Writes `X^p - 1` times `a[a_col]` into `res[res_col]`.
     fn vec_znx_mul_xp_minus_one(
         &self,
         p: i64,
@@ -738,9 +678,7 @@ pub trait VecZnxMulXpMinusOne<B: Backend> {
     );
 }
 
-/// Returns scratch bytes required for
-/// [`VecZnxMulXpMinusOneAssign::vec_znx_mul_xp_minus_one_assign`] on a
-/// destination of `size` limbs.
+/// Scratch requirement of the in-place multiplication by `X^p - 1`.
 ///
 /// ```text
 /// op         vec_znx_mul_xp_minus_one_assign_tmp_bytes(size)
@@ -751,9 +689,12 @@ pub trait VecZnxMulXpMinusOne<B: Backend> {
 /// test       test_vec_znx_mul_xp_minus_one_assign
 /// ```
 pub trait VecZnxMulXpMinusOneAssignTmpBytes {
+    /// Returns the scratch byte count the in-place multiplication by `X^p - 1` requires on a destination of `size` limbs.
     fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(&self, size: usize) -> usize;
 }
 
+/// In-place multiplication of a column by `X^p - 1` in the ring.
+///
 /// ```text
 /// op         vec_znx_mul_xp_minus_one_assign(p, res, res_col, scratch)
 /// class      derived
@@ -767,6 +708,7 @@ pub trait VecZnxMulXpMinusOneAssignTmpBytes {
 /// test       test_vec_znx_mul_xp_minus_one_assign, test_vec_znx_mul_xp_minus_one_assign_derived
 /// ```
 pub trait VecZnxMulXpMinusOneAssign<B: Backend> {
+    /// Multiplies every limb of `res[res_col]` by `X^p - 1` in place.
     fn vec_znx_mul_xp_minus_one_assign(
         &self,
         p: i64,
@@ -776,7 +718,7 @@ pub trait VecZnxMulXpMinusOneAssign<B: Backend> {
     );
 }
 
-/// Switches ring degree by inserting zero coefficients or selecting spaced coefficients.
+/// Ring degree switch of a column, by coefficient insertion or selection.
 ///
 /// ```text
 /// op         vec_znx_switch_ring(res, res_col, a, a_col)
@@ -788,9 +730,12 @@ pub trait VecZnxMulXpMinusOneAssign<B: Backend> {
 /// test       test_vec_znx_switch_ring, test_vec_znx_switch_ring_matches_wrapper
 /// ```
 pub trait VecZnxSwitchRing<B: Backend> {
+    /// Writes `a[a_col]` at the ring degree of `res` into `res[res_col]`.
     fn vec_znx_switch_ring(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
+/// Copy of one column into another.
+///
 /// ```text
 /// op         vec_znx_copy(res, res_col, a, a_col)
 /// class      basis
@@ -801,9 +746,12 @@ pub trait VecZnxSwitchRing<B: Backend> {
 /// test       test_vec_znx_copy, test_vec_znx_copy_matches_wrapper, test_vec_znx_window_ops
 /// ```
 pub trait VecZnxCopy<B: Backend> {
+    /// Writes `a[a_col]` into `res[res_col]`.
     fn vec_znx_copy(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
+/// Filling of a column with a uniform torus value drawn from a pseudorandom stream.
+///
 /// ```text
 /// op         vec_znx_fill_uniform_source(base2k, k, res, res_col, source)
 /// class      basis
@@ -814,9 +762,7 @@ pub trait VecZnxCopy<B: Backend> {
 /// test       test_vec_znx_fill_uniform
 /// ```
 pub trait VecZnxFillUniformSource<B: Backend> {
-    /// Fills a column with a uniform `k`-bit torus value in base `2^base2k`.
-    ///
-    /// Unused low bits in the last live limb and limbs above `k` are zeroed.
+    /// Writes a uniform torus value of precision `k`, canonical at radix `base2k`, into `res[res_col]`, drawing from `source`.
     fn vec_znx_fill_uniform_source(
         &self,
         base2k: usize,

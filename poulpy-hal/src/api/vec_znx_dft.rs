@@ -3,7 +3,7 @@ use crate::layouts::{
     VecZnxDftOwned,
 };
 
-/// Allocates a [`VecZnxDft`](crate::layouts::VecZnxDft).
+/// Allocation of a DFT-domain vector.
 ///
 /// ```text
 /// op         vec_znx_dft_alloc(cols, size)
@@ -14,10 +14,11 @@ use crate::layouts::{
 /// test       none
 /// ```
 pub trait VecZnxDftAlloc<B: Backend> {
+    /// Returns an owned DFT-domain vector with `cols` columns and `size` limbs.
     fn vec_znx_dft_alloc(&self, cols: usize, size: usize) -> VecZnxDftOwned<B>;
 }
 
-/// Returns the byte size required for a [`VecZnxDft`](crate::layouts::VecZnxDft).
+/// Byte size of a DFT-domain vector.
 ///
 /// ```text
 /// op         bytes_of_vec_znx_dft(cols, size)
@@ -28,14 +29,11 @@ pub trait VecZnxDftAlloc<B: Backend> {
 /// test       test_word_compat_dft_bytes
 /// ```
 pub trait VecZnxDftBytesOf {
+    /// Returns the byte size of a DFT-domain vector with `cols` columns and `size` limbs.
     fn bytes_of_vec_znx_dft(&self, cols: usize, size: usize) -> usize;
 }
 
-/// Applies the forward DFT to a coefficient-domain [`VecZnx`](crate::layouts::VecZnx),
-/// storing the result in a [`VecZnxDft`](crate::layouts::VecZnxDft).
-///
-/// The `step` and `offset` parameters select which limbs of the input
-/// are transformed: limbs `offset, offset + step, offset + 2*step, ...`.
+/// Forward DFT of selected limbs of a coefficient-domain vector.
 ///
 /// ```text
 /// op         vec_znx_dft_apply(step, offset, res, res_col, a, a_col)
@@ -47,6 +45,7 @@ pub trait VecZnxDftBytesOf {
 /// test       test_vec_znx_dft_apply, test_vec_znx_idft_apply, test_vec_znx_dft_step_zero_rejected
 /// ```
 pub trait VecZnxDftApply<B: Backend> {
+    /// Writes the forward DFT of the limbs of `a` selected by `step` and `offset` into `res`.
     fn vec_znx_dft_apply(
         &self,
         step: usize,
@@ -58,7 +57,7 @@ pub trait VecZnxDftApply<B: Backend> {
     );
 }
 
-/// Returns scratch bytes required for [`VecZnxIdftApply`].
+/// Scratch size of the inverse DFT into a big-word vector.
 ///
 /// ```text
 /// op         vec_znx_idft_apply_tmp_bytes()
@@ -69,11 +68,11 @@ pub trait VecZnxDftApply<B: Backend> {
 /// test       test_vec_znx_idft_apply
 /// ```
 pub trait VecZnxIdftApplyTmpBytes {
+    /// Returns the scratch byte size that [`VecZnxIdftApply`] requires.
     fn vec_znx_idft_apply_tmp_bytes(&self) -> usize;
 }
 
-/// Applies the inverse DFT, converting a [`VecZnxDft`](crate::layouts::VecZnxDft)
-/// into a [`VecZnxBig`](crate::layouts::VecZnxBig) (extended precision).
+/// Inverse DFT of a DFT-domain vector into a big-word vector.
 ///
 /// ```text
 /// op         vec_znx_idft_apply(res, res_col, a, a_col, scratch)
@@ -86,6 +85,7 @@ pub trait VecZnxIdftApplyTmpBytes {
 /// test       test_vec_znx_idft_apply, test_vec_znx_idft_apply_alloc
 /// ```
 pub trait VecZnxIdftApply<B: Backend> {
+    /// Writes the inverse DFT of `a` into `res`.
     fn vec_znx_idft_apply(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -96,7 +96,7 @@ pub trait VecZnxIdftApply<B: Backend> {
     );
 }
 
-/// Inverse DFT using `a` as temporary storage (avoids extra scratch).
+/// Inverse DFT of a DFT-domain vector into a big-word vector, consuming the source.
 ///
 /// ```text
 /// op         vec_znx_idft_apply_tmpa(res, res_col, a, a_col)
@@ -108,6 +108,7 @@ pub trait VecZnxIdftApply<B: Backend> {
 /// test       test_vec_znx_idft_apply_tmpa
 /// ```
 pub trait VecZnxIdftApplyTmpA<B: Backend> {
+    /// Writes the inverse DFT of the pre-call `a` into `res`.
     fn vec_znx_idft_apply_tmpa(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -117,7 +118,7 @@ pub trait VecZnxIdftApplyTmpA<B: Backend> {
     );
 }
 
-/// Returns scratch bytes required for [`VecZnxIdftNormalizeConsume`].
+/// Scratch size of the inverse DFT fused with normalization.
 ///
 /// ```text
 /// op         vec_znx_idft_normalize_consume_tmp_bytes(res_size, a_size)
@@ -128,11 +129,11 @@ pub trait VecZnxIdftApplyTmpA<B: Backend> {
 /// test       test_vec_znx_idft_normalize_consume
 /// ```
 pub trait VecZnxIdftNormalizeConsumeTmpBytes {
+    /// Returns the scratch byte size that [`VecZnxIdftNormalizeConsume`] requires for `res_size` and `a_size` limbs.
     fn vec_znx_idft_normalize_consume_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
 }
 
-/// Inverse DFT fused with normalization at precision `res_k`, consuming `a[a_col]`.
-/// The optional addend contributes only its first `a.size()` limbs.
+/// Inverse DFT of a DFT-domain vector fused with normalization into a coefficient-domain vector, consuming the source.
 ///
 /// ```text
 /// op         vec_znx_idft_normalize_consume(res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch)
@@ -147,6 +148,7 @@ pub trait VecZnxIdftNormalizeConsumeTmpBytes {
 /// test       test_vec_znx_idft_normalize_consume, test_vec_znx_idft_normalize_consume_derived
 /// ```
 pub trait VecZnxIdftNormalizeConsume<B: Backend> {
+    /// Writes the inverse DFT of the pre-call `a` plus the optional `addend`, normalized at `res_base2k` and `res_k`, into `res`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume(
         &self,
@@ -162,7 +164,7 @@ pub trait VecZnxIdftNormalizeConsume<B: Backend> {
     );
 }
 
-/// Element-wise addition of two [`VecZnxDft`](crate::layouts::VecZnxDft) vectors.
+/// Sum of two DFT-domain vectors.
 ///
 /// ```text
 /// op         vec_znx_dft_add(res, res_col, a, a_col, b, b_col)
@@ -174,6 +176,7 @@ pub trait VecZnxIdftNormalizeConsume<B: Backend> {
 /// test       test_vec_znx_dft_add
 /// ```
 pub trait VecZnxDftAdd<B: Backend> {
+    /// Writes `a + b` into `res`.
     fn vec_znx_dft_add(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,
@@ -185,7 +188,7 @@ pub trait VecZnxDftAdd<B: Backend> {
     );
 }
 
-/// In-place addition in DFT domain: `res += a`.
+/// In-place sum of a DFT-domain vector into another.
 ///
 /// ```text
 /// op         vec_znx_dft_add_assign(res, res_col, a, a_col)
@@ -197,6 +200,7 @@ pub trait VecZnxDftAdd<B: Backend> {
 /// test       test_vec_znx_dft_add_assign
 /// ```
 pub trait VecZnxDftAddAssign<B: Backend> {
+    /// Adds `a` into `res`.
     fn vec_znx_dft_add_assign(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,
@@ -206,7 +210,7 @@ pub trait VecZnxDftAddAssign<B: Backend> {
     );
 }
 
-/// Element-wise subtraction of two [`VecZnxDft`](crate::layouts::VecZnxDft) vectors.
+/// Difference of two DFT-domain vectors.
 ///
 /// ```text
 /// op         vec_znx_dft_sub(res, res_col, a, a_col, b, b_col)
@@ -218,6 +222,7 @@ pub trait VecZnxDftAddAssign<B: Backend> {
 /// test       test_vec_znx_dft_sub
 /// ```
 pub trait VecZnxDftSub<B: Backend> {
+    /// Writes `a - b` into `res`.
     fn vec_znx_dft_sub(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,
@@ -229,7 +234,7 @@ pub trait VecZnxDftSub<B: Backend> {
     );
 }
 
-/// In-place subtraction in DFT domain: `res -= a`.
+/// In-place difference of two DFT-domain vectors, the destination as the minuend.
 ///
 /// ```text
 /// op         vec_znx_dft_sub_assign(res, res_col, a, a_col)
@@ -241,6 +246,7 @@ pub trait VecZnxDftSub<B: Backend> {
 /// test       test_vec_znx_dft_sub_assign
 /// ```
 pub trait VecZnxDftSubAssign<B: Backend> {
+    /// Subtracts `a` from `res`.
     fn vec_znx_dft_sub_assign(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,
@@ -250,7 +256,7 @@ pub trait VecZnxDftSubAssign<B: Backend> {
     );
 }
 
-/// In-place negated subtraction in DFT domain: `res = a - res`.
+/// In-place difference of two DFT-domain vectors, the destination as the subtrahend.
 ///
 /// ```text
 /// op         vec_znx_dft_sub_negate_assign(res, res_col, a, a_col)
@@ -262,6 +268,7 @@ pub trait VecZnxDftSubAssign<B: Backend> {
 /// test       test_vec_znx_dft_sub_negate_assign
 /// ```
 pub trait VecZnxDftSubNegateAssign<B: Backend> {
+    /// Writes `a - res` into `res`.
     fn vec_znx_dft_sub_negate_assign(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,
@@ -271,9 +278,7 @@ pub trait VecZnxDftSubNegateAssign<B: Backend> {
     );
 }
 
-/// Copies selected limbs from one [`VecZnxDft`](crate::layouts::VecZnxDft) to another.
-///
-/// The `step` and `offset` parameters select which limbs are copied.
+/// Copy of selected limbs of a DFT-domain vector.
 ///
 /// ```text
 /// op         vec_znx_dft_copy(step, offset, res, res_col, a, a_col)
@@ -285,6 +290,7 @@ pub trait VecZnxDftSubNegateAssign<B: Backend> {
 /// test       test_vec_znx_dft_copy, test_vec_znx_dft_step_zero_rejected
 /// ```
 pub trait VecZnxDftCopy<B: Backend> {
+    /// Writes the limbs of `a` selected by `step` and `offset` into `res`.
     fn vec_znx_dft_copy(
         &self,
         step: usize,
@@ -296,7 +302,7 @@ pub trait VecZnxDftCopy<B: Backend> {
     );
 }
 
-/// Zeroes all limbs of the selected column in DFT domain.
+/// Zeroing of a DFT-domain vector column.
 ///
 /// ```text
 /// op         vec_znx_dft_zero(res, res_col)
@@ -308,18 +314,11 @@ pub trait VecZnxDftCopy<B: Backend> {
 /// test       test_vec_znx_dft_zero
 /// ```
 pub trait VecZnxDftZero<B: Backend> {
+    /// Zeroes every limb of column `res_col` of `res`.
     fn vec_znx_dft_zero(&self, res: &mut VecZnxDftBackendMut<'_, B>, res_col: usize);
 }
 
-/// Builds a backend-specific permutation plan that implements the DFT-domain
-/// automorphism `tau_p: X -> X^p` for odd `p`. The plan captures the
-/// slot permutation, plus any implementation bookkeeping, and is reusable
-/// across columns and limbs.
-///
-/// The associated `Plan` type is the only point in the public API where
-/// the backend leaks its automorphism representation. Callers that want to
-/// keep plans backend-agnostic must own
-/// `<Module<B> as VecZnxDftAutomorphismPlan<B>>::Plan`.
+/// Reusable plan for the DFT-domain automorphism `X -> X^p`.
 ///
 /// ```text
 /// op         vec_znx_dft_automorphism_plan(p)
@@ -332,11 +331,11 @@ pub trait VecZnxDftZero<B: Backend> {
 pub trait VecZnxDftAutomorphismPlan<B: Backend> {
     type Plan;
 
+    /// Returns a reusable plan for the substitution `X -> X^p`.
     fn vec_znx_dft_automorphism_plan(&self, p: i64) -> Self::Plan;
 }
 
-/// Returns scratch bytes required by
-/// [`VecZnxDftAutomorphism::vec_znx_dft_automorphism_add_with_plan`].
+/// Scratch size of the accumulating DFT-domain automorphism.
 ///
 /// ```text
 /// op         vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res_size, a_size)
@@ -347,11 +346,12 @@ pub trait VecZnxDftAutomorphismPlan<B: Backend> {
 /// test       test_vec_znx_dft_automorphism_add
 /// ```
 pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
+    /// Returns the scratch byte size that
+    /// [`VecZnxDftAutomorphism::vec_znx_dft_automorphism_add_with_plan`] requires for `res_size` and `a_size` limbs.
     fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
 }
 
-/// Applies a precomputed DFT-domain automorphism plan to `a`, writing the
-/// result into `res` (out-of-place).
+/// Automorphism `X -> X^p` of a DFT-domain vector, applied from a prepared plan.
 ///
 /// ```text
 /// op         vec_znx_dft_automorphism_with_plan(plan, res, res_col, a, a_col)
@@ -363,6 +363,7 @@ pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
 /// test       test_vec_znx_dft_automorphism
 /// ```
 pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
+    /// Writes the substitution of `plan` applied to `a` into `res`.
     fn vec_znx_dft_automorphism_with_plan(
         &self,
         plan: &Self::Plan,
@@ -372,14 +373,8 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
         a_col: usize,
     );
 
-    /// `res[res_col] += automorphism(a[a_col])` over `min(res.size(), a.size())` limbs;
-    /// res limbs beyond that are left untouched.
+    /// Adds the substitution of `plan` applied to `a` into `res`.
     ///
-    /// `scratch` must hold at least
-    /// [`vec_znx_dft_automorphism_add_with_plan_tmp_bytes`](VecZnxDftAutomorphismAddWithPlanTmpBytes::vec_znx_dft_automorphism_add_with_plan_tmp_bytes)
-    /// on the same sizes: the derived body carves one
-    /// `min(res.size(), a.size())`-limb, one-column `VecZnxDft` for the
-    /// rotated operand.
     /// ```text
     /// op         vec_znx_dft_automorphism_add_with_plan(plan, res, res_col, a, a_col, scratch)
     /// class      derived
@@ -403,9 +398,7 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
         scratch: &mut ScratchArena<'_, B>,
     );
 
-    /// Convenience: build the plan and apply in one call. Prefer
-    /// [`vec_znx_dft_automorphism_with_plan`](Self::vec_znx_dft_automorphism_with_plan)
-    /// when the same `p` is used repeatedly.
+    /// Writes the automorphism `X -> X^p` of `a` into `res`.
     ///
     /// ```text
     /// op         vec_znx_dft_automorphism(p, res, res_col, a, a_col)

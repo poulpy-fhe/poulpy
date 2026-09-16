@@ -1,9 +1,5 @@
 /// A precomputed complex transform table with separate real and imaginary halves.
 ///
-/// A length-`m` complex vector occupies `2*m` real scalars. The forward
-/// operation evaluates at the roots defined in the shared notation, in
-/// bit-reversed order; the inverse is unnormalized.
-///
 /// ```text
 /// op         NegacyclicFFT::m()
 /// class      support
@@ -13,6 +9,7 @@
 /// test       none
 /// ```
 pub trait NegacyclicFFT<F> {
+    /// Returns the complex transform length `m`.
     fn m(&self) -> usize;
 
     /// Applies the forward complex transform in place.
@@ -53,5 +50,6 @@ pub trait NegacyclicFFT<F> {
 /// test       none
 /// ```
 pub trait NegacyclicFFTNew<F>: NegacyclicFFT<F> + Sized {
+    /// Returns a table of complex transform length `m`.
     fn new(m: usize) -> Self;
 }

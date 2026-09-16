@@ -1,6 +1,6 @@
 use crate::layouts::{Backend, MatZnx, ScalarZnx, VecZnx};
 
-/// Instantiate a new [crate::layouts::Module].
+/// Instantiates a [`Module`](crate::layouts::Module).
 ///
 /// ```text
 /// op         Module::<BE>::new(n)
@@ -11,10 +11,11 @@ use crate::layouts::{Backend, MatZnx, ScalarZnx, VecZnx};
 /// test       none
 /// ```
 pub trait ModuleNew<B: Backend> {
+    /// Returns the module of ring degree `n`, carrying its precomputed transform tables.
     fn new(n: u64) -> Self;
 }
 
-/// Query the maximum ring degree `N` of a [`Module`](crate::layouts::Module).
+/// Queries the ring degree `N` of a [`Module`](crate::layouts::Module).
 ///
 /// ```text
 /// op         n()
@@ -25,10 +26,11 @@ pub trait ModuleNew<B: Backend> {
 /// test       none
 /// ```
 pub trait ModuleN {
+    /// Returns the ring degree `N` the module was built for.
     fn n(&self) -> usize;
 }
 
-/// Query `log2(N)` with a default implementation derived from [`ModuleN::n`].
+/// Queries `log2(N)` of a [`Module`](crate::layouts::Module).
 ///
 /// ```text
 /// op         log_n()
@@ -42,12 +44,13 @@ pub trait ModuleLogN
 where
     Self: ModuleN,
 {
+    /// Returns `log2(N)`.
     fn log_n(&self) -> usize {
         (u64::BITS - (self.n() as u64 - 1).leading_zeros()) as usize
     }
 }
 
-/// Allocates backend-owned [`ScalarZnx`](crate::layouts::ScalarZnx) layouts.
+/// Allocates a [`ScalarZnx`](crate::layouts::ScalarZnx).
 ///
 /// ```text
 /// op         scalar_znx_alloc(cols)
@@ -58,10 +61,11 @@ where
 /// test       none
 /// ```
 pub trait ScalarZnxAlloc<B: Backend>: ModuleN {
+    /// Returns an owned [`ScalarZnx`](crate::layouts::ScalarZnx) of `cols` columns.
     fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord>;
 }
 
-/// Allocates backend-owned [`VecZnx`](crate::layouts::VecZnx) layouts.
+/// Allocates a [`VecZnx`](crate::layouts::VecZnx).
 ///
 /// ```text
 /// op         vec_znx_alloc(cols, size)
@@ -72,10 +76,11 @@ pub trait ScalarZnxAlloc<B: Backend>: ModuleN {
 /// test       none
 /// ```
 pub trait VecZnxAlloc<B: Backend>: ModuleN {
+    /// Returns an owned [`VecZnx`](crate::layouts::VecZnx) of `cols` columns and `size` limbs.
     fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord>;
 }
 
-/// Allocates backend-owned [`MatZnx`](crate::layouts::MatZnx) layouts.
+/// Allocates a [`MatZnx`](crate::layouts::MatZnx).
 ///
 /// ```text
 /// op         mat_znx_alloc(rows, cols_in, cols_out, size)
@@ -86,5 +91,6 @@ pub trait VecZnxAlloc<B: Backend>: ModuleN {
 /// test       none
 /// ```
 pub trait MatZnxAlloc<B: Backend>: ModuleN {
+    /// Returns an owned [`MatZnx`](crate::layouts::MatZnx) of the given dimensions.
     fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf, B::ZnxWord>;
 }

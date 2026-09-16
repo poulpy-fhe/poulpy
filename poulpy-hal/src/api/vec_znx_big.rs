@@ -3,8 +3,7 @@ use crate::layouts::{
     VecZnxBigOwned,
 };
 
-/// Converts a coefficient-domain [`VecZnx`](crate::layouts::VecZnx) column
-/// into a [`VecZnxBig`](crate::layouts::VecZnxBig) column.
+/// Conversion of a coefficient-domain vector column into a big-word vector column.
 ///
 /// ```text
 /// op         vec_znx_big_from_small(res, res_col, a, a_col)
@@ -17,6 +16,7 @@ use crate::layouts::{
 /// test       test_vec_znx_big_from_small, test_vec_znx_big_window_ops, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigFromSmall<B: Backend> {
+    /// Writes column `a_col` of `a` into column `res_col` of `res`.
     fn vec_znx_big_from_small(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -26,7 +26,7 @@ pub trait VecZnxBigFromSmall<B: Backend> {
     );
 }
 
-/// Allocates as [crate::layouts::VecZnxBig].
+/// Allocation of a big-word vector.
 ///
 /// ```text
 /// op         vec_znx_big_alloc(cols, size)
@@ -37,10 +37,11 @@ pub trait VecZnxBigFromSmall<B: Backend> {
 /// test       none
 /// ```
 pub trait VecZnxBigAlloc<B: Backend> {
+    /// Returns an owned big-word vector with `cols` columns and `size` limbs.
     fn vec_znx_big_alloc(&self, cols: usize, size: usize) -> VecZnxBigOwned<B>;
 }
 
-/// Returns the size in bytes to allocate a [crate::layouts::VecZnxBig].
+/// Byte size of a big-word vector.
 ///
 /// ```text
 /// op         bytes_of_vec_znx_big(cols, size) / bytes_of_vec_znx_big_n(n, cols, size)
@@ -51,11 +52,15 @@ pub trait VecZnxBigAlloc<B: Backend> {
 /// test       none
 /// ```
 pub trait VecZnxBigBytesOf {
+    /// Returns the byte size of a big-word vector of the module degree with `cols` columns and `size` limbs.
     fn bytes_of_vec_znx_big(&self, cols: usize, size: usize) -> usize;
 
+    /// Returns the byte size of a degree-`n` big-word vector with `cols` columns and `size` limbs.
     fn bytes_of_vec_znx_big_n(&self, n: usize, cols: usize, size: usize) -> usize;
 }
 
+/// Sum of two big-word vectors.
+///
 /// ```text
 /// op         vec_znx_big_add(res, res_col, a, a_col, b, b_col)
 /// class      basis
@@ -67,7 +72,7 @@ pub trait VecZnxBigBytesOf {
 /// test       test_vec_znx_big_add, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigAdd<B: Backend> {
-    /// Adds `a` and `b` into `res`.
+    /// Writes `a + b` into `res`.
     fn vec_znx_big_add(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -79,6 +84,8 @@ pub trait VecZnxBigAdd<B: Backend> {
     );
 }
 
+/// In-place sum of a big-word vector into another.
+///
 /// ```text
 /// op         vec_znx_big_add_assign(res, res_col, a, a_col)
 /// class      variant
@@ -100,6 +107,8 @@ pub trait VecZnxBigAddAssign<B: Backend> {
     );
 }
 
+/// Sum of a big-word vector and a coefficient-domain vector.
+///
 /// ```text
 /// op         vec_znx_big_add_small(res, res_col, a, a_col, b, b_col)
 /// class      derived
@@ -113,7 +122,7 @@ pub trait VecZnxBigAddAssign<B: Backend> {
 /// test       test_vec_znx_big_add_small, test_vec_znx_big_add_small_derived, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigAddSmall<B: Backend> {
-    /// Adds `a` and the coefficient-domain `b` into `res`.
+    /// Writes the sum of `a` and the coefficient-domain `b` into `res`.
     fn vec_znx_big_add_small(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -125,6 +134,8 @@ pub trait VecZnxBigAddSmall<B: Backend> {
     );
 }
 
+/// In-place sum of a coefficient-domain vector into a big-word vector.
+///
 /// ```text
 /// op         vec_znx_big_add_small_assign(res, res_col, a, a_col)
 /// class      variant
@@ -146,6 +157,8 @@ pub trait VecZnxBigAddSmallAssign<B: Backend> {
     );
 }
 
+/// Difference of two big-word vectors.
+///
 /// ```text
 /// op         vec_znx_big_sub(res, res_col, a, a_col, b, b_col)
 /// class      basis
@@ -157,7 +170,7 @@ pub trait VecZnxBigAddSmallAssign<B: Backend> {
 /// test       test_vec_znx_big_sub, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSub<B: Backend> {
-    /// Subtracts `b` from `a` into `res`.
+    /// Writes `a - b` into `res`.
     fn vec_znx_big_sub(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -169,6 +182,8 @@ pub trait VecZnxBigSub<B: Backend> {
     );
 }
 
+/// In-place difference of two big-word vectors, the destination as the minuend.
+///
 /// ```text
 /// op         vec_znx_big_sub_assign(res, res_col, a, a_col)
 /// class      variant
@@ -190,6 +205,8 @@ pub trait VecZnxBigSubAssign<B: Backend> {
     );
 }
 
+/// In-place difference of two big-word vectors, the destination as the subtrahend.
+///
 /// ```text
 /// op         vec_znx_big_sub_negate_assign(res, res_col, a, a_col)
 /// class      variant
@@ -201,7 +218,7 @@ pub trait VecZnxBigSubAssign<B: Backend> {
 /// test       test_vec_znx_big_sub_negate_assign, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSubNegateAssign<B: Backend> {
-    /// Subtracts `res` from `a` into `res`.
+    /// Writes `a - res` into `res`.
     fn vec_znx_big_sub_negate_assign(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -211,6 +228,8 @@ pub trait VecZnxBigSubNegateAssign<B: Backend> {
     );
 }
 
+/// Difference of a coefficient-domain vector and a big-word vector.
+///
 /// ```text
 /// op         vec_znx_big_sub_small_a(res, res_col, a, a_col, b, b_col)
 /// class      derived
@@ -224,7 +243,7 @@ pub trait VecZnxBigSubNegateAssign<B: Backend> {
 /// test       test_vec_znx_big_sub_small_a, test_vec_znx_big_sub_small_a_derived, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSubSmallA<B: Backend> {
-    /// Subtracts `b` from the coefficient-domain `a` into `res`.
+    /// Writes the difference of the coefficient-domain `a` and `b` into `res`.
     fn vec_znx_big_sub_small_a(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -236,6 +255,8 @@ pub trait VecZnxBigSubSmallA<B: Backend> {
     );
 }
 
+/// In-place difference of a big-word vector and a coefficient-domain vector, the destination as the minuend.
+///
 /// ```text
 /// op         vec_znx_big_sub_small_assign(res, res_col, a, a_col)
 /// class      variant
@@ -257,6 +278,8 @@ pub trait VecZnxBigSubSmallAssign<B: Backend> {
     );
 }
 
+/// Difference of a big-word vector and a coefficient-domain vector.
+///
 /// ```text
 /// op         vec_znx_big_sub_small_b(res, res_col, a, a_col, b, b_col)
 /// class      derived
@@ -270,7 +293,7 @@ pub trait VecZnxBigSubSmallAssign<B: Backend> {
 /// test       test_vec_znx_big_sub_small_b, test_vec_znx_big_sub_small_b_derived, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSubSmallB<B: Backend> {
-    /// Subtracts the coefficient-domain `b` from `a` into `res`.
+    /// Writes the difference of `a` and the coefficient-domain `b` into `res`.
     fn vec_znx_big_sub_small_b(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -282,6 +305,8 @@ pub trait VecZnxBigSubSmallB<B: Backend> {
     );
 }
 
+/// In-place difference of a coefficient-domain vector and a big-word vector, the destination as the subtrahend.
+///
 /// ```text
 /// op         vec_znx_big_sub_small_negate_assign(res, res_col, a, a_col)
 /// class      variant
@@ -293,7 +318,7 @@ pub trait VecZnxBigSubSmallB<B: Backend> {
 /// test       test_vec_znx_big_sub_small_b_assign, test_vec_znx_big_sparse_add_sub
 /// ```
 pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
-    /// Subtracts `res` from the coefficient-domain `a` into `res`.
+    /// Writes the difference of the coefficient-domain `a` and `res` into `res`.
     fn vec_znx_big_sub_small_negate_assign(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -303,8 +328,7 @@ pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
     );
 }
 
-/// Sums coefficients from a selected [`VecZnxBig`](crate::layouts::VecZnxBig)
-/// column and stores each limb's result in one destination coefficient.
+/// Sum of the coefficients of a big-word vector column, one destination coefficient per limb.
 ///
 /// ```text
 /// op         vec_znx_big_inner_sum(res, res_col, res_coeff, a, a_col)
@@ -316,6 +340,7 @@ pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
 /// test       test_vec_znx_big_inner_sum
 /// ```
 pub trait VecZnxBigInnerSum<B: Backend> {
+    /// Writes the coefficient sum of each limb of `a` into coefficient `res_coeff` of `res`.
     fn vec_znx_big_inner_sum(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -327,8 +352,7 @@ pub trait VecZnxBigInnerSum<B: Backend> {
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Computes a coefficient-wise linear combination of [`VecZnx`](crate::layouts::VecZnx)
-/// columns with scalar weights, coefficient by coefficient and limb by limb.
+/// Weighted sum of the columns of a coefficient-domain vector into a big-word vector, coefficient by coefficient.
 ///
 /// ```text
 /// op         vec_znx_big_col_weighted_sum(res, res_col, a, weights, weights_col, cols, coeffs)
@@ -340,6 +364,7 @@ pub trait VecZnxBigInnerSum<B: Backend> {
 /// test       test_vec_znx_big_col_weighted_sum
 /// ```
 pub trait VecZnxBigColWeightedSum<B: Backend> {
+    /// Writes into `res` the sum of the first `cols` columns of `a` weighted by `weights`, over the first `coeffs` coefficients.
     fn vec_znx_big_col_weighted_sum<'r, 'a, 'b>(
         &self,
         res: &mut VecZnxBigBackendMut<'r, B>,
@@ -352,9 +377,7 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
     );
 }
 
-/// Computes the element-wise (Hadamard) product `res[k] = a[k] * b[k]` for all `k`
-/// and stores each product as a [`BigWord`](Backend::BigWord) value in `res`.
-/// Use [`VecZnxBigInnerSum`] afterwards to reduce to a single scalar.
+/// Coefficient-wise product of a coefficient-domain vector and a scalar vector, in big words.
 ///
 /// ```text
 /// op         vec_znx_scalar_product(res, res_col, a, a_col, b, b_col)
@@ -366,6 +389,7 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
 /// test       test_vec_znx_scalar_product
 /// ```
 pub trait VecZnxScalarProduct<B: Backend> {
+    /// Writes the coefficient-wise product of `a` and `b` into `res`.
     fn vec_znx_scalar_product(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -377,7 +401,7 @@ pub trait VecZnxScalarProduct<B: Backend> {
     );
 }
 
-/// Negates the selected column of `a` and stores the result in `res`.
+/// Negation of a big-word vector.
 ///
 /// ```text
 /// op         vec_znx_big_negate(res, res_col, a, a_col)
@@ -389,6 +413,7 @@ pub trait VecZnxScalarProduct<B: Backend> {
 /// test       test_vec_znx_big_negate
 /// ```
 pub trait VecZnxBigNegate<B: Backend> {
+    /// Writes `-a` into `res`.
     fn vec_znx_big_negate(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
@@ -398,7 +423,7 @@ pub trait VecZnxBigNegate<B: Backend> {
     );
 }
 
-/// Negates the selected column of `res` in-place.
+/// In-place negation of a big-word vector.
 ///
 /// ```text
 /// op         vec_znx_big_negate_assign(res, res_col)
@@ -410,10 +435,11 @@ pub trait VecZnxBigNegate<B: Backend> {
 /// test       test_vec_znx_big_negate_assign
 /// ```
 pub trait VecZnxBigNegateAssign<B: Backend> {
+    /// Negates column `res_col` of `res`.
     fn vec_znx_big_negate_assign(&self, res: &mut VecZnxBigBackendMut<'_, B>, res_col: usize);
 }
 
-/// Returns scratch bytes required for [`VecZnxBigNormalize`].
+/// Scratch size of the normalization of a big-word vector.
 ///
 /// ```text
 /// op         vec_znx_big_normalize_tmp_bytes()
@@ -424,18 +450,12 @@ pub trait VecZnxBigNegateAssign<B: Backend> {
 /// test       test_vec_znx_big_normalize
 /// ```
 pub trait VecZnxBigNormalizeTmpBytes {
+    /// Returns the scratch byte size that [`VecZnxBigNormalize`] requires.
     fn vec_znx_big_normalize_tmp_bytes(&self) -> usize;
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Normalizes a [`VecZnxBig`](crate::layouts::VecZnxBig) into a coefficient-domain
-/// [`VecZnx`](crate::layouts::VecZnx) with the target base, precision, and offset.
-///
-/// For i64 big words, the input and radix bounds of [`super::VecZnxNormalize`]
-/// apply. For i128 big words, input coefficients must lie in `[-2^126, 2^126]`,
-/// with input radix width in `1..=127` and output radix width in `1..=64`.
-/// Additions before normalization must preserve the applicable coefficient
-/// bound. These are caller preconditions and are not checked by an input scan.
+/// Normalization of a big-word vector into a coefficient-domain vector at a target base, precision and offset.
 ///
 /// ```text
 /// op         vec_znx_big_normalize(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, scratch)
@@ -448,6 +468,7 @@ pub trait VecZnxBigNormalizeTmpBytes {
 /// test       test_vec_znx_big_normalize, test_vec_znx_big_window_normalize
 /// ```
 pub trait VecZnxBigNormalize<B: Backend> {
+    /// Writes column `a_col` of `a`, scaled by `2^res_offset` and normalized at `res_base2k` and `res_k`, into `res`.
     fn vec_znx_big_normalize(
         &self,
         res: &mut VecZnxBackendMut<'_, B>,
@@ -462,7 +483,7 @@ pub trait VecZnxBigNormalize<B: Backend> {
     );
 }
 
-/// Returns scratch bytes required for in-place automorphism on [`VecZnxBig`](crate::layouts::VecZnxBig).
+/// Scratch size of the in-place automorphism of a big-word vector.
 ///
 /// ```text
 /// op         vec_znx_big_automorphism_assign_tmp_bytes()
@@ -473,9 +494,12 @@ pub trait VecZnxBigNormalize<B: Backend> {
 /// test       test_vec_znx_big_automorphism_assign
 /// ```
 pub trait VecZnxBigAutomorphismAssignTmpBytes {
+    /// Returns the scratch byte size that [`VecZnxBigAutomorphismAssign`] requires.
     fn vec_znx_big_automorphism_assign_tmp_bytes(&self) -> usize;
 }
 
+/// Automorphism `X -> X^p` of a big-word vector.
+///
 /// ```text
 /// op         vec_znx_big_automorphism(p, res, res_col, a, a_col)
 /// class      basis
@@ -486,7 +510,7 @@ pub trait VecZnxBigAutomorphismAssignTmpBytes {
 /// test       test_vec_znx_big_automorphism
 /// ```
 pub trait VecZnxBigAutomorphism<B: Backend> {
-    /// Applies the automorphism X -> X^p on `a` and stores the result in `res`.
+    /// Writes the automorphism `X -> X^p` of `a` into `res`.
     fn vec_znx_big_automorphism(
         &self,
         p: i64,
@@ -497,6 +521,8 @@ pub trait VecZnxBigAutomorphism<B: Backend> {
     );
 }
 
+/// In-place automorphism `X -> X^p` of a big-word vector.
+///
 /// ```text
 /// op         vec_znx_big_automorphism_assign(p, res, res_col, scratch)
 /// class      variant
@@ -510,7 +536,7 @@ pub trait VecZnxBigAutomorphism<B: Backend> {
 /// test       test_vec_znx_big_automorphism_assign
 /// ```
 pub trait VecZnxBigAutomorphismAssign<B: Backend> {
-    /// Applies the automorphism X -> X^p on `res` in place.
+    /// Replaces column `res_col` of `res` by its automorphism `X -> X^p`.
     fn vec_znx_big_automorphism_assign(
         &self,
         p: i64,

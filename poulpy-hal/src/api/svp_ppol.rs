@@ -3,7 +3,7 @@ use crate::layouts::{
     VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
 };
 
-/// Allocates as [crate::layouts::SvpPPol].
+/// Allocates an [`SvpPPol`](crate::layouts::SvpPPol).
 ///
 /// ```text
 /// op         svp_ppol_alloc(cols, hint)
@@ -14,10 +14,11 @@ use crate::layouts::{
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait SvpPPolAlloc<B: Backend> {
+    /// Returns an owned [`SvpPPol`](crate::layouts::SvpPPol) with `cols` columns under `hint`.
     fn svp_ppol_alloc(&self, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B>;
 }
 
-/// Returns the size in bytes to allocate a [crate::layouts::SvpPPol].
+/// Returns the byte size of an [`SvpPPol`](crate::layouts::SvpPPol).
 ///
 /// ```text
 /// op         bytes_of_svp_ppol(cols, hint)
@@ -28,10 +29,11 @@ pub trait SvpPPolAlloc<B: Backend> {
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_svp_prepare_bytes
 /// ```
 pub trait SvpPPolBytesOf {
+    /// Returns the bytes an [`SvpPPol`](crate::layouts::SvpPPol) with `cols` columns under `hint` occupies.
     fn bytes_of_svp_ppol(&self, cols: usize, hint: PrepareHint) -> usize;
 }
 
-/// Prepare a [crate::layouts::ScalarZnx] into an [crate::layouts::SvpPPol].
+/// Preparation of a [`ScalarZnx`](crate::layouts::ScalarZnx) into an [`SvpPPol`](crate::layouts::SvpPPol).
 ///
 /// ```text
 /// op         svp_prepare(res, res_col, a, a_col)
@@ -43,13 +45,11 @@ pub trait SvpPPolBytesOf {
 /// test       test_svp_apply_dft_to_dft
 /// ```
 pub trait SvpPrepare<B: Backend> {
+    /// Writes `a[a_col]` into `res[res_col]` in the prepared representation.
     fn svp_prepare(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize);
 }
 
-/// Copy one prepared scalar polynomial column into another.
-///
-/// Copies representation bytes, so `res` and `a` must share the degree and the
-/// [`PrepareHint`](crate::layouts::PrepareHint); every kernel asserts both.
+/// Copy of one prepared scalar polynomial column into another.
 ///
 /// ```text
 /// op         svp_ppol_copy(res, res_col, a, a_col)
@@ -61,6 +61,7 @@ pub trait SvpPrepare<B: Backend> {
 /// test       test_svp_apply_dft_to_dft
 /// ```
 pub trait SvpPPolCopy<B: Backend> {
+    /// Writes `a[a_col]` into `res[res_col]`.
     fn svp_ppol_copy(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &SvpPPolBackendRef<'_, B>, a_col: usize);
 }
 
@@ -75,10 +76,11 @@ pub trait SvpPPolCopy<B: Backend> {
 /// test       test_svp_apply_dft
 /// ```
 pub trait SvpApplyDftTmpBytes {
+    /// Returns the scratch bytes `svp_apply_dft` requires for a source of `b_size` limbs.
     fn svp_apply_dft_tmp_bytes(&self, b_size: usize) -> usize;
 }
 
-/// Apply a scalar-vector product between `a[a_col]` and `b[b_col]` and stores the result on `res[res_col]`.
+/// Product of a prepared scalar polynomial by a coefficient-domain vector, into the DFT domain.
 ///
 /// ```text
 /// op         svp_apply_dft(res, res_col, a, a_col, b, b_col, scratch)
@@ -93,13 +95,7 @@ pub trait SvpApplyDftTmpBytes {
 /// test       test_svp_apply_dft, test_svp_apply_dft_derived
 /// ```
 pub trait SvpApplyDft<B: Backend> {
-    /// `idft(res)[res_col,j] = a[a_col] * b[b_col,j]`. Limbs of `res` beyond
-    /// `min(res.size(), b.size())` are zeroed.
-    ///
-    /// `scratch` must hold at least
-    /// [`svp_apply_dft_tmp_bytes`](SvpApplyDftTmpBytes::svp_apply_dft_tmp_bytes)
-    /// on `b.size()`: the derived body carves one `b.size()`-limb, one-column
-    /// `VecZnxDft` for the transformed right operand.
+    /// Writes `a[a_col] * b[b_col]` into `res[res_col]`, zeroing the limbs from `b.size()` on.
     #[allow(clippy::too_many_arguments)]
     fn svp_apply_dft(
         &self,
@@ -113,7 +109,7 @@ pub trait SvpApplyDft<B: Backend> {
     );
 }
 
-/// Apply a scalar-vector product between `a[a_col]` and `b[b_col]` and stores the result on `res[res_col]`.
+/// Product of a prepared scalar polynomial by a DFT-domain vector, in the DFT domain.
 ///
 /// ```text
 /// op         svp_apply_dft_to_dft(res, res_col, a, a_col, b, b_col)
@@ -125,6 +121,7 @@ pub trait SvpApplyDft<B: Backend> {
 /// test       test_svp_apply_dft_to_dft
 /// ```
 pub trait SvpApplyDftToDft<B: Backend> {
+    /// Writes `a[a_col] * b[b_col]` into `res[res_col]`, zeroing the limbs from `b.size()` on.
     fn svp_apply_dft_to_dft(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,
@@ -136,7 +133,7 @@ pub trait SvpApplyDftToDft<B: Backend> {
     );
 }
 
-/// Apply a scalar-vector product between `res[res_col]` and `a[a_col]` and stores the result on `res[res_col]`.
+/// In-place product of a DFT-domain vector by a prepared scalar polynomial.
 ///
 /// ```text
 /// op         svp_apply_dft_to_dft_assign(res, res_col, a, a_col)
@@ -148,6 +145,7 @@ pub trait SvpApplyDftToDft<B: Backend> {
 /// test       test_svp_apply_dft_to_dft_assign
 /// ```
 pub trait SvpApplyDftToDftAssign<B: Backend> {
+    /// Multiplies every limb of `res[res_col]` by `a[a_col]`.
     fn svp_apply_dft_to_dft_assign(
         &self,
         res: &mut VecZnxDftBackendMut<'_, B>,

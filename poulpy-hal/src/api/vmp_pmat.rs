@@ -14,10 +14,11 @@ use crate::layouts::{
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait VmpPMatAlloc<B: Backend> {
+    /// Returns an owned [`VmpPMat`](crate::layouts::VmpPMat) of the given dimensions under `hint`.
     fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> VmpPMatOwned<B>;
 }
 
-/// Returns the byte size required for a [`VmpPMat`](crate::layouts::VmpPMat).
+/// Returns the byte size of a [`VmpPMat`](crate::layouts::VmpPMat).
 ///
 /// ```text
 /// op         bytes_of_vmp_pmat(rows, cols_in, cols_out, size, hint)
@@ -28,10 +29,11 @@ pub trait VmpPMatAlloc<B: Backend> {
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_vmp_prepare_bytes
 /// ```
 pub trait VmpPMatBytesOf {
+    /// Returns the bytes a [`VmpPMat`](crate::layouts::VmpPMat) of the given dimensions under `hint` occupies.
     fn bytes_of_vmp_pmat(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
-/// Returns scratch bytes required for [`VmpPrepare`].
+/// Returns the scratch bytes [`VmpPrepare`] requires.
 ///
 /// ```text
 /// op         vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size)
@@ -42,11 +44,11 @@ pub trait VmpPMatBytesOf {
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpPrepareTmpBytes {
+    /// Returns the scratch bytes `vmp_prepare` requires for a matrix of the given dimensions.
     fn vmp_prepare_tmp_bytes(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
 }
 
-/// Prepares a coefficient-domain [`MatZnx`](crate::layouts::MatZnx) into a
-/// DFT-domain [`VmpPMat`](crate::layouts::VmpPMat).
+/// Preparation of a coefficient-domain [`MatZnx`](crate::layouts::MatZnx) into a [`VmpPMat`](crate::layouts::VmpPMat).
 ///
 /// ```text
 /// op         vmp_prepare(pmat, mat, scratch)
@@ -59,11 +61,12 @@ pub trait VmpPrepareTmpBytes {
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpPrepare<B: Backend> {
+    /// Writes every entry of `mat` into `pmat` in the prepared representation.
     fn vmp_prepare(&self, pmat: &mut VmpPMatBackendMut<'_, B>, mat: &MatZnxBackendRef<'_, B>, scratch: &mut ScratchArena<'_, B>);
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Returns scratch bytes required for [`VmpApplyDft`].
+/// Returns the scratch bytes [`VmpApplyDft`] requires.
 ///
 /// ```text
 /// op         vmp_apply_dft_tmp_bytes(res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
@@ -74,6 +77,7 @@ pub trait VmpPrepare<B: Backend> {
 /// test       test_vmp_apply_dft
 /// ```
 pub trait VmpApplyDftTmpBytes {
+    /// Returns the scratch bytes `vmp_apply_dft` requires for the given shapes.
     fn vmp_apply_dft_tmp_bytes(
         &self,
         res_size: usize,
@@ -85,7 +89,7 @@ pub trait VmpApplyDftTmpBytes {
     ) -> usize;
 }
 
-/// Applies the vector-matrix product `VecZnx x VmpPMat -> VecZnxDft`.
+/// Vector-matrix product of a coefficient-domain vector by a prepared matrix, into the DFT domain.
 ///
 /// ```text
 /// op         vmp_apply_dft(res, a, pmat, scratch)
@@ -100,6 +104,7 @@ pub trait VmpApplyDftTmpBytes {
 /// test       test_vmp_apply_dft, test_vmp_apply_dft_derived
 /// ```
 pub trait VmpApplyDft<B: Backend> {
+    /// Writes `a * pmat` into `res`.
     fn vmp_apply_dft<R>(
         &self,
         res: &mut R,
@@ -111,7 +116,7 @@ pub trait VmpApplyDft<B: Backend> {
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Returns scratch bytes required for [`VmpApplyDftToDft`].
+/// Returns the scratch bytes [`VmpApplyDftToDft`] requires.
 ///
 /// ```text
 /// op         vmp_apply_dft_to_dft_tmp_bytes(res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
@@ -122,6 +127,7 @@ pub trait VmpApplyDft<B: Backend> {
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpApplyDftToDftTmpBytes {
+    /// Returns the scratch bytes `vmp_apply_dft_to_dft` requires for the given shapes.
     fn vmp_apply_dft_to_dft_tmp_bytes(
         &self,
         res_size: usize,
@@ -134,7 +140,7 @@ pub trait VmpApplyDftToDftTmpBytes {
 }
 
 #[allow(clippy::too_many_arguments)]
-/// Returns scratch bytes required for [`VmpApplyDftToDftAdd`].
+/// Returns the scratch bytes [`VmpApplyDftToDftAdd`] requires.
 ///
 /// ```text
 /// op         vmp_apply_dft_to_dft_add_tmp_bytes(res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
@@ -145,6 +151,7 @@ pub trait VmpApplyDftToDftTmpBytes {
 /// test       test_vmp_apply_dft_to_dft_add
 /// ```
 pub trait VmpApplyDftToDftAddTmpBytes {
+    /// Returns the scratch bytes `vmp_apply_dft_to_dft_add` requires for the given shapes.
     fn vmp_apply_dft_to_dft_add_tmp_bytes(
         &self,
         res_size: usize,
@@ -156,6 +163,8 @@ pub trait VmpApplyDftToDftAddTmpBytes {
     ) -> usize;
 }
 
+/// Vector-matrix product of a DFT-domain vector by a prepared matrix, in the DFT domain.
+///
 /// ```text
 /// op         vmp_apply_dft_to_dft(res, a, pmat, limb_offset, scratch)
 /// class      basis
@@ -167,32 +176,7 @@ pub trait VmpApplyDftToDftAddTmpBytes {
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpApplyDftToDft<B: Backend> {
-    /// Applies the vector matrix product [crate::layouts::VecZnxDft] x [crate::layouts::VmpPMat].
-    ///
-    /// A vector matrix product numerically equivalent to a sum of [crate::api::SvpApplyDft],
-    /// where each [crate::layouts::SvpPPol] is a limb of the input [crate::layouts::VecZnx] in DFT,
-    /// and each vector a [crate::layouts::VecZnxDft] (row) of the [crate::layouts::VmpPMat].
-    ///
-    /// As such, given an input [crate::layouts::VecZnx] of `i` size and a [crate::layouts::VmpPMat] of `i` rows and
-    /// `j` size, the output is a [crate::layouts::VecZnx] of `j` size.
-    ///
-    /// Input and output column counts must match the matrix. Input limbs
-    /// beyond its row count are ignored, and output limbs beyond the selected
-    /// matrix window are zero.
-    ///
-    /// ```text
-    /// |a b c d| x |e f g| = (a * |e f g| + b * |h i j| + c * |k l m|) = |n o p|
-    ///             |h i j|
-    ///             |k l m|
-    /// ```
-    /// where each element is a [crate::layouts::VecZnxDft].
-    ///
-    /// # Arguments
-    ///
-    /// * `c`: the output of the vector matrix product, as a [crate::layouts::VecZnxDft].
-    /// * `a`: the left operand [crate::layouts::VecZnxDft] of the vector matrix product.
-    /// * `b`: the right operand [crate::layouts::VmpPMat] of the vector matrix product.
-    /// * `buf`: scratch space, the size can be obtained with [VmpApplyDftToDftTmpBytes::vmp_apply_dft_to_dft_tmp_bytes].
+    /// Writes `a * pmat` into `res`, reading the matrix limbs from `limb_offset` on.
     fn vmp_apply_dft_to_dft<'r>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, B>,
@@ -203,6 +187,8 @@ pub trait VmpApplyDftToDft<B: Backend> {
     );
 }
 
+/// Accumulating vector-matrix product of a DFT-domain vector by a prepared matrix, in the DFT domain.
+///
 /// ```text
 /// op         vmp_apply_dft_to_dft_add(res, a, pmat, limb_offset, scratch)
 /// class      derived
@@ -216,7 +202,7 @@ pub trait VmpApplyDftToDft<B: Backend> {
 /// test       test_vmp_apply_dft_to_dft_add, test_vmp_apply_dft_to_dft_add_derived
 /// ```
 pub trait VmpApplyDftToDftAdd<B: Backend> {
-    /// Fused `res += a · pmat`, shifted by `limb_offset` limbs.
+    /// Adds `a * pmat` to `res`, reading the matrix limbs from `limb_offset` on.
     fn vmp_apply_dft_to_dft_add<'r>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, B>,
@@ -227,17 +213,7 @@ pub trait VmpApplyDftToDftAdd<B: Backend> {
     );
 }
 
-/// Copies selected rows and the leading limbs of a
-/// [`VmpPMat`](crate::layouts::VmpPMat) into a smaller one.
-///
-/// Row `i` of `res` is row `first_row + i * row_step` of `a`, truncated to
-/// `res.size()` limbs. Only the selected rows and limbs are read, so the result
-/// is a dense prepared matrix over exactly the material a coarsened gadget
-/// decomposition uses.
-///
-/// The degree, column counts and [`PrepareHint`](crate::layouts::PrepareHint)
-/// must match, and `res.size() <= a.size()`. The row step is positive and
-/// the final selected row must lie inside `a` without index overflow.
+/// Copy of selected rows and the leading limbs of a [`VmpPMat`](crate::layouts::VmpPMat) into a smaller one.
 ///
 /// ```text
 /// op         vmp_extract_selected_rows(res, a, first_row, row_step)
@@ -249,6 +225,7 @@ pub trait VmpApplyDftToDftAdd<B: Backend> {
 /// test       test_vmp_extract_selected_rows
 /// ```
 pub trait VmpExtractSelectedRows<B: Backend> {
+    /// Writes row `first_row + r * row_step` of `a` into row `r` of `res`.
     fn vmp_extract_selected_rows(
         &self,
         res: &mut VmpPMatBackendMut<'_, B>,
@@ -270,5 +247,6 @@ pub trait VmpExtractSelectedRows<B: Backend> {
 /// test       test_vmp_zero
 /// ```
 pub trait VmpZero<B: Backend> {
+    /// Writes zero into every entry of `res`.
     fn vmp_zero(&self, res: &mut VmpPMatBackendMut<'_, B>);
 }

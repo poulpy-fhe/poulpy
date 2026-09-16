@@ -14,7 +14,9 @@ use crate::layouts::{
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait CnvPVecAlloc<BE: Backend> {
+    /// Returns an owned [`CnvPVecL`](crate::layouts::CnvPVecL) of `cols` columns and `size` limbs under `hint`.
     fn cnv_pvec_left_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE>;
+    /// Returns an owned [`CnvPVecR`](crate::layouts::CnvPVecR) of `cols` columns and `size` limbs under `hint`.
     fn cnv_pvec_right_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE>;
 }
 
@@ -29,16 +31,15 @@ pub trait CnvPVecAlloc<BE: Backend> {
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait CnvPVecBytesOf {
+    /// Returns the bytes a [`CnvPVecL`](crate::layouts::CnvPVecL) of `cols` columns and `size` limbs under `hint` occupies.
     fn bytes_of_cnv_pvec_left(&self, cols: usize, size: usize, hint: PrepareHint) -> usize;
+    /// Returns the bytes a [`CnvPVecR`](crate::layouts::CnvPVecR) of `cols` columns and `size` limbs under `hint` occupies.
     fn bytes_of_cnv_pvec_right(&self, cols: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
 /// Bivariate convolution over `Z[X, Y] mod (X^N + 1)` where `Y = 2^{-K}`.
-///
-/// Provides methods to prepare left/right operands and apply the convolution.
-/// See method-level documentation for the mathematical formulation.
 pub trait Convolution<BE: Backend> {
-    /// Returns scratch bytes required for [`cnv_prepare_left`](Convolution::cnv_prepare_left).
+    /// Returns the scratch bytes [`cnv_prepare_left`](Convolution::cnv_prepare_left) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_prepare_left_tmp_bytes(res_size, a_size)
@@ -49,8 +50,7 @@ pub trait Convolution<BE: Backend> {
     /// test       test_convolution
     /// ```
     fn cnv_prepare_left_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
-    /// Prepares a coefficient-domain [`VecZnx`](crate::layouts::VecZnx) as the left
-    /// operand of a bivariate convolution.
+    /// Writes each column of `a` into `res`, truncated or zero-extended to `res.size()` limbs.
     ///
     /// ```text
     /// op         cnv_prepare_left(res, a, scratch)
@@ -69,7 +69,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_prepare_right`](Convolution::cnv_prepare_right).
+    /// Returns the scratch bytes [`cnv_prepare_right`](Convolution::cnv_prepare_right) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_prepare_right_tmp_bytes(res_size, a_size)
@@ -80,8 +80,7 @@ pub trait Convolution<BE: Backend> {
     /// test       test_convolution
     /// ```
     fn cnv_prepare_right_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
-    /// Prepares a coefficient-domain [`VecZnx`](crate::layouts::VecZnx) as the right
-    /// operand of a bivariate convolution.
+    /// Writes each column of `a` into `res`, truncated or zero-extended to `res.size()` limbs.
     ///
     /// ```text
     /// op         cnv_prepare_right(res, a, scratch)
@@ -100,7 +99,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_apply_dft`](Convolution::cnv_apply_dft).
+    /// Returns the scratch bytes [`cnv_apply_dft`](Convolution::cnv_apply_dft) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -112,7 +111,7 @@ pub trait Convolution<BE: Backend> {
     /// ```
     fn cnv_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Returns scratch bytes required for [`cnv_by_const_apply`](Convolution::cnv_by_const_apply).
+    /// Returns the scratch bytes [`cnv_by_const_apply`](Convolution::cnv_by_const_apply) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_by_const_apply_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -124,12 +123,8 @@ pub trait Convolution<BE: Backend> {
     /// ```
     fn cnv_by_const_apply_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Convolves the selected column of `a` with coefficient `b_coeff` of
-    /// each limb of `b`, treating that coefficient as a constant polynomial.
-    /// Output limb `j` sums products whose input limb indices total
-    /// `j + cnv_offset`. With the value model's limb weights, the selected
-    /// product window has scale `2^((cnv_offset + 1) * w)` at radix width `w`.
-    #[allow(clippy::too_many_arguments)]
+    /// Writes the convolution of `a[a_col]` with coefficient `b_coeff` of `b[b_col]` into `res[res_col]`, zero-filling the remaining limbs.
+    ///
     /// ```text
     /// op         cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     /// class      basis
@@ -140,6 +135,7 @@ pub trait Convolution<BE: Backend> {
     /// ensures    the selected column holds the limb window of the constant convolution, scaled by 2^((cnv_offset + 1) * w) at any radix width w; the remaining limbs are zero-filled
     /// test       test_convolution_by_const, test_convolution_by_const_degree_rejected
     /// ```
+    #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
         &self,
         cnv_offset: usize,
@@ -153,7 +149,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_by_const_apply_add`](Convolution::cnv_by_const_apply_add).
+    /// Returns the scratch bytes [`cnv_by_const_apply_add`](Convolution::cnv_by_const_apply_add) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_by_const_apply_add_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -165,12 +161,8 @@ pub trait Convolution<BE: Backend> {
     /// ```
     fn cnv_by_const_apply_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// `res[res_col] +=` the [`Convolution::cnv_by_const_apply`] result; limbs
-    /// the convolution would zero-fill are left untouched. Scratch requirement
-    /// is
-    /// [`cnv_by_const_apply_add_tmp_bytes`](Convolution::cnv_by_const_apply_add_tmp_bytes),
-    /// not [`cnv_by_const_apply_tmp_bytes`](Convolution::cnv_by_const_apply_tmp_bytes).
-    #[allow(clippy::too_many_arguments)]
+    /// Adds the convolution of `a[a_col]` with coefficient `b_coeff` of `b[b_col]` to `res[res_col]`, leaving the limbs outside its support unchanged.
+    ///
     /// ```text
     /// op         cnv_by_const_apply_add(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     /// class      derived
@@ -183,6 +175,7 @@ pub trait Convolution<BE: Backend> {
     /// override   allowed, with cnv_by_const_apply_add_tmp_bytes
     /// test       test_convolution_by_const_add, test_cnv_by_const_apply_add_derived, test_convolution_by_const_degree_rejected
     /// ```
+    #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply_add(
         &self,
         cnv_offset: usize,
@@ -197,11 +190,7 @@ pub trait Convolution<BE: Backend> {
     );
 
     #[allow(clippy::too_many_arguments)]
-    /// Convolves the selected prepared columns in the polynomial ring.
-    /// Output limb `j` sums products whose input limb indices total
-    /// `j + cnv_offset`. With the value model's limb weights, the selected
-    /// product window has scale `2^((cnv_offset + 1) * w)` at radix width `w`.
-    /// A shorter destination truncates the window; remaining limbs are zero.
+    /// Writes the convolution of `a[a_col]` and `b[b_col]` into `res[res_col]`, zero-filling the remaining limbs.
     ///
     /// ```text
     /// op         cnv_apply_dft(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
@@ -226,7 +215,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_apply_dft_add`](Convolution::cnv_apply_dft_add).
+    /// Returns the scratch bytes [`cnv_apply_dft_add`](Convolution::cnv_apply_dft_add) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_add_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -238,12 +227,8 @@ pub trait Convolution<BE: Backend> {
     /// ```
     fn cnv_apply_dft_add_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Accumulating variant of [`cnv_apply_dft`](Convolution::cnv_apply_dft):
-    /// adds the selected convolution to the old destination column.
-    /// Limbs outside the convolution's support retain their old value.
-    /// Scratch requirement is
-    /// [`cnv_apply_dft_add_tmp_bytes`](Convolution::cnv_apply_dft_add_tmp_bytes).
-    #[allow(clippy::too_many_arguments)]
+    /// Adds the convolution of `a[a_col]` and `b[b_col]` to `res[res_col]`, leaving the limbs outside its support unchanged.
+    ///
     /// ```text
     /// op         cnv_apply_dft_add(cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     /// class      derived
@@ -257,6 +242,7 @@ pub trait Convolution<BE: Backend> {
     /// override   allowed, with cnv_apply_dft_add_tmp_bytes
     /// test       test_convolution_add, test_cnv_apply_dft_add_derived, test_convolution_sparse
     /// ```
+    #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_add(
         &self,
         cnv_offset: usize,
@@ -269,9 +255,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_apply_dft_sum`](Convolution::cnv_apply_dft_sum).
-    ///
-    /// `a_size` and `b_size` are upper bounds over the sizes of the term operands.
+    /// Returns the scratch bytes [`cnv_apply_dft_sum`](Convolution::cnv_apply_dft_sum) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_apply_dft_sum_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -283,14 +267,7 @@ pub trait Convolution<BE: Backend> {
     /// ```
     fn cnv_apply_dft_sum_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
-    /// Sums the selected convolution limb windows into `res[res_col]`,
-    /// using the same `cnv_offset` for every term.
-    ///
-    /// Each term behaves like one [`Convolution::cnv_apply_dft`] call over the
-    /// selected columns and the per-term results are summed; with an empty
-    /// `terms` slice the output column is zeroed. Backends may fuse the
-    /// accumulation while preserving the inverse-transform observable of
-    /// the sum within the module's DFT exactness class.
+    /// Writes the sum of the convolutions of the `terms` into `res[res_col]`, zeroing the column when `terms` is empty.
     ///
     /// ```text
     /// op         cnv_apply_dft_sum(cnv_offset, res, res_col, terms, scratch)
@@ -315,7 +292,7 @@ pub trait Convolution<BE: Backend> {
     ) where
         BE: 'a;
 
-    /// Returns scratch bytes required for [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft).
+    /// Returns the scratch bytes [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res_size, a_size, b_size)
@@ -328,9 +305,7 @@ pub trait Convolution<BE: Backend> {
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
     #[allow(clippy::too_many_arguments)]
-    /// Evaluates the bivariate pair-wise convolution res = (a\[i\] + a\[j\]) * (b\[i\] + b\[j\]).
-    /// If i == j then calls [Convolution::cnv_apply_dft], i.e. res = a\[i\] * b\[i\].
-    /// See [Convolution::cnv_apply_dft] for information about the bivariate convolution.
+    /// Writes the convolution of column `i` of `a` and `b` into `res[res_col]` when `i == j`, and the convolution of their two column sums otherwise.
     ///
     /// ```text
     /// op         cnv_pairwise_apply_dft(cnv_offset, res, res_col, a, b, i, j, scratch)
@@ -357,7 +332,7 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Returns scratch bytes required for [`cnv_prepare_self`](Convolution::cnv_prepare_self).
+    /// Returns the scratch bytes [`cnv_prepare_self`](Convolution::cnv_prepare_self) requires for those sizes.
     ///
     /// ```text
     /// op         cnv_prepare_self_tmp_bytes(res_size, a_size)
@@ -369,8 +344,7 @@ pub trait Convolution<BE: Backend> {
     /// ```
     fn cnv_prepare_self_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
 
-    /// Prepares both left and right convolution operands from the same input.
-    /// Implementations may share the transform between the two preparations.
+    /// Writes each column of `a` into both `left` and `right`, truncated or zero-extended to their limb count.
     ///
     /// ```text
     /// op         cnv_prepare_self(left, right, a, scratch)
