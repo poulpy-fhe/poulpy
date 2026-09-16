@@ -91,6 +91,7 @@ where
         self.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key)
     }
 
+    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a compact diagonal.
     fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
     where
         C: CKKSCtBounds,
@@ -103,6 +104,7 @@ where
         self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key) + self.glwe_bytes_of_from_infos(ct)
     }
 
+    /// The ciphertext stands in for the diagonal, so the budget is an upper bound for a compact diagonal.
     fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
     where
         C: CKKSCtBounds,

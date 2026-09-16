@@ -335,3 +335,32 @@ pub fn test_compact_linear_transformation<BE, F, E>(
         &mut scratch.borrow(),
     );
 }
+
+/// The production diagonal encoder emits compact diagonals for a sparse matrix
+/// and dense ones for a full one.
+pub fn test_compact_diagonal_encoder<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + crate::api::CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let mut scratch = alloc_scratch(&params, module);
+    let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
+    for (slots, want_n) in [(compact_slots(&params), params.n / 4), (params.n / 2, params.n)] {
+        let lt = crate::default::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+            module,
+            params.base2k.into(),
+            params.prec().into(),
+            &matrix::<F>(slots),
+            strategy,
+            false,
+            &mut scratch.borrow(),
+        )
+        .unwrap();
+        assert_eq!(lt.first_diagonal_plaintext().unwrap().n().as_usize(), want_n, "slots {slots}");
+    }
+}
