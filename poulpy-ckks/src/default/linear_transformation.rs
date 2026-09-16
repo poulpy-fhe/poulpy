@@ -17,7 +17,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, Convolution, ModuleN},
+    api::{CnvPVecBytesOf, Convolution, ModuleN, VecZnxSwitchRing},
     layouts::{Backend, CyclotomicOrder, Data, Module, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
 };
 
@@ -49,7 +49,7 @@ where
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxSwitchRing<BE>,
     {
         glwe_accumulate_streamed_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
     }

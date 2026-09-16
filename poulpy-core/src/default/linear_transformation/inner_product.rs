@@ -9,8 +9,8 @@
 
 use poulpy_hal::layouts::CnvPVecLToBackendRef;
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
-    layouts::{Backend, CnvDftAccTerm, CnvPVecRToBackendRef, PrepareHint, ScratchArena, VecZnxDftBackendMut},
+    api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxSwitchRing},
+    layouts::{Backend, CnvDftAccTerm, CnvPVecRToBackendRef, PrepareHint, ScratchArena, VecZnxDftBackendMut, VecZnxToBackendRef},
 };
 
 use crate::{
@@ -102,7 +102,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    M: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxSwitchRing<BE>,
     P: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
 {
     let cols = lhs.cols();
@@ -132,9 +132,17 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
         assert_eq!(baby.size() + diagonal_size - cnv_offset_hi, res_dft_size);
 
         // Stream the RHS: prepare this diagonal on the fly, then reuse the slot.
+        // A compact diagonal is embedded into a module-degree temporary first:
+        // the prepares take the module degree.
         {
             let plaintext = d.plaintext.to_backend_ref();
-            module.cnv_prepare_right(&mut diagonal, &plaintext.data, &mut scratch_1.borrow());
+            if plaintext.data.n() < module.n() {
+                let (mut dense, mut scratch_2) = scratch_1.borrow().take_vec_znx_scratch(module.n(), 1, plaintext.data.size());
+                module.vec_znx_switch_ring(&mut dense, 0, &plaintext.data, 0);
+                module.cnv_prepare_right(&mut diagonal, &dense.to_backend_ref(), &mut scratch_2);
+            } else {
+                module.cnv_prepare_right(&mut diagonal, &plaintext.data, &mut scratch_1.borrow());
+            }
         }
 
         for col in 0..cols {

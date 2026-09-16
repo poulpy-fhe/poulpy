@@ -316,4 +316,22 @@ pub fn test_compact_linear_transformation<BE, F, E>(
         &want_im,
         &mut scratch.borrow(),
     );
+
+    // Streamed path: the same transformation with its plaintext diagonals,
+    // prepared on the fly through the ring embedding.
+    let mut ct_streamed = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_linear_transformation_self_into(&mut ct_streamed, &ct, &lt, &atks, &mut scratch.borrow())
+        .unwrap();
+    assert_decrypt_precision(
+        "compact_lt_streamed",
+        &params,
+        module,
+        &encoder,
+        &ct_streamed,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
 }

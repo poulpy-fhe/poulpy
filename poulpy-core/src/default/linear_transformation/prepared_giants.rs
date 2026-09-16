@@ -13,7 +13,7 @@ use poulpy_hal::{
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
         VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
         VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxNormalizeAssign,
-        VecZnxNormalizeTmpBytes,
+        VecZnxNormalizeTmpBytes, VecZnxSwitchRing,
     },
     layouts::{
         Backend, GaloisElement, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
@@ -72,7 +72,7 @@ pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN;
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxSwitchRing<BE>;
 }
 
 impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
@@ -84,7 +84,7 @@ impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxSwitchRing<BE>,
     {
         glwe_accumulate_prepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
     }
@@ -101,7 +101,7 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+    M: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxSwitchRing<BE>,
     P: GLWEToBackendRef<BE> + crate::layouts::IntPolyInfos + GLWEInfos,
 {
     glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
@@ -169,7 +169,8 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         + VecZnxIdftApplyTmpBytes
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
-        + GLWEMulPlain<BE>,
+        + GLWEMulPlain<BE>
+        + VecZnxSwitchRing<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
     H: GetAutomorphismKey<BE>,

@@ -16,7 +16,7 @@ use poulpy_hal::{
         VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
         VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
         VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
-        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSwitchRing,
     },
     layouts::{Backend, GaloisElement, PrepareHint, ScratchArena},
 };
@@ -222,7 +222,8 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
         + GLWEMulPlain<BE>
-        + GaloisElement,
+        + GaloisElement
+        + VecZnxSwitchRing<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     P: DiagonalProd<BE>,
     H: GetAutomorphismKey<BE>,
@@ -238,8 +239,8 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
 /// Reference impl: scratch bytes for the streamed (unprepared-RHS) evaluation.
 ///
 /// The streamed inner product additionally holds one resident `CnvPVecR`
-/// diagonal slot and a `cnv_prepare_right` scratch on top of the prepared
-/// evaluation budget.
+/// diagonal slot, a module-degree `VecZnx` that embeds a compact diagonal, and
+/// a `cnv_prepare_right` scratch on top of the prepared evaluation budget.
 pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default<BE, M, R, A, B, K>(
     module: &M,
     res: &R,
@@ -273,5 +274,6 @@ where
 {
     glwe_eval_linear_transformation_tmp_bytes_default::<BE, _, _, _, _, _>(module, res, a, pt, key)
         + module.bytes_of_cnv_pvec_right(1, pt.size(), PrepareHint::OneShot)
+        + BE::bytes_of_vec_znx(module.n(), 1, pt.max_size())
         + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
 }
