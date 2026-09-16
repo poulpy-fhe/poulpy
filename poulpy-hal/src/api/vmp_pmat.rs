@@ -25,7 +25,7 @@ pub trait VmpPMatAlloc<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     every dimension >= 1
-/// ensures    returns the byte size of such a VmpPMat, the amount take_vmp_pmat_scratch carves. The hint never changes the value a prepared matrix denotes, and the in-tree backends give it the same size
+/// ensures    returns the byte size of such a VmpPMat, the amount take_vmp_pmat_scratch carves. The hint never changes the value a prepared matrix denotes, and every backend gives it the same size
 /// exact      not an arithmetic operation
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_vmp_prepare_bytes
 /// ```
@@ -58,7 +58,7 @@ pub trait VmpPrepareTmpBytes {
 /// domain     pmat: a VmpPMat; mat: a MatZnx of the same degree and dimensions
 /// requires   scratch >= vmp_prepare_tmp_bytes(...)
 /// ensures    pmat holds prep(mat) in the representation pmat's PrepareHint names. The representation is opaque, so the statement is on the observable: vmp_apply_dft_to_dft with it is the vector-matrix product by mat
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpPrepare<B: Backend> {
@@ -101,7 +101,7 @@ pub trait VmpApplyDftTmpBytes {
 /// ensures    idft(res) = [[a]] * M, the matrix pmat was prepared from; the min(a.size(), pmat.rows()) leading limbs of a are consumed and a's trailing columns are aligned with pmat.cols_in(), the leading ones zeroed
 /// fallback   OEP default body: zero the unaligned leading columns, transform the consumed limbs into a carved VecZnxDft, then apply in the DFT domain
 /// override   allowed, with vmp_apply_dft_tmp_bytes
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vmp_apply_dft, test_vmp_apply_dft_derived
 /// ```
 pub trait VmpApplyDft<B: Backend> {
@@ -170,7 +170,7 @@ pub trait VmpApplyDftToDftAddTmpBytes {
 /// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat; where a dimension disagrees the largest valid one is used
 /// requires   scratch >= vmp_apply_dft_to_dft_tmp_bytes(...)
 /// ensures    idft(res) = idft(a) * M, the matrix pmat was prepared from, reading pmat's limbs from limb_offset on; row i of the product weighs limb i of a. Only the limbs the product reaches are written
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpApplyDftToDft<B: Backend> {
@@ -217,8 +217,8 @@ pub trait VmpApplyDftToDft<B: Backend> {
 /// requires   scratch >= vmp_apply_dft_to_dft_add_tmp_bytes(...)
 /// ensures    res gains idft(a) * M over the same limb window vmp_apply_dft_to_dft writes; limbs the product does not reach gain zero and so keep their value
 /// fallback   OEP default body: a zeroed res.size()-limb staging accumulator, the product into it, then a column-wise dft_add_assign. The zeroing is load-bearing: the product may leave the limbs past its bound untouched, and an unzeroed accumulator would fold scratch into res there
-/// override   allowed, with vmp_apply_dft_to_dft_add_tmp_bytes; the avx, avx512 and arm families override it with a fused kernel
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// override   allowed, with vmp_apply_dft_to_dft_add_tmp_bytes
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vmp_apply_dft_to_dft_add, test_vmp_apply_dft_to_dft_add_derived
 /// ```
 pub trait VmpApplyDftToDftAdd<B: Backend> {

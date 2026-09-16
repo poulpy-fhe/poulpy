@@ -446,7 +446,7 @@ pub trait VecZnxBigNormalizeTmpBytes {
 /// For i64 big words, the input and radix bounds of [`super::VecZnxNormalize`]
 /// apply. For i128 big words, input coefficients must lie in `[-2^126, 2^126]`,
 /// with input radix width in `1..=127` and output radix width in `1..=64`.
-/// NTT4x30 IDFT coefficients have the tighter bound `abs(a) < 2^119`.
+/// An NTT backend's IDFT output may have the tighter bound `abs(a) < 2^119`.
 /// Additions before normalization must preserve the applicable coefficient
 /// bound. These are caller preconditions and are not checked by an input scan.
 ///

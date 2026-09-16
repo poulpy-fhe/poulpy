@@ -612,7 +612,7 @@ macro_rules! impl_backend_from {
             // Sizing must be forwarded explicitly: these are defaulted trait
             // methods, so without forwarding the delegate would silently get
             // the word-derived defaults instead of the source backend's
-            // overrides (e.g. the packed IFMA `bytes_of_vmp_pmat`), breaking
+            // overrides (e.g. a backend's packed `bytes_of_vmp_pmat`), breaking
             // the layout compatibility asserted by the markers below.
             const SCRATCH_ALIGN: usize = <$from as poulpy_hal::layouts::Backend>::SCRATCH_ALIGN;
 

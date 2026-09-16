@@ -153,7 +153,7 @@ pub const GALOISGENERATOR: u64 = 5;
 /// Default memory alignment in bytes for all allocated buffers.
 ///
 /// Set to 64 bytes to match the cache-line size of modern x86 processors
-/// and the alignment required by AVX-512 instructions.
+/// and the widest vector alignment a backend's loads require.
 pub const DEFAULTALIGN: usize = 64;
 
 fn is_aligned_custom<T>(ptr: *const T, align: usize) -> bool {

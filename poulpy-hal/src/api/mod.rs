@@ -61,7 +61,7 @@
 //! A column is canonical at radix `base2k` and precision `k` when both hold:
 //!
 //! - every digit lies in the centered range `[-2^(base2k-1), 2^(base2k-1))`,
-//!   the range the `znx_normalize_*` step kernels of `poulpy-cpu-ref` produce;
+//!   the range the backend's normalize step kernels produce;
 //! - nothing lives below precision `k`: limbs `ceil(k / base2k)..size` are
 //!   zero, and the low `(-k) mod base2k` bits of limb `ceil(k / base2k) - 1`
 //!   are zero.
@@ -104,8 +104,9 @@
 //!
 //! Coefficient-domain and big-domain operations are exact and bit-identical
 //! across backends. DFT-domain operations carry the backend's exactness class:
-//! exact for NTT backends, approximate for FFT64, whose error bound is a
-//! function of `N`, `base2k` and the operand sizes. Their contracts are stated
+//! exact for an NTT backend, approximate for a floating-point FFT backend,
+//! whose error bound is a function of `N`, `base2k` and the operand sizes.
+//! Their contracts are stated
 //! on `idft(...)`: `idft(dft(a)) = a`, `idft(svp_apply(dft(a), prep(s))) =
 //! a * s`, `idft(vmp_apply(dft(a), prep(M))) = a * M`, and the DFT-domain
 //! `add`, `sub`, `automorphism` are the images of the ring operations.
@@ -123,9 +124,9 @@
 //! yields a degree-`n` prepared operand that every apply form reads through the
 //! backend's slot correspondence, while the left operand and the result take
 //! the module degree (sparse operands,
-//! <https://github.com/poulpy-fhe/poulpy/issues/266>). The in-tree CPU
-//! backends take sparse degrees from 8 up for that slot, prepare and apply;
-//! the coefficient-domain add and sub families accept any power-of-two
+//! <https://github.com/poulpy-fhe/poulpy/issues/266>). A backend may reject a
+//! sparse degree below its transform block width for that slot, prepare and
+//! apply; the coefficient-domain add and sub families accept any power-of-two
 //! divisor.
 //!
 //! The coefficient-wise operations are outside that rule: `vec_znx_big_inner_sum`,

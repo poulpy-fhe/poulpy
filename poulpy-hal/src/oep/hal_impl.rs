@@ -170,8 +170,8 @@ pub unsafe trait HalVecZnxImpl: Backend {
     /// `vec_znx_lsh` itself needs. A backend that overrides some but not all
     /// bodies of the family must therefore either leave this on the default or
     /// return a value large enough for the ones it did not override.
-    /// `poulpy-cpu-ref` does exactly that: it overrides `vec_znx_lsh_assign` and
-    /// leaves this `_tmp_bytes` on the default.
+    /// A backend may do exactly that: override `vec_znx_lsh_assign` and
+    /// leave this `_tmp_bytes` on the default.
     fn vec_znx_lsh_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize {
         crate::oep::vec_znx_lsh_tmp_bytes_derived::<Self>(module, res_size)
     }
@@ -700,8 +700,8 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>, res_col: usize);
 
-    /// Backend-specific automorphism plan (e.g. a `Fft64AutomorphismPlan`
-    /// for FFT64 backends, a pure-permutation plan for NTT backends).
+    /// Backend-specific automorphism plan (e.g. a precomputed plan for a
+    /// floating-point FFT backend, a pure-permutation plan for an NTT backend).
     type AutomorphismPlan: Send + Sync;
 
     fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan;
@@ -974,8 +974,8 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
 
     /// Required, not derived: this is an exact big-domain product of `a` with
     /// one coefficient column of `b`. The spec's DFT decomposition would route
-    /// it through an approximate transform on FFT64 (spec section 4.3, PR4
-    /// deviation).
+    /// it through an approximate transform on a floating-point FFT backend
+    /// (spec section 4.3, PR4 deviation).
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
         module: &Module<Self>,

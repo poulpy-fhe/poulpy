@@ -26,7 +26,7 @@ pub trait CnvPVecAlloc<BE: Backend> {
 /// class      support
 /// mutation   none
 /// domain     cols >= 1, size >= 1
-/// ensures    returns the byte size of such a prepared operand, the amount take_cnv_pvec_left_scratch and its right twin carve. The hint never changes the value a prepared operand denotes, and the in-tree backends give it the same size
+/// ensures    returns the byte size of such a prepared operand, the amount take_cnv_pvec_left_scratch and its right twin carve. The hint never changes the value a prepared operand denotes, and every backend gives it the same size
 /// exact      not an arithmetic operation
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
@@ -63,7 +63,7 @@ pub trait Convolution<BE: Backend> {
     /// requires   scratch >= cnv_prepare_left_tmp_bytes(res.size(), a.size())
     /// ensures    res holds prep_L(a) in the representation res's PrepareHint names. The representation is opaque, so the statement is on the observable: cnv_apply_dft with it is the bivariate convolution by a
     /// sparse     none: a takes the module degree; the sparse-capable prepare is cnv_prepare_right (4.5, #266)
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+    /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
     fn cnv_prepare_left(
@@ -95,8 +95,8 @@ pub trait Convolution<BE: Backend> {
     /// domain     res: a CnvPVecR with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_right_tmp_bytes(res.size(), a.size())
     /// ensures    res holds prep_R(a) in the representation res's PrepareHint names, observed through cnv_apply_dft
-    /// sparse     a is the sparse-capable slot: a degree-n input, n dividing N, n >= 8 on the in-tree CPU backends, produces a degree-n prepared operand standing for prep_R(switch_ring_{n->N}(a)) (4.5, #266)
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+    /// sparse     a is the sparse-capable slot: a degree-n input, n dividing N, n not below the backend's minimum sparse degree, produces a degree-n prepared operand standing for prep_R(switch_ring_{n->N}(a)) (4.5, #266)
+    /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
     fn cnv_prepare_right(
@@ -149,7 +149,8 @@ pub trait Convolution<BE: Backend> {
     ///
     /// Required of every backend, never derived: it is an exact big-domain
     /// product of `a` with one coefficient column of `b`, and the DFT
-    /// decomposition would route it through an approximate transform on FFT64.
+    /// decomposition would route it through an approximate transform on a
+    /// floating-point FFT backend.
     #[allow(clippy::too_many_arguments)]
     /// ```text
     /// op         cnv_by_const_apply(cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
@@ -159,7 +160,7 @@ pub trait Convolution<BE: Backend> {
     /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    res[res_col] is the bivariate convolution of a[a_col] with coefficient b_coeff of b[b_col], read as a constant in X, scaled by 2^(cnv_offset * base2k); limbs past the convolution bound are zero-filled
     /// sparse     none: a takes the module degree; a degree-n a is embedded by the caller with vec_znx_switch_ring first, nothing consumes more (#266)
-    /// exact      exact: it is a big-domain product, which is why it is required of every backend rather than routed through the lossy DFT decomposition on FFT64
+    /// exact      exact: it is a big-domain product, which is why it is required of every backend rather than routed through the lossy DFT decomposition on a floating-point FFT backend
     /// test       test_convolution_by_const, test_convolution_by_const_degree_rejected
     /// ```
     fn cnv_by_const_apply(
@@ -259,7 +260,7 @@ pub trait Convolution<BE: Backend> {
     /// requires   scratch >= cnv_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    idft(res[res_col]) is the bivariate convolution of a[a_col] and b[b_col] over Z[X, Y] mod (X^N + 1), Y = 2^-base2k, scaled by 2^(cnv_offset * base2k); a res shorter than a.size() + b.size() truncates in Y, and the limbs past the convolution bound are zero-filled
     /// sparse     b may be a degree-n prepared right operand, n dividing N, under the substitution of 4.5; res and a take the module degree; there is no backend-generic body for it, so the mixed-degree sweep is a basis-kernel obligation (#266)
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+    /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution, test_convolution_sparse
     /// ```
     fn cnv_apply_dft(
@@ -304,7 +305,7 @@ pub trait Convolution<BE: Backend> {
     /// sparse     as for cnv_apply_dft (4.5)
     /// fallback   OEP default body: the convolution into a carved res.size()-limb VecZnxDft, then vec_znx_dft_add_assign
     /// override   allowed, with cnv_apply_dft_add_tmp_bytes
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+    /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution_add, test_cnv_apply_dft_add_derived, test_convolution_sparse
     /// ```
     fn cnv_apply_dft_add(
@@ -354,8 +355,8 @@ pub trait Convolution<BE: Backend> {
     /// ensures    idft(res[res_col]) is the sum over the terms of their bivariate convolutions, overwriting the column; an empty slice zeroes it. A backend may fuse the accumulation with one lazy reduction per output limb, so the result is congruent to a chain of cnv_apply_dft_add calls without being bit-identical to it
     /// sparse     per term, as for cnv_apply_dft (4.5)
     /// fallback   OEP default body: the first term overwrites with cnv_apply_dft, which also zeroes the limbs past the convolution bound, and the remaining terms fold in with cnv_apply_dft_add
-    /// override   allowed, with cnv_apply_dft_sum_tmp_bytes; the avx and avx512 families override it with a fused kernel
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+    /// override   allowed, with cnv_apply_dft_sum_tmp_bytes
+    /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution_sum, test_cnv_apply_dft_sum_derived, test_convolution_sparse
     /// ```
     fn cnv_apply_dft_sum<'a>(
@@ -396,8 +397,8 @@ pub trait Convolution<BE: Backend> {
     /// ensures    for i != j, idft(res[res_col]) is the convolution of (a[i] + a[j]) with (b[i] + b[j]), expanded in the DFT domain where the prepared operands are linear; for i == j it is the single product a[i] * b[i], not the four-fold one the sum would give
     /// sparse     per product, as for cnv_apply_dft (4.5)
     /// fallback   OEP default body: the four-product expansion above
-    /// override   allowed, with cnv_pairwise_apply_dft_tmp_bytes; the avx512 family overrides it with a fused kernel
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+    /// override   allowed, with cnv_pairwise_apply_dft_tmp_bytes
+    /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_convolution_pairwise, test_cnv_pairwise_apply_dft_derived, test_convolution_sparse
     /// ```
     fn cnv_pairwise_apply_dft(
@@ -440,7 +441,7 @@ pub trait Convolution<BE: Backend> {
     /// sparse     none: a takes the module degree, as for cnv_prepare_left (4.5)
     /// fallback   OEP default body: the two prepares in sequence
     /// override   allowed, with cnv_prepare_self_tmp_bytes; a backend that shares the transform between the two does it here
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+    /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_cnv_prepare_self_derived, test_convolution_prepare_shape_rejected, test_convolution_sparse
     /// ```
     fn cnv_prepare_self(

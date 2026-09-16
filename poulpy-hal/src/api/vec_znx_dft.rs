@@ -45,7 +45,7 @@ pub trait VecZnxDftBytesOf {
 /// mutation   out-of-place
 /// domain     res: a VecZnxDft; a: a dense VecZnx of the module degree; step >= 1
 /// ensures    limb j of res[res_col] is the forward transform of limb offset + j * step of a[a_col], for as many limbs as res holds; limbs whose source is past a.size() are zero. The representation is opaque, so the statement is on the observable: idft(res) reproduces those limbs of a
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vec_znx_dft_apply, test_vec_znx_idft_apply, test_vec_znx_dft_step_zero_rejected
 /// ```
 pub trait VecZnxDftApply<B: Backend> {
@@ -85,7 +85,7 @@ pub trait VecZnxIdftApplyTmpBytes {
 /// domain     res: a VecZnxBig; a: a VecZnxDft of the same degree; a is read, not clobbered
 /// requires   scratch >= vec_znx_idft_apply_tmp_bytes()
 /// ensures    res[res_col] is the inverse transform of a[a_col], limb by limb, in big words; limbs of res past a.size() are zero. idft(dft(x)) = x is the round trip the DFT-domain contracts are stated through
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vec_znx_idft_apply, test_vec_znx_idft_apply_alloc
 /// ```
 pub trait VecZnxIdftApply<B: Backend> {
@@ -108,7 +108,7 @@ pub trait VecZnxIdftApply<B: Backend> {
 /// definition vec_znx_idft_apply(res, res_col, a, a_col), with a spent as the transform's workspace
 /// domain     res: a VecZnxBig; a: a VecZnxDft of the same degree, taken mutably
 /// ensures    res[res_col] holds idft(a[a_col]) as for vec_znx_idft_apply, and a[a_col] is left unspecified. Kept beside the basis form because it carries temporary-lifetime information a composition loses: the caller states that a is dead, which buys the backend the scratch
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vec_znx_idft_apply_tmpa
 /// ```
 pub trait VecZnxIdftApplyTmpA<B: Backend> {
@@ -149,7 +149,7 @@ pub trait VecZnxIdftNormalizeConsumeTmpBytes {
 /// ensures    [[res]] = [[idft(a)]] + [[addend]] at radix res_base2k, rounded once at precision res_k and canonical there; a[a_col] is left unspecified
 /// fallback   OEP default body: idft_apply_tmpa into a carved VecZnxBig, the optional add_small_assign, then big_normalize
 /// override   allowed, with vec_znx_idft_normalize_consume_tmp_bytes
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vec_znx_idft_normalize_consume, test_vec_znx_idft_normalize_consume_derived
 /// ```
 pub trait VecZnxIdftNormalizeConsume<B: Backend> {
@@ -176,7 +176,7 @@ pub trait VecZnxIdftNormalizeConsume<B: Backend> {
 /// mutation   out-of-place
 /// domain     res, a, b: VecZnxDft of the same degree
 /// ensures    idft(res[res_col]) = idft(a[a_col]) + idft(b[b_col]) limb by limb, the image of the ring addition; operands shorter than res are zero-extended and every limb of res is written
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vec_znx_dft_add
 /// ```
 pub trait VecZnxDftAdd<B: Backend> {
@@ -200,7 +200,7 @@ pub trait VecZnxDftAdd<B: Backend> {
 /// definition vec_znx_dft_add(res, res_col, res, res_col, a, a_col)
 /// domain     res, a: VecZnxDft of the same degree
 /// ensures    idft(res[res_col]) gains idft(a[a_col]) limb by limb; limbs of res past a.size() keep their value
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vec_znx_dft_add_assign
 /// ```
 pub trait VecZnxDftAddAssign<B: Backend> {
@@ -221,7 +221,7 @@ pub trait VecZnxDftAddAssign<B: Backend> {
 /// mutation   out-of-place
 /// domain     res, a, b: VecZnxDft of the same degree
 /// ensures    idft(res[res_col]) = idft(a[a_col]) - idft(b[b_col]) limb by limb; operands shorter than res are zero-extended and every limb of res is written
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vec_znx_dft_sub
 /// ```
 pub trait VecZnxDftSub<B: Backend> {
@@ -245,7 +245,7 @@ pub trait VecZnxDftSub<B: Backend> {
 /// definition vec_znx_dft_sub(res, res_col, res, res_col, a, a_col)
 /// domain     res, a: VecZnxDft of the same degree
 /// ensures    idft(res[res_col]) loses idft(a[a_col]) limb by limb; limbs of res past a.size() keep their value
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vec_znx_dft_sub_assign
 /// ```
 pub trait VecZnxDftSubAssign<B: Backend> {
@@ -267,7 +267,7 @@ pub trait VecZnxDftSubAssign<B: Backend> {
 /// definition vec_znx_dft_sub(res, res_col, a, a_col, res, res_col)
 /// domain     res, a: VecZnxDft of the same degree
 /// ensures    idft(res[res_col]) = idft(a[a_col]) - idft(res[res_col]) limb by limb; limbs of res past a.size() are negated in place
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vec_znx_dft_sub_negate_assign
 /// ```
 pub trait VecZnxDftSubNegateAssign<B: Backend> {
@@ -370,7 +370,7 @@ pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
 /// mutation   out-of-place
 /// domain     res, a: VecZnxDft of the module degree; plan: built by vec_znx_dft_automorphism_plan for an odd p
 /// ensures    idft(res[res_col]) = tau_p(idft(a[a_col])) limb by limb; limbs of res past a.size() are zero
-/// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vec_znx_dft_automorphism
 /// ```
 pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
@@ -402,7 +402,7 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     /// ensures    res[res_col] gains tau_p(a[a_col]) over min(res.size(), a.size()) limbs; the limbs of res past that are untouched
     /// fallback   OEP default body: the automorphism into a carved one-column VecZnxDft, then dft_add_assign
     /// override   allowed, with vec_znx_dft_automorphism_add_with_plan_tmp_bytes
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+    /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_vec_znx_dft_automorphism_add, test_vec_znx_dft_automorphism_add_with_plan_derived
     /// ```
     fn vec_znx_dft_automorphism_add_with_plan(
@@ -428,7 +428,7 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     /// ensures    as for vec_znx_dft_automorphism_with_plan, with the plan built and dropped inside the call; prefer the plan form when one p is reused
     /// fallback   OEP default body: build the plan, apply it, drop it
     /// override   allowed, scratch-free
-    /// exact      backend DFT class: exact for the NTT families, approximate for FFT64
+    /// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
     /// test       test_vec_znx_dft_automorphism, test_vec_znx_dft_automorphism_derived
     /// ```
     fn vec_znx_dft_automorphism(
