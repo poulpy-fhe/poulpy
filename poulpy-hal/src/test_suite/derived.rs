@@ -15,7 +15,7 @@
 //! override is pinned to the same oracle as the default body. Coefficient- and
 //! big-domain results are compared bit for bit; DFT-domain results are
 //! compared after `idft` and `big_normalize` at the suite's `base2k`, which is
-//! how the rest of this suite states DFT-domain equality (spec decision 4).
+//! how the rest of this suite states DFT-domain equality.
 //!
 //! Where the two sides are allowed to distribute the same value over
 //! different non-canonical digits, the accumulating shifts, the comparison
@@ -271,7 +271,7 @@ where
                 module.vec_znx_dft_apply(1, 0, &mut res_module.to_backend_mut(), j, &res_init_ref, j);
             }
 
-            // Oracle: the spec definition of `vmp_apply_dft_to_dft_add`,
+            // Oracle: the contract definition of `vmp_apply_dft_to_dft_add`,
             // spelled out through the public api traits, a fresh product,
             // then folded in column by column.
             let mut fresh = module.vec_znx_dft_alloc(cols_out, res_size);
@@ -411,7 +411,7 @@ where
                     &mut scratch.borrow(),
                 );
 
-                // Oracle: the spec definition of `lsh`, spelled out.
+                // Oracle: the contract definition of `lsh`, spelled out.
                 module.vec_znx_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut want_backend),
                     base2k,
@@ -472,7 +472,7 @@ where
                     &mut scratch.borrow(),
                 );
 
-                // Oracle: the spec definition of `rsh`, spelled out.
+                // Oracle: the contract definition of `rsh`, spelled out.
                 module.vec_znx_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut want_backend),
                     base2k,
@@ -2159,7 +2159,7 @@ where
                 );
             }
 
-            // Oracle: the spec definition, spelled out through the api traits.
+            // Oracle: the contract definition, spelled out through the api traits.
             module.cnv_apply_dft(
                 cnv_offset,
                 &mut fresh.to_backend_mut(),
@@ -2269,7 +2269,7 @@ where
 
     for n_terms in 1..=term_cols.len() {
         for cnv_offset in [0usize, 1usize] {
-            // Oracle: the spec definition, spelled out through the api traits.
+            // Oracle: the contract definition, spelled out through the api traits.
             for (idx, &(a_col, b_col)) in term_cols[..n_terms].iter().enumerate() {
                 if idx == 0 {
                     module.cnv_apply_dft(

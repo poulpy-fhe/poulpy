@@ -14,7 +14,7 @@
 //! and a test that runs the decomposition directly on a concrete backend
 //! passes that backend.
 //!
-//! Rules (spec section 5) every function in this module obeys:
+//! Rules every function in this module obeys:
 //!
 //! - only OEP methods of `BE`, backend-native views, [`ScratchArena`]
 //!   carving and `Backend::bytes_of_*`;

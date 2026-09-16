@@ -973,7 +973,7 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
     ) -> usize;
 
     /// Required, not derived: this is an exact big-domain product of `a` with
-    /// one coefficient column of `b`. The spec's DFT decomposition would route
+    /// one coefficient column of `b`. The DFT decomposition of the derived forms would route
     /// it through an approximate transform on a floating-point FFT backend.
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
