@@ -17,7 +17,7 @@ use poulpy_hal::{
 use crate::SlotsKind;
 use crate::{
     CKKSInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
-    layouts::CKKSPreparedRight,
+    ensure_plaintext_degree_match, layouts::CKKSPreparedRight,
 };
 use poulpy_core::GLWEBytesOf;
 
@@ -309,6 +309,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
+        ensure_plaintext_degree_match("ckks_mul_pt_vec", a.n().as_usize(), pt.n().as_usize())?;
         // Set the result metadata first: `dst.size()` is meta-derived and a fresh
         // `dst` carries zero meta, so `glwe_mul_plain` (which writes `res.size()`
         // limbs) would otherwise produce an empty output.
@@ -328,6 +329,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, pt)?;
+        ensure_plaintext_degree_match("ckks_mul_pt_vec_assign", dst.n().as_usize(), pt.n().as_usize())?;
         let log_sparsity = dst.log_sparsity().min(pt.log_sparsity());
         let slots = dst.slots().join(pt.slots());
         scratch.scope(|scratch_local| {

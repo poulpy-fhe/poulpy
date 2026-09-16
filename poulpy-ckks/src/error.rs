@@ -203,7 +203,7 @@ impl fmt::Display for CKKSCompositionError {
             Self::PlaintextDegreeMismatch { op, ct_n, pt_n } => {
                 write!(
                     f,
-                    "{op} requires a full plaintext with degree {ct_n}, got plaintext degree {pt_n}"
+                    "{op} requires a plaintext of degree {ct_n} or a power-of-two divisor of it from the backend's minimum sparse degree, got plaintext degree {pt_n}"
                 )
             }
             Self::PlaintextCoefficientOutOfRange { op, role, coeff, n } => {
@@ -292,6 +292,16 @@ pub(crate) fn ensure_base2k_match(op: &'static str, ct_base2k: usize, pt_base2k:
 
 pub(crate) fn ensure_plaintext_degree_match(op: &'static str, ct_n: usize, pt_n: usize) -> Result<()> {
     if ct_n != pt_n {
+        return Err(CKKSCompositionError::PlaintextDegreeMismatch { op, ct_n, pt_n }.into());
+    }
+    Ok(())
+}
+
+/// A plaintext operand embeds into the ciphertext ring when its degree is the
+/// ciphertext's, or a power-of-two divisor of it not below the backend's
+/// minimum sparse degree.
+pub(crate) fn ensure_plaintext_degree_embeds(op: &'static str, ct_n: usize, pt_n: usize, floor: usize) -> Result<()> {
+    if pt_n != ct_n && !(pt_n.is_power_of_two() && pt_n >= floor && ct_n.is_multiple_of(pt_n)) {
         return Err(CKKSCompositionError::PlaintextDegreeMismatch { op, ct_n, pt_n }.into());
     }
     Ok(())

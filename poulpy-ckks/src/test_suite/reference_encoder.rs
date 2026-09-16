@@ -152,6 +152,11 @@ impl ReferenceEncodingPlan {
 }
 
 impl<T> ReferenceEncoder<T> {
+    /// The complex slot count this encoder was built for.
+    pub fn m(&self) -> usize {
+        self.plan.m
+    }
+
     /// Creates an encoder for `m` complex CKKS slots.
     ///
     /// Inputs:
