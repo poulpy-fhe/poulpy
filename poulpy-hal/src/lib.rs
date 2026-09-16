@@ -69,8 +69,8 @@
 //!
 //! All [`oep`] extension points are `unsafe` to implement. Implementors must uphold the
 //! contract documented in [`doc::backend_safety`], covering memory domains,
-//! alignment, scratch lifetime, synchronization, aliasing, and numerical
-//! exactness.
+//! alignment, scratch lifetime, synchronization, aliasing, and the numerical
+//! contract.
 //!
 //! ## Non-Goals
 //!
@@ -137,7 +137,7 @@ pub mod doc {
     /// Safety contract that all [`crate::oep`] trait implementations must uphold.
     ///
     /// Covers memory domains, alignment, scratch lifetime, synchronization,
-    /// aliasing, and numerical exactness requirements.
+    /// aliasing, and the numerical contract.
     #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/backend_safety_contract.md"))]
     pub mod backend_safety {
         pub const _PLACEHOLDER: () = ();

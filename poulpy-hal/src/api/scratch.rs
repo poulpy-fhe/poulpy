@@ -21,7 +21,6 @@ use crate::{
 /// mutation   none
 /// domain     size: bytes, at least the largest `*_tmp_bytes` the caller will hand out
 /// ensures    returns an owned buffer of at least `size` bytes with the backend's alignment; its contents are unspecified
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait ScratchOwnedAlloc<B: Backend> {
@@ -36,7 +35,6 @@ pub trait ScratchOwnedAlloc<B: Backend> {
 /// mutation   none
 /// domain     -
 /// ensures    returns a ScratchArena over the whole owned buffer; the arena's contents are unspecified on entry and after every call that takes it
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait ScratchOwnedBorrow<B: Backend> {
@@ -51,7 +49,6 @@ pub trait ScratchOwnedBorrow<B: Backend> {
 /// mutation   none
 /// domain     -
 /// ensures    returns the number of bytes still carvable from the arena
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait ScratchAvailable {
@@ -69,7 +66,6 @@ pub trait ScratchAvailable {
 /// mutation   none
 /// domain     a borrowed scratch region of a backend whose memory the host can address
 /// ensures    returns the region as a host byte slice; a backend whose scratch lives on a device does not implement this
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait HostBufMut<'a>: Sized {
@@ -95,7 +91,6 @@ impl<'a> HostBufMut<'a> for &'a mut [u8] {
 /// mutation   none
 /// domain     the arena holds at least the matching `bytes_of_*`
 /// ensures    consumes the arena and returns the carved layout, tagged with the requested dimensions, beside the remaining arena; the carved bytes are unspecified, so a caller that reads before writing zeroes first
-/// exact      not an arithmetic operation
 /// test       none
 /// ```
 pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {

@@ -11,7 +11,6 @@ use crate::layouts::{
 /// mutation   none
 /// domain     every dimension >= 1; hint: the PrepareHint the destination will be written under
 /// ensures    returns an owned degree-N VmpPMat of those dimensions in the backend's prepared representation, which is opaque; its contents are unspecified
-/// exact      not an arithmetic operation
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait VmpPMatAlloc<B: Backend> {
@@ -26,7 +25,6 @@ pub trait VmpPMatAlloc<B: Backend> {
 /// mutation   none
 /// domain     every dimension >= 1
 /// ensures    returns the byte size of such a VmpPMat, the amount take_vmp_pmat_scratch carves. The hint never changes the value a prepared matrix denotes, and every backend gives it the same size
-/// exact      not an arithmetic operation
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_vmp_prepare_bytes
 /// ```
 pub trait VmpPMatBytesOf {
@@ -41,7 +39,6 @@ pub trait VmpPMatBytesOf {
 /// mutation   none
 /// domain     every dimension >= 1
 /// ensures    returns the scratch bytes vmp_prepare needs on a matrix of those dimensions
-/// exact      not an arithmetic operation
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpPrepareTmpBytes {
@@ -58,7 +55,6 @@ pub trait VmpPrepareTmpBytes {
 /// domain     pmat: a VmpPMat; mat: a MatZnx of the same degree and dimensions
 /// requires   scratch >= vmp_prepare_tmp_bytes(...)
 /// ensures    pmat holds prep(mat) in the representation pmat's PrepareHint names. The representation is opaque, so the statement is on the observable: vmp_apply_dft_to_dft with it is the vector-matrix product by mat
-/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpPrepare<B: Backend> {
@@ -74,7 +70,6 @@ pub trait VmpPrepare<B: Backend> {
 /// mutation   none
 /// domain     every dimension >= 1
 /// ensures    returns the scratch bytes vmp_apply_dft needs: a min(a_size, b_rows)-limb, b_cols_in-column VecZnxDft for the transformed input, plus whatever vmp_apply_dft_to_dft asks for on the same shapes
-/// exact      not an arithmetic operation
 /// test       test_vmp_apply_dft
 /// ```
 pub trait VmpApplyDftTmpBytes {
@@ -101,7 +96,6 @@ pub trait VmpApplyDftTmpBytes {
 /// ensures    idft(res) = [[a]] * M, the matrix pmat was prepared from; the min(a.size(), pmat.rows()) leading limbs of a are consumed and a's trailing columns are aligned with pmat.cols_in(), the leading ones zeroed
 /// fallback   OEP default body: zero the unaligned leading columns, transform the consumed limbs into a carved VecZnxDft, then apply in the DFT domain
 /// override   allowed, with vmp_apply_dft_tmp_bytes
-/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vmp_apply_dft, test_vmp_apply_dft_derived
 /// ```
 pub trait VmpApplyDft<B: Backend> {
@@ -124,7 +118,6 @@ pub trait VmpApplyDft<B: Backend> {
 /// mutation   none
 /// domain     every dimension >= 1
 /// ensures    returns the scratch bytes vmp_apply_dft_to_dft needs on those shapes
-/// exact      not an arithmetic operation
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpApplyDftToDftTmpBytes {
@@ -148,7 +141,6 @@ pub trait VmpApplyDftToDftTmpBytes {
 /// mutation   none
 /// domain     every dimension >= 1
 /// ensures    returns the scratch bytes vmp_apply_dft_to_dft_add needs: a res_size-limb, b_cols_out-column staging accumulator plus the product's own scratch. A backend that overrides the operation with a fused kernel overrides this too, and may report less
-/// exact      not an arithmetic operation
 /// test       test_vmp_apply_dft_to_dft_add
 /// ```
 pub trait VmpApplyDftToDftAddTmpBytes {
@@ -170,7 +162,6 @@ pub trait VmpApplyDftToDftAddTmpBytes {
 /// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat; where a dimension disagrees the largest valid one is used
 /// requires   scratch >= vmp_apply_dft_to_dft_tmp_bytes(...)
 /// ensures    idft(res) = idft(a) * M, the matrix pmat was prepared from, reading pmat's limbs from limb_offset on; row i of the product weighs limb i of a. Only the limbs the product reaches are written
-/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vmp_apply_dft_to_dft
 /// ```
 pub trait VmpApplyDftToDft<B: Backend> {
@@ -218,7 +209,6 @@ pub trait VmpApplyDftToDft<B: Backend> {
 /// ensures    res gains idft(a) * M over the same limb window vmp_apply_dft_to_dft writes; limbs the product does not reach gain zero and so keep their value
 /// fallback   OEP default body: a zeroed res.size()-limb staging accumulator, the product into it, then a column-wise dft_add_assign. The zeroing is load-bearing: the product may leave the limbs past its bound untouched, and an unzeroed accumulator would fold scratch into res there
 /// override   allowed, with vmp_apply_dft_to_dft_add_tmp_bytes
-/// exact      backend DFT class: exact for an NTT backend, approximate for a floating-point FFT backend
 /// test       test_vmp_apply_dft_to_dft_add, test_vmp_apply_dft_to_dft_add_derived
 /// ```
 pub trait VmpApplyDftToDftAdd<B: Backend> {
@@ -253,7 +243,6 @@ pub trait VmpApplyDftToDftAdd<B: Backend> {
 /// mutation   out-of-place
 /// domain     res, a: VmpPMat of the same degree, the same column counts and the same PrepareHint, with res.size() <= a.size(), row_step > 0 and a last selected row inside a; assert_extractable checks all of it before the kernel indexes on those facts
 /// ensures    row i of res is row first_row + i * row_step of a, truncated to res.size() limbs, so res is a dense prepared matrix over exactly the material a coarsened gadget decomposition uses. It moves representation bytes
-/// exact      exact, it copies
 /// test       test_vmp_extract_selected_rows
 /// ```
 pub trait VmpExtractSelectedRows<B: Backend> {
@@ -274,7 +263,6 @@ pub trait VmpExtractSelectedRows<B: Backend> {
 /// mutation   out-of-place
 /// domain     res: a VmpPMat
 /// ensures    every entry of res is the representation of zero, so a vector-matrix product through it yields zero
-/// exact      exact
 /// test       test_vmp_zero
 /// ```
 pub trait VmpZero<B: Backend> {

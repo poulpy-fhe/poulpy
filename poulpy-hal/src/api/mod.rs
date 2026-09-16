@@ -16,11 +16,10 @@
 //! mutation   out-of-place
 //! domain     res, a, b: VecZnx or windows of one, read at one shared base2k
 //! ensures    res[res_col] = a[a_col] + b[b_col] limb by limb
-//! exact      exact
 //! test       test_vec_znx_add_matches_reference
 //! ```
 //!
-//! `op`, `class`, `mutation`, `domain`, `ensures`, `exact` and `test` are
+//! `op`, `class`, `mutation`, `domain`, `ensures` and `test` are
 //! always present; `definition`, `requires`, `fallback`, `override` and
 //! `sparse` appear where they have something to say.
 //!
@@ -102,14 +101,14 @@
 //!
 //! # Exactness
 //!
-//! Coefficient-domain and big-domain operations are exact and bit-identical
-//! across backends. DFT-domain operations carry the backend's exactness class:
-//! exact for an NTT backend, approximate for a floating-point FFT backend,
-//! whose error bound is a function of `N`, `base2k` and the operand sizes.
-//! Their contracts are stated
-//! on `idft(...)`: `idft(dft(a)) = a`, `idft(svp_apply(dft(a), prep(s))) =
-//! a * s`, `idft(vmp_apply(dft(a), prep(M))) = a * M`, and the DFT-domain
-//! `add`, `sub`, `automorphism` are the images of the ring operations.
+//! Every operation's result is the exact integer result under the operand
+//! bounds its contract states. A backend whose transform is floating point
+//! rounds back to those integers within the bounds it documents, so the
+//! result does not depend on the backend. The DFT-domain types are opaque;
+//! their contracts are stated on `idft(...)`: `idft(dft(a)) = a`,
+//! `idft(svp_apply(dft(a), prep(s))) = a * s`, `idft(vmp_apply(dft(a),
+//! prep(M))) = a * M`, and the DFT-domain `add`, `sub`, `automorphism` are
+//! the images of the ring operations.
 //!
 //! # Degree embedding
 //!
