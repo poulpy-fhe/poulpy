@@ -16,7 +16,7 @@
 // ----------------------------------------------------------------------
 
 use std::arch::x86_64::{
-    __m128d, __m256d, _mm_load_pd, _mm256_add_pd, _mm256_fmadd_pd, _mm256_fmsub_pd, _mm256_loadu_pd, _mm256_mul_pd,
+    __m128d, __m256d, _mm_loadu_pd, _mm256_add_pd, _mm256_fmadd_pd, _mm256_fmsub_pd, _mm256_loadu_pd, _mm256_mul_pd,
     _mm256_permute2f128_pd, _mm256_set_m128d, _mm256_storeu_pd, _mm256_sub_pd, _mm256_unpackhi_pd, _mm256_unpacklo_pd,
 };
 
@@ -102,7 +102,7 @@ fn ifft_bfs_16_avx2_fma(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], m
 #[target_feature(enable = "avx2,fma")]
 fn inv_twiddle_ifft_avx2_fma(h: usize, re: &mut [f64], im: &mut [f64], omg: [f64; 2]) {
     unsafe {
-        let omx: __m128d = _mm_load_pd(omg.as_ptr());
+        let omx: __m128d = _mm_loadu_pd(omg.as_ptr());
         let omra: __m256d = _mm256_set_m128d(omx, omx);
         let omi: __m256d = _mm256_unpackhi_pd(omra, omra);
         let omr: __m256d = _mm256_unpacklo_pd(omra, omra);
