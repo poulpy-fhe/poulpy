@@ -139,7 +139,8 @@ pub fn reim_to_znx_i64_bnd63_avx512(res: &mut [i64], divisor: f64, a: &[f64]) {
     let mantissa_mask: u64 = (i64::MAX as u64) ^ expo_mask;
     let mantissa_msb: u64 = 0x0010000000000000u64;
     let divi_bits: f64 = divisor * (1i64 << 52) as f64;
-    let offset: f64 = divisor / 2.;
+    // A bias just below half avoids double rounding near ties and at 2^52.
+    let offset: f64 = divisor * 0.5f64.next_down();
 
     unsafe {
         use std::arch::x86_64::{
@@ -220,7 +221,8 @@ pub fn reim_to_znx_i64_assign_bnd63_avx512(res: &mut [f64], divisor: f64) {
     let mantissa_mask: u64 = (i64::MAX as u64) ^ expo_mask;
     let mantissa_msb: u64 = 0x0010000000000000u64;
     let divi_bits: f64 = divisor * (1i64 << 52) as f64;
-    let offset: f64 = divisor / 2.;
+    // A bias just below half avoids double rounding near ties and at 2^52.
+    let offset: f64 = divisor * 0.5f64.next_down();
 
     unsafe {
         use std::arch::x86_64::{
@@ -296,6 +298,11 @@ pub fn reim_to_znx_i64_assign_bnd63_avx512(res: &mut [f64], divisor: f64) {
 
 #[cfg(all(test, target_feature = "avx512f"))]
 mod tests {
+    #[test]
+    fn reim_to_znx_rounding_boundaries() {
+        poulpy_cpu_ref::test_suite::reim_conversion::test_reim_to_znx_rounding::<crate::FFT64Avx512>();
+    }
+
     use poulpy_cpu_ref::reference::fft64::reim::{reim_from_znx_i64_ref, reim_to_znx_i64_ref};
 
     use super::*;
