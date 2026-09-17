@@ -6,8 +6,16 @@ fn glwe_copy() {
     use poulpy_core::test_suite::copy::test_glwe_copy;
     use poulpy_hal::{layouts::Module, test_suite::TestParams};
 
-    let fft = TestParams { size: 256, base2k: 17 };
-    let ntt = TestParams { size: 256, base2k: 52 };
+    let fft = TestParams {
+        size: 256,
+        base2k: 17,
+        n: 256,
+    };
+    let ntt = TestParams {
+        size: 256,
+        base2k: 52,
+        n: 256,
+    };
     test_glwe_copy(&fft, &Module::<crate::FFT64Avx512>::new(256));
     test_glwe_copy(&ntt, &Module::<crate::NTT4x30Avx512>::new(256));
     #[cfg(feature = "enable-rayon")]
@@ -17,7 +25,11 @@ fn glwe_copy() {
     }
     #[cfg(feature = "enable-ifma")]
     {
-        let ifma = TestParams { size: 256, base2k: 42 };
+        let ifma = TestParams {
+            size: 256,
+            base2k: 42,
+            n: 256,
+        };
         test_glwe_copy(&ifma, &Module::<crate::NTT3x42Ifma>::new(256));
         #[cfg(feature = "enable-rayon")]
         test_glwe_copy(&ifma, &Module::<crate::NTT3x42IfmaRayon>::new(256));
