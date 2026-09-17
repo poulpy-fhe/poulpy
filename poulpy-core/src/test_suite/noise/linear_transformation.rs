@@ -209,7 +209,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         for &rot in &baby_steps {
             let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct);
             if rot == 0 {
-                module.glwe_copy(&mut expected, &ct);
+                module.glwe_copy(&mut expected, &ct, &mut scratch.borrow());
             } else {
                 let p = module.galois_element(rot);
                 let key = keys

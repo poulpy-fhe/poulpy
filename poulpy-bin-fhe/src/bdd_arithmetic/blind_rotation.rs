@@ -241,7 +241,7 @@ where
         }
 
         if !res_is_cur {
-            self.glwe_copy(res, &tmp_res);
+            self.glwe_copy(res, &tmp_res, &mut scratch_1);
         }
     }
 
@@ -263,7 +263,7 @@ where
         K: GetGGSWBit<BE>,
         BE: Backend<ZnxWord = i64> + 'static,
     {
-        self.glwe_copy(res, a);
+        self.glwe_copy(res, a, scratch);
         self.glwe_blind_rotation_assign(res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
     }
 }

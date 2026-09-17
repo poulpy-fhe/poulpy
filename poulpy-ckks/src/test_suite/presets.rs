@@ -29,7 +29,8 @@ use crate::{
     layouts::{BootstrappingContext, BootstrappingKeysPrepared, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::helpers::{
-        PrecisionStats, TestContextBackend, TestContextHostModule, TestContextModule, ckks_spec, precision_stats, test_vector_1,
+        PrecisionStats, TestContextBackend, TestContextHostModule, TestContextModule, assert_canonical_at_k, ckks_spec,
+        precision_stats, test_vector_1,
     },
 };
 
@@ -197,6 +198,7 @@ where
     /// the reference vector, as `(real, imaginary)` statistics.
     pub fn precision(&mut self) -> (PrecisionStats, PrecisionStats) {
         let output = &self.output;
+        assert_canonical_at_k::<BE>("bootstrap preset", output);
         let log_budget = output
             .log_budget()
             .min(PRECISION_LOG_BUDGET)

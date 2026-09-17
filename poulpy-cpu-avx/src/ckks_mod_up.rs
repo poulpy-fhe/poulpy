@@ -138,7 +138,7 @@ where
 
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     let shift = k_large - k_small - scale_up;
-    module.glwe_copy(dst, src);
+    module.glwe_copy(dst, src, scratch);
     module.glwe_rsh(shift, dst, scratch);
     dst.set_meta(CKKSMeta {
         log_delta: src.log_delta() + scale_up,

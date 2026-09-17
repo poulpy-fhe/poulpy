@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::GLWECopy;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
@@ -62,6 +63,7 @@ where
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
+        + GLWECopy<BE>
         + CnvPVecBytesOf
         + Convolution<BE>
         + VecZnxRshTmpBytes
@@ -133,6 +135,7 @@ where
         usize::from(needs_work_copy) * compact_work
             + self
                 .ckks_copy_tmp_bytes(work.max_size())
+                .max(self.glwe_copy_tmp_bytes(&work, ct))
                 .max(self.ckks_add_pt_const_tmp_bytes(work.max_size()))
                 .max(self.ckks_sub_pt_const_tmp_bytes(work.max_size()))
                 .max(bsgs_giant)

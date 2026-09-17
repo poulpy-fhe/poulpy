@@ -13,6 +13,7 @@
 //! accumulator one limb too narrow passes the key-switch noise sweep), and
 //! parity alone cannot tell you the reference is right.
 
+pub mod copy;
 pub mod keys;
 pub mod noise;
 pub mod parity;
@@ -36,6 +37,7 @@ macro_rules! core_backend_test_suite {
                 glwe_encrypt_pk => $crate::test_suite::noise::encryption::test_glwe_encrypt_pk,
                 scalar_znx_fill_distribution => $crate::test_suite::sampling::test_scalar_znx_fill_distribution,
                 glwe_base2k_conv => $crate::test_suite::noise::test_glwe_base2k_conversion,
+                glwe_copy => $crate::test_suite::copy::test_glwe_copy,
                 test_glwe_tensoring => $crate::test_suite::noise::glwe_tensor::test_glwe_tensoring,
                 test_glwe_tensor_square => $crate::test_suite::noise::glwe_tensor::test_glwe_tensor_square,
                 glwe_tensor_relinearize_coarsened => $crate::test_suite::parity::test_glwe_tensor_relinearize_coarsened,

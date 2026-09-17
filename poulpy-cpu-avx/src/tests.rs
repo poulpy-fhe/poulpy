@@ -1,6 +1,22 @@
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
 
+#[test]
+fn glwe_copy() {
+    use poulpy_core::test_suite::copy::test_glwe_copy;
+    use poulpy_hal::{layouts::Module, test_suite::TestParams};
+
+    let fft = TestParams { size: 256, base2k: 17 };
+    let ntt = TestParams { size: 256, base2k: 52 };
+    test_glwe_copy(&fft, &Module::<crate::FFT64Avx>::new(256));
+    test_glwe_copy(&ntt, &Module::<crate::NTT4x30Avx>::new(256));
+    #[cfg(feature = "enable-rayon")]
+    {
+        test_glwe_copy(&fft, &Module::<crate::FFT64AvxRayon>::new(256));
+        test_glwe_copy(&ntt, &Module::<crate::NTT4x30AvxRayon>::new(256));
+    }
+}
+
 poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64,
     backend_ref = poulpy_cpu_ref::FFT64Ref,

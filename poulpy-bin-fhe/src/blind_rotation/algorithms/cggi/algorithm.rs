@@ -503,7 +503,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
             }
         }
 
-        module.glwe_copy(res, &out_tmp);
+        module.glwe_copy(res, &out_tmp, &mut scratch_3);
         return;
     }
 
@@ -580,7 +580,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
             }
         }
     }
-    module.glwe_copy(res, &out_tmp);
+    module.glwe_copy(res, &out_tmp, &mut scratch_4);
 }
 
 fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
@@ -630,7 +630,7 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
 
     let mut lwe_2n: Vec<i64> = vec![0i64; (lwe.n() + 1).into()]; // TODO: from scratch space
     let mut out_tmp: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
-    module.glwe_copy(&mut out_tmp, res);
+    module.glwe_copy(&mut out_tmp, res, scratch);
 
     mod_switch_2n::<BE, _>(2 * lut.domain_size(), &mut lwe_2n, lwe, lut.rotation_direction());
 
@@ -671,5 +671,5 @@ fn execute_standard<R, L, M, BE: Backend<ZnxWord = i64>>(
     {
         module.glwe_normalize_assign(&mut out_tmp, &mut scratch_1.borrow());
     }
-    module.glwe_copy(res, &out_tmp);
+    module.glwe_copy(res, &out_tmp, &mut scratch_1);
 }

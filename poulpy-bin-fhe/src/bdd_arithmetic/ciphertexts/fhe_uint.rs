@@ -373,7 +373,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         let trace_start = (T::LOG_BITS - T::LOG_BYTES) as usize;
         let rot: i64 = (T::bit_index(dst << 3) << log_gap) as i64;
 
-        module.glwe_copy(self, a);
+        module.glwe_copy(self, a, scratch);
 
         self.zero_byte(module, dst, keys, scratch);
 
@@ -619,11 +619,11 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T, i64> {
         // Splice sext
         let mut tmp: FheUint<BE::OwnedBuf, T, BE::ZnxWord> = FheUint::alloc_from_infos(module, self);
         let mut current: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(self);
-        module.glwe_copy(&mut current, self);
+        module.glwe_copy(&mut current, self, &mut scratch_1);
         for i in (byte + 1)..(1 << T::LOG_BYTES) as usize {
             tmp.splice_u8(module, i, 0, &current, &sext, keys, &mut scratch_1);
-            module.glwe_copy(&mut current, &tmp.bits);
+            module.glwe_copy(&mut current, &tmp.bits, &mut scratch_1);
         }
-        module.glwe_copy(self, &current);
+        module.glwe_copy(self, &current, &mut scratch_1);
     }
 }

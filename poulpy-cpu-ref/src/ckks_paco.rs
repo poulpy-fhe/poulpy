@@ -26,7 +26,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, HostDataRef, Module},
+    layouts::{Backend, HostDataRef, Module, ScratchArena},
 };
 
 /// Stages a generic input (e.g. a scratch-carved view) into one owned copy of
@@ -40,6 +40,7 @@ pub fn paco_coeff_encodings_staged<BE, F, Src>(
     ct: &Src,
     plan: &PaCoPlan,
     base2k: Base2K,
+    scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
 where
     BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
@@ -55,7 +56,7 @@ where
         plan.n()
     );
     let mut owned = module.ckks_ciphertext_alloc_from_infos(ct);
-    module.glwe_copy(&mut owned, ct);
+    module.glwe_copy(&mut owned, ct, scratch);
     owned.set_meta_checked(ct.meta())?;
     paco_coeff_encodings_host::<BE, _, F>(module, &owned, plan, base2k)
 }
@@ -86,7 +87,7 @@ macro_rules! impl_ckks_paco_coeff_encoding {
                 ct: &Src,
                 plan: &::poulpy_ckks::layouts::PaCoPlan,
                 base2k: ::poulpy_core::layouts::Base2K,
-                _scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> ::poulpy_ckks::CKKSResult<
                 [::poulpy_ckks::layouts::CKKSPlaintext<
                     <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
@@ -98,7 +99,7 @@ macro_rules! impl_ckks_paco_coeff_encoding {
                 $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {
-                $crate::ckks_paco::paco_coeff_encodings_staged::<$be, F, Src>(module, ct, plan, base2k)
+                $crate::ckks_paco::paco_coeff_encodings_staged::<$be, F, Src>(module, ct, plan, base2k, scratch)
                     .map_err(::poulpy_ckks::CKKSError::from)
             }
         }

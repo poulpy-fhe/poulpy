@@ -356,7 +356,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         if res_initialized {
             module.glwe_add_assign(res, &fallback_acc);
         } else {
-            module.glwe_copy(res, &fallback_acc);
+            module.glwe_copy(res, &fallback_acc, &mut scratch_phase);
             res_initialized = true;
         }
     }
