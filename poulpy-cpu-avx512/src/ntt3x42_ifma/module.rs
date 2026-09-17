@@ -54,7 +54,7 @@ impl NTT3x42IfmaHandle {
 }
 
 impl Backend for NTT3x42Ifma {
-    const MIN_DEGREE: usize = 16;
+    const MIN_DEGREE: usize = 8;
     const MAX_BASE2K: usize = <poulpy_cpu_ref::NTT4x30Ref as Backend>::MAX_BASE2K;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
