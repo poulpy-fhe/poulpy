@@ -57,7 +57,7 @@ pub trait Convolution<BE: Backend> {
     /// class      basis
     /// mutation   out-of-place
     /// definition res[c,j] reads as a[c,j] for every 0 <= c < res.cols()
-    /// domain     res: a CnvPVecL of the module degree with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
+    /// domain     res: a CnvPVecL of degree N with res.cols() == a.cols(); a: a dense VecZnx of degree N, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_left_tmp_bytes(res.size(), a.size())
     /// ensures    each prepared column reads the source column truncated or zero-extended to res.size() limbs
     /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
@@ -87,7 +87,7 @@ pub trait Convolution<BE: Backend> {
     /// class      basis
     /// mutation   out-of-place
     /// definition res[c,j] reads as a[c,j] for every 0 <= c < res.cols()
-    /// domain     res: a CnvPVecR of the module degree with res.cols() == a.cols(); a: a dense VecZnx of the module degree, canonical at the precision the caller means to convolve at
+    /// domain     res: a CnvPVecR of degree N with res.cols() == a.cols(); a: a dense VecZnx of degree N, canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_right_tmp_bytes(res.size(), a.size())
     /// ensures    each prepared column reads the source column truncated or zero-extended to res.size() limbs
     /// test       test_convolution, test_convolution_prepare_shape_rejected, test_convolution_sparse
@@ -130,7 +130,7 @@ pub trait Convolution<BE: Backend> {
     /// class      basis
     /// mutation   out-of-place
     /// definition res[res_col,j] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v,b_coeff]; other columns of res are unchanged
-    /// domain     res: a VecZnxBig of the module degree; a: a dense VecZnx of the module degree; b: a dense VecZnx of any degree, b_coeff < b.n(); res.size(), a.size() and b.size() >= 1
+    /// domain     res: a VecZnxBig of degree N; a: a dense VecZnx of degree N; b: a dense VecZnx of any degree, b_coeff < b.n(); res.size(), a.size() and b.size() >= 1
     /// requires   scratch >= cnv_by_const_apply_tmp_bytes(cnv_offset, res.size(), a.size(), b.size()); every coefficient of each partial sum and result is representable in BigWord
     /// ensures    the selected column holds the limb window of the constant convolution, scaled by 2^((cnv_offset + 1) * w) at any radix width w; the remaining limbs are zero-filled
     /// test       test_convolution_by_const, test_convolution_by_const_degree_rejected
@@ -197,10 +197,10 @@ pub trait Convolution<BE: Backend> {
     /// class      basis
     /// mutation   out-of-place
     /// definition idft(res)[res_col,j] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = j + cnv_offset} a[a_col,u] * b[b_col,v]; other columns of res are unchanged
-    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of the module degree; b: a CnvPVecR of the module degree or of a degree dividing it; res.size(), a.size() and b.size() >= 1
+    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a degree dividing it; res.size(), a.size() and b.size() >= 1
     /// requires   scratch >= cnv_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    the selected inverse column holds the limb window of the convolution, scaled by 2^((cnv_offset + 1) * w) at any radix width w; the remaining limbs are zero-filled
-    /// sparse     b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum sparse degree, prepared under a degree-n module; res and a take the module degree; the degree embedding of the api module docs defines the correspondence that reads it
+    /// sparse     b may be a prepared right operand of degree n, n a power of two dividing N and not below the backend's minimum sparse degree, prepared at degree n; res and a take degree N; the degree embedding of the api module docs defines the correspondence that reads it
     /// test       test_convolution, test_convolution_sparse
     /// ```
     fn cnv_apply_dft(
@@ -274,7 +274,7 @@ pub trait Convolution<BE: Backend> {
     /// class      derived
     /// mutation   out-of-place
     /// definition idft(res)[res_col,j] = sum_{0 <= t < terms.len()} sum_{0 <= u < terms[t].a.size(), 0 <= v < terms[t].b.size(), u + v = j + cnv_offset} terms[t].a[terms[t].a_col,u] * terms[t].b[terms[t].b_col,v]; an empty terms slice yields zero; other columns of res are unchanged
-    /// domain     res: a VecZnxDft of the module degree; terms: prepared left operands of the module degree and right operands of the module degree or of a degree dividing it, with their column indices
+    /// domain     res: a VecZnxDft of degree N; terms: prepared left operands of degree N and right operands of degree N or of a degree dividing it, with their column indices
     /// requires   scratch >= cnv_apply_dft_sum_tmp_bytes(cnv_offset, res.size(), max({0} union {terms[t].a.size() : 0 <= t < terms.len()}), max({0} union {terms[t].b.size() : 0 <= t < terms.len()}))
     /// ensures    the selected inverse column is the sum of the selected convolution limb windows; an empty slice zeroes the column
     /// sparse     per term, as for cnv_apply_dft
@@ -312,7 +312,7 @@ pub trait Convolution<BE: Backend> {
     /// class      derived
     /// mutation   out-of-place
     /// definition for every 0 <= ell < res.size(), idft(res)[res_col,ell] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = ell + cnv_offset} a[i,u] * b[i,v] if i == j, and idft(res)[res_col,ell] = sum_{0 <= u < a.size(), 0 <= v < b.size(), u + v = ell + cnv_offset} (a[i,u] + a[j,u]) * (b[i,v] + b[j,v]) if i != j; other columns of res are unchanged
-    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of the module degree; b: a CnvPVecR of the module degree or of a degree dividing it; i, j column indices
+    /// domain     res: a VecZnxDft and a: a CnvPVecL, both of degree N; b: a CnvPVecR of degree N or of a degree dividing it; i, j column indices
     /// requires   scratch >= cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, res.size(), a.size(), b.size())
     /// ensures    the selected inverse column contains one convolution when i == j and the convolution of the two column sums when i != j
     /// sparse     per product, as for cnv_apply_dft
@@ -351,7 +351,7 @@ pub trait Convolution<BE: Backend> {
     /// class      derived
     /// mutation   out-of-place
     /// definition left[c,j] and right[c,j] read as a[c,j] for every 0 <= c < left.cols() and 0 <= j < left.size()
-    /// domain     left: a CnvPVecL of the module degree; right: a CnvPVecR of the module degree, with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of the module degree with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
+    /// domain     left: a CnvPVecL of degree N; right: a CnvPVecR of degree N, with right.cols() == left.cols() and right.size() == left.size(); a: a dense VecZnx of degree N with a.cols() == left.cols(), canonical at the precision the caller means to convolve at
     /// requires   scratch >= cnv_prepare_self_tmp_bytes(left.size(), a.size())
     /// ensures    both prepared operands read the source truncated or zero-extended to their limb count
     /// fallback   OEP default body: the shape check, then the two prepares in sequence

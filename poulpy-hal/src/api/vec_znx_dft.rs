@@ -40,7 +40,7 @@ pub trait VecZnxDftBytesOf {
 /// class      basis
 /// mutation   out-of-place
 /// definition idft(res)[res_col,j] = a[a_col,offset + j * step]; other columns of res are unchanged
-/// domain     res: a VecZnxDft; a: a dense VecZnx of the module degree; step >= 1; offset + j * step fits usize for every 0 <= j < min(res.size(), ceil(a.size() / step))
+/// domain     res: a VecZnxDft; a: a dense VecZnx of degree N; step >= 1; offset + j * step fits usize for every 0 <= j < min(res.size(), ceil(a.size() / step))
 /// ensures    the selected source limbs are transformed; result limbs whose source index is at least a.size() are zero
 /// test       test_vec_znx_dft_apply, test_vec_znx_idft_apply, test_vec_znx_dft_step_zero_rejected
 /// ```
@@ -140,7 +140,7 @@ pub trait VecZnxIdftNormalizeConsumeTmpBytes {
 /// class      derived
 /// mutation   out-of-place
 /// definition res[res_col] = canon(sum_{0 <= t < a.size()} (idft(old(a))[a_col,t] + addend_limb(addend,t)) * 2^(-a_base2k * (t + 1)), res_base2k, res_k, res.size()); a[a_col] is unspecified afterwards; columns of res other than res_col and columns of a other than a_col are unchanged
-/// domain     res: a VecZnx; a: a VecZnxDft taken mutably; addend: an optional VecZnx column read at a_base2k; all operands have the module degree; res_k <= res.size() * res_base2k; normalization input and radix bounds apply
+/// domain     res: a VecZnx; a: a VecZnxDft taken mutably; addend: an optional VecZnx column read at a_base2k; all operands have the degree N of the call; res_k <= res.size() * res_base2k; normalization input and radix bounds apply
 /// requires   scratch >= vec_znx_idft_normalize_consume_tmp_bytes(res.size(), a.size())
 /// ensures    the inverse-transformed source and the first a.size() limbs of the optional addend are read at a_base2k, rounded once at precision res_k, and represented canonically at res_base2k modulo 1
 /// fallback   inverse-transform into an a.size()-limb VecZnxBig, add the optional selected column, then normalize
@@ -358,7 +358,7 @@ pub trait VecZnxDftAutomorphismAddWithPlanTmpBytes {
 /// class      basis
 /// mutation   out-of-place
 /// definition idft(res)[res_col,j] = sum_{0 <= i < N} idft(a)[a_col,j,i] * X^(i * plan.p) in R_N; other columns of res are unchanged
-/// domain     res, a: VecZnxDft of the module degree; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
+/// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
 /// ensures    the planned substitution is applied to the selected source column limb by limb; result limbs from a.size() onward are zero
 /// test       test_vec_znx_dft_automorphism
 /// ```
@@ -380,7 +380,7 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     /// class      derived
     /// mutation   accumulate
     /// definition idft(res)[res_col,j] = idft(old(res))[res_col,j] + sum_{0 <= i < N} idft(a)[a_col,j,i] * X^(i * plan.p) in R_N; result limbs from a.size() onward and other columns of res are unchanged
-    /// domain     res, a: VecZnxDft of the module degree; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
+    /// domain     res, a: VecZnxDft of degree N; plan: built by vec_znx_dft_automorphism_plan for this degree and an odd exponent
     /// requires   scratch >= vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res.size(), a.size())
     /// ensures    the selected result column gains the planned substitution of the selected source column limb by limb
     /// fallback   apply the plan into a one-column VecZnxDft with min(res.size(), a.size()) limbs, then add its column 0 into res[res_col]
@@ -405,7 +405,7 @@ pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
     /// class      derived
     /// mutation   out-of-place
     /// definition idft(res)[res_col,j] = sum_{0 <= i < N} idft(a)[a_col,j,i] * X^(i * p) in R_N; other columns of res are unchanged
-    /// domain     res, a: VecZnxDft of the module degree; p odd
+    /// domain     res, a: VecZnxDft of degree N; p odd
     /// ensures    the substitution X -> X^p is applied to the selected source column limb by limb; result limbs from a.size() onward are zero
     /// fallback   build the plan for p, apply it, then drop it
     /// override   allowed, scratch-free

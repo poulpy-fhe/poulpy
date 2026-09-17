@@ -52,7 +52,7 @@ pub trait VecZnxBigAlloc<B: Backend> {
 /// test       none
 /// ```
 pub trait VecZnxBigBytesOf {
-    /// Returns the byte size of a big-word vector of the module degree with `cols` columns and `size` limbs.
+    /// Returns the byte size of a big-word vector of degree N with `cols` columns and `size` limbs.
     fn bytes_of_vec_znx_big(&self, cols: usize, size: usize) -> usize;
 
     /// Returns the byte size of a degree-`n` big-word vector with `cols` columns and `size` limbs.
@@ -505,7 +505,7 @@ pub trait VecZnxBigAutomorphismAssignTmpBytes {
 /// class      basis
 /// mutation   out-of-place
 /// definition res[res_col,j] = sum_{0 <= i < a.n()} a[a_col,j,i] * X^(p*i) in R_N; other columns of res are unchanged
-/// domain     res, a: dense VecZnxBig of the module degree; p odd
+/// domain     res, a: dense VecZnxBig of degree N; p odd
 /// ensures    the selected output column is the limbwise automorphism with zero extension or truncation
 /// test       test_vec_znx_big_automorphism
 /// ```
@@ -528,7 +528,7 @@ pub trait VecZnxBigAutomorphism<B: Backend> {
 /// class      variant
 /// mutation   in-place
 /// definition res[res_col,j] = sum_{0 <= i < res.n()} old(res)[res_col,j,i] * X^(p*i) in R_N; other columns of res are unchanged
-/// domain     res: a dense VecZnxBig of the module degree; p odd
+/// domain     res: a dense VecZnxBig of degree N; p odd
 /// requires   scratch >= vec_znx_big_automorphism_assign_tmp_bytes()
 /// ensures    the selected output column is the limbwise automorphism of its pre-call value
 /// fallback   none

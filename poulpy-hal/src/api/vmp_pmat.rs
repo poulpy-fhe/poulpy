@@ -96,7 +96,7 @@ pub trait VmpApplyDftTmpBytes {
 /// class      derived
 /// mutation   out-of-place
 /// definition idft(res)[d,j] = sum_{0 <= i < min(a.size(), pmat.rows()), max(pmat.cols_in() - a.cols(), 0) <= c < pmat.cols_in()} a[c + a.cols() - pmat.cols_in(),i] * pmat[i,c,d,j] for every 0 <= d < res.cols()
-/// domain     res: a VecZnxDft of pmat.cols_out() columns; a: a dense VecZnx; pmat: a VmpPMat; all operands have the module degree
+/// domain     res: a VecZnxDft of pmat.cols_out() columns; a: a dense VecZnx; pmat: a VmpPMat; all operands have the degree N of the call
 /// requires   scratch >= vmp_apply_dft_tmp_bytes(res.size(), a.size(), pmat.rows(), pmat.cols_in(), pmat.cols_out(), pmat.size())
 /// ensures    leading input limbs pair with matrix rows, trailing input columns align with the highest matrix input columns, and output limbs past pmat.size() are zero
 /// fallback   zero unaligned leading columns, transform the consumed limbs into a temporary VecZnxDft, then apply in the DFT domain
@@ -170,7 +170,7 @@ pub trait VmpApplyDftToDftAddTmpBytes {
 /// class      basis
 /// mutation   out-of-place
 /// definition idft(res)[d,j] = sum_{0 <= i < min(a.size(), pmat.rows()), 0 <= c < pmat.cols_in()} idft(a)[c,i] * pmat[i,c,d,j + limb_offset] for every 0 <= d < res.cols()
-/// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat of the same degree; a.cols() == pmat.cols_in(), res.cols() == pmat.cols_out()
+/// domain     res, a: VecZnxDft of degree N; pmat: a VmpPMat of the same degree; a.cols() == pmat.cols_in(), res.cols() == pmat.cols_out()
 /// requires   scratch >= vmp_apply_dft_to_dft_tmp_bytes(res.size(), a.size(), pmat.rows(), pmat.cols_in(), pmat.cols_out(), pmat.size())
 /// ensures    limb i of a pairs with matrix row i; result limb j reads matrix limb j + limb_offset; limbs j >= max(pmat.size() - limb_offset, 0) are zero
 /// test       test_vmp_apply_dft_to_dft
@@ -194,7 +194,7 @@ pub trait VmpApplyDftToDft<B: Backend> {
 /// class      derived
 /// mutation   accumulate
 /// definition idft(res)[d,j] = idft(old(res))[d,j] + sum_{0 <= i < min(a.size(), pmat.rows()), 0 <= c < pmat.cols_in()} idft(a)[c,i] * pmat[i,c,d,j + limb_offset] for every 0 <= d < res.cols(); limbs j >= max(pmat.size() - limb_offset, 0) are unchanged, and all of res is unchanged when the sum index set is empty
-/// domain     res, a: VecZnxDft of the module degree; pmat: a VmpPMat of the same degree; a.cols() == pmat.cols_in(), res.cols() == pmat.cols_out()
+/// domain     res, a: VecZnxDft of degree N; pmat: a VmpPMat of the same degree; a.cols() == pmat.cols_in(), res.cols() == pmat.cols_out()
 /// requires   scratch >= vmp_apply_dft_to_dft_add_tmp_bytes(res.size(), a.size(), pmat.rows(), pmat.cols_in(), pmat.cols_out(), pmat.size())
 /// ensures    every output column gains the matrix product; limbs j >= max(pmat.size() - limb_offset, 0) retain their old value
 /// fallback   zero a res.cols()-column res.size()-limb temporary, apply the product into it, then add each temporary column to its corresponding destination column

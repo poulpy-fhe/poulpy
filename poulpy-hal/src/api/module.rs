@@ -7,7 +7,7 @@ use crate::layouts::{Backend, MatZnx, ScalarZnx, VecZnx};
 /// class      support
 /// mutation   none
 /// domain     n: a power of two, the ring degree N
-/// ensures    returns the backend's module for R_N = Z[X]/(X^N + 1), carrying its precomputed transform tables
+/// ensures    returns the backend's module for R_N and every R_n, n a power of two with MIN_DEGREE <= n <= N, carrying the transform tables of each
 /// test       none
 /// ```
 pub trait ModuleNew<B: Backend> {
@@ -22,7 +22,7 @@ pub trait ModuleNew<B: Backend> {
 /// class      support
 /// mutation   none
 /// domain     -
-/// ensures    returns the ring degree N the module was built for
+/// ensures    returns the largest ring degree N the module serves
 /// test       none
 /// ```
 pub trait ModuleN {
