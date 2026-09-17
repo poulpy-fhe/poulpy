@@ -186,7 +186,8 @@ impl Backend for HostBytesBackend {
 
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
         let mut out = crate::alloc_aligned::<u8>(bytes.len());
-        out.copy_from_slice(bytes);
+        out[..bytes.len()].copy_from_slice(bytes);
+        out[bytes.len()..].fill(0);
         out
     }
 
@@ -195,7 +196,8 @@ impl Backend for HostBytesBackend {
             bytes
         } else {
             let mut out = crate::alloc_aligned::<u8>(bytes.len());
-            out.copy_from_slice(&bytes);
+            out[..bytes.len()].copy_from_slice(&bytes);
+            out[bytes.len()..].fill(0);
             out
         }
     }
@@ -227,13 +229,25 @@ impl Backend for HostBytesBackend {
     }
 
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-        assert_eq!(buf.len(), dst.len());
-        dst.copy_from_slice(buf);
+        assert!(
+            buf.len() >= dst.len(),
+            "backend view length {} is smaller than destination host slice length {}",
+            buf.len(),
+            dst.len()
+        );
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
 
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-        assert_eq!(buf.len(), src.len());
-        buf.copy_from_slice(src);
+        assert!(
+            buf.len() >= src.len(),
+            "backend view length {} is smaller than source host slice length {}",
+            buf.len(),
+            src.len()
+        );
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
 
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
