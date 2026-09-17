@@ -23,21 +23,39 @@ use poulpy_hal::{
 /// Opaque handle for the [`NTT3x42Ifma`](super::NTT3x42Ifma) backend.
 ///
 /// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
-/// of size `n`, and the lazy-accumulation metadata for IFMA prep-format
-/// products.
+/// of every degree the module serves, and the lazy-accumulation metadata for
+/// IFMA prep-format products.
 ///
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module<NTT3x42Ifma>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
 pub struct NTT3x42IfmaHandle {
-    pub(crate) table_ntt: Ntt3x42IfmaTable<Primes42>,
-    pub(crate) table_intt: Ntt3x42IfmaTableInv<Primes42>,
+    /// Forward tables for every degree the module serves, indexed by
+    /// `log2(degree) - log2(MIN_DEGREE)`; the last entry is the module's own.
+    pub(crate) tables_ntt: Vec<Ntt3x42IfmaTable<Primes42>>,
+    /// Inverse tables, same indexing.
+    pub(crate) tables_intt: Vec<Ntt3x42IfmaTableInv<Primes42>>,
     pub(crate) meta_bbc: Bbc126IfmaMeta<Primes42>,
     table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
+impl NTT3x42IfmaHandle {
+    const LOG_MIN_DEGREE: usize = NTT3x42Ifma::MIN_DEGREE.ilog2() as usize;
+
+    /// The forward table for degree `n`, a power of two the module serves.
+    pub(crate) fn table_ntt_for(&self, n: usize) -> &Ntt3x42IfmaTable<Primes42> {
+        &self.tables_ntt[n.ilog2() as usize - Self::LOG_MIN_DEGREE]
+    }
+
+    /// The inverse table for degree `n`.
+    pub(crate) fn table_intt_for(&self, n: usize) -> &Ntt3x42IfmaTableInv<Primes42> {
+        &self.tables_intt[n.ilog2() as usize - Self::LOG_MIN_DEGREE]
+    }
+}
+
 impl Backend for NTT3x42Ifma {
     const DFT_IS_EXACT: bool = true;
+    const MIN_DEGREE: usize = 16;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = Q126Scalar;
@@ -229,15 +247,23 @@ fn assert_runtime_support() {
 /// Allocate a fully-initialised `Module<NTT3x42Ifma>` of ring dimension `n`.
 ///
 /// Verifies AVX-512-IFMA availability at runtime, then heap-allocates a
-/// [`NTT3x42IfmaHandle`] containing the forward / inverse NTT tables and the
-/// BBC metadata.
+/// [`NTT3x42IfmaHandle`] containing the forward / inverse NTT tables of every
+/// degree from [`Backend::MIN_DEGREE`] to `n`, and the BBC metadata.
 pub(crate) fn module_new(n: u64) -> Module<NTT3x42Ifma> {
     assert_runtime_support();
-    assert!(n >= 8, "NTT3x42Ifma requires n >= 8, got {n}");
+    assert!(
+        n as usize >= NTT3x42Ifma::MIN_DEGREE,
+        "NTT3x42Ifma requires n >= {}, got {n}",
+        NTT3x42Ifma::MIN_DEGREE
+    );
     let handle = NTT3x42IfmaHandle {
         table_cache: Default::default(),
-        table_ntt: Ntt3x42IfmaTable::new(n as usize),
-        table_intt: Ntt3x42IfmaTableInv::new(n as usize),
+        tables_ntt: (NTT3x42IfmaHandle::LOG_MIN_DEGREE..=(n as usize).ilog2() as usize)
+            .map(|log_degree| Ntt3x42IfmaTable::new(1usize << log_degree))
+            .collect(),
+        tables_intt: (NTT3x42IfmaHandle::LOG_MIN_DEGREE..=(n as usize).ilog2() as usize)
+            .map(|log_degree| Ntt3x42IfmaTableInv::new(1usize << log_degree))
+            .collect(),
         meta_bbc: Bbc126IfmaMeta::new(),
     };
     let ptr: NonNull<NTT3x42IfmaHandle> = NonNull::from(Box::leak(Box::new(handle)));

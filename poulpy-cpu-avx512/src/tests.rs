@@ -155,7 +155,7 @@ poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt3x42_ifma,
     backend_ref = poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT3x42Ifma,
-    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 52, n: 16 },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,

@@ -20,7 +20,7 @@ use core::arch::x86_64::{
 use poulpy_hal::layouts::PrimeSet;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView,
-    ZnxViewMut,
+    ZnxViewMut, check_degree,
 };
 
 // 3-prime CRT -> i128 reconstruction helpers.
@@ -501,11 +501,11 @@ unsafe fn packed_negate_assign(n: usize, dst: &mut [u64]) {
 #[cfg(feature = "enable-rayon")]
 pub(crate) fn vec_znx_idft_apply_tmpa_limb_ifma(
     module: &Module<NTT3x42Ifma>,
+    n: usize,
     dst: &mut [i128],
     src: Option<&[u64]>,
     scratch: &mut [u64],
 ) {
-    let n = module.n();
     assert_eq!(dst.len(), n);
     assert!(scratch.len() >= 3 * n);
     let Some(src) = src else {
@@ -515,7 +515,7 @@ pub(crate) fn vec_znx_idft_apply_tmpa_limb_ifma(
     assert_eq!(src.len(), 2 * n);
     unsafe {
         unpack_limb_3x42(n, scratch, src);
-        intt_then_compact_ifma(n, 1, scratch.as_mut_ptr(), dst.as_mut_ptr(), &handle(module).table_intt);
+        intt_then_compact_ifma(n, 1, scratch.as_mut_ptr(), dst.as_mut_ptr(), handle(module).table_intt_for(n));
     }
 }
 
@@ -527,8 +527,9 @@ pub(crate) fn idft_compact_in_place_ifma<E: poulpy_hal::execution::TaskExecutor>
     a_col: usize,
     tmp: &mut [u64],
 ) {
-    let table = &handle(module).table_intt;
     let n = a.n();
+    check_degree::<NTT3x42Ifma>(module.n(), n);
+    let table = handle(module).table_intt_for(n);
     let a_cols = a.cols();
     let a_size = a.size();
     let data: &mut [u64] = cast_slice_mut(a.data_mut());
@@ -550,8 +551,10 @@ pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
     a: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
     a_col: usize,
 ) {
-    let table = &handle(module).table_intt;
-    let n = a.n();
+    let n = res.n();
+    check_degree::<NTT3x42Ifma>(module.n(), n);
+    assert_eq!(a.n(), n, "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{n}", a.n());
+    let table = handle(module).table_intt_for(n);
     let min_size = res.size().min(a.size());
     let a_cols = a.cols();
     let res_cols = res.cols();
@@ -581,8 +584,13 @@ pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
 }
 
 #[inline(always)]
-pub(crate) fn vec_znx_dft_apply_limb(module: &Module<NTT3x42Ifma>, dst: &mut [u64], src: Option<&[i64]>, scratch: &mut [u64]) {
-    let n = module.n();
+pub(crate) fn vec_znx_dft_apply_limb(
+    module: &Module<NTT3x42Ifma>,
+    n: usize,
+    dst: &mut [u64],
+    src: Option<&[i64]>,
+    scratch: &mut [u64],
+) {
     assert_eq!(dst.len(), 2 * n);
     assert!(scratch.len() >= 3 * n);
     let Some(src) = src else {
@@ -592,7 +600,7 @@ pub(crate) fn vec_znx_dft_apply_limb(module: &Module<NTT3x42Ifma>, dst: &mut [u6
     assert_eq!(src.len(), n);
     NTT3x42Ifma::ntt3x42_ifma_from_znx64(scratch, src);
     unsafe {
-        ntt_avx512::<Primes42>(&handle(module).table_ntt, scratch, true);
+        ntt_avx512::<Primes42>(handle(module).table_ntt_for(n), scratch, true);
         pack_limb_3x42_lazy(n, dst, scratch);
     }
 }
@@ -612,6 +620,8 @@ pub(crate) fn vec_znx_dft_apply(
     let a_size = a.size();
     let res_size = res.size();
     let n = res.n();
+    check_degree::<NTT3x42Ifma>(module.n(), n);
+    assert_eq!(a.n(), n, "vec_znx_dft_apply: a.n():{} != res.n():{n}", a.n());
     let cols = res.cols();
     let steps = a_size.div_ceil(step);
     let min_steps = res_size.min(steps);
@@ -625,7 +635,7 @@ pub(crate) fn vec_znx_dft_apply(
             let res_slice = packed_limb_mut(res_data, n, cols, res_col, j);
             let limb = offset + j * step;
             let src = (j < min_steps && limb < a_size).then(|| a.at(a_col, limb));
-            vec_znx_dft_apply_limb(module, res_slice, src, scratch);
+            vec_znx_dft_apply_limb(module, n, res_slice, src, scratch);
         },
     );
 }
@@ -639,8 +649,13 @@ pub(crate) fn vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
 /// Inverse NTT (non-destructive) for the IFMA backend.
 #[inline(always)]
 #[cfg(feature = "enable-rayon")]
-pub(crate) fn vec_znx_idft_apply_limb(module: &Module<NTT3x42Ifma>, dst: &mut [i128], src: Option<&[u64]>, scratch: &mut [u64]) {
-    let n = module.n();
+pub(crate) fn vec_znx_idft_apply_limb(
+    module: &Module<NTT3x42Ifma>,
+    n: usize,
+    dst: &mut [i128],
+    src: Option<&[u64]>,
+    scratch: &mut [u64],
+) {
     assert_eq!(dst.len(), n);
     assert!(scratch.len() >= 3 * n);
     let Some(src) = src else {
@@ -650,7 +665,7 @@ pub(crate) fn vec_znx_idft_apply_limb(module: &Module<NTT3x42Ifma>, dst: &mut [i
     assert_eq!(src.len(), 2 * n);
     unsafe { unpack_limb_3x42(n, scratch, src) };
     <NTT3x42Ifma as Ntt3x42IfmaDFTExecute<Ntt3x42IfmaTableInv<Primes42>>>::ntt3x42_ifma_dft_execute(
-        &handle(module).table_intt,
+        handle(module).table_intt_for(n),
         scratch,
     );
     NTT3x42Ifma::ntt3x42_ifma_to_znx128(dst, n, scratch);
@@ -665,11 +680,13 @@ pub(crate) fn vec_znx_idft_apply(
     tmp: &mut [u64],
 ) {
     let n = res.n();
+    check_degree::<NTT3x42Ifma>(module.n(), n);
+    assert_eq!(a.n(), n, "vec_znx_idft_apply: a.n():{} != res.n():{n}", a.n());
     let res_cols = res.cols();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
     let a_cols = a.cols();
-    let table = &handle(module).table_intt;
+    let table = handle(module).table_intt_for(n);
     let _ = tmp;
 
     let a_u64: &[u64] = cast_slice(a.data());
