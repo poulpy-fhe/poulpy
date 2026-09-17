@@ -575,6 +575,14 @@ macro_rules! ckks_backend_test_suite {
                 linear_transformation_pins_operation_precisions,
                 $crate::test_suite::linear_transformation::test_linear_transformation_pins_operation_precisions
             );
+            run_test!(
+                compact_plaintext_embedding,
+                $crate::test_suite::compact::test_compact_plaintext_embedding
+            );
+            run_test!(
+                compact_plaintext_add_sub_mul,
+                $crate::test_suite::compact::test_compact_plaintext_add_sub_mul
+            );
             run_test!(paco_partial_c2s, $crate::test_suite::paco_lt::test_paco_partial_c2s);
             run_test!(paco_packing, $crate::test_suite::paco_lt::test_paco_packing);
             run_test!(
@@ -985,6 +993,7 @@ pub mod add_many;
 pub mod add_unsafe;
 pub mod affine;
 pub mod bootstrapping;
+pub mod compact;
 pub mod composition;
 pub mod conjugate;
 pub mod copy;

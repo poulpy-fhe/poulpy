@@ -1062,7 +1062,7 @@ where
         },
     };
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
-    ckks_decode_pt(encoder, params.n / 2, &pt)
+    ckks_decode_pt(encoder, encoder.m(), &pt)
 }
 
 /// Decodes a host-side plaintext to slot vectors.
@@ -1325,7 +1325,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     });
     module.ckks_extract_pt(&mut pt_decode, &full_pt, scratch).unwrap();
     let pt_host = download_pt::<BE>(&pt_decode);
-    let (re_out, im_out) = ckks_decode_pt(encoder, params.n / 2, &pt_host);
+    let (re_out, im_out) = ckks_decode_pt(encoder, encoder.m(), &pt_host);
     assert_precision(&format!("{label} re"), &re_out, want_re, log_delta, params.n);
     assert_precision(&format!("{label} im"), &im_out, want_im, log_delta, params.n);
 }
