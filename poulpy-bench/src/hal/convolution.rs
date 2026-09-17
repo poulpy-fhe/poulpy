@@ -166,8 +166,9 @@ where
 const SUM_TERMS: usize = 4;
 
 /// `cnv_apply_dft_sum` over `SUM_TERMS` terms into one output column. With
-/// `SPARSE` the right operand is prepared at half the module degree (never
-/// below the backend floor), the shape a compact plaintext diagonal has.
+/// `SPARSE` the right operand is prepared at half the module degree, the
+/// shape a compact plaintext diagonal has; the runner asserts that half
+/// still clears the backend floor.
 pub fn runner_cnv_apply_dft_sum<BE, M: Measurement, const SPARSE: bool>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
     BE: Backend<ZnxWord = i64> + 'static,
@@ -180,7 +181,8 @@ where
 
     let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
 
-    let b_n: usize = if SPARSE && module.n() / 2 >= BE::MIN_DEGREE {
+    let b_n: usize = if SPARSE {
+        assert!(module.n() / 2 >= BE::MIN_DEGREE, "sparse sum runner below the backend floor");
         module.n() / 2
     } else {
         module.n()

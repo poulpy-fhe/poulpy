@@ -50,17 +50,25 @@ impl Backend for SrcBackend {
     }
 
     fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
-        dst.copy_from_slice(buf);
+        assert!(buf.len() >= dst.len(), "test backend buffer shorter than destination");
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
 
     fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
-        buf.copy_from_slice(src);
+        assert!(buf.len() >= src.len(), "test backend buffer shorter than source");
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-        dst.copy_from_slice(buf);
+        assert!(buf.len() >= dst.len(), "test backend view shorter than destination");
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-        buf.copy_from_slice(src);
+        assert!(buf.len() >= src.len(), "test backend view shorter than source");
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()
@@ -172,17 +180,25 @@ impl Backend for DstBackend {
     }
 
     fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
-        dst.copy_from_slice(buf);
+        assert!(buf.len() >= dst.len(), "test backend buffer shorter than destination");
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
 
     fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
-        buf.copy_from_slice(src);
+        assert!(buf.len() >= src.len(), "test backend buffer shorter than source");
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-        dst.copy_from_slice(buf);
+        assert!(buf.len() >= dst.len(), "test backend view shorter than destination");
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-        buf.copy_from_slice(src);
+        assert!(buf.len() >= src.len(), "test backend view shorter than source");
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()

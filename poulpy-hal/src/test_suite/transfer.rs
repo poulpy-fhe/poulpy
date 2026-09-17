@@ -53,4 +53,21 @@ pub fn test_transfer_padded_lengths<BE: TestBackend>(_params: &TestParams, _modu
             "copy_host_to_view padding not zero, len {len}"
         );
     }
+
+    // A destination or source longer than the padded buffer is rejected.
+    let src8 = BE::alloc_bytes(8);
+    let mut dst65 = vec![0u8; 65];
+    let dst_rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        BE::copy_to_host(&src8, &mut dst65);
+    }))
+    .is_err();
+    assert!(dst_rejected, "copy_to_host accepted a destination longer than the buffer");
+
+    let mut owned8 = BE::alloc_bytes(8);
+    let src65 = vec![0u8; 65];
+    let src_rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        BE::copy_host_to_view(&mut BE::view_mut(&mut owned8), &src65);
+    }))
+    .is_err();
+    assert!(src_rejected, "copy_host_to_view accepted a source longer than the buffer");
 }
