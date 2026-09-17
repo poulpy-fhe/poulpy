@@ -244,7 +244,11 @@ where
     {
         assert_eq!(self.n() as u32, res.n());
         assert_eq!(self.n() as u32, a.n());
-        assert_eq!(self.n() as u32, b.n());
+        let b_n: usize = b.n().as_usize();
+        assert!(
+            b_n == self.n() || (b_n.is_power_of_two() && b_n >= BE::MIN_DEGREE && self.n().is_multiple_of(b_n)),
+            "glwe_mul_plain: b.n() does not embed into the module degree"
+        );
 
         let ab_base2k: Base2K = a.base2k();
         assert_eq!(b.base2k(), ab_base2k);
@@ -302,7 +306,9 @@ where
         let cols: usize = res.rank().as_usize() + 1;
 
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, a.size(), PrepareHint::OneShot);
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self.n(), 1, b.size(), PrepareHint::OneShot);
+        // A compact right operand is prepared at its own degree; the apply
+        // reads it through the sparse right slot of the convolution.
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(b.n().as_usize(), 1, b.size(), PrepareHint::OneShot);
 
         let a_backend = a.to_backend_ref();
         let b_backend = b.to_backend_ref();
@@ -377,7 +383,9 @@ where
         let cols: usize = res.rank().as_usize() + 1;
 
         let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, res.size(), PrepareHint::OneShot);
-        let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self.n(), 1, a.size(), PrepareHint::OneShot);
+        // A compact right operand is prepared at its own degree; the apply
+        // reads it through the sparse right slot of the convolution.
+        let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(a.n().as_usize(), 1, a.size(), PrepareHint::OneShot);
 
         let a_backend = a.to_backend_ref();
 
@@ -431,6 +439,9 @@ where
 
 #[doc(hidden)]
 pub trait GLWEMulPlainDefault<BE: Backend> {
+    /// The right operand may be compact: a degree that is a power-of-two divisor
+    /// of the module's, not below the backend floor, stands for its ring
+    /// embedding; the budget is an upper bound for it.
     fn glwe_mul_plain_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
