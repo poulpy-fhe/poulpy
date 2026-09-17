@@ -131,20 +131,23 @@ EvalMod is charged at the scale it runs (`f_mod_log_delta`), not the message sca
 ## Functional bootstrapping
 
 Functional bootstrapping replaces the final identity refresh with a lookup table.
-`EncodedLut::general` interprets a table of length `p` as `table[m]` for integer messages `m = 0..p`; `p` must be a nonzero power of two.
+`EncodedLut::general` interpolates exactly `p` entries with degree `p - 1`, for any table length `p >= 2`.
+Inputs contain integer messages `m`; the result is `table[m mod p]`, including for negative messages.
+Configure the plan with `plan.with_functional_bootstrap(&lut)?` before compiling the context.
+The initial SlotsToCoeffs transform includes the normalization to phase `m/p`.
 The input contract is:
 
 ```text
-ct_in.log_budget() - slots_to_coeffs.consumed_bits() = log2(p)
+ct_in.log_budget() - slots_to_coeffs.consumed_bits() = ceil(log2(p))
 ```
 
-The output scale is `ct_in.log_delta() + log2(p)`.
+The output scale is `ct_in.log_delta() + ceil(log2(p))`.
 Use `BootstrappingPlan::functional_bootstrap_k` to size the raised ciphertext for a desired output width, then round that width to whole limbs if necessary.
-LUTs are encoded on the host and uploaded once with `EncodedLut::to_backend`.
+LUTs are encoded on the host and uploaded once with `EncodedLut::transfer_to`.
 
 General LUTs use trigonometric Hermite interpolation on the unit circle.
 They therefore require an S2C-first recipe whose EvalMod type is `ExpCmplx` with `scaling = 2π`.
-`ckks_functional_bootstrap` takes a slice of LUTs and a slice of outputs, so one LUT and many go through the same entry point: the batch shares the SlotsToCoeffs, ModUp and CoeffsToSlots stages, and equal-arity general LUTs additionally share the power basis of each transformed half (binary or mixed batches fall back to evaluating each LUT against the shared transformed input). Each imaginary half is folded into its output as it is produced, so the scratch bound does not grow with the batch size.
+`ckks_functional_bootstrap` takes a slice of LUTs and a slice of outputs, so one LUT and many go through the same entry point: the batch shares the SlotsToCoeffs, ModUp and CoeffsToSlots stages, and equal-arity general LUTs additionally share the power basis of each transformed half (binary or mixed batches fall back to evaluating each LUT against the shared transformed input). Every LUT in a batch must have the same table length. Each imaginary half is folded into its output as it is produced, so the scratch bound does not grow with the batch size.
 Real slots are selected by the input's metadata rather than by a separate entry point: `ct.set_slots(SlotsKind::Real)` makes both `ckks_bootstrap` and `ckks_functional_bootstrap` skip the imaginary branch.
 
 `EncodedLut::binary` is specialized for two entries.

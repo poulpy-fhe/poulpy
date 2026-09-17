@@ -98,6 +98,11 @@ Measured against `main` before this cleanup (`d56615f9`, three commits before th
 
 `ckks_mul_pt_const_into` on NTT4x30Avx512 measured 37% slower before PR6a: its `cnv_by_const_apply` kernel called `at()` on both operands for every coefficient, and `ZnxView::at_ptr` has addressed through `VecZnxShape` since the window support landed (#265). PR6a takes each limb slice once per limb; the row is now -58.2% against the pre-cleanup `main` and the HAL row `cnv_by_const_apply` at 4096x8 is -68.8%. `glwe_mul_plain`, `glwe_mul_plain_assign` and `glwe_tensor_apply` on FFT64Avx512 are 7 to 10% faster. Every other row is within 5%.
 
+### `poulpy-ckks`
+
+- **Breaking:** `EncodedLut::general` uses exactly `p >= 2` entries and degree `p - 1`, without power-of-two padding. Evaluation is periodic modulo `p`, and LUTs in a batch must have the same table length.
+- Add `BootstrappingPlan::with_functional_bootstrap(&lut)` to normalize integer messages in the existing SlotsToCoeffs transform, without an extra multiplication or level. Non-power-of-two LUTs require a context compiled from this configured plan.
+
 ## [0.8.3] - 2026-09-09
 
 Adds opt-in Rayon parallelism to every accelerated CPU family behind a backend-selected task executor, packs NTT4x30 transform words into `u32` pairs on AVX2/AVX-512, fuses paired gadget digits in strided key switching, and resolves evaluation keys per precision, including reading a prepared key at a coarser digit size. Normalization takes an explicit target precision, fixing cross-base and partial-limb noise. CKKS gains `LogN=16` bootstrapping presets, non-power-of-two LUTs, an even Han–Ki EvalMod and a native NTT ModUp; bin-FHE runs on device backends.

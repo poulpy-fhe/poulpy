@@ -86,6 +86,7 @@ pub struct BootstrappingTechniques {
 pub struct BootstrappingPlan {
     pipeline: BootstrappingPipeline,
     c2s_guard_bits: usize,
+    functional_message_modulus: Option<usize>,
 
     techniques: BootstrappingTechniques,
 
@@ -156,11 +157,25 @@ impl BootstrappingPlan {
         Ok(Self {
             pipeline,
             c2s_guard_bits: 0,
+            functional_message_modulus: None,
             techniques,
             coeffs_to_slots,
             eval_mod,
             slots_to_coeffs,
         })
+    }
+
+    /// Configures S2C-first functional bootstrapping of integer messages modulo the LUT length.
+    /// The initial transform includes the normalization to the LUT's unit-circle phase.
+    pub fn with_functional_bootstrap<P>(mut self, lut: &EncodedLut<P>) -> Result<Self> {
+        ensure!(
+            self.pipeline == BootstrappingPipeline::S2CFirst,
+            "functional bootstrapping requires an S2C-first plan"
+        );
+        let q = (1usize << lut.log_msg_ratio()) as f64;
+        self.slots_to_coeffs = self.slots_to_coeffs.with_scaling(q / (2.0 * lut.message_modulus() as f64))?;
+        self.functional_message_modulus = Some(lut.message_modulus());
+        Ok(self)
     }
 
     /// The selected ModUp/EvalMod bootstrapping pipeline.
@@ -284,6 +299,10 @@ impl BootstrappingPlan {
         } else {
             0
         };
+        ensure!(
+            self.functional_message_modulus.is_none_or(|p| p == lut.message_modulus()),
+            "functional bootstrap plan and LUT must have the same message modulus"
+        );
         let lut_log_delta = log_delta + lut.log_msg_ratio();
         Ok(output_k + self.c2s_guard_bits + self.coeffs_to_slots.consumed_bits() + eval_mod + lut.consumed_bits(lut_log_delta))
     }
@@ -319,6 +338,7 @@ impl BootstrappingPlan {
 /// imaginary coefficient halves can be reduced independently by EvalMod.
 pub struct BootstrappingContext<BE: Backend, F> {
     c2s_guard_bits: usize,
+    functional_message_modulus: Option<usize>,
     /// Prepared CoeffsToSlots matrix (homomorphic encoding).
     ///
     /// The plan constructor scales this transform for its EvalMod variant.
@@ -328,7 +348,7 @@ pub struct BootstrappingContext<BE: Backend, F> {
     coeffs_to_slots_bypass: Option<DFTMatrixPrepared<BE, Encode, Split>>,
 
     /// Prepared SlotsToCoeffs matrix (homomorphic decoding). S2C-first plans
-    /// use scaling `1/2` to cancel the initial real/imaginary split.
+    /// cancel the initial real/imaginary split and normalize functional messages.
     slots_to_coeffs: DFTMatrixPrepared<BE, Decode, Split>,
 
     /// Encoded, backend-resident EvalMod (`x mod 1`).
@@ -342,6 +362,10 @@ pub struct BootstrappingContext<BE: Backend, F> {
 }
 
 impl<BE: Backend, F> BootstrappingContext<BE, F> {
+    pub(crate) fn functional_message_modulus(&self) -> Option<usize> {
+        self.functional_message_modulus
+    }
+
     /// Extra internal scale bits removed after CoeffsToSlots.
     pub fn c2s_guard_bits(&self) -> usize {
         self.c2s_guard_bits
@@ -417,6 +441,7 @@ where
 
         Ok(Self {
             c2s_guard_bits: plan.c2s_guard_bits,
+            functional_message_modulus: plan.functional_message_modulus,
             coeffs_to_slots,
             coeffs_to_slots_bypass,
             slots_to_coeffs,
@@ -444,6 +469,40 @@ mod tests {
             CoeffsMeta::from_delta_budget(8, 2),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn functional_bootstrapping_normalization_is_in_s2c() {
+        let module = Module::<poulpy_hal::layouts::HostBytesBackend>::new(16);
+        let lut = |p: usize| {
+            EncodedLut::general(
+                &module,
+                &vec![1.0f64; p],
+                32usize.into(),
+                CoeffsMeta::from_delta_budget(55, 32),
+                SplitStrategy::MinDepth,
+            )
+            .unwrap()
+        };
+        let lut5 = lut(5);
+        let lut7 = lut(7);
+        let base = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
+        let configured = base.clone().with_functional_bootstrap(&lut5).unwrap();
+        assert_eq!(configured.slots_to_coeffs().scaling(), Some(4.0 / 5.0));
+        assert_eq!(configured.pre_mod_up_consumed_bits(), base.pre_mod_up_consumed_bits());
+        assert_eq!(configured.post_mod_up_consumed_bits(), base.post_mod_up_consumed_bits());
+        assert!(configured.functional_bootstrap_k(100, 40, &lut7).is_err());
+        let configured = configured.with_functional_bootstrap(&lut5).unwrap();
+        assert_eq!(configured.slots_to_coeffs().scaling(), Some(4.0 / 5.0));
+        let configured = configured.with_functional_bootstrap(&lut7).unwrap();
+        assert_eq!(configured.functional_message_modulus, Some(7));
+        assert_eq!(configured.slots_to_coeffs().scaling(), Some(4.0 / 7.0));
+        assert!(
+            plan(BootstrappingPipeline::C2SFirst, BootstrappingTechniques::default(), 16)
+                .unwrap()
+                .with_functional_bootstrap(&lut5)
+                .is_err()
+        );
     }
 
     #[test]

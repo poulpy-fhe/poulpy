@@ -21,12 +21,14 @@ use crate::{
 
 /// A lookup table encoded as plaintext polynomial coefficients.
 ///
+/// Inputs contain integer messages `m`.
 /// Functional bootstrapping expects an input satisfying
 /// `log_budget - s2c_consumed_bits == ceil(log2(p))`, where `p` is the table size.
 /// Its output scale is the input scale plus `ceil(log2(p))`.
 pub struct EncodedLut<P> {
     kind: EncodedLutKind<P>,
     log_msg_ratio: usize,
+    message_modulus: usize,
 }
 
 pub(crate) enum EncodedLutKind<P> {
@@ -39,12 +41,11 @@ pub(crate) enum EncodedLutKind<P> {
 }
 
 impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
-    /// Encodes `table[m]` for each integer message `m` in `0..table.len()`.
+    /// Encodes a table of at least two entries with period `p = table.len()` and degree `p - 1`.
     ///
-    /// The table must be nonempty. Unused entries up to the next power of two
-    /// are filled with zero, preserving integer inputs `m` and a power-of-two
-    /// message ratio. Evaluation is periodic with that padded length, rather
-    /// than modulo `table.len()`. This form requires EvalMod at evaluation time.
+    /// Configure the plan with [`super::BootstrappingPlan::with_functional_bootstrap`].
+    /// Evaluation returns `table[m mod p]`.
+    /// This form requires EvalMod at evaluation time.
     pub fn general<F>(
         host_module: &Module<HostBytesBackend>,
         table: &[F],
@@ -56,13 +57,13 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
         F: CKKSScalar + Float + FloatConst,
         CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
+        ensure!(table.len() >= 2, "LUT length must be at least two");
         let log_msg_ratio = table_log_msg_ratio(table.len())?;
-        let mut padded = table.to_vec();
-        padded.resize(1usize << log_msg_ratio, F::zero());
-        let bsgs = trig_hermite_lut(&padded)?.encode_bsgs_with(host_module, base2k, coeffs_meta, strategy)?;
+        let bsgs = trig_hermite_lut(table)?.encode_bsgs_with(host_module, base2k, coeffs_meta, strategy)?;
         Ok(Self {
             kind: EncodedLutKind::General(bsgs),
             log_msg_ratio,
+            message_modulus: table.len(),
         })
     }
 
@@ -101,6 +102,7 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
                 log_interval_reduction,
             },
             log_msg_ratio: 1,
+            message_modulus: 2,
         })
     }
 
@@ -136,6 +138,7 @@ impl<P> EncodedLut<P> {
         EncodedLut {
             kind,
             log_msg_ratio: self.log_msg_ratio,
+            message_modulus: self.message_modulus,
         }
     }
 
@@ -149,6 +152,11 @@ impl<P> EncodedLut<P> {
     /// Returns `ceil(log2(p))`, where `p` is the number of table entries.
     pub fn log_msg_ratio(&self) -> usize {
         self.log_msg_ratio
+    }
+
+    /// The exact message modulus (number of table entries).
+    pub fn message_modulus(&self) -> usize {
+        self.message_modulus
     }
 
     /// Multiplicative budget consumed at the given ciphertext scale.
@@ -185,15 +193,39 @@ impl<P> EncodedLut<P> {
 
 fn table_log_msg_ratio(len: usize) -> Result<usize> {
     ensure!(len > 0, "LUT length must be nonzero");
-    let padded_len = len
+    let binary_span = len
         .checked_next_power_of_two()
         .ok_or_else(|| anyhow!("LUT length {len} is too large"))?;
-    Ok(padded_len.ilog2() as usize)
+    Ok(binary_span.ilog2() as usize)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::table_log_msg_ratio;
+    use super::{EncodedLut, table_log_msg_ratio};
+    use crate::{CoeffsMeta, polynomial::SplitStrategy};
+    use poulpy_hal::layouts::{HostBytesBackend, Module};
+
+    #[test]
+    fn general_lut_preserves_exact_modulus_and_degree() {
+        let module = Module::<HostBytesBackend>::new(16);
+        for p in [2, 3, 4, 5, 6, 7, 8, 9, 17, 33] {
+            let table: Vec<_> = (0..p).map(|m| ((m * m + 3 * m + 2) % 7) as f64).collect();
+            let lut = EncodedLut::general(
+                &module,
+                &table,
+                32usize.into(),
+                CoeffsMeta::from_delta_budget(55, 32),
+                SplitStrategy::MinDepth,
+            )
+            .unwrap();
+            assert_eq!(lut.message_modulus(), p);
+            let series = lut.general_series().unwrap();
+            assert_eq!(series.re.degree(), p - 1);
+            assert_eq!(series.im.degree(), p - 1);
+            let transferred = lut.transfer_to(&module);
+            assert_eq!(transferred.message_modulus(), p);
+        }
+    }
 
     #[test]
     fn message_ratio_is_derived_from_table_length() {
