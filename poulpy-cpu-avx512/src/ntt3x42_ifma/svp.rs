@@ -59,7 +59,7 @@ pub(crate) fn svp_prepare(
 ) {
     let n = res.n();
     check_degree::<NTT3x42Ifma>(module.n(), n);
-    assert_eq!(a.n(), n, "svp_prepare: a.n():{} != res.n():{n}", a.n());
+    assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
 
     let mut tmp = vec![0u64; 3 * n];
     NTT3x42Ifma::ntt3x42_ifma_from_znx64(&mut tmp, a.at(a_col, 0));

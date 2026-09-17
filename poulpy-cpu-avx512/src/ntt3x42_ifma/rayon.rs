@@ -534,7 +534,7 @@ unsafe impl HalVecZnxDftImpl for NTT3x42IfmaRayon {
         poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
         assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         poulpy_hal::layouts::check_degree::<NTT3x42Ifma>(module.n(), res.n());
-        assert_eq!(a.n(), res.n(), "vec_znx_dft_apply: a.n():{} != res.n():{}", a.n(), res.n());
+        assert!(a.n() == res.n(), "vec_znx_dft_apply: a.n() != res.n()");
         if parallel_limb_tasks(res.size()) {
             let n = res.n();
             let cols = res.cols();

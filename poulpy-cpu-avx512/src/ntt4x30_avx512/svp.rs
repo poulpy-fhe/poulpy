@@ -57,7 +57,7 @@ pub(crate) fn svp_prepare(
 ) {
     let n = res.n();
     check_degree::<NTT4x30Avx512>(module.n(), n);
-    assert_eq!(a.n(), n, "svp_prepare: a.n():{} != res.n():{n}", a.n());
+    assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
     let mut tmp = vec![0u64; 4 * n];
     NTT4x30Avx512::ntt_from_znx64(&mut tmp, a.at(a_col, 0));
     NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table_for(n), &mut tmp);

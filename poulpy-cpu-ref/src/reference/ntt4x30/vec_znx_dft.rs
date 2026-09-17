@@ -248,7 +248,7 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
     assert!(step >= 1, "ntt4x30_vec_znx_dft_apply: step must be >= 1");
     let n = res.n();
     check_degree::<BE>(module.n(), n);
-    assert_eq!(a.n(), n, "vec_znx_dft_apply: a.n():{} != res.n():{n}", a.n());
+    assert!(a.n() == n, "vec_znx_dft_apply: a.n() != res.n()");
     let a_size = a.size();
     let res_size = res.size();
 

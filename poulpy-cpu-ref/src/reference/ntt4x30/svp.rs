@@ -62,7 +62,7 @@ pub fn ntt4x30_svp_prepare<'r, 'a, BE>(
 {
     let n = res.n();
     check_degree::<BE>(module.n(), n);
-    assert_eq!(a.n(), n, "svp_prepare: a.n():{} != res.n():{n}", a.n());
+    assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
 
     // Temporary q120b working buffer (heap-allocated; prepare is not hot).
     let mut tmp = vec![0u64; 4 * n];

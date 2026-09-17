@@ -1250,7 +1250,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512Rayon {
         }
 
         poulpy_hal::layouts::check_degree::<NTT4x30Avx512>(module.n(), res.n());
-        assert_eq!(a.n(), res.n(), "vec_znx_dft_apply: a.n():{} != res.n():{}", a.n(), res.n());
+        assert!(a.n() == res.n(), "vec_znx_dft_apply: a.n() != res.n()");
         let n = res.n();
         let cols = res.cols();
         let a_size = a.size();

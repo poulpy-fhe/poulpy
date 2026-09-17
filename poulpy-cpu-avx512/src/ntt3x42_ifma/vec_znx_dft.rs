@@ -621,7 +621,7 @@ pub(crate) fn vec_znx_dft_apply(
     let res_size = res.size();
     let n = res.n();
     check_degree::<NTT3x42Ifma>(module.n(), n);
-    assert_eq!(a.n(), n, "vec_znx_dft_apply: a.n():{} != res.n():{n}", a.n());
+    assert!(a.n() == n, "vec_znx_dft_apply: a.n() != res.n()");
     let cols = res.cols();
     let steps = a_size.div_ceil(step);
     let min_steps = res_size.min(steps);

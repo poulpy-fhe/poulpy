@@ -230,7 +230,7 @@ pub(crate) fn vec_znx_dft_apply(
     assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
     let n = res.n();
     check_degree::<NTT4x30Avx>(module.n(), n);
-    assert_eq!(a.n(), n, "vec_znx_dft_apply: a.n():{} != res.n():{n}", a.n());
+    assert!(a.n() == n, "vec_znx_dft_apply: a.n() != res.n()");
     let cols = res.cols();
     let res_size = res.size();
     let a_size = a.size();
