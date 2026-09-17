@@ -26,6 +26,10 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// of coefficients per step raises it to the smallest degree they handle.
     const MIN_DEGREE: usize = 8;
 
+    /// Maximum supported limb radix for FHE parameter selection.
+    /// Operation-specific input and accumulation bounds still apply.
+    const MAX_BASE2K: usize;
+
     /// Task executor selected by this backend.
     type TaskExecutor: crate::execution::TaskExecutor;
     /// Word type for coefficient-domain (small) polynomial representations.
@@ -253,6 +257,9 @@ unsafe impl<B: Backend> Sync for Module<B> {}
 unsafe impl<B: Backend> Send for Module<B> {}
 
 impl<B: Backend> Module<B> {
+    /// The backend's supported FHE limb radix; see [`Backend::MAX_BASE2K`].
+    pub const MAX_BASE2K: usize = B::MAX_BASE2K;
+
     /// Creates a backend module for ring degree `N`.
     #[inline]
     pub fn new(n: u64) -> Self

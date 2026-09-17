@@ -82,6 +82,8 @@ pub struct FFT64Avx512Handle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Avx512 {}
 
 impl Backend for FFT64Avx512 {
+    const MAX_BASE2K: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::MAX_BASE2K;
+
     // The AVX-512 complex multiply steps eight complex slots at a time with no
     // tail, so the smallest ring this backend serves has n / 2 = 8 slots.
     const MIN_DEGREE: usize = 16;

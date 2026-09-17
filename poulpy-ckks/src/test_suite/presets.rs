@@ -36,6 +36,17 @@ use crate::{
 /// Plaintext budget bits (above `log_delta`) used to measure the output precision.
 pub const PRECISION_LOG_BUDGET: usize = 8;
 
+/// Keeps the nominal preset when its radix fits the backend, otherwise uses
+/// the FFT digit shape (7 high-modulus limbs, 1 dense-to-sparse limb) at the
+/// backend's radix limit. Re-derivation validates the key modulus bounds.
+pub fn preset_for_backend<BE: Backend>(preset: &BootstrappingPreset) -> anyhow::Result<BootstrappingPreset> {
+    if preset.base2k() <= BE::MAX_BASE2K {
+        Ok(preset.clone())
+    } else {
+        preset.with_base2k(BE::MAX_BASE2K)?.with_dsizes(7, 1)
+    }
+}
+
 /// A preset set up end to end and ready to bootstrap repeatedly.
 pub struct BootstrappingPresetRun<BE: Backend> {
     preset: BootstrappingPreset,
@@ -217,7 +228,7 @@ where
 /// Runs every preset once on `BE` and checks the measured output precision
 /// against the precision the preset advertises.
 ///
-/// Every backend runs the preset at its nominal shape with `f64` DFT matrices
+/// Every backend runs the preset at a supported radix with `f64` DFT matrices
 /// and must reach the advertised precision. Full logN16 bootstraps are slow,
 /// so backends register this as an ignored test.
 pub fn bootstrapping_presets_meet_precision<BE>()
@@ -234,6 +245,7 @@ where
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
     for preset in all().unwrap() {
+        let preset = preset_for_backend::<BE>(&preset).unwrap();
         let mut run = BootstrappingPresetRun::<BE>::setup(preset);
         let (re, im) = run.precision();
         let preset = run.preset();

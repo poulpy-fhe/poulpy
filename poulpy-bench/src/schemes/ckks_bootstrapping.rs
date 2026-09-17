@@ -1,7 +1,7 @@
 //! Full-slot CKKS bootstrapping benchmark.
 //!
 //! One benchmark per preset in [`poulpy_ckks::presets::bootstrapping::all`],
-//! at the preset's nominal shape on every backend. Criterion's name filter selects a preset by its name. The setup, the
+//! at a radix supported by the backend. Criterion's name filter selects a preset by its name. The setup, the
 //! bootstrap call, and the precision measurement are the shared
 //! [`BootstrappingPresetRun`] driver, so the benchmark exercises exactly what
 //! the precision pin test checks.
@@ -14,7 +14,7 @@ use poulpy_ckks::{
     presets::bootstrapping::{BootstrappingPreset, all},
     test_suite::{
         helpers::{TestContextBackend, TestContextHostModule, TestContextModule},
-        presets::BootstrappingPresetRun,
+        presets::{BootstrappingPresetRun, preset_for_backend},
     },
 };
 use poulpy_core::layouts::{
@@ -89,6 +89,7 @@ where
     let mut group = c.benchmark_group(format!("{backend}/ckks/ckks_bootstrapping"));
     group.sample_size(10);
     for preset in all().unwrap() {
+        let preset = preset_for_backend::<BE>(&preset).unwrap();
         runner_ckks_bootstrapping::<BE>(&mut group, preset);
     }
     group.finish();
