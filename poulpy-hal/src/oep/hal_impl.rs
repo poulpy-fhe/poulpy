@@ -704,7 +704,7 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
     /// floating-point FFT backend, a pure-permutation plan for an NTT backend).
     type AutomorphismPlan: Send + Sync;
 
-    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan;
+    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_with_plan(
         module: &Module<Self>,

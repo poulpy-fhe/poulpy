@@ -282,22 +282,22 @@ where
     let cnv_size = 2 * size - 1;
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut small: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(cols, size);
+    let mut small: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(module.n(), cols, size);
     small.fill_uniform(16, &mut source);
-    let mut addend: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(cols, size);
+    let mut addend: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(module.n(), cols, size);
     addend.fill_uniform(16, &mut source);
-    let mut sum: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(cols, size);
+    let mut sum: VecZnx<BE::OwnedBuf, i64> = module.vec_znx_alloc(module.n(), cols, size);
 
-    let mut mat: MatZnx<BE::OwnedBuf, i64> = module.mat_znx_alloc(rows, cols, cols, size);
+    let mut mat: MatZnx<BE::OwnedBuf, i64> = module.mat_znx_alloc(module.n(), rows, cols, cols, size);
     mat.fill_uniform(16, &mut source);
 
-    let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols, cols, size, PrepareHint::Reuse);
-    let mut a: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(cols, size);
-    let mut res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(cols, size);
-    let mut big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(cols, size);
-    let mut left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, size, PrepareHint::Reuse);
-    let mut right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, size, PrepareHint::Reuse);
-    let mut cnv_res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(cols, cnv_size);
+    let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(module.n(), rows, cols, cols, size, PrepareHint::Reuse);
+    let mut a: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), cols, size);
+    let mut res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), cols, size);
+    let mut big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), cols, size);
+    let mut left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(module.n(), cols, size, PrepareHint::Reuse);
+    let mut right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(module.n(), cols, size, PrepareHint::Reuse);
+    let mut cnv_res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), cols, cnv_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module

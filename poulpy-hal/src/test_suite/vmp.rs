@@ -28,7 +28,7 @@ where
 {
     let cols = a.cols();
     let size = a.size();
-    let mut res = module.vec_znx_big_alloc(cols, size);
+    let mut res = module.vec_znx_big_alloc(module.n(), cols, size);
     for j in 0..cols {
         let mut res_backend = res.to_backend_mut();
         let mut a_backend = a.to_backend_mut();
@@ -82,22 +82,22 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                 for size_out in 1..max_size + 1 {
                     let rows: usize = cols_in;
 
-                    let mut a = module_host.vec_znx_alloc(cols_in, size_in);
+                    let mut a = module_host.vec_znx_alloc(params.n, cols_in, size_in);
                     a.fill_uniform(base2k, &mut source);
                     let a_digest: u64 = a.digest_u64();
                     let a_ref_backend = upload_vec_znx::<BR>(&a);
                     let a_test_backend = upload_vec_znx::<BT>(&a);
 
-                    let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size_out);
+                    let mut mat = module_host.mat_znx_alloc(params.n, rows, cols_in, cols_out, size_out);
                     mat.fill_uniform(base2k, &mut source);
                     let mat_digest: u64 = mat.digest_u64();
                     let mat_ref_backend = upload_mat_znx::<BR>(&mat);
                     let mat_test_backend = upload_mat_znx::<BT>(&mat);
 
                     let mut pmat_ref: VmpPMatOwned<BR> =
-                        module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
+                        module_ref.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
                     let mut pmat_test: VmpPMatOwned<BT> =
-                        module_test.vmp_pmat_alloc(rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
+                        module_test.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
 
                     module_ref.vmp_prepare(
                         &mut pmat_ref.to_backend_mut(),
@@ -112,8 +112,8 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
 
                     assert_eq!(mat.digest_u64(), mat_digest);
 
-                    let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols_out, size_out);
-                    let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols_out, size_out);
+                    let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols_out, size_out);
+                    let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(params.n, cols_out, size_out);
 
                     module_ref.vmp_apply_dft(
                         &mut res_dft_ref,
@@ -133,7 +133,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
                     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
-                    let res_host_template = module_host.vec_znx_alloc(cols_out, size_out);
+                    let res_host_template = module_host.vec_znx_alloc(params.n, cols_out, size_out);
                     let mut res_small_ref_backend = upload_vec_znx::<BR>(&res_host_template);
                     let mut res_small_test_backend = upload_vec_znx::<BT>(&res_host_template);
 
@@ -233,14 +233,14 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                 for size_out in 1..max_size + 1 {
                     let rows: usize = size_in;
 
-                    let mut a = module_host.vec_znx_alloc(cols_in, size_in);
+                    let mut a = module_host.vec_znx_alloc(params.n, cols_in, size_in);
                     a.fill_uniform(base2k, &mut source);
                     let a_digest: u64 = a.digest_u64();
                     let a_ref_backend = upload_vec_znx::<BR>(&a);
                     let a_test_backend = upload_vec_znx::<BT>(&a);
 
-                    let mut a_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols_in, size_in);
-                    let mut a_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols_in, size_in);
+                    let mut a_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols_in, size_in);
+                    let mut a_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(params.n, cols_in, size_in);
 
                     for j in 0..cols_in {
                         module_ref.vec_znx_dft_apply(
@@ -273,16 +273,16 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
                     assert_eq!(a.digest_u64(), a_digest);
 
-                    let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size_out);
+                    let mut mat = module_host.mat_znx_alloc(params.n, rows, cols_in, cols_out, size_out);
                     mat.fill_uniform(base2k, &mut source);
                     let mat_digest: u64 = mat.digest_u64();
                     let mat_ref_backend = upload_mat_znx::<BR>(&mat);
                     let mat_test_backend = upload_mat_znx::<BT>(&mat);
 
                     let mut pmat_ref: VmpPMatOwned<BR> =
-                        module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
+                        module_ref.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
                     let mut pmat_test: VmpPMatOwned<BT> =
-                        module_test.vmp_pmat_alloc(rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
+                        module_test.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
 
                     module_ref.vmp_prepare(
                         &mut pmat_ref.to_backend_mut(),
@@ -297,8 +297,8 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
                     assert_eq!(mat.digest_u64(), mat_digest);
 
-                    let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols_out, size_out);
-                    let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols_out, size_out);
+                    let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols_out, size_out);
+                    let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(params.n, cols_out, size_out);
 
                     module_ref.vmp_apply_dft_to_dft(
                         &mut res_dft_ref.to_backend_mut(),
@@ -318,7 +318,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
                     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
-                    let res_host_template = module_host.vec_znx_alloc(cols_out, size_out);
+                    let res_host_template = module_host.vec_znx_alloc(params.n, cols_out, size_out);
                     let mut res_small_ref_backend = upload_vec_znx::<BR>(&res_host_template);
                     let mut res_small_test_backend = upload_vec_znx::<BT>(&res_host_template);
 
@@ -381,16 +381,16 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
     Module<BE>: VmpPMatAlloc<BE> + VmpPrepare<BE> + VmpPrepareTmpBytes + VmpExtractSelectedRows<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let n: usize = module_host.n();
+    let n: usize = params.n;
     let mut source: Source = Source::new([0u8; 32]);
     let (max_cols, size, rows) = (2usize, 4usize, 6usize);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.vmp_prepare_tmp_bytes(rows, max_cols, max_cols, size));
 
     for cols_in in 1..max_cols + 1 {
         for cols_out in 1..max_cols + 1 {
-            let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size);
+            let mut mat = module_host.mat_znx_alloc(params.n, rows, cols_in, cols_out, size);
             mat.fill_uniform(params.base2k, &mut source);
-            let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size, PrepareHint::Reuse);
+            let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, size, PrepareHint::Reuse);
             module.vmp_prepare(
                 &mut pmat.to_backend_mut(),
                 &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&mat)),
@@ -406,7 +406,7 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
                         }
                         // Oracle: the same rows and limb prefix, prepared densely.
                         let (a_ncols, res_ncols) = (cols_out * size, cols_out * res_size);
-                        let mut sel = module_host.mat_znx_alloc(res_rows, cols_in, cols_out, res_size);
+                        let mut sel = module_host.mat_znx_alloc(params.n, res_rows, cols_in, cols_out, res_size);
                         for i in 0..res_rows {
                             for c in 0..cols_in {
                                 let src_row: usize = (first + i * step) * cols_in + c;
@@ -419,7 +419,7 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
                             }
                         }
                         let mut expected: VmpPMatOwned<BE> =
-                            module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
+                            module.vmp_pmat_alloc(params.n, res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
                         module.vmp_prepare(
                             &mut expected.to_backend_mut(),
                             &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(&sel)),
@@ -427,7 +427,7 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
                         );
 
                         let mut got: VmpPMatOwned<BE> =
-                            module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
+                            module.vmp_pmat_alloc(params.n, res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
                         module.vmp_extract_selected_rows(&mut got.to_backend_mut(), &pmat.to_backend_ref(), first, step);
                         // Compared through the backend's host download rather
                         // than `digest_u64`, which needs host-resident buffers.
@@ -442,7 +442,7 @@ fn check_extract_selected_rows<BE: crate::test_suite::TestBackend>(
         }
     }
 
-    let parent: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, max_cols, max_cols, size, PrepareHint::Reuse);
+    let parent: VmpPMatOwned<BE> = module.vmp_pmat_alloc(params.n, rows, max_cols, max_cols, size, PrepareHint::Reuse);
     check_extract_rejects_bad_selections(module, &parent);
 }
 
@@ -466,7 +466,8 @@ where
         (1, size, 0, 0, "zero step"),
     ];
     for (res_rows, res_size, first, step, what) in cases {
-        let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
+        let mut res: VmpPMatOwned<BE> =
+            module.vmp_pmat_alloc(module.n(), res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
         let hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(|_| {}));
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -478,7 +479,7 @@ where
 
     // A destination naming the other representation must be rejected before any
     // byte moves, even though every dimension matches.
-    let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size, PrepareHint::OneShot);
+    let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(module.n(), rows, cols_in, cols_out, size, PrepareHint::OneShot);
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
     let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -569,23 +570,23 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
                         for limb_offset in 0..3 {
                             let rows: usize = size_in;
 
-                            let mut a = module_host.vec_znx_alloc(cols_in, size_in);
+                            let mut a = module_host.vec_znx_alloc(params.n, cols_in, size_in);
                             a.fill_uniform(base2k, &mut source);
                             let a_ref_backend = upload_vec_znx::<BR>(&a);
                             let a_test_backend = upload_vec_znx::<BT>(&a);
 
-                            let mut res_init = module_host.vec_znx_alloc(cols_out, size_out);
+                            let mut res_init = module_host.vec_znx_alloc(params.n, cols_out, size_out);
                             res_init.fill_uniform(base2k, &mut source);
                             let res_init_ref_backend = upload_vec_znx::<BR>(&res_init);
                             let res_init_test_backend = upload_vec_znx::<BT>(&res_init);
 
-                            let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, mat_size);
+                            let mut mat = module_host.mat_znx_alloc(params.n, rows, cols_in, cols_out, mat_size);
                             mat.fill_uniform(base2k, &mut source);
                             let mat_ref_backend = upload_mat_znx::<BR>(&mat);
                             let mat_test_backend = upload_mat_znx::<BT>(&mat);
 
-                            let mut a_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols_in, size_in);
-                            let mut a_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols_in, size_in);
+                            let mut a_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols_in, size_in);
+                            let mut a_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(params.n, cols_in, size_in);
                             for j in 0..cols_in {
                                 module_ref.vec_znx_dft_apply(
                                     1,
@@ -605,8 +606,10 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
                                 );
                             }
 
-                            let mut res_init_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols_out, size_out);
-                            let mut res_init_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols_out, size_out);
+                            let mut res_init_dft_ref: VecZnxDftOwned<BR> =
+                                module_ref.vec_znx_dft_alloc(params.n, cols_out, size_out);
+                            let mut res_init_dft_test: VecZnxDftOwned<BT> =
+                                module_test.vec_znx_dft_alloc(params.n, cols_out, size_out);
                             for j in 0..cols_out {
                                 module_ref.vec_znx_dft_apply(
                                     1,
@@ -627,9 +630,9 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
                             }
 
                             let mut pmat_ref: VmpPMatOwned<BR> =
-                                module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
+                                module_ref.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
                             let mut pmat_test: VmpPMatOwned<BT> =
-                                module_test.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
+                                module_test.vmp_pmat_alloc(params.n, rows, cols_in, cols_out, mat_size, PrepareHint::Reuse);
                             module_ref.vmp_prepare(
                                 &mut pmat_ref.to_backend_mut(),
                                 &<MatZnx<BR::OwnedBuf, i64> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
@@ -641,8 +644,10 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
                                 &mut scratch_test.arena(),
                             );
 
-                            let mut res_apply_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols_out, size_out);
-                            let mut res_apply_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols_out, size_out);
+                            let mut res_apply_ref: VecZnxDftOwned<BR> =
+                                module_ref.vec_znx_dft_alloc(params.n, cols_out, size_out);
+                            let mut res_apply_test: VecZnxDftOwned<BT> =
+                                module_test.vec_znx_dft_alloc(params.n, cols_out, size_out);
                             module_ref.vmp_apply_dft_to_dft(
                                 &mut res_apply_ref.to_backend_mut(),
                                 &a_dft_ref.to_backend_ref(),
@@ -694,7 +699,7 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
                             let res_acc_big_ref = idft_into_alloc(module_ref, &mut res_acc_ref);
                             let res_acc_big_test = idft_into_alloc(module_test, &mut res_acc_test);
 
-                            let res_host_template = module_host.vec_znx_alloc(cols_out, size_out);
+                            let res_host_template = module_host.vec_znx_alloc(params.n, cols_out, size_out);
                             let mut res_apply_small_ref = upload_vec_znx::<BR>(&res_host_template);
                             let mut res_apply_small_test = upload_vec_znx::<BT>(&res_host_template);
                             let mut res_acc_small_ref = upload_vec_znx::<BR>(&res_host_template);
@@ -808,18 +813,18 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
     let mut scratch_test: ScratchOwned<BT> =
         ScratchOwned::alloc(module_test.vmp_apply_dft_tmp_bytes(size, size, rows, cols, cols, size));
 
-    let mut a = module_host.vec_znx_alloc(cols, size);
+    let mut a = module_host.vec_znx_alloc(params.n, cols, size);
     a.fill_uniform(base2k, &mut source);
     let a_ref_backend = upload_vec_znx::<BR>(&a);
     let a_test_backend = upload_vec_znx::<BT>(&a);
 
-    let mut mat = module_host.mat_znx_alloc(rows, cols, cols, size);
+    let mut mat = module_host.mat_znx_alloc(params.n, rows, cols, cols, size);
     mat.fill_uniform(base2k, &mut source);
     let mat_ref_backend = upload_mat_znx::<BR>(&mat);
     let mat_test_backend = upload_mat_znx::<BT>(&mat);
 
-    let mut pmat_ref: VmpPMatOwned<BR> = module_ref.vmp_pmat_alloc(rows, cols, cols, size, PrepareHint::Reuse);
-    let mut pmat_test: VmpPMatOwned<BT> = module_test.vmp_pmat_alloc(rows, cols, cols, size, PrepareHint::Reuse);
+    let mut pmat_ref: VmpPMatOwned<BR> = module_ref.vmp_pmat_alloc(params.n, rows, cols, cols, size, PrepareHint::Reuse);
+    let mut pmat_test: VmpPMatOwned<BT> = module_test.vmp_pmat_alloc(params.n, rows, cols, cols, size, PrepareHint::Reuse);
 
     module_ref.vmp_prepare(
         &mut pmat_ref.to_backend_mut(),
@@ -835,8 +840,8 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
     module_ref.vmp_zero(&mut pmat_ref.to_backend_mut());
     module_test.vmp_zero(&mut pmat_test.to_backend_mut());
 
-    let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols, size);
-    let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols, size);
+    let mut res_dft_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(params.n, cols, size);
+    let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(params.n, cols, size);
 
     module_ref.vmp_apply_dft(
         &mut res_dft_ref,
@@ -854,7 +859,7 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
     let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
-    let template = module_host.vec_znx_alloc(cols, size);
+    let template = module_host.vec_znx_alloc(params.n, cols, size);
     let mut res_ref_backend = upload_vec_znx::<BR>(&template);
     let mut res_test_backend = upload_vec_znx::<BT>(&template);
 
@@ -883,14 +888,14 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
         );
     }
 
-    let want = module_host.vec_znx_alloc(cols, size);
+    let want = module_host.vec_znx_alloc(params.n, cols, size);
     assert_eq!(download_vec_znx::<BR>(&res_ref_backend), want);
     assert_eq!(download_vec_znx::<BT>(&res_test_backend), want);
 }
 
 /// `vmp_apply_dft_to_dft` and `vmp_apply_dft_to_dft_add` panic when `a` or
 /// `res` has a column count other than the matrix's.
-pub fn test_vmp_apply_dft_to_dft_shape_rejected<BE: crate::test_suite::TestBackend>(_params: &TestParams, module: &Module<BE>)
+pub fn test_vmp_apply_dft_to_dft_shape_rejected<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VmpPMatAlloc<BE>
         + VmpZero<BE>
@@ -903,7 +908,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let (rows, cols, size) = (2usize, 2usize, 2usize);
-    let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols, cols, size, PrepareHint::Reuse);
+    let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(params.n, rows, cols, cols, size, PrepareHint::Reuse);
     module.vmp_zero(&mut pmat.to_backend_mut());
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -912,8 +917,8 @@ where
     );
 
     for (a_cols, res_cols) in [(cols - 1, cols), (cols, cols - 1)] {
-        let mut a: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(a_cols, size);
-        let mut res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(res_cols, size);
+        let mut a: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, a_cols, size);
+        let mut res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, res_cols, size);
         for col in 0..a_cols {
             module.vec_znx_dft_zero(&mut a.to_backend_mut(), col);
         }

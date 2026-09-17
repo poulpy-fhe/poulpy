@@ -153,7 +153,7 @@ where
         + VecZnxSubAssign<BE>
         + VecZnxSubNegateAssign<BE>,
 {
-    let n = module.n();
+    let n = params.n;
     let base2k = params.base2k;
     let cols = 2;
     let mut source = Source::new([7u8; 32]);
@@ -239,7 +239,7 @@ where
     Module<BE>: ModuleN + VecZnxSwitchRing<BE> + VecZnxBigAlloc<BE> + VecZnxBigFromSmall<BE>,
 {
     let dense = embed(module, a);
-    let mut big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(a.cols(), a.size());
+    let mut big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), a.cols(), a.size());
     for col in 0..a.cols() {
         module.vec_znx_big_from_small(&mut big.to_backend_mut(), col, &vec_znx_backend_ref::<BE>(&dense), col);
     }
@@ -302,7 +302,7 @@ where
         + VecZnxBigSubSmallNegateAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let n = module.n();
+    let n = params.n;
     let base2k = params.base2k;
     let cols = 2;
     let mut source = Source::new([9u8; 32]);
@@ -350,8 +350,8 @@ where
                 let (a_small_dense, b_small_dense) = (embed(module, &a), embed(module, &b));
 
                 for (what, op) in big_bin.iter() {
-                    let mut want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(cols, res_size);
-                    let mut have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(cols, res_size);
+                    let mut want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, cols, res_size);
+                    let mut have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, cols, res_size);
                     for col in 0..cols {
                         op(
                             &mut want.to_backend_mut(),
@@ -378,8 +378,8 @@ where
                 }
 
                 // Big with a small operand: add_small and sub_small_b take the small `b`, sub_small_a the small `a`.
-                let mut want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(cols, res_size);
-                let mut have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(cols, res_size);
+                let mut want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, cols, res_size);
+                let mut have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, cols, res_size);
                 for col in 0..cols {
                     module.vec_znx_big_add_small(
                         &mut want.to_backend_mut(),
@@ -474,8 +474,8 @@ where
 
             // The basis promotion is a sparse-capable slot too: the degree-n
             // operand and its embedding promote to the same Big.
-            let mut want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(cols, res_size);
-            let mut have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(cols, res_size);
+            let mut want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, cols, res_size);
+            let mut have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, cols, res_size);
             for col in 0..cols {
                 module.vec_znx_big_from_small(
                     &mut want.to_backend_mut(),

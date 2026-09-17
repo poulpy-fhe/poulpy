@@ -83,7 +83,7 @@ where
 
         let max_noise = DEFAULT_SIGMA_XE.log2() + 0.5 - (key_infos.k().as_usize() as f64);
 
-        let mut pt_want: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(rank);
+        let mut pt_want: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), rank);
 
         for i in 0..rank {
             for j in 0..rank {
@@ -199,7 +199,7 @@ pub fn test_gglwe_to_ggsw_compressed_encrypt_sk<BE: crate::test_suite::noise::Te
 
         let max_noise = DEFAULT_SIGMA_XE.log2() + 0.5 - (key_infos.k().as_usize() as f64);
 
-        let mut pt_want: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(rank);
+        let mut pt_want: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), rank);
 
         for i in 0..rank {
             for j in 0..rank {

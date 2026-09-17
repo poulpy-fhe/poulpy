@@ -6,35 +6,35 @@ use crate::layouts::{
 /// Allocates prepared convolution operands ([`CnvPVecL`](crate::layouts::CnvPVecL), [`CnvPVecR`](crate::layouts::CnvPVecR)).
 ///
 /// ```text
-/// op         cnv_pvec_left_alloc(cols, size, hint) / cnv_pvec_right_alloc(cols, size, hint)
+/// op         cnv_pvec_left_alloc(n, cols, size, hint) / cnv_pvec_right_alloc(n, cols, size, hint)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1, size >= 1; hint: the PrepareHint the destination will be written under
-/// ensures    returns an owned degree-N CnvPVecL or CnvPVecR of those dimensions in the backend's prepared representation, which is opaque; its contents are unspecified
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1; hint: the PrepareHint the destination will be written under
+/// ensures    returns an owned degree-n CnvPVecL or CnvPVecR of those dimensions in the backend's prepared representation, which is opaque; its contents are unspecified
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait CnvPVecAlloc<BE: Backend> {
-    /// Returns an owned [`CnvPVecL`](crate::layouts::CnvPVecL) of `cols` columns and `size` limbs under `hint`.
-    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE>;
-    /// Returns an owned [`CnvPVecR`](crate::layouts::CnvPVecR) of `cols` columns and `size` limbs under `hint`.
-    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE>;
+    /// Returns an owned degree-`n` [`CnvPVecL`](crate::layouts::CnvPVecL) of `cols` columns and `size` limbs under `hint`.
+    fn cnv_pvec_left_alloc(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE>;
+    /// Returns an owned degree-`n` [`CnvPVecR`](crate::layouts::CnvPVecR) of `cols` columns and `size` limbs under `hint`.
+    fn cnv_pvec_right_alloc(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE>;
 }
 
 /// Returns the byte sizes for prepared convolution operands.
 ///
 /// ```text
-/// op         bytes_of_cnv_pvec_left(cols, size, hint) / bytes_of_cnv_pvec_right(cols, size, hint)
+/// op         bytes_of_cnv_pvec_left(n, cols, size, hint) / bytes_of_cnv_pvec_right(n, cols, size, hint)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1, size >= 1
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
 /// ensures    returns the byte size required for the given prepared operand dimensions and hint
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait CnvPVecBytesOf {
-    /// Returns the bytes a [`CnvPVecL`](crate::layouts::CnvPVecL) of `cols` columns and `size` limbs under `hint` occupies.
-    fn bytes_of_cnv_pvec_left(&self, cols: usize, size: usize, hint: PrepareHint) -> usize;
-    /// Returns the bytes a [`CnvPVecR`](crate::layouts::CnvPVecR) of `cols` columns and `size` limbs under `hint` occupies.
-    fn bytes_of_cnv_pvec_right(&self, cols: usize, size: usize, hint: PrepareHint) -> usize;
+    /// Returns the bytes a degree-`n` [`CnvPVecL`](crate::layouts::CnvPVecL) of `cols` columns and `size` limbs under `hint` occupies.
+    fn bytes_of_cnv_pvec_left(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
+    /// Returns the bytes a degree-`n` [`CnvPVecR`](crate::layouts::CnvPVecR) of `cols` columns and `size` limbs under `hint` occupies.
+    fn bytes_of_cnv_pvec_right(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
 /// Bivariate convolution over `Z[X, Y] mod (X^N + 1)` where `Y = 2^{-K}`.

@@ -29,12 +29,12 @@ where
     let a_size = plan.raised_k(base2k).div_ceil(base2k);
     let b_size = (plan.log_delta_work() + base2k).div_ceil(base2k);
     let res_dft_size = a_size + b_size;
-    let preps = 4 * plan.theta() * module.bytes_of_cnv_pvec_right(1, b_size, PrepareHint::Reuse);
+    let preps = 4 * plan.theta() * module.bytes_of_cnv_pvec_right(module.n(), 1, b_size, PrepareHint::Reuse);
     let work = module
         .cnv_prepare_right_tmp_bytes(b_size, b_size)
         .max(module.cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size))
-        .max(module.bytes_of_vec_znx_big(2, res_dft_size) + module.vec_znx_big_normalize_tmp_bytes());
-    module.bytes_of_vec_znx_dft(2, res_dft_size) + preps + work
+        .max(module.bytes_of_vec_znx_big(module.n(), 2, res_dft_size) + module.vec_znx_big_normalize_tmp_bytes());
+    module.bytes_of_vec_znx_dft(module.n(), 2, res_dft_size) + preps + work
 }
 
 /// Lazy masking accumulation: `acc = sum_i masks[i] * pis[i]` over the
@@ -80,7 +80,7 @@ where
     let res_dft_size = a_size + b_size - cnv_offset_hi;
 
     let scratch = scratch.borrow();
-    let (mut sum_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module, 2, res_dft_size);
+    let (mut sum_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), 2, res_dft_size);
 
     let mut preps = Vec::with_capacity(pis.len());
     let mut rest = scratch_1;
@@ -89,7 +89,7 @@ where
             mask.size() == a_size && pi.size() == b_size,
             "{OP}: inconsistent operand sizes"
         );
-        let (mut b_prep, next) = rest.take_cnv_pvec_right_scratch(module, 1, b_size, PrepareHint::Reuse);
+        let (mut b_prep, next) = rest.take_cnv_pvec_right_scratch(module.n(), 1, b_size, PrepareHint::Reuse);
         rest = next.apply_mut(|s| module.cnv_prepare_right(&mut b_prep, GLWEToBackendRef::<BE>::to_backend_ref(pi).data(), s));
         preps.push(b_prep);
     }
@@ -111,7 +111,7 @@ where
         }
     }
 
-    let (mut res_big, mut scratch_2) = rest.take_vec_znx_big_scratch(module, 2, res_dft_size);
+    let (mut res_big, mut scratch_2) = rest.take_vec_znx_big_scratch(module.n(), 2, res_dft_size);
     {
         let mut res_big_mut = res_big.to_backend_mut();
         let mut sum_dft_mut = sum_dft.to_backend_mut();

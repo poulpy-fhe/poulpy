@@ -46,7 +46,7 @@ where
     let mut b = VecZnx::alloc(module.n(), 1, b_size);
 
     let mut res_want = VecZnx::alloc(module.n(), 1, res_size);
-    let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+    let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, res_size);
 
     a.fill_uniform(17, &mut source);
 
@@ -137,9 +137,9 @@ where
 
     let a_backend = upload_vec_znx::<BE>(&a);
     let b_backend = upload_vec_znx::<BE>(&b);
-    let mut acc_have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
-    let mut acc_want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
-    let mut term: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+    let mut acc_have: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, res_size);
+    let mut acc_want: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, res_size);
+    let mut term: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, res_size);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .cnv_by_const_apply_tmp_bytes(0, res_size, a_size, b_size)
@@ -253,8 +253,8 @@ where
     // Two-column DFT destination written at column 1: covers the
     // column-interleaved `VecZnxDft` indexing of the backend kernels.
     let res_dft_col: usize = 1;
-    let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
-    let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+    let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), 2, res_size);
+    let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, res_size);
 
     a.fill_uniform(17, &mut source);
     b.fill_uniform(17, &mut source);
@@ -262,8 +262,8 @@ where
     let a_backend = upload_vec_znx::<BE>(&a);
     let b_backend = upload_vec_znx::<BE>(&b);
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(a_cols, a_size, PrepareHint::Reuse);
-    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(b_cols, b_size, PrepareHint::Reuse);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(module.n(), a_cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(module.n(), b_cols, b_size, PrepareHint::Reuse);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -362,15 +362,15 @@ where
     let a_backend = upload_vec_znx::<BE>(&a);
     let b_backend = upload_vec_znx::<BE>(&b);
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
-    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(module.n(), cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(module.n(), cols, b_size, PrepareHint::Reuse);
 
     // Two-column accumulators exercised at both columns: covers the
     // column-interleaved `VecZnxDft` indexing of the backend kernels.
     let res_cols: usize = 2;
-    let mut res_acc: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(res_cols, res_size);
-    let mut res_ref: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(res_cols, res_size);
-    let mut tmp_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(1, res_size);
+    let mut res_acc: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), res_cols, res_size);
+    let mut res_ref: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), res_cols, res_size);
+    let mut tmp_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), 1, res_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -491,13 +491,13 @@ where
     let a_backend = upload_vec_znx::<BE>(&a);
     let b_backend = upload_vec_znx::<BE>(&b);
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
-    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(module.n(), cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(module.n(), cols, b_size, PrepareHint::Reuse);
 
-    let mut res_fused: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
-    let mut res_ref: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
-    let mut big_fused: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
-    let mut big_ref: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+    let mut res_fused: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), 2, res_size);
+    let mut res_ref: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), 2, res_size);
+    let mut big_fused: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, res_size);
+    let mut big_ref: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, res_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -641,8 +641,8 @@ where
     // Two-column DFT destination written at column 1: covers the
     // column-interleaved `VecZnxDft` indexing of the backend kernels.
     let res_dft_col: usize = 1;
-    let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
-    let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+    let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(module.n(), 2, res_size);
+    let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, res_size);
 
     a.fill_uniform(17, &mut source);
     b.fill_uniform(17, &mut source);
@@ -650,8 +650,8 @@ where
     let a_backend = upload_vec_znx::<BE>(&a);
     let b_backend = upload_vec_znx::<BE>(&b);
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
-    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(module.n(), cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(module.n(), cols, b_size, PrepareHint::Reuse);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -936,7 +936,7 @@ pub fn test_convolution_prepare_shape_rejected<BE: crate::test_suite::TestBacken
             .max(module.cnv_prepare_self_tmp_bytes(size, size)),
     );
 
-    let mut narrow_left = module.cnv_pvec_left_alloc(cols - 1, size, PrepareHint::Reuse);
+    let mut narrow_left = module.cnv_pvec_left_alloc(params.n, cols - 1, size, PrepareHint::Reuse);
     let left_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_prepare_left(
             &mut narrow_left.to_backend_mut(),
@@ -950,7 +950,7 @@ pub fn test_convolution_prepare_shape_rejected<BE: crate::test_suite::TestBacken
         "cnv_prepare_left accepted res.cols() != a.cols() instead of panicking"
     );
 
-    let mut narrow_right = module.cnv_pvec_right_alloc(cols - 1, size, PrepareHint::Reuse);
+    let mut narrow_right = module.cnv_pvec_right_alloc(params.n, cols - 1, size, PrepareHint::Reuse);
     let right_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_prepare_right(
             &mut narrow_right.to_backend_mut(),
@@ -964,8 +964,8 @@ pub fn test_convolution_prepare_shape_rejected<BE: crate::test_suite::TestBacken
         "cnv_prepare_right accepted res.cols() != a.cols() instead of panicking"
     );
 
-    let mut left = module.cnv_pvec_left_alloc(cols, size, PrepareHint::Reuse);
-    let mut short_right = module.cnv_pvec_right_alloc(cols, size - 1, PrepareHint::Reuse);
+    let mut left = module.cnv_pvec_left_alloc(params.n, cols, size, PrepareHint::Reuse);
+    let mut short_right = module.cnv_pvec_right_alloc(params.n, cols, size - 1, PrepareHint::Reuse);
     let size_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_prepare_self(
             &mut left.to_backend_mut(),
@@ -1013,7 +1013,7 @@ pub fn test_convolution_by_const_degree_rejected<BE: crate::test_suite::TestBack
     b.fill_uniform(params.base2k, &mut source);
     let a_be = upload_vec_znx::<BE>(&a);
     let b_be = upload_vec_znx::<BE>(&b);
-    let mut res: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, size);
+    let mut res: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(params.n, 1, size);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
             .cnv_by_const_apply_tmp_bytes(0, size, size, size)
@@ -1088,7 +1088,7 @@ where
     M: ModuleN + VecZnxIdftApplyTmpA<BE> + VecZnxBigAlloc<BE> + VecZnxBigNormalize<BE>,
 {
     let res_size = res_dft.size();
-    let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+    let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, res_size);
     module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_col);
     let mut out = upload_vec_znx::<BE>(&VecZnx::alloc(module.n(), 1, res_size));
     module.vec_znx_big_normalize(
@@ -1134,7 +1134,7 @@ where
         + ModuleNew<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let n = module.n();
+    let n = params.n;
     let base2k = params.base2k;
     let cols = 2usize;
     let (a_size, b_size, res_size) = (3usize, 4usize, 6usize);
@@ -1156,7 +1156,7 @@ where
     let mut a_host = VecZnx::alloc(n, cols, a_size);
     a_host.fill_uniform(base2k, &mut source);
     let a_be = upload_vec_znx::<BE>(&a_host);
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     module.cnv_prepare_left(
         &mut a_prep.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_be),
@@ -1169,7 +1169,7 @@ where
         let b_be = upload_vec_znx::<BE>(&b_host);
         let b_dense = switch_ring_up(module, &b_be);
 
-        let mut b_prep_dense: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
+        let mut b_prep_dense: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, b_size, PrepareHint::Reuse);
         module.cnv_prepare_right(
             &mut b_prep_dense.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&b_dense),
@@ -1179,7 +1179,7 @@ where
         // any dense prepare; only the apply below crosses the two degrees.
         let small: Module<BE> = Module::<BE>::new(b_n as u64);
         let mut small_scratch: ScratchOwned<BE> = ScratchOwned::alloc(small.cnv_prepare_right_tmp_bytes(b_size, b_size));
-        let mut b_prep: CnvPVecROwned<BE> = small.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
+        let mut b_prep: CnvPVecROwned<BE> = small.cnv_pvec_right_alloc(small.n(), cols, b_size, PrepareHint::Reuse);
         small.cnv_prepare_right(
             &mut b_prep.to_backend_mut(),
             &vec_znx_backend_ref::<BE>(&b_be),
@@ -1189,8 +1189,8 @@ where
         let label = format!("b.n()={b_n}");
         // Runs `form` on the dense right operand and on the compact one; both must agree after idft + normalize.
         let mut check = |what: &str, form: &ConvolutionForm<'_, BE>| {
-            let mut want_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
-            let mut have_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
+            let mut want_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, 2, res_size);
+            let mut have_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, 2, res_size);
             form(&mut want_dft, &b_prep_dense, &mut scratch);
             form(&mut have_dft, &b_prep, &mut scratch);
             let want = idft_normalized(module, base2k, &mut want_dft, res_col, &mut scratch);
@@ -1274,8 +1274,8 @@ where
     let mut half = VecZnx::alloc(n / 2, cols, a_size);
     half.fill_uniform(base2k, &mut source);
     let half_be = upload_vec_znx::<BE>(&half);
-    let mut full_left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
-    let mut full_right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut full_left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(params.n, cols, a_size, PrepareHint::Reuse);
+    let mut full_right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_prepare_left(
             &mut full_left.to_backend_mut(),
@@ -1303,7 +1303,7 @@ where
         );
     }))
     .is_err();
-    assert!(panicked, "cnv_prepare_right accepted a.n() != module.n()");
+    assert!(panicked, "cnv_prepare_right accepted a.n() != params.n");
     // A degree-n prepared right operand comes from a degree-n module, never from this one.
     let mut half_right: CnvPVecROwned<BE> = CnvPVecR::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
     let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1314,7 +1314,7 @@ where
         );
     }))
     .is_err();
-    assert!(panicked, "cnv_prepare_right accepted res.n() != module.n()");
+    assert!(panicked, "cnv_prepare_right accepted res.n() != params.n");
 
     // `cnv_prepare_self` prepares one input into both halves, so the two must share a degree:
     // the parallel path writes into `right` at offsets computed from `left`'s degree.
@@ -1335,8 +1335,8 @@ where
     // The left operand of an apply takes the module degree: the entry assert fires
     // before the kernel reads the zeroed compact operand.
     let half_left: CnvPVecLOwned<BE> = CnvPVecL::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
-    let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
-    let mut b_full: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(params.n, 2, res_size);
+    let mut b_full: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(params.n, cols, a_size, PrepareHint::Reuse);
     module.cnv_prepare_right(
         &mut b_full.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&full_be),

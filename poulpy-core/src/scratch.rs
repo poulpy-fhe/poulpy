@@ -130,7 +130,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         B: 'a,
         M: ModuleN + SvpPPolBytesOf,
     {
-        let (data, scratch) = self.take_svp_ppol_scratch(module, rank.into(), PrepareHint::Reuse);
+        let (data, scratch) = self.take_svp_ppol_scratch(module.n(), rank.into(), PrepareHint::Reuse);
         (
             GLWESecretPreparedViewMut::from_inner(GLWESecretPrepared {
                 data: data.into_inner(),
@@ -204,7 +204,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
     {
         assert_eq!(module.n() as u32, infos.n());
         let (data, scratch) = self.take_vmp_pmat_scratch(
-            module,
+            module.n(),
             infos.dnum().into(),
             infos.rank_in().into(),
             (infos.rank_out() + 1).into(),
@@ -257,7 +257,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
     {
         assert_eq!(module.n() as u32, infos.n());
         let (data, scratch) = self.take_vmp_pmat_scratch(
-            module,
+            module.n(),
             infos.dnum().into(),
             (infos.rank() + 1).into(),
             (infos.rank() + 1).into(),

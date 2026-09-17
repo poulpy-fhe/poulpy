@@ -13,8 +13,8 @@ macro_rules! hal_impl_vec_znx_dft {
 
         type AutomorphismPlan = <Self as $defaults>::AutomorphismPlanDefault;
 
-        fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
-            <Self as $defaults>::vec_znx_dft_automorphism_plan_default(module, p)
+        fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
+            <Self as $defaults>::vec_znx_dft_automorphism_plan_default(module, n, p)
         }
     };
 
@@ -24,8 +24,8 @@ macro_rules! hal_impl_vec_znx_dft {
 
         type AutomorphismPlan = <Self as $defaults>::AutomorphismPlanDefault;
 
-        fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
-            <Self as $defaults>::vec_znx_dft_automorphism_plan_default(module, p)
+        fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
+            <Self as $defaults>::vec_znx_dft_automorphism_plan_default(module, n, p)
         }
 
         fn vec_znx_dft_automorphism_with_plan(

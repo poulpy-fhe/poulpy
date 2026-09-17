@@ -46,7 +46,7 @@ where
         A: GLWEInfos,
     {
         assert_eq!(self.n() as u32, infos.n());
-        let full_ct = self.bytes_of_vec_znx(infos.rank().as_usize() + 1, infos.size());
+        let full_ct = self.bytes_of_vec_znx(self.n(), infos.rank().as_usize() + 1, infos.size());
         full_ct + self.glwe_encrypt_sk_tmp_bytes(infos)
     }
 

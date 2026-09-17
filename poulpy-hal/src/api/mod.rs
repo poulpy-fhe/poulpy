@@ -183,7 +183,7 @@
 //! `N`, denotes its image `p(X^(N/n))` in `R_N`, and a formula on such an
 //! operand uses that image; the compact storage is a representation choice
 //! the contracts never mention. Only the operand slots a contract's `sparse`
-//! line names accept a degree other than the module's; `res` and every other
+//! line names accept a degree other than `N`; `res` and every other
 //! operand share `N`. Only a dense operand takes such a degree: a window in a
 //! sparse-capable slot has the width of `res`. The coefficient-domain `add`
 //! and `sub` families and `vec_znx_big_from_small` accept the slot, so the

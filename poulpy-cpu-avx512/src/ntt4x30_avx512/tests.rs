@@ -15,7 +15,7 @@ cross_backend_test_suite! {
     mod vec_znx,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<8, base2k: 50 },
+    params = TestParams { size: 1<<8, base2k: 50, n: 1<<8 },
     tests = {
         test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
         test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
@@ -46,7 +46,7 @@ cross_backend_test_suite! {
     mod svp,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<8, base2k: 50 },
+    params = TestParams { size: 1<<8, base2k: 50, n: 1<<8 },
     tests = {
         test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
@@ -58,7 +58,7 @@ cross_backend_test_suite! {
     mod vec_znx_big,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<8, base2k: 50 },
+    params = TestParams { size: 1<<8, base2k: 50, n: 1<<8 },
     tests = {
         test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
         test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
@@ -87,7 +87,7 @@ cross_backend_test_suite! {
     mod vec_znx_dft,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<8, base2k: 50 },
+    params = TestParams { size: 1<<8, base2k: 50, n: 1<<8 },
     tests = {
         test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
         test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
@@ -109,7 +109,7 @@ cross_backend_test_suite! {
     mod vmp,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<8, base2k: 50 },
+    params = TestParams { size: 1<<8, base2k: 50, n: 1<<8 },
     tests = {
         test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
@@ -150,7 +150,7 @@ fn test_transform_domain_packed_byte_sizes() {
 backend_test_suite! {
     mod derived,
     backend = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<8, base2k: 50 },
+    params = TestParams { size: 1<<8, base2k: 50, n: 1<<8 },
     tests = {
         test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
         test_vmp_apply_dft_to_dft_add_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_to_dft_add_derived,
@@ -183,7 +183,7 @@ backend_test_suite! {
 backend_test_suite! {
     mod sampling,
     backend = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<12, base2k: 50 },
+    params = TestParams { size: 1<<12, base2k: 50, n: 1<<12 },
     tests = {
         test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
         test_vec_znx_add_normal => poulpy_core::test_suite::sampling::test_vec_znx_add_normal,
@@ -194,7 +194,7 @@ backend_test_suite! {
 backend_test_suite! {
     mod window,
     backend = crate::NTT4x30Avx512,
-    params = TestParams { size: 1 << 8, base2k: 50 },
+    params = TestParams { size: 1 << 8, base2k: 50, n: 1 << 8 },
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
@@ -214,7 +214,7 @@ backend_test_suite! {
 backend_test_suite! {
     mod lwe_matrix,
     backend = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<8, base2k: 50 },
+    params = TestParams { size: 1<<8, base2k: 50, n: 1<<8 },
     tests = {
         glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::noise::test_glwe_expand_lwe_matrix_decrypt,
     }
@@ -231,7 +231,7 @@ cross_backend_test_suite! {
     mod ntt_n1024,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<10, base2k: 50 },
+    params = TestParams { size: 1<<10, base2k: 50, n: 1<<10 },
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
@@ -244,7 +244,7 @@ cross_backend_test_suite! {
     mod ntt_n8192,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<13, base2k: 50 },
+    params = TestParams { size: 1<<13, base2k: 50, n: 1<<13 },
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
@@ -257,7 +257,7 @@ cross_backend_test_suite! {
     mod ntt_n16384,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<14, base2k: 50 },
+    params = TestParams { size: 1<<14, base2k: 50, n: 1<<14 },
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
@@ -270,7 +270,7 @@ cross_backend_test_suite! {
     mod ntt_n32768,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<15, base2k: 50 },
+    params = TestParams { size: 1<<15, base2k: 50, n: 1<<15 },
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,

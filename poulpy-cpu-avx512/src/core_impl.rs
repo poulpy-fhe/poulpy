@@ -184,12 +184,12 @@ where
     Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxNormalizeTmpBytes,
 {
     let kernel = BE::rank_one_tensor_dft_tmp_bytes(dft_size, a_size, b_size);
-    let normalize = module.bytes_of_vec_znx_big(1, dft_size)
+    let normalize = module.bytes_of_vec_znx_big(module.n(), 1, dft_size)
         + BE::bytes_of_vec_znx(module.n(), 1, res_size)
         + module
             .vec_znx_big_normalize_tmp_bytes()
             .max(module.vec_znx_normalize_tmp_bytes());
-    BE::bytes_of_vec_znx(module.n(), 2, res_size) + module.bytes_of_vec_znx_dft(3, dft_size) + kernel.max(normalize)
+    BE::bytes_of_vec_znx(module.n(), 2, res_size) + module.bytes_of_vec_znx_dft(module.n(), 3, dft_size) + kernel.max(normalize)
 }
 
 fn rank_one_tensor_apply_tmp_bytes<BE, R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
@@ -212,8 +212,8 @@ where
     let a_size = a.k().as_usize().div_ceil(base2k);
     let b_size = b.k().as_usize().div_ceil(base2k);
     let dft_size = (a_size + b_size).min((res.size() * res.base2k().as_usize() + base2k - 1).div_ceil(base2k));
-    let prepared = module.bytes_of_cnv_pvec_left(2, a_size, PrepareHint::Reuse)
-        + module.bytes_of_cnv_pvec_right(2, b_size, PrepareHint::Reuse);
+    let prepared = module.bytes_of_cnv_pvec_left(module.n(), 2, a_size, PrepareHint::Reuse)
+        + module.bytes_of_cnv_pvec_right(module.n(), 2, b_size, PrepareHint::Reuse);
     let prepare = module
         .cnv_prepare_left_tmp_bytes(a_size, a_size)
         .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size));
@@ -237,8 +237,8 @@ where
     let base2k = a.base2k().as_usize();
     let a_size = a.k().as_usize().div_ceil(base2k);
     let dft_size = (2 * a_size).min((res.size() * res.base2k().as_usize() + base2k - 1).div_ceil(base2k));
-    let prepared = module.bytes_of_cnv_pvec_left(2, a_size, PrepareHint::Reuse)
-        + module.bytes_of_cnv_pvec_right(2, a_size, PrepareHint::Reuse);
+    let prepared = module.bytes_of_cnv_pvec_left(module.n(), 2, a_size, PrepareHint::Reuse)
+        + module.bytes_of_cnv_pvec_right(module.n(), 2, a_size, PrepareHint::Reuse);
     let prepare = module.cnv_prepare_self_tmp_bytes(a_size, a_size);
     prepared + prepare.max(rank_one_tensor_work_bytes(module, res.size(), dft_size, a_size, a_size))
 }
@@ -280,7 +280,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         in_base2k,
         cnv_offset_lo,
     );
-    let (mut tensor_dft, mut work) = scratch.borrow().take_vec_znx_dft_scratch(module, 3, dft_size);
+    let (mut tensor_dft, mut work) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 3, dft_size);
     BE::rank_one_tensor_dft(
         module,
         &mut tensor_dft.to_backend_mut(),
@@ -291,7 +291,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     );
 
     for (dft_col, res_col) in [(0, 0), (2, 2)] {
-        let (mut product_big, mut norm_scratch) = work.borrow().take_vec_znx_big_scratch(module, 1, dft_size);
+        let (mut product_big, mut norm_scratch) = work.borrow().take_vec_znx_big_scratch(module.n(), 1, dft_size);
         module.vec_znx_idft_apply_tmpa(
             &mut product_big.to_backend_mut(),
             0,
@@ -311,7 +311,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         );
     }
 
-    let (mut product_big, scratch) = work.borrow().take_vec_znx_big_scratch(module, 1, dft_size);
+    let (mut product_big, scratch) = work.borrow().take_vec_znx_big_scratch(module.n(), 1, dft_size);
     module.vec_znx_idft_apply_tmpa(&mut product_big.to_backend_mut(), 0, &mut tensor_dft.to_backend_mut(), 1);
     let (mut pairwise, mut norm_scratch) = scratch.take_vec_znx_scratch(module.n(), 1, res.size());
     module.vec_znx_big_normalize(
@@ -370,8 +370,8 @@ fn rank_one_tensor_apply<BE, R, A, B>(
     assert!(b_size <= b.size());
     let (mut a_prep, scratch) = scratch
         .borrow()
-        .take_cnv_pvec_left_scratch(module, 2, a_size, PrepareHint::Reuse);
-    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, b_size, PrepareHint::Reuse);
+        .take_cnv_pvec_left_scratch(module.n(), 2, a_size, PrepareHint::Reuse);
+    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module.n(), 2, b_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
         module.cnv_prepare_left(&mut a_prep, a.to_backend_ref().data(), &mut prep_scratch);
@@ -420,8 +420,8 @@ fn rank_one_tensor_square<BE, R, A>(
     assert!(a_size <= a.size());
     let (mut a_prep, scratch) = scratch
         .borrow()
-        .take_cnv_pvec_left_scratch(module, 2, a_size, PrepareHint::Reuse);
-    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, a_size, PrepareHint::Reuse);
+        .take_cnv_pvec_left_scratch(module.n(), 2, a_size, PrepareHint::Reuse);
+    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module.n(), 2, a_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
         module.cnv_prepare_self(&mut a_prep, &mut b_prep, a.to_backend_ref().data(), &mut prep_scratch);

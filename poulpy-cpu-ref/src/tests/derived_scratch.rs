@@ -17,7 +17,11 @@ use poulpy_hal::{
 
 use crate::{FFT64Ref, NTT4x30Ref};
 
-const PARAMS: TestParams = TestParams { size: 4, base2k: 17 };
+const PARAMS: TestParams = TestParams {
+    size: 4,
+    base2k: 17,
+    n: 4,
+};
 
 fn run<BE>(module: &Module<BE>)
 where

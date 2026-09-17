@@ -178,7 +178,7 @@ where
     {
         let cols_out = res.cols();
         let res_size = res.size();
-        let (mut tmp, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols_out, res_size);
+        let (mut tmp, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols_out, res_size);
         for col in 0..cols_out {
             module.vec_znx_dft_zero(&mut tmp, col);
         }

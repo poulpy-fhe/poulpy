@@ -6,31 +6,31 @@ use crate::layouts::{
 /// Allocation of a DFT-domain vector.
 ///
 /// ```text
-/// op         vec_znx_dft_alloc(cols, size)
+/// op         vec_znx_dft_alloc(n, cols, size)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1, size >= 1
-/// ensures    returns an owned degree-N VecZnxDft with cols columns and size limbs; its contents are unspecified
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
+/// ensures    returns an owned degree-n VecZnxDft with cols columns and size limbs; its contents are unspecified
 /// test       none
 /// ```
 pub trait VecZnxDftAlloc<B: Backend> {
-    /// Returns an owned DFT-domain vector with `cols` columns and `size` limbs.
-    fn vec_znx_dft_alloc(&self, cols: usize, size: usize) -> VecZnxDftOwned<B>;
+    /// Returns an owned degree-`n` DFT-domain vector with `cols` columns and `size` limbs.
+    fn vec_znx_dft_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnxDftOwned<B>;
 }
 
 /// Byte size of a DFT-domain vector.
 ///
 /// ```text
-/// op         bytes_of_vec_znx_dft(cols, size)
+/// op         bytes_of_vec_znx_dft(n, cols, size)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1, size >= 1
-/// ensures    returns the bytes required for a degree-N VecZnxDft with cols columns and size limbs
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
+/// ensures    returns the bytes required for a degree-n VecZnxDft with cols columns and size limbs
 /// test       test_word_compat_dft_bytes
 /// ```
 pub trait VecZnxDftBytesOf {
-    /// Returns the byte size of a DFT-domain vector with `cols` columns and `size` limbs.
-    fn bytes_of_vec_znx_dft(&self, cols: usize, size: usize) -> usize;
+    /// Returns the byte size of a degree-`n` DFT-domain vector with `cols` columns and `size` limbs.
+    fn bytes_of_vec_znx_dft(&self, n: usize, cols: usize, size: usize) -> usize;
 }
 
 /// Forward DFT of selected limbs of a coefficient-domain vector.
@@ -321,18 +321,18 @@ pub trait VecZnxDftZero<B: Backend> {
 /// Reusable plan for the DFT-domain automorphism `X -> X^p`.
 ///
 /// ```text
-/// op         vec_znx_dft_automorphism_plan(p)
+/// op         vec_znx_dft_automorphism_plan(n, p)
 /// class      support
 /// mutation   none
-/// domain     p odd
-/// ensures    returns a reusable plan for the substitution X -> X^p in R_N
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree, the degree of the objects the plan is applied to; p odd
+/// ensures    returns a reusable plan for the substitution X -> X^p in R_n
 /// test       test_vec_znx_dft_automorphism
 /// ```
 pub trait VecZnxDftAutomorphismPlan<B: Backend> {
     type Plan;
 
-    /// Returns a reusable plan for the substitution `X -> X^p`.
-    fn vec_znx_dft_automorphism_plan(&self, p: i64) -> Self::Plan;
+    /// Returns a reusable plan for the substitution `X -> X^p` in `R_n`.
+    fn vec_znx_dft_automorphism_plan(&self, n: usize, p: i64) -> Self::Plan;
 }
 
 /// Scratch size of the accumulating DFT-domain automorphism.

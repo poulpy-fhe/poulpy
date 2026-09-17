@@ -112,7 +112,7 @@ pub(crate) fn svp_apply_dft(
     b: &VecZnxBackendRef<'_, NTT4x30Avx>,
     b_col: usize,
 ) {
-    let mut b_dft_owned = module.vec_znx_dft_alloc(1, b.size());
+    let mut b_dft_owned = module.vec_znx_dft_alloc(module.n(), 1, b.size());
     let mut b_dft = b_dft_owned.to_backend_mut();
     module.vec_znx_dft_apply(1, 0, &mut b_dft, 0, b, b_col);
     svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft.reborrow_backend_ref(), 0);

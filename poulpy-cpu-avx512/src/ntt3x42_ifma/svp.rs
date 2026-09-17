@@ -108,7 +108,7 @@ pub(crate) fn svp_apply_dft<E: poulpy_hal::execution::TaskExecutor>(
     b_col: usize,
 ) {
     let b_size = b.size();
-    let mut b_dft_owned = module.vec_znx_dft_alloc(1, b_size);
+    let mut b_dft_owned = module.vec_znx_dft_alloc(module.n(), 1, b_size);
     let mut b_dft = b_dft_owned.to_backend_mut();
     <Module<NTT3x42Ifma> as VecZnxDftApply<NTT3x42Ifma>>::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
     let b_dft_ref = b_dft.reborrow_backend_ref();

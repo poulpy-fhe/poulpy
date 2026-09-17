@@ -85,8 +85,8 @@ where
     {
         let n: usize = infos.n().into();
         let size: usize = infos.size();
-        let tmp_hadamard: usize = self.bytes_of_vec_znx_big_n(n, 1, size);
-        let tmp_scalar: usize = self.bytes_of_vec_znx_big_n(1, 1, size);
+        let tmp_hadamard: usize = self.bytes_of_vec_znx_big(n, 1, size);
+        let tmp_scalar: usize = self.bytes_of_vec_znx_big(1, 1, size);
         let normalize: usize = self.vec_znx_big_normalize_tmp_bytes();
         (tmp_hadamard + tmp_scalar).next_multiple_of(BE::SCRATCH_ALIGN) + normalize
     }
@@ -128,14 +128,14 @@ where
         self.fill_lwe_mask_from_source_default(base2k, res, source_xa);
 
         // tmp_hadamard[limb][k] = mask[limb][k] * sk[k]  (element-wise, BigScalar)
-        let (mut tmp_hadamard, scratch_1) = scratch.borrow().take_vec_znx_big_scratch_n(res_n, 1, res_size);
+        let (mut tmp_hadamard, scratch_1) = scratch.borrow().take_vec_znx_big_scratch(res_n, 1, res_size);
         {
             let res_ref = res.to_backend_ref();
             self.vec_znx_scalar_product(&mut tmp_hadamard, 0, &res_ref.mask, 0, &sk.data, 0);
         }
 
         // tmp_scalar[limb][0] = sum_k tmp_hadamard[limb][k] = <mask, sk>
-        let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch_n(1, 1, res_size);
+        let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(1, 1, res_size);
         self.vec_znx_big_inner_sum(&mut tmp_scalar, 0, 0, &tmp_hadamard.to_backend_ref(), 0);
 
         // tmp_scalar = m - <mask, sk>

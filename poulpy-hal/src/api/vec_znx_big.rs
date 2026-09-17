@@ -29,34 +29,31 @@ pub trait VecZnxBigFromSmall<B: Backend> {
 /// Allocation of a big-word vector.
 ///
 /// ```text
-/// op         vec_znx_big_alloc(cols, size)
+/// op         vec_znx_big_alloc(n, cols, size)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1, size >= 1
-/// ensures    returns an owned degree-N VecZnxBig of those dimensions in the backend's memory; its contents are unspecified
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
+/// ensures    returns an owned degree-n VecZnxBig of those dimensions in the backend's memory; its contents are unspecified
 /// test       none
 /// ```
 pub trait VecZnxBigAlloc<B: Backend> {
-    /// Returns an owned big-word vector with `cols` columns and `size` limbs.
-    fn vec_znx_big_alloc(&self, cols: usize, size: usize) -> VecZnxBigOwned<B>;
+    /// Returns an owned degree-`n` big-word vector with `cols` columns and `size` limbs.
+    fn vec_znx_big_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B>;
 }
 
 /// Byte size of a big-word vector.
 ///
 /// ```text
-/// op         bytes_of_vec_znx_big(cols, size) / bytes_of_vec_znx_big_n(n, cols, size)
+/// op         bytes_of_vec_znx_big(n, cols, size)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1, size >= 1; the `_n` form takes a degree other than the module's
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
 /// ensures    returns the byte size of such a VecZnxBig in this backend's representation, the amount take_vec_znx_big_scratch carves
 /// test       none
 /// ```
 pub trait VecZnxBigBytesOf {
-    /// Returns the byte size of a big-word vector of degree N with `cols` columns and `size` limbs.
-    fn bytes_of_vec_znx_big(&self, cols: usize, size: usize) -> usize;
-
     /// Returns the byte size of a degree-`n` big-word vector with `cols` columns and `size` limbs.
-    fn bytes_of_vec_znx_big_n(&self, n: usize, cols: usize, size: usize) -> usize;
+    fn bytes_of_vec_znx_big(&self, n: usize, cols: usize, size: usize) -> usize;
 }
 
 /// Sum of two big-word vectors.

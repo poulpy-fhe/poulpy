@@ -236,11 +236,11 @@ where
         fft64_vec_znx_dft_zero::<Self>(res, res_col);
     }
 
-    fn vec_znx_dft_automorphism_plan_default(module: &Module<Self>, p: i64) -> Fft64AutomorphismPlan
+    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> Fft64AutomorphismPlan
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        build_fft64_automorphism_plan(module.n(), p)
+        build_fft64_automorphism_plan(n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(
@@ -450,11 +450,11 @@ where
         ntt4x30_default_vec_znx_dft_zero::<Self>(res, res_col);
     }
 
-    fn vec_znx_dft_automorphism_plan_default(module: &Module<Self>, p: i64) -> NttAutomorphismPlan
+    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> NttAutomorphismPlan
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        build_ntt4x30_automorphism_plan(module.n(), p)
+        build_ntt4x30_automorphism_plan(n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(

@@ -318,37 +318,36 @@ impl<B: Backend> Module<B> {
         self.n()
     }
 
-    /// Allocates a zero-initialized backend-owned [`ScalarZnx`].
+    /// Allocates a zero-initialized backend-owned [`ScalarZnx`] of degree `n`.
     #[inline]
-    pub fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord> {
-        let n = self.n();
+    pub fn scalar_znx_alloc(&self, n: usize, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord> {
         let len = B::bytes_of_scalar_znx(n, cols);
         let bytes = B::alloc_zeroed_bytes(len);
         ScalarZnx::from_data(bytes, n, cols)
     }
 
-    /// Allocates a zero-initialized backend-owned [`VecZnx`].
+    /// Allocates a zero-initialized backend-owned [`VecZnx`] of degree `n`.
     #[inline]
-    pub fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
-        vec_znx_alloc_zeroed::<B>(self.n(), cols, size)
+    pub fn vec_znx_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
+        vec_znx_alloc_zeroed::<B>(n, cols, size)
     }
 
-    /// Returns the byte size of a [`VecZnx`] with this module's ring degree.
+    /// Returns the byte size of a [`VecZnx`] of degree `n`.
     #[inline]
-    pub fn bytes_of_vec_znx(&self, cols: usize, size: usize) -> usize {
-        self.bytes_of_vec_znx_n(self.n(), cols, size)
-    }
-
-    /// Returns the byte size of a [`VecZnx`] with an explicit coefficient degree.
-    #[inline]
-    pub fn bytes_of_vec_znx_n(&self, n: usize, cols: usize, size: usize) -> usize {
+    pub fn bytes_of_vec_znx(&self, n: usize, cols: usize, size: usize) -> usize {
         B::bytes_of_vec_znx(n, cols, size)
     }
 
-    /// Allocates a zero-initialized backend-owned [`MatZnx`].
+    /// Allocates a zero-initialized backend-owned [`MatZnx`] of degree `n`.
     #[inline]
-    pub fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf, B::ZnxWord> {
-        let n = self.n();
+    pub fn mat_znx_alloc(
+        &self,
+        n: usize,
+        rows: usize,
+        cols_in: usize,
+        cols_out: usize,
+        size: usize,
+    ) -> MatZnx<B::OwnedBuf, B::ZnxWord> {
         let len = B::bytes_of_mat_znx(n, rows, cols_in, cols_out, size);
         let bytes = B::alloc_zeroed_bytes(len);
         MatZnx::from_data(bytes, n, rows, cols_in, cols_out, size)

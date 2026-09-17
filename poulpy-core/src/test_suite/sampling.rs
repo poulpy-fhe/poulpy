@@ -179,12 +179,12 @@ where
     let mut scratch = ScratchOwned::<BE>::alloc(module.vec_znx_big_normalize_tmp_bytes());
 
     for col_i in 0..COLS {
-        let mut a: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(COLS, SIZE);
+        let mut a: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), COLS, SIZE);
         module.vec_znx_big_add_normal(BASE2K, &mut a.to_backend_mut(), col_i, noise, &mut source);
         module.vec_znx_big_add_normal(BASE2K, &mut a.to_backend_mut(), col_i, noise, &mut source);
 
         // The digits are only readable once normalized back into a `VecZnx`.
-        let mut res = module.vec_znx_alloc(COLS, SIZE);
+        let mut res = module.vec_znx_alloc(module.n(), COLS, SIZE);
         for col_j in 0..COLS {
             module.vec_znx_big_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut res),

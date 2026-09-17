@@ -720,8 +720,8 @@ unsafe impl HalVecZnxDftImpl for NTT3x42IfmaRayon {
 
     type AutomorphismPlan = <NTT3x42Ifma as HalVecZnxDftImpl>::AutomorphismPlan;
 
-    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
-        NTT3x42Ifma::vec_znx_dft_automorphism_plan(base_module(module), p)
+    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
+        NTT3x42Ifma::vec_znx_dft_automorphism_plan(base_module(module), n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(

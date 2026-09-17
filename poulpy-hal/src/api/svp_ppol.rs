@@ -6,31 +6,31 @@ use crate::layouts::{
 /// Allocates an [`SvpPPol`](crate::layouts::SvpPPol).
 ///
 /// ```text
-/// op         svp_ppol_alloc(cols, hint)
+/// op         svp_ppol_alloc(n, cols, hint)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1; hint: the PrepareHint the destination will be written under
-/// ensures    returns an owned degree-N SvpPPol with cols columns and the requested hint; its contents are unspecified
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1; hint: the PrepareHint the destination will be written under
+/// ensures    returns an owned degree-n SvpPPol with cols columns and the requested hint; its contents are unspecified
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait SvpPPolAlloc<B: Backend> {
-    /// Returns an owned [`SvpPPol`](crate::layouts::SvpPPol) with `cols` columns under `hint`.
-    fn svp_ppol_alloc(&self, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B>;
+    /// Returns an owned degree-`n` [`SvpPPol`](crate::layouts::SvpPPol) with `cols` columns under `hint`.
+    fn svp_ppol_alloc(&self, n: usize, cols: usize, hint: PrepareHint) -> SvpPPolOwned<B>;
 }
 
 /// Returns the byte size of an [`SvpPPol`](crate::layouts::SvpPPol).
 ///
 /// ```text
-/// op         bytes_of_svp_ppol(cols, hint)
+/// op         bytes_of_svp_ppol(n, cols, hint)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1
-/// ensures    returns the bytes required for a degree-N SvpPPol with cols columns and the requested hint
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1
+/// ensures    returns the bytes required for a degree-n SvpPPol with cols columns and the requested hint
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_svp_prepare_bytes
 /// ```
 pub trait SvpPPolBytesOf {
-    /// Returns the bytes an [`SvpPPol`](crate::layouts::SvpPPol) with `cols` columns under `hint` occupies.
-    fn bytes_of_svp_ppol(&self, cols: usize, hint: PrepareHint) -> usize;
+    /// Returns the bytes a degree-`n` [`SvpPPol`](crate::layouts::SvpPPol) with `cols` columns under `hint` occupies.
+    fn bytes_of_svp_ppol(&self, n: usize, cols: usize, hint: PrepareHint) -> usize;
 }
 
 /// Preparation of a [`ScalarZnx`](crate::layouts::ScalarZnx) into an [`SvpPPol`](crate::layouts::SvpPPol).

@@ -42,7 +42,7 @@ where
     where
         K: GGLWEInfos,
     {
-        let lvl_0: usize = self.bytes_of_vec_znx_dft(mask_cols, a_size);
+        let lvl_0: usize = self.bytes_of_vec_znx_dft(self.n(), mask_cols, a_size);
         let lvl_1: usize = self.gglwe_product_dft_tmp_bytes_default(res_size, a_size, key_infos);
         lvl_0 + lvl_1
     }
@@ -104,8 +104,8 @@ where
             // below); the layout infos do not carry it, so size for either
             // representation.
             let dense = self
-                .bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size, PrepareHint::Reuse)
-                .max(self.bytes_of_vmp_pmat(dnum, cols_in, cols_out, key_size, PrepareHint::OneShot));
+                .bytes_of_vmp_pmat(self.n(), dnum, cols_in, cols_out, key_size, PrepareHint::Reuse)
+                .max(self.bytes_of_vmp_pmat(self.n(), dnum, cols_in, cols_out, key_size, PrepareHint::OneShot));
             dense + product
         }
     }
@@ -140,7 +140,7 @@ where
         let key_size: usize = key.size();
         scratch.scope(|scratch_phase| {
             let (mut dense, mut scratch_1) =
-                scratch_phase.take_vmp_pmat_scratch(self, rows, cols_in, cols_out, key_size, key.data.hint());
+                scratch_phase.take_vmp_pmat_scratch(self.n(), rows, cols_in, cols_out, key_size, key.data.hint());
             self.vmp_extract_selected_rows(&mut dense, &key.data, stride - 1, stride);
             gglwe_product_pmat(
                 self,
@@ -242,7 +242,7 @@ where
     let apply = module.vmp_apply_dft_to_dft_tmp_bytes(res_size, digit_size, pmat_rows, pmat_cols_in, pmat_cols_out, pmat_size);
     let accumulate =
         module.vmp_apply_dft_to_dft_add_tmp_bytes(res_size, digit_size, pmat_rows, pmat_cols_in, pmat_cols_out, pmat_size);
-    module.bytes_of_vec_znx_dft(a_cols, digit_size) + apply.max(accumulate)
+    module.bytes_of_vec_znx_dft(module.n(), a_cols, digit_size) + apply.max(accumulate)
 }
 
 /// Canonical GGLWE product over interleaved gadget digits: digit `di` gathers
@@ -266,7 +266,7 @@ pub fn gglwe_product_digits_strided_default<BE: Backend>(
     let dnum = pmat.rows();
     for di in 0..dsize {
         let digit_size = ((a_size + di) / dsize).min(dnum);
-        let (mut digit, mut digit_scratch) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, digit_size);
+        let (mut digit, mut digit_scratch) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, digit_size);
         for col in 0..cols {
             module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut digit, col, a, col);
         }
@@ -322,7 +322,7 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
     let mask_cols = a.rank().as_usize();
     let a_size: usize = a.size();
     scratch.scope(|scratch_phase| {
-        let (mut a_dft, mut scratch_1) = scratch_phase.take_vec_znx_dft_scratch(module, mask_cols, a_size);
+        let (mut a_dft, mut scratch_1) = scratch_phase.take_vec_znx_dft_scratch(module.n(), mask_cols, a_size);
         for col_i in 0..mask_cols {
             let a_data: &VecZnxBackendRef<'_, BE> = &a.data;
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, a_data, col_i + 1);
@@ -420,8 +420,8 @@ where
     let mask_cols = a_infos.rank().as_usize();
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos);
     let a_dft_size = a_infos.k().div_ceil(key_infos.base2k()) as usize;
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(output_cols, output_size);
-    let lvl_1_big: usize = module.bytes_of_vec_znx_big(output_cols, output_size);
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), output_cols, output_size);
+    let lvl_1_big: usize = module.bytes_of_vec_znx_big(module.n(), output_cols, output_size);
     let consume_tmp: usize = module.vec_znx_idft_normalize_consume_tmp_bytes(output_size, output_size);
     let lvl_1: usize = consume_tmp.max(
         lvl_1_big
@@ -510,7 +510,7 @@ pub fn glwe_keyswitch_default<BE, M, R, A>(
     let res_k = res.k().as_usize();
     let cols: usize = (res.rank() + 1).into();
 
-    let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
+    let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, output_size);
 
     let mut scratch = scratch_1;
     if a_base2k != key_base2k {
@@ -628,7 +628,7 @@ pub fn glwe_keyswitch_assign_default<BE, M, R>(
     let res_k = res.k().as_usize();
     let key_base2k: usize = key.base2k().as_usize();
     let cols: usize = (res.rank() + 1).into();
-    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
+    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, output_size);
 
     let (res_big, mut scratch) = if res_base2k != key_base2k {
         let scratch = scratch_1;
@@ -642,7 +642,7 @@ pub fn glwe_keyswitch_assign_default<BE, M, R>(
 
         module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_3);
 
-        let (mut res_big, mut scratch) = scratch_3.take_vec_znx_big_scratch(module, cols, output_size);
+        let (mut res_big, mut scratch) = scratch_3.take_vec_znx_big_scratch(module.n(), cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
             module.vec_znx_idft_apply(&mut res_big, i, &res_dft_ref, i, &mut scratch);
@@ -669,7 +669,7 @@ pub fn glwe_keyswitch_assign_default<BE, M, R>(
             module.glwe_keyswitch_internal(&mut res_dft, res, key, &mut ks_scratch);
         }
         let res_ref = GLWEToBackendRef::<BE>::to_backend_ref(res);
-        let (mut res_big, mut scratch) = scratch_1.take_vec_znx_big_scratch(module, cols, output_size);
+        let (mut res_big, mut scratch) = scratch_1.take_vec_znx_big_scratch(module.n(), cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
             module.vec_znx_idft_apply(&mut res_big, i, &res_dft_ref, i, &mut scratch);

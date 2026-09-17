@@ -6,31 +6,39 @@ use crate::layouts::{
 /// Allocates a [`VmpPMat`](crate::layouts::VmpPMat).
 ///
 /// ```text
-/// op         vmp_pmat_alloc(rows, cols_in, cols_out, size, hint)
+/// op         vmp_pmat_alloc(n, rows, cols_in, cols_out, size, hint)
 /// class      support
 /// mutation   none
-/// domain     every dimension >= 1; hint: the PrepareHint the destination will be written under
-/// ensures    returns an owned degree-N VmpPMat of those dimensions in the backend's prepared representation, which is opaque; its contents are unspecified
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; every other dimension >= 1; hint: the PrepareHint the destination will be written under
+/// ensures    returns an owned degree-n VmpPMat of those dimensions in the backend's prepared representation, which is opaque; its contents are unspecified
 /// test       test_word_compat_prepare_hint_sizes
 /// ```
 pub trait VmpPMatAlloc<B: Backend> {
-    /// Returns an owned [`VmpPMat`](crate::layouts::VmpPMat) of the given dimensions under `hint`.
-    fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> VmpPMatOwned<B>;
+    /// Returns an owned degree-`n` [`VmpPMat`](crate::layouts::VmpPMat) of the given dimensions under `hint`.
+    fn vmp_pmat_alloc(
+        &self,
+        n: usize,
+        rows: usize,
+        cols_in: usize,
+        cols_out: usize,
+        size: usize,
+        hint: PrepareHint,
+    ) -> VmpPMatOwned<B>;
 }
 
 /// Returns the byte size of a [`VmpPMat`](crate::layouts::VmpPMat).
 ///
 /// ```text
-/// op         bytes_of_vmp_pmat(rows, cols_in, cols_out, size, hint)
+/// op         bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, hint)
 /// class      support
 /// mutation   none
-/// domain     every dimension >= 1
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; every other dimension >= 1
 /// ensures    returns the byte size required for the given prepared matrix dimensions and hint
 /// test       test_word_compat_prepare_hint_sizes, test_word_compat_vmp_prepare_bytes
 /// ```
 pub trait VmpPMatBytesOf {
-    /// Returns the bytes a [`VmpPMat`](crate::layouts::VmpPMat) of the given dimensions under `hint` occupies.
-    fn bytes_of_vmp_pmat(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize;
+    /// Returns the bytes a degree-`n` [`VmpPMat`](crate::layouts::VmpPMat) of the given dimensions under `hint` occupies.
+    fn bytes_of_vmp_pmat(&self, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize;
 }
 
 /// Returns the scratch bytes [`VmpPrepare`] requires.

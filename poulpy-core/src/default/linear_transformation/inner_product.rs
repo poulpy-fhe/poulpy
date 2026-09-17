@@ -122,7 +122,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     let (mut diagonal, mut scratch_1) =
         scratch
             .borrow()
-            .take_cnv_pvec_right_scratch(module, 1, diagonal_size, PrepareHint::OneShot);
+            .take_cnv_pvec_right_scratch(module.n(), 1, diagonal_size, PrepareHint::OneShot);
 
     // Baby is the outer loop, so the first baby initializes every output column
     // (overwrite) and the rest accumulate in place; each diagonal is prepared once.
