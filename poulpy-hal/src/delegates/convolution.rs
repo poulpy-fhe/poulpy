@@ -19,22 +19,22 @@ macro_rules! impl_convolution_delegate {
 }
 
 impl<BE: Backend> CnvPVecAlloc<BE> for Module<BE> {
-    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE> {
-        CnvPVecLOwned::<BE>::alloc(self.n(), cols, size, hint)
+    fn cnv_pvec_left_alloc(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecLOwned<BE> {
+        CnvPVecLOwned::<BE>::alloc(n, cols, size, hint)
     }
 
-    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE> {
-        CnvPVecROwned::<BE>::alloc(self.n(), cols, size, hint)
+    fn cnv_pvec_right_alloc(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> CnvPVecROwned<BE> {
+        CnvPVecROwned::<BE>::alloc(n, cols, size, hint)
     }
 }
 
 impl<BE: Backend> CnvPVecBytesOf for Module<BE> {
-    fn bytes_of_cnv_pvec_left(&self, cols: usize, size: usize, hint: PrepareHint) -> usize {
-        BE::bytes_of_cnv_pvec_left(self.n(), cols, size, hint)
+    fn bytes_of_cnv_pvec_left(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize {
+        BE::bytes_of_cnv_pvec_left(n, cols, size, hint)
     }
 
-    fn bytes_of_cnv_pvec_right(&self, cols: usize, size: usize, hint: PrepareHint) -> usize {
-        BE::bytes_of_cnv_pvec_right(self.n(), cols, size, hint)
+    fn bytes_of_cnv_pvec_right(&self, n: usize, cols: usize, size: usize, hint: PrepareHint) -> usize {
+        BE::bytes_of_cnv_pvec_right(n, cols, size, hint)
     }
 }
 

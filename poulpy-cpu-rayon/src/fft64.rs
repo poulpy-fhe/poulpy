@@ -543,7 +543,7 @@ unsafe impl HalVecZnxImpl for $rayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
 
     fn vec_znx_normalize(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
@@ -554,14 +554,14 @@ unsafe impl HalVecZnxImpl for $rayon {
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
+        let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * res.n());
         $crate::normalize::vec_znx_normalize_par::<$base, $rayon>(
             res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry,
         );
     }
 
     fn vec_znx_normalize_assign(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         base2k: usize,
         k: usize,
         a_offset: i64,
@@ -569,7 +569,7 @@ unsafe impl HalVecZnxImpl for $rayon {
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
+        let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * a.n());
         $crate::normalize::vec_znx_normalize_assign_par::<$base, $rayon>(base2k, k, a_offset, a, a_col, carry);
     }
 }
@@ -588,7 +588,10 @@ unsafe impl HalVmpImpl for $rayon {
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = fft64_vmp_prepare_tmp_bytes(module.n());
+        let n = res.n();
+        $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
+        assert_eq!(a.n(), n, "vmp_prepare: a.n():{} != res.n():{n}", a.n());
+        let per_worker = fft64_vmp_prepare_tmp_bytes(n);
         let rows = a.cols_in() * a.rows();
         let workers = $crate::workers_within(
             rows.min(<$rayon as $crate::__private::poulpy_hal::execution::ScratchWorkers>::PREPARE),
@@ -596,7 +599,7 @@ unsafe impl HalVmpImpl for $rayon {
             scratch.available(),
         );
         let (tmp, _) = $crate::take_scratch::<Self, f64>(scratch.borrow(), workers * per_worker / core::mem::size_of::<f64>());
-        fft64_vmp_prepare::<Self>(module.get_fft_table(), res, a, tmp);
+        fft64_vmp_prepare::<Self>(module.get_fft_table_for(n), res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes(
@@ -1001,7 +1004,7 @@ unsafe impl HalVecZnxBigImpl for $rayon {
     }
 
     fn vec_znx_big_normalize(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
@@ -1012,7 +1015,7 @@ unsafe impl HalVecZnxBigImpl for $rayon {
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
+        let (carry, _) = $crate::take_scratch::<Self, i64>(scratch.borrow(), 3 * res.n());
         let a_vec: VecZnxBackendRef<'_, $base> = VecZnx::from_shape(&**a.data(), a.shape());
         $crate::normalize::vec_znx_normalize_par::<$base, $rayon>(
             res, res_base2k, res_k, res_offset, res_col, &a_vec, a_base2k, a_col, carry,
@@ -1081,9 +1084,11 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let n = a.n();
+        $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
+        assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
         let a_cols = a.cols();
         let a_size = a.size();
-        let table = module.get_ifft_table();
+        let table = module.get_ifft_table_for(n);
         let divisor = table.m() as f64;
         // In-place inverse FFT per limb; the buffer becomes `VecZnx` layout.
         if $crate::parallel_limb_tasks(a_size) {
@@ -1140,9 +1145,11 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         }
 
         let n = res.n();
+        $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
+        assert_eq!(a.n(), n, "vec_znx_dft_apply: a.n():{} != res.n():{n}", a.n());
         let cols = res.cols();
         let a_size = a.size();
-        let table = module.get_fft_table();
+        let table = module.get_fft_table_for(n);
         res.raw_mut().par_chunks_mut(n * cols).enumerate().for_each(|(j, group)| {
             let dst = &mut group[n * res_col..][..n];
             let limb = offset + j * step;
@@ -1180,11 +1187,13 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         }
 
         let n = res.n();
+        $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
+        assert_eq!(a.n(), n, "vec_znx_idft_apply: a.n():{} != res.n():{n}", a.n());
         let res_cols = res.cols();
         let a_cols = a.cols();
         let min_size = res.size().min(a.size());
         let a_raw = a.raw();
-        let table = module.get_ifft_table();
+        let table = module.get_ifft_table_for(n);
         let divisor = table.m() as f64;
         res.raw_mut().par_chunks_mut(n * res_cols).enumerate().for_each(|(j, group)| {
             let dst = &mut group[n * res_col..][..n];
@@ -1218,12 +1227,14 @@ unsafe impl HalVecZnxDftImpl for $rayon {
         }
 
         let n = res.n();
+        $crate::__private::poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
+        assert_eq!(a.n(), n, "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{n}", a.n());
         let res_cols = res.cols();
         let a_cols = a.cols();
         let min_size = res.size().min(a.size());
         let active_words = min_size * n * res_cols;
         let (res_active, res_zero) = res.raw_mut().split_at_mut(active_words);
-        let table = module.get_ifft_table();
+        let table = module.get_ifft_table_for(n);
         let divisor = table.m() as f64;
 
         res_active
@@ -1354,8 +1365,8 @@ unsafe impl HalVecZnxDftImpl for $rayon {
 
     type AutomorphismPlan = <$base as HalVecZnxDftImpl>::AutomorphismPlan;
 
-    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
-        <$base as HalVecZnxDftImpl>::vec_znx_dft_automorphism_plan(base_module(module), p)
+    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
+        <$base as HalVecZnxDftImpl>::vec_znx_dft_automorphism_plan(base_module(module), n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(

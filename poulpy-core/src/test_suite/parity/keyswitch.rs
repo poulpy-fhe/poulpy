@@ -89,9 +89,9 @@ where
                 .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size_out)),
         );
 
-        let mut a = module.vec_znx_alloc(cols_in, a_size);
+        let mut a = module.vec_znx_alloc(module.n(), cols_in, a_size);
         a.fill_uniform(base2k, &mut source);
-        let mut a_dft = module.vec_znx_dft_alloc(cols_in, a_size);
+        let mut a_dft = module.vec_znx_dft_alloc(module.n(), cols_in, a_size);
         for col in 0..cols_in {
             let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&a);
             module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), col, &a, col);
@@ -104,13 +104,13 @@ where
             }
         }
 
-        let mut mat = module.mat_znx_alloc(rows, cols_in, cols_out, size_out);
+        let mut mat = module.mat_znx_alloc(module.n(), rows, cols_in, cols_out, size_out);
         mat.fill_uniform(base2k, &mut source);
-        let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
+        let mut pmat = module.vmp_pmat_alloc(module.n(), rows, cols_in, cols_out, size_out, PrepareHint::Reuse);
         let mat = <MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&mat);
         module.vmp_prepare(&mut pmat.to_backend_mut(), &mat, &mut scratch.borrow());
 
-        let mut want = module.vec_znx_dft_alloc(cols_out, size_out);
+        let mut want = module.vec_znx_dft_alloc(module.n(), cols_out, size_out);
         let sentinel = vec![1u8; BE::len_bytes(&want.data)];
         BE::copy_from_host(&mut want.data, &sentinel);
         crate::default::keyswitching::glwe::gglwe_product_digits_strided_default(
@@ -123,7 +123,7 @@ where
             &mut scratch.borrow(),
         );
 
-        let mut have = module.vec_znx_dft_alloc(cols_out, size_out);
+        let mut have = module.vec_znx_dft_alloc(module.n(), cols_out, size_out);
         BE::copy_from_host(&mut have.data, &sentinel);
         BE::gglwe_product_digits_strided(
             module,
@@ -432,16 +432,16 @@ where
         let mut prep = ScratchOwned::<BE>::alloc(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
 
         // Built on the host and uploaded, so a device backend runs this too.
-        let mut a_host = host.vec_znx_alloc(cols_in, input_size);
+        let mut a_host = host.vec_znx_alloc(host.n(), cols_in, input_size);
         a_host.fill_uniform(base2k, &mut source);
         let a = upload_vec_znx::<BE>(&a_host);
-        let mut a_dft = module.vec_znx_dft_alloc(cols_in, input_size);
+        let mut a_dft = module.vec_znx_dft_alloc(module.n(), cols_in, input_size);
         for col in 0..cols_in {
             let a = <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&a);
             module.vec_znx_dft_apply(1, 0, &mut a_dft.to_backend_mut(), col, &a, col);
         }
 
-        let mut mat = host.mat_znx_alloc(rows, cols_in, cols_out, size);
+        let mut mat = host.mat_znx_alloc(host.n(), rows, cols_in, cols_out, size);
         mat.fill_uniform(base2k, &mut source);
 
         let selected: Vec<usize> = (0..sel_rows).map(|i| (i + 1) * s as usize - 1).collect();
@@ -460,7 +460,7 @@ where
         poison(&mut mat, i64::MIN + 1);
 
         // Oracle: a key holding exactly the selected rows, used natively.
-        let mut sel = host.mat_znx_alloc(sel_rows, cols_in, cols_out, size);
+        let mut sel = host.mat_znx_alloc(host.n(), sel_rows, cols_in, cols_out, size);
         for (i, &src_row) in selected.iter().enumerate() {
             for c in 0..cols_in {
                 let (src, dst) = ((src_row * cols_in + c) * row_len, (i * cols_in + c) * row_len);
@@ -470,7 +470,7 @@ where
         }
 
         let prepare = |m: &MatZnx<Vec<u8>, i64>, rows: usize, scratch: &mut ScratchOwned<BE>| {
-            let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size, PrepareHint::Reuse);
+            let mut pmat = module.vmp_pmat_alloc(module.n(), rows, cols_in, cols_out, size, PrepareHint::Reuse);
             module.vmp_prepare(
                 &mut pmat.to_backend_mut(),
                 &<MatZnx<BE::OwnedBuf, i64> as MatZnxToBackendRef<BE>>::to_backend_ref(&upload_mat_znx::<BE>(m)),
@@ -509,7 +509,7 @@ where
         };
 
         let product = |key: &GGLWEPreparedBackendRef<'_, BE>, scratch: &mut ScratchOwned<BE>| {
-            let mut res = module.vec_znx_dft_alloc(cols_out, size);
+            let mut res = module.vec_znx_dft_alloc(module.n(), cols_out, size);
             module.gglwe_product_dft_default(
                 &mut res.to_backend_mut(),
                 &a_dft.to_backend_ref(),

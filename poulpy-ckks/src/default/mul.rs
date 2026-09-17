@@ -10,7 +10,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution, VecZnxCopy},
+    api::{CnvPVecAlloc, Convolution, ModuleN, VecZnxCopy},
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
@@ -118,7 +118,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
     fn ckks_prepare_right_default<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
-        Self: Convolution<BE> + CnvPVecAlloc<BE> + Sized,
+        Self: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         // Hoist `a` once into a backend-resident right operand. `glwe_prepare_right`
@@ -127,7 +127,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let cols = a.rank().as_usize() + 1;
         let k: usize = a.k().into();
         let size = k.div_ceil(a.base2k().as_usize());
-        let mut prep = self.cnv_pvec_right_alloc(cols, size, PrepareHint::Reuse);
+        let mut prep = self.cnv_pvec_right_alloc(self.n(), cols, size, PrepareHint::Reuse);
         glwe_prepare_right(self, &mut prep, a, k, scratch);
         Ok(CKKSPreparedRight {
             prep,

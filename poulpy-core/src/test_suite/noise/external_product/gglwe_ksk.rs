@@ -87,7 +87,7 @@ pub fn test_gglwe_switching_key_external_product<BE: crate::test_suite::noise::T
                     module.glwe_switching_key_alloc_from_infos(&gglwe_out_infos);
                 let mut ct_rgsw: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
-                let mut pt_rgsw: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+                let mut pt_rgsw: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
 
                 let mut source_xs: Source = Source::new([0u8; 32]);
                 let mut source_xe: Source = Source::new([0u8; 32]);
@@ -251,7 +251,7 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::n
                     module.glwe_switching_key_alloc_from_infos(&gglwe_out_infos);
                 let mut ct_rgsw: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
-                let mut pt_rgsw: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+                let mut pt_rgsw: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(module.n(), 1);
 
                 let mut source_xs: Source = Source::new([0u8; 32]);
                 let mut source_xe: Source = Source::new([0u8; 32]);

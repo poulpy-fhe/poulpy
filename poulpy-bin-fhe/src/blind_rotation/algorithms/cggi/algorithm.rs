@@ -73,10 +73,10 @@ where
         if block_size > 1 {
             let cols: usize = (brk_infos.rank() + 1).into();
             let dnum: usize = brk_infos.dnum().into();
-            let acc_dft: usize = self.bytes_of_vec_znx_dft(cols, dnum) * extension_factor;
-            let acc_big: usize = self.bytes_of_vec_znx_big(1, brk_size);
-            let vmp_res: usize = self.bytes_of_vec_znx_dft(cols, brk_size) * extension_factor;
-            let vmp_xai: usize = self.bytes_of_vec_znx_dft(1, brk_size);
+            let acc_dft: usize = self.bytes_of_vec_znx_dft(self.n(), cols, dnum) * extension_factor;
+            let acc_big: usize = self.bytes_of_vec_znx_big(self.n(), 1, brk_size);
+            let vmp_res: usize = self.bytes_of_vec_znx_dft(self.n(), cols, brk_size) * extension_factor;
+            let vmp_xai: usize = self.bytes_of_vec_znx_dft(self.n(), 1, brk_size);
             let acc_dft_add: usize = vmp_res;
             let vmp: usize = self.vmp_apply_dft_to_dft_tmp_bytes(brk_size, dnum, dnum, 2, 2, brk_size); // GGSW product: (1 x 2) x (2 x 2)
             let acc: usize = if extension_factor > 1 {
@@ -184,10 +184,10 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
 
     let scratch = scratch.borrow();
     let (mut acc, scratch_1) = scratch.take_vec_znx_slice_scratch(extension_factor, n_glwe, cols, res.size());
-    let (mut acc_dft, scratch_2) = scratch_1.take_vec_znx_dft_slice_scratch(module, extension_factor, cols, dnum);
-    let (mut vmp_res, scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module, extension_factor, cols, brk.size());
-    let (mut acc_add_dft, scratch_4) = scratch_3.take_vec_znx_dft_slice_scratch(module, extension_factor, cols, brk.size());
-    let (mut vmp_xai, mut scratch_5) = scratch_4.take_vec_znx_dft_scratch(module, 1, brk.size());
+    let (mut acc_dft, scratch_2) = scratch_1.take_vec_znx_dft_slice_scratch(module.n(), extension_factor, cols, dnum);
+    let (mut vmp_res, scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module.n(), extension_factor, cols, brk.size());
+    let (mut acc_add_dft, scratch_4) = scratch_3.take_vec_znx_dft_slice_scratch(module.n(), extension_factor, cols, brk.size());
+    let (mut vmp_xai, mut scratch_5) = scratch_4.take_vec_znx_dft_scratch(module.n(), 1, brk.size());
 
     for acc_i in &mut acc {
         for col in 0..cols {
@@ -327,7 +327,7 @@ fn execute_block_binary_extended<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
         }
 
         scratch_5.scope(|scratch_local| {
-            let (mut acc_add_big, mut scratch7) = scratch_local.take_vec_znx_big_scratch(module, 1, brk.size());
+            let (mut acc_add_big, mut scratch7) = scratch_local.take_vec_znx_big_scratch(module.n(), 1, brk.size());
 
             for j in 0..extension_factor {
                 for i in 0..cols {
@@ -420,11 +420,11 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
     // ACC + [sum DFT(X^ai -1) * (DFT(ACC) x BRKi)]
 
     let scratch = scratch.borrow();
-    let (mut acc_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module, cols, dnum);
+    let (mut acc_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), cols, dnum);
 
     if BE::TaskExecutor::IS_PARALLEL {
-        let (vmp_res, scratch_2) = scratch_1.take_vec_znx_dft_slice_scratch(module, block_size, cols, brk.size());
-        let (contributions, mut scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module, block_size, cols, brk.size());
+        let (vmp_res, scratch_2) = scratch_1.take_vec_znx_dft_slice_scratch(module.n(), block_size, cols, brk.size());
+        let (contributions, mut scratch_3) = scratch_2.take_vec_znx_dft_slice_scratch(module.n(), block_size, cols, brk.size());
         let mut tasks: Vec<_> = vmp_res.into_iter().zip(contributions).collect();
         let workers = poulpy_hal::execution::worker_count::<BE::TaskExecutor>(block_size, block_size);
         let worker_scratch_bytes = poulpy_hal::execution::worker_scratch_bytes::<BE>(module.vmp_apply_dft_to_dft_tmp_bytes(
@@ -476,7 +476,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
                 }
             }
 
-            let (mut acc_add_big, mut scratch_4) = scratch_3.borrow().take_vec_znx_big_scratch(module, 1, brk.size());
+            let (mut acc_add_big, mut scratch_4) = scratch_3.borrow().take_vec_znx_big_scratch(module.n(), 1, brk.size());
             for col in 0..cols {
                 let contribution_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&sum.1);
                 module.vec_znx_idft_apply(&mut acc_add_big, 0, &contribution_ref, col, &mut scratch_4.borrow());
@@ -507,9 +507,9 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
         return;
     }
 
-    let (mut vmp_res, scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols, brk.size());
-    let (mut acc_add_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(module, cols, brk.size());
-    let (mut vmp_xai, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module, 1, brk.size());
+    let (mut vmp_res, scratch_2) = scratch_1.take_vec_znx_dft_scratch(module.n(), cols, brk.size());
+    let (mut acc_add_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(module.n(), cols, brk.size());
+    let (mut vmp_xai, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module.n(), 1, brk.size());
 
     let x_pow_a: &Vec<SvpPPolOwned<BE>>;
     if let Some(b) = &brk.x_pow_a {
@@ -550,7 +550,7 @@ fn execute_block_binary<R, L, M, BE: Backend<ZnxWord = i64> + 'static>(
         }
 
         {
-            let (mut acc_add_big, mut scratch_5) = scratch_4.borrow().take_vec_znx_big_scratch(module, 1, brk.size());
+            let (mut acc_add_big, mut scratch_5) = scratch_4.borrow().take_vec_znx_big_scratch(module.n(), 1, brk.size());
 
             for i in 0..cols {
                 let acc_add_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&acc_add_dft);

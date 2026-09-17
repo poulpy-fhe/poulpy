@@ -87,7 +87,7 @@ where
 {
     fn glwe_secret_tensor_prepared_alloc(&self, rank: Rank) -> GLWESecretTensorPrepared<B::OwnedBuf, B> {
         GLWESecretTensorPrepared {
-            data: self.svp_ppol_alloc(crate::layouts::pairs(rank.into()), PrepareHint::Reuse),
+            data: self.svp_ppol_alloc(self.n(), crate::layouts::pairs(rank.into()), PrepareHint::Reuse),
             rank,
             dist: Distribution::NONE,
         }
@@ -101,7 +101,7 @@ where
     }
 
     fn glwe_secret_tensor_prepared_bytes_of(&self, rank: Rank) -> usize {
-        self.bytes_of_svp_ppol(crate::layouts::pairs(rank.into()), PrepareHint::Reuse)
+        self.bytes_of_svp_ppol(self.n(), crate::layouts::pairs(rank.into()), PrepareHint::Reuse)
     }
     fn glwe_secret_tensor_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where

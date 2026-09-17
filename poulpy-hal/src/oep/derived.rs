@@ -87,7 +87,7 @@ pub fn vmp_apply_dft_derived<BE, R>(
     let offset: usize = MatZnxInfos::cols_in(b) - cols_to_copy;
 
     let (mut a_dft, mut scratch) =
-        ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, MatZnxInfos::cols_in(b), a_dft_size);
+        ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(a), MatZnxInfos::cols_in(b), a_dft_size);
 
     for j in 0..offset {
         BE::vec_znx_dft_zero(module, &mut a_dft, j);
@@ -143,7 +143,8 @@ pub fn vmp_apply_dft_to_dft_add_derived<BE>(
 {
     let cols_out: usize = VecZnxInfos::cols(res);
     let res_size: usize = ZnxInfos::size(res);
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, cols_out, res_size);
+    let (mut tmp, mut scratch) =
+        ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), cols_out, res_size);
     for col in 0..cols_out {
         BE::vec_znx_dft_zero(module, &mut tmp, col);
     }
@@ -546,7 +547,7 @@ pub fn vec_znx_idft_normalize_consume_derived<BE>(
     BE: HalVecZnxDftImpl,
 {
     let a_size: usize = ZnxInfos::size(a);
-    let (mut big, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_big_scratch(scratch.borrow(), module, 1, a_size);
+    let (mut big, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_big_scratch(scratch.borrow(), ZnxInfos::n(a), 1, a_size);
     BE::vec_znx_idft_apply_tmpa(module, &mut big, 0, a, a_col);
     if let Some((add, add_col)) = addend {
         BE::vec_znx_big_add_small_assign(module, &mut big, 0, add, add_col);
@@ -577,7 +578,7 @@ pub fn vec_znx_dft_automorphism_derived<BE>(
 ) where
     BE: HalVecZnxDftImpl,
 {
-    let plan = BE::vec_znx_dft_automorphism_plan(module, p);
+    let plan = BE::vec_znx_dft_automorphism_plan(module, res.n(), p);
     BE::vec_znx_dft_automorphism_with_plan(module, &plan, res, res_col, a, a_col);
 }
 
@@ -605,7 +606,7 @@ pub fn vec_znx_dft_automorphism_add_with_plan_derived<BE>(
     BE: HalVecZnxDftImpl,
 {
     let size: usize = ZnxInfos::size(res).min(ZnxInfos::size(a));
-    let (mut tmp, _) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, 1, size);
+    let (mut tmp, _) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, size);
     BE::vec_znx_dft_automorphism_with_plan(module, plan, &mut tmp, 0, a, a_col);
     BE::vec_znx_dft_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -634,7 +635,7 @@ pub fn svp_apply_dft_derived<BE>(
     BE: HalSvpImpl,
 {
     let b_size: usize = ZnxInfos::size(b);
-    let (mut b_dft, _) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, 1, b_size);
+    let (mut b_dft, _) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, b_size);
     BE::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
     BE::svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft.to_backend_ref(), 0);
 }
@@ -700,7 +701,7 @@ pub fn cnv_apply_dft_add_derived<BE>(
     BE: HalConvolutionImpl,
 {
     let res_size: usize = ZnxInfos::size(res);
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), module, 1, res_size);
+    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_dft_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
     BE::cnv_apply_dft(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, &mut scratch);
     BE::vec_znx_dft_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }
@@ -789,7 +790,7 @@ pub fn cnv_by_const_apply_add_derived<BE>(
     BE: HalConvolutionImpl,
 {
     let res_size: usize = ZnxInfos::size(res);
-    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_big_scratch(scratch.borrow(), module, 1, res_size);
+    let (mut tmp, mut scratch) = ScratchArenaTakeBasic::take_vec_znx_big_scratch(scratch.borrow(), ZnxInfos::n(res), 1, res_size);
     BE::cnv_by_const_apply(module, cnv_offset, &mut tmp, 0, a, a_col, b, b_col, b_coeff, &mut scratch);
     BE::vec_znx_big_add_assign(module, res, res_col, &tmp.to_backend_ref(), 0);
 }

@@ -89,7 +89,7 @@ where
 
             res.dist = sk_lwe.dist();
 
-            let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = self.scalar_znx_alloc(1);
+            let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = self.scalar_znx_alloc(self.n(), 1);
             let sk_ref = sk_lwe.data();
 
             for (i, ggsw) in res.keys.iter_mut().enumerate() {

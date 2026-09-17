@@ -12,7 +12,7 @@
 
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
 use poulpy_hal::{
-    api::{CnvPVecAlloc, Convolution},
+    api::{CnvPVecAlloc, Convolution, ModuleN},
     layouts::{Backend, PrepareHint, ScratchArena},
 };
 
@@ -29,7 +29,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
     /// `layout.index()` and forwards to [`Self::alloc_prepared_from_index`].
     pub fn alloc_prepared<M, P>(module: &M, layout: &LinearTransformationLayout, pt_infos: &P) -> Self
     where
-        M: CnvPVecAlloc<BE>,
+        M: ModuleN + CnvPVecAlloc<BE>,
         P: LWEInfos,
     {
         Self::alloc_prepared_from_index(module, &layout.index(), pt_infos)
@@ -43,7 +43,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
     /// per-diagonal `log_scale` is left at `0` for the scheme layer to set.
     pub fn alloc_prepared_from_index<M, P>(module: &M, index: &LinearTransformationPlan, pt_infos: &P) -> Self
     where
-        M: CnvPVecAlloc<BE>,
+        M: ModuleN + CnvPVecAlloc<BE>,
         P: LWEInfos,
     {
         let pt_size = pt_infos.size();
@@ -58,7 +58,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
                 diagonals.push(LinearTransformationDiagonal {
                     baby,
                     plaintext: PreparedDiagonal {
-                        cnv: module.cnv_pvec_right_alloc(1, pt_size, PrepareHint::Reuse),
+                        cnv: module.cnv_pvec_right_alloc(module.n(), 1, pt_size, PrepareHint::Reuse),
                         base2k,
                         k,
                         log_scale: 0,

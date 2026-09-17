@@ -51,7 +51,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     /// Duplicate rotations in `baby_steps` are de-duplicated.
     pub fn alloc<M, A>(module: &M, baby_steps: &[i64], a: &A) -> Self
     where
-        M: CnvPVecAlloc<BE>,
+        M: ModuleN + CnvPVecAlloc<BE>,
         A: GLWEInfos,
     {
         let cols = a.rank().as_usize() + 1;
@@ -60,7 +60,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
         for &rot in baby_steps {
             values
                 .entry(rot)
-                .or_insert_with(|| module.cnv_pvec_left_alloc(cols, size, PrepareHint::Reuse));
+                .or_insert_with(|| module.cnv_pvec_left_alloc(module.n(), cols, size, PrepareHint::Reuse));
         }
         Self { values }
     }
@@ -68,7 +68,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     /// Convenience: pre-allocates from a [`LinearTransformationLayout`].
     pub fn alloc_from_layout<M, A>(module: &M, layout: &LinearTransformationLayout, a: &A) -> Self
     where
-        M: CnvPVecAlloc<BE>,
+        M: ModuleN + CnvPVecAlloc<BE>,
         A: GLWEInfos,
     {
         Self::alloc(module, &layout.baby_steps(), a)
@@ -100,8 +100,8 @@ where
     let baby = module.glwe_bytes_of_from_infos(a_infos);
     let prepare = module.cnv_prepare_left_tmp_bytes(a_infos.size(), a_infos.size());
 
-    let hoisted_a_dft = module.bytes_of_vec_znx_dft(cols - 1, a_size);
-    let hoisted_rot = module.bytes_of_vec_znx_dft(cols, key_size)
+    let hoisted_a_dft = module.bytes_of_vec_znx_dft(module.n(), cols - 1, a_size);
+    let hoisted_rot = module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
         + module
             .gglwe_product_dft_tmp_bytes_default(key_size, a_size, key_infos)
             .max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size));
@@ -138,7 +138,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
     assert_eq!(key_ref.base2k(), a.base2k());
 
     // `key_size` is this key's own product width; limbs above it stay zeroed.
-    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
+    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, key_size);
     module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
 
     let baby_base2k = baby.base2k().as_usize();
@@ -228,7 +228,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
 
     if use_hoisted {
         let scratch = scratch.borrow();
-        let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(module, cols - 1, a_size);
+        let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(module.n(), cols - 1, a_size);
         let a_ref = a.to_backend_ref();
         for col_i in 0..cols - 1 {
             module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, &a_ref.data, col_i + 1);
@@ -243,7 +243,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
             .zip(&key_sizes)
             .filter_map(|(key, &key_size)| key.as_ref().map(|key| (key, key_size)))
             .map(|(key, key_size)| {
-                module.bytes_of_vec_znx_dft(cols, key_size)
+                module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
                     + module
                         .gglwe_product_dft_tmp_bytes_default(key_size, a_size, key)
                         .max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size))

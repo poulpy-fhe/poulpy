@@ -29,34 +29,31 @@ pub trait VecZnxBigFromSmall<B: Backend> {
 /// Allocation of a big-word vector.
 ///
 /// ```text
-/// op         vec_znx_big_alloc(cols, size)
+/// op         vec_znx_big_alloc(n, cols, size)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1, size >= 1
-/// ensures    returns an owned degree-N VecZnxBig of those dimensions in the backend's memory; its contents are unspecified
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
+/// ensures    returns an owned degree-n VecZnxBig of those dimensions in the backend's memory; its contents are unspecified
 /// test       none
 /// ```
 pub trait VecZnxBigAlloc<B: Backend> {
-    /// Returns an owned big-word vector with `cols` columns and `size` limbs.
-    fn vec_znx_big_alloc(&self, cols: usize, size: usize) -> VecZnxBigOwned<B>;
+    /// Returns an owned degree-`n` big-word vector with `cols` columns and `size` limbs.
+    fn vec_znx_big_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B>;
 }
 
 /// Byte size of a big-word vector.
 ///
 /// ```text
-/// op         bytes_of_vec_znx_big(cols, size) / bytes_of_vec_znx_big_n(n, cols, size)
+/// op         bytes_of_vec_znx_big(n, cols, size)
 /// class      support
 /// mutation   none
-/// domain     cols >= 1, size >= 1; the `_n` form takes a degree other than the module's
+/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; cols >= 1, size >= 1
 /// ensures    returns the byte size of such a VecZnxBig in this backend's representation, the amount take_vec_znx_big_scratch carves
 /// test       none
 /// ```
 pub trait VecZnxBigBytesOf {
-    /// Returns the byte size of a big-word vector of the module degree with `cols` columns and `size` limbs.
-    fn bytes_of_vec_znx_big(&self, cols: usize, size: usize) -> usize;
-
     /// Returns the byte size of a degree-`n` big-word vector with `cols` columns and `size` limbs.
-    fn bytes_of_vec_znx_big_n(&self, n: usize, cols: usize, size: usize) -> usize;
+    fn bytes_of_vec_znx_big(&self, n: usize, cols: usize, size: usize) -> usize;
 }
 
 /// Sum of two big-word vectors.
@@ -505,7 +502,7 @@ pub trait VecZnxBigAutomorphismAssignTmpBytes {
 /// class      basis
 /// mutation   out-of-place
 /// definition res[res_col,j] = sum_{0 <= i < a.n()} a[a_col,j,i] * X^(p*i) in R_N; other columns of res are unchanged
-/// domain     res, a: dense VecZnxBig of the module degree; p odd
+/// domain     res, a: dense VecZnxBig of degree N; p odd
 /// ensures    the selected output column is the limbwise automorphism with zero extension or truncation
 /// test       test_vec_znx_big_automorphism
 /// ```
@@ -528,7 +525,7 @@ pub trait VecZnxBigAutomorphism<B: Backend> {
 /// class      variant
 /// mutation   in-place
 /// definition res[res_col,j] = sum_{0 <= i < res.n()} old(res)[res_col,j,i] * X^(p*i) in R_N; other columns of res are unchanged
-/// domain     res: a dense VecZnxBig of the module degree; p odd
+/// domain     res: a dense VecZnxBig of degree N; p odd
 /// requires   scratch >= vec_znx_big_automorphism_assign_tmp_bytes()
 /// ensures    the selected output column is the limbwise automorphism of its pre-call value
 /// fallback   none

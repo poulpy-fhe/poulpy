@@ -11,7 +11,7 @@ use poulpy_cpu_ref::reference::sparse_log_gap;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
-    VecZnxBackendRef, VecZnxDftBackendMut, ZnxView,
+    VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, check_degree,
 };
 use std::mem::size_of;
 
@@ -282,7 +282,7 @@ fn prepare<E: TaskExecutor>(
         let res = right.as_ref().unwrap();
         (res.n(), res.cols(), res.size())
     };
-    assert_eq!(n, module.n(), "prepare: res.n():{n} != module.n():{}", module.n());
+    check_degree::<NTT4x30Avx512>(module.n(), n);
     assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
@@ -290,6 +290,7 @@ fn prepare<E: TaskExecutor>(
         assert_eq!(r.cols(), l.cols(), "right.cols():{} != left.cols():{}", r.cols(), l.cols());
         assert_eq!(r.size(), l.size(), "right.size():{} != left.size():{}", r.size(), l.size());
     }
+    let table = module.get_ntt_table_for(n);
     let min_size = size.min(a.size());
     let mut left = left.map(|res| cast_slice_mut::<_, u32>(res.data_mut()));
     let mut right = right.map(|res| cast_slice_mut::<_, u32>(res.data_mut()));
@@ -305,7 +306,7 @@ fn prepare<E: TaskExecutor>(
             let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             if limb < min_size {
                 NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
-                NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), tmp);
+                NTT4x30Avx512::ntt_dft_execute(table, tmp);
                 if let Some(dst) = dst_l.as_deref_mut() {
                     unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
                 }
@@ -334,7 +335,7 @@ fn prepare<E: TaskExecutor>(
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         for limb in 0..min_size {
             NTT4x30Avx512::ntt_from_znx64(tmp, a.at(col, limb));
-            NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), tmp);
+            NTT4x30Avx512::ntt_dft_execute(table, tmp);
             if let Some(dst) = dst_l.as_deref_mut() {
                 unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
             }
@@ -403,7 +404,7 @@ unsafe fn apply<E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     b1_col: usize,
 ) {
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
-    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    check_degree::<NTT4x30Avx512>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap = sparse_log_gap(n, b.n());
     if res_size == 0 || a_size == 0 || b_size == 0 {

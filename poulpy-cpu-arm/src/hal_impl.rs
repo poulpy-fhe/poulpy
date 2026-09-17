@@ -86,7 +86,7 @@ unsafe impl HalVmpImpl for NTT4x30Neon {
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(module.n());
+        let bytes = crate::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         crate::ntt4x30::vmp::vmp_prepare_neon_pm(module, res, a, tmp);
     }

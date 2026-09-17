@@ -28,7 +28,7 @@ where
 
     let a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
     let rhs: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
-    let mut c: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols, sweep.size);
+    let mut c: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
         let a = vec_znx_dft_backend_ref::<B>(&a);
@@ -52,7 +52,7 @@ pub fn runner_vec_znx_dft_add_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
     let mut source: Source = Source::new([0u8; 32]);
 
     let a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
-    let mut c: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols, sweep.size);
+    let mut c: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
         let a = vec_znx_dft_backend_ref::<B>(&a);
@@ -72,7 +72,7 @@ where
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols, sweep.size);
+    let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols, sweep.size);
     let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<B>(&a);
 
@@ -95,7 +95,7 @@ where
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut res: VecZnxBigOwned<B> = module.vec_znx_big_alloc(sweep.cols, sweep.size);
+    let mut res: VecZnxBigOwned<B> = module.vec_znx_big_alloc(module.n(), sweep.cols, sweep.size);
     let a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
 
     let mut scratch = ScratchOwned::alloc(module.vec_znx_idft_apply_tmp_bytes());
@@ -120,7 +120,7 @@ pub fn runner_vec_znx_idft_apply_tmpa<B: Backend<ZnxWord = i64>, M: Measurement>
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut res: VecZnxBigOwned<B> = module.vec_znx_big_alloc(sweep.cols, sweep.size);
+    let mut res: VecZnxBigOwned<B> = module.vec_znx_big_alloc(module.n(), sweep.cols, sweep.size);
     let mut a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
 
     bencher.iter(|| {
@@ -143,7 +143,7 @@ where
 
     let a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
     let rhs: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
-    let mut c: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols, sweep.size);
+    let mut c: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
         let a = vec_znx_dft_backend_ref::<B>(&a);
@@ -167,7 +167,7 @@ pub fn runner_vec_znx_dft_sub_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
     let mut source: Source = Source::new([0u8; 32]);
 
     let a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
-    let mut c: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols, sweep.size);
+    let mut c: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
         let a = vec_znx_dft_backend_ref::<B>(&a);
@@ -190,7 +190,7 @@ pub fn runner_vec_znx_dft_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measur
     let mut source: Source = Source::new([0u8; 32]);
 
     let a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
-    let mut c: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(sweep.cols, sweep.size);
+    let mut c: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
         let a = vec_znx_dft_backend_ref::<B>(&a);
@@ -220,7 +220,7 @@ pub fn runner_vec_znx_idft_normalize_consume<B: Backend<ZnxWord = i64>, M: Measu
         ScratchOwned::alloc(module.vec_znx_idft_normalize_consume_tmp_bytes(sweep.size, sweep.size));
 
     let mut a: VecZnxDftOwned<B> = random_backend_vec_znx_dft::<B>(module.n(), sweep.cols, sweep.size, &mut source);
-    let mut res = module.vec_znx_alloc(sweep.cols, sweep.size);
+    let mut res = module.vec_znx_alloc(module.n(), sweep.cols, sweep.size);
 
     bencher.iter(|| {
         let mut a = vec_znx_dft_backend_mut::<B>(&mut a);

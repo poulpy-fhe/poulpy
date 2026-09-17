@@ -23,7 +23,7 @@ use crate::reference::{
 };
 use poulpy_hal::layouts::{
     Backend, HostDataRef, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolToBackendMut,
-    SvpPPolToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, ZnxViewMut,
+    SvpPPolToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, ZnxViewMut, check_degree,
 };
 
 #[doc(hidden)]
@@ -40,7 +40,10 @@ where
         R: SvpPPolToBackendMut<Self>,
     {
         let mut res_ref = res.to_backend_mut();
-        fft64_svp_prepare::<Self>(module.get_fft_table(), &mut res_ref, res_col, a, a_col);
+        let n: usize = res_ref.n();
+        check_degree::<Self>(module.n(), n);
+        assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
+        fft64_svp_prepare::<Self>(module.get_fft_table_for(n), &mut res_ref, res_col, a, a_col);
     }
 
     fn svp_ppol_copy_default(

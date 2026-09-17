@@ -7,7 +7,7 @@ use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply},
     layouts::{
         DataView, DataViewMut, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut, ZnxView,
+        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut, ZnxView, check_degree,
     },
 };
 
@@ -56,9 +56,11 @@ pub(crate) fn svp_prepare(
     a_col: usize,
 ) {
     let n = res.n();
+    check_degree::<NTT4x30Avx512>(module.n(), n);
+    assert!(a.n() == n, "svp_prepare: a.n() != res.n()");
     let mut tmp = vec![0u64; 4 * n];
     NTT4x30Avx512::ntt_from_znx64(&mut tmp, a.at(a_col, 0));
-    NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), &mut tmp);
+    NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table_for(n), &mut tmp);
     let data: &mut [u32] = cast_slice_mut(res.data_mut());
     unsafe { pack_limb_q120(n, &mut data[4 * n * res_col..][..4 * n], &tmp) };
 }
@@ -92,7 +94,7 @@ pub(crate) fn svp_apply_dft(
     b: &VecZnxBackendRef<'_, NTT4x30Avx512>,
     b_col: usize,
 ) {
-    let mut b_dft_owned = module.vec_znx_dft_alloc(1, b.size());
+    let mut b_dft_owned = module.vec_znx_dft_alloc(b.n(), 1, b.size());
     let mut b_dft = b_dft_owned.to_backend_mut();
     module.vec_znx_dft_apply(1, 0, &mut b_dft, 0, b, b_col);
     svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft.reborrow_backend_ref(), 0);
@@ -109,6 +111,8 @@ pub(crate) fn svp_apply_dft_to_dft(
     b_col: usize,
 ) {
     let n = res.n();
+    assert_eq!(a.n(), n, "svp_apply_dft_to_dft: a.n():{} != res.n():{n}", a.n());
+    assert_eq!(b.n(), n, "svp_apply_dft_to_dft: b.n():{} != res.n():{n}", b.n());
     let (res_cols, b_cols) = (res.cols(), b.cols());
     let min_size = res.size().min(b.size());
     let factor_data: &[u32] = cast_slice(a.data());
@@ -134,6 +138,7 @@ pub(crate) fn svp_apply_dft_to_dft_assign(
     a_col: usize,
 ) {
     let n = res.n();
+    assert_eq!(a.n(), n, "svp_apply_dft_to_dft_assign: a.n():{} != res.n():{n}", a.n());
     let cols = res.cols();
     let factor_data: &[u32] = cast_slice(a.data());
     let factor = &factor_data[4 * n * a_col..][..4 * n];

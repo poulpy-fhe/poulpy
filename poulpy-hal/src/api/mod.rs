@@ -39,7 +39,11 @@
 //!
 //! # Value model
 //!
-//! The polynomial ring is `R_n = Z[X]/(X^n + 1)`, with module degree `N`.
+//! The polynomial ring is `R_n = Z[X]/(X^n + 1)`. A module is built at a
+//! degree `N` and serves every power-of-two degree `n` with
+//! `MIN_DEGREE <= n <= N`, `MIN_DEGREE` the backend's floor; in a contract
+//! `N` denotes the degree of the call, the degree its operands share, which
+//! the kernel reads from them and which is at most the module's.
 //! A selected column `a[c]` with `a.size()` limbs and radix width `b` denotes
 //! the coefficient-wise dyadic value
 //!
@@ -163,25 +167,35 @@
 //! floating-point operation: its definition is an ideal complex formula and
 //! its result carries floating arithmetic error.
 //!
+//! # Degree
+//!
+//! A computing operation takes no degree argument: its operands share one
+//! degree `N`, read from `res` (or the in-place operand), and every kernel
+//! asserts at entry that the module serves it. An allocation, `bytes_of_*`,
+//! scratch take or plan has no polynomial operand and takes the degree `n`
+//! as its first argument. The `*_tmp_bytes` are sized at the module's degree,
+//! an upper bound for a call at a smaller one.
+//!
 //! # Degree embedding
 //!
-//! Every operation is defined on `R_N`. A degree-`n` object, `n` a
-//! power-of-two divisor of `N`, denotes its image `p(X^(N/n))` in `R_N`, and
-//! a formula on such an operand uses that image; the compact storage is a
-//! representation choice the contracts never mention. Only the operand slots
-//! a contract's `sparse` line names accept a degree other than the module's;
-//! `res` and every other operand share `N`. Only a dense operand takes such a
-//! degree: a window in a sparse-capable slot has the width of `res`. The
-//! coefficient-domain `add` and `sub` families and `vec_znx_big_from_small`
-//! accept the slot, so the derived small-operand forms inherit it. In the
-//! convolution only the prepared right operand is sparse-capable, and the
-//! prepares are not sparsity-aware: a degree-`n` right operand is prepared
-//! under a degree-`n` module, like any dense prepare, and the apply forms of a
-//! degree-`N` module read it through the backend's slot correspondence, while
-//! the left operand and the result take the module degree. A backend may
-//! reject a sparse degree below its transform block width in the apply; the
-//! coefficient-domain add and sub families accept any power-of-two divisor.
-//! `switch_ring` states both directions of the coefficient map explicitly.
+//! Every operation is defined on `R_N`, `N` the degree of the call. A
+//! degree-`n` object in a sparse-capable slot, `n` a power-of-two divisor of
+//! `N`, denotes its image `p(X^(N/n))` in `R_N`, and a formula on such an
+//! operand uses that image; the compact storage is a representation choice
+//! the contracts never mention. Only the operand slots a contract's `sparse`
+//! line names accept a degree other than `N`; `res` and every other
+//! operand share `N`. Only a dense operand takes such a degree: a window in a
+//! sparse-capable slot has the width of `res`. The coefficient-domain `add`
+//! and `sub` families and `vec_znx_big_from_small` accept the slot, so the
+//! derived small-operand forms inherit it. In the convolution only the
+//! prepared right operand is sparse-capable, and the prepares are not
+//! sparsity-aware: a degree-`n` right operand is prepared at degree `n`, like
+//! any dense prepare, and the degree-`N` apply forms read it through the
+//! backend's slot correspondence, while the left operand and the result take
+//! the degree `N` of the call. A backend may reject a sparse degree below its
+//! transform block width in the apply; the coefficient-domain add and sub
+//! families accept any power-of-two divisor. `switch_ring` states both
+//! directions of the coefficient map explicitly.
 //!
 //! Coefficient-wise reductions and products act on visible coefficient
 //! vectors rather than `R_N`; their contracts specify all degree relations.

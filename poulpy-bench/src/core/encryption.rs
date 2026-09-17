@@ -94,7 +94,7 @@ where
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(infos.rank());
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-    let pt = module.scalar_znx_alloc(1);
+    let pt = module.scalar_znx_alloc(module.n(), 1);
     let mut ct = module.ggsw_alloc_from_infos(&infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ggsw_encrypt_sk_tmp_bytes(&infos));
 

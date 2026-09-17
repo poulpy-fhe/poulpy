@@ -12,7 +12,7 @@ use poulpy_cpu_ref::reference::ntt4x30::{
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView,
-    ZnxViewMut,
+    ZnxViewMut, check_degree,
 };
 
 use super::{
@@ -100,20 +100,19 @@ pub(crate) unsafe fn unpack_limb_q120(n: usize, dst: &mut [u64], src: &[u32]) {
     }
 }
 
-pub(crate) fn dft_limb(module: &Module<NTT4x30Avx>, dst: &mut [u32], src: Option<&[i64]>, tmp: &mut [u64]) {
+pub(crate) fn dft_limb(module: &Module<NTT4x30Avx>, n: usize, dst: &mut [u32], src: Option<&[i64]>, tmp: &mut [u64]) {
     if let Some(src) = src {
         NTT4x30Avx::ntt_from_znx64(tmp, src);
-        NTT4x30Avx::ntt_dft_execute(module.get_ntt_table(), tmp);
-        unsafe { pack_limb_q120(module.n(), dst, tmp) };
+        NTT4x30Avx::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
+        unsafe { pack_limb_q120(n, dst, tmp) };
     } else {
         dst.fill(0);
     }
 }
 
-pub(crate) fn idft_limb(module: &Module<NTT4x30Avx>, dst: &mut [i128], src: &[u32], tmp: &mut [u64]) {
-    let n = module.n();
+pub(crate) fn idft_limb(module: &Module<NTT4x30Avx>, n: usize, dst: &mut [i128], src: &[u32], tmp: &mut [u64]) {
     unsafe { unpack_limb_q120(n, tmp, src) };
-    NTT4x30Avx::ntt_dft_execute(module.get_intt_table(), tmp);
+    NTT4x30Avx::ntt_dft_execute(module.get_intt_table_for(n), tmp);
     NTT4x30Avx::ntt_to_znx128(dst, n, tmp);
 }
 
@@ -230,6 +229,8 @@ pub(crate) fn vec_znx_dft_apply(
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
     let n = res.n();
+    check_degree::<NTT4x30Avx>(module.n(), n);
+    assert!(a.n() == n, "vec_znx_dft_apply: a.n() != res.n()");
     let cols = res.cols();
     let res_size = res.size();
     let a_size = a.size();
@@ -238,7 +239,7 @@ pub(crate) fn vec_znx_dft_apply(
     for limb in 0..res_size {
         let dst = packed_limb_mut(res_data, n, cols, res_col, limb);
         let src_limb = offset + limb * step;
-        dft_limb(module, dst, (src_limb < a_size).then(|| a.at(a_col, src_limb)), &mut tmp);
+        dft_limb(module, n, dst, (src_limb < a_size).then(|| a.at(a_col, src_limb)), &mut tmp);
     }
 }
 
@@ -256,12 +257,15 @@ pub(crate) fn vec_znx_idft_apply(
 ) {
     poulpy_hal::layouts::assert_dense(res, "vec_znx_idft_apply");
     let n = res.n();
+    check_degree::<NTT4x30Avx>(module.n(), n);
+    assert_eq!(a.n(), n, "vec_znx_idft_apply: a.n():{} != res.n():{n}", a.n());
     let min_size = res.size().min(a.size());
     let a_cols = a.cols();
     let a_data: &[u32] = cast_slice(a.data());
     for limb in 0..min_size {
         idft_limb(
             module,
+            n,
             res.at_mut(res_col, limb),
             packed_limb(a_data, n, a_cols, a_col, limb),
             tmp,
@@ -291,13 +295,15 @@ pub(crate) fn idft_compact_in_place(
     tmp: &mut [u64],
 ) {
     let n = a.n();
+    check_degree::<NTT4x30Avx>(module.n(), n);
+    let table = module.get_intt_table_for(n);
     let cols = a.cols();
     let size = a.size();
     let data: &mut [u32] = cast_slice_mut(a.data_mut());
     for limb in 0..size {
         let slot = packed_limb_mut(data, n, cols, a_col, limb);
         unsafe { unpack_limb_q120(n, tmp, slot) };
-        NTT4x30Avx::ntt_dft_execute(module.get_intt_table(), tmp);
+        NTT4x30Avx::ntt_dft_execute(table, tmp);
         let dst = unsafe { std::slice::from_raw_parts_mut(slot.as_mut_ptr() as *mut i128, n) };
         NTT4x30Avx::ntt_to_znx128(dst, n, tmp);
     }
@@ -497,6 +503,11 @@ pub(crate) fn vec_znx_dft_automorphism(
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,
     a_col: usize,
 ) {
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
     let n = res.n();
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
@@ -523,6 +534,11 @@ pub(crate) fn vec_znx_dft_automorphism_add<E: TaskExecutor>(
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,
     a_col: usize,
 ) {
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
     let n = res.n();
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());

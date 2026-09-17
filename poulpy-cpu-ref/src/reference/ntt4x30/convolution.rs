@@ -15,7 +15,7 @@ use poulpy_hal::execution::TaskExecutor;
 use crate::{
     layouts::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataMut, HostDataRef,
-        VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
+        VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut, check_degree,
     },
     reference::{
         ntt4x30::{
@@ -354,7 +354,7 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n = res.n();
-    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
@@ -394,7 +394,7 @@ pub fn ntt4x30_cnv_apply_dft_add<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n = res.n();
-    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
@@ -481,7 +481,7 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
     use crate::reference::ntt4x30::mat_vec::{accum_mul_q120_bc, accum_to_q120b};
 
     let n = res.n();
-    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    check_degree::<BE>(module.n(), n);
     let res_size = res.size();
 
     #[allow(clippy::type_complexity)]
@@ -603,7 +603,7 @@ pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
     }
 
     let n = res.n();
-    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
@@ -659,9 +659,9 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_left");
     let n = res.n();
-    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let table = module.get_ntt_table();
+    let table = module.get_ntt_table_for(n);
     let cols = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     let res_size = res.size();
@@ -744,9 +744,9 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_right");
     let n = res.n();
-    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let table = module.get_ntt_table();
+    let table = module.get_ntt_table_for(n);
     let cols = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     let res_size = res.size();
@@ -825,12 +825,7 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_self");
     let n = left.n();
-    assert_eq!(
-        n,
-        module.n(),
-        "ntt4x30_cnv_prepare_self: left.n():{n} != module.n():{}",
-        module.n()
-    );
+    check_degree::<BE>(module.n(), n);
     assert_eq!(a.n(), n, "ntt4x30_cnv_prepare_self: a.n():{} != left.n():{n}", a.n());
     assert_eq!(
         right.n(),
@@ -838,7 +833,7 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
         "ntt4x30_cnv_prepare_self: right.n():{} != left.n():{n}",
         right.n()
     );
-    let table = module.get_ntt_table();
+    let table = module.get_ntt_table_for(n);
     let cols = left.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());
     assert_eq!(right.cols(), cols, "right.cols():{} != left.cols():{cols}", right.cols());

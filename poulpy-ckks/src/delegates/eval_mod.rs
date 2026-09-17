@@ -95,7 +95,7 @@ where
         let compact_work = BE::bytes_of_vec_znx(work.n().into(), cols, work.max_size());
         // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
         // across the baby-step pairs that share it.
-        let hoisted_right = self.bytes_of_cnv_pvec_right(cols, work.max_size(), PrepareHint::Reuse);
+        let hoisted_right = self.bytes_of_cnv_pvec_right(self.n(), cols, work.max_size(), PrepareHint::Reuse);
         let bsgs_giant = self
             .ckks_mul_tmp_bytes(&work, &work, &work, tsk)
             .max(self.ckks_add_tmp_bytes(work.max_size()))

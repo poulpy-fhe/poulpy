@@ -41,12 +41,12 @@ fn main() {
     let mut source: Source = Source::new(seed);
 
     // s <- Z_{-1, 0, 1}[X]/(X^{N}+1)
-    let mut s: ScalarZnx<Vec<u8>, i64> = module.scalar_znx_alloc(1);
+    let mut s: ScalarZnx<Vec<u8>, i64> = module.scalar_znx_alloc(module.n(), 1);
     // Sampled on the host; `poulpy_core::GLWESecretSampling` uploads secrets to a backend the same way.
     s.fill_ternary_prob(0, 0.5, &mut source);
 
     // Buffer to store s in the DFT domain
-    let mut s_dft = module.svp_ppol_alloc(s.cols(), PrepareHint::Reuse);
+    let mut s_dft = module.svp_ppol_alloc(module.n(), s.cols(), PrepareHint::Reuse);
 
     // s_dft <- DFT(s)
     module.svp_prepare(
@@ -58,6 +58,7 @@ fn main() {
 
     // Allocates a VecZnx with two columns: ct=(0, 0)
     let mut ct: VecZnx<Vec<u8>, i64> = module.vec_znx_alloc(
+        module.n(),
         2,       // Number of columns
         ct_size, // Number of small poly per column
     );
@@ -71,7 +72,7 @@ fn main() {
         &mut source,
     );
 
-    let mut buf_dft: VecZnxDftOwned<BackendImpl> = module.vec_znx_dft_alloc(1, ct_size);
+    let mut buf_dft: VecZnxDftOwned<BackendImpl> = module.vec_znx_dft_alloc(module.n(), 1, ct_size);
 
     let ct_backend = <VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct);
     module.vec_znx_dft_apply(1, 0, &mut buf_dft.to_backend_mut(), 0, &ct_backend, 1);
@@ -87,11 +88,12 @@ fn main() {
     // Alias scratch space (VecZnxDft<B> is always at least as big as VecZnxBig<B>)
 
     // BIG(ct[1] * s) <- IDFT(DFT(ct[1] * s)) (not normalized)
-    let mut buf_big: VecZnxBigOwned<BackendImpl> = module.vec_znx_big_alloc(1, ct_size);
+    let mut buf_big: VecZnxBigOwned<BackendImpl> = module.vec_znx_big_alloc(module.n(), 1, ct_size);
     module.vec_znx_idft_apply_tmpa(&mut buf_big.to_backend_mut(), 0, &mut buf_dft.to_backend_mut(), 0);
 
     // Creates a plaintext: VecZnx with 1 column
     let mut m = module.vec_znx_alloc(
+        module.n(),
         1,        // Number of columns
         msg_size, // Number of small polynomials
     );
@@ -165,7 +167,7 @@ fn main() {
     );
 
     // m + e <- BIG(ct[1] * s + ct[0])
-    let mut res = module.vec_znx_alloc(1, ct_size);
+    let mut res = module.vec_znx_alloc(module.n(), 1, ct_size);
     module.vec_znx_big_normalize(
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut res),
         base2k,

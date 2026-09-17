@@ -101,14 +101,6 @@ where
     fn get_ifft_table_for(&self, n: usize) -> &ReimIFFTTable<F> {
         self.get_fft_plan(n).ifft()
     }
-
-    fn get_fft_table(&self) -> &ReimFFTTable<F> {
-        self.get_fft_table_for(self.n())
-    }
-
-    fn get_ifft_table(&self) -> &ReimIFFTTable<F> {
-        self.get_ifft_table_for(self.n())
-    }
 }
 
 /// Implemented by FFT64 backend handle types that own precomputed FFT tables.

@@ -28,7 +28,7 @@ where
 
     let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(1, sweep.size, PrepareHint::Reuse);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(module.n(), 1, sweep.size, PrepareHint::Reuse);
 
     let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
@@ -55,7 +55,7 @@ where
 
     let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
 
-    let mut a_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(1, sweep.size, PrepareHint::Reuse);
+    let mut a_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(module.n(), 1, sweep.size, PrepareHint::Reuse);
 
     let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
@@ -84,7 +84,7 @@ where
 
     let a_prep: CnvPVecLOwned<BE> = random_backend_cnv_pvec_left::<BE>(module.n(), 1, sweep.size, &mut source);
     let b_prep: CnvPVecROwned<BE> = random_backend_cnv_pvec_right::<BE>(module.n(), 1, sweep.size, &mut source);
-    let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
+    let mut c_dft = module.vec_znx_dft_alloc(module.n(), 1, c_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -123,7 +123,7 @@ where
 
     let a_prep: CnvPVecLOwned<BE> = random_backend_cnv_pvec_left::<BE>(module.n(), 1, sweep.size, &mut source);
     let b_prep: CnvPVecROwned<BE> = random_backend_cnv_pvec_right::<BE>(module.n(), 1, sweep.size, &mut source);
-    let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
+    let mut c_dft = module.vec_znx_dft_alloc(module.n(), 1, c_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -176,7 +176,7 @@ where
 
     let a_prep: CnvPVecLOwned<BE> = random_backend_cnv_pvec_left::<BE>(module.n(), cols, sweep.size, &mut source);
     let b_prep: CnvPVecROwned<BE> = random_backend_cnv_pvec_right::<BE>(module.n(), cols, sweep.size, &mut source);
-    let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
+    let mut c_dft = module.vec_znx_dft_alloc(module.n(), 1, c_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -216,7 +216,7 @@ where
 
     let a = random_host_vec_znx(module.n(), cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
-    let mut c_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, c_size);
+    let mut c_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, c_size);
 
     let b = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let b = upload_host_vec_znx::<BE>(&b);
@@ -258,7 +258,7 @@ where
 
     let a = random_host_vec_znx(module.n(), cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
-    let mut c_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, c_size);
+    let mut c_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(module.n(), 1, c_size);
 
     let b = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let b = upload_host_vec_znx::<BE>(&b);
@@ -297,8 +297,8 @@ where
 
     let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
 
-    let mut left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(1, sweep.size, PrepareHint::Reuse);
-    let mut right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(1, sweep.size, PrepareHint::Reuse);
+    let mut left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(module.n(), 1, sweep.size, PrepareHint::Reuse);
+    let mut right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(module.n(), 1, sweep.size, PrepareHint::Reuse);
 
     let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);

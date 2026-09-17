@@ -523,10 +523,10 @@ where
     let a_size: usize = res_infos.k().as_usize().div_ceil(tsk_base2k);
     let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, res_infos, tsk_infos);
 
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(cols - 1, a_size) + BE::bytes_of_vec_znx(module.n(), 1, a_size);
-    let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(cols, output_size);
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), cols - 1, a_size) + BE::bytes_of_vec_znx(module.n(), 1, a_size);
+    let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(module.n(), cols, output_size);
     let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, tsk_infos);
-    let lvl_1_big: usize = module.bytes_of_vec_znx_big(cols, output_size)
+    let lvl_1_big: usize = module.bytes_of_vec_znx_big(module.n(), cols, output_size)
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
@@ -574,7 +574,7 @@ pub fn ggsw_expand_row_default<BE, M, R>(
 
     let res_conv_size: usize = res_backend.k().as_usize().div_ceil(tsk_base2k);
     {
-        let (mut a_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols - 1, res_conv_size);
+        let (mut a_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols - 1, res_conv_size);
         let (mut a_0, mut scratch_2) = scratch_1.take_vec_znx_scratch(module.n(), 1, res_conv_size);
 
         for row in 0..res_backend.dnum().as_usize() {
@@ -653,13 +653,13 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
 
     for col in 1..cols {
         let scratch_row = scratch.borrow();
-        let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(module, cols, output_size);
+        let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(module.n(), cols, output_size);
         {
             let mut scratch_prod = scratch_1.borrow();
             module.gglwe_product_dft_default(&mut res_dft, a_dft, tsk.at(col - 1), 1, &mut scratch_prod);
         }
 
-        let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module, cols, res_dft.size());
+        let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module.n(), cols, res_dft.size());
         let res_dft_ref = res_dft.to_backend_ref();
         for j in 0..cols {
             scratch_2 = scratch_2.apply_mut(|scratch| module.vec_znx_idft_apply(&mut res_big, j, &res_dft_ref, j, scratch));

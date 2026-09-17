@@ -203,7 +203,7 @@ where
             )
         };
 
-        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, pt_in.size());
+        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, pt_in.size());
         bivariate_convolution_naive::<_, BE>(
             module,
             in_base2k,
@@ -508,7 +508,8 @@ where
         pt_b.data_mut().fill_uniform(17, &mut source_xa);
         pt_a.data_mut().fill_uniform(17, &mut source_xa);
 
-        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, pt_a.size() + pt_b.size());
+        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> =
+            module.vec_znx_alloc(module.n(), 1, pt_a.size() + pt_b.size());
         bivariate_convolution_naive(
             module,
             in_base2k,
@@ -645,7 +646,8 @@ where
             pt_b.data_mut().at_mut(0, j)[b_coeff] = ((r << (64 - 17)) as i64) >> (64 - 17);
         }
 
-        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, pt_a.size() + pt_b.size());
+        let mut pt_want_base2k_in: VecZnx<BE::OwnedBuf, BE::ZnxWord> =
+            module.vec_znx_alloc(module.n(), 1, pt_a.size() + pt_b.size());
         bivariate_convolution_naive(
             module,
             in_base2k,

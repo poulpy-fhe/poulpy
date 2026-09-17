@@ -18,7 +18,7 @@ use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, DataView, DataViewMut, Module,
-    VecZnxBackendRef, VecZnxDftBackendMut, ZnxView,
+    VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, check_degree,
 };
 
 use super::{
@@ -822,6 +822,7 @@ pub(crate) unsafe fn cnv_tensor_rank1_dft_ifma<E: TaskExecutor>(
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_apply_dft_ifma<E: TaskExecutor>(
+    module: &Module<NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -832,6 +833,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<E: TaskExecutor>(
     tmp: &mut [u8],
 ) {
     let n = res.n();
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
@@ -861,6 +863,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<E: TaskExecutor>(
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_apply_dft_add_ifma<E: TaskExecutor>(
+    module: &Module<NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -871,6 +874,7 @@ pub(crate) unsafe fn cnv_apply_dft_add_ifma<E: TaskExecutor>(
     tmp: &mut [u8],
 ) {
     let n = res.n();
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
@@ -1072,6 +1076,7 @@ unsafe fn conv_accumulate_terms_group(
 
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_apply_dft_sum_ifma<'a, E: TaskExecutor>(
+    module: &Module<NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -1079,6 +1084,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<'a, E: TaskExecutor>(
     tmp: &mut [u8],
 ) {
     let n = res.n();
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     let res_size = res.size();
     let n_groups = n / 8;
     let mut max_size = 0;
@@ -1224,6 +1230,7 @@ pub(crate) unsafe fn cnv_apply_dft_sum_ifma<'a, E: TaskExecutor>(
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<E: TaskExecutor>(
+    module: &Module<NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -1234,11 +1241,12 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<E: TaskExecutor>(
     tmp: &mut [u8],
 ) {
     if col_0 == col_1 {
-        unsafe { cnv_apply_dft_ifma::<E>(res, cnv_offset, res_col, a, col_0, b, col_1, tmp) };
+        unsafe { cnv_apply_dft_ifma::<E>(module, res, cnv_offset, res_col, a, col_0, b, col_1, tmp) };
         return;
     }
 
     let n = res.n();
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
@@ -1323,9 +1331,9 @@ pub(crate) fn cnv_prepare_left<E: TaskExecutor>(
 ) {
     poulpy_hal::layouts::assert_dense(a, "cnv_prepare_left");
     let n = res.n();
-    assert_eq!(n, module.n(), "cnv_prepare_left: res.n():{n} != module.n():{}", module.n());
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let table = &handle(module).table_ntt;
+    let table = handle(module).table_ntt_for(n);
     let cols = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     let res_size = res.size();
@@ -1387,9 +1395,9 @@ pub(crate) fn cnv_prepare_right<E: TaskExecutor>(
 ) {
     poulpy_hal::layouts::assert_dense(a, "cnv_prepare_right");
     let n = res.n();
-    assert_eq!(n, module.n(), "cnv_prepare_right: res.n():{n} != module.n():{}", module.n());
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
-    let table = &handle(module).table_ntt;
+    let table = handle(module).table_ntt_for(n);
     let cols = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
     let res_size = res.size();
@@ -1449,10 +1457,10 @@ pub(crate) fn cnv_prepare_self<E: TaskExecutor>(
 ) {
     poulpy_hal::layouts::assert_dense(a, "cnv_prepare_self");
     let n = left.n();
-    assert_eq!(n, module.n(), "cnv_prepare_self: left.n():{n} != module.n():{}", module.n());
+    check_degree::<NTT3x42Ifma>(module.n(), n);
     assert_eq!(a.n(), n, "cnv_prepare_self: a.n():{} != left.n():{n}", a.n());
     assert_eq!(right.n(), n, "cnv_prepare_self: right.n():{} != left.n():{n}", right.n());
-    let table = &handle(module).table_ntt;
+    let table = handle(module).table_ntt_for(n);
     let cols = left.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());
     assert_eq!(right.cols(), cols, "right.cols():{} != left.cols():{cols}", right.cols());

@@ -276,7 +276,7 @@ where
 
         let mut a_ij_dft = VecZnxDftOwned::<BE>::alloc(self.n(), 1, 1);
         let a_prepared_backend_ref = a_prepared.data.reborrow_backend_ref();
-        let mut a_ij_big_backend = self.vec_znx_big_alloc(1, 1);
+        let mut a_ij_big_backend = self.vec_znx_big_alloc(self.n(), 1, 1);
         let mut norm_scratch = ScratchOwned {
             data: BE::alloc_bytes(self.vec_znx_big_normalize_tmp_bytes()),
             _phantom: std::marker::PhantomData,

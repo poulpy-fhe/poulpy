@@ -251,7 +251,7 @@ where
         "vec_znx_automorphism accepted a windowed view instead of panicking"
     );
 
-    let mut dft = module.vec_znx_dft_alloc(cols, size);
+    let mut dft = module.vec_znx_dft_alloc(params.n, cols, size);
     let dft_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.vec_znx_dft_apply(
             1,
@@ -268,7 +268,7 @@ where
         "vec_znx_dft_apply accepted a windowed view instead of panicking"
     );
 
-    let mut prep = module.cnv_pvec_left_alloc(cols, size, PrepareHint::Reuse);
+    let mut prep = module.cnv_pvec_left_alloc(params.n, cols, size, PrepareHint::Reuse);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_left_tmp_bytes(size, size));
     let cnv_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         module.cnv_prepare_left(

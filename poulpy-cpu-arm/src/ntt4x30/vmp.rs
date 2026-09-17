@@ -15,7 +15,7 @@ use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{
         DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
-        ZnxView, ZnxViewMut,
+        ZnxView, ZnxViewMut, check_degree,
     },
 };
 
@@ -52,6 +52,7 @@ pub(crate) fn vmp_prepare_neon_pm(
     tmp: &mut [u64],
 ) {
     let n = res.n();
+    check_degree::<NTT4x30Neon>(module.n(), n);
 
     assert_eq!(a.n(), n);
     assert_eq!(res.cols_in(), a.cols_in());
@@ -70,6 +71,7 @@ pub(crate) fn vmp_prepare_neon_pm(
 
     let (tmp_b, tmp_c_u64) = tmp.split_at_mut(4 * n);
     let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
+    let table = module.get_ntt_table_for(n);
 
     let mat_i64: &[i64] = a.raw();
     let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
@@ -79,7 +81,7 @@ pub(crate) fn vmp_prepare_neon_pm(
             let pos = n * (row_i * ncols + col_i);
 
             NTT4x30Neon::ntt_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
-            NTT4x30Neon::ntt_dft_execute(module.get_ntt_table(), tmp_b);
+            NTT4x30Neon::ntt_dft_execute(table, tmp_b);
             NTT4x30Neon::ntt_c_from_b(n, tmp_c, tmp_b);
             let tmp_c_u64: &[u64] = cast_slice(tmp_c);
 

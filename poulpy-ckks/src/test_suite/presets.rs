@@ -6,7 +6,6 @@
 //! precision pin test ([`bootstrapping_presets_meet_precision`]) both drive it,
 //! so there is a single description of how a preset is exercised.
 
-use anyhow::Result;
 use poulpy_core::{
     EncryptionLayout,
     layouts::{
@@ -36,18 +35,6 @@ use crate::{
 
 /// Plaintext budget bits (above `log_delta`) used to measure the output precision.
 pub const PRECISION_LOG_BUDGET: usize = 8;
-
-/// The digit shape a backend runs a preset at: the preset's nominal shape for
-/// exact (NTT) backends, and `base2k = 19` with 7-limb digits for approximate
-/// FFT64 backends, whose products cannot carry the nominal radix. Their
-/// dense-to-sparse keys use 1-limb digits to stay within the sparse modulus bound.
-pub fn preset_for_backend<BE: Backend>(preset: &BootstrappingPreset) -> Result<BootstrappingPreset> {
-    if BE::DFT_IS_EXACT {
-        Ok(preset.clone())
-    } else {
-        preset.with_base2k(19)?.with_dsizes(7, 1)
-    }
-}
 
 /// A preset set up end to end and ready to bootstrap repeatedly.
 pub struct BootstrappingPresetRun<BE: Backend> {
@@ -230,10 +217,9 @@ where
 /// Runs every preset once on `BE` and checks the measured output precision
 /// against the precision the preset advertises.
 ///
-/// The advertised precision is pinned at the nominal shape with `f64` DFT
-/// matrices, so the assertion applies to exact (NTT) backends only; approximate
-/// FFT64 backends run at a reduced radix and only report their measurement.
-/// Full logN16 bootstraps are slow, so backends register this as an ignored test.
+/// Every backend runs the preset at its nominal shape with `f64` DFT matrices
+/// and must reach the advertised precision. Full logN16 bootstraps are slow,
+/// so backends register this as an ignored test.
 pub fn bootstrapping_presets_meet_precision<BE>()
 where
     BE: TestContextBackend,
@@ -248,7 +234,6 @@ where
 {
     let backend = std::any::type_name::<BE>().rsplit("::").next().unwrap();
     for preset in all().unwrap() {
-        let preset = preset_for_backend::<BE>(&preset).unwrap();
         let mut run = BootstrappingPresetRun::<BE>::setup(preset);
         let (re, im) = run.precision();
         let preset = run.preset();
@@ -262,15 +247,13 @@ where
             im.avg_log2_prec,
             preset.log2_precision(),
         );
-        if BE::DFT_IS_EXACT {
-            let advertised = preset.log2_precision() as f64;
-            assert!(
-                re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
-                "preset {} advertises {advertised} bits but measured re_min={:.2} im_min={:.2}",
-                preset.name(),
-                re.min_log2_prec,
-                im.min_log2_prec
-            );
-        }
+        let advertised = preset.log2_precision() as f64;
+        assert!(
+            re.min_log2_prec >= advertised && im.min_log2_prec >= advertised,
+            "preset {} advertises {advertised} bits but measured re_min={:.2} im_min={:.2}",
+            preset.name(),
+            re.min_log2_prec,
+            im.min_log2_prec
+        );
     }
 }
