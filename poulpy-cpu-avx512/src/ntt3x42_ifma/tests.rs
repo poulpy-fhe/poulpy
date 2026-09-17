@@ -394,28 +394,28 @@ mod ntt3x42_ifma_tests {
 #[test]
 fn test_convolution_by_const_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
-    test_convolution_by_const(&module, 12);
-    test_convolution_by_const_add(&module, 12);
+    test_convolution_by_const(&module, module.n(), 12);
+    test_convolution_by_const_add(&module, module.n(), 12);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn test_convolution_by_const_ntt3x42_ifma_rayon() {
     let module = Module::<crate::NTT3x42IfmaRayon>::new(8);
-    test_convolution_by_const(&module, 12);
-    test_convolution_by_const_add(&module, 12);
+    test_convolution_by_const(&module, module.n(), 12);
+    test_convolution_by_const_add(&module, module.n(), 12);
 }
 
 #[test]
 fn test_convolution_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
-    test_convolution(&module, 12);
+    test_convolution(&module, module.n(), 12);
 }
 
 #[test]
 fn test_convolution_pairwise_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
-    test_convolution_pairwise(&module, 12);
+    test_convolution_pairwise(&module, module.n(), 12);
 }
 
 #[test]
@@ -457,20 +457,20 @@ fn test_glwe_keyswitch_noise_ntt3x42_ifma() {
 #[test]
 fn test_convolution_add_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
-    test_convolution_add(&module, 12);
+    test_convolution_add(&module, module.n(), 12);
 }
 
 #[test]
 fn test_convolution_sum_ntt3x42_ifma() {
     let module = Module::<NTT3x42Ifma>::new(1 << 8);
-    test_convolution_sum(&module, 12);
+    test_convolution_sum(&module, module.n(), 12);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn test_convolution_sum_ntt3x42_ifma_rayon() {
     let module = Module::<crate::NTT3x42IfmaRayon>::new(1 << 8);
-    test_convolution_sum(&module, 12);
+    test_convolution_sum(&module, module.n(), 12);
 }
 
 #[test]

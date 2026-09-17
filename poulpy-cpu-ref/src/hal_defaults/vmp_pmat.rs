@@ -32,7 +32,7 @@ use poulpy_hal::{
     execution::TaskExecutor,
     layouts::{
         Backend, HostDataMut, HostDataRef, MatZnxBackendRef, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
+        VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, check_degree,
     },
 };
 
@@ -96,9 +96,12 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = fft64_vmp_prepare_tmp_bytes(module.n());
+        let n: usize = res.n();
+        check_degree::<Self>(module.n(), n);
+        assert_eq!(a.n(), n, "vmp_prepare: a.n():{} != res.n():{n}", a.n());
+        let bytes = fft64_vmp_prepare_tmp_bytes(n);
         let (tmp, _) = take_host_typed::<Self, f64>(scratch.borrow(), bytes / size_of::<f64>());
-        fft64_vmp_prepare::<Self>(module.get_fft_table(), res, a, tmp);
+        fft64_vmp_prepare::<Self>(module.get_fft_table_for(n), res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes_default(
@@ -178,7 +181,7 @@ where
     {
         let cols_out = res.cols();
         let res_size = res.size();
-        let (mut tmp, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols_out, res_size);
+        let (mut tmp, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(res.n(), cols_out, res_size);
         for col in 0..cols_out {
             module.vec_znx_dft_zero(&mut tmp, col);
         }
@@ -255,7 +258,7 @@ where
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt4x30_vmp_prepare_tmp_bytes(module.n());
+        let bytes = ntt4x30_vmp_prepare_tmp_bytes(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         ntt4x30_vmp_prepare::<Self>(module, res, a, tmp);
     }

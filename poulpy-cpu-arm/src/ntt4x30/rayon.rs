@@ -978,6 +978,6 @@ mod tests {
 
     #[test]
     fn convolution_by_const() {
-        test_convolution_by_const(&Module::<NTT4x30NeonRayon>::new(1 << 8), 50);
+        test_convolution_by_const(&Module::<NTT4x30NeonRayon>::new(1 << 8), 1 << 8, 50);
     }
 }

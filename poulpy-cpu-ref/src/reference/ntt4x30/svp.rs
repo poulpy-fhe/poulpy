@@ -27,7 +27,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use crate::{
     layouts::{
         Backend, HostDataMut, HostDataRef, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, ZnxView, ZnxViewMut,
+        VecZnxDftBackendRef, ZnxView, ZnxViewMut, check_degree,
     },
     reference::ntt4x30::{
         NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc, NttZero, ntt::NttTable, primes::Primes30, types::Q120bScalar,
@@ -61,11 +61,13 @@ pub fn ntt4x30_svp_prepare<'r, 'a, BE>(
     BE::BufRef<'a>: HostDataRef,
 {
     let n = res.n();
+    check_degree::<BE>(module.n(), n);
+    assert_eq!(a.n(), n, "svp_prepare: a.n():{} != res.n():{n}", a.n());
 
     // Temporary q120b working buffer (heap-allocated; prepare is not hot).
     let mut tmp = vec![0u64; 4 * n];
     BE::ntt_from_znx64(&mut tmp, a.at(a_col, 0));
-    BE::ntt_dft_execute(module.get_ntt_table(), &mut tmp);
+    BE::ntt_dft_execute(module.get_ntt_table_for(n), &mut tmp);
 
     // Write q120c into the SvpPPol buffer.
     let res_u32: &mut [u32] = cast_slice_mut(res.at_mut(res_col, 0));

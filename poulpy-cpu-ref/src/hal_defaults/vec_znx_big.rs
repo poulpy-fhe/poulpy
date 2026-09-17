@@ -457,7 +457,7 @@ where
     }
 
     fn vec_znx_big_normalize_default<R, A>(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut R,
         res_base2k: usize,
         res_k: usize,
@@ -486,10 +486,9 @@ where
         R: VecZnxToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
-        let (carry, _) = take_host_typed::<Self, i64>(
-            scratch.borrow(),
-            fft64_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i64>(),
-        );
+        let n: usize = res.to_backend_mut().n();
+        let (carry, _) =
+            take_host_typed::<Self, i64>(scratch.borrow(), fft64_vec_znx_big_normalize_tmp_bytes(n) / size_of::<i64>());
         fft64_vec_znx_big_normalize::<_, _, Self>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
@@ -510,7 +509,7 @@ where
     }
 
     fn vec_znx_big_automorphism_assign_default<R>(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         k: i64,
         res: &mut R,
         res_col: usize,
@@ -520,9 +519,10 @@ where
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxBigToBackendMut<Self>,
     {
+        let n: usize = res.to_backend_mut().n();
         let (tmp, _) = take_host_typed::<Self, i64>(
             scratch.borrow(),
-            fft64_vec_znx_big_automorphism_assign_tmp_bytes(module.n()) / size_of::<i64>(),
+            fft64_vec_znx_big_automorphism_assign_tmp_bytes(n) / size_of::<i64>(),
         );
         fft64_vec_znx_big_automorphism_assign::<_, Self>(k, res, res_col, tmp);
     }
@@ -797,7 +797,7 @@ where
     }
 
     fn vec_znx_big_normalize_default<R, A>(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut R,
         res_base2k: usize,
         res_k: usize,
@@ -813,15 +813,16 @@ where
         R: VecZnxToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
+        let n: usize = res.to_backend_mut().n();
         let (carry, _) = take_host_typed::<Self, i128>(
             scratch.borrow(),
-            ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>(),
+            ntt4x30_vec_znx_big_normalize_tmp_bytes(n) / size_of::<i128>(),
         );
         ntt4x30_vec_znx_big_normalize::<_, _, Self>(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     fn vec_znx_big_normalize_add_assign_default<R, A>(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut R,
         res_base2k: usize,
         res_offset: i64,
@@ -836,15 +837,16 @@ where
         R: VecZnxToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
+        let n: usize = res.to_backend_mut().n();
         let (carry, _) = take_host_typed::<Self, i128>(
             scratch.borrow(),
-            ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>(),
+            ntt4x30_vec_znx_big_normalize_tmp_bytes(n) / size_of::<i128>(),
         );
         ntt4x30_vec_znx_big_normalize_add_assign::<_, _, Self>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     fn vec_znx_big_normalize_sub_assign_default<R, A>(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut R,
         res_base2k: usize,
         res_offset: i64,
@@ -859,9 +861,10 @@ where
         R: VecZnxToBackendMut<Self>,
         A: VecZnxBigToBackendRef<Self>,
     {
+        let n: usize = res.to_backend_mut().n();
         let (carry, _) = take_host_typed::<Self, i128>(
             scratch.borrow(),
-            ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>(),
+            ntt4x30_vec_znx_big_normalize_tmp_bytes(n) / size_of::<i128>(),
         );
         ntt4x30_vec_znx_big_normalize_sub_assign::<_, _, Self>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
@@ -883,7 +886,7 @@ where
     }
 
     fn vec_znx_big_automorphism_assign_default<R>(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         k: i64,
         res: &mut R,
         res_col: usize,
@@ -893,9 +896,10 @@ where
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxBigToBackendMut<Self>,
     {
+        let n: usize = res.to_backend_mut().n();
         let (tmp, _) = take_host_typed::<Self, i128>(
             scratch.borrow(),
-            ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(module.n()) / size_of::<i128>(),
+            ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(n) / size_of::<i128>(),
         );
         ntt4x30_vec_znx_big_automorphism_assign::<_, Self>(k, res, res_col, tmp);
     }

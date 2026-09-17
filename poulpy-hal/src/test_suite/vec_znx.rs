@@ -5,12 +5,12 @@ use super::{
 
 use crate::{
     api::{
-        ModuleNew, ScalarZnxAutomorphism, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign,
-        VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxFillUniformSource,
-        VecZnxLsh, VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign,
-        VecZnxMulXpMinusOneAssignTmpBytes, VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign,
-        VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAssign,
-        VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
+        ScalarZnxAutomorphism, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxAddScalarAssign, VecZnxAutomorphism,
+        VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxCopy, VecZnxFillUniformSource, VecZnxLsh,
+        VecZnxLshAssign, VecZnxLshTmpBytes, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign, VecZnxMulXpMinusOneAssignTmpBytes,
+        VecZnxNegate, VecZnxNegateAssign, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxRotate,
+        VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxRsh, VecZnxRshAssign, VecZnxRshTmpBytes, VecZnxSub,
+        VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing, VecZnxZero,
     },
     layouts::{DigestU64, FillUniform, HostBytesBackend, HostDataRef, Module, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
@@ -1335,6 +1335,12 @@ where
     let k = base2k * size;
     let zero: Vec<i64> = vec![0; n];
     let one_12_sqrt: f64 = 0.28867513459481287;
+    // The estimate averages the `n` coefficients of one column, so its standard
+    // error is `sigma * sqrt(1 / 5n)`; five of those give the historical 0.01 at
+    // n = 4096. At a small degree the band is loose, at n = 8 it is wider than the
+    // 0.5 a sample standard deviation can reach at all, so the small-degree leg of
+    // the sweep is a smoke test and the tight check is the full-degree leg.
+    let std_tol: f64 = 5.0 * one_12_sqrt * (0.2 / n as f64).sqrt();
     (0..cols).for_each(|col_i| {
         let host_init = VecZnx::alloc(params.n, cols, size);
         let mut a = upload_vec_znx::<B>(&host_init);
@@ -1347,7 +1353,10 @@ where
                 })
             } else {
                 let std: f64 = a.stats(base2k, col_i).std();
-                assert!((std - one_12_sqrt).abs() < 0.01, "std={std} ~!= {one_12_sqrt}",);
+                assert!(
+                    (std - one_12_sqrt).abs() < std_tol,
+                    "std={std} ~!= {one_12_sqrt} (tolerance {std_tol})",
+                );
             }
         })
     });
@@ -1839,7 +1848,7 @@ pub fn test_vec_znx_switch_ring<BR: crate::test_suite::TestBackend, BT: crate::t
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxSwitchRing<BR> + ModuleNew<BR>,
+    Module<BR>: VecZnxSwitchRing<BR>,
     Module<BT>: VecZnxSwitchRing<BT>,
 {
     let base2k = params.base2k;
@@ -1932,7 +1941,6 @@ pub fn test_vec_znx_switch_ring_matches_wrapper<BR: crate::test_suite::TestBacke
     _module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: ModuleNew<BR>,
     Module<BT>: VecZnxSwitchRing<BT>,
 {
     let base2k = params.base2k;

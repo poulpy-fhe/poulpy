@@ -1,6 +1,11 @@
-//! The derived composites at `n = 4`, where a one-limb temporary is 32 bytes
-//! and the arena realigns the nested take to 64. The `_tmp_bytes` formulas
-//! must round their temporaries, or the scratch they advertise is short.
+//! The derived composites at the backend floor, `n = 8`: each one must run
+//! inside the scratch its `_tmp_bytes` advertises, at the smallest degree the
+//! reference backends serve.
+//!
+//! At `n = 8` every limb is already a multiple of the 64-byte scratch
+//! alignment, so the rounding of a temporary shorter than one alignment unit
+//! is not probed here; it needs a degree below the floor or a backend whose
+//! alignment exceeds a limb.
 
 use poulpy_hal::{
     layouts::Module,
@@ -18,9 +23,9 @@ use poulpy_hal::{
 use crate::{FFT64Ref, NTT4x30Ref};
 
 const PARAMS: TestParams = TestParams {
-    size: 4,
+    size: 8,
     base2k: 17,
-    n: 4,
+    n: 8,
 };
 
 fn run<BE>(module: &Module<BE>)
@@ -40,8 +45,7 @@ where
     test_cnv_by_const_apply_add_derived(&PARAMS, module);
 }
 
-/// The VMP composites. The FFT64 prepare kernel requires `n >= 8`, so only the
-/// NTT backend runs them at `n = 4`.
+/// The VMP composites.
 fn run_vmp<BE>(module: &Module<BE>)
 where
     BE: poulpy_hal::test_suite::TestBackend + poulpy_hal::oep::HalVmpImpl,
@@ -51,18 +55,19 @@ where
 }
 
 #[test]
-fn derived_scratch_fft64_ref_n4() {
-    let module = Module::<FFT64Ref>::new(4);
+fn derived_scratch_fft64_ref_n8() {
+    let module = Module::<FFT64Ref>::new(8);
     run(&module);
-    test_convolution_add(&module, 17);
-    test_convolution_by_const_add(&module, 17);
+    run_vmp(&module);
+    test_convolution_add(&module, 8, 17);
+    test_convolution_by_const_add(&module, 8, 17);
 }
 
 #[test]
-fn derived_scratch_ntt4x30_ref_n4() {
-    let module = Module::<NTT4x30Ref>::new(4);
+fn derived_scratch_ntt4x30_ref_n8() {
+    let module = Module::<NTT4x30Ref>::new(8);
     run(&module);
     run_vmp(&module);
-    test_convolution_add(&module, 17);
-    test_convolution_by_const_add(&module, 17);
+    test_convolution_add(&module, 8, 17);
+    test_convolution_by_const_add(&module, 8, 17);
 }

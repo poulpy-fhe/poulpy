@@ -27,7 +27,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use crate::{
     layouts::{
         Backend, HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, ZnxView, ZnxViewMut,
+        VecZnxDftBackendRef, ZnxView, ZnxViewMut, check_degree,
     },
     reference::{
         SendPtr,
@@ -252,10 +252,13 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_vec_znx_dft_apply");
     assert!(step >= 1, "ntt4x30_vec_znx_dft_apply: step must be >= 1");
+    let n = res.n();
+    check_degree::<BE>(module.n(), n);
+    assert_eq!(a.n(), n, "vec_znx_dft_apply: a.n():{} != res.n():{n}", a.n());
     let a_size = a.size();
     let res_size = res.size();
 
-    let table = module.get_ntt_table();
+    let table = module.get_ntt_table_for(n);
 
     let steps = a_size.div_ceil(step);
     let min_steps = res_size.min(steps);
@@ -312,10 +315,12 @@ pub fn ntt4x30_vec_znx_idft_apply<BE>(
 {
     poulpy_hal::layouts::assert_dense(res, "ntt4x30_vec_znx_idft_apply");
     let n = res.n();
+    check_degree::<BE>(module.n(), n);
+    assert_eq!(a.n(), n, "vec_znx_idft_apply: a.n():{} != res.n():{n}", a.n());
     let res_size = res.size();
     let min_size = res_size.min(a.size());
 
-    let table = module.get_intt_table();
+    let table = module.get_intt_table_for(n);
 
     for j in 0..min_size {
         let a_slice: &[u64] = limb_u64::<_, BE>(a, a_col, j);
@@ -346,10 +351,12 @@ pub fn ntt4x30_vec_znx_idft_apply_tmpa<BE>(
 {
     poulpy_hal::layouts::assert_dense(res, "ntt4x30_vec_znx_idft_apply_tmpa");
     let n = res.n();
+    check_degree::<BE>(module.n(), n);
+    assert_eq!(a.n(), n, "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{n}", a.n());
     let res_size = res.size();
     let min_size = res_size.min(a.size());
 
-    let table = module.get_intt_table();
+    let table = module.get_intt_table_for(n);
 
     for j in 0..min_size {
         BE::ntt_dft_execute(table, limb_u64_mut::<_, BE>(a, a_col, j));
@@ -375,16 +382,17 @@ where
     BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
-    let table = module.get_intt_table();
+    let n = a.n();
+    check_degree::<BE>(module.n(), n);
+    let table = module.get_intt_table_for(n);
 
-    let (n, n_blocks, u64_ptr) = {
-        let n = a.n();
+    let (n_blocks, u64_ptr) = {
         let n_blocks = a.cols() * a.size();
         let ptr: *mut u64 = {
             let s = a.raw_mut();
             cast_slice_mut::<_, u64>(s).as_mut_ptr()
         };
-        (n, n_blocks, ptr)
+        (n_blocks, ptr)
     };
 
     unsafe { compact_all_blocks_scalar(n, n_blocks, u64_ptr, table) };

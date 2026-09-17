@@ -29,7 +29,7 @@ where
 {
     let cols = a.cols();
     let size = a.size();
-    let mut res = module.vec_znx_big_alloc(module.n(), cols, size);
+    let mut res = module.vec_znx_big_alloc(a.n(), cols, size);
     for j in 0..cols {
         let mut res_backend = res.to_backend_mut();
         let mut a_backend = a.to_backend_mut();

@@ -50,7 +50,7 @@ where
     let cols = host.cols();
     let size = host.size();
     let uploaded = upload_vec_znx::<BE>(host);
-    let mut res = module.vec_znx_big_alloc(module.n(), cols, size);
+    let mut res = module.vec_znx_big_alloc(host.n(), cols, size);
     for j in 0..cols {
         module.vec_znx_big_from_small(&mut res.to_backend_mut(), j, &vec_znx_backend_ref::<BE>(&uploaded), j);
     }
@@ -108,7 +108,7 @@ where
 {
     let (a_base2k, res_base2k) = base2k;
     let shape = backend.shape();
-    let mut res_backend = module.vec_znx_alloc(module.n(), shape.cols(), res_size);
+    let mut res_backend = module.vec_znx_alloc(shape.n(), shape.cols(), res_size);
     for j in 0..shape.cols() {
         module.vec_znx_big_normalize(
             &mut <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut res_backend),

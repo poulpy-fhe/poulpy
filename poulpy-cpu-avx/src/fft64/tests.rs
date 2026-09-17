@@ -214,12 +214,12 @@ backend_test_suite! {
 #[test]
 fn test_convolution_direct() {
     let module = Module::<FFT64Avx>::new(1 << 8);
-    test_convolution(&module, 12);
-    test_convolution_by_const(&module, 12);
-    test_convolution_by_const_add(&module, 12);
-    test_convolution_pairwise(&module, 12);
-    test_convolution_add(&module, 12);
-    test_convolution_sum(&module, 12);
+    test_convolution(&module, module.n(), 12);
+    test_convolution_by_const(&module, module.n(), 12);
+    test_convolution_by_const_add(&module, module.n(), 12);
+    test_convolution_pairwise(&module, module.n(), 12);
+    test_convolution_add(&module, module.n(), 12);
+    test_convolution_sum(&module, module.n(), 12);
 }
 
 cross_backend_test_suite! {
@@ -249,5 +249,5 @@ cross_backend_test_suite! {
 #[test]
 fn test_convolution_by_const_add_rayon() {
     let module = Module::<crate::FFT64AvxRayon>::new(1 << 8);
-    test_convolution_by_const_add(&module, 12);
+    test_convolution_by_const_add(&module, module.n(), 12);
 }

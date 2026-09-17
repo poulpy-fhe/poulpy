@@ -29,7 +29,7 @@ where
 {
     let cols = a.cols();
     let size = a.size();
-    let mut res = module.vec_znx_big_alloc(module.n(), cols, size);
+    let mut res = module.vec_znx_big_alloc(a.n(), cols, size);
     for j in 0..cols {
         let mut res_backend = res.to_backend_mut();
         let mut a_backend = a.to_backend_mut();
@@ -51,7 +51,7 @@ where
     let cols = host.cols();
     let size = host.size();
     let backend = upload_vec_znx::<BE>(host);
-    let mut out = module.vec_znx_dft_alloc(module.n(), cols, size);
+    let mut out = module.vec_znx_dft_alloc(host.n(), cols, size);
     for j in 0..cols {
         module.vec_znx_dft_apply(
             steps,
@@ -76,7 +76,7 @@ where
     Module<BE>: VecZnxBigNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let mut backend = module.vec_znx_alloc(module.n(), big.cols(), big.size());
+    let mut backend = module.vec_znx_alloc(big.n(), big.cols(), big.size());
     for j in 0..big.cols() {
         module.vec_znx_big_normalize(
             &mut <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut backend),
@@ -120,7 +120,7 @@ where
     Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxBigNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let mut big = module.vec_znx_big_alloc(module.n(), dft.cols(), res_size);
+    let mut big = module.vec_znx_big_alloc(dft.n(), dft.cols(), res_size);
     for j in 0..dft.cols() {
         module.vec_znx_idft_apply(&mut big.to_backend_mut(), j, &dft.to_backend_ref(), j, &mut scratch.arena());
     }
@@ -686,6 +686,7 @@ pub fn test_vec_znx_dft_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
 /// [`test_vec_znx_dft_automorphism`] which exercises both backends.
 fn contract_check_one_backend<BE>(
     base2k: usize,
+    n: usize,
     module_host: &Module<HostBytesBackend>,
     module: &Module<BE>,
     scratch: &mut ScratchOwned<BE>,
@@ -706,14 +707,14 @@ fn contract_check_one_backend<BE>(
     let mut source = Source::new([0u8; 32]);
 
     for size in [1, 2, 3, 4] {
-        let mut a = module_host.vec_znx_alloc(module_host.n(), cols, size);
+        let mut a = module_host.vec_znx_alloc(n, cols, size);
         a.fill_uniform(base2k, &mut source);
 
         for &p in p_values {
             // Pipeline A: DFT → automorphism with plan → IDFT → normalize.
             let mut a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
-            let mut res_dft = module.vec_znx_dft_alloc(module.n(), cols, size);
-            let plan = module.vec_znx_dft_automorphism_plan(module.n(), p);
+            let mut res_dft = module.vec_znx_dft_alloc(n, cols, size);
+            let plan = module.vec_znx_dft_automorphism_plan(n, p);
             for j in 0..cols {
                 module.vec_znx_dft_automorphism_with_plan(&plan, &mut res_dft.to_backend_mut(), j, &a_dft.to_backend_ref(), j);
             }
@@ -723,7 +724,7 @@ fn contract_check_one_backend<BE>(
 
             // Pipeline B: coefficient-domain automorphism on the same backend.
             let a_backend = upload_vec_znx::<BE>(&a);
-            let res_coeff_backend_host = module_host.vec_znx_alloc(module_host.n(), cols, size);
+            let res_coeff_backend_host = module_host.vec_znx_alloc(n, cols, size);
             let mut res_coeff_backend = upload_vec_znx::<BE>(&res_coeff_backend_host);
             for j in 0..cols {
                 module.vec_znx_automorphism(
@@ -782,8 +783,8 @@ pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: cra
     // of the floating-point FFT plan and a range of orbits under odd-p multiplication.
     let p_values: &[i64] = &[1, 5, 9, 13, 3, 7, 11, 15, -1, -5];
 
-    contract_check_one_backend::<BR>(base2k, module_host, module_ref, &mut scratch_ref, cols, p_values);
-    contract_check_one_backend::<BT>(base2k, module_host, module_test, &mut scratch_test, cols, p_values);
+    contract_check_one_backend::<BR>(base2k, params.n, module_host, module_ref, &mut scratch_ref, cols, p_values);
+    contract_check_one_backend::<BT>(base2k, params.n, module_host, module_test, &mut scratch_test, cols, p_values);
 }
 
 /// Runs the fused-accumulation check `automorphism_add(res, a) ==
@@ -791,6 +792,7 @@ pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: cra
 /// wider than `a` (limbs beyond `a.size()` must stay untouched).
 fn automorphism_add_check_one_backend<BE>(
     base2k: usize,
+    n: usize,
     module_host: &Module<HostBytesBackend>,
     module: &Module<BE>,
     scratch: &mut ScratchOwned<BE>,
@@ -812,8 +814,8 @@ fn automorphism_add_check_one_backend<BE>(
     let mut source = Source::new([1u8; 32]);
 
     for (a_size, res_size) in [(1, 1), (3, 3), (3, 4), (4, 4)] {
-        let mut a = module_host.vec_znx_alloc(module_host.n(), cols, a_size);
-        let mut seed = module_host.vec_znx_alloc(module_host.n(), cols, res_size);
+        let mut a = module_host.vec_znx_alloc(n, cols, a_size);
+        let mut seed = module_host.vec_znx_alloc(n, cols, res_size);
         a.fill_uniform(base2k, &mut source);
         seed.fill_uniform(base2k, &mut source);
 
@@ -823,7 +825,7 @@ fn automorphism_add_check_one_backend<BE>(
             ScratchOwned::alloc(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(res_size, a_size));
 
         for &p in p_values {
-            let plan = module.vec_znx_dft_automorphism_plan(module.n(), p);
+            let plan = module.vec_znx_dft_automorphism_plan(n, p);
             let a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
 
             // Fused: res += automorphism(a) in one pass.
@@ -841,7 +843,7 @@ fn automorphism_add_check_one_backend<BE>(
 
             // Composition: automorphism into a temporary, then DFT-domain add.
             let mut res_want = dft_of_uploaded_vec_znx(module, &seed, 1, 0);
-            let mut rot = module.vec_znx_dft_alloc(module.n(), cols, a_size);
+            let mut rot = module.vec_znx_dft_alloc(n, cols, a_size);
             for j in 0..cols {
                 module.vec_znx_dft_automorphism_with_plan(&plan, &mut rot.to_backend_mut(), j, &a_dft.to_backend_ref(), j);
                 module.vec_znx_dft_add_assign(&mut res_want.to_backend_mut(), j, &rot.to_backend_ref(), j);
@@ -895,8 +897,8 @@ pub fn test_vec_znx_dft_automorphism_add<BR: crate::test_suite::TestBackend, BT:
 
     let p_values: &[i64] = &[1, 5, 3, 7, -1, -5];
 
-    automorphism_add_check_one_backend::<BR>(base2k, module_host, module_ref, &mut scratch_ref, cols, p_values);
-    automorphism_add_check_one_backend::<BT>(base2k, module_host, module_test, &mut scratch_test, cols, p_values);
+    automorphism_add_check_one_backend::<BR>(base2k, params.n, module_host, module_ref, &mut scratch_ref, cols, p_values);
+    automorphism_add_check_one_backend::<BT>(base2k, params.n, module_host, module_test, &mut scratch_test, cols, p_values);
 }
 
 /// Runs the fused check `idft_normalize_consume(res, a, addend) ==
@@ -904,6 +906,7 @@ pub fn test_vec_znx_dft_automorphism_add<BR: crate::test_suite::TestBackend, BT:
 /// combinations and both addend arms.
 fn idft_normalize_consume_check_one_backend<BE>(
     base2k: usize,
+    n: usize,
     module_host: &Module<HostBytesBackend>,
     module: &Module<BE>,
     cols: usize,
@@ -926,8 +929,8 @@ fn idft_normalize_consume_check_one_backend<BE>(
     for (a_size, res_size) in [(1, 1), (4, 4), (4, 3), (3, 4)] {
         for res_base2k in [base2k, base2k - 2] {
             for with_addend in [false, true] {
-                let mut a = module_host.vec_znx_alloc(module_host.n(), cols, a_size);
-                let mut addend = module_host.vec_znx_alloc(module_host.n(), 1, a_size);
+                let mut a = module_host.vec_znx_alloc(n, cols, a_size);
+                let mut addend = module_host.vec_znx_alloc(n, 1, a_size);
                 a.fill_uniform(base2k, &mut source);
                 addend.fill_uniform(base2k, &mut source);
                 let addend_backend = upload_vec_znx::<BE>(&addend);
@@ -943,7 +946,7 @@ fn idft_normalize_consume_check_one_backend<BE>(
                 for col in 0..cols {
                     // Fused: res = normalize(idft(a) + addend), clobbering a.
                     let mut a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
-                    let res_host_template = VecZnx::alloc(module.n(), 1, res_size);
+                    let res_host_template = VecZnx::alloc(n, 1, res_size);
                     let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
                     module.vec_znx_idft_normalize_consume(
                         &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
@@ -960,7 +963,7 @@ fn idft_normalize_consume_check_one_backend<BE>(
 
                     // Composition: idft into BIG, small add, normalize.
                     let a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
-                    let mut big = module.vec_znx_big_alloc(module.n(), 1, a_size);
+                    let mut big = module.vec_znx_big_alloc(n, 1, a_size);
                     module.vec_znx_idft_apply(
                         &mut big.to_backend_mut(),
                         0,
@@ -1032,8 +1035,8 @@ pub fn test_vec_znx_idft_normalize_consume<BR: crate::test_suite::TestBackend, B
     assert_eq!(module_ref.n(), module_test.n());
     let cols = 2;
 
-    idft_normalize_consume_check_one_backend::<BR>(base2k, module_host, module_ref, cols);
-    idft_normalize_consume_check_one_backend::<BT>(base2k, module_host, module_test, cols);
+    idft_normalize_consume_check_one_backend::<BR>(base2k, params.n, module_host, module_ref, cols);
+    idft_normalize_consume_check_one_backend::<BT>(base2k, params.n, module_host, module_test, cols);
 }
 
 /// Pins the limb selection of `vec_znx_dft_apply`: limb `j` of the result is

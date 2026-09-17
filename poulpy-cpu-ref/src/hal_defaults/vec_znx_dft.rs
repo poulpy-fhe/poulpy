@@ -45,7 +45,7 @@ use poulpy_hal::{
     api::HostBufMut,
     layouts::{
         Backend, HostDataMut, HostDataRef, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
-        VecZnxDftBackendRef,
+        VecZnxDftBackendRef, check_degree,
     },
 };
 
@@ -96,7 +96,9 @@ where
         Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     {
-        fft64_vec_znx_dft_apply::<Self>(module.get_fft_table(), step, offset, res, res_col, a, a_col);
+        let n: usize = res.n();
+        check_degree::<Self>(module.n(), n);
+        fft64_vec_znx_dft_apply::<Self>(module.get_fft_table_for(n), step, offset, res, res_col, a, a_col);
     }
 
     fn vec_znx_idft_apply_tmp_bytes_default(_module: &Module<Self>) -> usize
@@ -121,7 +123,9 @@ where
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
         let _ = scratch;
-        fft64_vec_znx_idft_apply::<Self>(module.get_ifft_table(), res, res_col, a, a_col);
+        let n: usize = res.n();
+        check_degree::<Self>(module.n(), n);
+        fft64_vec_znx_idft_apply::<Self>(module.get_ifft_table_for(n), res, res_col, a, a_col);
     }
 
     fn vec_znx_idft_apply_tmpa_default(
@@ -136,7 +140,9 @@ where
             Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
     {
-        fft64_vec_znx_idft_apply_tmpa::<Self>(module.get_ifft_table(), res, res_col, a, a_col);
+        let n: usize = res.n();
+        check_degree::<Self>(module.n(), n);
+        fft64_vec_znx_idft_apply_tmpa::<Self>(module.get_ifft_table_for(n), res, res_col, a, a_col);
     }
     fn vec_znx_dft_add_default(
         _module: &Module<Self>,
@@ -334,7 +340,7 @@ where
     {
         let (tmp, _) = take_host_typed::<Self, u64>(
             scratch.borrow(),
-            ntt4x30_default_vec_znx_idft_apply_tmp_bytes(module.n()) / size_of::<u64>(),
+            ntt4x30_default_vec_znx_idft_apply_tmp_bytes(res.n()) / size_of::<u64>(),
         );
         ntt4x30_default_vec_znx_idft_apply::<Self>(module, res, res_col, a, a_col, tmp);
     }

@@ -261,10 +261,10 @@ cross_backend_test_suite! {
 #[test]
 fn test_convolution_direct() {
     let module = Module::<NTT4x30Neon>::new(1 << 8);
-    test_convolution(&module, 50);
-    test_convolution_by_const(&module, 50);
-    test_convolution_by_const_add(&module, 50);
-    test_convolution_pairwise(&module, 50);
+    test_convolution(&module, module.n(), 50);
+    test_convolution_by_const(&module, module.n(), 50);
+    test_convolution_by_const_add(&module, module.n(), 50);
+    test_convolution_pairwise(&module, module.n(), 50);
 }
 
 cross_backend_test_suite! {
@@ -297,5 +297,5 @@ cross_backend_test_suite! {
 #[test]
 fn test_convolution_by_const_add_rayon() {
     let module = Module::<crate::NTT4x30NeonRayon>::new(1 << 8);
-    test_convolution_by_const_add(&module, 50);
+    test_convolution_by_const_add(&module, module.n(), 50);
 }

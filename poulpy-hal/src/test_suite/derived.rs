@@ -2152,7 +2152,8 @@ where
     let res_size: usize = a_size + b_size;
 
     let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
-    let (a_prep, b_prep, mut scratch) = prepare_convolution_operands::<BE>(module, &module_host, cols, a_size, b_size, 17);
+    let (a_prep, b_prep, mut scratch) =
+        prepare_convolution_operands::<BE>(module, &module_host, params.n, cols, a_size, b_size, 17);
 
     let mut res_oracle = module.vec_znx_dft_alloc(params.n, cols, res_size);
     let mut res_derived = module.vec_znx_dft_alloc(params.n, cols, res_size);
@@ -2218,18 +2219,9 @@ where
                 &mut scratch.borrow(),
             );
 
-            let want = normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
-            let have_derived = normalize_dft_column::<BE>(
-                module,
-                &module_host,
-                base2k,
-                &mut big,
-                &mut res_derived,
-                res_col,
-                &mut scratch,
-            );
-            let have_module =
-                normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_module, res_col, &mut scratch);
+            let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
+            let have_derived = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_derived, res_col, &mut scratch);
+            let have_module = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_module, res_col, &mut scratch);
             assert_eq!(
                 want, have_derived,
                 "cnv_apply_dft_add: derived decomposition != two-step oracle (res_col {res_col} cnv_offset {cnv_offset})"
@@ -2274,7 +2266,8 @@ where
     let res_col: usize = 1;
 
     let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
-    let (a_prep, b_prep, mut scratch) = prepare_convolution_operands::<BE>(module, &module_host, cols, a_size, b_size, 17);
+    let (a_prep, b_prep, mut scratch) =
+        prepare_convolution_operands::<BE>(module, &module_host, params.n, cols, a_size, b_size, 17);
 
     let mut res_oracle = module.vec_znx_dft_alloc(params.n, 2, res_size);
     let mut res_derived = module.vec_znx_dft_alloc(params.n, 2, res_size);
@@ -2350,18 +2343,9 @@ where
                 &mut module_scratch.borrow(),
             );
 
-            let want = normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
-            let have_derived = normalize_dft_column::<BE>(
-                module,
-                &module_host,
-                base2k,
-                &mut big,
-                &mut res_derived,
-                res_col,
-                &mut scratch,
-            );
-            let have_module =
-                normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_module, res_col, &mut scratch);
+            let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
+            let have_derived = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_derived, res_col, &mut scratch);
+            let have_module = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_module, res_col, &mut scratch);
             assert_eq!(
                 want, have_derived,
                 "cnv_apply_dft_sum: derived decomposition != per-term oracle (n_terms {n_terms} cnv_offset {cnv_offset})"
@@ -2398,7 +2382,8 @@ where
     let res_col: usize = 1;
 
     let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(params.n as u64);
-    let (a_prep, b_prep, mut scratch) = prepare_convolution_operands::<BE>(module, &module_host, cols, a_size, b_size, 17);
+    let (a_prep, b_prep, mut scratch) =
+        prepare_convolution_operands::<BE>(module, &module_host, params.n, cols, a_size, b_size, 17);
 
     let mut res_oracle = module.vec_znx_dft_alloc(params.n, 2, res_size);
     let mut res_derived = module.vec_znx_dft_alloc(params.n, 2, res_size);
@@ -2459,18 +2444,9 @@ where
                 &mut scratch.borrow(),
             );
 
-            let want = normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
-            let have_derived = normalize_dft_column::<BE>(
-                module,
-                &module_host,
-                base2k,
-                &mut big,
-                &mut res_derived,
-                res_col,
-                &mut scratch,
-            );
-            let have_module =
-                normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_module, res_col, &mut scratch);
+            let want = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_oracle, res_col, &mut scratch);
+            let have_derived = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_derived, res_col, &mut scratch);
+            let have_module = normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_module, res_col, &mut scratch);
             assert_eq!(
                 want, have_derived,
                 "cnv_pairwise_apply_dft: derived decomposition != expanded oracle (i {i} j {j} cnv_offset {cnv_offset})"
@@ -2567,7 +2543,7 @@ where
                 col,
                 &mut scratch.borrow(),
             );
-            normalize_dft_column::<BE>(module, &module_host, base2k, &mut big, &mut res_dft, res_col, scratch)
+            normalize_dft_column::<BE>(module, base2k, &mut big, &mut res_dft, res_col, scratch)
         };
 
     for col in 0..cols {
@@ -2726,6 +2702,7 @@ where
 fn prepare_convolution_operands<BE: TestBackend + HalConvolutionImpl>(
     module: &Module<BE>,
     module_host: &Module<HostBytesBackend>,
+    n: usize,
     cols: usize,
     a_size: usize,
     b_size: usize,
@@ -2738,8 +2715,8 @@ where
     let res_size: usize = a_size + b_size;
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut a = module_host.vec_znx_alloc(module_host.n(), cols, a_size);
-    let mut b = module_host.vec_znx_alloc(module_host.n(), cols, b_size);
+    let mut a = module_host.vec_znx_alloc(n, cols, a_size);
+    let mut b = module_host.vec_znx_alloc(n, cols, b_size);
     a.fill_uniform(fill_base2k, &mut source);
     b.fill_uniform(fill_base2k, &mut source);
     let a_backend = upload_vec_znx::<BE>(&a);
@@ -2755,8 +2732,8 @@ where
             .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
 
-    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(module.n(), cols, a_size, PrepareHint::Reuse);
-    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(module.n(), cols, b_size, PrepareHint::Reuse);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(n, cols, a_size, PrepareHint::Reuse);
+    let mut b_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(n, cols, b_size, PrepareHint::Reuse);
     module.cnv_prepare_left(
         &mut a_prep.to_backend_mut(),
         &vec_znx_backend_ref::<BE>(&a_backend),
@@ -2775,7 +2752,6 @@ where
 /// `base2k`: the comparison form this suite uses for DFT-domain results.
 fn normalize_dft_column<BE: TestBackend>(
     module: &Module<BE>,
-    module_host: &Module<HostBytesBackend>,
     base2k: usize,
     big: &mut crate::layouts::VecZnxBigOwned<BE>,
     res: &mut crate::layouts::VecZnxDftOwned<BE>,
@@ -2787,7 +2763,7 @@ where
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
 {
     let size: usize = ZnxInfos::size(big);
-    let template = module_host.vec_znx_alloc(module_host.n(), 1, size);
+    let template: VecZnxOwned<i64> = VecZnx::alloc(big.n(), 1, size);
     let mut backend = upload_vec_znx::<BE>(&template);
     module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut res.to_backend_mut(), res_col);
     module.vec_znx_big_normalize(

@@ -8,8 +8,8 @@ use crate::layouts::VmpPMatToBackendMut;
 use crate::layouts::VmpPMatToBackendRef;
 use crate::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
+        ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftAlloc,
+        VecZnxDftApply, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
         VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes, VmpExtractSelectedRows, VmpPMatAlloc,
         VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
@@ -28,7 +28,7 @@ where
 {
     let cols = a.cols();
     let size = a.size();
-    let mut res = module.vec_znx_big_alloc(module.n(), cols, size);
+    let mut res = module.vec_znx_big_alloc(a.n(), cols, size);
     for j in 0..cols {
         let mut res_backend = res.to_backend_mut();
         let mut a_backend = a.to_backend_mut();
@@ -43,8 +43,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: ModuleNew<BR>
-        + VmpApplyDftTmpBytes
+    Module<BR>: VmpApplyDftTmpBytes
         + VmpApplyDft<BR>
         + VmpPMatAlloc<BR>
         + VecZnxDftAlloc<BR>
@@ -53,8 +52,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
         + VecZnxIdftApplyTmpA<BR>
         + VecZnxBigNormalize<BR>,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    Module<BT>: ModuleNew<BT>
-        + VmpApplyDftTmpBytes
+    Module<BT>: VmpApplyDftTmpBytes
         + VmpApplyDft<BT>
         + VmpPMatAlloc<BT>
         + VecZnxDftAlloc<BT>
@@ -177,8 +175,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: ModuleNew<BR>
-        + VmpApplyDftToDftTmpBytes
+    Module<BR>: VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BR>
         + VmpPMatAlloc<BR>
         + VecZnxDftAlloc<BR>
@@ -191,8 +188,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         + VmpPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    Module<BT>: ModuleNew<BT>
-        + VmpApplyDftToDftTmpBytes
+    Module<BT>: VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BT>
         + VmpPMatAlloc<BT>
         + VecZnxDftAlloc<BT>
@@ -457,6 +453,7 @@ fn check_extract_rejects_bad_selections<BE: crate::test_suite::TestBackend>(modu
 where
     Module<BE>: VmpPMatAlloc<BE> + VmpExtractSelectedRows<BE>,
 {
+    let n = a.n();
     let (rows, cols_in, cols_out, size) = (a.rows(), a.cols_in(), a.cols_out(), a.size());
     // (res rows, res size, first row, step, what is wrong)
     let cases: [(usize, usize, usize, usize, &str); 4] = [
@@ -466,8 +463,7 @@ where
         (1, size, 0, 0, "zero step"),
     ];
     for (res_rows, res_size, first, step, what) in cases {
-        let mut res: VmpPMatOwned<BE> =
-            module.vmp_pmat_alloc(module.n(), res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
+        let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(n, res_rows, cols_in, cols_out, res_size, PrepareHint::Reuse);
         let hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(|_| {}));
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -479,7 +475,7 @@ where
 
     // A destination naming the other representation must be rejected before any
     // byte moves, even though every dimension matches.
-    let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(module.n(), rows, cols_in, cols_out, size, PrepareHint::OneShot);
+    let mut res: VmpPMatOwned<BE> = module.vmp_pmat_alloc(n, rows, cols_in, cols_out, size, PrepareHint::OneShot);
     let hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
     let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -505,8 +501,7 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: ModuleNew<BR>
-        + VmpApplyDftToDftTmpBytes
+    Module<BR>: VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BR>
         + VmpApplyDftToDftAddTmpBytes
         + VmpApplyDftToDftAdd<BR>
@@ -522,8 +517,7 @@ pub fn test_vmp_apply_dft_to_dft_add<BR: crate::test_suite::TestBackend, BT: cra
         + VmpPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    Module<BT>: ModuleNew<BT>
-        + VmpApplyDftToDftTmpBytes
+    Module<BT>: VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BT>
         + VmpApplyDftToDftAddTmpBytes
         + VmpApplyDftToDftAdd<BT>

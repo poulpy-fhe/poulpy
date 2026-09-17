@@ -88,7 +88,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize_default(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
@@ -116,7 +116,7 @@ where
         for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let byte_count = vec_znx_normalize_tmp_bytes(module.n());
+        let byte_count = vec_znx_normalize_tmp_bytes(res.n());
         assert!(
             byte_count.is_multiple_of(size_of::<i64>()),
             "Scratch buffer size {} must be divisible by {}",
@@ -129,7 +129,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_normalize_assign_default(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         base2k: usize,
         k: usize,
         res_offset: i64,
@@ -148,7 +148,7 @@ where
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let byte_count = vec_znx_normalize_tmp_bytes(module.n());
+        let byte_count = vec_znx_normalize_tmp_bytes(res.n());
         assert!(
             byte_count.is_multiple_of(size_of::<i64>()),
             "Scratch buffer size {} must be divisible by {}",
@@ -258,7 +258,7 @@ where
     /// CPU override of [`poulpy_hal::oep::vec_znx_lsh_assign_derived`]: the
     /// fused in-place kernel, bit-exact with the default.
     fn vec_znx_lsh_assign_default(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         base2k: usize,
         k: usize,
         res: &mut VecZnxBackendMut<'_, Self>,
@@ -269,10 +269,8 @@ where
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let (carry, _) = take_host_typed::<Self, i64>(
-            scratch.borrow(),
-            vec_znx_lsh_assign_carry_bytes(module.n()) / size_of::<i64>(),
-        );
+        let (carry, _) =
+            take_host_typed::<Self, i64>(scratch.borrow(), vec_znx_lsh_assign_carry_bytes(res.n()) / size_of::<i64>());
         vec_znx_lsh_assign::<Self>(base2k, k, res, res_col, carry);
     }
 
@@ -296,7 +294,7 @@ where
     }
 
     fn vec_znx_rotate_assign_default(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
@@ -306,10 +304,8 @@ where
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufMut<'x>: HostBufMut<'x>,
     {
-        let (tmp, _) = take_host_typed::<Self, i64>(
-            scratch.borrow(),
-            vec_znx_rotate_assign_tmp_bytes(module.n()) / size_of::<i64>(),
-        );
+        let (tmp, _) =
+            take_host_typed::<Self, i64>(scratch.borrow(), vec_znx_rotate_assign_tmp_bytes(res.n()) / size_of::<i64>());
         vec_znx_rotate_assign::<Self>(p, res, res_col, tmp);
     }
 
@@ -333,7 +329,7 @@ where
     }
 
     fn vec_znx_automorphism_assign_default(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
@@ -345,7 +341,7 @@ where
     {
         let (tmp, _) = take_host_typed::<Self, i64>(
             scratch.borrow(),
-            vec_znx_automorphism_assign_tmp_bytes(module.n()) / size_of::<i64>(),
+            vec_znx_automorphism_assign_tmp_bytes(res.n()) / size_of::<i64>(),
         );
         vec_znx_automorphism_assign::<Self>(p, res, res_col, tmp);
     }
@@ -359,7 +355,7 @@ where
     /// [`Self::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default`] reports,
     /// bit-exact with the default.
     fn vec_znx_mul_xp_minus_one_assign_default(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         p: i64,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
@@ -371,7 +367,7 @@ where
     {
         let (tmp, _) = take_host_typed::<Self, i64>(
             scratch.borrow(),
-            vec_znx_mul_xp_minus_one_assign_tmp_bytes(module.n()) / size_of::<i64>(),
+            vec_znx_mul_xp_minus_one_assign_tmp_bytes(res.n()) / size_of::<i64>(),
         );
         vec_znx_mul_xp_minus_one_assign::<Self>(p, res, res_col, tmp);
     }
