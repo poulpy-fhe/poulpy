@@ -187,7 +187,9 @@
 //! operand share `N`. Only a dense operand takes such a degree: a window in a
 //! sparse-capable slot has the width of `res`. The coefficient-domain `add`
 //! and `sub` families and `vec_znx_big_from_small` accept the slot, so the
-//! derived small-operand forms inherit it. In the convolution only the
+//! derived small-operand forms inherit it. The shift-add and shift-sub forms
+//! of `VecZnx` accept it in `a`: their temporary takes `a`'s degree and the
+//! add or sub that follows reads it. In the convolution only the
 //! prepared right operand is sparse-capable, and the prepares are not
 //! sparsity-aware: a degree-`n` right operand is prepared at degree `n`, like
 //! any dense prepare, and the degree-`N` apply forms read it through the
