@@ -78,6 +78,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 ### `poulpy-bench`
 
 - HAL runners for every derived operation that lacked one: the shift `_add` / `_sub` forms, `vec_znx_add_scalar_assign`, `vec_znx_idft_normalize_consume`, `vmp_apply_dft_to_dft_add`, `cnv_prepare_self` and `cnv_by_const_apply_add`. `NTT3x42Ifma` gains a HAL sweep, having had none. HAL bench ids follow the api rename.
+- `cnv_apply_dft_sum` runner over four terms, dense and with a sparse right operand at half the module degree (`cnv_apply_dft_sum_sparse`), in the full HAL tier beside the other convolution ops.
 
 ### Performance
 
