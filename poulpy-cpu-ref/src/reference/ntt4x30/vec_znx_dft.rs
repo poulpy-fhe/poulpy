@@ -126,12 +126,6 @@ pub trait NttModuleHandle: poulpy_hal::api::ModuleN {
     fn get_intt_table_for(&self, n: usize) -> &NttTableInv<Primes30> {
         self.get_ntt_plan(n).intt()
     }
-    fn get_ntt_table(&self) -> &NttTable<Primes30> {
-        self.get_ntt_table_for(self.n())
-    }
-    fn get_intt_table(&self) -> &NttTableInv<Primes30> {
-        self.get_intt_table_for(self.n())
-    }
     /// Precomputed metadata for `q120b × q120c` lazy multiply–accumulate.
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30>;
     /// Precomputed metadata for `q120b × q120b` lazy multiply–accumulate.
