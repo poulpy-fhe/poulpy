@@ -208,6 +208,7 @@ pub unsafe fn reim_addmul_avx512(res: &mut [f64], a: &[f64], b: &[f64]) {
     }
 
     let m: usize = res.len() >> 1;
+    assert!(m.is_multiple_of(8), "reim_addmul_avx512: m:{m} must be a multiple of 8");
 
     let (rr, ri) = res.split_at_mut(m);
     let (ar, ai) = a.split_at(m);
@@ -259,6 +260,7 @@ pub unsafe fn reim_mul_avx512(res: &mut [f64], a: &[f64], b: &[f64]) {
     }
 
     let m: usize = res.len() >> 1;
+    assert!(m.is_multiple_of(8), "reim_mul_avx512: m:{m} must be a multiple of 8");
 
     let (rr, ri) = res.split_at_mut(m);
     let (ar, ai) = a.split_at(m);
@@ -308,6 +310,7 @@ pub unsafe fn reim_mul_assign_avx512(res: &mut [f64], a: &[f64]) {
     }
 
     let m: usize = res.len() >> 1;
+    assert!(m.is_multiple_of(8), "reim_mul_assign_avx512: m:{m} must be a multiple of 8");
 
     let (rr, ri) = res.split_at_mut(m);
     let (ar, ai) = a.split_at(m);

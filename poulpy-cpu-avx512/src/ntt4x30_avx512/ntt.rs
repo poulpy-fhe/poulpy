@@ -956,9 +956,16 @@ unsafe fn intt_iter_red(
 /// # Safety
 ///
 /// Caller must ensure AVX-512F is available (guaranteed by `NTT4x30Avx512` construction).
-/// `data.len()` must be `>= 4 * table.n`.
+/// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn ntt_avx512<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+    assert_eq!(
+        data.len(),
+        4 * table.n,
+        "ntt_avx512: data.len():{} != 4 * table.n:{}",
+        data.len(),
+        4 * table.n
+    );
     let n = table.n;
     if n == 1 {
         return;
@@ -1046,9 +1053,16 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut
 /// # Safety
 ///
 /// Caller must ensure AVX-512F is available (guaranteed by `NTT4x30Avx512` construction).
-/// `data.len()` must be `>= 4 * table.n`.
+/// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn intt_avx512<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+    assert_eq!(
+        data.len(),
+        4 * table.n,
+        "intt_avx512: data.len():{} != 4 * table.n:{}",
+        data.len(),
+        4 * table.n
+    );
     let n = table.n;
     if n == 1 {
         return;

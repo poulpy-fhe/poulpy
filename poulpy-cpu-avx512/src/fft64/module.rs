@@ -82,6 +82,10 @@ pub struct FFT64Avx512Handle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Avx512 {}
 
 impl Backend for FFT64Avx512 {
+    // The AVX-512 complex multiply steps eight complex slots at a time with no
+    // tail, so the smallest ring this backend serves has n / 2 = 8 slots.
+    const MIN_DEGREE: usize = 16;
+
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;

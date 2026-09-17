@@ -488,6 +488,7 @@ macro_rules! impl_backend_from {
     ($be:ty, $from:ty $(, $executor:ty)?) => {
         impl poulpy_hal::layouts::Backend for $be {
             const DFT_IS_EXACT: bool = <$from as poulpy_hal::layouts::Backend>::DFT_IS_EXACT;
+            const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
 
             type TaskExecutor = poulpy_hal::impl_backend_from!(@executor $from $(, $executor)?);
             type ZnxWord = <$from as poulpy_hal::layouts::Backend>::ZnxWord;

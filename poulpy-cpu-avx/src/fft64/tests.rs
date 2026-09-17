@@ -13,7 +13,7 @@ cross_backend_test_suite! {
     mod vec_znx,
     backend_ref =  poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx,
-    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_add_matches_reference => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_matches_reference,
         test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
@@ -44,7 +44,7 @@ cross_backend_test_suite! {
     mod svp,
     backend_ref =  poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx,
-    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
@@ -56,7 +56,7 @@ cross_backend_test_suite! {
     mod vec_znx_big,
     backend_ref =  poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx,
-    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_big_add => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add,
         test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
@@ -85,7 +85,7 @@ cross_backend_test_suite! {
     mod vec_znx_dft,
     backend_ref =  poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx,
-    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_dft_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add,
         test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
@@ -107,7 +107,7 @@ cross_backend_test_suite! {
     mod vmp,
     backend_ref =  poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx,
-    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
@@ -120,7 +120,7 @@ cross_backend_test_suite! {
 backend_test_suite! {
     mod derived,
     backend = crate::FFT64Avx,
-    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_vmp_apply_dft_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_derived,
         test_vmp_apply_dft_to_dft_add_derived => poulpy_hal::test_suite::derived::test_vmp_apply_dft_to_dft_add_derived,
@@ -164,7 +164,7 @@ backend_test_suite! {
 backend_test_suite! {
     mod window,
     backend = crate::FFT64Avx,
-    params = TestParams { size: 1 << 8, base2k: 12, n: 1 << 8 },
+    params = TestParams { size: 1 << 8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
@@ -185,7 +185,7 @@ backend_test_suite! {
 backend_test_suite! {
     mod window_rayon,
     backend = crate::FFT64AvxRayon,
-    params = TestParams { size: 1 << 8, base2k: 12, n: 1 << 8 },
+    params = TestParams { size: 1 << 8, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_window_ops => poulpy_hal::test_suite::window::test_vec_znx_window_ops,
         test_vec_znx_big_window_ops => poulpy_hal::test_suite::window::test_vec_znx_big_window_ops,
@@ -226,7 +226,7 @@ cross_backend_test_suite! {
     mod word_compat,
     backend_ref =  poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx,
-    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
     tests = {
         test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
     }
@@ -238,7 +238,7 @@ cross_backend_test_suite! {
     mod vec_znx_dft_rayon,
     backend_ref =  poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64AvxRayon,
-    params = TestParams { size: 1<<14, base2k: 12, n: 1<<14 },
+    params = TestParams { size: 1<<14, base2k: 12, n: 8 },
     tests = {
         test_vec_znx_dft_automorphism_add => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism_add,
         test_vec_znx_idft_normalize_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_normalize_consume,

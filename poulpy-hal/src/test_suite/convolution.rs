@@ -1166,10 +1166,10 @@ where
         &mut scratch.arena(),
     );
 
-    // At params.n == 8 no sparse degree exists below it, so that leg of the sweep runs
-    // only the rejection block; the compact prepare under the one module is checked on
-    // the full-degree leg.
-    for b_n in (1..=4).map(|g| n >> g).filter(|&d| d >= 8) {
+    // At params.n == BE::MIN_DEGREE no sparse degree exists below it, so that leg of the
+    // sweep runs only the rejection block; the compact prepare under the one module is
+    // checked on the full-degree leg.
+    for b_n in (1..=4).map(|g| n >> g).filter(|&d| d >= BE::MIN_DEGREE) {
         let mut b_host = VecZnx::alloc(b_n, cols, b_size);
         b_host.fill_uniform(base2k, &mut source);
         let b_be = upload_vec_znx::<BE>(&b_host);

@@ -497,7 +497,7 @@ unsafe impl HalVecZnxImpl for NTT4x30AvxRayon {
     poulpy_cpu_ref::hal_impl_vec_znx_without_normalize!();
 
     fn vec_znx_normalize(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
@@ -508,14 +508,14 @@ unsafe impl HalVecZnxImpl for NTT4x30AvxRayon {
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
+        let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * res.n());
         poulpy_cpu_rayon::normalize::vec_znx_normalize_par::<NTT4x30Avx, Self>(
             res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, carry,
         );
     }
 
     fn vec_znx_normalize_assign(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         base2k: usize,
         k: usize,
         a_offset: i64,
@@ -523,7 +523,7 @@ unsafe impl HalVecZnxImpl for NTT4x30AvxRayon {
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * module.n());
+        let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i64>(scratch.borrow(), 3 * a.n());
         poulpy_cpu_rayon::normalize::vec_znx_normalize_assign_par::<NTT4x30Avx, Self>(base2k, k, a_offset, a, a_col, carry);
     }
 }
@@ -541,7 +541,7 @@ unsafe impl HalVmpImpl for NTT4x30AvxRayon {
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = super::vmp::vmp_prepare_tmp_bytes_avx(module.n());
+        let bytes = super::vmp::vmp_prepare_tmp_bytes_avx(res.n());
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::vmp::vmp_prepare_avx_pm(base_module(module), &mut base_vmp_mut(res), a, tmp);
     }
@@ -766,7 +766,7 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(res.n());
         let bytes = poulpy_cpu_rayon::workers_within(
             res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
             per_worker,
@@ -787,7 +787,7 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(res.n());
         let bytes = poulpy_cpu_rayon::workers_within(
             res.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
             per_worker,
@@ -1024,7 +1024,7 @@ unsafe impl HalConvolutionImpl for NTT4x30AvxRayon {
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let per_worker = super::convolution::cnv_prepare_tmp_bytes(module.n());
+        let per_worker = super::convolution::cnv_prepare_tmp_bytes(left.n());
         let bytes = poulpy_cpu_rayon::workers_within(
             left.size().min(<Self as poulpy_hal::execution::ScratchWorkers>::PREPARE),
             per_worker,
@@ -1038,7 +1038,7 @@ unsafe impl HalVecZnxBigImpl for NTT4x30AvxRayon {
     poulpy_cpu_ref::hal_impl_vec_znx_big_without_normalize!(NTT4x30VecZnxBigDefault);
 
     fn vec_znx_big_normalize(
-        module: &Module<Self>,
+        _module: &Module<Self>,
         res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
@@ -1049,7 +1049,7 @@ unsafe impl HalVecZnxBigImpl for NTT4x30AvxRayon {
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i128>(scratch.borrow(), 3 * module.n());
+        let (carry, _) = poulpy_cpu_rayon::take_scratch::<Self, i128>(scratch.borrow(), 3 * res.n());
         poulpy_cpu_rayon::normalize::ntt4x30_vec_znx_big_normalize_par::<NTT4x30Avx, Self>(
             res,
             res_base2k,
@@ -1221,6 +1221,8 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
             );
         }
 
+        poulpy_hal::layouts::check_degree::<NTT4x30Avx>(module.n(), res.n());
+        assert_eq!(a.n(), res.n(), "vec_znx_dft_apply: a.n():{} != res.n():{}", a.n(), res.n());
         let n = res.n();
         let cols = res.cols();
         let a_size = a.size();
@@ -1232,6 +1234,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
                 let src_limb = offset + limb * step;
                 super::vec_znx_dft::dft_limb(
                     module,
+                    n,
                     &mut group[4 * n * res_col..][..4 * n],
                     (src_limb < a_size).then(|| a.at(a_col, src_limb)),
                     tmp,
@@ -1266,6 +1269,8 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
             );
         }
 
+        poulpy_hal::layouts::check_degree::<NTT4x30Avx>(module.n(), res.n());
+        assert_eq!(a.n(), res.n(), "vec_znx_idft_apply: a.n():{} != res.n():{}", a.n(), res.n());
         let n = res.n();
         let res_cols = res.cols();
         let a_cols = a.cols();
@@ -1286,6 +1291,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
             if limb < min_size {
                 super::vec_znx_dft::idft_limb(
                     module,
+                    n,
                     dst,
                     super::vec_znx_dft::packed_limb(a_data, n, a_cols, a_col, limb),
                     tmp,
@@ -1313,6 +1319,14 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
             );
         }
 
+        poulpy_hal::layouts::check_degree::<NTT4x30Avx>(module.n(), res.n());
+        assert_eq!(
+            a.n(),
+            res.n(),
+            "vec_znx_idft_apply_tmpa: a.n():{} != res.n():{}",
+            a.n(),
+            res.n()
+        );
         let n = res.n();
         let res_cols = res.cols();
         let a_cols = a.cols();
@@ -1326,6 +1340,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30AvxRayon {
                 if limb < min_size {
                     super::vec_znx_dft::idft_limb(
                         module,
+                        n,
                         dst,
                         super::vec_znx_dft::packed_limb(a_data, n, a_cols, a_col, limb),
                         tmp,

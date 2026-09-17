@@ -21,7 +21,7 @@ use poulpy_cpu_ref::reference::vmp_select::assert_extractable;
 use poulpy_hal::execution::TaskExecutor;
 use poulpy_hal::layouts::{
     DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
-    VmpPMatBackendRef, ZnxView, ZnxViewMut,
+    VmpPMatBackendRef, ZnxView, ZnxViewMut, check_degree,
 };
 
 use super::arithmetic_avx512::{BARRETT_MU, POW32, Q_VEC, bcast_quad, reduce_b_to_canonical_512};
@@ -60,6 +60,7 @@ pub(crate) fn vmp_prepare_avx_pm(
     tmp: &mut [u64],
 ) {
     let n = res.n();
+    check_degree::<NTT4x30Avx512>(module.n(), n);
 
     assert_eq!(a.n(), n);
     assert_eq!(res.cols_in(), a.cols_in());
@@ -77,6 +78,7 @@ pub(crate) fn vmp_prepare_avx_pm(
     let bp_stride = ncols * nrows * 8;
 
     let tmp_b = &mut tmp[..4 * n];
+    let table = module.get_ntt_table_for(n);
 
     let mat_i64: &[i64] = a.raw();
     let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
@@ -86,7 +88,7 @@ pub(crate) fn vmp_prepare_avx_pm(
             let pos = n * (row_i * ncols + col_i);
 
             NTT4x30Avx512::ntt_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
-            NTT4x30Avx512::ntt_dft_execute(module.get_ntt_table(), tmp_b);
+            NTT4x30Avx512::ntt_dft_execute(table, tmp_b);
             unsafe { canonicalize_limb_q120(n, tmp_b) };
 
             for bp in 0..n_block_pairs {

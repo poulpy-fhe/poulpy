@@ -28,7 +28,7 @@ poulpy_core::core_parity_test_suite! {
     mod core_parity_fft64,
     backend_ref = poulpy_cpu_ref::FFT64Ref,
     backend_test = crate::FFT64Avx512,
-    params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 17, n: 16 },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
@@ -48,7 +48,7 @@ poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30,
     backend_ref = poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512,
-    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 52, n: 8 },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
@@ -69,7 +69,7 @@ poulpy_core::core_parity_test_suite! {
     mod core_parity_ntt4x30_rayon,
     backend_ref = poulpy_cpu_ref::NTT4x30Ref,
     backend_test = crate::NTT4x30Avx512Rayon,
-    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
+    params = TestParams { size: 1<<8, base2k: 52, n: 8 },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
