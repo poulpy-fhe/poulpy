@@ -105,11 +105,11 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
 /// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
 ///
 /// A backend pair that packs `VmpPMat` differently must not declare
-/// [`VmpPMatLayoutCompatible`] and therefore cannot instantiate this test —
-/// notably the accelerated NTT4x30 backends (prime-major planar layout)
-/// against the reference backend (block-interleaved q120c): their divergence
-/// under the shared `Q120bScalar` word is now prevented by construction, the
-/// backends being distinct container types with no `VmpPMat` marker.
+/// [`VmpPMatLayoutCompatible`] and therefore cannot instantiate this test,
+/// notably a pair with a prime-major planar layout on one side and a
+/// block-interleaved layout on the other: their divergence under a shared
+/// DFT word is now prevented by construction, the backends being distinct
+/// container types with no `VmpPMat` marker.
 pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
@@ -212,7 +212,7 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
     }
 }
 
-/// The in-tree backends have one prepared representation, so both hints size identically
+/// Every backend in the workspace has one prepared representation, so both hints size identically
 /// and the hint round-trips through allocation.
 pub fn test_word_compat_prepare_hint_sizes<BA: Backend, BB: Backend>(
     params: &TestParams,

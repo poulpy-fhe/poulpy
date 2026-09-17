@@ -17,12 +17,15 @@ use crate::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataMut, HostDataRef,
         VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
     },
-    reference::ntt4x30::{
-        NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
-        ntt::NttTable,
-        primes::{PrimeSet, Primes30},
-        types::Q120bScalar,
-        vec_znx_dft::NttModuleHandle,
+    reference::{
+        ntt4x30::{
+            NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
+            ntt::NttTable,
+            primes::{PrimeSet, Primes30},
+            types::Q120bScalar,
+            vec_znx_dft::NttModuleHandle,
+        },
+        sparse_log_gap,
     },
 };
 
@@ -39,20 +42,22 @@ pub(crate) const CNV_ACC_GROUP: usize = 16;
 /// Block-group size of the prepare canonicalize-and-scatter staging.
 const PREP_GROUP: usize = 64;
 
-/// Scratch bytes required by [`ntt4x30_cnv_apply_dft`] and its accumulate
-/// variant: the padded `a` window plus the accumulate staging group.
+/// Scratch bytes required by [`ntt4x30_cnv_apply_dft`] and its accumulate and
+/// pairwise variants: the padded `a` window, the staged `b` rows (a sparse `b`
+/// is gathered, a pairwise `b` is lazily summed) and its `b1` twin, plus the
+/// accumulate staging group.
 pub fn ntt4x30_cnv_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size);
-    16 * (a_size + 2 * (TILE - 1)) * size_of::<u32>() + 8 * CNV_ACC_GROUP * min_size * size_of::<u64>()
+    16 * (a_size + 2 * (TILE - 1) + 2 * b_size) * size_of::<u32>() + 8 * CNV_ACC_GROUP * min_size * size_of::<u64>()
 }
 
 /// Scratch bytes required by [`ntt4x30_cnv_pairwise_apply_dft`]: the apply
-/// scratch plus the summed `b` rows.
+/// scratch, which already stages both operands' second columns.
 pub fn ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     if a_size == 0 || b_size == 0 || res_size == 0 {
         0
     } else {
-        ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size) + 16 * b_size * size_of::<u32>()
+        ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 }
 
@@ -73,12 +78,32 @@ fn canonical_sum_row(dst: &mut [u32], a: &[u32], b: &[u32]) {
     }
 }
 
+/// Rows `0..size` of degree-`N` x2 block `blk`, gathered from a degree-`n`
+/// prepared right operand column `src` (block-major, `size` rows of 16 u32 per
+/// block, slot `s` of a row at `[8s, 8s + 8)`), `N = n << log_gap`: degree-`N` slot `i` reads
+/// degree-`n` slot `i >> log_gap`, so the two slots of a block read one slot
+/// once `log_gap >= 1`. Row order is preserved, which keeps the reversed limb
+/// order of a `CnvPVecR` column.
+fn gather_sparse_x2_rows(dst: &mut [u32], src: &[u32], size: usize, blk: usize, log_gap: usize) {
+    for lane in 0..2 {
+        let slot: usize = (2 * blk + lane) >> log_gap;
+        let base: usize = (slot >> 1) * size * 16 + 8 * (slot & 1);
+        for r in 0..size {
+            dst[16 * r + 8 * lane..16 * r + 8 * lane + 8].copy_from_slice(&src[base + 16 * r..base + 16 * r + 8]);
+        }
+    }
+}
+
 /// Convolve one column pair into `res[res_col]`, tiling [`TILE`] output limbs
 /// per pass over the zero-padded `a` window.
 ///
 /// - `ACC`: accumulate into `res` (via group-staged `ntt_add_assign`) instead
 ///   of overwriting.
 /// - `PAIRWISE`: operands are `(a0 + a1) mod q` and the lazy sum `b0 + b1`.
+///
+/// `b_log_gap` is `log2(N / n)` of a degree-`n` right operand (zero when dense):
+/// its x2 rows are gathered block by block through [`gather_sparse_x2_rows`].
+/// `a` takes the module degree.
 #[allow(clippy::too_many_arguments)]
 unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
     module: &(impl NttModuleHandle + Sync),
@@ -96,6 +121,7 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
     b0_col: &[u32],
     b1_col: &[u32],
     b_size: usize,
+    b_log_gap: usize,
     tmp: &mut [u8],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
@@ -112,7 +138,8 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
     let (stage, rest) = tmp_u64.split_at_mut(8 * CNV_ACC_GROUP * min_size);
     let rest_u32: &mut [u32] = cast_slice_mut(rest);
     let (win, rest_u32) = rest_u32.split_at_mut(16 * win_rows);
-    let b_sum: &mut [u32] = &mut rest_u32[..if PAIRWISE { 16 * b_size } else { 0 }];
+    let (b_stage, rest_u32) = rest_u32.split_at_mut(16 * b_size);
+    let b1_stage: &mut [u32] = &mut rest_u32[..16 * b_size];
 
     win[..16 * pad].fill(0);
     win[16 * (a_size + pad)..].fill(0);
@@ -123,7 +150,8 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
     for local_blk in 0..block_count {
         let blk = block_start + local_blk;
         // Stage this block's a rows (or the canonical pairwise sum) into the
-        // padded window; b rows are read in place (lazy-summed when PAIRWISE).
+        // padded window; b rows are read in place when dense and not pairwise,
+        // otherwise staged (gathered when sparse, lazy-summed when PAIRWISE).
         let a_blk = &a0_col[blk * 16 * a_size..(blk + 1) * 16 * a_size];
         if PAIRWISE {
             let a1_blk = &a1_col[blk * 16 * a_size..(blk + 1) * 16 * a_size];
@@ -137,15 +165,26 @@ unsafe fn ntt4x30_conv_block_group<BE, const ACC: bool, const PAIRWISE: bool>(
         } else {
             win[16 * pad..16 * (pad + a_size)].copy_from_slice(a_blk);
         }
-        let b_blk: &[u32] = if PAIRWISE {
-            let b0_blk = &b0_col[blk * 16 * b_size..(blk + 1) * 16 * b_size];
-            let b1_blk = &b1_col[blk * 16 * b_size..(blk + 1) * 16 * b_size];
-            for (d, (x, y)) in b_sum.iter_mut().zip(b0_blk.iter().zip(b1_blk.iter())) {
-                *d = x + y;
+        let b_blk: &[u32] = if b_log_gap == 0 {
+            let b0_blk: &[u32] = &b0_col[blk * 16 * b_size..(blk + 1) * 16 * b_size];
+            if PAIRWISE {
+                let b1_blk: &[u32] = &b1_col[blk * 16 * b_size..(blk + 1) * 16 * b_size];
+                for (d, (x, y)) in b_stage.iter_mut().zip(b0_blk.iter().zip(b1_blk.iter())) {
+                    *d = x + y;
+                }
+                &*b_stage
+            } else {
+                b0_blk
             }
-            b_sum
         } else {
-            &b0_col[blk * 16 * b_size..(blk + 1) * 16 * b_size]
+            gather_sparse_x2_rows(b_stage, b0_col, b_size, blk, b_log_gap);
+            if PAIRWISE {
+                gather_sparse_x2_rows(b1_stage, b1_col, b_size, blk, b_log_gap);
+                for (d, x) in b_stage.iter_mut().zip(b1_stage.iter()) {
+                    *d += *x;
+                }
+            }
+            &*b_stage
         };
 
         let grp_pos = local_blk;
@@ -206,6 +245,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
     b0_col: &[u32],
     b1_col: &[u32],
     b_size: usize,
+    b_log_gap: usize,
     tmp: &mut [u8],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
@@ -247,6 +287,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
                 b0_col,
                 b1_col,
                 b_size,
+                b_log_gap,
                 local_tmp,
             );
         });
@@ -270,6 +311,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
                     b0_col,
                     b1_col,
                     b_size,
+                    b_log_gap,
                     tmp,
                 );
             }
@@ -312,6 +354,9 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n = res.n();
+    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -323,9 +368,9 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
     }
 
     let a_col_u32 = col_slice_u32(a.raw(), n, a_size, a_col);
-    let b_col_u32 = col_slice_u32(b.raw(), n, b_size, b_col);
+    let b_col_u32 = col_slice_u32(b.raw(), b.n(), b_size, b_col);
     ntt4x30_conv_columns::<BE, false, false>(
-        module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, tmp,
+        module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, b_log_gap, tmp,
     );
 }
 
@@ -349,6 +394,9 @@ pub fn ntt4x30_cnv_apply_dft_add<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n = res.n();
+    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -357,9 +405,9 @@ pub fn ntt4x30_cnv_apply_dft_add<BE>(
     }
 
     let a_col_u32 = col_slice_u32(a.raw(), n, a_size, a_col);
-    let b_col_u32 = col_slice_u32(b.raw(), n, b_size, b_col);
+    let b_col_u32 = col_slice_u32(b.raw(), b.n(), b_size, b_col);
     ntt4x30_conv_columns::<BE, true, false>(
-        module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, tmp,
+        module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, b_log_gap, tmp,
     );
 }
 
@@ -433,7 +481,26 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
     use crate::reference::ntt4x30::mat_vec::{accum_mul_q120_bc, accum_to_q120b};
 
     let n = res.n();
+    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
     let res_size = res.size();
+
+    #[allow(clippy::type_complexity)]
+    let term_cols: Vec<(&[u32], &[u32], usize, usize, usize)> = terms
+        .iter()
+        .map(|t| {
+            let a_size = t.a.size();
+            let b_size = t.b.size();
+            assert_eq!(t.a.n(), n, "a.n():{} != res.n():{n}", t.a.n());
+            (
+                col_slice_u32(t.a.raw(), n, a_size, t.a_col),
+                col_slice_u32(t.b.raw(), t.b.n(), b_size, t.b_col),
+                a_size,
+                b_size,
+                sparse_log_gap(n, t.b.n()),
+            )
+        })
+        .collect();
+
     if res_size == 0 {
         return;
     }
@@ -447,28 +514,10 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
     let meta = module.get_bbc_meta();
     let n_blks = n / 2;
 
-    let term_cols: Vec<(&[u32], &[u32], usize, usize)> = terms
-        .iter()
-        .map(|t| {
-            let a_size = t.a.size();
-            let b_size = t.b.size();
-            (
-                col_slice_u32(t.a.raw(), n, a_size, t.a_col),
-                col_slice_u32(t.b.raw(), n, b_size, t.b_col),
-                a_size,
-                b_size,
-            )
-        })
-        .collect();
-    #[allow(clippy::type_complexity)]
-    let term_rows: Vec<(&[[u32; 8]], &[[u32; 8]])> = term_cols
-        .iter()
-        .map(|&(a_col, b_col, _, _)| (cast_slice(a_col), cast_slice(b_col)))
-        .collect();
     let sched = cnv_accumulate_schedule(
         cnv_offset,
         res_size,
-        &term_cols.iter().map(|&(_, _, a, b)| (a, b)).collect::<Vec<_>>(),
+        &term_cols.iter().map(|&(_, _, a, b, _)| (a, b)).collect::<Vec<_>>(),
     );
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
@@ -477,19 +526,37 @@ pub fn ntt4x30_cnv_apply_dft_sum<BE>(
     let stage = &mut tmp_u64[..8 * CNV_ACC_GROUP * res_size];
     let stage4: &mut [[u64; 4]] = cast_slice_mut(stage);
 
+    // Gather buffer of a sparse term's right-operand x2 rows, allocated once (a
+    // dense term reads its rows in place and never touches it).
+    let mut yb = [[0u32; 8]; 2];
+    let term_a_rows: Vec<&[[u32; 8]]> = term_cols.iter().map(|&(a_col, _, _, _, _)| cast_slice(a_col)).collect();
+    let term_b_rows: Vec<&[[u32; 8]]> = term_cols.iter().map(|&(_, b_col, _, _, _)| cast_slice(b_col)).collect();
+
     for blk in 0..n_blks {
         let grp_pos = blk % CNV_ACC_GROUP;
 
         for (k, sched_k) in sched.iter().enumerate() {
             let mut s = [[0u64; 8]; 2];
             for e in sched_k {
-                let (_, _, a_size, b_size) = term_cols[e.term];
-                let (a_rows, b_rows) = term_rows[e.term];
+                let (_, b_col, a_size, b_size, b_log_gap) = term_cols[e.term];
+                let a_rows = term_a_rows[e.term];
+                let b_rows = term_b_rows[e.term];
                 for i in 0..e.len {
                     let r = 2 * (blk * a_size + e.a_row + i);
-                    let q = 2 * (blk * b_size + e.b_row + i);
-                    accum_mul_q120_bc(&mut s[0], &a_rows[r], &b_rows[q]);
-                    accum_mul_q120_bc(&mut s[1], &a_rows[r + 1], &b_rows[q + 1]);
+                    let row = e.b_row + i;
+                    let y: &[[u32; 8]] = if b_log_gap == 0 {
+                        let br = 2 * (blk * b_size + row);
+                        &b_rows[br..br + 2]
+                    } else {
+                        for (lane, dst) in yb.iter_mut().enumerate() {
+                            let slot: usize = (2 * blk + lane) >> b_log_gap;
+                            let idx: usize = ((slot >> 1) * b_size + row) * 16 + 8 * (slot & 1);
+                            dst.copy_from_slice(&b_col[idx..idx + 8]);
+                        }
+                        &yb[..]
+                    };
+                    accum_mul_q120_bc(&mut s[0], &a_rows[r], &y[0]);
+                    accum_mul_q120_bc(&mut s[1], &a_rows[r + 1], &y[1]);
                 }
             }
             let o = 2 * (k * CNV_ACC_GROUP + grp_pos);
@@ -536,6 +603,9 @@ pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
     }
 
     let n = res.n();
+    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -548,9 +618,11 @@ pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
 
     let a0 = col_slice_u32(a.raw(), n, a_size, col_i);
     let a1 = col_slice_u32(a.raw(), n, a_size, col_j);
-    let b0 = col_slice_u32(b.raw(), n, b_size, col_i);
-    let b1 = col_slice_u32(b.raw(), n, b_size, col_j);
-    ntt4x30_conv_columns::<BE, false, true>(module, cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, tmp);
+    let b0 = col_slice_u32(b.raw(), b.n(), b_size, col_i);
+    let b1 = col_slice_u32(b.raw(), b.n(), b_size, col_j);
+    ntt4x30_conv_columns::<BE, false, true>(
+        module, cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -587,6 +659,8 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_left");
     let n = res.n();
+    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let table = module.get_ntt_table();
     let cols = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
@@ -670,6 +744,8 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_right");
     let n = res.n();
+    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
     let table = module.get_ntt_table();
     let cols = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
@@ -749,6 +825,19 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "ntt4x30_cnv_prepare_self");
     let n = left.n();
+    assert_eq!(
+        n,
+        module.n(),
+        "ntt4x30_cnv_prepare_self: left.n():{n} != module.n():{}",
+        module.n()
+    );
+    assert_eq!(a.n(), n, "ntt4x30_cnv_prepare_self: a.n():{} != left.n():{n}", a.n());
+    assert_eq!(
+        right.n(),
+        n,
+        "ntt4x30_cnv_prepare_self: right.n():{} != left.n():{n}",
+        right.n()
+    );
     let table = module.get_ntt_table();
     let cols = left.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());

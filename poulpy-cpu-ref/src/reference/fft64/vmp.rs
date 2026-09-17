@@ -1,9 +1,7 @@
 use crate::{
-    cast_mut,
     layouts::{
-        Backend, HostDataMut, HostDataRef, MatZnxBackendRef, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VecZnxDftToBackendMut, VecZnxToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatToBackendRef, ZnxView,
-        ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, MatZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
+        VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
         SendPtr,
@@ -110,62 +108,6 @@ pub(crate) fn vmp_prepare_core<REIM, E>(
             }
         }
     });
-}
-
-pub fn vmp_apply_dft_tmp_bytes(n: usize, a_size: usize, prows: usize, pcols_in: usize) -> usize {
-    let row_max: usize = (a_size).min(prows);
-    (16 + (n + 8) * row_max * pcols_in) * size_of::<f64>()
-}
-
-pub fn vmp_apply_dft<R, A, M, BE>(table: &ReimFFTTable<f64>, res: &mut R, a: &A, pmat: &M, tmp_bytes: &mut [f64])
-where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
-    for<'x> BE::BufMut<'x>: HostDataMut,
-    for<'x> BE::BufRef<'x>: HostDataRef,
-    R: VecZnxDftToBackendMut<BE>,
-    A: VecZnxToBackendRef<BE>,
-    M: VmpPMatToBackendRef<BE>,
-{
-    let a = a.to_backend_ref();
-    poulpy_hal::layouts::assert_dense(&a, "vmp_apply_dft");
-    let pmat = pmat.to_backend_ref();
-
-    let n: usize = a.n();
-    let cols: usize = pmat.cols_in();
-    let size: usize = a.size().min(pmat.rows());
-
-    {
-        assert!(tmp_bytes.len() >= vmp_apply_dft_tmp_bytes(n, size, pmat.rows(), cols));
-        assert!(a.cols() <= cols);
-    }
-
-    let (data, tmp_bytes) = tmp_bytes.split_at_mut(BE::bytes_of_vec_znx_dft(n, cols, size));
-
-    let mut a_dft: VecZnxDft<&mut [u8], BE::DftWord, BE> = VecZnxDft::from_data(cast_mut(data), n, cols, size);
-
-    let offset: usize = cols - a.cols();
-    for j in 0..cols {
-        if j < offset {
-            BE::reim_zero(a_dft.at_mut(j, 0));
-        } else {
-            BE::reim_from_znx(a_dft.at_mut(j, 0), a.at(offset + j, 0));
-            BE::reim_dft_execute(table, a_dft.at_mut(j, 0));
-        }
-    }
-
-    let mut res_ref = res.to_backend_mut();
-    let nrows: usize = pmat.cols_in() * pmat.rows();
-    let ncols: usize = pmat.cols_out() * pmat.size();
-    vmp_apply_dft_to_dft_core::<true, BE, BE::TaskExecutor>(
-        n,
-        res_ref.raw_mut(),
-        a_dft.raw(),
-        pmat.raw(),
-        0,
-        nrows,
-        ncols,
-        tmp_bytes,
-    );
 }
 
 /// Copies rows `first_row + i * row_step` of `a`, truncated to `res.size()`

@@ -143,3 +143,17 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for ReimIFFTAvx {
         }
     }
 }
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use poulpy_hal::api::NegacyclicFFTNew;
+
+    #[test]
+    fn raw_transform_matches_contract() {
+        for m in [16, 32, 64, 128, 256] {
+            let table = FFT64AvxReimTable::new(m);
+            poulpy_hal::test_suite::reim::test_negacyclic_fft(&table);
+        }
+    }
+}

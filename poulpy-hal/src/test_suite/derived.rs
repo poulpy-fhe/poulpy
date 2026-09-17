@@ -15,11 +15,11 @@
 //! override is pinned to the same oracle as the default body. Coefficient- and
 //! big-domain results are compared bit for bit; DFT-domain results are
 //! compared after `idft` and `big_normalize` at the suite's `base2k`, which is
-//! how the rest of this suite states DFT-domain equality (spec decision 4).
+//! how the rest of this suite states DFT-domain equality.
 //!
 //! Where the two sides are allowed to distribute the same value over
 //! different non-canonical digits, the accumulating shifts, the comparison
-//! is on canonical forms, as in PR2's `rsh_sub` proof.
+//! is on canonical forms, as in the `rsh_sub` argument.
 
 use crate::{
     api::{
@@ -37,9 +37,9 @@ use crate::{
     layouts::{
         CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
         CnvPVecRToBackendRef, FillUniform, HostBytesBackend, MatZnx, MatZnxInfos, MatZnxToBackendRef, Module, PrepareHint,
-        ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, ZnxView,
-        ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
+        ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxOwned, VmpPMatToBackendMut,
+        VmpPMatToBackendRef, ZnxInfos, ZnxView, ZnxViewMut, vec_znx_backend_mut, vec_znx_backend_ref,
     },
     oep::{
         HalConvolutionImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl, cnv_apply_dft_add_derived,
@@ -271,7 +271,7 @@ where
                 module.vec_znx_dft_apply(1, 0, &mut res_module.to_backend_mut(), j, &res_init_ref, j);
             }
 
-            // Oracle: the spec definition of `vmp_apply_dft_to_dft_add`,
+            // Oracle: the contract definition of `vmp_apply_dft_to_dft_add`,
             // spelled out through the public api traits, a fresh product,
             // then folded in column by column.
             let mut fresh = module.vec_znx_dft_alloc(cols_out, res_size);
@@ -411,7 +411,7 @@ where
                     &mut scratch.borrow(),
                 );
 
-                // Oracle: the spec definition of `lsh`, spelled out.
+                // Oracle: the contract definition of `lsh`, spelled out.
                 module.vec_znx_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut want_backend),
                     base2k,
@@ -472,7 +472,7 @@ where
                     &mut scratch.borrow(),
                 );
 
-                // Oracle: the spec definition of `rsh`, spelled out.
+                // Oracle: the contract definition of `rsh`, spelled out.
                 module.vec_znx_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut want_backend),
                     base2k,
@@ -1262,17 +1262,23 @@ where
     // (big operand size, small operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    for (a_size, b_size, res_size) in [
-        (3usize, 3usize, 3usize),
-        (4, 2, 3),
-        (2, 4, 3),
-        (3, 3, 5),
-        (4, 4, 2),
-        (4, 2, 5),
+    // The small operand is the sparse-capable slot: the last two cases give it
+    // half the module's degree, the degree the default body has to embed. Under
+    // a module too small to halve below the degree floor they stay dense.
+    let sparse_n: usize = if module.n() >= 16 { module.n() / 2 } else { module.n() };
+    for (a_size, b_size, res_size, small_n) in [
+        (3usize, 3usize, 3usize, module.n()),
+        (4, 2, 3, module.n()),
+        (2, 4, 3, module.n()),
+        (3, 3, 5, module.n()),
+        (4, 4, 2, module.n()),
+        (4, 2, 5, module.n()),
+        (3, 3, 3, sparse_n),
+        (4, 2, 5, sparse_n),
     ] {
         let mut a_small = module_host.vec_znx_alloc(1, a_size);
         a_small.fill_uniform(base2k, &mut source);
-        let mut b = module_host.vec_znx_alloc(1, b_size);
+        let mut b: VecZnxOwned<i64> = VecZnx::alloc(small_n, 1, b_size);
         b.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a_small);
         let b_backend = upload_vec_znx::<BE>(&b);
@@ -1366,13 +1372,13 @@ where
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&have_backend),
-            "vec_znx_big_add_small: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_add_small: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&got_backend),
-            "vec_znx_big_add_small: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_add_small: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
 }
@@ -1401,15 +1407,21 @@ where
     // (small operand size, big operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    for (a_size, b_size, res_size) in [
-        (3usize, 3usize, 3usize),
-        (2, 4, 3),
-        (4, 2, 3),
-        (3, 3, 5),
-        (4, 4, 2),
-        (4, 2, 5),
+    // The small operand is the sparse-capable slot: the last two cases give it
+    // half the module's degree, the degree the default body has to embed. Under
+    // a module too small to halve below the degree floor they stay dense.
+    let sparse_n: usize = if module.n() >= 16 { module.n() / 2 } else { module.n() };
+    for (a_size, b_size, res_size, small_n) in [
+        (3usize, 3usize, 3usize, module.n()),
+        (2, 4, 3, module.n()),
+        (4, 2, 3, module.n()),
+        (3, 3, 5, module.n()),
+        (4, 4, 2, module.n()),
+        (4, 2, 5, module.n()),
+        (3, 3, 3, sparse_n),
+        (4, 2, 5, sparse_n),
     ] {
-        let mut a_small = module_host.vec_znx_alloc(1, a_size);
+        let mut a_small: VecZnxOwned<i64> = VecZnx::alloc(small_n, 1, a_size);
         a_small.fill_uniform(base2k, &mut source);
         let mut b = module_host.vec_znx_alloc(1, b_size);
         b.fill_uniform(base2k, &mut source);
@@ -1505,13 +1517,13 @@ where
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&have_backend),
-            "vec_znx_big_sub_small_a: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_a: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&got_backend),
-            "vec_znx_big_sub_small_a: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_a: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
 }
@@ -1540,17 +1552,23 @@ where
     // (big operand size, small operand size, res size): res longer than both,
     // small shorter than big, small longer than big, res shorter than both, res
     // past both with one operand ending early.
-    for (a_size, b_size, res_size) in [
-        (3usize, 3usize, 3usize),
-        (4, 2, 3),
-        (2, 4, 3),
-        (3, 3, 5),
-        (4, 4, 2),
-        (4, 2, 5),
+    // The small operand is the sparse-capable slot: the last two cases give it
+    // half the module's degree, the degree the default body has to embed. Under
+    // a module too small to halve below the degree floor they stay dense.
+    let sparse_n: usize = if module.n() >= 16 { module.n() / 2 } else { module.n() };
+    for (a_size, b_size, res_size, small_n) in [
+        (3usize, 3usize, 3usize, module.n()),
+        (4, 2, 3, module.n()),
+        (2, 4, 3, module.n()),
+        (3, 3, 5, module.n()),
+        (4, 4, 2, module.n()),
+        (4, 2, 5, module.n()),
+        (3, 3, 3, sparse_n),
+        (4, 2, 5, sparse_n),
     ] {
         let mut a_small = module_host.vec_znx_alloc(1, a_size);
         a_small.fill_uniform(base2k, &mut source);
-        let mut b = module_host.vec_znx_alloc(1, b_size);
+        let mut b: VecZnxOwned<i64> = VecZnx::alloc(small_n, 1, b_size);
         b.fill_uniform(base2k, &mut source);
         let a_backend = upload_vec_znx::<BE>(&a_small);
         let b_backend = upload_vec_znx::<BE>(&b);
@@ -1644,13 +1662,13 @@ where
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&have_backend),
-            "vec_znx_big_sub_small_b: default body != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_b: default body != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
 
         assert_eq!(
             download_vec_znx::<BE>(&want_backend),
             download_vec_znx::<BE>(&got_backend),
-            "vec_znx_big_sub_small_b: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size})"
+            "vec_znx_big_sub_small_b: dispatched op != independent oracle (a {a_size} b {b_size} res {res_size} small_n {small_n})"
         );
     }
 }
@@ -2159,7 +2177,7 @@ where
                 );
             }
 
-            // Oracle: the spec definition, spelled out through the api traits.
+            // Oracle: the contract definition, spelled out through the api traits.
             module.cnv_apply_dft(
                 cnv_offset,
                 &mut fresh.to_backend_mut(),
@@ -2269,7 +2287,7 @@ where
 
     for n_terms in 1..=term_cols.len() {
         for cnv_offset in [0usize, 1usize] {
-            // Oracle: the spec definition, spelled out through the api traits.
+            // Oracle: the contract definition, spelled out through the api traits.
             for (idx, &(a_col, b_col)) in term_cols[..n_terms].iter().enumerate() {
                 if idx == 0 {
                     module.cnv_apply_dft(

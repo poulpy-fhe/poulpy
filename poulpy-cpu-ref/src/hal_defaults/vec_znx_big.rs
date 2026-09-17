@@ -34,6 +34,7 @@ use crate::reference::{
         ntt4x30_vec_znx_big_sub_assign, ntt4x30_vec_znx_big_sub_negate_assign, ntt4x30_vec_znx_big_sub_small_a,
         ntt4x30_vec_znx_big_sub_small_assign, ntt4x30_vec_znx_big_sub_small_b, ntt4x30_vec_znx_big_sub_small_negate_assign,
     },
+    vec_znx::vec_znx_from_small_mixed,
     znx::{
         I64NormalizeOps, ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
         ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
@@ -200,6 +201,10 @@ where
     {
         let mut res = res.to_backend_mut();
         let a: VecZnx<&[u8], i64> = vec_znx_backend_ref_as_host_ref::<Self>(a);
+
+        if a.n() != res.n() {
+            return vec_znx_from_small_mixed(&mut res, res_col, &a, a_col);
+        }
 
         let res_size = res.size();
         let a_size = a.size();

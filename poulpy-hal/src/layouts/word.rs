@@ -8,9 +8,8 @@
 //! per-container `*LayoutCompatible` markers (see
 //! [`VecZnxDftLayoutCompatible`](crate::layouts::VecZnxDftLayoutCompatible)
 //! and siblings). Sharing a word is necessary but not sufficient for such a
-//! marker: the NTT4x30 backends share `Q120bScalar` yet pack `VmpPMat`
-//! differently, which is precisely why interchangeability is opt-in per
-//! container family.
+//! marker: two backends can share a DFT word yet pack `VmpPMat` differently,
+//! which is precisely why interchangeability is opt-in per container family.
 //!
 //! Word types are a sizing + identity contract, not necessarily an element
 //! view: [`Backend::bytes_of_vmp_pmat`](crate::layouts::Backend::bytes_of_vmp_pmat)

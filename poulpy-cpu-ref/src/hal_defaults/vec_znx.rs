@@ -3,8 +3,8 @@
 use std::mem::size_of;
 
 use crate::reference::vec_znx::{
-    vec_znx_add, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_automorphism_assign_tmp_bytes, vec_znx_copy,
-    vec_znx_fill_uniform_ref, vec_znx_lsh_assign, vec_znx_lsh_assign_carry_bytes, vec_znx_mul_xp_minus_one_assign,
+    vec_znx_add, vec_znx_add_assign, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_automorphism_assign_tmp_bytes,
+    vec_znx_copy, vec_znx_fill_uniform_ref, vec_znx_lsh_assign, vec_znx_lsh_assign_carry_bytes, vec_znx_mul_xp_minus_one_assign,
     vec_znx_mul_xp_minus_one_assign_tmp_bytes, vec_znx_negate, vec_znx_negate_assign, vec_znx_normalize,
     vec_znx_normalize_assign, vec_znx_normalize_tmp_bytes, vec_znx_rotate, vec_znx_rotate_assign,
     vec_znx_rotate_assign_tmp_bytes, vec_znx_sub, vec_znx_sub_assign, vec_znx_sub_negate_assign, vec_znx_switch_ring,
@@ -19,7 +19,7 @@ use crate::reference::znx::{
 use crate::reference::{fft64::convolution::I64Ops, ntt4x30::I128BigOps};
 use poulpy_hal::{
     api::HostBufMut,
-    layouts::{Backend, HostDataMut, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataMut, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef},
     source::Source,
 };
 
@@ -186,15 +186,7 @@ where
         for<'x> Self::BufMut<'x>: HostDataMut,
         for<'x> Self::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
-        {
-            assert_eq!(a.n(), res.n());
-        }
-
-        let sum_size: usize = a.size().min(res.size());
-
-        for j in 0..sum_size {
-            Self::znx_add_assign(res.at_mut(res_col, j), a.at(a_col, j));
-        }
+        vec_znx_add_assign::<Self>(res, res_col, a, a_col);
     }
 
     fn vec_znx_sub_default<'a>(

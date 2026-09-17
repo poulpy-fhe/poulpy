@@ -113,7 +113,7 @@ where
 /// Builds the shared `E(x) = exp(2πi·x)` power basis for a batch of general
 /// LUTs: one EvalMod, then the union of every LUT's baby-step schedule.
 ///
-/// LUTs with the same padded length share a message ratio, but their coefficient
+/// LUTs with the same length share a message modulus, but their coefficient
 /// parity (and, for some split strategies, their BSGS split) can still differ,
 /// so the populated schedule must not depend on which LUT happens to be first.
 pub(crate) fn ckks_lut_power_basis<BE, F, C, H>(

@@ -779,7 +779,7 @@ pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: cra
     let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
 
     // Cover both residue classes mod 4 to exercise the conj/no-conj arms
-    // of the FFT64 plan and a range of orbits under odd-p multiplication.
+    // of the floating-point FFT plan and a range of orbits under odd-p multiplication.
     let p_values: &[i64] = &[1, 5, 9, 13, 3, 7, 11, 15, -1, -5];
 
     contract_check_one_backend::<BR>(base2k, module_host, module_ref, &mut scratch_ref, cols, p_values);

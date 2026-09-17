@@ -44,8 +44,8 @@ enum Case {
     General,
     Multi,
     Binary,
-    NonPowerOfTwo,
-    MultiNonPowerOfTwo,
+    GeneralModulus(usize),
+    MultiModulus(usize),
 }
 
 pub fn test_functional_bootstrapping_e2e<BE, F, E>(
@@ -97,11 +97,13 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    for guard_bits in [0, 6] {
-        run_case::<BE, F, E>(Case::NonPowerOfTwo, params, module, host_module, guard_bits);
+    for p in [2, 3, 5, 6, 7, 9, 17] {
+        for guard_bits in [0, 6] {
+            run_case::<BE, F, E>(Case::GeneralModulus(p), params, module, host_module, guard_bits);
+        }
     }
-    for guard_bits in [0, 6] {
-        run_case::<BE, F, E>(Case::MultiNonPowerOfTwo, params, module, host_module, guard_bits);
+    for p in [5, 6, 7] {
+        run_case::<BE, F, E>(Case::MultiModulus(p), params, module, host_module, 6);
     }
 }
 
@@ -183,27 +185,30 @@ fn run_case<BE, F, E>(
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let table_values: &[&[usize]] = match case {
-        Case::General => &[&[0, 1, 0, 0]],
-        Case::NonPowerOfTwo => &[&[2, 0, 1]],
-        Case::MultiNonPowerOfTwo => &[
-            &[5, 2, 7, 0, 3],
-            &[0, 1, 2, 3, 4, 5],
-            &[0, 0, 0, 0, 0, 0, 0],
-            &[7, 6, 5, 4, 3, 2, 1, 0],
+    let native_tables: Vec<Vec<usize>> = match case {
+        Case::GeneralModulus(p) => vec![(0..p).map(|m| (m * m + 3 * m + 2) % 7).collect()],
+        Case::MultiModulus(p) => vec![
+            (0..p).map(|m| (m * m + 3 * m + 2) % 7).collect(),
+            (0..p).collect(),
+            vec![0; p],
         ],
-        Case::Multi => &[
+        _ => Vec::new(),
+    };
+    let table_values: Vec<&[usize]> = match case {
+        Case::General => vec![&[0, 1, 0, 0]],
+        Case::GeneralModulus(_) | Case::MultiModulus(_) => native_tables.iter().map(Vec::as_slice).collect(),
+        Case::Multi => vec![
             &[5, 2, 7, 0, 3, 6, 1, 4],
             &[0, 1, 2, 3, 4, 5, 6, 7],
             &[0, 0, 0, 0, 0, 0, 0, 0],
         ],
-        Case::Binary => &[&[3, 1]],
+        Case::Binary => vec![&[3, 1]],
     };
     let tables: Vec<Vec<F>> = table_values
         .iter()
         .map(|table| table.iter().map(|&value| F::from_usize(value).unwrap()).collect())
         .collect();
-    let p = tables[0].len().next_power_of_two();
+    let p = tables[0].len();
     let plan = fbt_plan(params.base2k, guard_bits);
     let coeffs_meta = CoeffsMeta::from_delta_budget(LUT_LOG_DELTA, params.base2k);
 
@@ -222,7 +227,7 @@ fn run_case<BE, F, E>(
             )
             .unwrap(),
         ],
-        Case::General | Case::Multi | Case::NonPowerOfTwo | Case::MultiNonPowerOfTwo => tables
+        Case::General | Case::Multi | Case::GeneralModulus(_) | Case::MultiModulus(_) => tables
             .iter()
             .enumerate()
             .map(|(index, table)| {
@@ -237,17 +242,49 @@ fn run_case<BE, F, E>(
             })
             .collect(),
     };
+    for lut in &host_luts {
+        assert_eq!(lut.message_modulus(), p);
+        if let Some(series) = lut.general_series() {
+            assert_eq!(series.re.degree(), p - 1);
+            assert_eq!(series.im.degree(), p - 1);
+        }
+    }
+    let padded_luts: Vec<_> = if p.is_power_of_two() {
+        Vec::new()
+    } else {
+        tables
+            .iter()
+            .enumerate()
+            .map(|(index, table)| {
+                let mut padded = table.clone();
+                padded.resize(p.next_power_of_two(), F::zero());
+                let lut = EncodedLut::general(
+                    host_module,
+                    &padded,
+                    params.base2k.into(),
+                    CoeffsMeta::from_delta_budget(if index == 1 { LUT_LOG_DELTA - 5 } else { LUT_LOG_DELTA }, params.base2k),
+                    SplitStrategy::MinDepth,
+                )
+                .unwrap();
+                let scale = INPUT_LOG_DELTA + lut.log_msg_ratio();
+                assert!(host_luts[index].consumed_bits(scale) <= lut.consumed_bits(scale));
+                assert!(host_luts[index].general_series().unwrap().re.degree() < lut.general_series().unwrap().re.degree());
+                lut.transfer_to(module)
+            })
+            .collect()
+    };
+    let plan = plan.with_functional_bootstrap(&host_luts[0]).unwrap();
     let log_msg_ratio = host_luts[0].log_msg_ratio();
     let log_modulus_in = INPUT_LOG_DELTA + log_msg_ratio;
     let k_in = plan.input_k(log_modulus_in);
     let output_k = log_modulus_in + 2 * INPUT_LOG_DELTA;
     let functional_k = plan.functional_bootstrap_k(output_k, INPUT_LOG_DELTA, &host_luts[0]).unwrap();
-    let expected_functional_k = match case {
-        Case::General | Case::NonPowerOfTwo => 769 + guard_bits,
-        Case::Multi | Case::MultiNonPowerOfTwo => 814 + guard_bits,
-        Case::Binary => 668 + guard_bits,
-    };
-    assert_eq!(functional_k, expected_functional_k);
+    match case {
+        Case::General => assert_eq!(functional_k, 769 + guard_bits),
+        Case::Multi => assert_eq!(functional_k, 814 + guard_bits),
+        Case::Binary => assert_eq!(functional_k, 668 + guard_bits),
+        Case::GeneralModulus(_) | Case::MultiModulus(_) => {}
+    }
     let k_boot = functional_k.next_multiple_of(2 * params.base2k);
     let backend_luts: Vec<_> = host_luts.iter().map(|lut| lut.transfer_to(module)).collect();
     let tp = CKKSTestParams {
@@ -278,6 +315,12 @@ fn run_case<BE, F, E>(
         ScratchOwned::<BE>::alloc(initial_tmp)
     };
     let ctx = BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+    let padded_ctx = if padded_luts.is_empty() {
+        None
+    } else {
+        let plan = fbt_plan(params.base2k, guard_bits);
+        Some(BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap())
+    };
     let keys_layout = BootstrappingKeysLayout {
         automorphism_key: tp.atk_layout().layout,
         tensor_key: tp.tsk_layout().layout,
@@ -320,10 +363,16 @@ fn run_case<BE, F, E>(
     let mut op_scratch = ScratchOwned::<BE>::alloc(boot_tmp);
 
     let mut source = Source::new([9u8; 32]);
-    let sample = |source: &mut Source| ((source.next_f64(0.0, 1.0) * p as f64) as usize).min(p - 1);
+    let sample = |source: &mut Source| ((source.next_f64(0.0, 1.0) * (3 * p) as f64) as isize) - p as isize;
     for slots_kind in [SlotsKind::Complex, SlotsKind::Real] {
         let messages_re: Vec<_> = (0..params.n / 2)
-            .map(|i| if i < p { i } else { sample(&mut source) })
+            .map(|i| {
+                if i < 3 * p {
+                    i as isize - p as isize
+                } else {
+                    sample(&mut source)
+                }
+            })
             .collect();
         let messages_im: Vec<_> = (0..params.n / 2)
             .map(|_| {
@@ -334,8 +383,8 @@ fn run_case<BE, F, E>(
                 }
             })
             .collect();
-        let re: Vec<F> = messages_re.iter().map(|&value| F::from_usize(value).unwrap()).collect();
-        let im: Vec<F> = messages_im.iter().map(|&value| F::from_usize(value).unwrap()).collect();
+        let re: Vec<F> = messages_re.iter().map(|&value| F::from_isize(value).unwrap()).collect();
+        let im: Vec<F> = messages_im.iter().map(|&value| F::from_isize(value).unwrap()).collect();
         let mut ct = ckks_encrypt_with_prec(
             &tp,
             module,
@@ -379,14 +428,14 @@ fn run_case<BE, F, E>(
             let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, output, &sk, &mut scratch.borrow());
             let want_re: Vec<F> = messages_re
                 .iter()
-                .map(|&message| table.get(message).copied().unwrap_or_else(F::zero))
+                .map(|&message| table[message.rem_euclid(p as isize) as usize])
                 .collect();
             let want_im: Vec<F> = if slots_kind == SlotsKind::Real {
                 vec![F::zero(); messages_im.len()]
             } else {
                 messages_im
                     .iter()
-                    .map(|&message| table.get(message).copied().unwrap_or_else(F::zero))
+                    .map(|&message| table[message.rem_euclid(p as isize) as usize])
                     .collect()
             };
             for (got, want, part) in [(&got_re, &want_re, "re"), (&got_im, &want_im, "im")] {
@@ -397,6 +446,79 @@ fn run_case<BE, F, E>(
                     stats.min_log2_prec,
                     stats.avg_log2_prec
                 );
+            }
+        }
+
+        if let Some(padded_ctx) = &padded_ctx {
+            let mut rejected = vec![module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into())];
+            let error = module
+                .ckks_functional_bootstrap(
+                    &mut rejected,
+                    &ct,
+                    padded_ctx,
+                    &backend_luts[..1],
+                    &keys,
+                    &mut op_scratch.borrow(),
+                )
+                .unwrap_err();
+            assert!(error.to_string().contains("context must be configured"));
+            let error = module
+                .ckks_functional_bootstrap(&mut rejected, &ct, &ctx, &padded_luts[..1], &keys, &mut op_scratch.borrow())
+                .unwrap_err();
+            assert!(error.to_string().contains("context must be configured"));
+            let error = module
+                .ckks_bootstrap(&mut rejected[0], &ct, &ctx, &keys, &mut op_scratch.borrow())
+                .unwrap_err();
+            assert!(error.to_string().contains("identity bootstrapping context"));
+            let encode_padded = |messages: &[isize]| {
+                messages
+                    .iter()
+                    .map(|&m| F::from_usize(m.rem_euclid(p as isize) as usize).unwrap())
+                    .collect::<Vec<_>>()
+            };
+            let mut padded_ct = ckks_encrypt_with_prec(
+                &tp,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                k_in,
+                &encode_padded(&messages_re),
+                &encode_padded(&messages_im),
+                input_spec,
+                &mut scratch.borrow(),
+            );
+            padded_ct.set_slots(slots_kind);
+            let mut padded_outputs: Vec<_> = padded_luts
+                .iter()
+                .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
+                .collect();
+            let padded_tmp =
+                module.ckks_functional_bootstrap_tmp_bytes(&output_spec, &input_spec, padded_ctx, &padded_luts, &keys_layout);
+            let mut padded_scratch = ScratchOwned::<BE>::alloc(padded_tmp);
+            module
+                .ckks_functional_bootstrap(
+                    &mut padded_outputs,
+                    &padded_ct,
+                    padded_ctx,
+                    &padded_luts,
+                    &keys,
+                    &mut padded_scratch.borrow(),
+                )
+                .unwrap();
+            for (native, padded) in outputs.iter().zip(&padded_outputs) {
+                let (native_re, native_im) =
+                    ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, native, &sk, &mut scratch.borrow());
+                let (padded_re, padded_im) =
+                    ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, padded, &sk, &mut scratch.borrow());
+                for (got, want) in [(&native_re, &padded_re), (&native_im, &padded_im)] {
+                    let stats = precision_stats(got, want, native.log_delta());
+                    assert!(
+                        stats.min_log2_prec >= 8.0,
+                        "native/padded p={p}: {:.1} bits",
+                        stats.min_log2_prec
+                    );
+                }
             }
         }
 
@@ -442,7 +564,7 @@ fn run_case<BE, F, E>(
                 .unwrap();
         }
 
-        if slots_kind == SlotsKind::Complex && matches!(case, Case::Multi) {
+        if slots_kind == SlotsKind::Complex && matches!(case, Case::Multi | Case::MultiModulus(_)) {
             let luts = &backend_luts;
             let mut outputs: Vec<_> = luts
                 .iter()
@@ -466,7 +588,7 @@ fn run_case<BE, F, E>(
                 .unwrap(),
                 EncodedLut::general(
                     host_module,
-                    &tables[0][..4],
+                    &tables[0][..p - 1],
                     params.base2k.into(),
                     coeffs_meta,
                     SplitStrategy::MinDepth,
@@ -483,7 +605,7 @@ fn run_case<BE, F, E>(
                     &mut op_scratch.borrow(),
                 )
                 .unwrap_err();
-            assert!(error.to_string().contains("same message ratio"));
+            assert!(error.to_string().contains("same message modulus"));
 
             let binary_luts = vec![
                 EncodedLut::general(
