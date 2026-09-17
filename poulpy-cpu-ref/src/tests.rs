@@ -15,6 +15,34 @@ mod delegating_backend;
 mod derived_scratch;
 
 #[test]
+fn bootstrapping_presets_respect_max_base2k() {
+    use poulpy_ckks::{presets::bootstrapping::all, test_suite::presets::preset_for_backend};
+    use poulpy_core::layouts::LWEInfos;
+
+    assert_eq!(Module::<FFT64Ref>::MAX_BASE2K, 19);
+    assert_eq!(Module::<NTT4x30Ref>::MAX_BASE2K, 52);
+    for preset in all().unwrap() {
+        let fft = preset_for_backend::<FFT64Ref>(&preset).unwrap();
+        let ntt = preset_for_backend::<NTT4x30Ref>(&preset).unwrap();
+        assert_eq!((fft.base2k(), fft.key_dsize(), fft.dense_to_sparse_dsize()), (19, 7, 1));
+        assert_eq!(
+            (ntt.base2k(), ntt.key_dsize(), ntt.dense_to_sparse_dsize()),
+            (preset.base2k(), preset.key_dsize(), preset.dense_to_sparse_dsize())
+        );
+        for adapted in [fft, ntt] {
+            assert_eq!(
+                (adapted.input_k(), adapted.output_k(), adapted.bootstrap_k()),
+                (preset.input_k(), preset.output_k(), preset.bootstrap_k())
+            );
+            assert_eq!(adapted.plan().c2s_guard_bits(), preset.plan().c2s_guard_bits());
+            assert!(adapted.keys_layout().automorphism_key.k().as_usize() <= adapted.max_dense_modulus());
+            let small_key = &adapted.keys_layout().encapsulation.as_ref().unwrap().dense_to_sparse;
+            assert!(small_key.k().as_usize() <= adapted.max_sparse_modulus());
+        }
+    }
+}
+
+#[test]
 fn test_convolution_by_const_fft64_ref() {
     let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(64);
     test_convolution_by_const(&module, 8, 17);
