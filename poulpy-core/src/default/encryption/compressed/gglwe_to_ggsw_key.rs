@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, VecZnxCopyBackend},
+    api::{ModuleN, ScratchArenaTakeBasic, VecZnxCopy},
     layouts::{
         Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
     },
@@ -37,11 +37,7 @@ pub trait GGLWEToGGSWKeyCompressedEncryptSkDefault<BE: Backend> {
 
 impl<BE: Backend> GGLWEToGGSWKeyCompressedEncryptSkDefault<BE> for Module<BE>
 where
-    Self: ModuleN
-        + GGLWECompressedEncryptSk<BE>
-        + GLWESecretTensorFactory<BE>
-        + GLWESecretPreparedFactory<BE>
-        + VecZnxCopyBackend<BE>,
+    Self: ModuleN + GGLWECompressedEncryptSk<BE> + GLWESecretTensorFactory<BE> + GLWESecretPreparedFactory<BE> + VecZnxCopy<BE>,
 {
     fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -106,7 +102,7 @@ where
                 for j in 0..rank {
                     let (lo, hi) = if i <= j { (i, j) } else { (j, i) };
                     let idx: usize = lo * rank + hi - (lo * (lo + 1) / 2);
-                    self.vec_znx_copy_backend(&mut sk_ij_backend, j, &sk_tensor_backend, idx);
+                    self.vec_znx_copy(&mut sk_ij_backend, j, &sk_tensor_backend, idx);
                 }
             }
 

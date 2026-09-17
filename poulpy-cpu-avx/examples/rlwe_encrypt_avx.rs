@@ -1,4 +1,5 @@
 use itertools::izip;
+use poulpy_cpu_ref::ScalarZnxFill;
 use poulpy_cpu_ref::layouts::SvpPPolToBackendMut;
 use poulpy_cpu_ref::layouts::SvpPPolToBackendRef;
 use poulpy_cpu_ref::layouts::VecZnxBigToBackendMut;
@@ -22,17 +23,18 @@ use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 
 use poulpy_hal::{
     api::{
-        ScalarZnxFillTernaryProbSourceBackend, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftAssign, SvpPPolAlloc,
-        SvpPrepare, VecZnxAddNormalSourceBackend, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
+        ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxBigAddSmallAssign,
+        VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign, VecZnxDftAlloc,
+        VecZnxDftApply, VecZnxFillUniformSource, VecZnxIdftApplyTmpA, VecZnxNormalizeAssign,
     },
     layouts::{
-        Module, NoiseInfos, PrepareHint, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, ScratchOwned, VecZnx,
-        VecZnxBigOwned, VecZnxDftOwned, VecZnxToBackendMut, VecZnxToBackendRef,
+        Module, PrepareHint, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxBigOwned, VecZnxDftOwned,
+        VecZnxToBackendMut, VecZnxToBackendRef,
     },
     source::Source,
 };
+
+use poulpy_core::{NoiseInfos, VecZnxAddNormal};
 
 fn main() {
     let n: usize = 16;
@@ -50,14 +52,8 @@ fn main() {
 
     // s <- Z_{-1, 0, 1}[X]/(X^{N}+1)
     let mut s: ScalarZnx<Vec<u8>, i64> = module.scalar_znx_alloc(1);
-    // Sampled through the backend, so a backend that generates its secrets
-    // itself (device-side, secure element) substitutes its own implementation.
-    module.scalar_znx_fill_ternary_prob_source_backend(
-        &mut ScalarZnxToBackendMut::<BackendImpl>::to_backend_mut(&mut s),
-        0,
-        0.5,
-        &mut source,
-    );
+    // Sampled on the host; `poulpy_core::GLWESecretSampling` uploads secrets to a backend the same way.
+    s.fill_ternary_prob(0, 0.5, &mut source);
 
     // Buffer to store s in the DFT domain
     let mut s_dft = module.svp_ppol_alloc(s.cols(), PrepareHint::Reuse);
@@ -77,7 +73,7 @@ fn main() {
     );
 
     // Fill the second column with random values: ct = (0, a)
-    module.vec_znx_fill_uniform_source_backend(
+    module.vec_znx_fill_uniform_source(
         base2k,
         base2k * ct_size,
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
@@ -112,9 +108,10 @@ fn main() {
     let mut want: Vec<i64> = vec![0; n];
     want.iter_mut().for_each(|x| *x = source.next_u64n(16, 15) as i64);
     m.encode_vec_i64(base2k, 0, log_scale, &want);
-    module.vec_znx_normalize_assign_backend(
+    module.vec_znx_normalize_assign(
         base2k,
         msg_size * base2k,
+        0,
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut m),
         0,
         &mut scratch.borrow(),
@@ -144,7 +141,7 @@ fn main() {
 
     // Add noise to ct[0]
     // ct[0] <- ct[0] + e
-    module.vec_znx_add_normal_source_backend(
+    module.vec_znx_add_normal(
         base2k,
         &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
         0, // Selects the first column of ct (ct[0])

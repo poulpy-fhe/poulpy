@@ -5,6 +5,7 @@
 - [Backends](backends.md) — the FFT and NTT arithmetic families, the currently available subfamilies (`FFT64`, `NTT4x30`, `NTT3x42`), the available backend types, and how to choose one.
 - [Performance](performance.md) — choosing the arithmetic family, the backend, `base2k` and the thread count, with measurements for each decision and a diagnostic for finding the thread knee on your own machine.
 - [Grafting vs. the Bivariate Representation](grafting-vs-bivariate.md) — how Poulpy's bivariate base-`2^K` representation compares to RNS Grafting for bit-granular scale and modulus management.
+- [HAL model and contracts](../poulpy-hal/src/api/mod.rs), the rustdoc of `poulpy_hal::api` (`cargo doc -p poulpy-hal --open`): the value model, canonical form, limb rule, mutation and exactness classes, the degree-embedding rule and the contract block every HAL operation carries, with the derived operations and the backend implementation order in [`poulpy_hal::oep`](../poulpy-hal/src/oep/mod.rs) and the window views in [`poulpy_hal::layouts`](../poulpy-hal/src/layouts/mod.rs).
 
 ## CKKS
 

@@ -42,8 +42,8 @@ use poulpy_cpu_ref::reference::ntt4x30::{
 };
 
 use super::arithmetic_avx::{
-    b_from_znx64_avx2, b_from_znx64_masked_avx2, b_to_znx128_avx2, c_from_b_avx2, pack_left_1blk_x2_avx2,
-    pack_right_1blk_x2_avx2, pairwise_pack_left_1blk_x2_avx2, pairwise_pack_right_1blk_x2_avx2, vec_mat1col_product_bbb_avx2,
+    b_from_znx64_avx2, b_to_znx128_avx2, c_from_b_avx2, pack_left_1blk_x2_avx2, pack_right_1blk_x2_avx2,
+    pairwise_pack_left_1blk_x2_avx2, pairwise_pack_right_1blk_x2_avx2, vec_mat1col_product_bbb_avx2,
 };
 
 use super::mat_vec_avx::{vec_mat1col_product_bbc_avx2, vec_mat1col_product_x2_bbc_avx2, vec_mat2cols_product_x2_bbc_avx2};
@@ -234,12 +234,6 @@ impl NttFromZnx64 for NTT4x30Avx {
     fn ntt_from_znx64(res: &mut [u64], a: &[i64]) {
         // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
         unsafe { b_from_znx64_avx2(a.len(), res, a) }
-    }
-
-    #[inline(always)]
-    fn ntt_from_znx64_masked(res: &mut [u64], a: &[i64], mask: i64) {
-        // SAFETY: NTT4x30Avx::new() verifies AVX2 availability at construction time.
-        unsafe { b_from_znx64_masked_avx2(a.len(), res, a, mask) }
     }
 }
 

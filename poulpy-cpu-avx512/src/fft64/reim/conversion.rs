@@ -239,8 +239,9 @@ pub fn reim_to_znx_i64_assign_bnd63_avx512(res: &mut [f64], divisor: f64) {
         let divi_bits_512: __m512i = _mm512_castpd_si512(_mm512_set1_pd(divi_bits));
         let zero_512: __m512i = _mm512_set1_epi64(0);
 
-        let mut res_ptr_8xi64: *mut __m512i = res.as_mut_ptr() as *mut __m512i;
-        let mut res_ptr_1xf64: *mut f64 = res.as_mut_ptr();
+        let res_base: *mut f64 = res.as_mut_ptr();
+        let mut res_ptr_8xi64: *mut __m512i = res_base as *mut __m512i;
+        let mut res_ptr_1xf64: *mut f64 = res_base;
 
         let span: usize = res.len() >> 3;
 

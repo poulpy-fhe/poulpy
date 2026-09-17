@@ -34,7 +34,7 @@ use crate::{
 /// [encapsulation keys](BootstrappingKeys::encapsulation_keys).
 pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE> {
     /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
-    fn ckks_mod_up_tmp_bytes(&self) -> usize;
+    fn ckks_mod_up_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Scratch upper bound for a full [`Self::ckks_bootstrap`] call: the
     /// pipeline working ciphertexts it carves from scratch plus the largest

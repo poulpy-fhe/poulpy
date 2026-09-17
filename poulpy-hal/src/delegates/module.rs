@@ -6,7 +6,7 @@ use crate::{
 
 impl<B> ModuleNew<B> for Module<B>
 where
-    B: Backend + HalModuleImpl<B>,
+    B: Backend + HalModuleImpl,
 {
     fn new(n: u64) -> Self {
         B::new(n)

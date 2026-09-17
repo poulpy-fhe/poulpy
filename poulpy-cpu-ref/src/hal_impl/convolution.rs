@@ -2,33 +2,31 @@
 macro_rules! hal_impl_convolution {
     ($defaults:ident) => {
         fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-            <Self as $defaults<Self>>::cnv_prepare_left_tmp_bytes_default(module, res_size, a_size)
+            <Self as $defaults>::cnv_prepare_left_tmp_bytes_default(module, res_size, a_size)
         }
 
         fn cnv_prepare_left(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            mask: i64,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults<Self>>::cnv_prepare_left_default(module, res, a, mask, &mut scratch);
+            <Self as $defaults>::cnv_prepare_left_default(module, res, a, &mut scratch);
         }
 
         fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-            <Self as $defaults<Self>>::cnv_prepare_right_tmp_bytes_default(module, res_size, a_size)
+            <Self as $defaults>::cnv_prepare_right_tmp_bytes_default(module, res_size, a_size)
         }
 
         fn cnv_prepare_right(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            mask: i64,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults<Self>>::cnv_prepare_right_default(module, res, a, mask, &mut scratch);
+            <Self as $defaults>::cnv_prepare_right_default(module, res, a, &mut scratch);
         }
 
         fn cnv_apply_dft_tmp_bytes(
@@ -38,7 +36,7 @@ macro_rules! hal_impl_convolution {
             a_size: usize,
             b_size: usize,
         ) -> usize {
-            <Self as $defaults<Self>>::cnv_apply_dft_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
+            <Self as $defaults>::cnv_apply_dft_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
         }
 
         fn cnv_by_const_apply_tmp_bytes(
@@ -48,7 +46,7 @@ macro_rules! hal_impl_convolution {
             a_size: usize,
             b_size: usize,
         ) -> usize {
-            <Self as $defaults<Self>>::cnv_by_const_apply_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
+            <Self as $defaults>::cnv_by_const_apply_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -65,7 +63,7 @@ macro_rules! hal_impl_convolution {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults<Self>>::cnv_by_const_apply_default(
+            <Self as $defaults>::cnv_by_const_apply_default(
                 module,
                 cnv_offset,
                 &mut res,
@@ -77,6 +75,16 @@ macro_rules! hal_impl_convolution {
                 b_coeff,
                 &mut scratch,
             );
+        }
+
+        fn cnv_by_const_apply_add_tmp_bytes(
+            module: &Module<Self>,
+            cnv_offset: usize,
+            res_size: usize,
+            a_size: usize,
+            b_size: usize,
+        ) -> usize {
+            <Self as $defaults>::cnv_by_const_apply_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -93,7 +101,7 @@ macro_rules! hal_impl_convolution {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults<Self>>::cnv_by_const_apply_add_default(
+            <Self as $defaults>::cnv_by_const_apply_add_default(
                 module,
                 cnv_offset,
                 &mut res,
@@ -120,21 +128,21 @@ macro_rules! hal_impl_convolution {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults<Self>>::cnv_apply_dft_default(
-                module,
-                cnv_offset,
-                &mut res,
-                res_col,
-                a,
-                a_col,
-                b,
-                b_col,
-                &mut scratch,
-            );
+            <Self as $defaults>::cnv_apply_dft_default(module, cnv_offset, &mut res, res_col, a, a_col, b, b_col, &mut scratch);
+        }
+
+        fn cnv_apply_dft_add_tmp_bytes(
+            module: &Module<Self>,
+            cnv_offset: usize,
+            res_size: usize,
+            a_size: usize,
+            b_size: usize,
+        ) -> usize {
+            <Self as $defaults>::cnv_apply_dft_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn cnv_apply_dft_accumulate(
+        fn cnv_apply_dft_add(
             module: &Module<Self>,
             cnv_offset: usize,
             mut res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
@@ -146,7 +154,7 @@ macro_rules! hal_impl_convolution {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults<Self>>::cnv_apply_dft_accumulate_default(
+            <Self as $defaults>::cnv_apply_dft_add_default(
                 module,
                 cnv_offset,
                 &mut res,
@@ -166,7 +174,7 @@ macro_rules! hal_impl_convolution {
             a_size: usize,
             b_size: usize,
         ) -> usize {
-            <Self as $defaults<Self>>::cnv_pairwise_apply_dft_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
+            <Self as $defaults>::cnv_pairwise_apply_dft_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -182,21 +190,11 @@ macro_rules! hal_impl_convolution {
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults<Self>>::cnv_pairwise_apply_dft_default(
-                module,
-                cnv_offset,
-                &mut res,
-                res_col,
-                a,
-                b,
-                i,
-                j,
-                &mut scratch,
-            );
+            <Self as $defaults>::cnv_pairwise_apply_dft_default(module, cnv_offset, &mut res, res_col, a, b, i, j, &mut scratch);
         }
 
         fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-            <Self as $defaults<Self>>::cnv_prepare_self_tmp_bytes_default(module, res_size, a_size)
+            <Self as $defaults>::cnv_prepare_self_tmp_bytes_default(module, res_size, a_size)
         }
 
         fn cnv_prepare_self(
@@ -204,11 +202,10 @@ macro_rules! hal_impl_convolution {
             left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
             right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            mask: i64,
             scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
-            <Self as $defaults<Self>>::cnv_prepare_self_default(module, left, right, a, mask, &mut scratch);
+            <Self as $defaults>::cnv_prepare_self_default(module, left, right, a, &mut scratch);
         }
     };
 }

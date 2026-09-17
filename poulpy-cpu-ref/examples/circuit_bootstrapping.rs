@@ -1,3 +1,4 @@
+use poulpy_core::NoiseInfos;
 use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
@@ -7,13 +8,12 @@ use poulpy_core::{
         prepared::{GGSWPrepared, GGSWPreparedFactory, GLWESecretPrepared, GLWESecretPreparedFactory},
     },
 };
-use poulpy_hal::layouts::NoiseInfos;
 use std::time::Instant;
 
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssignBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssign},
     layouts::{Backend, Module, ScalarZnx, ScratchOwned, VecZnxToBackendMut, ZnxView, ZnxViewMut},
     source::Source,
 };
@@ -158,9 +158,10 @@ fn main() {
     pt_lwe.encode_i64(data, (k_lwe_pt + 1).into()); // +1 for padding bit
 
     // Normalize plaintext to nicely print coefficients
-    module.vec_znx_normalize_assign_backend(
+    module.vec_znx_normalize_assign(
         base2k,
         pt_lwe.size() * base2k,
+        0,
         &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_lwe.data_mut()),
         0,
         &mut scratch.borrow(),
@@ -259,9 +260,10 @@ fn main() {
         .for_each(|(x, y)| *y = (x % (1 << (k_glwe_pt - 1))) as i64 - (1 << (k_glwe_pt - 2)));
 
     pt_glwe.encode_vec_i64(&data_vec, (k_lwe_pt + 2).into());
-    module.vec_znx_normalize_assign_backend(
+    module.vec_znx_normalize_assign(
         base2k,
         pt_glwe.size() * base2k,
+        0,
         &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_glwe.data_mut()),
         0,
         &mut scratch.borrow(),

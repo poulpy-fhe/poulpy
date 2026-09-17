@@ -10,10 +10,7 @@ use poulpy_core::{
     oep::{DecryptionDefault, EncryptionDefault},
 };
 use poulpy_hal::{
-    api::{
-        VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend,
-        VecZnxRshTmpBytes,
-    },
+    api::{VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena},
     oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
     source::Source,
@@ -26,62 +23,62 @@ use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, defa
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
-    fn ckks_encrypt_sk_tmp_bytes_impl<A>(module: &Module<BE>, ct_infos: &A) -> usize
+pub unsafe trait CKKSEncryptionImpl: Backend {
+    fn ckks_encrypt_sk_tmp_bytes_impl<A>(module: &Module<Self>, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds;
 
     fn ckks_encrypt_sk_impl<Dct, S, E, Pt>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         ct: &mut Dct,
         pt: &Pt,
         sk: &S,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
         E: EncryptionInfos,
-        Pt: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
-        Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        S: GLWESecretPreparedToBackendRef<BE>;
+        Pt: GLWEToBackendRef<Self> + IntPolyInfos + CKKSCtBounds,
+        Dct: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+        S: GLWESecretPreparedToBackendRef<Self>;
 
-    fn ckks_decrypt_tmp_bytes_impl<A>(module: &Module<BE>, ct_infos: &A) -> usize
+    fn ckks_decrypt_tmp_bytes_impl<A>(module: &Module<Self>, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds;
 
     fn ckks_decrypt_impl<S, Dct, Pt>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         pt: &mut Pt,
         ct: &Dct,
         sk: &S,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) -> Result<()>
     where
-        Pt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
-        Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
+        Pt: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
+        Dct: GLWEToBackendRef<Self> + GLWEInfos + CKKSCtBounds,
+        S: GLWESecretPreparedToBackendRef<Self> + GLWEInfos;
 }
 
 /// Default encryption/decryption, deliberately restricted to host backends
 /// (`HostBackend` + host-visible buffer views): the [`CKKSEncryptionImpl`]
 /// trait itself carries no host bounds, and a device backend implements it
 /// natively instead of relying on this blanket impl.
-unsafe impl<BE: Backend> CKKSEncryptionImpl<BE> for BE
+unsafe impl<BE: Backend> CKKSEncryptionImpl for BE
 where
-    BE: HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE> + HostBackend,
+    BE: HalVecZnxImpl + HalVecZnxBigImpl + HalVecZnxDftImpl + HalSvpImpl + HostBackend,
     Module<BE>: CKKSEncryptionDefault<BE>
         + CKKSPlaintextDefault<BE>
         + EncryptionDefault<BE>
         + DecryptionDefault<BE>
         + poulpy_core::GLWENormalize<BE>
-        + VecZnxLshAddIntoBackend<BE>
-        + VecZnxRshAddIntoBackend<BE>
+        + VecZnxLshAdd<BE>
+        + VecZnxRshAdd<BE>
         + VecZnxRshTmpBytes
-        + VecZnxLshBackend<BE>
+        + VecZnxLsh<BE>
         + VecZnxLshTmpBytes
-        + VecZnxRshBackend<BE>,
+        + VecZnxRsh<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
 {

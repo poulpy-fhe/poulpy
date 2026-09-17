@@ -1,19 +1,14 @@
 use crate::layouts::VecZnxBigBackendMut;
 use crate::layouts::VecZnxBigBackendRef;
-use crate::layouts::VecZnxBigOwned;
-use std::f64::consts::SQRT_2;
-
-use poulpy_hal::api::VecZnxBigAlloc;
 
 use crate::{
-    api::VecZnxBigAddNormal,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
+        VecZnxToBackendRef, ZnxViewMut,
     },
     reference::{
         vec_znx::{
-            vec_znx_add_assign, vec_znx_add_into, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_negate,
+            vec_znx_add, vec_znx_add_assign, vec_znx_automorphism, vec_znx_automorphism_assign, vec_znx_negate,
             vec_znx_negate_assign, vec_znx_normalize, vec_znx_normalize_tmp_bytes, vec_znx_sub, vec_znx_sub_assign,
             vec_znx_sub_negate_assign,
         },
@@ -43,7 +38,7 @@ where
     VecZnx::from_shape(v.data, shape)
 }
 
-pub fn vec_znx_big_add_into<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn vec_znx_big_add<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -55,7 +50,7 @@ where
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let b_vznx = big_as_vec_znx_ref::<BE>(b.to_backend_ref());
-    vec_znx_add_into::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_vznx, b_col);
+    vec_znx_add::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_vznx, b_col);
 }
 
 pub fn vec_znx_big_add_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -71,7 +66,7 @@ where
     vec_znx_add_assign::<BE>(&mut res_vznx, res_col, &a_vznx, a_col);
 }
 
-pub fn vec_znx_big_add_small_into<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn vec_znx_big_add_small<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i64, ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -83,7 +78,7 @@ where
     let mut res_vznx = big_as_vec_znx_mut::<BE>(res.to_backend_mut());
     let a_vznx = big_as_vec_znx_ref::<BE>(a.to_backend_ref());
     let b_ref = b.to_backend_ref();
-    vec_znx_add_into::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_ref, b_col);
+    vec_znx_add::<BE>(&mut res_vznx, res_col, &a_vznx, a_col, &b_ref, b_col);
 }
 
 pub fn vec_znx_big_add_small_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -199,63 +194,29 @@ pub fn vec_znx_big_normalize<R, A, BE>(
     );
 }
 
-pub fn vec_znx_big_add_normal_ref<R, B>(base2k: usize, res: &mut R, res_col: usize, noise_infos: NoiseInfos, source: &mut Source)
-where
+pub fn vec_znx_big_add_normal_ref<R, B>(
+    base2k: usize,
+    res: &mut R,
+    res_col: usize,
+    k: usize,
+    sigma: f64,
+    bound: f64,
+    source: &mut Source,
+) where
     B: Backend<BigWord = i64, ZnxWord = i64>,
     for<'a> B::BufMut<'a>: HostDataMut,
     R: VecZnxBigToBackendMut<B>,
 {
     let mut res = res.to_backend_mut();
     assert!(
-        (noise_infos.bound.log2().ceil() as i64) < 64,
+        (bound.log2().ceil() as i64) < 64,
         "invalid bound: ceil(log2(bound))={} > 63",
-        (noise_infos.bound.log2().ceil() as i64)
+        (bound.log2().ceil() as i64)
     );
 
-    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
-    znx_add_normal_f64_ref(res.at_mut(res_col, limb), noise_infos.sigma, noise_infos.bound, shift, source)
-}
-
-pub fn test_vec_znx_big_add_normal<B>(module: &Module<B>)
-where
-    B: Backend<BigWord = i64, ZnxWord = i64> + 'static,
-    B::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> B::BufMut<'a>: HostDataMut,
-    for<'a> B::BufRef<'a>: HostDataRef,
-    Module<B>: VecZnxBigAddNormal<B>,
-{
-    let n: usize = module.n();
-    let base2k: usize = 17;
-    let noise_infos = NoiseInfos::new(2 * 17, 3.2, 6.0 * 3.2).unwrap();
-    let size: usize = 5;
-    let mut source: Source = Source::new([0u8; 32]);
-    let cols: usize = 2;
-    let zero: Vec<i64> = vec![0; n];
-    let k_f64: f64 = (1u64 << noise_infos.k as u64) as f64;
-    let sqrt2: f64 = SQRT_2;
-    (0..cols).for_each(|col_i| {
-        let mut a: VecZnxBigOwned<B> = module.vec_znx_big_alloc(cols, size);
-        {
-            let mut a_ref = a.to_backend_mut();
-            module.vec_znx_big_add_normal(base2k, &mut a_ref, col_i, noise_infos, &mut source);
-            module.vec_znx_big_add_normal(base2k, &mut a_ref, col_i, noise_infos, &mut source);
-        }
-        (0..cols).for_each(|col_j| {
-            if col_j != col_i {
-                (0..size).for_each(|limb_i| {
-                    assert_eq!(a.at(col_j, limb_i), zero);
-                })
-            } else {
-                let std: f64 = a.stats(base2k, col_i).std() * k_f64;
-                assert!(
-                    (std - noise_infos.sigma * sqrt2).abs() < 0.1,
-                    "std={} ~!= {}",
-                    std,
-                    noise_infos.sigma * sqrt2
-                );
-            }
-        })
-    });
+    let limb: usize = k.div_ceil(base2k) - 1;
+    let shift: u32 = ((limb + 1) * base2k - k) as u32;
+    znx_add_normal_f64_ref(res.at_mut(res_col, limb), sigma, bound, shift, source)
 }
 
 /// R <- A - B

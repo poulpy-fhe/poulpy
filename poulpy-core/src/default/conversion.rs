@@ -8,13 +8,12 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyRangeBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
-        VecZnxExtractCoeffBackend, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
-        VecZnxRotateBackend, VecZnxZeroBackend,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply,
+        VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxRotate, VecZnxZero,
     },
     layouts::{
         Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
-        VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos,
+        VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_ref,
     },
 };
 
@@ -36,7 +35,7 @@ use crate::{
 pub fn lwe_sample_extract_default<BE, M, R, A>(module: &M, res: &mut R, a: &A)
 where
     BE: Backend,
-    M: ModuleN + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
+    M: ModuleN + VecZnxCopy<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
@@ -47,15 +46,19 @@ where
     assert_eq!(a.n(), module.n() as u32);
     assert!(res.base2k() == a.base2k());
 
-    let min_size: usize = res.size().min(a.size());
     let n: usize = res.n().into();
-
-    module.vec_znx_zero_backend(&mut res.body, 0);
-    module.vec_znx_zero_backend(&mut res.mask, 0);
-    (0..min_size).for_each(|i| {
-        module.vec_znx_copy_range_backend(&mut res.body, 0, i, 0, &a.data, 0, i, 0, 1);
-        module.vec_znx_copy_range_backend(&mut res.mask, 0, i, 0, &a.data, 1, i, 0, n);
-    });
+    module.vec_znx_copy(
+        &mut res.body,
+        0,
+        &vec_znx_backend_ref_from_ref::<BE>(&a.data).window_coeffs(0, 1),
+        0,
+    );
+    module.vec_znx_copy(
+        &mut res.mask,
+        0,
+        &vec_znx_backend_ref_from_ref::<BE>(&a.data).window_coeffs(0, n),
+        1,
+    );
 }
 
 pub fn glwe_expand_lwe_tmp_bytes_default<BE, M, R, A>(module: &M, lwe_infos: &R, a_infos: &A) -> usize
@@ -105,7 +108,7 @@ where
 pub fn glwe_expand_lwe_default<BE, M, R, A>(module: &M, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: ModuleN + VecZnxExtractCoeffBackend<BE> + VecZnxRotateBackend<BE> + VecZnxCopyRangeBackend<BE>,
+    M: ModuleN + VecZnxCopy<BE> + VecZnxRotate<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
@@ -122,24 +125,37 @@ where
     if rank == 1 {
         for (i, lwe) in res.iter_mut().enumerate() {
             let mut lwe = lwe.to_backend_mut();
-            module.vec_znx_extract_coeff_backend(&mut lwe.body, 0, &a.data, 0, i);
-            module.vec_znx_rotate_backend(-(i as i64), &mut lwe.mask, 0, &a.data, 1);
+            module.vec_znx_copy(
+                &mut lwe.body,
+                0,
+                &vec_znx_backend_ref_from_ref::<BE>(&a.data).window_coeffs(i, 1),
+                0,
+            );
+            module.vec_znx_rotate(-(i as i64), &mut lwe.mask, 0, &a.data, 1);
         }
     } else {
         let lwe_size = res.first().map(|r| r.size()).unwrap_or(0);
         let (mut tmp, _) = scratch.borrow().take_vec_znx_scratch(n, 1, lwe_size);
         for (i, lwe) in res.iter_mut().enumerate() {
             let mut lwe = lwe.to_backend_mut();
-            module.vec_znx_extract_coeff_backend(&mut lwe.body, 0, &a.data, 0, i);
+            module.vec_znx_copy(
+                &mut lwe.body,
+                0,
+                &vec_znx_backend_ref_from_ref::<BE>(&a.data).window_coeffs(i, 1),
+                0,
+            );
             for j in 0..rank {
                 {
                     let mut tmp_mut = tmp.to_backend_mut();
-                    module.vec_znx_rotate_backend(-(i as i64), &mut tmp_mut, 0, &a.data, j + 1);
+                    module.vec_znx_rotate(-(i as i64), &mut tmp_mut, 0, &a.data, j + 1);
                 }
                 let tmp_ref = tmp.to_backend_ref();
-                for l in 0..lwe_size {
-                    module.vec_znx_copy_range_backend(&mut lwe.mask, 0, l, j * n, &tmp_ref, 0, l, 0, n);
-                }
+                module.vec_znx_copy(
+                    &mut vec_znx_backend_mut_from_mut::<BE>(&mut lwe.mask).window_coeffs(j * n, n),
+                    0,
+                    &tmp_ref,
+                    0,
+                );
             }
         }
     }
@@ -158,7 +174,7 @@ where
 pub fn glwe_expand_lwe_matrix_default<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: ModuleN + VecZnxRotateBackend<BE> + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
+    M: ModuleN + VecZnxRotate<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
     R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
@@ -184,37 +200,32 @@ where
         glwe_expand_lwe_matrix_tmp_bytes_default::<BE, _, _, _>(module, &res, &a)
     );
 
-    module.vec_znx_zero_backend(&mut res.body, 0);
     for col in 0..res.n().as_usize() {
-        module.vec_znx_zero_backend(&mut res.mask, col);
+        module.vec_znx_zero(&mut res.mask, col);
     }
 
     let (mut tmp, _) = scratch.borrow().take_vec_znx_scratch(n, 1, min_size);
-    for limb in 0..min_size {
-        module.vec_znx_copy_range_backend(&mut res.body, 0, limb, 0, &a.data, 0, limb, 0, rows);
-    }
+    module.vec_znx_copy(
+        &mut res.body,
+        0,
+        &vec_znx_backend_ref_from_ref::<BE>(&a.data).window_coeffs(0, rows),
+        0,
+    );
 
     for row in 0..rows {
         for glwe_col in 0..rank {
             {
                 let mut tmp = tmp.to_backend_mut();
-                module.vec_znx_rotate_backend(-(row as i64), &mut tmp, 0, &a.data, glwe_col + 1);
+                module.vec_znx_rotate(-(row as i64), &mut tmp, 0, &a.data, glwe_col + 1);
             }
             let tmp_ref = tmp.to_backend_ref();
-            for limb in 0..min_size {
-                for coeff in 0..n {
-                    module.vec_znx_copy_range_backend(
-                        &mut res.mask,
-                        glwe_col * n + coeff,
-                        limb,
-                        row,
-                        &tmp_ref,
-                        0,
-                        limb,
-                        coeff,
-                        1,
-                    );
-                }
+            for coeff in 0..n {
+                module.vec_znx_copy(
+                    &mut vec_znx_backend_mut_from_mut::<BE>(&mut res.mask).window_coeffs(row, 1),
+                    glwe_col * n + coeff,
+                    &vec_znx_backend_ref_from_ref::<BE>(&tmp_ref).window_coeffs(coeff, 1),
+                    0,
+                );
             }
         }
     }
@@ -262,8 +273,8 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
         + ConversionDefault<BE>
         + ModuleN
         + GLWEKeyswitchDefault<BE>
-        + VecZnxCopyRangeBackend<BE>
-        + VecZnxZeroBackend<BE>
+        + VecZnxCopy<BE>
+        + VecZnxZero<BE>
         + VecZnxNormalize<BE>
         + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -295,23 +306,29 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
         k: lwe.k(),
         rank: 1u32.into(),
     });
-    module.vec_znx_zero_backend(&mut glwe.data, 0);
-    module.vec_znx_zero_backend(&mut glwe.data, 1);
+    module.vec_znx_zero(&mut glwe.data, 0);
+    module.vec_znx_zero(&mut glwe.data, 1);
 
     let n_lwe: usize = lwe.n().into();
 
     let mut scratch_1 = if lwe.base2k() == ksk.base2k() {
-        for i in 0..lwe.size() {
-            module.vec_znx_copy_range_backend(&mut glwe.data, 0, i, 0, &lwe.body, 0, i, 0, 1);
-            module.vec_znx_copy_range_backend(&mut glwe.data, 1, i, 0, &lwe.mask, 0, i, 0, n_lwe);
-        }
+        module.vec_znx_copy(
+            &mut vec_znx_backend_mut_from_mut::<BE>(&mut glwe.data).window_coeffs(0, 1),
+            0,
+            &lwe.body,
+            0,
+        );
+        module.vec_znx_copy(
+            &mut vec_znx_backend_mut_from_mut::<BE>(&mut glwe.data).window_coeffs(0, n_lwe),
+            1,
+            &lwe.mask,
+            0,
+        );
         scratch_1
     } else {
         let (mut a_conv, mut scratch_2) = scratch_1.take_vec_znx_scratch(module.n(), 1, lwe.size());
-        module.vec_znx_zero_backend(&mut a_conv, 0);
-        for j in 0..lwe.size() {
-            module.vec_znx_copy_range_backend(&mut a_conv, 0, j, 0, &lwe.body, 0, j, 0, 1);
-        }
+        module.vec_znx_zero(&mut a_conv, 0);
+        module.vec_znx_copy(&mut a_conv.to_backend_mut().window_coeffs(0, 1), 0, &lwe.body, 0);
 
         module.vec_znx_normalize(
             &mut glwe.data,
@@ -325,10 +342,8 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
             &mut scratch_2.borrow(),
         );
 
-        module.vec_znx_zero_backend(&mut a_conv, 0);
-        for j in 0..lwe.size() {
-            module.vec_znx_copy_range_backend(&mut a_conv, 0, j, 0, &lwe.mask, 0, j, 0, n_lwe);
-        }
+        module.vec_znx_zero(&mut a_conv, 0);
+        module.vec_znx_copy(&mut a_conv.to_backend_mut().window_coeffs(0, n_lwe), 0, &lwe.mask, 0);
 
         module.vec_znx_normalize(
             &mut glwe.data,
@@ -386,13 +401,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEBytesOf<BE>
-        + ConversionDefault<BE>
-        + ModuleN
-        + GLWEKeyswitchDefault<BE>
-        + GLWERotate<BE>
-        + VecZnxCopyRangeBackend<BE>
-        + VecZnxZeroBackend<BE>,
+    M: GLWEBytesOf<BE> + ConversionDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + GLWERotate<BE> + VecZnxCopy<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
@@ -426,15 +435,20 @@ pub fn lwe_from_glwe_default<BE, M, R, A>(
 
     let mut res_backend = res.to_backend_mut();
     let tmp_glwe_rank_1_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe_rank_1);
-    let min_size: usize = res_backend.size().min(tmp_glwe_rank_1_ref.size());
     let n: usize = res_backend.n().into();
 
-    module.vec_znx_zero_backend(&mut res_backend.body, 0);
-    module.vec_znx_zero_backend(&mut res_backend.mask, 0);
-    for i in 0..min_size {
-        module.vec_znx_copy_range_backend(&mut res_backend.body, 0, i, 0, &tmp_glwe_rank_1_ref.data, 0, i, 0, 1);
-        module.vec_znx_copy_range_backend(&mut res_backend.mask, 0, i, 0, &tmp_glwe_rank_1_ref.data, 1, i, 0, n);
-    }
+    module.vec_znx_copy(
+        &mut res_backend.body,
+        0,
+        &vec_znx_backend_ref_from_ref::<BE>(&tmp_glwe_rank_1_ref.data).window_coeffs(0, 1),
+        0,
+    );
+    module.vec_znx_copy(
+        &mut res_backend.mask,
+        0,
+        &vec_znx_backend_ref_from_ref::<BE>(&tmp_glwe_rank_1_ref.data).window_coeffs(0, n),
+        1,
+    );
 }
 
 pub fn ggsw_from_gglwe_tmp_bytes_default<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize

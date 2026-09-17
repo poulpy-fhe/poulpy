@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{SvpPPolBytesOf, VecZnxAutomorphismBackend},
+    api::{SvpPPolBytesOf, VecZnxAutomorphism},
     layouts::{
         Backend, GaloisElement, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
         scalar_znx_as_vec_znx_backend_ref_from_ref,
@@ -38,7 +38,7 @@ pub trait GLWEAutomorphismKeyEncryptSkDefault<BE: Backend> {
 
 impl<BE: Backend> GLWEAutomorphismKeyEncryptSkDefault<BE> for Module<BE>
 where
-    Self: GGLWEEncryptSk<BE> + VecZnxAutomorphismBackend<BE> + GaloisElement + SvpPPolBytesOf + GLWESecretPreparedFactory<BE>,
+    Self: GGLWEEncryptSk<BE> + VecZnxAutomorphism<BE> + GaloisElement + SvpPPolBytesOf + GLWESecretPreparedFactory<BE>,
 {
     fn glwe_automorphism_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -95,7 +95,7 @@ where
             let sk_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk.data());
             let mut sk_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_out.data_mut());
             for i in 0..sk.rank().into() {
-                self.vec_znx_automorphism_backend(self.galois_element_inv(p), &mut sk_out_backend, i, &sk_backend, i);
+                self.vec_znx_automorphism(self.galois_element_inv(p), &mut sk_out_backend, i, &sk_backend, i);
             }
         }
         self.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);

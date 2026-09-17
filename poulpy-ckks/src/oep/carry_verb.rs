@@ -26,7 +26,6 @@ macro_rules! ckks_carry_verb_oep {
         default_trait: $Default:ident,
         glwe_bound: $GLWEVerb:ident,
         pt_vec_bounds: [$($PtVecBound:ident),+ $(,)?],
-        pt_const_bounds: [$($PtConstBound:ident),+ $(,)?],
     ) => {
         ::paste::paste! {
             #[doc = concat!("Backend override seam for the CKKS ", $doc_verb, " family.")]
@@ -38,50 +37,50 @@ macro_rules! ckks_carry_verb_oep {
             /// Implementations must satisfy the contracts of all trait methods, including
             /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
             /// associated method signatures.
-            pub unsafe trait $Impl<BE: Backend>: Backend {
-                fn [<ckks_ $verb _tmp_bytes_impl>](module: &Module<BE>) -> usize;
+            pub unsafe trait $Impl: Backend {
+                fn [<ckks_ $verb _tmp_bytes_impl>](module: &Module<Self>, res_size: usize) -> usize;
                 fn [<ckks_ $verb _into_impl>]<Dst, A, B>(
-                    module: &Module<BE>,
+                    module: &Module<Self>,
                     dst: &mut Dst,
                     a: &A,
                     b: &B,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    B: GLWEToBackendRef<BE> + CKKSCtBounds;
+                    Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+                    A: GLWEToBackendRef<Self> + CKKSCtBounds,
+                    B: GLWEToBackendRef<Self> + CKKSCtBounds;
                 fn [<ckks_ $verb _into_unnormalized_impl>]<Dst, A, B>(
-                    module: &Module<BE>,
-                    dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                    module: &Module<Self>,
+                    dst: &mut UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
                     a: &A,
                     b: &B,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    B: GLWEToBackendRef<BE> + CKKSCtBounds;
+                    GLWE<Dst, Self::ZnxWord>: GLWEToBackendMut<Self>,
+                    A: GLWEToBackendRef<Self> + CKKSCtBounds,
+                    B: GLWEToBackendRef<Self> + CKKSCtBounds;
                 fn [<ckks_ $verb _assign_impl>]<Dst, A>(
-                    module: &Module<BE>,
+                    module: &Module<Self>,
                     dst: &mut Dst,
                     a: &A,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSInfos;
+                    Dst: GLWEToBackendMut<Self> + CKKSInfos + SetCKKSInfos,
+                    A: GLWEToBackendRef<Self> + CKKSInfos;
                 fn [<ckks_ $verb _assign_unnormalized_impl>]<Dst, A>(
-                    module: &Module<BE>,
-                    dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                    module: &Module<Self>,
+                    dst: &mut UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
                     a: &A,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSInfos;
+                    GLWE<Dst, Self::ZnxWord>: GLWEToBackendMut<Self>,
+                    A: GLWEToBackendRef<Self> + CKKSInfos;
                 /// Crate-internal accumulator seam: like the `_assign_unnormalized`
                 /// variant, but on an [`UnnormalizedCKKSCiphertextRefMut`] reborrow of a
                 /// caller-owned normalized ciphertext. Deliberately has **no api
@@ -90,121 +89,121 @@ macro_rules! ckks_carry_verb_oep {
                 /// uncallable — and a public constructor would void the `Normalized`
                 /// type guard. Consumed by the composite dot-product accumulators.
                 fn [<ckks_ $verb _assign_unnormalized_ref_impl>]<Dst, A>(
-                    module: &Module<BE>,
-                    dst: &mut UnnormalizedCKKSCiphertextRefMut<'_, Dst, BE::ZnxWord>,
+                    module: &Module<Self>,
+                    dst: &mut UnnormalizedCKKSCiphertextRefMut<'_, Dst, Self::ZnxWord>,
                     a: &A,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSInfos;
+                    CKKSCiphertext<Dst, Self::ZnxWord>: GLWEToBackendMut<Self>,
+                    A: GLWEToBackendRef<Self> + CKKSInfos;
                 fn [<ckks_ $verb _one_assign_impl>]<Dst>(
-                    module: &Module<BE>,
+                    module: &Module<Self>,
                     dst: &mut Dst,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
-                fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<BE>) -> usize;
+                    Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos;
+                fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<Self>, res_size: usize) -> usize;
                 fn [<ckks_ $verb _pt_vec_into_impl>]<Dst, A, P>(
-                    module: &Module<BE>,
+                    module: &Module<Self>,
                     dst: &mut Dst,
                     a: &A,
                     pt: &P,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+                    A: GLWEToBackendRef<Self> + CKKSCtBounds,
+                    P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_vec_into_unnormalized_impl>]<Dst, A, P>(
-                    module: &Module<BE>,
-                    dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                    module: &Module<Self>,
+                    dst: &mut UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
                     a: &A,
                     pt: &P,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    GLWE<Dst, Self::ZnxWord>: GLWEToBackendMut<Self>,
+                    A: GLWEToBackendRef<Self> + CKKSCtBounds,
+                    P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_vec_assign_impl>]<Dst, P>(
-                    module: &Module<BE>,
+                    module: &Module<Self>,
                     dst: &mut Dst,
                     pt: &P,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+                    P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_vec_assign_unnormalized_impl>]<Dst, P>(
-                    module: &Module<BE>,
-                    dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                    module: &Module<Self>,
+                    dst: &mut UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
                     pt: &P,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
-                fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<BE>) -> usize;
+                    GLWE<Dst, Self::ZnxWord>: GLWEToBackendMut<Self>,
+                    P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<Self>, res_size: usize) -> usize;
                 fn [<ckks_ $verb _pt_const_into_impl>]<Dst, A, P>(
-                    module: &Module<BE>,
+                    module: &Module<Self>,
                     dst: &mut Dst,
                     a: &A,
                     dst_coeff: usize,
                     pt: &P,
                     pt_coeff: usize,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+                    A: GLWEToBackendRef<Self> + CKKSCtBounds,
+                    P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_const_into_unnormalized_impl>]<Dst, A, P>(
-                    module: &Module<BE>,
-                    dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                    module: &Module<Self>,
+                    dst: &mut UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
                     a: &A,
                     dst_coeff: usize,
                     pt: &P,
                     pt_coeff: usize,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    A: GLWEToBackendRef<BE> + CKKSCtBounds,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    GLWE<Dst, Self::ZnxWord>: GLWEToBackendMut<Self>,
+                    A: GLWEToBackendRef<Self> + CKKSCtBounds,
+                    P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_const_assign_impl>]<Dst, P>(
-                    module: &Module<BE>,
+                    module: &Module<Self>,
                     dst: &mut Dst,
                     dst_coeff: usize,
                     pt: &P,
                     pt_coeff: usize,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    Dst: GLWEToBackendMut<Self> + CKKSCtBounds + SetCKKSInfos,
+                    P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_const_assign_unnormalized_impl>]<Dst, P>(
-                    module: &Module<BE>,
-                    dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
+                    module: &Module<Self>,
+                    dst: &mut UnnormalizedCKKSCiphertext<Dst, Self::ZnxWord>,
                     dst_coeff: usize,
                     pt: &P,
                     pt_coeff: usize,
-                    scratch: &mut ScratchArena<'_, BE>,
+                    scratch: &mut ScratchArena<'_, Self>,
                 ) -> Result<()>
                 where
                     Dst: Data,
-                    GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
-                    P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
+                    GLWE<Dst, Self::ZnxWord>: GLWEToBackendMut<Self>,
+                    P: GLWEToBackendRef<Self> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
             }
 
-            unsafe impl<BE: Backend> $Impl<BE> for BE
+            unsafe impl<BE: Backend> $Impl for BE
             where
-                BE: ::poulpy_hal::oep::HalVecZnxImpl<BE>,
+                BE: ::poulpy_hal::oep::HalVecZnxImpl,
                 Module<BE>: $Default<BE>
                     + CKKSModuleAlloc<BE>
                     + CKKSPlaintextDefault<BE>
@@ -212,12 +211,11 @@ macro_rules! ckks_carry_verb_oep {
                     + GLWENormalize<BE>
                     + GLWEShift<BE>
                     $(+ $PtVecBound<BE>)+
-                    $(+ $PtConstBound<BE>)+
                     + VecZnxLshTmpBytes
                     + VecZnxRshTmpBytes,
             {
-                fn [<ckks_ $verb _tmp_bytes_impl>](module: &Module<BE>) -> usize {
-                    $Default::[<ckks_ $verb _tmp_bytes_default>](module)
+                fn [<ckks_ $verb _tmp_bytes_impl>](module: &Module<BE>, res_size: usize) -> usize {
+                    $Default::[<ckks_ $verb _tmp_bytes_default>](module, res_size)
                 }
 
                 fn [<ckks_ $verb _into_impl>]<Dst, A, B>(
@@ -303,8 +301,8 @@ macro_rules! ckks_carry_verb_oep {
                     $Default::[<ckks_ $verb _one_assign_default>](module, dst, scratch)
                 }
 
-                fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<BE>) -> usize {
-                    $Default::[<ckks_ $verb _pt_vec_tmp_bytes_default>](module)
+                fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<BE>, res_size: usize) -> usize {
+                    $Default::[<ckks_ $verb _pt_vec_tmp_bytes_default>](module, res_size)
                 }
 
                 fn [<ckks_ $verb _pt_vec_into_impl>]<Dst, A, P>(
@@ -365,8 +363,8 @@ macro_rules! ckks_carry_verb_oep {
                     $Default::[<ckks_ $verb _pt_vec_assign_unnormalized_default>](module, &mut dst.write_view(), pt, scratch)
                 }
 
-                fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<BE>) -> usize {
-                    $Default::[<ckks_ $verb _pt_const_tmp_bytes_default>](module)
+                fn [<ckks_ $verb _pt_const_tmp_bytes_impl>](module: &Module<BE>, res_size: usize) -> usize {
+                    $Default::[<ckks_ $verb _pt_const_tmp_bytes_default>](module, res_size)
                 }
 
                 fn [<ckks_ $verb _pt_const_into_impl>]<Dst, A, P>(

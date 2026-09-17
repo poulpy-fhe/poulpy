@@ -4,11 +4,11 @@ use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddAssignBackend, VecZnxAlloc, VecZnxBigAddAssign,
-        VecZnxBigAddInto, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend, VecZnxBigAlloc, VecZnxBigAutomorphism,
-        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign,
-        VecZnxBigSubSmallABackend, VecZnxBigSubSmallBBackend, VecZnxSubAssignBackend,
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAddAssign, VecZnxAlloc, VecZnxBigAdd, VecZnxBigAddAssign,
+        VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign,
+        VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA,
+        VecZnxBigSubSmallB, VecZnxSubAssign,
     },
     layouts::{Backend, Module, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef},
     source::Source,
@@ -20,9 +20,9 @@ use crate::hal::helpers::{
 };
 use crate::hal::params::{HalSweepParms, NormalizeSweepParams};
 
-pub fn runner_vec_znx_big_add_into<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_big_add<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxBigAddInto<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
+    Module<B>: VecZnxBigAdd<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -38,7 +38,7 @@ where
         let b = b.to_backend_ref();
         let mut c = c.to_backend_mut();
         for i in 0..sweep.cols {
-            module.vec_znx_big_add_into(&mut c, i, &a, i, &b, i);
+            module.vec_znx_big_add(&mut c, i, &a, i, &b, i);
         }
         black_box(());
     });
@@ -68,11 +68,11 @@ pub fn runner_vec_znx_big_add_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
     });
 }
 
-pub fn runner_vec_znx_big_add_small_into<B: Backend<ZnxWord = i64>, M: Measurement>(
+pub fn runner_vec_znx_big_add_small<B: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxBigAddSmallIntoBackend<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
+    Module<B>: VecZnxBigAddSmall<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -89,7 +89,7 @@ pub fn runner_vec_znx_big_add_small_into<B: Backend<ZnxWord = i64>, M: Measureme
         let b = vec_znx_backend_ref::<B>(&b);
         let mut c = c.to_backend_mut();
         for i in 0..sweep.cols {
-            module.vec_znx_big_add_small_into_backend(&mut c, i, &a, i, &b, i);
+            module.vec_znx_big_add_small(&mut c, i, &a, i, &b, i);
         }
         black_box(());
     });
@@ -276,7 +276,7 @@ pub fn runner_vec_znx_big_normalize_add_assign<B: Backend<ZnxWord = i64>, M: Mea
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxAddAssignBackend<B>
+    Module<B>: VecZnxAddAssign<B>
         + VecZnxAlloc<B>
         + VecZnxBigNormalize<B>
         + ModuleNew<B>
@@ -317,7 +317,7 @@ pub fn runner_vec_znx_big_normalize_add_assign<B: Backend<ZnxWord = i64>, M: Mea
 
             let tmp_ref = vec_znx_backend_ref::<B>(&tmp);
             let mut res_ref = vec_znx_backend_mut::<B>(&mut res);
-            module.vec_znx_add_assign_backend(&mut res_ref, i, &tmp_ref, 0);
+            module.vec_znx_add_assign(&mut res_ref, i, &tmp_ref, 0);
         }
         black_box(());
     });
@@ -331,7 +331,7 @@ pub fn runner_vec_znx_big_normalize_sub_assign<B: Backend<ZnxWord = i64>, M: Mea
         + VecZnxBigNormalize<B>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxBigAlloc<B>
-        + VecZnxSubAssignBackend<B>
+        + VecZnxSubAssign<B>
         + ModuleNew<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -368,7 +368,7 @@ pub fn runner_vec_znx_big_normalize_sub_assign<B: Backend<ZnxWord = i64>, M: Mea
 
             let tmp_ref = vec_znx_backend_ref::<B>(&tmp);
             let mut res_ref = vec_znx_backend_mut::<B>(&mut res);
-            module.vec_znx_sub_assign_backend(&mut res_ref, i, &tmp_ref, 0);
+            module.vec_znx_sub_assign(&mut res_ref, i, &tmp_ref, 0);
         }
         black_box(());
     });
@@ -450,7 +450,7 @@ pub fn runner_vec_znx_big_sub_small_a<B: Backend<ZnxWord = i64>, M: Measurement>
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxBigSubSmallABackend<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
+    Module<B>: VecZnxBigSubSmallA<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -467,7 +467,7 @@ pub fn runner_vec_znx_big_sub_small_a<B: Backend<ZnxWord = i64>, M: Measurement>
         let b = b.to_backend_ref();
         let mut c = c.to_backend_mut();
         for i in 0..sweep.cols {
-            module.vec_znx_big_sub_small_a_backend(&mut c, i, &a, i, &b, i);
+            module.vec_znx_big_sub_small_a(&mut c, i, &a, i, &b, i);
         }
         black_box(());
     });
@@ -477,7 +477,7 @@ pub fn runner_vec_znx_big_sub_small_b<B: Backend<ZnxWord = i64>, M: Measurement>
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxBigSubSmallBBackend<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
+    Module<B>: VecZnxBigSubSmallB<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -494,7 +494,7 @@ pub fn runner_vec_znx_big_sub_small_b<B: Backend<ZnxWord = i64>, M: Measurement>
         let b = vec_znx_backend_ref::<B>(&b);
         let mut c = c.to_backend_mut();
         for i in 0..sweep.cols {
-            module.vec_znx_big_sub_small_b_backend(&mut c, i, &a, i, &b, i);
+            module.vec_znx_big_sub_small_b(&mut c, i, &a, i, &b, i);
         }
         black_box(());
     });

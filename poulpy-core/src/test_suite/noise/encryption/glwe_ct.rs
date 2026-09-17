@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{Module, ScratchOwned, ZnxView},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
@@ -34,8 +34,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>:
-        GLWEEncryptSk<BE> + GLWENoise<BE> + GLWESecretPreparedFactory<BE> + VecZnxFillUniformSourceBackend<BE> + GLWESub<BE>,
+    Module<BE>: GLWEEncryptSk<BE> + GLWENoise<BE> + GLWESecretPreparedFactory<BE> + VecZnxFillUniformSource<BE> + GLWESub<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -78,7 +77,7 @@ where
         let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-        module.vec_znx_fill_uniform_source_backend(
+        module.vec_znx_fill_uniform_source(
             base2k,
             pt_want.k().as_usize(),
             &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
@@ -118,7 +117,7 @@ where
     Module<BE>: GLWECompressedEncryptSk<BE>
         + GLWENoise<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWESub<BE>
         + GLWEDecompress<Backend = BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -164,7 +163,7 @@ where
         let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-        module.vec_znx_fill_uniform_source_backend(
+        module.vec_znx_fill_uniform_source(
             base2k,
             pt_want.k().as_usize(),
             &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
@@ -205,8 +204,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>:
-        GLWEEncryptSk<BE> + GLWENoise<BE> + GLWESecretPreparedFactory<BE> + VecZnxFillUniformSourceBackend<BE> + GLWESub<BE>,
+    Module<BE>: GLWEEncryptSk<BE> + GLWENoise<BE> + GLWESecretPreparedFactory<BE> + VecZnxFillUniformSource<BE> + GLWESub<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -272,7 +270,7 @@ where
         + GLWEPublicKeyGenerate<BE>
         + GLWENoise<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWESub<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -313,7 +311,7 @@ where
         let mut pk: GLWEPublicKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_public_key_alloc_from_infos(&glwe_infos);
         module.glwe_public_key_generate(&mut pk, &sk_prepared, &glwe_infos, &mut source_xe, &mut source_xa);
 
-        module.vec_znx_fill_uniform_source_backend(
+        module.vec_znx_fill_uniform_source(
             base2k,
             pt_want.k().as_usize(),
             &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),

@@ -155,10 +155,6 @@ impl ReimArith for FFT64Neon {
         crate::neon::reim_arith::reim_from_znx_i64_bnd50_neon(res, a);
     }
     #[inline(always)]
-    fn reim_from_znx_masked(res: &mut [f64], a: &[i64], mask: i64) {
-        crate::neon::reim_arith::reim_from_znx_i64_masked_bnd50_neon(res, a, mask);
-    }
-    #[inline(always)]
     fn reim_to_znx(res: &mut [i64], divisor: f64, a: &[f64]) {
         crate::neon::reim_arith::reim_to_znx_i64_bnd63_neon(res, divisor, a);
     }
@@ -256,5 +252,19 @@ impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for FFT64Neon {
     #[inline(always)]
     fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         <Self as I64Ops>::i64_hadamard_product(res, a, b)
+    }
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+    use poulpy_hal::api::NegacyclicFFTNew;
+
+    #[test]
+    fn raw_transform_matches_contract() {
+        for m in [16, 32, 64, 128, 256] {
+            let table = FFT64NeonReimTable::new(m);
+            poulpy_hal::test_suite::reim::test_negacyclic_fft(&table);
+        }
     }
 }

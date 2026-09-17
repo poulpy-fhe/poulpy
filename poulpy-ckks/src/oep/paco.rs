@@ -27,13 +27,13 @@ use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingI
 /// Implementations must satisfy the contracts of all trait methods, including
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
-pub unsafe trait CKKSPaCoCoeffEncodingImpl<BE: Backend>: Backend {
+pub unsafe trait CKKSPaCoCoeffEncodingImpl: Backend {
     /// Backend-native arena bytes required by coefficient embedding and β
     /// packing. This includes any scalar buffers used by native FFT kernels.
-    fn ckks_paco_coeff_encodings_tmp_bytes_impl<F>(module: &Module<BE>, plan: &PaCoPlan) -> Result<usize>
+    fn ckks_paco_coeff_encodings_tmp_bytes_impl<F>(module: &Module<Self>, plan: &PaCoPlan) -> Result<usize>
     where
         F: PaCoScalar,
-        BE: CKKSEncodingImpl<BE, F>;
+        Self: CKKSEncodingImpl<F>;
 
     /// Encodes the exhausted ciphertext's public coefficients as the four
     /// dense beta plaintexts consumed by PaCo blind rotation.
@@ -45,14 +45,14 @@ pub unsafe trait CKKSPaCoCoeffEncodingImpl<BE: Backend>: Backend {
     /// coefficient→evaluation packing used by the σ vectors of
     /// [`PaCoSecretSpec`](crate::layouts::PaCoSecretSpec) at key generation.
     fn ckks_paco_coeff_encodings_impl<F, Src>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         ct: &Src,
         plan: &PaCoPlan,
         base2k: Base2K,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
+        scratch: &mut ScratchArena<'_, Self>,
+    ) -> Result<[CKKSPlaintextOwned<Self>; 4]>
     where
         F: PaCoScalar,
-        BE: CKKSEncodingImpl<BE, F>,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Self: CKKSEncodingImpl<F>,
+        Src: GLWEToBackendRef<Self> + CKKSCtBounds;
 }

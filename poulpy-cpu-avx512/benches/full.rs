@@ -19,6 +19,15 @@ fn bench_ckks_bootstrapping_ifma(_c: &mut Criterion) {
     bench_ckks_bootstrapping::<Ifma>(_c);
 }
 
+/// HAL sweep for `NTT3x42Ifma`, the one accelerated backend that had no HAL row.
+fn bench_hal_ifma(_c: &mut Criterion) {
+    #[cfg(feature = "enable-ifma")]
+    {
+        bench_hal_ckks::<Ifma>(_c);
+        bench_hal_binfhe::<Ifma>(_c);
+    }
+}
+
 criterion_group! {
     name = benches;
     config = poulpy_bench::criterion_config();
@@ -29,6 +38,7 @@ criterion_group! {
      bench_core_binfhe::<Fft>,
      bench_ckks::<Ntt>,
      bench_ckks_bootstrapping::<Ntt>,
+     bench_hal_ifma,
      bench_ckks_bootstrapping_ifma,
      bench_ckks_bootstrapping::<Fft>,
      bench_binfhe::<Fft, CGGI>

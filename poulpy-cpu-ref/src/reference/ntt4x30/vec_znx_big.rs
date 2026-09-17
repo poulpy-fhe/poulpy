@@ -17,7 +17,7 @@
 //!
 //! # Functions
 //!
-//! - **Element-wise arithmetic**: [`ntt4x30_vec_znx_big_add_into`], [`ntt4x30_vec_znx_big_sub`],
+//! - **Element-wise arithmetic**: [`ntt4x30_vec_znx_big_add`], [`ntt4x30_vec_znx_big_sub`],
 //!   [`ntt4x30_vec_znx_big_negate`] and their inplace / mixed-precision variants.
 //! - **Copy from small**: [`ntt4x30_vec_znx_big_from_small`] — sign-extend `i64` → `i128`.
 //! - **Normalization**: [`ntt4x30_vec_znx_big_normalize`] — extract base-2k digits from
@@ -34,12 +34,15 @@ use rand_distr::{Distribution, Normal};
 
 use crate::{
     layouts::{
-        Backend, HostDataMut, HostDataRef, NoiseInfos, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxInfos, VecZnxShape,
+        VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
         normalization::I64NormalizeOps,
-        vec_znx::VecZnxRangeMut,
+        vec_znx::{
+            VecZnxRangeMut, vec_znx_add_assign_mixed, vec_znx_add_mixed, vec_znx_from_small_mixed, vec_znx_sub_assign_mixed,
+            vec_znx_sub_mixed, vec_znx_sub_negate_assign_mixed,
+        },
         znx::{
             ZnxNormalizeMiddleStepAssign, get_carry_i128, get_digit_i128, znx_extract_digit_addmul_normalize_i128_ref,
             znx_extract_digit_mul_i128_ref,
@@ -787,7 +790,7 @@ pub fn ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(n: usize) -> usize {
 ///
 /// Limbs present in both `a` and `b` are summed; limbs present in only one are copied;
 /// extra res limbs beyond both are zeroed.
-pub fn ntt4x30_vec_znx_big_add_into<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn ntt4x30_vec_znx_big_add<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -799,6 +802,10 @@ where
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
     let b = b.to_backend_ref();
+
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_add_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+    }
 
     let res_size = res.size();
     let a_size = a.size();
@@ -842,6 +849,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_add_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
         BE::i128_add_assign(res.at_mut(res_col, j), a.at(a_col, j));
@@ -850,7 +862,7 @@ where
 
 /// Add a small (`i64`) polynomial `b` to a big (`i128`) polynomial `a`:
 /// `res[res_col] = a[a_col] + b[b_col]`.
-pub fn ntt4x30_vec_znx_big_add_small_into<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
+pub fn ntt4x30_vec_znx_big_add_small<R, A, B, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
 where
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128BigOps,
     R: VecZnxBigToBackendMut<BE>,
@@ -862,6 +874,10 @@ where
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
     let b = b.to_backend_ref();
+
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_add_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+    }
 
     let res_size = res.size();
     let a_size = a.size();
@@ -894,6 +910,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_add_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
         BE::i128_add_small_assign(res.at_mut(res_col, j), a.at(a_col, j));
@@ -913,6 +934,10 @@ where
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
     let b = b.to_backend_ref();
+
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_sub_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+    }
 
     let res_size = res.size();
     let a_size = a.size();
@@ -953,6 +978,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_sub_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
         BE::i128_sub_assign(res.at_mut(res_col, j), a.at(a_col, j));
@@ -970,6 +1000,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_sub_negate_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
 
@@ -994,6 +1029,10 @@ where
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
     let b = b.to_backend_ref();
+
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_sub_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+    }
 
     let res_size = res.size();
     let a_size = a.size();
@@ -1032,6 +1071,10 @@ where
     let a = a.to_backend_ref();
     let b = b.to_backend_ref();
 
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_sub_mixed(&mut res, res_col, &a, a_col, &b, b_col);
+    }
+
     let res_size = res.size();
     let a_size = a.size();
     let b_size = b.size();
@@ -1063,6 +1106,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_sub_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
         BE::i128_sub_small_assign(res.at_mut(res_col, j), a.at(a_col, j));
@@ -1079,6 +1127,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_sub_negate_assign_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
 
@@ -1138,6 +1191,11 @@ where
 {
     let mut res = res.to_backend_mut();
     let a = a.to_backend_ref();
+
+    if a.n() != res.n() {
+        return vec_znx_from_small_mixed(&mut res, res_col, &a, a_col);
+    }
+
     let res_size = res.size();
     let min_size = res_size.min(a.size());
 
@@ -1178,10 +1236,8 @@ pub fn ntt4x30_vec_znx_big_normalize<R, A, BE>(
 {
     let (n, res_size) = {
         let res_view = res.to_backend_mut();
-        poulpy_hal::layouts::assert_dense(&res_view, "ntt4x30_vec_znx_big_normalize");
         (res_view.n(), res_view.size())
     };
-    poulpy_hal::layouts::assert_dense(&a.to_backend_ref(), "ntt4x30_vec_znx_big_normalize");
     assert!(res_k <= res_size * res_base2k);
     ntt4x30_vec_znx_big_normalize_range(res, res_base2k, res_k, res_offset, res_col, a, a_base2k, a_col, 0, n, carry);
 }
@@ -1212,14 +1268,12 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
         assert!(carry.len() >= 3 * coeff_len);
     }
     let mut res = res.to_backend_mut();
-    let (n, cols, size) = (res.n(), res.cols(), res.size());
+    let res_shape = res.shape();
     let ptr = res.data_mut().as_mut().as_mut_ptr().cast::<i64>();
     unsafe {
         ntt4x30_vec_znx_big_normalize_range_raw::<A, BE>(
             ptr,
-            n,
-            cols,
-            size,
+            res_shape,
             res_base2k,
             res_k,
             res_offset,
@@ -1238,10 +1292,11 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
 ///
 /// # Safety
 ///
-/// `res_ptr` must be non-null, aligned for `i64`, and address at least
-/// `n * cols * size` initialized `i64` values; layout arithmetic must not overflow.
-/// The source must have valid initialized storage, degree `n`, and column `a_col`.
-/// Require `res_col < cols`, `coeff_start <= n`, `coeff_len <= n - coeff_start`,
+/// `res_ptr` must be non-null, aligned for `i64` and the base of the dense buffer
+/// `res_shape` describes; every element `res_shape` selects must be initialized.
+/// Layout arithmetic is checked by [`VecZnxShape`].
+/// The source must have valid initialized storage, degree `res_shape.n()`, and column `a_col`.
+/// Require `res_col < res_shape.cols()`, `coeff_start + coeff_len <= res_shape.n()`,
 /// and at least `3 * coeff_len` private scratch words in `carry`.
 ///
 /// For every destination limb, the selected coefficient range must be exclusively
@@ -1252,9 +1307,7 @@ fn ntt4x30_vec_znx_big_normalize_range<R, A, BE>(
 #[doc(hidden)]
 pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
     res_ptr: *mut i64,
-    n: usize,
-    cols: usize,
-    size: usize,
+    res_shape: VecZnxShape,
     res_base2k: usize,
     res_k: usize,
     res_offset: i64,
@@ -1270,6 +1323,7 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
     BE: Backend<BigWord = i128, ZnxWord = i64> + I128NormalizeOps,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
+    let (n, cols, size) = (res_shape.n(), res_shape.cols(), res_shape.size());
     {
         assert_eq!(n, a.to_backend_ref().n());
         assert!(res_col < cols);
@@ -1277,7 +1331,7 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
         assert!(carry.len() >= 3 * coeff_len);
         assert!(res_k <= size * res_base2k);
     }
-    let mut res = unsafe { VecZnxRangeMut::new(res_ptr, n, cols, res_col, coeff_start, coeff_len) };
+    let mut res = unsafe { VecZnxRangeMut::new(res_ptr, res_shape, res_col, coeff_start, coeff_len) };
     if res_k == 0 {
         for limb in 0..size {
             res.at_mut(limb).fill(0);
@@ -1341,18 +1395,25 @@ pub unsafe fn ntt4x30_vec_znx_big_normalize_range_raw<A, BE>(
             || crate::reference::vec_znx::normalize_cross_needs_exact(input.size(), a_base2k, res_base2k, res_k, res_offset)
     };
     if needs_exact {
-        for i in 0..coeff_len {
+        let input_limbs: Vec<&[i128]> = (0..input.size())
+            .map(|j| &input.at(a_col, j)[coeff_start..coeff_start + coeff_len])
+            .collect();
+        // One base pointer per output limb of the range; limbs are disjoint and
+        // each holds `coeff_len` writable scalars, so `add(i)` with `i < coeff_len`
+        // stays inside limb `j`.
+        let res_limbs: Vec<*mut i64> = (0..size).map(|j| res.at_mut(j).as_mut_ptr()).collect();
+        (0..coeff_len).for_each(|i| {
             crate::reference::vec_znx::normalize_exact::<false, _, _>(
-                |j| input.at(a_col, j)[coeff_start + i],
+                |j| input_limbs[j][i],
                 input.size(),
                 a_base2k,
                 size,
                 res_base2k,
                 res_k,
                 res_offset,
-                |j, digit| res.at_mut(j)[i] = digit,
+                |j, digit| unsafe { *res_limbs[j].add(i) = digit },
             );
-        }
+        });
         return;
     }
 
@@ -1412,10 +1473,18 @@ pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
     let mut output = res.to_backend_mut();
     let output_size = output.size();
     assert!(carry.len() >= 3 * output.n());
-    for i in 0..output.n() {
+    let input_limbs: Vec<&[i128]> = (0..input.size()).map(|j| input.at(a_col, j)).collect();
+    assert!(res_col < output.cols(), "res_col {res_col} >= cols {}", output.cols());
+    // One base pointer, limb addresses from the shape: each `at_mut` call
+    // reborrows the whole buffer and would invalidate the pointers taken before it.
+    let out_base: *mut i64 = output.base_mut_ptr();
+    let out_limbs: Vec<*mut i64> = (0..output_size)
+        .map(|j| unsafe { out_base.add(output.scalar_offset(res_col, j)) })
+        .collect();
+    (0..output.n()).for_each(|i| {
         let mut extra = 0i128;
         crate::reference::vec_znx::normalize_exact::<false, _, _>(
-            |j| input.at(a_col, j)[i],
+            |j| input_limbs[j][i],
             input.size(),
             a_base2k,
             output_size,
@@ -1423,14 +1492,14 @@ pub fn ntt4x30_vec_znx_big_normalize_assign<O, R, A, BE>(
             output_size * res_base2k,
             res_offset,
             |j, digit| {
-                let value = &mut output.at_mut(res_col, j)[i];
+                let value = unsafe { &mut *out_limbs[j].add(i) };
                 let signed = if O::SUB { -(digit as i128) } else { digit as i128 };
                 let total = *value as i128 + signed + extra;
                 *value = total as i64;
                 extra = (total - *value as i128) >> res_base2k;
             },
         );
-    }
+    });
 }
 
 /// Adds normalized `a` under the source bounds of [`ntt4x30_vec_znx_big_normalize`].
@@ -1559,7 +1628,9 @@ pub fn ntt4x30_vec_znx_big_add_normal_ref<R, BE>(
     base2k: usize,
     res: &mut R,
     res_col: usize,
-    noise_infos: NoiseInfos,
+    k: usize,
+    sigma: f64,
+    bound: f64,
     source: &mut Source,
 ) where
     BE: Backend<BigWord = i128, ZnxWord = i64>,
@@ -1568,18 +1639,19 @@ pub fn ntt4x30_vec_znx_big_add_normal_ref<R, BE>(
 {
     let mut res = res.to_backend_mut();
     assert!(
-        (noise_infos.bound.log2().ceil() as i64) < 64,
+        (bound.log2().ceil() as i64) < 64,
         "invalid bound: ceil(log2(bound))={} > 63",
-        noise_infos.bound.log2().ceil() as i64
+        bound.log2().ceil() as i64
     );
 
-    let (limb, shift) = noise_infos.target_limb_and_shift(base2k);
-    let normal: Normal<f64> = Normal::new(0.0, noise_infos.sigma).unwrap();
+    let limb: usize = k.div_ceil(base2k) - 1;
+    let shift: u32 = ((limb + 1) * base2k - k) as u32;
+    let normal: Normal<f64> = Normal::new(0.0, sigma).unwrap();
     let rj: &mut [i128] = res.at_mut(res_col, limb);
 
     rj.iter_mut().for_each(|r| {
         let mut s: f64 = normal.sample(source);
-        while s.abs() > noise_infos.bound {
+        while s.abs() > bound {
             s = normal.sample(source);
         }
         *r = r.wrapping_add((s.round() as i64 as i128) << shift);

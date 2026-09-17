@@ -36,7 +36,7 @@ pub fn ship_coeff_encodings_staged<BE, F, Src>(
     complex: bool,
 ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
 where
-    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<BE, F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<F>,
     BE::OwnedBuf: HostDataRef,
     Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: ShipScalar,
@@ -59,7 +59,7 @@ where
 #[macro_export]
 macro_rules! impl_ckks_ship_coeff_encoding {
     ($be:ty) => {
-        unsafe impl ::poulpy_ckks::oep::CKKSShipCoeffEncodingImpl<$be> for $be {
+        unsafe impl ::poulpy_ckks::oep::CKKSShipCoeffEncodingImpl for $be {
             fn ckks_ship_coeff_encodings_tmp_bytes_impl<F>(
                 _module: &::poulpy_hal::layouts::Module<$be>,
                 _plan: &::poulpy_ckks::layouts::ShipPlan,
@@ -68,7 +68,7 @@ macro_rules! impl_ckks_ship_coeff_encoding {
             ) -> ::poulpy_ckks::CKKSResult<usize>
             where
                 F: ::poulpy_ckks::api::ShipScalar,
-                $be: ::poulpy_ckks::oep::CKKSEncodingImpl<$be, F>,
+                $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
             {
                 // The reference path uses ordinary host vectors. Native
                 // device implementations report their arena workspace here.
@@ -90,7 +90,7 @@ macro_rules! impl_ckks_ship_coeff_encoding {
             >
             where
                 F: ::poulpy_ckks::api::ShipScalar,
-                $be: ::poulpy_ckks::oep::CKKSEncodingImpl<$be, F>,
+                $be: ::poulpy_ckks::oep::CKKSEncodingImpl<F>,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + ::poulpy_ckks::CKKSCtBounds,
             {
                 $crate::ckks_ship::ship_coeff_encodings_staged::<$be, F, Src>(module, ct, plan, base2k, complex)

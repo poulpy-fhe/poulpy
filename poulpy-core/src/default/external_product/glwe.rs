@@ -9,7 +9,7 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply,
         VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
+        VmpApplyDftToDftAdd, VmpApplyDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
@@ -74,7 +74,7 @@ fn glwe_external_product_dft_fill<BE, M>(
         + VecZnxNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyDftToDftAdd<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes,
 {
@@ -114,7 +114,7 @@ fn glwe_external_product_dft_fill<BE, M>(
         } else {
             let res_compute_size = gglwe_product_digit_output_size(res_dft.size(), ggsw.size(), dsize, di, product_limbs);
             let mut res_view = res_dft.with_size_mut(res_compute_size);
-            module.vmp_apply_dft_to_dft_accumulate(
+            module.vmp_apply_dft_to_dft_add(
                 &mut res_view,
                 &a_dft.to_backend_ref(),
                 &ggsw.data,
@@ -133,7 +133,7 @@ where
         + VecZnxNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyDftToDftAdd<BE>
         + VecZnxBigBytesOf
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes

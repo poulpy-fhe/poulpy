@@ -3,10 +3,7 @@ use std::hint::black_box;
 use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::{
-    api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend, VecZnxRotateAssignTmpBytes,
-        VecZnxRotateBackend,
-    },
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes},
     layouts::{Backend, Module, ScratchOwned},
     source::Source,
 };
@@ -16,7 +13,7 @@ use crate::hal::params::HalSweepParms;
 
 pub fn runner_vec_znx_rotate<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
-    Module<B>: VecZnxRotateBackend<B> + ModuleNew<B>,
+    Module<B>: VecZnxRotate<B> + ModuleNew<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -31,7 +28,7 @@ where
         let a = vec_znx_backend_ref::<B>(&a);
         let mut res = vec_znx_backend_mut::<B>(&mut res);
         for i in 0..sweep.cols {
-            module.vec_znx_rotate_backend(-7, &mut res, i, &a, i);
+            module.vec_znx_rotate(-7, &mut res, i, &a, i);
         }
         black_box(());
     });
@@ -41,7 +38,7 @@ pub fn runner_vec_znx_rotate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     sweep: &HalSweepParms,
 ) where
-    Module<B>: VecZnxRotateAssignBackend<B> + ModuleNew<B> + VecZnxRotateAssignTmpBytes,
+    Module<B>: VecZnxRotateAssign<B> + ModuleNew<B> + VecZnxRotateAssignTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -56,7 +53,7 @@ pub fn runner_vec_znx_rotate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
     bencher.iter(|| {
         let mut res = vec_znx_backend_mut::<B>(&mut res);
         for i in 0..sweep.cols {
-            module.vec_znx_rotate_assign_backend(-7, &mut res, i, &mut scratch.borrow());
+            module.vec_znx_rotate_assign(-7, &mut res, i, &mut scratch.borrow());
         }
         black_box(());
     });

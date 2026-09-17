@@ -12,8 +12,8 @@ use crate::layouts::{
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
-pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
-    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(module: &Module<BE>, res: &R, a: &A, pt: &B, key: &K) -> usize
+pub unsafe trait LinearTransformationImpl: Backend {
+    fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(module: &Module<Self>, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -21,7 +21,7 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
         K: GGLWEInfos;
 
     fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &R,
         a: &A,
         pt: &B,
@@ -33,45 +33,45 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
         B: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &Module<BE>, a: &A, key: &K) -> usize
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &Module<Self>, a: &A, key: &K) -> usize
     where
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(module: &Module<BE>, pt_infos: &P) -> usize
+    fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(module: &Module<Self>, pt_infos: &P) -> usize
     where
         P: LWEInfos;
 
     fn glwe_prepare_linear_transformation_rhs<P>(
-        module: &Module<BE>,
-        prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
+        module: &Module<Self>,
+        prepared: &mut LinearTransformation<PreparedDiagonal<Self::OwnedBuf, Self>>,
         lt: &LinearTransformation<P>,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        P: GLWEToBackendRef<BE> + GLWEInfos;
+        P: GLWEToBackendRef<Self> + GLWEInfos;
 
     fn glwe_prepare_linear_transformation_baby_steps<A, H>(
-        module: &Module<BE>,
-        cache: &mut LinearTransformationBabySteps<BE>,
+        module: &Module<Self>,
+        cache: &mut LinearTransformationBabySteps<Self>,
         a: &A,
         keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        A: GLWEToBackendRef<BE> + GLWEInfos,
-        H: GetAutomorphismKey<BE>;
+        A: GLWEToBackendRef<Self> + GLWEInfos,
+        H: GetAutomorphismKey<Self>;
 
     fn glwe_eval_linear_transformation_into<R, P, H>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationBabySteps<BE>,
+        lhs: &LinearTransformationBabySteps<Self>,
         rhs: &LinearTransformation<P>,
         keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: crate::default::linear_transformation::DiagonalProd<BE>,
-        H: GetAutomorphismKey<BE>;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        P: crate::default::linear_transformation::DiagonalProd<Self>,
+        H: GetAutomorphismKey<Self>;
 }
 
 /// Override surface for the linear-transformation family.
@@ -142,7 +142,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
         H: GetAutomorphismKey<BE>;
 }
 
-unsafe impl<BE> LinearTransformationImpl<BE> for BE
+unsafe impl<BE> LinearTransformationImpl for BE
 where
     BE: Backend,
     Module<BE>: LinearTransformationDefault<BE>,

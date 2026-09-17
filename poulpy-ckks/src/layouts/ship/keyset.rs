@@ -19,7 +19,6 @@ use poulpy_core::{
         GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         ModuleCoreAlloc, Rank,
     },
-    msb_mask_bottom_limb,
 };
 use poulpy_hal::layouts::HostStaged;
 use poulpy_hal::{
@@ -246,7 +245,6 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
         let base2k = self.parameters.base2k;
         let kk = self.parameters.plan.raised_k(base2k);
         let mask_size = kk.div_ceil(base2k);
-        let mask_msb = msb_mask_bottom_limb(base2k, kk);
 
         let mut required = module
             .glwe_switching_key_prepare_tmp_bytes(&self.dense_to_sparse)
@@ -275,7 +273,6 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
                         module.cnv_prepare_left(
                             &mut prep.to_backend_mut(),
                             GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),
-                            mask_msb,
                             scratch,
                         );
                         prep

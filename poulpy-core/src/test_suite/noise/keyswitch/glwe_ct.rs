@@ -1,6 +1,6 @@
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{Module, ScratchOwned},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
@@ -24,7 +24,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: VecZnxFillUniformSourceBackend<BE>
+    Module<BE>: VecZnxFillUniformSource<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWEEncryptSk<BE>
         + GLWEKeyswitch<BE>
@@ -86,7 +86,7 @@ where
                 let mut source_xe: Source = Source::new([0u8; 32]);
                 let mut source_xa: Source = Source::new([0u8; 32]);
 
-                module.vec_znx_fill_uniform_source_backend(
+                module.vec_znx_fill_uniform_source(
                     pt_in.base2k().into(),
                     pt_in.k().as_usize(),
                     &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
@@ -171,7 +171,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: VecZnxFillUniformSourceBackend<BE>
+    Module<BE>: VecZnxFillUniformSource<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWEEncryptSk<BE>
         + GLWEKeyswitch<BE>
@@ -217,7 +217,7 @@ where
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
-            module.vec_znx_fill_uniform_source_backend(
+            module.vec_znx_fill_uniform_source(
                 pt_want.base2k().into(),
                 pt_want.k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),

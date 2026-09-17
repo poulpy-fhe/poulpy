@@ -3,10 +3,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut};
 use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::{
-    api::{
-        VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend,
-        VecZnxRshTmpBytes,
-    },
+    api::{VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
     layouts::{Backend, ScratchArena},
     source::Source,
 };
@@ -21,11 +18,11 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
     fn ckks_encrypt_sk_tmp_bytes_default<A>(&self, ct_infos: &A) -> usize
     where
         A: GLWEInfos + CKKSInfos,
-        Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshAddIntoBackend<BE> + VecZnxRshTmpBytes,
+        Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshAdd<BE> + VecZnxRshTmpBytes,
     {
         self.glwe_encrypt_sk_tmp_bytes(ct_infos)
-            .max(self.vec_znx_lsh_tmp_bytes())
-            .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.vec_znx_lsh_tmp_bytes(ct_infos.size()))
+            .max(self.vec_znx_rsh_tmp_bytes(ct_infos.size()))
             .max(self.glwe_normalize_tmp_bytes())
     }
 
@@ -45,11 +42,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
-        Self: GLWEEncryptSk<BE>
-            + GLWENormalize<BE>
-            + VecZnxLshAddIntoBackend<BE>
-            + VecZnxRshAddIntoBackend<BE>
-            + CKKSPlaintextDefault<BE>,
+        Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextDefault<BE>,
     {
         self.glwe_encrypt_zero_sk(ct, sk, enc_infos, source_xe, source_xa, scratch);
         ct.set_log_budget(checked_log_budget_sub(
@@ -71,17 +64,15 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
     where
         Self: GLWEBytesOf<BE>,
         A: GLWEInfos + CKKSInfos,
-        Self: GLWEDecrypt<BE>
-            + VecZnxLshBackend<BE>
-            + VecZnxLshTmpBytes
-            + VecZnxRshBackend<BE>
-            + VecZnxRshTmpBytes
-            + CKKSPlaintextDefault<BE>,
+        Self: GLWEDecrypt<BE> + VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes + CKKSPlaintextDefault<BE>,
     {
         self.glwe_plaintext_bytes_of_from_infos(ct_infos)
             + self
                 .glwe_decrypt_tmp_bytes(ct_infos)
-                .max(self.ckks_extract_pt_tmp_bytes_default())
+                // `ckks_extract_pt` shifts into the destination plaintext, not
+                // into the ciphertext: size it by the destination's allocated
+                // limb width, which this signature bounds by the ciphertext's.
+                .max(self.ckks_extract_pt_tmp_bytes_default(ct_infos.max_size()))
     }
 
     fn ckks_decrypt_default<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -89,7 +80,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         Dpt: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
-        Self: GLWEDecrypt<BE> + CKKSPlaintextDefault<BE> + VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
+        Self: GLWEDecrypt<BE> + CKKSPlaintextDefault<BE> + VecZnxLsh<BE> + VecZnxRsh<BE>,
     {
         let (mut full_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
         self.glwe_decrypt(ct, &mut full_pt, sk, &mut scratch_1);

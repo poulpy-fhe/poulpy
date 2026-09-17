@@ -19,8 +19,8 @@ use std::collections::BTreeMap;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssign, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxDftZero, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
     },
     execution::{for_each_with_scratch, scratch_workers, worker_count, worker_scratch_bytes},
     layouts::{Backend, GaloisElement, PrepareHint, ScratchArena, VecZnxDftBackendRef, VecZnxDftToBackendRef},
@@ -29,10 +29,7 @@ use poulpy_hal::{
 use crate::{
     GLWEAutomorphism, ScratchArenaTakeCore,
     api::GLWEBytesOf,
-    default::{
-        keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
-        operations::msb_mask_bottom_limb,
-    },
+    default::keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
     layouts::{
         GGLWEInfos, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
         prepared::{GGLWEPreparedBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
@@ -90,7 +87,7 @@ where
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxIdftNormalizeConsumeTmpBytes,
@@ -131,7 +128,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
         + ModuleN
         + GaloisElement
         + GGLWEProductDefault<BE>
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
         + VecZnxIdftNormalizeConsume<BE>,
@@ -163,7 +160,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
             );
         }
         for col in 0..cols {
-            module.vec_znx_automorphism_assign_backend(key_p, &mut baby_ref.data, col, &mut scratch_1.borrow());
+            module.vec_znx_automorphism_assign(key_p, &mut baby_ref.data, col, &mut scratch_1.borrow());
         }
     }
 }
@@ -191,7 +188,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
         + ModuleN
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
@@ -203,7 +200,6 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
 {
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
-    let mask = msb_mask_bottom_limb(a.base2k().as_usize(), a.k().as_usize());
     // Baby rotations rotate the source, so their keys are the ones the source's
     // precision asks for. Every key is resolved once, in cache order, because
     // the rotations need not share a layout: the hoisted route is only taken
@@ -263,7 +259,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
             assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
             assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if *rot == 0 {
-                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, task_scratch);
+                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, task_scratch);
             } else {
                 let key = key_refs[index].as_ref().unwrap();
                 let (mut baby, mut baby_scratch) = task_scratch.borrow().take_glwe_scratch(&a_ref);
@@ -278,12 +274,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
                     &mut baby_scratch.borrow(),
                 );
                 let baby_ref = baby.to_backend_ref();
-                module.cnv_prepare_left(
-                    &mut prepared.to_backend_mut(),
-                    &baby_ref.data,
-                    mask,
-                    &mut baby_scratch.borrow(),
-                );
+                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &baby_ref.data, &mut baby_scratch.borrow());
             }
         });
     } else {
@@ -292,18 +283,13 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
             assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if rot == 0 {
                 let a_ref = a.to_backend_ref();
-                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, scratch);
+                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, scratch);
             } else {
                 let (mut baby, mut baby_scratch) = scratch.borrow().take_glwe_scratch(a);
                 let key = key.as_ref().unwrap();
                 module.glwe_automorphism(&mut baby, a, key, &mut baby_scratch.borrow());
                 let baby_ref = baby.to_backend_ref();
-                module.cnv_prepare_left(
-                    &mut prepared.to_backend_mut(),
-                    &baby_ref.data,
-                    mask,
-                    &mut baby_scratch.borrow(),
-                );
+                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &baby_ref.data, &mut baby_scratch.borrow());
             }
         }
     }

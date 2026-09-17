@@ -96,7 +96,7 @@ fn ship_bootstrap_roots<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<Vec<CKKSCiphertextOwned<BE>>>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
         + GGLWEProductDefault<BE>
@@ -229,7 +229,7 @@ pub(crate) fn ship_bootstrap_into<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
         + GGLWEProductDefault<BE>
@@ -281,7 +281,7 @@ pub(crate) fn ship_bootstrap_complex_into<BE, F, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
         + GGLWEProductDefault<BE>

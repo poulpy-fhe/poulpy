@@ -38,8 +38,8 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiph
 ///
 /// Metadata follows the same rule as the `pt_vec` variants above.
 pub trait CKKSSubOps<BE: Backend> {
-    fn ckks_sub_tmp_bytes(&self) -> usize;
-    fn ckks_sub_pt_vec_tmp_bytes(&self) -> usize;
+    fn ckks_sub_tmp_bytes(&self, res_size: usize) -> usize;
+    fn ckks_sub_pt_vec_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = a - b`.
     ///
@@ -77,7 +77,7 @@ pub trait CKKSSubOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
-    fn ckks_sub_pt_const_tmp_bytes(&self) -> usize;
+    fn ckks_sub_pt_const_tmp_bytes(&self, res_size: usize) -> usize;
 
     /// Computes `dst = a - pt[pt_coeff]`, subtracting one quantized constant
     /// from a single coefficient slot of the ciphertext.

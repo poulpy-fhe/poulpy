@@ -133,7 +133,7 @@ impl Backend for SrcBackend {
     unsafe fn destroy(_: NonNull<Self::Handle>) {}
 }
 
-unsafe impl HalModuleImpl<SrcBackend> for SrcBackend {
+unsafe impl HalModuleImpl for SrcBackend {
     fn new(n: u64) -> Module<SrcBackend> {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
         unsafe { Module::from_nonnull(NonNull::dangling(), n) }
@@ -253,7 +253,7 @@ impl Backend for DstBackend {
     unsafe fn destroy(_: NonNull<Self::Handle>) {}
 }
 
-unsafe impl HalModuleImpl<DstBackend> for DstBackend {
+unsafe impl HalModuleImpl for DstBackend {
     fn new(n: u64) -> Module<DstBackend> {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
         unsafe { Module::from_nonnull(NonNull::dangling(), n) }

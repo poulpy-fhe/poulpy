@@ -57,7 +57,6 @@ pub use glwe_to_lwe_key::*;
 pub use lwe::*;
 pub use lwe_switching_key::*;
 pub use lwe_to_glwe_key::*;
-use poulpy_hal::layouts::NoiseInfos;
 
 use crate::layouts::{GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos, TorusPrecision};
 use anyhow::Result;
@@ -69,6 +68,33 @@ pub const DEFAULT_SIGMA_XE: f64 = 3.2;
 /// Truncation bound for the discrete Gaussian error distribution, defined as 6.0 * [DEFAULT_SIGMA_XE].
 /// Samples are rejected if their absolute value exceeds this bound.
 pub const DEFAULT_BOUND_XE: f64 = 6.0 * DEFAULT_SIGMA_XE;
+
+/// Parameters of the discrete Gaussian error added at torus precision `2^-k`.
+///
+/// The descriptor [`VecZnxAddNormal`](crate::VecZnxAddNormal) and
+/// [`VecZnxBigAddNormal`](crate::VecZnxBigAddNormal) take: the backend draws
+/// the error in place through [`SamplingImpl`](crate::oep::SamplingImpl).
+#[derive(Clone, Copy, Debug)]
+pub struct NoiseInfos {
+    pub k: usize,
+    pub sigma: f64,
+    pub bound: f64,
+}
+
+impl NoiseInfos {
+    pub fn new(k: usize, sigma: f64, bound: f64) -> Result<Self> {
+        anyhow::ensure!(sigma.is_sign_positive(), "sigma must be positive");
+        anyhow::ensure!(sigma >= 1.0, "sigma must be greater or equal to 1");
+        anyhow::ensure!(bound >= sigma, "bound: {bound} must be greater or equal to sigma: {sigma}");
+        Ok(Self { k, sigma, bound })
+    }
+
+    /// Target limb and the number of unused low bits it holds.
+    pub fn target_limb_and_shift(&self, base2k: usize) -> (usize, u32) {
+        let limb: usize = self.k.div_ceil(base2k) - 1;
+        (limb, ((limb + 1) * base2k - self.k) as u32)
+    }
+}
 
 #[derive(Debug)]
 pub struct EncryptionLayout<L> {

@@ -8,9 +8,9 @@ use crate::layouts::UnnormalizedCKKSCiphertext;
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, oep::CKKSAddImpl};
 
-impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
-    fn ckks_add_tmp_bytes(&self) -> usize {
-        BE::ckks_add_tmp_bytes_impl(self)
+impl<BE: Backend + CKKSAddImpl> CKKSAddOps<BE> for Module<BE> {
+    fn ckks_add_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_add_tmp_bytes_impl(self, res_size)
     }
 
     fn ckks_add_into<Dst, A, B>(&self, dst: &mut Dst, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -37,8 +37,8 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
         BE::ckks_add_one_assign_impl(self, dst, scratch)
     }
 
-    fn ckks_add_pt_vec_tmp_bytes(&self) -> usize {
-        BE::ckks_add_pt_vec_tmp_bytes_impl(self)
+    fn ckks_add_pt_vec_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_add_pt_vec_tmp_bytes_impl(self, res_size)
     }
 
     fn ckks_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -58,8 +58,8 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
         BE::ckks_add_pt_vec_assign_impl(self, dst, pt, scratch)
     }
 
-    fn ckks_add_pt_const_tmp_bytes(&self) -> usize {
-        BE::ckks_add_pt_const_tmp_bytes_impl(self)
+    fn ckks_add_pt_const_tmp_bytes(&self, res_size: usize) -> usize {
+        BE::ckks_add_pt_const_tmp_bytes_impl(self, res_size)
     }
 
     fn ckks_add_pt_const_into<Dst, A, P>(

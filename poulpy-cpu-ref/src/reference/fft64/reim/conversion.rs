@@ -27,17 +27,6 @@ pub fn reim_from_znx_i64_ref(res: &mut [f64], a: &[i64]) {
 }
 
 #[inline(always)]
-pub fn reim_from_znx_i64_masked_ref(res: &mut [f64], a: &[i64], mask: i64) {
-    {
-        assert_eq!(res.len(), a.len())
-    }
-
-    for i in 0..res.len() {
-        res[i] = (a[i] & mask) as f64
-    }
-}
-
-#[inline(always)]
 pub fn reim_to_znx_i64_ref(res: &mut [i64], divisor: f64, a: &[f64]) {
     {
         assert_eq!(res.len(), a.len())

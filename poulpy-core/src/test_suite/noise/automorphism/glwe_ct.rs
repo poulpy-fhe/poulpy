@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssignBackend, VecZnxFillUniformSourceBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssign, VecZnxFillUniformSource},
     layouts::{Module, ScratchOwned},
     source::Source,
     test_suite::TestParams,
@@ -26,13 +26,13 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEDecrypt<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWENoise<BE>
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssign<BE>
         + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -86,7 +86,7 @@ where
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
-            module.vec_znx_fill_uniform_source_backend(
+            module.vec_znx_fill_uniform_source(
                 in_base2k,
                 pt_in.k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
@@ -144,12 +144,7 @@ where
             );
 
             module.glwe_normalize(&mut pt_out, &pt_in, &mut scratch.borrow());
-            module.vec_znx_automorphism_assign_backend(
-                p,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_out.data),
-                0,
-                &mut scratch.borrow(),
-            );
+            module.vec_znx_automorphism_assign(p, &mut vec_znx_backend_mut::<BE>(&mut pt_out.data), 0, &mut scratch.borrow());
 
             assert!(
                 module
@@ -170,13 +165,13 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxFillUniformSource<BE>
         + GLWEDecrypt<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWENoise<BE>
-        + VecZnxAutomorphismAssignBackend<BE>,
+        + VecZnxAutomorphismAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -218,7 +213,7 @@ where
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
-            module.vec_znx_fill_uniform_source_backend(
+            module.vec_znx_fill_uniform_source(
                 out_base2k,
                 pt_want.k().as_usize(),
                 &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
@@ -275,12 +270,7 @@ where
                 0f64,
             );
 
-            module.vec_znx_automorphism_assign_backend(
-                p,
-                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
-                0,
-                &mut scratch.borrow(),
-            );
+            module.vec_znx_automorphism_assign(p, &mut vec_znx_backend_mut::<BE>(&mut pt_want.data), 0, &mut scratch.borrow());
 
             assert!(
                 module

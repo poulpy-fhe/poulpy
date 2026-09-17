@@ -23,7 +23,7 @@ macro_rules! impl_automorphism_delegate {
 
 impl_automorphism_delegate!(
     GLWEAutomorphism<BE>,
-    [BE: Backend + AutomorphismImpl<BE>],
+    [BE: Backend + AutomorphismImpl],
     fn glwe_automorphism_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -96,7 +96,7 @@ impl_automorphism_delegate!(
 
 impl_automorphism_delegate!(
     GGSWAutomorphism<BE>,
-    [BE: Backend + AutomorphismImpl<BE> + crate::oep::ConversionImpl<BE>, Module<BE>: crate::oep::ConversionDefault<BE>],
+    [BE: Backend + AutomorphismImpl + crate::oep::ConversionImpl, Module<BE>: crate::oep::ConversionDefault<BE>],
     fn ggsw_automorphism_tmp_bytes<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
@@ -125,7 +125,7 @@ impl_automorphism_delegate!(
 
 impl_automorphism_delegate!(
     GLWEAutomorphismKeyAutomorphism<BE>,
-    [BE: Backend + AutomorphismImpl<BE>],
+    [BE: Backend + AutomorphismImpl],
     fn glwe_automorphism_key_automorphism_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,

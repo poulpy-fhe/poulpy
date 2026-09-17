@@ -399,6 +399,10 @@ pub(crate) fn vmp_apply_dft_to_dft_avx<E: TaskExecutor>(
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
     let n = res.n();
     let nrows = pmat.cols_in() * pmat.rows();
     let ncols = pmat.cols_out() * pmat.size();
@@ -423,7 +427,7 @@ pub(crate) fn vmp_apply_dft_to_dft_avx<E: TaskExecutor>(
     }
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_avx<E: TaskExecutor>(
+pub(crate) fn vmp_apply_dft_to_dft_add_avx<E: TaskExecutor>(
     module: &Module<NTT4x30Avx>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,
@@ -431,6 +435,10 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_avx<E: TaskExecutor>(
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
     let n = res.n();
     let nrows = pmat.cols_in() * pmat.rows();
     let ncols = pmat.cols_out() * pmat.size();

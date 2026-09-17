@@ -2,10 +2,7 @@
 //! low-digit column selection of the §4.4 hybrid).
 
 use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::{
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
-    msb_mask_bottom_limb,
-};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
@@ -35,7 +32,7 @@ where
     let preps = 4 * plan.theta() * module.bytes_of_cnv_pvec_right(1, b_size, PrepareHint::Reuse);
     let work = module
         .cnv_prepare_right_tmp_bytes(b_size, b_size)
-        .max(module.cnv_accumulate_dft_tmp_bytes(0, res_dft_size, a_size, b_size))
+        .max(module.cnv_apply_dft_sum_tmp_bytes(0, res_dft_size, a_size, b_size))
         .max(module.bytes_of_vec_znx_big(2, res_dft_size) + module.vec_znx_big_normalize_tmp_bytes());
     module.bytes_of_vec_znx_dft(2, res_dft_size) + preps + work
 }
@@ -75,7 +72,6 @@ where
     )?;
     let a_size = kk.div_ceil(base2k);
     let b_size = pis[0].size();
-    let b_mask = msb_mask_bottom_limb(base2k, pis[0].max_k().as_usize());
     let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < base2k {
         (0, -((base2k - (cnv_offset % base2k)) as i64))
     } else {
@@ -94,8 +90,7 @@ where
             "{OP}: inconsistent operand sizes"
         );
         let (mut b_prep, next) = rest.take_cnv_pvec_right_scratch(module, 1, b_size, PrepareHint::Reuse);
-        rest = next
-            .apply_mut(|s| module.cnv_prepare_right(&mut b_prep, GLWEToBackendRef::<BE>::to_backend_ref(pi).data(), b_mask, s));
+        rest = next.apply_mut(|s| module.cnv_prepare_right(&mut b_prep, GLWEToBackendRef::<BE>::to_backend_ref(pi).data(), s));
         preps.push(b_prep);
     }
 
@@ -112,7 +107,7 @@ where
                     b_col: 0,
                 })
                 .collect();
-            module.cnv_accumulate_dft(cnv_offset_hi, &mut sum_dft_mut, col, &terms, &mut rest.borrow());
+            module.cnv_apply_dft_sum(cnv_offset_hi, &mut sum_dft_mut, col, &terms, &mut rest.borrow());
         }
     }
 

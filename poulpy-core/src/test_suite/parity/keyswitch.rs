@@ -4,8 +4,8 @@ use crate::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
-        VecZnxDftZero, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxDftZero, VmpApplyDftToDft, VmpApplyDftToDftAdd, VmpApplyDftToDftAddTmpBytes, VmpApplyDftToDftTmpBytes,
+        VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
         Backend, FillUniform, HostBytesBackend, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendRef, Module, PrepareHint,
@@ -31,7 +31,7 @@ use crate::{
 /// Checks a backend's interleaved-digit product against the Core definition.
 pub fn test_gglwe_product_digits_strided<BE>(module: &Module<BE>, base2k: usize)
 where
-    BE: poulpy_hal::test_suite::TestBackend + GGLWEProductDigitsStridedImpl<BE>,
+    BE: poulpy_hal::test_suite::TestBackend + GGLWEProductDigitsStridedImpl,
     BE::OwnedBuf: HostDataMut,
     Module<BE>: VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
@@ -40,9 +40,9 @@ where
         + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
         + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyDftToDftAdd<BE>
         + VmpApplyDftToDftTmpBytes
-        + VmpApplyDftToDftAccumulateTmpBytes
+        + VmpApplyDftToDftAddTmpBytes
         + VmpPMatAlloc<BE>
         + VmpPrepare<BE>
         + VmpPrepareTmpBytes,

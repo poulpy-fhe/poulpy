@@ -30,8 +30,9 @@
 //! `coeff_offset..coeff_offset + n` of limbs `limb_offset + k * limb_step`.
 //! The value read through a window is the restricted map. Windows are built
 //! with `window_coeffs` and `window_limbs` on [`VecZnx`](crate::layouts::VecZnx)
-//! and [`VecZnxBig`](crate::layouts::VecZnxBig); coefficient-wise operations
-//! accept them, ring operations require `n == n_full == N`. Flat accessors
+//! and [`VecZnxBig`](crate::layouts::VecZnxBig); coefficient-wise operations,
+//! including `normalize` and the shifts, accept them; ring operations and
+//! DFT-domain operations require `n == n_full == N`. Flat accessors
 //! (`raw`, `as_ptr`) panic on a window.
 
 mod convolution;
@@ -75,7 +76,6 @@ pub use vmp_pmat::*;
 pub use word::*;
 pub use znx_base::*;
 
-use anyhow::Result;
 use std::ptr::NonNull;
 
 use crate::oep::HalModuleImpl;
@@ -306,7 +306,7 @@ impl Backend for HostBytesBackend {
     unsafe fn destroy(_handle: NonNull<Self::Handle>) {}
 }
 
-unsafe impl HalModuleImpl<HostBytesBackend> for HostBytesBackend {
+unsafe impl HalModuleImpl for HostBytesBackend {
     fn new(n: u64) -> crate::layouts::Module<Self> {
         assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
         unsafe { crate::layouts::Module::from_nonnull(NonNull::dangling(), n) }
@@ -612,7 +612,7 @@ macro_rules! impl_backend_from {
             // Sizing must be forwarded explicitly: these are defaulted trait
             // methods, so without forwarding the delegate would silently get
             // the word-derived defaults instead of the source backend's
-            // overrides (e.g. the packed IFMA `bytes_of_vmp_pmat`), breaking
+            // overrides (e.g. a backend's packed `bytes_of_vmp_pmat`), breaking
             // the layout compatibility asserted by the markers below.
             const SCRATCH_ALIGN: usize = <$from as poulpy_hal::layouts::Backend>::SCRATCH_ALIGN;
 
@@ -661,26 +661,4 @@ macro_rules! impl_backend_from {
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct NoiseInfos {
-    pub k: usize,
-    pub sigma: f64,
-    pub bound: f64,
-}
-
-impl NoiseInfos {
-    pub fn new(k: usize, sigma: f64, bound: f64) -> Result<Self> {
-        anyhow::ensure!(sigma.is_sign_positive(), "sigma must be positive");
-        anyhow::ensure!(sigma >= 1.0, "sigma must be greater or equal to 1");
-        anyhow::ensure!(bound >= sigma, "bound: {bound} must be greater or equal to sigma: {sigma}");
-        Ok(Self { k, sigma, bound })
-    }
-
-    /// Target limb and the number of unused low bits it holds.
-    pub fn target_limb_and_shift(&self, base2k: usize) -> (usize, u32) {
-        let limb: usize = self.k.div_ceil(base2k) - 1;
-        (limb, ((limb + 1) * base2k - self.k) as u32)
-    }
 }

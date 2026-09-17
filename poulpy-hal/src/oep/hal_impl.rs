@@ -1,17 +1,15 @@
 #![allow(clippy::too_many_arguments)]
 
-use crate::layouts::{
-    Backend, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-};
+use crate::layouts::{Backend, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef};
 
 /// Module construction extension point.
 ///
 /// # Safety
 /// Implementations must return a module handle that is valid for the backend
 /// and ring degree, and uphold the backend safety contract.
-pub unsafe trait HalModuleImpl<BE: Backend>: Backend {
+pub unsafe trait HalModuleImpl: Backend {
     #[allow(clippy::new_ret_no_self)]
-    fn new(n: u64) -> Module<BE>;
+    fn new(n: u64) -> Module<Self>;
 }
 
 /// Coefficient-domain `VecZnx` extension point.
@@ -19,399 +17,353 @@ pub unsafe trait HalModuleImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must uphold the backend safety contract for layout access,
 /// aliasing, scratch usage, and arithmetic correctness.
-pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
-    fn vec_znx_zero_backend(module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, res_col: usize);
+pub unsafe trait HalVecZnxImpl: Backend {
+    fn vec_znx_zero(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, res_col: usize);
 
-    fn scalar_znx_fill_ternary_hw_backend(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        hw: usize,
-        seed: [u8; 32],
-    );
-
-    fn scalar_znx_fill_ternary_prob_backend(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        prob: f64,
-        seed: [u8; 32],
-    );
-
-    fn scalar_znx_fill_binary_hw_backend(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        hw: usize,
-        seed: [u8; 32],
-    );
-
-    fn scalar_znx_fill_binary_prob_backend(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        prob: f64,
-        seed: [u8; 32],
-    );
-
-    fn scalar_znx_fill_binary_block_backend(
-        module: &Module<BE>,
-        res: &mut ScalarZnxBackendMut<'_, BE>,
-        res_col: usize,
-        block_size: usize,
-        seed: [u8; 32],
-    );
-
-    fn vec_znx_normalize_tmp_bytes_backend(module: &Module<BE>) -> usize;
+    fn vec_znx_normalize_tmp_bytes(module: &Module<Self>) -> usize;
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_normalize_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+    fn vec_znx_normalize(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
-    fn vec_znx_normalize_assign_backend(
-        module: &Module<BE>,
+    fn vec_znx_normalize_assign(
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        a: &mut VecZnxBackendMut<'_, BE>,
+        a_offset: i64,
+        a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
-    fn vec_znx_add_into_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+    fn vec_znx_add(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE>,
+        b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
     );
 
-    fn vec_znx_add_assign_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+    fn vec_znx_add_assign(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_add_scalar_assign_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+    /// `res[res_col][res_limb] += a[a_col]`, the scalar seen as a one-limb
+    /// `VecZnx`. Default body: `vec_znx_add_scalar_assign_derived`, an
+    /// `add_assign` on the one-limb window of `res`.
+    fn vec_znx_add_scalar_assign(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
         res_limb: usize,
-        a: &ScalarZnxBackendRef<'_, BE>,
+        a: &ScalarZnxBackendRef<'_, Self>,
         a_col: usize,
-    );
+    ) {
+        crate::oep::vec_znx_add_scalar_assign_derived::<Self>(module, res, res_col, res_limb, a, a_col)
+    }
 
-    fn vec_znx_sub_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+    fn vec_znx_sub(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE>,
+        b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
     );
 
-    fn vec_znx_sub_assign_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+    fn vec_znx_sub_assign(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_sub_negate_assign_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+    fn vec_znx_sub_negate_assign(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_negate_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+    fn vec_znx_negate(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_negate_assign_backend(module: &Module<BE>, a: &mut VecZnxBackendMut<'_, BE>, a_col: usize);
+    fn vec_znx_negate_assign(module: &Module<Self>, a: &mut VecZnxBackendMut<'_, Self>, a_col: usize);
 
-    fn vec_znx_rsh_tmp_bytes_backend(module: &Module<BE>) -> usize;
+    /// Returns scratch bytes for the whole right-shift family, [`Self::vec_znx_rsh`],
+    /// [`Self::vec_znx_rsh_add`], [`Self::vec_znx_rsh_sub`] and
+    /// [`Self::vec_znx_rsh_assign`], on a destination of `res_size` limbs.
+    /// Default body: `vec_znx_rsh_tmp_bytes_derived`.
+    ///
+    /// Family rule: the value must cover the `res_size`-limb temporary the `_add`
+    /// / `_sub` / `_assign` default bodies carve, not only the carry
+    /// `vec_znx_rsh` itself needs. A backend that overrides some but not all
+    /// bodies of the family must therefore either leave this on the default or
+    /// return a value large enough for the ones it did not override.
+    fn vec_znx_rsh_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize {
+        crate::oep::vec_znx_rsh_tmp_bytes_derived::<Self>(module, res_size)
+    }
 
-    fn vec_znx_rsh_backend(
-        module: &Module<BE>,
+    /// `res[res_col] = a[a_col] / 2^k` at the same radix. Default body:
+    /// `vec_znx_rsh_derived`, a `vec_znx_normalize` with `offset = -k`; it uses
+    /// only the normalization carry out of [`Self::vec_znx_rsh_tmp_bytes`].
+    fn vec_znx_rsh(
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_rsh_derived::<Self>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
-    fn vec_znx_rsh_coeff_backend(
-        module: &Module<BE>,
+    /// `res[res_col] += a[a_col] / 2^k`. Default body: `vec_znx_rsh_add_derived`,
+    /// a `vec_znx_rsh` into a `res.size()`-limb temporary carved out of
+    /// [`Self::vec_znx_rsh_tmp_bytes`], then `vec_znx_add_assign`.
+    fn vec_znx_rsh_add(
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        a_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_rsh_add_derived::<Self>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
-    fn vec_znx_rsh_add_into_backend(
-        module: &Module<BE>,
+    /// Returns scratch bytes for the whole left-shift family, [`Self::vec_znx_lsh`],
+    /// [`Self::vec_znx_lsh_add`], [`Self::vec_znx_lsh_sub`] and
+    /// [`Self::vec_znx_lsh_assign`], on a destination of `res_size` limbs.
+    /// Default body: `vec_znx_lsh_tmp_bytes_derived`.
+    ///
+    /// Family rule: the value must cover the `res_size`-limb temporary the `_add`
+    /// / `_sub` / `_assign` default bodies carve, not only the carry
+    /// `vec_znx_lsh` itself needs. A backend that overrides some but not all
+    /// bodies of the family must therefore either leave this on the default or
+    /// return a value large enough for the ones it did not override.
+    /// A backend may do exactly that: override `vec_znx_lsh_assign` and
+    /// leave this `_tmp_bytes` on the default.
+    fn vec_znx_lsh_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize {
+        crate::oep::vec_znx_lsh_tmp_bytes_derived::<Self>(module, res_size)
+    }
+
+    /// `res[res_col] = a[a_col] * 2^k` at the same radix. Default body:
+    /// `vec_znx_lsh_derived`, a `vec_znx_normalize` with `offset = +k`; it uses
+    /// only the normalization carry out of [`Self::vec_znx_lsh_tmp_bytes`].
+    fn vec_znx_lsh(
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_lsh_derived::<Self>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
-    fn vec_znx_rsh_add_coeff_into_backend(
-        module: &Module<BE>,
+    /// `res[res_col] += a[a_col] * 2^k`. Default body: `vec_znx_lsh_add_derived`,
+    /// a `vec_znx_lsh` into a `res.size()`-limb temporary carved out of
+    /// [`Self::vec_znx_lsh_tmp_bytes`], then `vec_znx_add_assign`.
+    fn vec_znx_lsh_add(
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        a_coeff: usize,
-        res_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_lsh_add_derived::<Self>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
-    fn vec_znx_rsh_sub_coeff_into_backend(
-        module: &Module<BE>,
+    /// `res[res_col] -= a[a_col] * 2^k`. Default body: `vec_znx_lsh_sub_derived`,
+    /// a `vec_znx_lsh` into a `res.size()`-limb temporary carved out of
+    /// [`Self::vec_znx_lsh_tmp_bytes`], then `vec_znx_sub_assign`.
+    fn vec_znx_lsh_sub(
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        a_coeff: usize,
-        res_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_lsh_sub_derived::<Self>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
-    fn vec_znx_lsh_tmp_bytes_backend(module: &Module<BE>) -> usize;
-
-    fn vec_znx_lsh_backend(
-        module: &Module<BE>,
+    /// `res[res_col] -= a[a_col] / 2^k`. Default body: `vec_znx_rsh_sub_derived`,
+    /// a `vec_znx_rsh` into a `res.size()`-limb temporary carved out of
+    /// [`Self::vec_znx_rsh_tmp_bytes`], then `vec_znx_sub_assign`.
+    fn vec_znx_rsh_sub(
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_rsh_sub_derived::<Self>(module, base2k, k, res, res_col, a, a_col, scratch)
+    }
 
-    fn vec_znx_lsh_add_into_backend(
-        module: &Module<BE>,
+    /// `a[a_col] /= 2^k`, in place on the one selected column. Default body:
+    /// `vec_znx_rsh_assign_derived`, a `vec_znx_rsh` into an `a.size()`-limb
+    /// temporary carved out of [`Self::vec_znx_rsh_tmp_bytes`], then a copy back.
+    fn vec_znx_rsh_assign(
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_rsh_assign_derived::<Self>(module, base2k, k, a, a_col, scratch)
+    }
 
-    fn vec_znx_lsh_add_coeff_to_coeff_backend(
-        module: &Module<BE>,
+    /// `a[a_col] *= 2^k`, in place on the one selected column. Default body:
+    /// `vec_znx_lsh_assign_derived`, a `vec_znx_lsh` into an `a.size()`-limb
+    /// temporary carved out of [`Self::vec_znx_lsh_tmp_bytes`], then a copy back.
+    fn vec_znx_lsh_assign(
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
-        a_coeff: usize,
-        res_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_lsh_assign_derived::<Self>(module, base2k, k, a, a_col, scratch)
+    }
 
-    fn vec_znx_lsh_sub_coeff_to_coeff_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        a_coeff: usize,
-        res_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_lsh_sub_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_rsh_sub_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_rsh_assign_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        a: &mut VecZnxBackendMut<'_, BE>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_lsh_assign_backend(
-        module: &Module<BE>,
-        base2k: usize,
-        k: usize,
-        a: &mut VecZnxBackendMut<'_, BE>,
-        a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn vec_znx_rotate_backend(
-        module: &Module<BE>,
+    fn vec_znx_rotate(
+        module: &Module<Self>,
         k: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_rotate_assign_tmp_bytes_backend(module: &Module<BE>) -> usize;
+    fn vec_znx_rotate_assign_tmp_bytes(module: &Module<Self>) -> usize;
 
-    fn vec_znx_rotate_assign_backend(
-        module: &Module<BE>,
+    fn vec_znx_rotate_assign(
+        module: &Module<Self>,
         k: i64,
-        a: &mut VecZnxBackendMut<'_, BE>,
+        a: &mut VecZnxBackendMut<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
-    fn vec_znx_automorphism_backend(
-        module: &Module<BE>,
+    fn vec_znx_automorphism(
+        module: &Module<Self>,
         k: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_automorphism_assign_tmp_bytes_backend(module: &Module<BE>) -> usize;
+    fn vec_znx_automorphism_assign_tmp_bytes(module: &Module<Self>) -> usize;
 
-    fn vec_znx_automorphism_assign_backend(
-        module: &Module<BE>,
+    fn vec_znx_automorphism_assign(
+        module: &Module<Self>,
         k: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
-    fn vec_znx_mul_xp_minus_one_backend(
-        module: &Module<BE>,
+    /// `res[res_col] = (X^k - 1) * a[a_col]`. Default body:
+    /// `vec_znx_mul_xp_minus_one_derived`, a `vec_znx_rotate` then a
+    /// `vec_znx_sub_assign` of the unrotated value. Takes no scratch.
+    fn vec_znx_mul_xp_minus_one(
+        module: &Module<Self>,
         k: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-    );
+    ) {
+        crate::oep::vec_znx_mul_xp_minus_one_derived::<Self>(module, k, res, res_col, a, a_col)
+    }
 
-    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_backend(module: &Module<BE>) -> usize;
+    /// Returns scratch bytes required for
+    /// [`Self::vec_znx_mul_xp_minus_one_assign`] on a `size`-limb operand.
+    /// Default body: `vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived`, one
+    /// `size`-limb `VecZnx` for the rotated copy.
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &Module<Self>, size: usize) -> usize {
+        crate::oep::vec_znx_mul_xp_minus_one_assign_tmp_bytes_derived::<Self>(module, size)
+    }
 
-    fn vec_znx_mul_xp_minus_one_assign_backend(
-        module: &Module<BE>,
+    /// `res[res_col] = (X^k - 1) * res[res_col]`. Default body:
+    /// `vec_znx_mul_xp_minus_one_assign_derived`, which carves the full-width
+    /// rotated copy out of [`Self::vec_znx_mul_xp_minus_one_assign_tmp_bytes`]
+    /// and copies it back.
+    fn vec_znx_mul_xp_minus_one_assign(
+        module: &Module<Self>,
         k: i64,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_mul_xp_minus_one_assign_derived::<Self>(module, k, res, res_col, scratch)
+    }
 
-    fn vec_znx_switch_ring_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+    fn vec_znx_switch_ring(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_copy_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+    fn vec_znx_copy(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_copy_range_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        res_limb: usize,
-        res_offset: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        a_limb: usize,
-        a_offset: usize,
-        len: usize,
-    );
-
-    fn vec_znx_extract_coeff_backend(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        a_coeff: usize,
-    );
-
-    fn vec_znx_fill_uniform_backend(
-        module: &Module<BE>,
+    fn vec_znx_fill_uniform(
+        module: &Module<Self>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_col: usize,
-        seed: [u8; 32],
-    );
-
-    fn vec_znx_add_normal_backend(
-        module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
         seed: [u8; 32],
     );
 }
@@ -421,194 +373,208 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must uphold the backend safety contract for backend-native
 /// accumulator layouts and arithmetic correctness.
-pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
-    fn vec_znx_big_from_small_backend(
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+pub unsafe trait HalVecZnxBigImpl: Backend {
+    fn vec_znx_big_from_small(
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_big_add_normal_backend(
-        module: &Module<BE>,
-        res_base2k: usize,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+    fn vec_znx_big_add(
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        noise_infos: NoiseInfos,
-        seed: [u8; 32],
-    );
-
-    fn vec_znx_big_add_into(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
-        res_col: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        b: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         b_col: usize,
     );
 
     fn vec_znx_big_add_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_big_add_small_into_backend(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+    /// Default body: [`crate::oep::vec_znx_big_add_small_derived`]. Over the
+    /// whole of `res`, limbs only `b` reaches keep `b`, limbs only `a` reaches
+    /// keep `a`, limbs beyond both operands are zero.
+    fn vec_znx_big_add_small(
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE>,
+        b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
-    );
+    ) {
+        crate::oep::vec_znx_big_add_small_derived::<Self>(module, res, res_col, a, a_col, b, b_col)
+    }
 
+    /// Required, not derived: the composition would need a `VecZnxBig`
+    /// temporary and this form takes no scratch, so the derived body cannot be used.
     fn vec_znx_big_add_small_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
     fn vec_znx_big_sub(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        b: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         b_col: usize,
     );
 
     fn vec_znx_big_sub_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
     );
 
     fn vec_znx_big_sub_negate_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_big_sub_small_a_backend(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+    /// Default body: [`crate::oep::vec_znx_big_sub_small_a_derived`]. Over the
+    /// whole of `res`, limbs only `a` reaches keep `a`, limbs beyond
+    /// `a.size()` that `b` reaches keep `-b`, limbs beyond both operands are
+    /// zero.
+    fn vec_znx_big_sub_small_a(
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        b: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         b_col: usize,
-    );
+    ) {
+        crate::oep::vec_znx_big_sub_small_a_derived::<Self>(module, res, res_col, a, a_col, b, b_col)
+    }
 
+    /// Required, not derived: the composition would need a `VecZnxBig`
+    /// temporary and this form takes no scratch, so the derived body cannot be used.
     fn vec_znx_big_sub_small_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_big_sub_small_b_backend(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+    /// Default body: [`crate::oep::vec_znx_big_sub_small_b_derived`]. Over the
+    /// whole of `res`, limbs only `a` reaches keep `a`, limbs beyond
+    /// `a.size()` that `b` reaches keep `-b`, limbs beyond both operands are
+    /// zero.
+    fn vec_znx_big_sub_small_b(
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
-        b: &VecZnxBackendRef<'_, BE>,
+        b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
-    );
+    ) {
+        crate::oep::vec_znx_big_sub_small_b_derived::<Self>(module, res, res_col, a, a_col, b, b_col)
+    }
 
+    /// Required, not derived: the composition would need a `VecZnxBig`
+    /// temporary and this form takes no scratch, so the derived body cannot be used.
     fn vec_znx_big_sub_small_negate_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_big_inner_sum_backend(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+    fn vec_znx_big_inner_sum(
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
         res_coeff: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
     );
 
     fn vec_znx_big_col_weighted_sum(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
-        weights: &ScalarZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
+        weights: &ScalarZnxBackendRef<'_, Self>,
         weights_col: usize,
         cols: usize,
         coeffs: usize,
     );
 
     fn vec_znx_scalar_product(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &VecZnxBackendRef<'_, BE>,
+        a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        b: &ScalarZnxBackendRef<'_, BE>,
+        b: &ScalarZnxBackendRef<'_, Self>,
         b_col: usize,
     );
 
     fn vec_znx_big_negate(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_big_negate_assign(module: &Module<BE>, a: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>, a_col: usize);
+    fn vec_znx_big_negate_assign(module: &Module<Self>, a: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>, a_col: usize);
 
-    fn vec_znx_big_normalize_tmp_bytes(module: &Module<BE>) -> usize;
+    fn vec_znx_big_normalize_tmp_bytes(module: &Module<Self>) -> usize;
 
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_big_normalize(
-        module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
     fn vec_znx_big_automorphism(
-        module: &Module<BE>,
+        module: &Module<Self>,
         k: i64,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBigBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBigBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_big_automorphism_assign_tmp_bytes(module: &Module<BE>) -> usize;
+    fn vec_znx_big_automorphism_assign_tmp_bytes(module: &Module<Self>) -> usize;
 
     fn vec_znx_big_automorphism_assign(
-        module: &Module<BE>,
+        module: &Module<Self>,
         k: i64,
-        a: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        a: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 }
 
@@ -617,143 +583,178 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must uphold the backend safety contract for prepared-domain
 /// layouts, transforms, and arithmetic correctness.
-pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
+pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
     fn vec_znx_dft_apply(
-        module: &Module<BE>,
+        module: &Module<Self>,
         step: usize,
         offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_idft_apply_tmp_bytes(module: &Module<BE>) -> usize;
+    fn vec_znx_idft_apply_tmp_bytes(module: &Module<Self>) -> usize;
 
     fn vec_znx_idft_apply(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
+    /// Required, not derived: the composition is `vec_znx_idft_apply(res, a)`,
+    /// which needs `vec_znx_idft_apply_tmp_bytes` scratch this signature does
+    /// not carry.
     fn vec_znx_idft_apply_tmpa(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        a: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
+    /// Returns scratch bytes required for
+    /// [`Self::vec_znx_idft_normalize_consume`]. Default body:
+    /// `vec_znx_idft_normalize_consume_tmp_bytes_derived`, the `a_size`-limb
+    /// `VecZnxBig` the inverse transform lands in plus the big normalization's
+    /// own carry.
+    fn vec_znx_idft_normalize_consume_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        crate::oep::vec_znx_idft_normalize_consume_tmp_bytes_derived::<Self>(module, res_size, a_size)
+    }
 
     /// `res[res_col] = normalize(idft(a[a_col]) + addend)`, clobbering `a[a_col]`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_idft_normalize_consume(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxBackendMut<'_, Self>,
         res_base2k: usize,
         res_k: usize,
         res_col: usize,
-        a: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        a: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         a_col: usize,
         a_base2k: usize,
-        addend: Option<(&crate::layouts::VecZnxBackendRef<'_, BE>, usize)>,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        addend: Option<(&crate::layouts::VecZnxBackendRef<'_, Self>, usize)>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_idft_normalize_consume_derived::<Self>(
+            module, res, res_base2k, res_k, res_col, a, a_col, a_base2k, addend, scratch,
+        )
+    }
 
-    fn vec_znx_dft_add_into(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+    fn vec_znx_dft_add(
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        b: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     );
 
-    fn vec_znx_dft_add_scaled_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
-        a_col: usize,
-        a_scale: i64,
-    );
-
     fn vec_znx_dft_add_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     );
 
     fn vec_znx_dft_sub(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        b: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     );
 
     fn vec_znx_dft_sub_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     );
 
     fn vec_znx_dft_sub_negate_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     );
 
     fn vec_znx_dft_copy(
-        module: &Module<BE>,
+        module: &Module<Self>,
         step: usize,
         offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn vec_znx_dft_zero(module: &Module<BE>, res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>, res_col: usize);
+    fn vec_znx_dft_zero(module: &Module<Self>, res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>, res_col: usize);
 
-    /// Backend-specific automorphism plan (e.g. a `Fft64AutomorphismPlan`
-    /// for FFT64 backends, a pure-permutation plan for NTT backends).
+    /// Backend-specific automorphism plan (e.g. a precomputed plan for a
+    /// floating-point FFT backend, a pure-permutation plan for an NTT backend).
     type AutomorphismPlan: Send + Sync;
 
-    fn vec_znx_dft_automorphism_plan(module: &Module<BE>, p: i64) -> Self::AutomorphismPlan;
+    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_with_plan(
-        module: &Module<BE>,
+        module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     );
+    /// `res[res_col] = automorphism(a[a_col])` for one `p`. Default body:
+    /// `vec_znx_dft_automorphism_derived`, the plan built and dropped inside
+    /// the call.
+    fn vec_znx_dft_automorphism(
+        module: &Module<Self>,
+        p: i64,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::oep::vec_znx_dft_automorphism_derived::<Self>(module, p, res, res_col, a, a_col)
+    }
+
+    /// Returns scratch bytes required for
+    /// [`Self::vec_znx_dft_automorphism_add_with_plan`]. Default body:
+    /// `vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived`, one
+    /// `min(res_size, a_size)`-limb `VecZnxDft` for the rotated operand.
+    fn vec_znx_dft_automorphism_add_with_plan_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        crate::oep::vec_znx_dft_automorphism_add_with_plan_tmp_bytes_derived::<Self>(module, res_size, a_size)
+    }
 
     /// `res[res_col] += automorphism(a[a_col])` over `min(res.size(), a.size())` limbs;
     /// res limbs beyond that are left untouched.
+    ///
+    /// `scratch` must hold at least
+    /// [`Self::vec_znx_dft_automorphism_add_with_plan_tmp_bytes`] on the same
+    /// sizes: the default body carves one `min(res.size(), a.size())`-limb,
+    /// one-column `VecZnxDft` for the rotated operand.
+    #[allow(clippy::too_many_arguments)]
     fn vec_znx_dft_automorphism_add_with_plan(
-        module: &Module<BE>,
+        module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vec_znx_dft_automorphism_add_with_plan_derived::<Self>(module, plan, res, res_col, a, a_col, scratch)
+    }
 }
 
 /// Scalar-vector product family extension point.
@@ -761,48 +762,67 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must uphold the backend safety contract for prepared
 /// polynomial layouts and arithmetic correctness.
-pub unsafe trait HalSvpImpl<BE: Backend>: Backend {
+pub unsafe trait HalSvpImpl: Backend + HalVecZnxDftImpl {
     fn svp_prepare(
-        module: &Module<BE>,
-        res: &mut crate::layouts::SvpPPolBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::SvpPPolBackendMut<'_, Self>,
         res_col: usize,
-        a: &ScalarZnxBackendRef<'_, BE>,
+        a: &ScalarZnxBackendRef<'_, Self>,
         a_col: usize,
     );
 
-    fn svp_ppol_copy_backend(
-        module: &Module<BE>,
-        res: &mut crate::layouts::SvpPPolBackendMut<'_, BE>,
+    fn svp_ppol_copy(
+        module: &Module<Self>,
+        res: &mut crate::layouts::SvpPPolBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::SvpPPolBackendRef<'_, BE>,
+        a: &crate::layouts::SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     );
 
+    /// Returns scratch bytes required for [`Self::svp_apply_dft`]. Default body:
+    /// `svp_apply_dft_tmp_bytes_derived`, one `b_size`-limb `VecZnxDft` for the
+    /// transformed right operand.
+    fn svp_apply_dft_tmp_bytes(module: &Module<Self>, b_size: usize) -> usize {
+        crate::oep::svp_apply_dft_tmp_bytes_derived::<Self>(module, b_size)
+    }
+
+    /// `res[res_col] = a[a_col] * dft(b[b_col])`. Limbs of `res` beyond
+    /// `min(res.size(), b.size())` are zeroed.
+    ///
+    /// `scratch` must hold at least [`Self::svp_apply_dft_tmp_bytes`] on
+    /// `b.size()`: the default body carves one `b.size()`-limb, one-column
+    /// `VecZnxDft` for the transformed right operand.
+    #[allow(clippy::too_many_arguments)]
     fn svp_apply_dft(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::SvpPPolBackendRef<'_, BE>,
+        a: &crate::layouts::SvpPPolBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        b: &crate::layouts::VecZnxBackendRef<'_, Self>,
         b_col: usize,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::svp_apply_dft_derived::<Self>(module, res, res_col, a, a_col, b, b_col, scratch)
+    }
 
     fn svp_apply_dft_to_dft(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::SvpPPolBackendRef<'_, BE>,
+        a: &crate::layouts::SvpPPolBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        b: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
         b_col: usize,
     );
 
+    /// Required, not derived: a default body would need a `VecZnxDft` temporary
+    /// the scratch-free signature does not carry, so the derived body cannot be used.
     fn svp_apply_dft_to_dft_assign(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::SvpPPolBackendRef<'_, BE>,
+        a: &crate::layouts::SvpPPolBackendRef<'_, Self>,
         a_col: usize,
     );
 }
@@ -812,39 +832,51 @@ pub unsafe trait HalSvpImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must uphold the backend safety contract for prepared matrix
 /// layouts, scratch usage, and arithmetic correctness.
-pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
-    fn vmp_prepare_tmp_bytes(module: &Module<BE>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
+pub unsafe trait HalVmpImpl: Backend + HalVecZnxDftImpl {
+    fn vmp_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
 
     fn vmp_prepare(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>,
-        a: &crate::layouts::MatZnxBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VmpPMatBackendMut<'_, Self>,
+        a: &crate::layouts::MatZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
+    /// Returns scratch bytes required for [`Self::vmp_apply_dft`]. Default body:
+    /// `vmp_apply_dft_tmp_bytes_derived`, one `min(a_size, b_rows)`-limb
+    /// `VecZnxDft` for the transformed input plus whatever
+    /// [`Self::vmp_apply_dft_to_dft`] needs.
     #[allow(clippy::too_many_arguments)]
     fn vmp_apply_dft_tmp_bytes(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res_size: usize,
         a_size: usize,
         b_rows: usize,
         b_cols_in: usize,
         b_cols_out: usize,
         b_size: usize,
-    ) -> usize;
+    ) -> usize {
+        crate::oep::vmp_apply_dft_tmp_bytes_derived::<Self>(module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
+    }
 
+    /// `res = dft(a) * pmat`. Default body: `vmp_apply_dft_derived`, which carves
+    /// the transformed input out of [`Self::vmp_apply_dft_tmp_bytes`], aligns
+    /// `a`'s columns with `pmat.cols_in()`, then applies in the DFT domain.
     fn vmp_apply_dft<R>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        b: &crate::layouts::VmpPMatBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        a: &crate::layouts::VecZnxBackendRef<'_, Self>,
+        b: &crate::layouts::VmpPMatBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: crate::layouts::VecZnxDftToBackendMut<BE>;
+        R: crate::layouts::VecZnxDftToBackendMut<Self>,
+    {
+        crate::oep::vmp_apply_dft_derived::<Self, R>(module, res, a, b, scratch)
+    }
 
     #[allow(clippy::too_many_arguments)]
     fn vmp_apply_dft_to_dft_tmp_bytes(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res_size: usize,
         a_size: usize,
         b_rows: usize,
@@ -854,43 +886,56 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
     ) -> usize;
 
     fn vmp_apply_dft_to_dft(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
-        b: &crate::layouts::VmpPMatBackendRef<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
+        b: &crate::layouts::VmpPMatBackendRef<'_, Self>,
         limb_offset: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
+    /// Returns scratch bytes required for [`Self::vmp_apply_dft_to_dft_add`].
+    /// Default body: `vmp_apply_dft_to_dft_add_tmp_bytes_derived`, a full-width
+    /// `res_size`-limb staging accumulator plus the product's own scratch.
     #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
-        module: &Module<BE>,
+    fn vmp_apply_dft_to_dft_add_tmp_bytes(
+        module: &Module<Self>,
         res_size: usize,
         a_size: usize,
         b_rows: usize,
         b_cols_in: usize,
         b_cols_out: usize,
         b_size: usize,
-    ) -> usize;
+    ) -> usize {
+        crate::oep::vmp_apply_dft_to_dft_add_tmp_bytes_derived::<Self>(
+            module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
+        )
+    }
 
-    fn vmp_apply_dft_to_dft_accumulate(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
-        b: &crate::layouts::VmpPMatBackendRef<'_, BE>,
+    /// `res += a * pmat` in the DFT domain. Default body:
+    /// `vmp_apply_dft_to_dft_add_derived`, which carves the zeroed staging
+    /// accumulator out of [`Self::vmp_apply_dft_to_dft_add_tmp_bytes`] and folds
+    /// it into `res` column by column.
+    fn vmp_apply_dft_to_dft_add(
+        module: &Module<Self>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, Self>,
+        b: &crate::layouts::VmpPMatBackendRef<'_, Self>,
         limb_offset: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::vmp_apply_dft_to_dft_add_derived::<Self>(module, res, a, b, limb_offset, scratch)
+    }
 
     fn vmp_extract_selected_rows(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>,
-        a: &crate::layouts::VmpPMatBackendRef<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::VmpPMatBackendMut<'_, Self>,
+        a: &crate::layouts::VmpPMatBackendRef<'_, Self>,
         first_row: usize,
         row_step: usize,
     );
 
-    fn vmp_zero(module: &Module<BE>, res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>);
+    fn vmp_zero(module: &Module<Self>, res: &mut crate::layouts::VmpPMatBackendMut<'_, Self>);
 }
 
 /// Convolution family extension point.
@@ -898,31 +943,29 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementations must uphold the backend safety contract for prepared matrix
 /// layouts, scratch usage, and arithmetic correctness.
-pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
-    fn cnv_prepare_left_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
+pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigImpl {
+    fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize;
 
     fn cnv_prepare_left(
-        module: &Module<BE>,
-        res: &mut crate::layouts::CnvPVecLBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::CnvPVecLBackendMut<'_, Self>,
+        a: &crate::layouts::VecZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
-    fn cnv_prepare_right_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
+    fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize;
 
     fn cnv_prepare_right(
-        module: &Module<BE>,
-        res: &mut crate::layouts::CnvPVecRBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
+        module: &Module<Self>,
+        res: &mut crate::layouts::CnvPVecRBackendMut<'_, Self>,
+        a: &crate::layouts::VecZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
-    fn cnv_apply_dft_tmp_bytes(module: &Module<BE>, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
+    fn cnv_apply_dft_tmp_bytes(module: &Module<Self>, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 
     fn cnv_by_const_apply_tmp_bytes(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
         res_size: usize,
         a_size: usize,
@@ -931,192 +974,173 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        b: &crate::layouts::VecZnxBackendRef<'_, Self>,
         b_col: usize,
         b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
+
+    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_by_const_apply_add`].
+    fn cnv_by_const_apply_add_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        crate::oep::cnv_by_const_apply_add_tmp_bytes_derived::<Self>(module, cnv_offset, res_size, a_size, b_size)
+    }
 
     /// `res[res_col] +=` the [`Self::cnv_by_const_apply`] result; limbs the
     /// convolution would zero-fill are left untouched.
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply_add(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        a: &crate::layouts::VecZnxBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        b: &crate::layouts::VecZnxBackendRef<'_, Self>,
         b_col: usize,
         b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::cnv_by_const_apply_add_derived::<Self>(module, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
+    }
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
+        a: &crate::layouts::CnvPVecLBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
+        b: &crate::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     );
 
-    // Lazy convolution used by glwe_mul_plain; defaults delegate to the eager path.
-    fn cnv_prepare_left_lazy_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
-        Self::cnv_prepare_left_tmp_bytes(module, res_size, a_size)
-    }
-
-    fn cnv_prepare_left_lazy(
-        module: &Module<BE>,
-        res: &mut crate::layouts::CnvPVecLBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        Self::cnv_prepare_left(module, res, a, mask, scratch);
-    }
-
-    fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
-        Self::cnv_prepare_right_tmp_bytes(module, res_size, a_size)
-    }
-
-    fn cnv_prepare_right_lazy(
-        module: &Module<BE>,
-        res: &mut crate::layouts::CnvPVecRBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        Self::cnv_prepare_right(module, res, a, mask, scratch);
-    }
-
-    fn cnv_apply_dft_lazy_tmp_bytes(
-        module: &Module<BE>,
+    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_apply_dft_add`].
+    fn cnv_apply_dft_add_tmp_bytes(
+        module: &Module<Self>,
         cnv_offset: usize,
         res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+        crate::oep::cnv_apply_dft_add_tmp_bytes_derived::<Self>(module, cnv_offset, res_size, a_size, b_size)
     }
 
+    /// `res[res_col] += a (x) b`. Default body: `cnv_apply_dft_add_derived`,
+    /// which carves a `res.size()`-limb staging `VecZnxDft` out of
+    /// [`Self::cnv_apply_dft_add_tmp_bytes`] and adds it into `res`.
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_lazy(
-        module: &Module<BE>,
+    fn cnv_apply_dft_add(
+        module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
+        a: &crate::layouts::CnvPVecLBackendRef<'_, Self>,
         a_col: usize,
-        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
+        b: &crate::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
-        Self::cnv_apply_dft(module, cnv_offset, res, res_col, a, a_col, b, b_col, scratch);
+        crate::oep::cnv_apply_dft_add_derived::<Self>(module, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
-        a_col: usize,
-        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
-        b_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_accumulate_dft`].
+    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_apply_dft_sum`].
     ///
     /// The default sizes the per-term fallback (one `cnv_apply_dft` /
-    /// `cnv_apply_dft_accumulate` scratch). Backends with a fused kernel should
+    /// `cnv_apply_dft_add` scratch). Backends with a fused kernel should
     /// override both methods together.
-    fn cnv_accumulate_dft_tmp_bytes(
-        module: &Module<BE>,
+    fn cnv_apply_dft_sum_tmp_bytes(
+        module: &Module<Self>,
         cnv_offset: usize,
         res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+        crate::oep::cnv_apply_dft_sum_tmp_bytes_derived::<Self>(module, cnv_offset, res_size, a_size, b_size)
     }
 
     /// Computes `res[res_col] = Σ_t a_t ⊛ b_t` (overwriting).
     ///
     /// The default implementation overwrites with the first term
     /// (`cnv_apply_dft`, which also zeroes the limbs past the convolution
-    /// bound) and folds the remaining terms with `cnv_apply_dft_accumulate`.
+    /// bound) and folds the remaining terms with `cnv_apply_dft_add`.
     /// Backends should override it with a fused kernel that keeps the lazy
     /// accumulators live across terms.
-    fn cnv_accumulate_dft<'a>(
-        module: &Module<BE>,
+    fn cnv_apply_dft_sum<'a>(
+        module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        terms: &[crate::layouts::CnvDftAccTerm<'a, BE>],
-        scratch: &mut ScratchArena<'_, BE>,
+        terms: &[crate::layouts::CnvDftAccTerm<'a, Self>],
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        BE: HalVecZnxDftImpl<BE> + 'a,
+        Self: 'a,
     {
-        if terms.is_empty() {
-            <BE as HalVecZnxDftImpl<BE>>::vec_znx_dft_zero(module, res, res_col);
-            return;
-        }
-        for (idx, term) in terms.iter().enumerate() {
-            if idx == 0 {
-                Self::cnv_apply_dft(
-                    module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
-                );
-            } else {
-                Self::cnv_apply_dft_accumulate(
-                    module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
-                );
-            }
-        }
+        crate::oep::cnv_apply_dft_sum_derived::<Self>(module, cnv_offset, res, res_col, terms, scratch)
     }
 
+    /// Returns scratch bytes required for [`Self::cnv_pairwise_apply_dft`].
+    /// Default body: `cnv_pairwise_apply_dft_tmp_bytes_derived`, the larger of
+    /// the one overwriting and the three accumulating products it chains.
     fn cnv_pairwise_apply_dft_tmp_bytes(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
         res_size: usize,
         a_size: usize,
         b_size: usize,
-    ) -> usize;
+    ) -> usize {
+        crate::oep::cnv_pairwise_apply_dft_tmp_bytes_derived::<Self>(module, cnv_offset, res_size, a_size, b_size)
+    }
 
+    /// `res[res_col] = (a[i] + a[j]) (x) (b[i] + b[j])`, expanded in the DFT
+    /// domain where the prepared operands are linear. Default body:
+    /// `cnv_pairwise_apply_dft_derived`; scratch is
+    /// [`Self::cnv_pairwise_apply_dft_tmp_bytes`].
     #[allow(clippy::too_many_arguments)]
     fn cnv_pairwise_apply_dft(
-        module: &Module<BE>,
+        module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
-        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
+        a: &crate::layouts::CnvPVecLBackendRef<'_, Self>,
+        b: &crate::layouts::CnvPVecRBackendRef<'_, Self>,
         i: usize,
         j: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::cnv_pairwise_apply_dft_derived::<Self>(module, cnv_offset, res, res_col, a, b, i, j, scratch)
+    }
 
-    fn cnv_prepare_self_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
+    /// Returns scratch bytes required for [`Self::cnv_prepare_self`]. Default
+    /// body: `cnv_prepare_self_tmp_bytes_derived`, the larger of the two
+    /// prepares.
+    fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        crate::oep::cnv_prepare_self_tmp_bytes_derived::<Self>(module, res_size, a_size)
+    }
 
+    /// Prepares `a` as both a left and a right convolution factor. Default body:
+    /// `cnv_prepare_self_derived`, one [`Self::cnv_prepare_left`] then one
+    /// [`Self::cnv_prepare_right`].
     fn cnv_prepare_self(
-        module: &Module<BE>,
-        left: &mut crate::layouts::CnvPVecLBackendMut<'_, BE>,
-        right: &mut crate::layouts::CnvPVecRBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+        module: &Module<Self>,
+        left: &mut crate::layouts::CnvPVecLBackendMut<'_, Self>,
+        right: &mut crate::layouts::CnvPVecRBackendMut<'_, Self>,
+        a: &crate::layouts::VecZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::oep::cnv_prepare_self_derived::<Self>(module, left, right, a, scratch)
+    }
 }

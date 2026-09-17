@@ -55,7 +55,7 @@ impl ModUpBackend for NTT4x30Avx {
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = <Self as GGLWEProductDigitsStridedImpl<Self>>::gglwe_product_digits_strided_tmp_bytes(
+        let bytes = <Self as GGLWEProductDigitsStridedImpl>::gglwe_product_digits_strided_tmp_bytes(
             module,
             res.size(),
             a.cols(),
@@ -116,7 +116,7 @@ fn encapsulated_mod_up<BE, Dst, Src>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> CKKSResult<()>
 where
-    BE: ModUpBackend + CKKSEncapsulatedModUpImpl<BE>,
+    BE: ModUpBackend + CKKSEncapsulatedModUpImpl,
     Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + GLWEKeyswitch<BE>
@@ -219,7 +219,7 @@ where
 
 macro_rules! impl_encapsulated_mod_up {
     ($be:ty) => {
-        unsafe impl CKKSEncapsulatedModUpImpl<$be> for $be {
+        unsafe impl CKKSEncapsulatedModUpImpl for $be {
             fn ckks_encapsulated_mod_up_tmp_bytes<Dst, Src, D2S, S2D>(
                 module: &Module<$be>,
                 dst_infos: &Dst,

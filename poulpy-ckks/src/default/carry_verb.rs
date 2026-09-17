@@ -64,8 +64,8 @@ where
 /// - `trait_name`: generated trait identifier.
 /// - `glwe_bound` / `glwe_into` / `glwe_assign` / `glwe_lsh_verb`: the core
 ///   GLWE verb trait and its into/assign/shift-accumulate methods.
-/// - `pt_vec_bounds` / `pt_const_bounds`: the verb-specific coefficient-wise
-///   HAL backend traits (each takes a `<BE>` parameter).
+/// - `pt_vec_bounds`: the verb-specific HAL shift backend traits (each takes
+///   a `<BE>` parameter), shared by the pt-vector and pt-constant variants.
 ///
 /// All type and trait names in the expansion resolve at the call site: the
 /// invoking module must import the shared bounds (`GLWEShift`, `GLWENormalize`,
@@ -81,7 +81,6 @@ macro_rules! ckks_carry_verb_default {
         glwe_assign: $glwe_assign:ident,
         glwe_lsh_verb: $glwe_lsh_verb:ident,
         pt_vec_bounds: [$($PtVecBound:ident),+ $(,)?],
-        pt_const_bounds: [$($PtConstBound:ident),+ $(,)?],
     ) => {
         ::paste::paste! {
             #[doc = concat!("Backend-generic reference implementation of the CKKS ", $doc_verb, " family.")]
@@ -95,30 +94,30 @@ macro_rules! ckks_carry_verb_default {
                 /// scratch needs. The ct–ct path never touches the `vec_znx` hooks,
                 /// so for it this is a slight over-provision — the price of keeping
                 /// one formula for the whole family.
-                fn [<ckks_ $verb _tmp_bytes_default>](&self) -> usize
+                fn [<ckks_ $verb _tmp_bytes_default>](&self, res_size: usize) -> usize
                 where
                     Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
                 {
-                    self.glwe_shift_tmp_bytes()
+                    self.glwe_shift_tmp_bytes(res_size)
                         .max(self.glwe_normalize_tmp_bytes())
-                        .max(self.vec_znx_rsh_tmp_bytes())
-                        .max(self.vec_znx_lsh_tmp_bytes())
+                        .max(self.vec_znx_rsh_tmp_bytes(res_size))
+                        .max(self.vec_znx_lsh_tmp_bytes(res_size))
                 }
 
                 /// Scratch bytes for the ct–pt-vector variants.
-                fn [<ckks_ $verb _pt_vec_tmp_bytes_default>](&self) -> usize
+                fn [<ckks_ $verb _pt_vec_tmp_bytes_default>](&self, res_size: usize) -> usize
                 where
                     Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
                 {
-                    self.[<ckks_ $verb _tmp_bytes_default>]()
+                    self.[<ckks_ $verb _tmp_bytes_default>](res_size)
                 }
 
                 /// Scratch bytes for the ct–pt-constant variants.
-                fn [<ckks_ $verb _pt_const_tmp_bytes_default>](&self) -> usize
+                fn [<ckks_ $verb _pt_const_tmp_bytes_default>](&self, res_size: usize) -> usize
                 where
                     Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
                 {
-                    self.[<ckks_ $verb _tmp_bytes_default>]()
+                    self.[<ckks_ $verb _tmp_bytes_default>](res_size)
                 }
 
                 fn [<ckks_ $verb _into_default>]<Dst, A, B>(
@@ -231,7 +230,7 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: GLWENormalize<BE>
-                        $(+ $PtConstBound<BE>)+
+                        $(+ $PtVecBound<BE>)+
                         + CKKSPlaintextDefault<BE>
                         + CKKSModuleAlloc<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
@@ -271,7 +270,7 @@ macro_rules! ckks_carry_verb_default {
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, 0, 0, scratch)?;
+                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, 0, 0, 0, scratch)?;
                     self.[<ckks_ $verb _pt_vec_assign_unnormalized_default>](dst, pt, scratch)?;
                     Ok(())
                 }
@@ -318,7 +317,7 @@ macro_rules! ckks_carry_verb_default {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: GLWEShift<BE> + GLWENormalize<BE> $(+ $PtConstBound<BE>)+ + CKKSPlaintextDefault<BE>,
+                    Self: GLWEShift<BE> + GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextDefault<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
@@ -338,12 +337,12 @@ macro_rules! ckks_carry_verb_default {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: GLWEShift<BE> $(+ $PtConstBound<BE>)+ + CKKSPlaintextDefault<BE>,
+                    Self: GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextDefault<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
-                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, 0, 0, scratch)?;
+                    $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, 0, 0, 0, scratch)?;
                     self.[<ckks_ $verb _pt_const_assign_unnormalized_default>](dst, dst_coeff, cst, const_coeff, scratch)
                 }
 
@@ -356,7 +355,7 @@ macro_rules! ckks_carry_verb_default {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: GLWENormalize<BE> $(+ $PtConstBound<BE>)+ + CKKSPlaintextDefault<BE>,
+                    Self: GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextDefault<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
@@ -374,7 +373,7 @@ macro_rules! ckks_carry_verb_default {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Self: CKKSPlaintextDefault<BE> $(+ $PtConstBound<BE>)+,
+                    Self: CKKSPlaintextDefault<BE> $(+ $PtVecBound<BE>)+,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {

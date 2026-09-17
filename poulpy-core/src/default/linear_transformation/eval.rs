@@ -11,12 +11,12 @@
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
-        VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
-        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
-        VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
-        VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes, VecZnxNormalizeAssignBackend,
-        VecZnxNormalizeTmpBytes,
+        CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssign, VecZnxBigAddAssign, VecZnxBigAlloc,
+        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmall,
+        VecZnxBigNormalize, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftAutomorphismAddWithPlanTmpBytes, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply,
+        VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes, VecZnxIdftNormalizeConsume, VecZnxIdftNormalizeConsumeTmpBytes,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, GaloisElement, PrepareHint, ScratchArena},
 };
@@ -52,10 +52,11 @@ where
         + Convolution<BE>
         + GGLWEProductDefault<BE>
         + crate::default::keyswitching::GLWEKeyswitchInternal<BE>
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes
@@ -117,7 +118,7 @@ where
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
@@ -151,8 +152,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
         + poulpy_hal::api::ModuleN
-        + VecZnxAutomorphismAssignBackend<BE>
-        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
@@ -203,14 +203,13 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + GGLWEProductDefault<BE>
         + GLWEKeyswitchInternal<BE>
         + VecZnxBigAddAssign<BE>
-        + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmallBackend<BE>
+        + VecZnxBigFromSmall<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxCopyBackend<BE>
+        + VecZnxCopy<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphism<BE>
@@ -220,7 +219,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
         + GLWEMulPlain<BE>
         + GaloisElement,
@@ -258,10 +257,11 @@ where
         + Convolution<BE>
         + GGLWEProductDefault<BE>
         + crate::default::keyswitching::GLWEKeyswitchInternal<BE>
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
         + VecZnxIdftApplyTmpBytes
         + VecZnxIdftNormalizeConsumeTmpBytes

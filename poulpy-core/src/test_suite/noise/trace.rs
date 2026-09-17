@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssignBackend, VecZnxSubAssignBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssign, VecZnxSubAssign},
     layouts::{Module, ScratchOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
@@ -33,8 +33,8 @@ where
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxNormalizeAssignBackend<BE>
-        + VecZnxSubAssignBackend<BE>,
+        + VecZnxNormalizeAssign<BE>
+        + VecZnxSubAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -144,12 +144,13 @@ where
                 );
             let pt_have_data =
                 <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&pt_have.data);
-            module.vec_znx_sub_assign_backend(&mut pt_want_data, 0, &pt_have_data, 0);
+            module.vec_znx_sub_assign(&mut pt_want_data, 0, &pt_have_data, 0);
         }
         let mut pt_noise = upload_glwe_plaintext(module, &pt_want);
-        module.vec_znx_normalize_assign_backend(
+        module.vec_znx_normalize_assign(
             pt_noise.base2k().as_usize(),
             pt_noise.data.size() * pt_noise.base2k().as_usize(),
+            0,
             &mut vec_znx_backend_mut::<BE>(&mut pt_noise.data),
             0,
             &mut scratch.borrow(),
@@ -169,6 +170,12 @@ where
         );
         // Residue left by the decomposition of the mask, folded against the secret.
         noise_want += n as f64 * 1.0 / 12.0 * 0.5 * rank as f64 * (-2.0 * (k) as f64).exp2();
+        // Each rotation halves the running sum with `glwe_rsh(1)`, which rounds
+        // at precision `k`: one uniform rounding of variance `2^-2k / 12` on the
+        // body and on each mask polynomial, the latter folded against the
+        // secret. Later halvings shrink the earlier roundings, so the geometric
+        // sum over the rotations is bounded by `4/3` of one step.
+        noise_want += 4.0 / 3.0 * (1.0 + n as f64 * 0.5 * rank as f64) / 12.0 * (-2.0 * (k) as f64).exp2();
         noise_want = noise_want.sqrt().log2();
 
         // The model is an upper bound, so only the upper side is asserted.

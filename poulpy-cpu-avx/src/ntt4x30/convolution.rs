@@ -6,12 +6,13 @@ use core::arch::x86_64::{
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
+use poulpy_cpu_ref::reference::sparse_log_gap;
 use poulpy_hal::execution::TaskExecutor;
 #[cfg(feature = "enable-rayon")]
 use poulpy_hal::layouts::CnvDftAccTerm;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CrtWord, HostDataMut, HostDataRef,
-    Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
+    Module, VecZnxBackendRef, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
 };
 use std::mem::size_of;
 
@@ -37,6 +38,17 @@ impl<T> SendPtr<T> {
 #[inline(always)]
 fn packed_row_offset(size: usize, limb: usize, group: usize) -> usize {
     (group * size + limb) * 4 * GROUP
+}
+
+/// u32 offset, inside a prepared right operand column whose own degree is
+/// `N >> log_gap`, of row `row0` of the slot that degree-`N` slot
+/// `group * GROUP + slot_in_group` reads: the slot itself when dense, slot
+/// `>> log_gap` when sparse (spec 4.5). Consecutive rows of that slot are
+/// `4 * GROUP` u32 apart.
+#[inline(always)]
+fn slot_offset(size: usize, row0: usize, group: usize, slot_in_group: usize, log_gap: usize) -> usize {
+    let slot = (group * GROUP + slot_in_group) >> log_gap;
+    packed_row_offset(size, row0, slot / GROUP) + 4 * (slot % GROUP)
 }
 
 #[inline(always)]
@@ -111,6 +123,7 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
     b0: &[u32],
     b1: &[u32],
     b_size: usize,
+    b_log_gap: usize,
 ) {
     unsafe {
         let q = _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i);
@@ -121,22 +134,24 @@ unsafe fn conv_group<const ACC: bool, const PAIRWISE: bool>(
             let a_start = k_abs + 1 - j_max;
             let b_start = b_size - j_max;
             for pair in 0..GROUP / 2 {
+                let b_off0 = slot_offset(b_size, b_start, group, 2 * pair, b_log_gap);
+                let b_off1 = slot_offset(b_size, b_start, group, 2 * pair + 1, b_log_gap);
                 let mut lo0 = _mm256_setzero_si256();
                 let mut hi0 = _mm256_setzero_si256();
                 let mut lo1 = _mm256_setzero_si256();
                 let mut hi1 = _mm256_setzero_si256();
                 for row in 0..j_max - j_min {
                     let ao = packed_row_offset(a_size, a_start + row, group);
-                    let bo = packed_row_offset(b_size, b_start + row, group);
+                    let ro = row * 4 * GROUP;
                     let mut av0 = load_coeff(a0.as_ptr().add(ao), 2 * pair);
                     let mut av1 = load_coeff(a0.as_ptr().add(ao), 2 * pair + 1);
-                    let mut bv0 = load_coeff(b0.as_ptr().add(bo), 2 * pair);
-                    let mut bv1 = load_coeff(b0.as_ptr().add(bo), 2 * pair + 1);
+                    let mut bv0 = load_coeff(b0.as_ptr().add(b_off0 + ro), 0);
+                    let mut bv1 = load_coeff(b0.as_ptr().add(b_off1 + ro), 0);
                     if PAIRWISE {
                         av0 = cond_sub(_mm256_add_epi64(av0, load_coeff(a1.as_ptr().add(ao), 2 * pair)), q);
                         av1 = cond_sub(_mm256_add_epi64(av1, load_coeff(a1.as_ptr().add(ao), 2 * pair + 1)), q);
-                        bv0 = cond_sub(_mm256_add_epi64(bv0, load_coeff(b1.as_ptr().add(bo), 2 * pair)), q);
-                        bv1 = cond_sub(_mm256_add_epi64(bv1, load_coeff(b1.as_ptr().add(bo), 2 * pair + 1)), q);
+                        bv0 = cond_sub(_mm256_add_epi64(bv0, load_coeff(b1.as_ptr().add(b_off0 + ro), 0)), q);
+                        bv1 = cond_sub(_mm256_add_epi64(bv1, load_coeff(b1.as_ptr().add(b_off1 + ro), 0)), q);
                     }
                     accumulate_product(&mut lo0, &mut hi0, av0, bv0);
                     accumulate_product(&mut lo1, &mut hi1, av1, bv1);
@@ -200,7 +215,6 @@ fn prepare<BE, E: TaskExecutor>(
     left: Option<&mut CnvPVecLBackendMut<'_, BE>>,
     right: Option<&mut CnvPVecRBackendMut<'_, BE>>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -217,6 +231,14 @@ fn prepare<BE, E: TaskExecutor>(
         let res = right.as_ref().unwrap();
         (res.n(), res.cols(), res.size())
     };
+    assert_eq!(n, module.n(), "prepare: res.n():{n} != module.n():{}", module.n());
+    assert_eq!(a.n(), n, "prepare: a.n():{} != res.n():{n}", a.n());
+    assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
+    if let (Some(l), Some(r)) = (left.as_ref(), right.as_ref()) {
+        assert_eq!(r.n(), n, "prepare: right.n():{} != left.n():{n}", r.n());
+        assert_eq!(r.cols(), l.cols(), "right.cols():{} != left.cols():{}", r.cols(), l.cols());
+        assert_eq!(r.size(), l.size(), "right.size():{} != left.size():{}", r.size(), l.size());
+    }
     let min_size = size.min(a.size());
     let mut left = left.map(|res| cast_slice_mut::<_, u32>(res.raw_mut()));
     let mut right = right.map(|res| cast_slice_mut::<_, u32>(res.raw_mut()));
@@ -231,11 +253,7 @@ fn prepare<BE, E: TaskExecutor>(
             let mut dst_l = left_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             let mut dst_r = right_ptr.map(|ptr| unsafe { std::slice::from_raw_parts_mut(ptr.get().add(col * stride), stride) });
             if limb < min_size {
-                if limb + 1 == min_size {
-                    BE::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
-                } else {
-                    BE::ntt_from_znx64(tmp, a.at(col, limb));
-                }
+                BE::ntt_from_znx64(tmp, a.at(col, limb));
                 BE::ntt_dft_execute(module.get_ntt_table(), tmp);
                 if let Some(dst) = dst_l.as_deref_mut() {
                     unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
@@ -264,11 +282,7 @@ fn prepare<BE, E: TaskExecutor>(
         let mut dst_l = left.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         let mut dst_r = right.as_deref_mut().map(|data| col_slice_mut(data, n, size, col));
         for limb in 0..min_size {
-            if limb + 1 == min_size {
-                BE::ntt_from_znx64_masked(tmp, a.at(col, limb), mask);
-            } else {
-                BE::ntt_from_znx64(tmp, a.at(col, limb));
-            }
+            BE::ntt_from_znx64(tmp, a.at(col, limb));
             BE::ntt_dft_execute(module.get_ntt_table(), tmp);
             if let Some(dst) = dst_l.as_deref_mut() {
                 unsafe { pack_prepared_limb(dst, tmp, n, size, limb) };
@@ -296,7 +310,6 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -306,14 +319,13 @@ pub(crate) fn cnv_prepare_left<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, Some(res), None, a, mask, tmp);
+    prepare::<BE, E>(module, Some(res), None, a, tmp);
 }
 
 pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     module: &Module<BE>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -323,7 +335,7 @@ pub(crate) fn cnv_prepare_right<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, None, Some(res), a, mask, tmp);
+    prepare::<BE, E>(module, None, Some(res), a, tmp);
 }
 
 pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
@@ -331,7 +343,6 @@ pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = CrtWord<Primes30, u32>, ZnxWord = i64>
@@ -341,7 +352,7 @@ pub(crate) fn cnv_prepare_self<BE, E: TaskExecutor>(
     for<'a> BE::BufMut<'a>: HostDataMut,
     Module<BE>: NttModuleHandle,
 {
-    prepare::<BE, E>(module, Some(left), Some(right), a, mask, tmp);
+    prepare::<BE, E>(module, Some(left), Some(right), a, tmp);
 }
 
 pub(crate) fn cnv_apply_dft_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
@@ -367,6 +378,9 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     Module<BE>: NttModuleHandle,
 {
     let (n, res_size, a_size, b_size) = (res.n(), res.size(), a.size(), b.size());
+    assert_eq!(n, module.n(), "res.n():{n} != module.n():{}", module.n());
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
+    let b_log_gap = sparse_log_gap(n, b.n());
     if res_size == 0 || a_size == 0 || b_size == 0 {
         if !ACC {
             for limb in 0..res_size {
@@ -382,8 +396,8 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
     let b_raw: &[u32] = cast_slice(b.raw());
     let a0 = col_slice(a_raw, n, a_size, a0_col);
     let a1 = col_slice(a_raw, n, a_size, a1_col);
-    let b0 = col_slice(b_raw, n, b_size, b0_col);
-    let b1 = col_slice(b_raw, n, b_size, b1_col);
+    let b0 = col_slice(b_raw, b.n(), b_size, b0_col);
+    let b1 = col_slice(b_raw, b.n(), b_size, b1_col);
     let res_cols = res.cols();
     let res_ptr = SendPtr(cast_slice_mut::<_, u32>(res.raw_mut()).as_mut_ptr());
     E::for_each(n / GROUP, |group| unsafe {
@@ -402,6 +416,7 @@ unsafe fn apply<BE, E: TaskExecutor, const ACC: bool, const PAIRWISE: bool>(
             b0,
             b1,
             b_size,
+            b_log_gap,
         )
     });
     if !ACC {
@@ -431,7 +446,7 @@ pub(crate) unsafe fn cnv_apply_dft<BE, E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn cnv_apply_dft_accumulate<BE, E: TaskExecutor>(
+pub(crate) unsafe fn cnv_apply_dft_add<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -450,12 +465,12 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate<BE, E: TaskExecutor>(
 }
 
 #[cfg(feature = "enable-rayon")]
-pub(crate) fn cnv_accumulate_dft_avx_tmp_bytes(_res_size: usize) -> usize {
+pub(crate) fn cnv_apply_dft_sum_avx_tmp_bytes(_res_size: usize) -> usize {
     0
 }
 
 #[cfg(feature = "enable-rayon")]
-pub(crate) unsafe fn cnv_accumulate_dft_avx<BE, E: TaskExecutor>(
+pub(crate) unsafe fn cnv_apply_dft_sum_avx<BE, E: TaskExecutor>(
     module: &Module<BE>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -517,94 +532,4 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft<BE, E: TaskExecutor>(
 
 pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
     0
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply<BE, E: TaskExecutor>(
-    cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
-    res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
-    a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
-    b_col: usize,
-    b_coeff: usize,
-) where
-    BE: Backend<BigWord = i128, ZnxWord = i64>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply");
-    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply");
-    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
-    if res_size == 0 || a_size == 0 || b_size == 0 {
-        let n = res.n();
-        let cols = res.cols();
-        let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
-        E::for_each(res_size, |limb| unsafe {
-            std::slice::from_raw_parts_mut(res_ptr.get().add(n * (limb * cols + res_col)), n).fill(0)
-        });
-        return;
-    }
-    let bound = a_size + b_size - 1;
-    let min_size = res_size.min(bound);
-    let offset = cnv_offset.min(bound);
-    let n = res.n();
-    let cols = res.cols();
-    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
-    E::for_each(res_size, |k| {
-        let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * cols + res_col)), n) };
-        if k < min_size {
-            let k_abs = k + offset;
-            let j_min = k_abs.saturating_sub(a_size - 1);
-            let j_max = (k_abs + 1).min(b_size);
-            for (coeff, out) in dst.iter_mut().enumerate() {
-                *out = (j_min..j_max)
-                    .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
-                    .sum();
-            }
-        } else {
-            dst.fill(0);
-        }
-    });
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn cnv_by_const_apply_add<BE, E: TaskExecutor>(
-    cnv_offset: usize,
-    res: &mut VecZnxBigBackendMut<'_, BE>,
-    res_col: usize,
-    a: &VecZnxBackendRef<'_, BE>,
-    a_col: usize,
-    b: &VecZnxBackendRef<'_, BE>,
-    b_col: usize,
-    b_coeff: usize,
-) where
-    BE: Backend<BigWord = i128, ZnxWord = i64>,
-    for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-{
-    poulpy_hal::layouts::assert_dense(a, "cnv_by_const_apply_add");
-    poulpy_hal::layouts::assert_dense(b, "cnv_by_const_apply_add");
-    let (res_size, a_size, b_size) = (res.size(), a.size(), b.size());
-    if res_size == 0 || a_size == 0 || b_size == 0 {
-        return;
-    }
-    let bound = a_size + b_size - 1;
-    let min_size = res_size.min(bound);
-    let offset = cnv_offset.min(bound);
-    let n = res.n();
-    let cols = res.cols();
-    let res_ptr = SendPtr(res.raw_mut().as_mut_ptr());
-    E::for_each(min_size, |k| {
-        let k_abs = k + offset;
-        let j_min = k_abs.saturating_sub(a_size - 1);
-        let j_max = (k_abs + 1).min(b_size);
-        let dst = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(n * (k * cols + res_col)), n) };
-        for (coeff, out) in dst.iter_mut().enumerate() {
-            *out += (j_min..j_max)
-                .map(|j| a.at(a_col, k_abs - j)[coeff] as i128 * b.at(b_col, j)[b_coeff] as i128)
-                .sum::<i128>();
-        }
-    });
 }

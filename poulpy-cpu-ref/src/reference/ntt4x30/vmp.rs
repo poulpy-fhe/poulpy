@@ -327,6 +327,8 @@ pub fn ntt4x30_vmp_apply_dft_to_dft<BE>(
 {
     assert_eq!(res.n(), pmat.n());
     assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
 
     let n = res.n();
     let nrows = pmat.cols_in() * pmat.rows();

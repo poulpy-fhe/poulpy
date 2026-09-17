@@ -1,8 +1,5 @@
 use poulpy_hal::{
-    api::{VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
-    layouts::{
-        Backend, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos,
-    },
+    layouts::{Module, VecZnxBackendMut, VecZnxBackendRef},
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
@@ -21,10 +18,9 @@ use crate::{
         znx::{
             ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
             ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
-            ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
-            ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
-            ZnxNormalizeMiddleStepCarryOnly, ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign,
-            ZnxSwitchRing, ZnxZero,
+            ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
+            ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub,
+            ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
         },
     },
 };
@@ -103,14 +99,6 @@ impl_forward_znx_trait!(
     znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64])
 );
 impl_forward_znx_trait!(
-    ZnxNormalizeMiddleStepSub,
-    znx_normalize_middle_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64])
-);
-impl_forward_znx_trait!(
-    ZnxNormalizeFinalStepSub,
-    znx_normalize_final_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64])
-);
-impl_forward_znx_trait!(
     ZnxNormalizeFinalStepAssign,
     znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64])
 );
@@ -154,30 +142,30 @@ impl BigWordHadamardProduct for DelegatingFFT64Ref {
     }
 }
 
-unsafe impl HalVecZnxImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalVecZnxImpl for DelegatingFFT64Ref {
     crate::hal_impl_vec_znx!();
 }
 
-unsafe impl HalModuleImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalModuleImpl for DelegatingFFT64Ref {
     crate::hal_impl_module!(FFT64ModuleDefault);
 }
 
-unsafe impl HalVmpImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalVmpImpl for DelegatingFFT64Ref {
     crate::hal_impl_vmp!(FFT64VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalConvolutionImpl for DelegatingFFT64Ref {
     crate::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
-unsafe impl HalVecZnxBigImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalVecZnxBigImpl for DelegatingFFT64Ref {
     crate::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalSvpImpl for DelegatingFFT64Ref {
     crate::hal_impl_svp!(FFT64SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+unsafe impl HalVecZnxDftImpl for DelegatingFFT64Ref {
     crate::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }

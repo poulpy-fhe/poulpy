@@ -11,10 +11,9 @@ use poulpy_cpu_ref::reference::{
     znx::{
         ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
         ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
-        ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
-        ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
-        ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref,
-        znx_rotate, znx_zero_ref,
+        ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
+        ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxRotate, ZnxSub, ZnxSubAssign,
+        ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref, znx_rotate, znx_zero_ref,
     },
 };
 use poulpy_hal::{
@@ -31,9 +30,9 @@ use crate::{
         },
         reim::{
             ReimFFTAvx, ReimIFFTAvx, reim_add_assign_avx2_fma, reim_add_avx2_fma, reim_addmul_avx2_fma,
-            reim_from_znx_i64_bnd50_fma, reim_from_znx_i64_masked_bnd50_fma, reim_mul_assign_avx2_fma, reim_mul_avx2_fma,
-            reim_negate_assign_avx2_fma, reim_negate_avx2_fma, reim_sub_assign_avx2_fma, reim_sub_avx2_fma,
-            reim_sub_negate_assign_avx2_fma, reim_to_znx_i64_assign_bnd63_avx2_fma, reim_to_znx_i64_bnd63_avx2_fma,
+            reim_from_znx_i64_bnd50_fma, reim_mul_assign_avx2_fma, reim_mul_avx2_fma, reim_negate_assign_avx2_fma,
+            reim_negate_avx2_fma, reim_sub_assign_avx2_fma, reim_sub_avx2_fma, reim_sub_negate_assign_avx2_fma,
+            reim_to_znx_i64_assign_bnd63_avx2_fma, reim_to_znx_i64_bnd63_avx2_fma,
         },
         reim4::{
             reim4_convolution_1coeff_avx, reim4_convolution_2coeffs_avx, reim4_convolution_apply_accumulate_avx,
@@ -48,10 +47,9 @@ use crate::{
         znx_add_assign_avx, znx_add_avx, znx_automorphism_avx, znx_automorphism_rotate_avx, znx_extract_digit_addmul_avx,
         znx_mul_add_power_of_two_avx, znx_mul_power_of_two_assign_avx, znx_mul_power_of_two_avx, znx_negate_assign_avx,
         znx_negate_avx, znx_normalize_digit_avx, znx_normalize_final_step_assign_avx, znx_normalize_final_step_avx,
-        znx_normalize_final_step_sub_avx, znx_normalize_first_step_assign_avx, znx_normalize_first_step_avx,
-        znx_normalize_first_step_carry_only_avx, znx_normalize_middle_step_assign_avx, znx_normalize_middle_step_avx,
-        znx_normalize_middle_step_carry_only_avx, znx_normalize_middle_step_sub_avx, znx_sub_assign_avx, znx_sub_avx,
-        znx_sub_negate_assign_avx, znx_switch_ring_avx,
+        znx_normalize_first_step_assign_avx, znx_normalize_first_step_avx, znx_normalize_first_step_carry_only_avx,
+        znx_normalize_middle_step_assign_avx, znx_normalize_middle_step_avx, znx_normalize_middle_step_carry_only_avx,
+        znx_sub_assign_avx, znx_sub_avx, znx_sub_negate_assign_avx, znx_switch_ring_avx,
     },
 };
 
@@ -386,24 +384,6 @@ impl ZnxNormalizeFinalStep for FFT64Avx {
     }
 }
 
-impl ZnxNormalizeMiddleStepSub for FFT64Avx {
-    #[inline(always)]
-    fn znx_normalize_middle_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        unsafe {
-            znx_normalize_middle_step_sub_avx(base2k, lsh, x, a, carry);
-        }
-    }
-}
-
-impl ZnxNormalizeFinalStepSub for FFT64Avx {
-    #[inline(always)]
-    fn znx_normalize_final_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-        unsafe {
-            znx_normalize_final_step_sub_avx(base2k, lsh, x, a, carry);
-        }
-    }
-}
-
 impl ZnxNormalizeFinalStepAssign for FFT64Avx {
     #[inline(always)]
     fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
@@ -539,11 +519,6 @@ impl ReimArith for FFT64Avx {
     #[inline(always)]
     fn reim_from_znx(res: &mut [f64], a: &[i64]) {
         unsafe { reim_from_znx_i64_bnd50_fma(res, a) }
-    }
-
-    #[inline(always)]
-    fn reim_from_znx_masked(res: &mut [f64], a: &[i64], mask: i64) {
-        unsafe { reim_from_znx_i64_masked_bnd50_fma(res, a, mask) }
     }
 
     #[inline(always)]
@@ -683,12 +658,13 @@ impl Reim4Convolution for FFT64Avx {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
+        unsafe { reim4_convolution_apply_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp) }
     }
 
     #[inline(always)]
@@ -702,12 +678,15 @@ impl Reim4Convolution for FFT64Avx {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_accumulate_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
+        unsafe {
+            reim4_convolution_apply_accumulate_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp)
+        }
     }
 
     #[inline(always)]
@@ -723,12 +702,17 @@ impl Reim4Convolution for FFT64Avx {
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_pairwise_apply_avx(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp) }
+        unsafe {
+            reim4_convolution_pairwise_apply_avx(
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+            )
+        }
     }
 
     #[inline(always)]

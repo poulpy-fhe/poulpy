@@ -769,83 +769,6 @@ pub unsafe fn znx_normalize_middle_step_avx512<const OVERWRITE: bool>(
     }
 }
 
-/// Subtractive variant of `znx_normalize_middle_step_avx512`: `x -= digit1`, carry as usual.
-#[inline]
-#[target_feature(enable = "avx512f")]
-pub unsafe fn znx_normalize_middle_step_sub_avx512(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    assert_eq!(x.len(), a.len());
-    assert!(x.len() <= carry.len());
-    assert!(lsh < base2k);
-
-    use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_sllv_epi64, _mm512_storeu_si512, _mm512_sub_epi64};
-
-    let n: usize = x.len();
-    let span: usize = n >> 3;
-
-    let (mask, sign, base2k_vec) = normalize_consts_avx512(base2k);
-
-    let mut xx: *mut __m512i = x.as_mut_ptr() as *mut __m512i;
-    let mut aa: *const __m512i = a.as_ptr() as *const __m512i;
-    let mut cc: *mut __m512i = carry.as_mut_ptr() as *mut __m512i;
-
-    if lsh == 0 {
-        for _ in 0..span {
-            let av: __m512i = _mm512_loadu_si512(aa as *const _);
-            let cv: __m512i = _mm512_loadu_si512(cc as *const _);
-
-            let d0: __m512i = get_digit_avx512(av, mask, sign);
-            let c0: __m512i = get_carry_avx512(av, d0, base2k_vec);
-
-            let s: __m512i = _mm512_add_epi64(d0, cv);
-            let x1: __m512i = get_digit_avx512(s, mask, sign);
-            let c1: __m512i = get_carry_avx512(s, x1, base2k_vec);
-            let cout: __m512i = _mm512_add_epi64(c0, c1);
-
-            let xv: __m512i = _mm512_loadu_si512(xx as *const _);
-            _mm512_storeu_si512(xx, _mm512_sub_epi64(xv, x1));
-            _mm512_storeu_si512(cc, cout);
-
-            xx = xx.add(1);
-            aa = aa.add(1);
-            cc = cc.add(1);
-        }
-    } else {
-        use core::arch::x86_64::_mm512_set1_epi64;
-
-        let (mask_lsh, sign_lsh, base2k_vec_lsh) = normalize_consts_avx512(base2k - lsh);
-        let lsh_v: __m512i = _mm512_set1_epi64(lsh as i64);
-
-        for _ in 0..span {
-            let av: __m512i = _mm512_loadu_si512(aa as *const _);
-            let cv: __m512i = _mm512_loadu_si512(cc as *const _);
-
-            let d0: __m512i = get_digit_avx512(av, mask_lsh, sign_lsh);
-            let c0: __m512i = get_carry_avx512(av, d0, base2k_vec_lsh);
-
-            let d0_lsh: __m512i = _mm512_sllv_epi64(d0, lsh_v);
-
-            let s: __m512i = _mm512_add_epi64(d0_lsh, cv);
-            let x1: __m512i = get_digit_avx512(s, mask, sign);
-            let c1: __m512i = get_carry_avx512(s, x1, base2k_vec);
-            let cout: __m512i = _mm512_add_epi64(c0, c1);
-
-            let xv: __m512i = _mm512_loadu_si512(xx as *const _);
-            _mm512_storeu_si512(xx, _mm512_sub_epi64(xv, x1));
-            _mm512_storeu_si512(cc, cout);
-
-            xx = xx.add(1);
-            aa = aa.add(1);
-            cc = cc.add(1);
-        }
-    }
-
-    if !x.len().is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_sub_ref;
-
-        znx_normalize_middle_step_sub_ref(base2k, lsh, &mut x[span << 3..], &a[span << 3..], &mut carry[span << 3..]);
-    }
-}
-
 /// Final step normalization (in-place).
 ///
 /// `x = digit( (digit(x, base2k_eff) << lsh) + carry )`   where base2k_eff = base2k when lsh==0
@@ -990,73 +913,6 @@ pub unsafe fn znx_normalize_final_step_avx512<const OVERWRITE: bool>(
         use poulpy_cpu_ref::reference::znx::znx_normalize_final_step_ref;
 
         znx_normalize_final_step_ref::<OVERWRITE>(base2k, lsh, &mut x[span << 3..], &a[span << 3..], &mut carry[span << 3..]);
-    }
-}
-
-/// Subtractive variant of `znx_normalize_final_step_avx512`: `x -= digit1`.
-#[inline]
-#[target_feature(enable = "avx512f")]
-pub unsafe fn znx_normalize_final_step_sub_avx512(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]) {
-    assert_eq!(x.len(), a.len());
-    assert!(x.len() <= carry.len());
-    assert!(lsh < base2k);
-
-    use core::arch::x86_64::{_mm512_add_epi64, _mm512_loadu_si512, _mm512_sllv_epi64, _mm512_storeu_si512, _mm512_sub_epi64};
-
-    let n: usize = x.len();
-    let span: usize = n >> 3;
-
-    let (mask, sign, _) = normalize_consts_avx512(base2k);
-
-    let mut xx: *mut __m512i = x.as_mut_ptr() as *mut __m512i;
-    let mut aa: *const __m512i = a.as_ptr() as *const __m512i;
-    let mut cc: *mut __m512i = carry.as_mut_ptr() as *mut __m512i;
-
-    if lsh == 0 {
-        for _ in 0..span {
-            let av: __m512i = _mm512_loadu_si512(aa as *const _);
-            let cv: __m512i = _mm512_loadu_si512(cc as *const _);
-
-            let d0: __m512i = get_digit_avx512(av, mask, sign);
-            let s: __m512i = _mm512_add_epi64(d0, cv);
-            let x1: __m512i = get_digit_avx512(s, mask, sign);
-
-            let xv: __m512i = _mm512_loadu_si512(xx as *const _);
-            _mm512_storeu_si512(xx, _mm512_sub_epi64(xv, x1));
-
-            xx = xx.add(1);
-            aa = aa.add(1);
-            cc = cc.add(1);
-        }
-    } else {
-        use core::arch::x86_64::_mm512_set1_epi64;
-
-        let (mask_lsh, sign_lsh, _) = normalize_consts_avx512(base2k - lsh);
-        let lsh_v: __m512i = _mm512_set1_epi64(lsh as i64);
-
-        for _ in 0..span {
-            let av: __m512i = _mm512_loadu_si512(aa as *const _);
-            let cv: __m512i = _mm512_loadu_si512(cc as *const _);
-
-            let d0: __m512i = get_digit_avx512(av, mask_lsh, sign_lsh);
-            let d0_lsh: __m512i = _mm512_sllv_epi64(d0, lsh_v);
-
-            let s: __m512i = _mm512_add_epi64(d0_lsh, cv);
-            let x1: __m512i = get_digit_avx512(s, mask, sign);
-
-            let xv: __m512i = _mm512_loadu_si512(xx as *const _);
-            _mm512_storeu_si512(xx, _mm512_sub_epi64(xv, x1));
-
-            xx = xx.add(1);
-            aa = aa.add(1);
-            cc = cc.add(1);
-        }
-    }
-
-    if !x.len().is_multiple_of(8) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_final_step_sub_ref;
-
-        znx_normalize_final_step_sub_ref(base2k, lsh, &mut x[span << 3..], &a[span << 3..], &mut carry[span << 3..]);
     }
 }
 
@@ -1320,8 +1176,6 @@ mod tests {
     #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn test_znx_normalize_middle_step_ifma_internal() {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_sub_ref;
-
         let a: [i64; 8] = X_DATA;
         let base2k = 12;
 
@@ -1357,24 +1211,6 @@ mod tests {
 
             znx_normalize_middle_step_ref::<false>(base2k, base2k - 1, &mut y0, &a, &mut c0);
             znx_normalize_middle_step_avx512::<false>(base2k, base2k - 1, &mut y1, &a, &mut c1);
-            assert_eq!(y0, y1);
-            assert_eq!(c0, c1);
-        }
-
-        // sub variant
-        {
-            let mut y0: [i64; 8] = [11, -22, 33, -44, 55, -66, 77, -88];
-            let mut y1: [i64; 8] = y0;
-            let mut c0: [i64; 8] = C_DATA;
-            let mut c1: [i64; 8] = C_DATA;
-
-            znx_normalize_middle_step_sub_ref(base2k, 0, &mut y0, &a, &mut c0);
-            znx_normalize_middle_step_sub_avx512(base2k, 0, &mut y1, &a, &mut c1);
-            assert_eq!(y0, y1);
-            assert_eq!(c0, c1);
-
-            znx_normalize_middle_step_sub_ref(base2k, base2k - 1, &mut y0, &a, &mut c0);
-            znx_normalize_middle_step_sub_avx512(base2k, base2k - 1, &mut y1, &a, &mut c1);
             assert_eq!(y0, y1);
             assert_eq!(c0, c1);
         }
@@ -1417,8 +1253,6 @@ mod tests {
     #[inline]
     #[target_feature(enable = "avx512f")]
     unsafe fn test_znx_normalize_final_step_ifma_internal() {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_final_step_sub_ref;
-
         let a: [i64; 8] = X_DATA;
         let base2k = 12;
 
@@ -1454,24 +1288,6 @@ mod tests {
 
             znx_normalize_final_step_ref::<false>(base2k, base2k - 1, &mut y0, &a, &mut c0);
             znx_normalize_final_step_avx512::<false>(base2k, base2k - 1, &mut y1, &a, &mut c1);
-            assert_eq!(y0, y1);
-            assert_eq!(c0, c1);
-        }
-
-        // sub variant
-        {
-            let mut y0: [i64; 8] = [11, -22, 33, -44, 55, -66, 77, -88];
-            let mut y1: [i64; 8] = y0;
-            let mut c0: [i64; 8] = C_DATA;
-            let mut c1: [i64; 8] = C_DATA;
-
-            znx_normalize_final_step_sub_ref(base2k, 0, &mut y0, &a, &mut c0);
-            znx_normalize_final_step_sub_avx512(base2k, 0, &mut y1, &a, &mut c1);
-            assert_eq!(y0, y1);
-            assert_eq!(c0, c1);
-
-            znx_normalize_final_step_sub_ref(base2k, base2k - 1, &mut y0, &a, &mut c0);
-            znx_normalize_final_step_sub_avx512(base2k, base2k - 1, &mut y1, &a, &mut c1);
             assert_eq!(y0, y1);
             assert_eq!(c0, c1);
         }

@@ -285,7 +285,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
 
 /// One `(left, right)` operand pair of a fused convolution accumulation.
 ///
-/// Consumed by [`Convolution::cnv_accumulate_dft`](crate::api::Convolution::cnv_accumulate_dft),
+/// Consumed by [`Convolution::cnv_apply_dft_sum`](crate::api::Convolution::cnv_apply_dft_sum),
 /// which overwrites the destination column with the sum of the bivariate
 /// convolutions of all terms.
 pub struct CnvDftAccTerm<'a, BE: Backend + 'a> {
@@ -435,7 +435,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`CnvPVecLayoutCompatible`](crate::layouts::CnvPVecLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
-    /// types must match `D` (true for all current CPU backends).
+    /// types must match `D` (true for every backend in the workspace).
     pub fn into_backend<B2>(self) -> CnvPVecL<D, W, B2>
     where
         B2: Backend<DftWord = W>,
@@ -461,7 +461,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     /// The buffer moves as-is; only the type tag changes. Requires the
     /// [`CnvPVecLayoutCompatible`](crate::layouts::CnvPVecLayoutCompatible) marker declared by the backend
     /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
-    /// types must match `D` (true for all current CPU backends).
+    /// types must match `D` (true for every backend in the workspace).
     pub fn into_backend<B2>(self) -> CnvPVecR<D, W, B2>
     where
         B2: Backend<DftWord = W>,

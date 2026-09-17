@@ -3,10 +3,13 @@ use crate::{
         Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, VecZnxBackendRef,
         VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
     },
-    reference::fft64::{
-        reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
-        reim4::{Reim4BlkMatVec, Reim4Convolution},
-        vec_znx_dft::vec_znx_dft_apply,
+    reference::{
+        fft64::{
+            reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
+            reim4::{Reim4BlkMatVec, Reim4Convolution},
+            vec_znx_dft::vec_znx_dft_apply,
+        },
+        sparse_log_gap,
     },
 };
 use poulpy_hal::execution::TaskExecutor;
@@ -15,33 +18,30 @@ pub fn convolution_prepare_left<BE>(
     table: &ReimFFTTable<f64>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    convolution_prepare::<_, BE>(table, res, a, mask, tmp)
+    convolution_prepare::<_, BE>(table, res, a, tmp)
 }
 
 pub fn convolution_prepare_right<BE>(
     table: &ReimFFTTable<f64>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    convolution_prepare::<_, BE>(table, res, a, mask, tmp)
+    convolution_prepare::<_, BE>(table, res, a, tmp)
 }
 
 fn convolution_prepare<R, BE>(
     table: &ReimFFTTable<f64>,
     res: &mut R,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
@@ -55,9 +55,15 @@ fn convolution_prepare<R, BE>(
     let res_size: usize = res.size();
     let min_size: usize = res_size.min(a.size());
 
-    let m: usize = a.n() >> 1;
-
-    let n: usize = table.m() << 1;
+    let n: usize = res.n();
+    assert_eq!(a.n(), n, "convolution_prepare: a.n():{} != res.n():{n}", a.n());
+    assert_eq!(
+        table.m() << 1,
+        n,
+        "convolution_prepare: table degree {} != res.n():{n}",
+        table.m() << 1
+    );
+    let m: usize = n >> 1;
 
     let res_raw: &mut [f64] = res.raw_mut();
 
@@ -67,11 +73,7 @@ fn convolution_prepare<R, BE>(
             let col = task / res_size;
             let j = task % res_size;
             if j < min_size {
-                if j + 1 == min_size {
-                    BE::reim_from_znx_masked(limb, a.at(col, j), mask);
-                } else {
-                    BE::reim_from_znx(limb, a.at(col, j));
-                }
+                BE::reim_from_znx(limb, a.at(col, j));
                 BE::reim_dft_execute(table, limb);
             }
             for blk_i in 0..m / 4 {
@@ -88,15 +90,7 @@ fn convolution_prepare<R, BE>(
     }
 
     for i in 0..cols {
-        // FFT all limbs (unmasked); the last active limb will be overwritten below.
         vec_znx_dft_apply::<BE>(table, 1, 0, tmp, 0, a, i);
-
-        // Re-compute only the last active limb with the mask applied.
-        if min_size > 0 {
-            let last = min_size - 1;
-            BE::reim_from_znx_masked(tmp.at_mut(0, last), a.at(i, last), mask);
-            BE::reim_dft_execute(table, tmp.at_mut(0, last));
-        }
 
         let tmp_raw: &[f64] = tmp.raw();
         let res_col: &mut [f64] = &mut res_raw[i * n * res_size..];
@@ -113,7 +107,6 @@ pub fn convolution_prepare_self<BE>(
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
-    mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
@@ -134,8 +127,21 @@ pub fn convolution_prepare_self<BE>(
     let res_size: usize = left_size;
     let min_size: usize = res_size.min(a.size());
 
-    let m: usize = a.n() >> 1;
-    let n: usize = table.m() << 1;
+    let n: usize = left.n();
+    assert_eq!(a.n(), n, "convolution_prepare_self: a.n():{} != left.n():{n}", a.n());
+    assert_eq!(
+        right.n(),
+        n,
+        "convolution_prepare_self: right.n():{} != left.n():{n}",
+        right.n()
+    );
+    assert_eq!(
+        table.m() << 1,
+        n,
+        "convolution_prepare_self: table degree {} != left.n():{n}",
+        table.m() << 1
+    );
+    let m: usize = n >> 1;
 
     let left_raw: &mut [f64] = left.raw_mut();
     let right_raw: &mut [f64] = right.raw_mut();
@@ -147,11 +153,7 @@ pub fn convolution_prepare_self<BE>(
             let col = task / res_size;
             let j = task % res_size;
             if j < min_size {
-                if j + 1 == min_size {
-                    BE::reim_from_znx_masked(limb, a.at(col, j), mask);
-                } else {
-                    BE::reim_from_znx(limb, a.at(col, j));
-                }
+                BE::reim_from_znx(limb, a.at(col, j));
                 BE::reim_dft_execute(table, limb);
             }
             for blk_i in 0..m / 4 {
@@ -171,15 +173,7 @@ pub fn convolution_prepare_self<BE>(
     }
 
     for i in 0..cols {
-        // FFT all limbs (unmasked); the last active limb will be overwritten below.
         vec_znx_dft_apply::<BE>(table, 1, 0, tmp, 0, a, i);
-
-        // Re-compute only the last active limb with the mask applied.
-        if min_size > 0 {
-            let last = min_size - 1;
-            BE::reim_from_znx_masked(tmp.at_mut(0, last), a.at(i, last), mask);
-            BE::reim_dft_execute(table, tmp.at_mut(0, last));
-        }
 
         let tmp_raw: &[f64] = tmp.raw();
         let left_col: &mut [f64] = &mut left_raw[i * n * res_size..];
@@ -309,8 +303,10 @@ fn convolution_by_const_apply_impl<BE, const ADD: bool>(
 
 pub fn convolution_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size - 1);
-    // Covers both the generic per-block staging and the fused column kernels.
-    size_of::<f64>() * 8 * min_size.max(a_size + 6 + b_size + 16 * min_size)
+    // Covers the reference per-block staging (a_size + b_size + min_size rows, the `a` rows
+    // only for the pairwise sum) and the fused SIMD cores: the padded `a` window, `b` staged
+    // for a sparse or a pairwise `b`, and 16 groups of output rows.
+    size_of::<f64>() * 8 * (a_size + 6 + 2 * b_size + 16 * min_size)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -329,8 +325,8 @@ pub fn convolution_apply_dft<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n: usize = res.n();
-    assert_eq!(a.n(), n);
-    assert_eq!(b.n(), n);
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
+    let b_log_gap: usize = sparse_log_gap(n, b.n());
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -356,8 +352,9 @@ pub fn convolution_apply_dft<BE>(
         dst_stride,
         &a_raw[a_col * n * a_size..],
         a_size,
-        &b_raw[b_col * n * b_size..],
+        &b_raw[b_col * b.n() * b_size..],
         b_size,
+        b_log_gap,
         tmp,
     );
 
@@ -369,7 +366,7 @@ pub fn convolution_apply_dft<BE>(
 /// Accumulating variant of [`convolution_apply_dft`]: `res[res_col] += a (x) b`,
 /// leaving limbs beyond `min(res.size(), a.size() + b.size() - 1)` untouched.
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_apply_dft_accumulate<BE>(
+pub fn convolution_apply_dft_add<BE>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
@@ -384,8 +381,8 @@ pub fn convolution_apply_dft_accumulate<BE>(
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n: usize = res.n();
-    assert_eq!(a.n(), n);
-    assert_eq!(b.n(), n);
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
+    let b_log_gap: usize = sparse_log_gap(n, b.n());
     let m: usize = n >> 1;
 
     let res_size: usize = res.size();
@@ -411,8 +408,9 @@ pub fn convolution_apply_dft_accumulate<BE>(
         dst_stride,
         &a_raw[a_col * n * a_size..],
         a_size,
-        &b_raw[b_col * n * b_size..],
+        &b_raw[b_col * b.n() * b_size..],
         b_size,
+        b_log_gap,
         tmp,
     );
 }
@@ -444,8 +442,8 @@ pub fn convolution_pairwise_apply_dft<BE>(
     let n: usize = res.n();
     let m: usize = n >> 1;
 
-    assert_eq!(a.n(), n);
-    assert_eq!(b.n(), n);
+    assert_eq!(a.n(), n, "a.n():{} != res.n():{n}", a.n());
+    let b_log_gap: usize = sparse_log_gap(n, b.n());
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();
@@ -473,9 +471,10 @@ pub fn convolution_pairwise_apply_dft<BE>(
         &a_raw[col_i * n * a_size..],
         &a_raw[col_j * n * a_size..],
         a_size,
-        &b_raw[col_i * n * b_size..],
-        &b_raw[col_j * n * b_size..],
+        &b_raw[col_i * b.n() * b_size..],
+        &b_raw[col_j * b.n() * b_size..],
         b_size,
+        b_log_gap,
         tmp,
     );
 

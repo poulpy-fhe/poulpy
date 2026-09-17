@@ -1,8 +1,7 @@
 use poulpy_hal::{
     api::{
-        ModuleN, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPPolCopyBackend, VecZnxBigAddAssign, VecZnxBigBytesOf,
-        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxIdftApplyTmpA,
+        ModuleN, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPPolCopy, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmall,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
     },
     layouts::{Backend, Data, ScratchArena},
 };
@@ -49,7 +48,7 @@ pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S
     M: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VecZnxBigFromSmallBackend<BE>
+        + VecZnxBigFromSmall<BE>
         + VecZnxDftApply<BE>
         + SvpApplyDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
@@ -57,7 +56,7 @@ pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + SvpPPolBytesOf
-        + SvpPPolCopyBackend<BE>
+        + SvpPPolCopy<BE>
         + GLWESecretPreparedFactory<BE>,
     GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
     GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + crate::layouts::SetBase2k,
@@ -84,11 +83,11 @@ pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S
         let sk_tensor_backend = sk_tensor.to_backend_ref();
 
         for i in 0..rank {
-            module.svp_ppol_copy_backend(&mut grouped_backend.data, i, &sk_backend.data, i);
+            module.svp_ppol_copy(&mut grouped_backend.data, i, &sk_backend.data, i);
         }
 
         for i in 0..(grouped_backend.rank().as_usize() - rank) {
-            module.svp_ppol_copy_backend(&mut grouped_backend.data, i + rank, &sk_tensor_backend.data, i);
+            module.svp_ppol_copy(&mut grouped_backend.data, i + rank, &sk_tensor_backend.data, i);
         }
     }
 

@@ -62,7 +62,10 @@ pub trait Reim4Convolution {
     ///
     /// `dst_stride` is the distance, in f64, between consecutive limbs of the
     /// destination column: `2m` for a one-column `VecZnxDft`, `2m * cols` for a
-    /// column of a multi-column (column-interleaved) one.
+    /// column of a multi-column (column-interleaved) one. `b_log_gap` is
+    /// `log2(N / n)` for a degree-`n` right operand (zero when dense): its block
+    /// rows are gathered through [`reim4_gather_sparse_block`]. `a` takes the
+    /// module degree. `tmp` holds at least `8 * (b_size + min_size)` f64.
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_apply(
         m: usize,
@@ -74,28 +77,36 @@ pub trait Reim4Convolution {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) where
         Self: Reim4BlkMatVec + Sized,
     {
         let a_stride: usize = a_size * 8;
-        let b_stride: usize = b_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
         let mut a_idx: usize = 0;
-        let mut b_idx: usize = 0;
         for blk_i in 0..m / 4 {
-            Self::reim4_convolution(tmp, min_size, offset, &a[a_idx..], a_size, &b[b_idx..], b_size);
+            let b_blk: &[f64] = if b_log_gap == 0 {
+                &b[blk_i * b_row..(blk_i + 1) * b_row]
+            } else {
+                reim4_gather_sparse_block(tmp_b, b, b_size, blk_i, b_log_gap);
+                &*tmp_b
+            };
+            Self::reim4_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
             for k in 0..min_size {
                 let off: usize = dst_stride * k + 4 * blk_i;
-                dst[off..off + 4].copy_from_slice(&tmp[8 * k..8 * k + 4]);
-                dst[off + m..off + m + 4].copy_from_slice(&tmp[8 * k + 4..8 * k + 8]);
+                dst[off..off + 4].copy_from_slice(&tmp_res[8 * k..8 * k + 4]);
+                dst[off + m..off + m + 4].copy_from_slice(&tmp_res[8 * k + 4..8 * k + 8]);
             }
             a_idx += a_stride;
-            b_idx += b_stride;
         }
     }
 
     /// Accumulating variant of [`Reim4Convolution::reim4_convolution_apply`]:
-    /// `dst += a ⊛ b`, leaving limbs beyond `min_size` untouched.
+    /// `dst += a ⊛ b`, leaving limbs beyond `min_size` untouched. `tmp` holds
+    /// at least `8 * (b_size + min_size)` f64, sized by the caller's
+    /// [`convolution_apply_dft_tmp_bytes`](super::convolution::convolution_apply_dft_tmp_bytes).
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_apply_accumulate(
         m: usize,
@@ -107,30 +118,39 @@ pub trait Reim4Convolution {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) where
         Self: Reim4BlkMatVec + Sized,
     {
         let a_stride: usize = a_size * 8;
-        let b_stride: usize = b_size * 8;
+        let b_row: usize = b_size * 8;
+        let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
         let mut a_idx: usize = 0;
-        let mut b_idx: usize = 0;
         for blk_i in 0..m / 4 {
-            Self::reim4_convolution(tmp, min_size, offset, &a[a_idx..], a_size, &b[b_idx..], b_size);
+            let b_blk: &[f64] = if b_log_gap == 0 {
+                &b[blk_i * b_row..(blk_i + 1) * b_row]
+            } else {
+                reim4_gather_sparse_block(tmp_b, b, b_size, blk_i, b_log_gap);
+                &*tmp_b
+            };
+            Self::reim4_convolution(tmp_res, min_size, offset, &a[a_idx..], a_size, b_blk, b_size);
             for k in 0..min_size {
                 let off: usize = dst_stride * k + 4 * blk_i;
                 for i in 0..4 {
-                    dst[off + i] += tmp[8 * k + i];
-                    dst[off + m + i] += tmp[8 * k + 4 + i];
+                    dst[off + i] += tmp_res[8 * k + i];
+                    dst[off + m + i] += tmp_res[8 * k + 4 + i];
                 }
             }
             a_idx += a_stride;
-            b_idx += b_stride;
         }
     }
 
     /// Pairwise column-level convolution `(a0 + a1) ⊛ (b0 + b1)`; `tmp` must
     /// additionally hold `8 * (a_size + b_size)` f64 for the summed rows.
+    /// `b_log_gap` is `log2(N / n)` for a degree-`n` right operand (zero when
+    /// dense): its block rows are summed through
+    /// [`reim4_gather_sparse_block_sum`]. `a0` and `a1` take the module degree.
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_pairwise_apply(
         m: usize,
@@ -144,6 +164,7 @@ pub trait Reim4Convolution {
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) where
         Self: Reim4BlkMatVec + crate::reference::fft64::reim::ReimArith + Sized,
@@ -152,12 +173,18 @@ pub trait Reim4Convolution {
         let b_row: usize = b_size * 8;
         let (tmp_a, tmp) = tmp.split_at_mut(a_row);
         let (tmp_b, tmp_res) = tmp.split_at_mut(b_row);
-
         let mut idx_a: usize = 0;
-        let mut idx_b: usize = 0;
         for blk_i in 0..m / 4 {
             Self::reim_add(tmp_a, &a0[idx_a..idx_a + a_row], &a1[idx_a..idx_a + a_row]);
-            Self::reim_add(tmp_b, &b0[idx_b..idx_b + b_row], &b1[idx_b..idx_b + b_row]);
+            if b_log_gap == 0 {
+                Self::reim_add(
+                    tmp_b,
+                    &b0[blk_i * b_row..(blk_i + 1) * b_row],
+                    &b1[blk_i * b_row..(blk_i + 1) * b_row],
+                );
+            } else {
+                reim4_gather_sparse_block_sum(tmp_b, b0, b1, b_size, blk_i, b_log_gap);
+            }
             Self::reim4_convolution(tmp_res, min_size, offset, tmp_a, a_size, tmp_b, b_size);
             for k in 0..min_size {
                 let off: usize = dst_stride * k + 4 * blk_i;
@@ -165,7 +192,6 @@ pub trait Reim4Convolution {
                 dst[off + m..off + m + 4].copy_from_slice(&tmp_res[8 * k + 4..8 * k + 8]);
             }
             idx_a += a_row;
-            idx_b += b_row;
         }
     }
 

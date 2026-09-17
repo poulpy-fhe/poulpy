@@ -151,7 +151,7 @@ pub trait CKKSDFTOps<BE: Backend> {
 ///
 /// Split from [`CKKSDFTOps`] so the scalar is a trait parameter and the method
 /// stays free of backend bounds: the delegating impl on `Module<BE>` requires
-/// the [`DFTMatrixImpl<BE, F>`](crate::oep::DFTMatrixImpl) seam at the impl
+/// the [`DFTMatrixImpl<F>`](crate::oep::DFTMatrixImpl) seam at the impl
 /// level, and a backend overrides that seam independently of any bounds the
 /// reference implementation carries.
 pub trait CKKSDFTMatrixOps<BE: Backend, F: CKKSEncodingScalar> {

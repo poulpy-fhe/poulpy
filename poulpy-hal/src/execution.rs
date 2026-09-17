@@ -83,7 +83,7 @@ pub fn worker_count<E: TaskExecutor>(requested: usize, tasks: usize) -> usize {
 pub trait ScratchWorkers {
     /// `cnv_prepare_left`, `cnv_prepare_right`, `cnv_prepare_self`.
     const PREPARE: usize = 1;
-    /// `cnv_apply_dft`, `cnv_pairwise_apply_dft`, `cnv_accumulate_dft`.
+    /// `cnv_apply_dft`, `cnv_pairwise_apply_dft`, `cnv_apply_dft_sum`.
     const APPLY: usize = 1;
     /// `vmp_apply_dft_to_dft` and its accumulate and strided variants.
     const VMP: usize = 1;

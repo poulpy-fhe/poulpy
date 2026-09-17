@@ -1,4 +1,4 @@
-use super::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+use super::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 use crate::layouts::CnvPVecLToBackendMut;
 use crate::layouts::CnvPVecLToBackendRef;
 use crate::layouts::CnvPVecRToBackendMut;
@@ -11,12 +11,13 @@ use rand::Rng;
 
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAddIntoBackend, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
-        VecZnxNormalizeAssignBackend,
+        CnvPVecAlloc, Convolution, ModuleN, ModuleNew, ScratchOwnedAlloc, VecZnxAdd, VecZnxBigAlloc, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
+        VecZnxNormalizeAssign, VecZnxSwitchRing,
     },
     layouts::{
-        DataView, FillUniform, PrepareHint, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero,
+        CnvDftAccTerm, CnvPVecL, CnvPVecR, DataView, FillUniform, Module, PrepareHint, ScratchArena, ScratchOwned, VecZnx,
+        VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero,
     },
     source::Source,
 };
@@ -30,7 +31,7 @@ where
         + Convolution<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxBigAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
@@ -233,7 +234,7 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxBigAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
@@ -277,7 +278,6 @@ where
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -286,7 +286,6 @@ where
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -341,9 +340,9 @@ where
     }
 }
 
-/// `cnv_apply_dft_accumulate` matches `cnv_apply_dft` followed by a DFT add,
+/// `cnv_apply_dft_add` matches `cnv_apply_dft` followed by a DFT add,
 /// bit-for-bit on the raw prepared data.
-pub fn test_convolution_accumulate<M, BE: crate::test_suite::TestBackend>(module: &M, _base2k: usize)
+pub fn test_convolution_add<M, BE: crate::test_suite::TestBackend>(module: &M, _base2k: usize)
 where
     M: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxDftAlloc<BE> + VecZnxDftAddAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -385,7 +384,6 @@ where
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -394,7 +392,6 @@ where
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -425,7 +422,7 @@ where
         for a_col in 0..cols {
             for b_col in 0..cols {
                 for cnv_offset in (0..res_size).step_by(3) {
-                    module.cnv_apply_dft_accumulate(
+                    module.cnv_apply_dft_add(
                         cnv_offset,
                         &mut res_acc.to_backend_mut(),
                         res_col,
@@ -458,11 +455,11 @@ where
     }
 }
 
-/// `cnv_accumulate_dft` matches the per-term `cnv_apply_dft` +
-/// `cnv_apply_dft_accumulate` sequence after normalization to the coefficient
+/// `cnv_apply_dft_sum` matches the per-term `cnv_apply_dft` +
+/// `cnv_apply_dft_add` sequence after normalization to the coefficient
 /// domain (the fused path reduces once per output, so the raw q120 lazy
 /// representatives may differ).
-pub fn test_convolution_accumulate_fused<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
+pub fn test_convolution_sum<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
 where
     M: ModuleN
         + Convolution<BE>
@@ -504,7 +501,7 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .cnv_accumulate_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .cnv_apply_dft_sum_tmp_bytes(0, res_size, a_size, b_size)
             .max(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size))
             .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
@@ -516,7 +513,6 @@ where
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -525,7 +521,6 @@ where
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -544,7 +539,7 @@ where
                     b_col,
                 })
                 .collect();
-            module.cnv_accumulate_dft(
+            module.cnv_apply_dft_sum(
                 cnv_offset,
                 &mut res_fused.to_backend_mut(),
                 res_col,
@@ -566,7 +561,7 @@ where
                     &mut scratch.arena(),
                 );
             } else {
-                module.cnv_apply_dft_accumulate(
+                module.cnv_apply_dft_add(
                     cnv_offset,
                     &mut res_ref.to_backend_mut(),
                     res_col,
@@ -624,10 +619,10 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxBigAlloc<BE>
-        + VecZnxAddIntoBackend<BE>
-        + VecZnxCopyBackend<BE>,
+        + VecZnxAdd<BE>
+        + VecZnxCopy<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -671,7 +666,6 @@ where
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -680,7 +674,6 @@ where
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
-            !0i64,
             &mut scratch.arena(),
         );
     }
@@ -719,7 +712,7 @@ where
                 let mut tmp_a_backend = upload_vec_znx::<BE>(&tmp_a);
                 let mut tmp_b_backend = upload_vec_znx::<BE>(&tmp_b);
                 if col_i != col_j {
-                    module.vec_znx_add_into_backend(
+                    module.vec_znx_add(
                         &mut vec_znx_backend_mut::<BE>(&mut tmp_a_backend),
                         0,
                         &vec_znx_backend_ref::<BE>(&a_backend),
@@ -727,7 +720,7 @@ where
                         &vec_znx_backend_ref::<BE>(&a_backend),
                         col_j,
                     );
-                    module.vec_znx_add_into_backend(
+                    module.vec_znx_add(
                         &mut vec_znx_backend_mut::<BE>(&mut tmp_b_backend),
                         0,
                         &vec_znx_backend_ref::<BE>(&b_backend),
@@ -736,13 +729,13 @@ where
                         col_j,
                     );
                 } else {
-                    module.vec_znx_copy_backend(
+                    module.vec_znx_copy(
                         &mut vec_znx_backend_mut::<BE>(&mut tmp_a_backend),
                         0,
                         &vec_znx_backend_ref::<BE>(&a_backend),
                         col_i,
                     );
-                    module.vec_znx_copy_backend(
+                    module.vec_znx_copy(
                         &mut vec_znx_backend_mut::<BE>(&mut tmp_b_backend),
                         0,
                         &vec_znx_backend_ref::<BE>(&b_backend),
@@ -785,7 +778,7 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     b_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: VecZnxNormalizeAssignBackend<BE>,
+    M: VecZnxNormalizeAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     for j in 0..res.size() {
@@ -815,9 +808,10 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     }
 
     let mut res_backend = upload_vec_znx::<BE>(res);
-    module.vec_znx_normalize_assign_backend(
+    module.vec_znx_normalize_assign(
         base2k,
         res_backend.size() * base2k,
+        0,
         &mut vec_znx_backend_mut::<BE>(&mut res_backend),
         res_col,
         scratch,
@@ -834,7 +828,7 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
     b: &VecZnxOwned<BE::ZnxWord>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: VecZnxNormalizeAssignBackend<BE>,
+    M: VecZnxNormalizeAssign<BE>,
 {
     let cols = res.cols();
 
@@ -878,9 +872,10 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
 
     let mut res_backend = upload_vec_znx::<BE>(res);
     for i in 0..cols {
-        module.vec_znx_normalize_assign_backend(
+        module.vec_znx_normalize_assign(
             base2k,
             res_backend.size() * base2k,
+            0,
             &mut vec_znx_backend_mut::<BE>(&mut res_backend),
             i,
             scratch,
@@ -916,4 +911,449 @@ fn negacyclic_convolution_naive(res: &mut [i64], a: &[i64], b: &[i64]) {
             res[i + j - n] -= ai * b[j];
         }
     }
+}
+
+/// The prepare kernels take their column count from the operand they write
+/// and read `a` by it, so `a.cols()` must equal it; `cnv_prepare_self` writes
+/// `right` with `left`'s shape, so the pair must agree in columns and size.
+/// Every backend must reject a mismatch rather than index past an operand.
+pub fn test_convolution_prepare_shape_rejected<BE: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module: &crate::layouts::Module<BE>,
+) where
+    crate::layouts::Module<BE>: CnvPVecAlloc<BE> + Convolution<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let (cols, size) = (2usize, 2usize);
+    let mut source = Source::new([5u8; 32]);
+    let mut a = VecZnxOwned::<i64>::alloc(params.size, cols, size);
+    a.fill_uniform(params.base2k, &mut source);
+    let a_be = upload_vec_znx::<BE>(&a);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_prepare_left_tmp_bytes(size, size)
+            .max(module.cnv_prepare_right_tmp_bytes(size, size))
+            .max(module.cnv_prepare_self_tmp_bytes(size, size)),
+    );
+
+    let mut narrow_left = module.cnv_pvec_left_alloc(cols - 1, size, PrepareHint::Reuse);
+    let left_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_left(
+            &mut narrow_left.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&a_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        left_panicked,
+        "cnv_prepare_left accepted res.cols() != a.cols() instead of panicking"
+    );
+
+    let mut narrow_right = module.cnv_pvec_right_alloc(cols - 1, size, PrepareHint::Reuse);
+    let right_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_right(
+            &mut narrow_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&a_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        right_panicked,
+        "cnv_prepare_right accepted res.cols() != a.cols() instead of panicking"
+    );
+
+    let mut left = module.cnv_pvec_left_alloc(cols, size, PrepareHint::Reuse);
+    let mut short_right = module.cnv_pvec_right_alloc(cols, size - 1, PrepareHint::Reuse);
+    let size_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_self(
+            &mut left.to_backend_mut(),
+            &mut short_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&a_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        size_panicked,
+        "cnv_prepare_self accepted right.size() != left.size() instead of panicking"
+    );
+
+    let cols_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_self(
+            &mut left.to_backend_mut(),
+            &mut narrow_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&a_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        cols_panicked,
+        "cnv_prepare_self accepted right.cols() != left.cols() instead of panicking"
+    );
+}
+
+/// `cnv_by_const_apply` and `cnv_by_const_apply_add` reject a first operand
+/// whose degree is not the module degree, in release builds too: the kernels
+/// would otherwise truncate the coefficient loop to the shorter operand.
+pub fn test_convolution_by_const_degree_rejected<BE: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module: &crate::layouts::Module<BE>,
+) where
+    crate::layouts::Module<BE>: Convolution<BE> + VecZnxBigAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let size = 2usize;
+    let mut source = Source::new([6u8; 32]);
+    let mut a = VecZnxOwned::<i64>::alloc(params.size / 2, 1, size);
+    a.fill_uniform(params.base2k, &mut source);
+    let mut b = VecZnxOwned::<i64>::alloc(params.size, 1, size);
+    b.fill_uniform(params.base2k, &mut source);
+    let a_be = upload_vec_znx::<BE>(&a);
+    let b_be = upload_vec_znx::<BE>(&b);
+    let mut res: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, size);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_by_const_apply_tmp_bytes(0, size, size, size)
+            .max(module.cnv_by_const_apply_add_tmp_bytes(0, size, size, size)),
+    );
+
+    let apply_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_by_const_apply(
+            0,
+            &mut res.to_backend_mut(),
+            0,
+            &vec_znx_backend_ref::<BE>(&a_be),
+            0,
+            &vec_znx_backend_ref::<BE>(&b_be),
+            0,
+            0,
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        apply_panicked,
+        "cnv_by_const_apply accepted a.n() != res.n() instead of panicking"
+    );
+
+    let add_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_by_const_apply_add(
+            0,
+            &mut res.to_backend_mut(),
+            0,
+            &vec_znx_backend_ref::<BE>(&a_be),
+            0,
+            &vec_znx_backend_ref::<BE>(&b_be),
+            0,
+            0,
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(
+        add_panicked,
+        "cnv_by_const_apply_add accepted a.n() != res.n() instead of panicking"
+    );
+}
+
+/// `switch_ring_{a.n() -> N}(a)` on the backend, a copy when `a` is dense.
+fn switch_ring_up<M, BE: crate::test_suite::TestBackend>(module: &M, a: &VecZnx<BE::OwnedBuf, i64>) -> VecZnx<BE::OwnedBuf, i64>
+where
+    M: ModuleN + VecZnxSwitchRing<BE>,
+{
+    let mut res = upload_vec_znx::<BE>(&VecZnx::alloc(module.n(), a.cols(), a.size()));
+    for col in 0..a.cols() {
+        module.vec_znx_switch_ring(
+            &mut vec_znx_backend_mut::<BE>(&mut res),
+            col,
+            &vec_znx_backend_ref::<BE>(a),
+            col,
+        );
+    }
+    res
+}
+
+/// `idft` of column `res_col` of `res_dft`, normalized at `base2k` over `res_size` limbs.
+fn idft_normalized<M, BE: crate::test_suite::TestBackend>(
+    module: &M,
+    base2k: usize,
+    res_dft: &mut VecZnxDftOwned<BE>,
+    res_col: usize,
+    scratch: &mut ScratchOwned<BE>,
+) -> VecZnx<Vec<u8>, i64>
+where
+    M: ModuleN + VecZnxIdftApplyTmpA<BE> + VecZnxBigAlloc<BE> + VecZnxBigNormalize<BE>,
+{
+    let res_size = res_dft.size();
+    let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+    module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_col);
+    let mut out = upload_vec_znx::<BE>(&VecZnx::alloc(module.n(), 1, res_size));
+    module.vec_znx_big_normalize(
+        &mut vec_znx_backend_mut::<BE>(&mut out),
+        base2k,
+        res_size * base2k,
+        0,
+        0,
+        &res_big.to_backend_ref(),
+        base2k,
+        0,
+        &mut scratch.arena(),
+    );
+    download_vec_znx::<BE>(&out)
+}
+
+/// One convolution form under test: it writes `res` from the shared prepared
+/// left operand and the given right operand, drawing its scratch from the owned
+/// arena.
+type ConvolutionForm<'a, BE> = dyn Fn(&mut VecZnxDftOwned<BE>, &CnvPVecROwned<BE>, &mut ScratchOwned<BE>) + 'a;
+
+/// Sparse operands: a degree-`n` right operand, prepared under a degree-`n`
+/// module, gives the convolution that the dense prepare of `switch_ring_{n->N}` of
+/// the same input gives, through `cnv_apply_dft`, `cnv_apply_dft_add`,
+/// `cnv_apply_dft_sum` and `cnv_pairwise_apply_dft`, compared after `idft` and
+/// normalization. The prepares are not sparsity-aware, `res` and `a` take the
+/// module degree: `cnv_prepare_left`, `cnv_prepare_right` and `cnv_prepare_self`
+/// with a degree-`N/2` input under the degree-`N` module panic, so does
+/// `cnv_prepare_right` into a degree-`N/2` result under it, `cnv_prepare_self`
+/// rejects a `right` whose degree differs from `left`'s, and `cnv_apply_dft`
+/// rejects a degree-`N/2` prepared left operand.
+pub fn test_convolution_sparse<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: ModuleN
+        + Convolution<BE>
+        + CnvPVecAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxSwitchRing<BE>
+        + ModuleNew<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let n = module.n();
+    let base2k = params.base2k;
+    let cols = 2usize;
+    let (a_size, b_size, res_size) = (3usize, 4usize, 6usize);
+    let res_col = 1usize;
+    let mut source = Source::new([3u8; 32]);
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_apply_dft_add_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_apply_dft_sum_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_pairwise_apply_dft_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_prepare_left_tmp_bytes(a_size, a_size))
+            .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size))
+            .max(module.cnv_prepare_self_tmp_bytes(a_size, a_size))
+            .max(module.vec_znx_big_normalize_tmp_bytes()),
+    );
+
+    // The left operand is dense at the module degree, shared by every form.
+    let mut a_host = VecZnx::alloc(n, cols, a_size);
+    a_host.fill_uniform(base2k, &mut source);
+    let a_be = upload_vec_znx::<BE>(&a_host);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
+    module.cnv_prepare_left(
+        &mut a_prep.to_backend_mut(),
+        &vec_znx_backend_ref::<BE>(&a_be),
+        &mut scratch.arena(),
+    );
+
+    for b_n in (1..=4).map(|g| n >> g).filter(|&d| d >= 8) {
+        let mut b_host = VecZnx::alloc(b_n, cols, b_size);
+        b_host.fill_uniform(base2k, &mut source);
+        let b_be = upload_vec_znx::<BE>(&b_host);
+        let b_dense = switch_ring_up(module, &b_be);
+
+        let mut b_prep_dense: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
+        module.cnv_prepare_right(
+            &mut b_prep_dense.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&b_dense),
+            &mut scratch.arena(),
+        );
+        // The compact operand at its own degree, prepared under a degree-n module like
+        // any dense prepare; only the apply below crosses the two degrees.
+        let small: Module<BE> = Module::<BE>::new(b_n as u64);
+        let mut small_scratch: ScratchOwned<BE> = ScratchOwned::alloc(small.cnv_prepare_right_tmp_bytes(b_size, b_size));
+        let mut b_prep: CnvPVecROwned<BE> = small.cnv_pvec_right_alloc(cols, b_size, PrepareHint::Reuse);
+        small.cnv_prepare_right(
+            &mut b_prep.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&b_be),
+            &mut small_scratch.arena(),
+        );
+
+        let label = format!("b.n()={b_n}");
+        // Runs `form` on the dense right operand and on the compact one; both must agree after idft + normalize.
+        let mut check = |what: &str, form: &ConvolutionForm<'_, BE>| {
+            let mut want_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
+            let mut have_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
+            form(&mut want_dft, &b_prep_dense, &mut scratch);
+            form(&mut have_dft, &b_prep, &mut scratch);
+            let want = idft_normalized(module, base2k, &mut want_dft, res_col, &mut scratch);
+            let have = idft_normalized(module, base2k, &mut have_dft, res_col, &mut scratch);
+            assert_eq!(want, have, "{what} {label}");
+        };
+
+        for cnv_offset in [0usize, 1, 3] {
+            check(&format!("cnv_apply_dft cnv_offset={cnv_offset}"), &|res, b, scratch| {
+                module.cnv_apply_dft(
+                    cnv_offset,
+                    &mut res.to_backend_mut(),
+                    res_col,
+                    &a_prep.to_backend_ref(),
+                    0,
+                    &b.to_backend_ref(),
+                    1,
+                    &mut scratch.arena(),
+                );
+            });
+            check(&format!("cnv_apply_dft_add cnv_offset={cnv_offset}"), &|res, b, scratch| {
+                // The seed is the same dense product in both runs; only the added term is sparse.
+                module.cnv_apply_dft(
+                    cnv_offset,
+                    &mut res.to_backend_mut(),
+                    res_col,
+                    &a_prep.to_backend_ref(),
+                    1,
+                    &b_prep_dense.to_backend_ref(),
+                    0,
+                    &mut scratch.arena(),
+                );
+                module.cnv_apply_dft_add(
+                    cnv_offset,
+                    &mut res.to_backend_mut(),
+                    res_col,
+                    &a_prep.to_backend_ref(),
+                    0,
+                    &b.to_backend_ref(),
+                    1,
+                    &mut scratch.arena(),
+                );
+            });
+            check(&format!("cnv_apply_dft_sum cnv_offset={cnv_offset}"), &|res, b, scratch| {
+                let terms = [
+                    CnvDftAccTerm {
+                        a: a_prep.to_backend_ref(),
+                        a_col: 0,
+                        b: b.to_backend_ref(),
+                        b_col: 1,
+                    },
+                    CnvDftAccTerm {
+                        a: a_prep.to_backend_ref(),
+                        a_col: 1,
+                        b: b.to_backend_ref(),
+                        b_col: 0,
+                    },
+                ];
+                module.cnv_apply_dft_sum(cnv_offset, &mut res.to_backend_mut(), res_col, &terms, &mut scratch.arena());
+            });
+            check(
+                &format!("cnv_pairwise_apply_dft cnv_offset={cnv_offset}"),
+                &|res, b, scratch| {
+                    module.cnv_pairwise_apply_dft(
+                        cnv_offset,
+                        &mut res.to_backend_mut(),
+                        res_col,
+                        &a_prep.to_backend_ref(),
+                        &b.to_backend_ref(),
+                        0,
+                        1,
+                        &mut scratch.arena(),
+                    );
+                },
+            );
+        }
+    }
+
+    // No prepare is sparsity-aware: under the degree-N module a degree-N/2 input is
+    // rejected by all three forms.
+    let mut half = VecZnx::alloc(n / 2, cols, a_size);
+    half.fill_uniform(base2k, &mut source);
+    let half_be = upload_vec_znx::<BE>(&half);
+    let mut full_left: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size, PrepareHint::Reuse);
+    let mut full_right: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_left(
+            &mut full_left.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&half_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(panicked, "cnv_prepare_left accepted a.n() != res.n()");
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_self(
+            &mut full_left.to_backend_mut(),
+            &mut full_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&half_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(panicked, "cnv_prepare_self accepted a.n() != left.n()");
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_right(
+            &mut full_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&half_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(panicked, "cnv_prepare_right accepted a.n() != module.n()");
+    // A degree-n prepared right operand comes from a degree-n module, never from this one.
+    let mut half_right: CnvPVecROwned<BE> = CnvPVecR::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_right(
+            &mut half_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&half_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(panicked, "cnv_prepare_right accepted res.n() != module.n()");
+
+    // `cnv_prepare_self` prepares one input into both halves, so the two must share a degree:
+    // the parallel path writes into `right` at offsets computed from `left`'s degree.
+    let mut full = VecZnx::alloc(n, cols, a_size);
+    full.fill_uniform(base2k, &mut source);
+    let full_be = upload_vec_znx::<BE>(&full);
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_prepare_self(
+            &mut full_left.to_backend_mut(),
+            &mut half_right.to_backend_mut(),
+            &vec_znx_backend_ref::<BE>(&full_be),
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(panicked, "cnv_prepare_self accepted right.n() != left.n()");
+
+    // The left operand of an apply takes the module degree: the entry assert fires
+    // before the kernel reads the zeroed compact operand.
+    let half_left: CnvPVecLOwned<BE> = CnvPVecL::alloc(n / 2, cols, a_size, PrepareHint::Reuse);
+    let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(2, res_size);
+    let mut b_full: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, a_size, PrepareHint::Reuse);
+    module.cnv_prepare_right(
+        &mut b_full.to_backend_mut(),
+        &vec_znx_backend_ref::<BE>(&full_be),
+        &mut scratch.arena(),
+    );
+    let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        module.cnv_apply_dft(
+            0,
+            &mut res_dft.to_backend_mut(),
+            res_col,
+            &half_left.to_backend_ref(),
+            0,
+            &b_full.to_backend_ref(),
+            1,
+            &mut scratch.arena(),
+        );
+    }))
+    .is_err();
+    assert!(panicked, "cnv_apply_dft accepted a.n() != res.n()");
 }

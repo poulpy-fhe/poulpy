@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-pub fn vec_znx_dft_add_into<BE>(
+pub fn vec_znx_dft_add<BE>(
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
     a: &VecZnxDftBackendRef<'_, BE>,
@@ -90,45 +90,6 @@ pub fn vec_znx_dft_add_assign<BE>(
     }
 }
 
-/// res = res + a * 2^{a_scale * base2k}.
-pub fn vec_znx_dft_add_scaled_assign<BE>(
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    res_col: usize,
-    a: &VecZnxDftBackendRef<'_, BE>,
-    a_col: usize,
-    a_scale: i64,
-) where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
-    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
-{
-    {
-        assert_eq!(a.n(), res.n());
-    }
-
-    let res_size: usize = res.size();
-    let a_size: usize = a.size();
-
-    if a_scale > 0 {
-        let shift: usize = (a_scale as usize).min(a_size);
-        let sum_size: usize = a_size.min(res_size).saturating_sub(shift);
-        for j in 0..sum_size {
-            BE::reim_add_assign(res.at_mut(res_col, j), a.at(a_col, j + shift));
-        }
-    } else if a_scale < 0 {
-        let shift: usize = (a_scale.unsigned_abs() as usize).min(res_size);
-        let sum_size: usize = a_size.min(res_size.saturating_sub(shift));
-        for j in 0..sum_size {
-            BE::reim_add_assign(res.at_mut(res_col, j + shift), a.at(a_col, j));
-        }
-    } else {
-        let sum_size: usize = a_size.min(res_size);
-        for j in 0..sum_size {
-            BE::reim_add_assign(res.at_mut(res_col, j), a.at(a_col, j));
-        }
-    }
-}
-
 pub fn vec_znx_dft_copy<BE>(
     step: usize,
     offset: usize,
@@ -142,7 +103,8 @@ pub fn vec_znx_dft_copy<BE>(
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     {
-        assert_eq!(res.n(), a.n())
+        assert_eq!(res.n(), a.n());
+        assert!(step >= 1, "vec_znx_dft_copy: step must be >= 1");
     }
 
     let steps: usize = a.size().div_ceil(step);
@@ -175,7 +137,7 @@ pub fn vec_znx_dft_apply<BE>(
 {
     poulpy_hal::layouts::assert_dense(a, "vec_znx_dft_apply");
     {
-        assert!(step > 0);
+        assert!(step >= 1, "vec_znx_dft_apply: step must be >= 1");
         assert_eq!(table.m() << 1, res.n());
         assert_eq!(a.n(), res.n());
     }
@@ -191,6 +153,8 @@ pub fn vec_znx_dft_apply<BE>(
         if limb < a_size {
             BE::reim_from_znx(res.at_mut(res_col, j), a.at(a_col, limb));
             BE::reim_dft_execute(table, res.at_mut(res_col, j));
+        } else {
+            BE::reim_zero(res.at_mut(res_col, j));
         }
     }
 

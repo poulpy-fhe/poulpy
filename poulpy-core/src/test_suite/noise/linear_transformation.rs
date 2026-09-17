@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSource, VecZnxIdftApplyTmpA,
     },
     layouts::{Backend, GaloisElement, HostDataMut, HostDataRef, Module, PrepareHint, ScratchOwned, VecZnx},
     source::Source,
@@ -30,7 +30,6 @@ use crate::{
             GLWEAutomorphismKeyPreparedToBackendRef, GLWESecretPrepared,
         },
     },
-    msb_mask_bottom_limb,
 };
 
 /// The stored keys, with the rotations listed in `coarse_ps` answered through a
@@ -78,7 +77,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftAlloc<BE>
         + VecZnxIdftApplyTmpA<BE>
-        + VecZnxFillUniformSourceBackend<BE>,
+        + VecZnxFillUniformSource<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n = module.n();
@@ -139,7 +138,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-    module.vec_znx_fill_uniform_source_backend(
+    module.vec_znx_fill_uniform_source(
         in_base2k,
         pt.k().as_usize(),
         &mut vec_znx_backend_mut::<BE>(&mut pt.data),
@@ -205,14 +204,8 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
 
         let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size(), PrepareHint::Reuse);
         let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
-        module.cnv_prepare_right(
-            &mut right_prepared.to_backend_mut(),
-            &pt_ref.data,
-            !0i64,
-            &mut scratch.borrow(),
-        );
+        module.cnv_prepare_right(&mut right_prepared.to_backend_mut(), &pt_ref.data, &mut scratch.borrow());
 
-        let mask = msb_mask_bottom_limb(ct.base2k().as_usize(), k_in);
         for &rot in &baby_steps {
             let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct);
             if rot == 0 {
@@ -230,7 +223,6 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             module.cnv_prepare_left(
                 &mut expected_prepared.to_backend_mut(),
                 &expected_ref.data,
-                mask,
                 &mut scratch.borrow(),
             );
 

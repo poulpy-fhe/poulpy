@@ -8,29 +8,17 @@ macro_rules! hal_impl_svp {
             a: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as $defaults<Self>>::svp_prepare_default(module, &mut res, res_col, a, a_col)
+            <Self as $defaults>::svp_prepare_default(module, &mut res, res_col, a, a_col)
         }
 
-        fn svp_ppol_copy_backend(
+        fn svp_ppol_copy(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::SvpPPolBackendMut<'_, Self>,
             res_col: usize,
             a: &poulpy_hal::layouts::SvpPPolBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as $defaults<Self>>::svp_ppol_copy_backend_default(module, res, res_col, a, a_col)
-        }
-
-        fn svp_apply_dft(
-            module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
-            res_col: usize,
-            a: &poulpy_hal::layouts::SvpPPolBackendRef<'_, Self>,
-            a_col: usize,
-            b: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
-            b_col: usize,
-        ) {
-            <Self as $defaults<Self>>::svp_apply_dft_default(module, res, res_col, &a, a_col, b, b_col)
+            <Self as $defaults>::svp_ppol_copy_default(module, res, res_col, a, a_col)
         }
 
         fn svp_apply_dft_to_dft(
@@ -42,7 +30,7 @@ macro_rules! hal_impl_svp {
             b: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
             b_col: usize,
         ) {
-            <Self as $defaults<Self>>::svp_apply_dft_to_dft_default(module, res, res_col, &a, a_col, b, b_col)
+            <Self as $defaults>::svp_apply_dft_to_dft_default(module, res, res_col, &a, a_col, b, b_col)
         }
 
         fn svp_apply_dft_to_dft_assign(
@@ -52,7 +40,7 @@ macro_rules! hal_impl_svp {
             a: &poulpy_hal::layouts::SvpPPolBackendRef<'_, Self>,
             a_col: usize,
         ) {
-            <Self as $defaults<Self>>::svp_apply_dft_to_dft_assign_default(module, res, res_col, &a, a_col)
+            <Self as $defaults>::svp_apply_dft_to_dft_assign_default(module, res, res_col, &a, a_col)
         }
     };
 }

@@ -184,7 +184,7 @@ pub mod glwe_trace_defaults_impl {
         }
 
         module
-            .glwe_shift_tmp_bytes()
+            .glwe_shift_tmp_bytes(a_infos.size())
             .max(module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos))
     }
 

@@ -6,9 +6,7 @@ use crate::{FFT64Avx512, NTT4x30Avx512};
 #[cfg(feature = "enable-rayon")]
 use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 use poulpy_core::{
-    default::operations::{
-        GLWETensoringDefault, cnv_offset_to_limb_offset, msb_mask_bottom_limb, normalize_input_limb_bound_with_offset,
-    },
+    default::operations::{GLWETensoringDefault, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
     impl_conversion_defaults_full, impl_decryption_defaults_full, impl_encryption_defaults_full,
     impl_gglwe_automorphism_defaults_full, impl_gglwe_external_product_defaults_full, impl_gglwe_keyswitch_defaults_full,
     impl_gglwe_product_digits_strided_default, impl_ggsw_automorphism_defaults_full, impl_ggsw_external_product_defaults_full,
@@ -21,8 +19,8 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
-        VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNormalizeAssign,
+        VecZnxNormalizeTmpBytes, VecZnxSubAssign,
     },
     layouts::{
         Backend, CnvPVecLBackendRef, CnvPVecLToBackendRef, CnvPVecRBackendRef, CnvPVecRToBackendRef, Module, PrepareHint,
@@ -264,9 +262,9 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopyBackend<BE>
-        + VecZnxSubAssignBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxCopy<BE>
+        + VecZnxSubAssign<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     AP: CnvPVecLToBackendRef<BE>,
@@ -330,11 +328,11 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     {
         let mut pairwise = pairwise.to_backend_mut();
         let res_ref = res.to_backend_ref();
-        module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 0);
-        module.vec_znx_sub_assign_backend(&mut pairwise, 0, res_ref.data(), 2);
+        module.vec_znx_sub_assign(&mut pairwise, 0, res_ref.data(), 0);
+        module.vec_znx_sub_assign(&mut pairwise, 0, res_ref.data(), 2);
     }
-    module.vec_znx_normalize_assign_backend(res_base2k, res_k, &mut pairwise.to_backend_mut(), 0, &mut norm_scratch);
-    module.vec_znx_copy_backend(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
+    module.vec_znx_normalize_assign(res_base2k, res_k, 0, &mut pairwise.to_backend_mut(), 0, &mut norm_scratch);
+    module.vec_znx_copy(res.to_backend_mut().data_mut(), 1, &pairwise.to_backend_ref(), 0);
 }
 
 fn rank_one_tensor_apply<BE, R, A, B>(
@@ -354,9 +352,9 @@ fn rank_one_tensor_apply<BE, R, A, B>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopyBackend<BE>
-        + VecZnxSubAssignBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxCopy<BE>
+        + VecZnxSubAssign<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -376,18 +374,8 @@ fn rank_one_tensor_apply<BE, R, A, B>(
     let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, b_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
-        module.cnv_prepare_left(
-            &mut a_prep,
-            a.to_backend_ref().data(),
-            msb_mask_bottom_limb(base2k, a.k().as_usize()),
-            &mut prep_scratch,
-        );
-        module.cnv_prepare_right(
-            &mut b_prep,
-            b.to_backend_ref().data(),
-            msb_mask_bottom_limb(base2k, b.k().as_usize()),
-            &mut prep_scratch,
-        );
+        module.cnv_prepare_left(&mut a_prep, a.to_backend_ref().data(), &mut prep_scratch);
+        module.cnv_prepare_right(&mut b_prep, b.to_backend_ref().data(), &mut prep_scratch);
     }
     rank_one_tensor_finish(
         module,
@@ -418,9 +406,9 @@ fn rank_one_tensor_square<BE, R, A>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxCopyBackend<BE>
-        + VecZnxSubAssignBackend<BE>
-        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxCopy<BE>
+        + VecZnxSubAssign<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -436,13 +424,7 @@ fn rank_one_tensor_square<BE, R, A>(
     let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, a_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
-        module.cnv_prepare_self(
-            &mut a_prep,
-            &mut b_prep,
-            a.to_backend_ref().data(),
-            msb_mask_bottom_limb(base2k, a.k().as_usize()),
-            &mut prep_scratch,
-        );
+        module.cnv_prepare_self(&mut a_prep, &mut b_prep, a.to_backend_ref().data(), &mut prep_scratch);
     }
     rank_one_tensor_finish(
         module,
@@ -459,7 +441,7 @@ fn rank_one_tensor_square<BE, R, A>(
 
 macro_rules! impl_rank_one_tensoring {
     ($be:ty) => {
-        unsafe impl GLWETensoringImpl<$be> for $be {
+        unsafe impl GLWETensoringImpl for $be {
             fn glwe_tensor_apply_tmp_bytes<R, A, B>(module: &Module<$be>, res: &R, a: &A, b: &B) -> usize
             where
                 R: GLWEInfos,
@@ -555,7 +537,7 @@ impl_rank_one_tensoring!(NTT3x42Ifma);
 #[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 impl_rank_one_tensoring!(NTT3x42IfmaRayon);
 
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx512 {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -604,7 +586,7 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT4x30Avx512> for N
 }
 
 #[cfg(feature = "enable-ifma")]
-unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42Ifma> for NTT3x42Ifma {
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT3x42Ifma {
     fn gglwe_product_digits_strided_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
@@ -708,9 +690,13 @@ impl_lwe_keyswitch_defaults_full!(NTT4x30Avx512);
 impl_lwe_keyswitch_defaults_full!(NTT3x42Ifma);
 
 impl_encryption_defaults_full!(FFT64Avx512);
+poulpy_cpu_ref::impl_sampling_host!(FFT64Avx512, fft64);
 impl_encryption_defaults_full!(NTT4x30Avx512);
+poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx512, ntt4x30);
 #[cfg(feature = "enable-ifma")]
 impl_encryption_defaults_full!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+poulpy_cpu_ref::impl_sampling_host!(NTT3x42Ifma, ntt4x30);
 
 impl_glwe_external_product_defaults_full!(FFT64Avx512);
 impl_glwe_external_product_defaults_full!(NTT4x30Avx512);
@@ -757,6 +743,8 @@ impl_lwe_keyswitch_defaults_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_encryption_defaults_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
+poulpy_cpu_ref::impl_sampling_host!(FFT64Avx512Rayon, fft64);
+#[cfg(feature = "enable-rayon")]
 impl_glwe_external_product_defaults_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_external_product_defaults_full!(FFT64Avx512Rayon);
@@ -781,6 +769,7 @@ mod ntt4x30_rayon_defaults {
     impl_ggsw_keyswitch_defaults_full!(NTT4x30Avx512Rayon);
     impl_lwe_keyswitch_defaults_full!(NTT4x30Avx512Rayon);
     impl_encryption_defaults_full!(NTT4x30Avx512Rayon);
+    poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx512Rayon, ntt4x30);
     impl_glwe_external_product_defaults_full!(NTT4x30Avx512Rayon);
     impl_gglwe_external_product_defaults_full!(NTT4x30Avx512Rayon);
     impl_ggsw_external_product_defaults_full!(NTT4x30Avx512Rayon);
@@ -803,6 +792,7 @@ mod ifma_rayon_defaults {
     impl_ggsw_keyswitch_defaults_full!(NTT3x42IfmaRayon);
     impl_lwe_keyswitch_defaults_full!(NTT3x42IfmaRayon);
     impl_encryption_defaults_full!(NTT3x42IfmaRayon);
+    poulpy_cpu_ref::impl_sampling_host!(NTT3x42IfmaRayon, ntt4x30);
     impl_glwe_external_product_defaults_full!(NTT3x42IfmaRayon);
     impl_gglwe_external_product_defaults_full!(NTT3x42IfmaRayon);
     impl_ggsw_external_product_defaults_full!(NTT3x42IfmaRayon);

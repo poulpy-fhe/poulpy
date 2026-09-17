@@ -130,7 +130,7 @@ pub mod glwe_packing_defaults_impl {
         let lvl_0: usize = module.glwe_bytes_of_from_infos(res);
         let lvl_1: usize = module
             .glwe_rotate_tmp_bytes()
-            .max(module.glwe_shift_tmp_bytes())
+            .max(module.glwe_shift_tmp_bytes(res.size()))
             .max(module.glwe_normalize_tmp_bytes())
             .max(module.glwe_automorphism_tmp_bytes(res, res, key));
 

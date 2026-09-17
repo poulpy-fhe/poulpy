@@ -361,13 +361,6 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> VecZnx<D, W> {
-    /// Returns the scratch space (in bytes) required by right-shift operations.
-    pub fn rsh_tmp_bytes(n: usize) -> usize {
-        n * size_of::<W>()
-    }
-}
-
 impl<D: HostDataMut, W: ZnxWord> ZnxZero for VecZnx<D, W> {
     fn zero(&mut self) {
         if self.is_dense() {

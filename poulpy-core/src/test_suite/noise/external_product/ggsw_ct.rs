@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
@@ -7,6 +7,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::layouts::prepared::GGSWPreparedToBackendRef;
+use crate::{Distribution, ScalarZnxFillDistribution};
 use crate::{
     EncryptionLayout, GGSWEncryptSk, GGSWExternalProduct, GGSWNoise,
     encryption::DEFAULT_SIGMA_XE,
@@ -16,6 +17,7 @@ use crate::{
     },
     noise::GGSWNoiseModel,
 };
+use poulpy_hal::test_suite::scalar_znx_backend_mut;
 
 #[allow(clippy::too_many_arguments)]
 pub fn test_ggsw_external_product<BE: crate::test_suite::noise::TestBackend>(params: &TestParams, module: &Module<BE>)
@@ -27,7 +29,7 @@ where
         + GGSWExternalProduct<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxRotateAssignBackend<BE>
+        + VecZnxRotateAssign<BE>
         + GGSWNoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -84,7 +86,12 @@ where
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
-            pt_in.fill_ternary_prob(0, 0.5, &mut source_xs);
+            module.scalar_znx_fill_distribution(
+                &mut scalar_znx_backend_mut::<BE>(&mut pt_in),
+                0,
+                Distribution::TernaryProb(0.5),
+                &mut source_xs,
+            );
 
             let k: usize = 1;
 
@@ -134,7 +141,7 @@ where
 
             {
                 let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
-                module.vec_znx_rotate_assign_backend(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
+                module.vec_znx_rotate_assign(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
             }
 
             let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
@@ -190,7 +197,7 @@ where
         + GGSWExternalProduct<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxRotateAssignBackend<BE>
+        + VecZnxRotateAssign<BE>
         + GGSWNoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -237,7 +244,12 @@ where
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
-            pt_in.fill_ternary_prob(0, 0.5, &mut source_xs);
+            module.scalar_znx_fill_distribution(
+                &mut scalar_znx_backend_mut::<BE>(&mut pt_in),
+                0,
+                Distribution::TernaryProb(0.5),
+                &mut source_xs,
+            );
 
             let k: usize = 1;
 
@@ -282,7 +294,7 @@ where
 
             {
                 let mut pt_in_as_vec = crate::test_suite::noise::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
-                module.vec_znx_rotate_assign_backend(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
+                module.vec_znx_rotate_assign(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
             }
 
             let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;

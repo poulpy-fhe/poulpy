@@ -10,30 +10,30 @@ use crate::layouts::{
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, and aliasing
 /// guarantees expected by the public and default external-product layers.
-pub unsafe trait GLWEExternalProductImpl<BE: Backend>: Backend {
-    fn glwe_external_product_tmp_bytes<R, A, G>(module: &Module<BE>, res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
+pub unsafe trait GLWEExternalProductImpl: Backend {
+    fn glwe_external_product_tmp_bytes<R, A, G>(module: &Module<Self>, res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         G: GGSWInfos;
 
     fn glwe_external_product<R, A>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
         a: &A,
-        ggsw: &GGSWPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        ggsw: &GGSWPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        R: GLWEToBackendMut<Self> + GLWEInfos,
+        A: GLWEToBackendRef<Self> + GLWEInfos;
 
     fn glwe_external_product_assign<R>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
-        ggsw: &GGSWPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        ggsw: &GGSWPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos;
+        R: GLWEToBackendMut<Self> + GLWEInfos;
 }
 
 /// Backend hook for batched GGLWE external products.
@@ -41,30 +41,30 @@ pub unsafe trait GLWEExternalProductImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, and aliasing
 /// guarantees expected by the public and default external-product layers.
-pub unsafe trait GGLWEExternalProductImpl<BE: Backend>: Backend {
-    fn gglwe_external_product_tmp_bytes<R, A, B>(module: &Module<BE>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+pub unsafe trait GGLWEExternalProductImpl: Backend {
+    fn gglwe_external_product_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GGLWEInfos,
         A: GGLWEInfos,
         B: GGSWInfos;
 
     fn gglwe_external_product<R, A>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
         a: &A,
-        b: &GGSWPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        b: &GGSWPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos;
+        R: GGLWEToBackendMut<Self> + GGLWEInfos,
+        A: GGLWEToBackendRef<Self> + GGLWEInfos;
 
     fn gglwe_external_product_assign<R>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
-        a: &GGSWPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        a: &GGSWPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGLWEToBackendMut<BE> + GGLWEInfos;
+        R: GGLWEToBackendMut<Self> + GGLWEInfos;
 }
 
 /// Backend hook for GGSW external products.
@@ -72,30 +72,30 @@ pub unsafe trait GGLWEExternalProductImpl<BE: Backend>: Backend {
 /// # Safety
 /// Implementors must preserve the semantics, scratch requirements, and aliasing
 /// guarantees expected by the public and default external-product layers.
-pub unsafe trait GGSWExternalProductImpl<BE: Backend>: Backend {
-    fn ggsw_external_product_tmp_bytes<R, A, B>(module: &Module<BE>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+pub unsafe trait GGSWExternalProductImpl: Backend {
+    fn ggsw_external_product_tmp_bytes<R, A, B>(module: &Module<Self>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GGSWInfos,
         A: GGSWInfos,
         B: GGSWInfos;
 
     fn ggsw_external_product<R, A>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
         a: &A,
-        b: &GGSWPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        b: &GGSWPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos;
+        R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
+        A: GGSWToBackendRef<Self> + GGSWAtViewRef<Self> + GGSWInfos;
 
     fn ggsw_external_product_assign<R>(
-        module: &Module<BE>,
+        module: &Module<Self>,
         res: &mut R,
-        a: &GGSWPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
+        a: &GGSWPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos;
+        R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos;
 }
 
 /// Override surface for the GLWE external-product sub-family.
@@ -187,7 +187,7 @@ pub trait GGSWExternalProductDefault<BE: Backend> {
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos;
 }
 
-unsafe impl<BE: Backend> GLWEExternalProductImpl<BE> for BE
+unsafe impl<BE: Backend> GLWEExternalProductImpl for BE
 where
     Module<BE>: GLWEExternalProductDefault<BE>,
 {
@@ -225,7 +225,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GGLWEExternalProductImpl<BE> for BE
+unsafe impl<BE: Backend> GGLWEExternalProductImpl for BE
 where
     Module<BE>: GGLWEExternalProductDefault<BE>,
 {
@@ -263,7 +263,7 @@ where
     }
 }
 
-unsafe impl<BE: Backend> GGSWExternalProductImpl<BE> for BE
+unsafe impl<BE: Backend> GGSWExternalProductImpl for BE
 where
     Module<BE>: GGSWExternalProductDefault<BE>,
 {

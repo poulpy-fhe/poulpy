@@ -1,25 +1,23 @@
 use crate::{
     api::{
-        VecZnxBigAddAssign, VecZnxBigAddInto, VecZnxBigAddNormal, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend,
-        VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes,
-        VecZnxBigBytesOf, VecZnxBigColWeightedSum, VecZnxBigFromSmallBackend, VecZnxBigInnerSumBackend, VecZnxBigNegate,
-        VecZnxBigNegateAssign, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign,
-        VecZnxBigSubNegateAssign, VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend,
-        VecZnxBigSubSmallNegateAssign, VecZnxScalarProduct,
+        VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigAutomorphism,
+        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigColWeightedSum,
+        VecZnxBigFromSmall, VecZnxBigInnerSum, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA,
+        VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxScalarProduct,
     },
     layouts::{
-        Backend, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+        Backend, Module, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
         VecZnxBigBackendRef, VecZnxBigOwned,
     },
     oep::HalVecZnxBigImpl,
-    source::Source,
 };
 
 macro_rules! impl_vec_znx_big_delegate {
     ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
-            B: Backend<ZnxWord = i64> + HalVecZnxBigImpl<B>,
+            B: Backend<ZnxWord = i64> + HalVecZnxBigImpl,
         {
             $($body)+
         }
@@ -27,15 +25,15 @@ macro_rules! impl_vec_znx_big_delegate {
 }
 
 impl_vec_znx_big_delegate!(
-    VecZnxBigFromSmallBackend<B>,
-    fn vec_znx_big_from_small_backend(
+    VecZnxBigFromSmall<B>,
+    fn vec_znx_big_from_small(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
-        B::vec_znx_big_from_small_backend(res, res_col, a, a_col);
+        B::vec_znx_big_from_small(res, res_col, a, a_col);
     }
 );
 
@@ -56,22 +54,8 @@ impl<B: Backend> VecZnxBigBytesOf for Module<B> {
 }
 
 impl_vec_znx_big_delegate!(
-    VecZnxBigAddNormal<B>,
-    fn vec_znx_big_add_normal(
-        &self,
-        base2k: usize,
-        res: &mut VecZnxBigBackendMut<'_, B>,
-        res_col: usize,
-        noise_infos: NoiseInfos,
-        source: &mut Source,
-    ) {
-        B::vec_znx_big_add_normal_backend(self, base2k, res, res_col, noise_infos, source.new_seed());
-    }
-);
-
-impl_vec_znx_big_delegate!(
-    VecZnxBigAddInto<B>,
-    fn vec_znx_big_add_into(
+    VecZnxBigAdd<B>,
+    fn vec_znx_big_add(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -80,7 +64,7 @@ impl_vec_znx_big_delegate!(
         b: &VecZnxBigBackendRef<'_, B>,
         b_col: usize,
     ) {
-        B::vec_znx_big_add_into(self, res, res_col, a, a_col, b, b_col);
+        B::vec_znx_big_add(self, res, res_col, a, a_col, b, b_col);
     }
 );
 
@@ -98,8 +82,8 @@ impl_vec_znx_big_delegate!(
 );
 
 impl_vec_znx_big_delegate!(
-    VecZnxBigAddSmallIntoBackend<B>,
-    fn vec_znx_big_add_small_into_backend(
+    VecZnxBigAddSmall<B>,
+    fn vec_znx_big_add_small(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -108,7 +92,7 @@ impl_vec_znx_big_delegate!(
         b: &VecZnxBackendRef<'_, B>,
         b_col: usize,
     ) {
-        B::vec_znx_big_add_small_into_backend(self, res, res_col, a, a_col, b, b_col);
+        B::vec_znx_big_add_small(self, res, res_col, a, a_col, b, b_col);
     }
 );
 
@@ -167,8 +151,8 @@ impl_vec_znx_big_delegate!(
 );
 
 impl_vec_znx_big_delegate!(
-    VecZnxBigSubSmallABackend<B>,
-    fn vec_znx_big_sub_small_a_backend(
+    VecZnxBigSubSmallA<B>,
+    fn vec_znx_big_sub_small_a(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -177,7 +161,7 @@ impl_vec_znx_big_delegate!(
         b: &VecZnxBigBackendRef<'_, B>,
         b_col: usize,
     ) {
-        B::vec_znx_big_sub_small_a_backend(self, res, res_col, a, a_col, b, b_col);
+        B::vec_znx_big_sub_small_a(self, res, res_col, a, a_col, b, b_col);
     }
 );
 
@@ -195,8 +179,8 @@ impl_vec_znx_big_delegate!(
 );
 
 impl_vec_znx_big_delegate!(
-    VecZnxBigSubSmallBBackend<B>,
-    fn vec_znx_big_sub_small_b_backend(
+    VecZnxBigSubSmallB<B>,
+    fn vec_znx_big_sub_small_b(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -205,7 +189,7 @@ impl_vec_znx_big_delegate!(
         b: &VecZnxBackendRef<'_, B>,
         b_col: usize,
     ) {
-        B::vec_znx_big_sub_small_b_backend(self, res, res_col, a, a_col, b, b_col);
+        B::vec_znx_big_sub_small_b(self, res, res_col, a, a_col, b, b_col);
     }
 );
 
@@ -223,8 +207,8 @@ impl_vec_znx_big_delegate!(
 );
 
 impl_vec_znx_big_delegate!(
-    VecZnxBigInnerSumBackend<B>,
-    fn vec_znx_big_inner_sum_backend(
+    VecZnxBigInnerSum<B>,
+    fn vec_znx_big_inner_sum(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
@@ -232,7 +216,7 @@ impl_vec_znx_big_delegate!(
         a: &VecZnxBigBackendRef<'_, B>,
         a_col: usize,
     ) {
-        B::vec_znx_big_inner_sum_backend(self, res, res_col, res_coeff, a, a_col);
+        B::vec_znx_big_inner_sum(self, res, res_col, res_coeff, a, a_col);
     }
 );
 

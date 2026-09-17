@@ -42,11 +42,12 @@
 //!
 //! The crate is organized into a four-layer stack:
 //!
-//! 1. **[`api`]** -- Safe, user-facing trait definitions (e.g. [`api::VecZnxAddIntoBackend`],
+//! 1. **[`api`]** -- Safe, user-facing trait definitions (e.g. [`api::VecZnxAdd`],
 //!    [`api::VmpApplyDftToDft`]). Scheme authors program against these.
 //! 2. **[`oep`]** -- Unsafe extension-point layer of per-family backend traits.
-//!    Backend crates implement only the families they own and may reuse helper
-//!    macros or defaults where convenient.
+//!    Basis methods are required; derived operations carry default bodies
+//!    (the free functions of [`oep::derived`]) a backend may override one
+//!    method at a time. The module docs give the implementation order.
 //! 3. **[`delegates`]** -- Blanket `impl` glue that connects each [`api`] trait to
 //!    the corresponding backend family method on [`layouts::Module`].
 //! 4. **Reference implementations** live in the `poulpy-cpu-ref` crate, which provides
@@ -68,8 +69,8 @@
 //!
 //! All [`oep`] extension points are `unsafe` to implement. Implementors must uphold the
 //! contract documented in [`doc::backend_safety`], covering memory domains,
-//! alignment, scratch lifetime, synchronization, aliasing, and numerical
-//! exactness.
+//! alignment, scratch lifetime, synchronization, aliasing, and the numerical
+//! contract.
 //!
 //! ## Non-Goals
 //!
@@ -136,7 +137,7 @@ pub mod doc {
     /// Safety contract that all [`crate::oep`] trait implementations must uphold.
     ///
     /// Covers memory domains, alignment, scratch lifetime, synchronization,
-    /// aliasing, and numerical exactness requirements.
+    /// aliasing, and the numerical contract.
     #[doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/backend_safety_contract.md"))]
     pub mod backend_safety {
         pub const _PLACEHOLDER: () = ();
@@ -152,7 +153,7 @@ pub const GALOISGENERATOR: u64 = 5;
 /// Default memory alignment in bytes for all allocated buffers.
 ///
 /// Set to 64 bytes to match the cache-line size of modern x86 processors
-/// and the alignment required by AVX-512 instructions.
+/// and the widest vector alignment a backend's loads require.
 pub const DEFAULTALIGN: usize = 64;
 
 fn is_aligned_custom<T>(ptr: *const T, align: usize) -> bool {

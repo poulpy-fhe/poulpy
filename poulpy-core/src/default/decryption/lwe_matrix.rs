@@ -1,9 +1,12 @@
 use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigColWeightedSum, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyRangeBackend, VecZnxZeroBackend,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxZero,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxToBackendRef},
+    layouts::{
+        Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxToBackendRef, vec_znx_backend_mut_from_mut,
+        vec_znx_backend_ref_from_ref,
+    },
 };
 
 use crate::layouts::{
@@ -28,11 +31,11 @@ pub fn lwe_matrix_decrypt_default<BE, R, P, S>(
     sk: &S,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    Module<BE>: VecZnxZeroBackend<BE>
+    Module<BE>: VecZnxZero<BE>
         + VecZnxBigColWeightedSum<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxCopyRangeBackend<BE>
+        + VecZnxCopy<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes,
     R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
@@ -66,7 +69,7 @@ pub fn lwe_matrix_decrypt_default<BE, R, P, S>(
         "lwe_matrix_decrypt currently expects matching limb counts"
     );
 
-    module.vec_znx_zero_backend(&mut pt.data, 0);
+    module.vec_znx_zero(&mut pt.data, 0);
 
     let scratch = scratch.borrow();
     let (mut tmp, scratch_1) = scratch.take_vec_znx_big_scratch_n(res.rows(), 1, res.size());
@@ -87,7 +90,10 @@ pub fn lwe_matrix_decrypt_default<BE, R, P, S>(
     );
 
     let rows_pt_ref = rows_pt.to_backend_ref();
-    for limb in 0..pt.size() {
-        module.vec_znx_copy_range_backend(&mut pt.data, 0, limb, 0, &rows_pt_ref, 0, limb, 0, res.rows());
-    }
+    module.vec_znx_copy(
+        &mut vec_znx_backend_mut_from_mut::<BE>(&mut pt.data).window_coeffs(0, res.rows()),
+        0,
+        &vec_znx_backend_ref_from_ref::<BE>(&rows_pt_ref).window_coeffs(0, res.rows()),
+        0,
+    );
 }

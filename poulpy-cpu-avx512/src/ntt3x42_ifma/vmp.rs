@@ -740,6 +740,10 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma<E: TaskExecutor>(
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
     let n = res.n();
     let res_size = res.size();
     let nrows = pmat.rows() * pmat.cols_in();
@@ -769,7 +773,7 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma<E: TaskExecutor>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma<E: TaskExecutor>(
+pub(crate) fn vmp_apply_dft_to_dft_add_ifma<E: TaskExecutor>(
     module: &Module<crate::NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
     a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
@@ -777,6 +781,10 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma<E: TaskExecutor>(
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
     let n = res.n();
     let res_size = res.size();
     let nrows = pmat.rows() * pmat.cols_in();

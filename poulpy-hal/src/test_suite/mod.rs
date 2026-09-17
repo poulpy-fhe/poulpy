@@ -12,7 +12,10 @@ use crate::layouts::{
 };
 
 pub mod convolution;
+pub mod derived;
+pub mod reim;
 pub mod serialization;
+pub mod sparse;
 pub mod svp;
 pub mod vec_znx;
 pub mod vec_znx_big;
@@ -27,7 +30,7 @@ pub mod word_compat;
 ///
 /// Centralising these values at the macro call-site makes it possible to
 /// instantiate the same test suite with backend-appropriate parameters
-/// (e.g. different `base2k` for FFT64 vs NTT4x30).
+/// (e.g. different `base2k` for a floating-point FFT backend vs an NTT backend).
 #[derive(Clone, Copy, Debug)]
 pub struct TestParams {
     /// Ring degree N (polynomial degree).

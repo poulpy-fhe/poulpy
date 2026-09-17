@@ -6,7 +6,7 @@
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
-    api::{ModuleN, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend},
+    api::{ModuleN, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes},
     layouts::{Backend, CyclotomicOrder, GaloisElement, ScratchArena},
 };
 
@@ -59,8 +59,8 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A>(
         + GGLWEAutomorphismDefault<BE>
         + GaloisElement
         + GLWEKeyswitchDefault<BE>
-        + VecZnxAutomorphismBackend<BE>
-        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxAutomorphism<BE>
+        + VecZnxAutomorphismAssign<BE>
         + VecZnxAutomorphismAssignTmpBytes
         + CyclotomicOrder,
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
@@ -99,20 +99,20 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A>(
 
                 if same_layout {
                     for i in 0..cols_out {
-                        module.vec_znx_automorphism_backend(p, &mut res_tmp.data, i, &a_ct_backend.data, i);
+                        module.vec_znx_automorphism(p, &mut res_tmp.data, i, &a_ct_backend.data, i);
                     }
 
                     let mut scratch_iter = scratch.borrow();
                     module.glwe_keyswitch_assign_default(&mut res_tmp, &key.to_backend_ref(), &mut scratch_iter);
 
                     for i in 0..cols_out {
-                        module.vec_znx_automorphism_assign_backend(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
+                        module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
                     }
                 } else {
                     let (mut tmp_glwe, mut scratch_iter) = scratch.borrow().take_glwe_scratch(&a_ct_backend);
 
                     for i in 0..cols_out {
-                        module.vec_znx_automorphism_backend(p, &mut tmp_glwe.data, i, &a_ct_backend.data, i);
+                        module.vec_znx_automorphism(p, &mut tmp_glwe.data, i, &a_ct_backend.data, i);
                     }
 
                     let tmp_glwe_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe);
@@ -120,7 +120,7 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A>(
                     module.glwe_keyswitch_default(&mut res_tmp, &tmp_glwe_view, &key.to_backend_ref(), &mut scratch_iter);
 
                     for i in 0..cols_out {
-                        module.vec_znx_automorphism_assign_backend(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
+                        module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
                     }
                 }
             }
@@ -137,7 +137,7 @@ pub fn glwe_automorphism_key_automorphism_assign_default<BE, M, R>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GaloisElement + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE> + CyclotomicOrder,
+    M: GaloisElement + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssign<BE> + CyclotomicOrder,
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
 {
     assert_eq!(res.rank(), key.rank(), "key rank: {} != key rank: {}", res.rank(), key.rank());
@@ -155,13 +155,13 @@ pub fn glwe_automorphism_key_automorphism_assign_default<BE, M, R>(
 
                 let mut scratch_iter = scratch.borrow();
                 for i in 0..cols_out {
-                    module.vec_znx_automorphism_assign_backend(p, &mut res_tmp.data, i, &mut scratch_iter);
+                    module.vec_znx_automorphism_assign(p, &mut res_tmp.data, i, &mut scratch_iter);
                 }
 
                 module.glwe_keyswitch_assign_default(&mut res_tmp, &key.to_backend_ref(), &mut scratch_iter);
 
                 for i in 0..cols_out {
-                    module.vec_znx_automorphism_assign_backend(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
+                    module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
                 }
             }
         }
