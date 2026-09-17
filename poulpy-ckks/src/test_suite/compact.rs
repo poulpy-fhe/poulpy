@@ -2,21 +2,27 @@
 //! degree. Every consumer must give the result the dense plaintext of the same
 //! values gives.
 
-use poulpy_core::layouts::LWEInfos;
+use std::collections::HashMap;
+
+use poulpy_core::layouts::{Diagonals, Evaluate, LWEInfos, LinearTransformationStrategy};
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow, VecZnxSwitchRing},
-    layouts::{Backend, HostBytesBackend, Module},
+    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow, VecZnxSwitchRing},
+    layouts::{Backend, CyclotomicOrder, HostBytesBackend, Module, ScratchArena},
 };
 
 use crate::{
     CKKSInfos, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSMulOps, CKKSSubOps},
-    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned},
+    api::{
+        CKKSAddOps, CKKSEncodingHostOps, CKKSEncodingOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps,
+        LinearTransformation, LinearTransformationPrepared,
+    },
+    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision,
-            ckks_decrypt_decode, ckks_encrypt, gen_sk, quantize, test_vector_1, test_vector_2, upload_pt, want_add, want_mul,
+            ckks_decrypt_decode, ckks_encrypt, gen_atk, gen_sk, gen_sk_with_raw, quantize, test_vector_1, test_vector_2,
+            upload_pt, want_add, want_mul,
         },
         reference_encoder::ReferenceEncoder,
     },
@@ -257,4 +263,170 @@ pub fn test_compact_plaintext_add_sub_mul<BE, F, E>(
             .is_err(),
         "ckks_add_pt_vec_into accepted a plaintext below the backend floor"
     );
+}
+
+/// A six-diagonal complex matrix on `m` slots (the shape `linear_transformation.rs` uses).
+fn matrix<F: TestScalar>(m: usize) -> ComplexDiagonals<F> {
+    let mut re = Diagonals::<F>::new(m);
+    let mut im = Diagonals::<F>::new(m);
+    for i in 0..6usize {
+        re.set(
+            i as i64,
+            (0..m)
+                .map(|j| F::from_f64(0.25 * (i as f64 + 1.0) / (1.0 + (j % 8) as f64)).unwrap())
+                .collect(),
+        );
+        im.set(
+            i as i64,
+            (0..m)
+                .map(|j| F::from_f64(0.125 * (i as f64 + 1.0) / (1.0 + ((j + 3) % 8) as f64)).unwrap())
+                .collect(),
+        );
+    }
+    ComplexDiagonals::new(re, im)
+}
+
+/// Encodes the matrix into a transformation whose diagonals are compact
+/// plaintexts, through the same closure shape the production encoder uses.
+fn encode_compact_lt<BE, F>(
+    module: &Module<BE>,
+    params: &CKKSTestParams,
+    b: &ComplexDiagonals<F>,
+    strategy: LinearTransformationStrategy,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> LinearTransformation<CKKSPlaintextOwned<BE>>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingHostOps<BE, F>,
+    F: TestScalar,
+{
+    let prec = params.prec();
+    b.build_transform(strategy, |pre_re, pre_im| {
+        let mut pt = module.ckks_pt_vec_alloc_compact(pre_re.len(), params.base2k.into(), prec.k());
+        pt.set_meta_checked(prec.meta()).unwrap();
+        module.ckks_encode_reim_into(&mut pt, pre_re, pre_im, scratch).unwrap();
+        pt
+    })
+}
+
+/// `dec(lt(enc(a), B)) ≈ B·a` with compact diagonals on the prepared path (the
+/// prepared slots carry the compact degree) and on the streamed path.
+pub fn test_compact_linear_transformation<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingHostOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable,
+{
+    let m = compact_slots(&params);
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (a_re, a_im) = test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let key_params = CKKSTestParams {
+        dsize: params.dsize.max(4),
+        ..params
+    };
+    let mut scratch = alloc_scratch(&key_params, module);
+    let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
+    let b = matrix::<F>(m);
+    let lt = encode_compact_lt(module, &params, &b, strategy, &mut scratch.borrow());
+    let first = lt.first_diagonal_plaintext().unwrap();
+    assert_eq!(first.n().as_usize(), 2 * m, "diagonal is not compact");
+
+    let order = module.cyclotomic_order();
+    let mut atks = HashMap::new();
+    for p in lt.galois_elements(order) {
+        atks.entry(p)
+            .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
+    }
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &a_re,
+        &a_im,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
+
+    // Prepared path: the slots are allocated and prepared at the compact degree
+    // under the one module.
+    let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
+    assert_eq!(
+        prepared.first_diagonal_plaintext().unwrap().n().as_usize(),
+        2 * m,
+        "prepared slot is not compact"
+    );
+    module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch.borrow());
+    let mut ct_out = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_linear_transformation_self_into(&mut ct_out, &ct, &prepared, &atks, &mut scratch.borrow())
+        .unwrap();
+    assert_decrypt_precision(
+        "compact_lt_prepared",
+        &params,
+        module,
+        &encoder,
+        &ct_out,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+
+    // Streamed path: the same transformation with its plaintext diagonals,
+    // prepared on the fly at the compact degree.
+    let mut ct_streamed = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_linear_transformation_self_into(&mut ct_streamed, &ct, &lt, &atks, &mut scratch.borrow())
+        .unwrap();
+    assert_decrypt_precision(
+        "compact_lt_streamed",
+        &params,
+        module,
+        &encoder,
+        &ct_streamed,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+}
+
+/// The production diagonal encoder emits compact diagonals for a sparse matrix
+/// and dense ones for a full one.
+pub fn test_compact_diagonal_encoder<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let mut scratch = alloc_scratch(&params, module);
+    let strategy = LinearTransformationStrategy::Bsgs { giant_step: 2 };
+    for (slots, want_n) in [(compact_slots(&params), params.n / 4), (params.n / 2, params.n)] {
+        let lt = crate::default::ckks_encode_linear_transformation_from_diagonals::<BE, F>(
+            module,
+            params.base2k.into(),
+            params.prec().into(),
+            &matrix::<F>(slots),
+            strategy,
+            false,
+            &mut scratch.borrow(),
+        )
+        .unwrap();
+        assert_eq!(lt.first_diagonal_plaintext().unwrap().n().as_usize(), want_n, "slots {slots}");
+    }
 }
