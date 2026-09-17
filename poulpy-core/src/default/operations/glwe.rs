@@ -1727,7 +1727,9 @@ where
 
 #[doc(hidden)]
 pub trait GLWECopyDefault<BE: Backend> {
-    fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_copy_tmp_bytes_default<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize;
+
+    fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
@@ -1735,9 +1737,17 @@ pub trait GLWECopyDefault<BE: Backend> {
 
 impl<BE: Backend> GLWECopyDefault<BE> for Module<BE>
 where
-    Self: ModuleN + VecZnxCopy<BE> + VecZnxZero<BE>,
+    Self: ModuleN + VecZnxCopy<BE> + VecZnxZero<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
-    fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_copy_tmp_bytes_default<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
+        if res.base2k() == a.base2k() && res.k() >= a.k() {
+            0
+        } else {
+            self.vec_znx_normalize_tmp_bytes()
+        }
+    }
+
+    fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1750,9 +1760,26 @@ where
         assert!(res.rank() == a.rank() || a.rank() == 0);
 
         let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
-
-        for i in 0..min_rank {
-            self.vec_znx_copy(&mut res.data, i, &a.data, i);
+        if res.base2k() == a.base2k() && res.k() >= a.k() {
+            for i in 0..min_rank {
+                self.vec_znx_copy(&mut res.data, i, &a.data, i);
+            }
+        } else {
+            let base2k = res.base2k().as_usize();
+            let k = res.k().as_usize();
+            for i in 0..min_rank {
+                self.vec_znx_normalize(
+                    &mut res.data,
+                    base2k,
+                    k,
+                    0,
+                    i,
+                    &a.data,
+                    a.base2k().as_usize(),
+                    i,
+                    &mut scratch.borrow(),
+                );
+            }
         }
 
         for i in min_rank..(res.rank() + 1).into() {

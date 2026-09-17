@@ -332,7 +332,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let slots = dst.slots().join(pt.slots());
         scratch.scope(|scratch_local| {
             let (mut input, mut op_scratch) = scratch_local.take_glwe_scratch(&*dst);
-            self.glwe_copy(&mut input, &*dst);
+            self.glwe_copy(&mut input, &*dst, &mut op_scratch);
             dst.set_log_budget(res_log_budget);
             dst.set_log_delta(res_log_delta);
             dst.set_log_sparsity(log_sparsity);
@@ -386,7 +386,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, cnst)?;
         scratch.scope(|scratch_local| {
             let (mut input, mut op_scratch) = scratch_local.take_glwe_scratch(&*dst);
-            self.glwe_copy(&mut input, &*dst);
+            self.glwe_copy(&mut input, &*dst, &mut op_scratch);
             dst.set_log_budget(res_log_budget);
             dst.set_log_delta(res_log_delta);
             self.glwe_mul_const(cnv_offset, dst, &input, cnst, cnst_coeff, &mut op_scratch);

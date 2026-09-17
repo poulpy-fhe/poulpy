@@ -384,7 +384,7 @@ fn eval_level<M, G, R, BE, L>(
                         &mut scratch_1.borrow(),
                     );
                 }
-                Node::Copy => module.glwe_copy(&mut next_level[j], &prev_level[j]), /* Update BDD circuits to order Cmux -> Copy -> None so that mem swap can be used */
+                Node::Copy => module.glwe_copy(&mut next_level[j], &prev_level[j], &mut scratch_1.borrow()), /* Update BDD circuits to order Cmux -> Copy -> None so that mem swap can be used */
                 Node::None => {}
             }
         }
@@ -608,9 +608,9 @@ where
             let (mut a_prev, scratch_1) = scratch.take_glwe_scratch(res_a);
             let (mut b_prev, scratch_2) = scratch_1.take_glwe_scratch(res_b);
             let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, output_size);
-            let (res_big_tmp, scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, output_size);
-            self.glwe_copy(&mut a_prev, res_a);
-            self.glwe_copy(&mut b_prev, res_b);
+            let (res_big_tmp, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, output_size);
+            self.glwe_copy(&mut a_prev, res_a, &mut scratch_4);
+            self.glwe_copy(&mut b_prev, res_b, &mut scratch_4);
 
             let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
             {
@@ -818,6 +818,10 @@ where
             + self
                 .glwe_external_product_internal_tmp_bytes(&tmp_infos, &tmp_infos, selector_infos)
                 .max(self.vec_znx_big_normalize_tmp_bytes())
+                // Blind selection/rotation also use this bound to copy inputs
+                // whose precision or radix need not match their accumulator.
+                .max(self.glwe_normalize_tmp_bytes())
+                .max(self.glwe_copy_tmp_bytes(res_infos, &tmp_infos))
     }
 
     // res = (t - f) * s + f
@@ -838,9 +842,9 @@ where
         self.glwe_sub(res, t, f);
         let cols: usize = (res.rank() + 1).into();
         let (mut tmp_in, scratch_1) = scratch.take_glwe_scratch(res);
-        let (mut tmp_f, scratch_2) = scratch_1.take_glwe_scratch(&f_backend);
-        self.glwe_copy(&mut tmp_in, res);
-        self.glwe_copy(&mut tmp_f, f);
+        let (mut tmp_f, mut scratch_2) = scratch_1.take_glwe_scratch(&f_backend);
+        self.glwe_copy(&mut tmp_in, res, &mut scratch_2);
+        self.glwe_copy(&mut tmp_f, f, &mut scratch_2);
         let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, res, s);
         let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, output_size);
         let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
@@ -871,7 +875,7 @@ where
                 &mut scratch_norm.borrow(),
             );
         }
-        self.glwe_copy(res, &tmp_in);
+        self.glwe_copy(res, &tmp_in, &mut scratch_norm);
     }
 
     // res = (a - res) * s + res
@@ -901,8 +905,8 @@ where
             rank: res.rank(),
         };
         let (mut tmp, scratch_1) = scratch.take_glwe_scratch(&tmp_infos);
-        let (mut res_prev, scratch_2) = scratch_1.take_glwe_scratch(res);
-        self.glwe_copy(&mut res_prev, res);
+        let (mut res_prev, mut scratch_2) = scratch_1.take_glwe_scratch(res);
+        self.glwe_copy(&mut res_prev, res, &mut scratch_2);
         self.glwe_sub(&mut tmp, a, res);
         let cols: usize = (res.rank() + 1).into();
         let output_size = glwe_external_product_output_size::<BE, _, _, _>(&tmp_infos, &tmp_infos, s);
@@ -935,7 +939,7 @@ where
                 &mut scratch_norm.borrow(),
             );
         }
-        self.glwe_copy(res, &tmp);
+        self.glwe_copy(res, &tmp, &mut scratch_norm);
     }
 
     // res = (res - a) * s + a
@@ -953,9 +957,9 @@ where
         self.glwe_sub_assign(res, a);
         let cols: usize = (res.rank() + 1).into();
         let (mut tmp, scratch_1) = scratch.take_glwe_scratch(res);
-        let (mut tmp_a, scratch_2) = scratch_1.take_glwe_scratch(&a_backend);
-        self.glwe_copy(&mut tmp, res);
-        self.glwe_copy(&mut tmp_a, a);
+        let (mut tmp_a, mut scratch_2) = scratch_1.take_glwe_scratch(&a_backend);
+        self.glwe_copy(&mut tmp, res, &mut scratch_2);
+        self.glwe_copy(&mut tmp_a, a, &mut scratch_2);
         let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, res, s);
         let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, output_size);
         let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
@@ -986,7 +990,7 @@ where
                 &mut scratch_norm.borrow(),
             );
         }
-        self.glwe_copy(res, &tmp);
+        self.glwe_copy(res, &tmp, &mut scratch_norm);
     }
 }
 

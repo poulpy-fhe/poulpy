@@ -492,7 +492,7 @@ pub fn ggsw_from_gglwe_default<BE, M, R, A>(
     for row in 0..res_backend.dnum().into() {
         let mut res_at = res_backend.at_view_mut(row, 0);
         let a_at = a_backend.at_view(row, 0);
-        module.glwe_copy_default(&mut res_at, &a_at);
+        module.glwe_copy_default(&mut res_at, &a_at, scratch);
     }
 
     module.ggsw_expand_row_default(&mut res_backend, tsk, scratch)

@@ -186,7 +186,7 @@ where
             } else {
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
-                    eval_mod_copy_input(module, &mut input, ct, &mut nested);
+                    module.glwe_copy(&mut input, ct, &mut nested);
                     if let Some(offset) = params.f_mod_input_offset.as_ref() {
                         module.ckks_add_pt_const_assign(&mut input, 0, offset, 0, &mut nested)?;
                     }
@@ -223,7 +223,7 @@ where
             } else {
                 scratch.scope(|scratch_local| {
                     let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
-                    eval_mod_copy_input(module, &mut input, ct, &mut nested);
+                    module.glwe_copy(&mut input, ct, &mut nested);
                     module.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, &mut nested)
                 })?;
             }
@@ -262,25 +262,11 @@ fn eval_mod_input<BE, C>(
 ) -> CKKSCiphertextOwned<BE>
 where
     BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE> + GLWENormalize<BE>,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let mut input = module.ckks_ciphertext_alloc(layout.base2k, layout.k);
-    eval_mod_copy_input(module, &mut input, ct, scratch);
+    module.glwe_copy(&mut input, ct, scratch);
     input.set_meta(meta);
     input
-}
-
-fn eval_mod_copy_input<BE, R, C>(module: &Module<BE>, input: &mut R, ct: &C, scratch: &mut ScratchArena<'_, BE>)
-where
-    BE: Backend,
-    Module<BE>: GLWECopy<BE> + GLWENormalize<BE>,
-    R: GLWEToBackendMut<BE> + CKKSCtBounds,
-    C: GLWEToBackendRef<BE> + CKKSCtBounds,
-{
-    if input.k() < ct.k() {
-        module.glwe_normalize(input, ct, scratch);
-    } else {
-        module.glwe_copy(input, ct);
-    }
 }

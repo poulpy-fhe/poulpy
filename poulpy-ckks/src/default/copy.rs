@@ -28,7 +28,7 @@ pub trait CKKSCopyDefault<BE: Backend> {
             // so propagate `src`'s width explicitly. Stamped before the write,
             // like every unary op, so the label matches the data.
             dst.set_log_budget(src.log_budget());
-            self.glwe_copy(dst, src);
+            self.glwe_copy(dst, src, scratch);
         } else {
             crate::ckks_shift_stamp_unary(self, "copy", dst, src, 0, 0, 0, scratch)?;
         }

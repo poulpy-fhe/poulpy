@@ -121,12 +121,15 @@ impl_operations_delegate!(
     GLWECopy<BE>,
     GLWECopyImpl,
     GLWECopyDefault<BE>,
-    fn glwe_copy<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
+        BE::glwe_copy_tmp_bytes(self, res, a)
+    },
+    fn glwe_copy<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        BE::glwe_copy(self, res, a)
+        BE::glwe_copy(self, res, a, scratch)
     }
 );
 

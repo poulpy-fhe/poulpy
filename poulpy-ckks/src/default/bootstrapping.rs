@@ -244,7 +244,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
 
         // MSB-align `src` into the wider `dst`: the value occupies the top
         // `k_small` bits and the freshly-introduced low-order limbs are zero.
-        self.glwe_copy(dst, src);
+        self.glwe_copy(dst, src, scratch);
 
         // Shift the digits down to their natural integer magnitude. This is the
         // modulus raise: the raised-from modulus `q = 2^k_small` becomes an
