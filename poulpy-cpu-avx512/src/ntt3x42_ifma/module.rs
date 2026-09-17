@@ -54,7 +54,6 @@ impl NTT3x42IfmaHandle {
 }
 
 impl Backend for NTT3x42Ifma {
-    const DFT_IS_EXACT: bool = true;
     const MIN_DEGREE: usize = 16;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;

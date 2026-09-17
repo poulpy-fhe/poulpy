@@ -44,8 +44,6 @@ pub struct NTT4x30AvxHandle {
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Avx {}
 
 impl Backend for NTT4x30Avx {
-    const DFT_IS_EXACT: bool = true;
-
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = CrtWord<Primes30, u32>;
     type ZnxWord = i64;
