@@ -126,11 +126,10 @@ where
 /// accumulates over the same `limb_offset..limb_offset + res.size()` window
 /// of `b` that `vmp_apply_dft_to_dft` itself reads.
 ///
-/// The `vec_znx_dft_zero` loop over the accumulator is load-bearing, not
-/// hygiene: `vmp_apply_dft_to_dft` writes only the limbs the product reaches
-/// and may leave every limb past `min(b.size(), res.size() + limb_offset)`
-/// untouched, so an unzeroed accumulator would fold scratch garbage into
-/// `res` there.
+/// The `vec_znx_dft_zero` loop over the accumulator is defensive:
+/// `vmp_apply_dft_to_dft` zeroes the limbs past its bound by contract, and
+/// the loop keeps the sum correct on a kernel that only writes the limbs the
+/// product reaches.
 #[doc(hidden)]
 pub fn vmp_apply_dft_to_dft_add_derived<BE>(
     module: &Module<BE>,
@@ -660,6 +659,7 @@ pub fn cnv_prepare_self_derived<BE>(
 ) where
     BE: HalConvolutionImpl,
 {
+    assert_eq!(right.size(), left.size());
     BE::cnv_prepare_left(module, left, a, scratch);
     BE::cnv_prepare_right(module, right, a, scratch);
 }

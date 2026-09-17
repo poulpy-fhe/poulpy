@@ -13,6 +13,7 @@ use crate::layouts::{
 
 pub mod convolution;
 pub mod derived;
+pub mod reim;
 pub mod serialization;
 pub mod sparse;
 pub mod svp;

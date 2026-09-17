@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-/// Allocates a new [crate::layouts::ScratchOwned] of `size` aligned bytes.
+/// Allocates a [`ScratchOwned`](crate::layouts::ScratchOwned).
 ///
 /// ```text
 /// op         ScratchOwned::<BE>::alloc(size)
@@ -24,6 +24,7 @@ use crate::{
 /// test       none
 /// ```
 pub trait ScratchOwnedAlloc<B: Backend> {
+    /// Returns an owned buffer of at least `size` bytes at the backend's alignment.
     fn alloc(size: usize) -> Self;
 }
 
@@ -38,10 +39,11 @@ pub trait ScratchOwnedAlloc<B: Backend> {
 /// test       none
 /// ```
 pub trait ScratchOwnedBorrow<B: Backend> {
+    /// Returns a [`ScratchArena`] over the whole owned buffer.
     fn borrow(&mut self) -> ScratchArena<'_, B>;
 }
 
-/// Returns how many bytes left can be taken from the scratch.
+/// Queries how many bytes remain in a [`ScratchArena`].
 ///
 /// ```text
 /// op         available()
@@ -52,13 +54,11 @@ pub trait ScratchOwnedBorrow<B: Backend> {
 /// test       none
 /// ```
 pub trait ScratchAvailable {
+    /// Returns the number of bytes still carvable from the arena.
     fn available(&self) -> usize;
 }
 
-/// Host-visible borrowed scratch region for a backend.
-///
-/// Device backends should not implement this unless their borrowed mutable
-/// scratch region is directly accessible as a host byte slice.
+/// A borrowed scratch region the host can address as a byte slice.
 ///
 /// ```text
 /// op         into_bytes()
@@ -69,6 +69,7 @@ pub trait ScratchAvailable {
 /// test       none
 /// ```
 pub trait HostBufMut<'a>: Sized {
+    /// Returns the region as a host byte slice.
     fn into_bytes(self) -> &'a mut [u8];
 }
 
@@ -79,14 +80,10 @@ impl<'a> HostBufMut<'a> for &'a mut [u8] {
     }
 }
 
-/// Backend-native arena allocation of typed HAL layouts.
-///
-/// This is the additive, backend-owned scratch path introduced for
-/// incremental device-backend integration. It consumes a [`ScratchArena`]
-/// by value and returns the carved layout together with the remaining arena.
+/// Arena allocation of typed layouts out of a [`ScratchArena`].
 ///
 /// ```text
-/// op         take_*_scratch(dimensions)
+/// op         take_*_scratch(dimensions) / take_vec_znx_big_scratch_n(n, dimensions)
 /// class      support
 /// mutation   none
 /// domain     the arena holds at least the matching `bytes_of_*`
@@ -94,7 +91,7 @@ impl<'a> HostBufMut<'a> for &'a mut [u8] {
 /// test       none
 /// ```
 pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
-    /// Takes a [`CnvPVecL`] from the scratch arena.
+    /// Returns a [`CnvPVecL`] of `cols` columns and `size` limbs under `hint`, beside the remaining arena.
     fn take_cnv_pvec_left_scratch<M>(
         self,
         module: &M,
@@ -106,7 +103,7 @@ pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
         B: 'a,
         M: ModuleN + CnvPVecBytesOf;
 
-    /// Takes a [`CnvPVecR`] from the scratch arena.
+    /// Returns a [`CnvPVecR`] of `cols` columns and `size` limbs under `hint`, beside the remaining arena.
     fn take_cnv_pvec_right_scratch<M>(
         self,
         module: &M,
@@ -118,39 +115,40 @@ pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
         B: 'a,
         M: ModuleN + CnvPVecBytesOf;
 
-    /// Takes a [`ScalarZnx`] from the scratch arena.
+    /// Returns a degree-`n` [`ScalarZnx`] of `cols` columns, beside the remaining arena.
     fn take_scalar_znx_scratch(self, n: usize, cols: usize) -> (ScalarZnxViewMut<'a, B>, Self)
     where
         B: 'a;
 
-    /// Takes a [`SvpPPol`] from the scratch arena.
+    /// Returns an [`SvpPPol`] of `cols` columns under `hint`, beside the remaining arena.
     fn take_svp_ppol_scratch<M>(self, module: &M, cols: usize, hint: PrepareHint) -> (SvpPPolViewMut<'a, B>, Self)
     where
         B: 'a,
         M: SvpPPolBytesOf + ModuleN;
 
-    /// Takes a [`VecZnx`] from the scratch arena.
+    /// Returns a degree-`n` [`VecZnx`] of `cols` columns and `size` limbs, beside the remaining arena.
     fn take_vec_znx_scratch(self, n: usize, cols: usize, size: usize) -> (VecZnxViewMut<'a, B>, Self)
     where
         B: 'a;
 
-    /// Takes a [`VecZnxBig`] from the scratch arena.
+    /// Returns a [`VecZnxBig`] of `cols` columns and `size` limbs, beside the remaining arena.
     fn take_vec_znx_big_scratch<M>(self, module: &M, cols: usize, size: usize) -> (VecZnxBigViewMut<'a, B>, Self)
     where
         B: 'a,
         M: VecZnxBigBytesOf + ModuleN;
 
+    /// Returns a degree-`n` [`VecZnxBig`] of `cols` columns and `size` limbs, beside the remaining arena.
     fn take_vec_znx_big_scratch_n(self, n: usize, cols: usize, size: usize) -> (VecZnxBigViewMut<'a, B>, Self)
     where
         B: 'a;
 
-    /// Takes a [`VecZnxDft`] from the scratch arena.
+    /// Returns a [`VecZnxDft`] of `cols` columns and `size` limbs, beside the remaining arena.
     fn take_vec_znx_dft_scratch<M>(self, module: &M, cols: usize, size: usize) -> (VecZnxDftViewMut<'a, B>, Self)
     where
         B: 'a,
         M: VecZnxDftBytesOf + ModuleN;
 
-    /// Takes `len` consecutive [`VecZnxDft`] objects from the scratch arena.
+    /// Returns `len` consecutive [`VecZnxDft`] of `cols` columns and `size` limbs, beside the remaining arena.
     fn take_vec_znx_dft_slice_scratch<M>(
         self,
         module: &M,
@@ -172,7 +170,7 @@ pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
         (slice, scratch)
     }
 
-    /// Takes `len` consecutive [`VecZnx`] objects from the scratch arena.
+    /// Returns `len` consecutive degree-`n` [`VecZnx`] of `cols` columns and `size` limbs, beside the remaining arena.
     fn take_vec_znx_slice_scratch(self, len: usize, n: usize, cols: usize, size: usize) -> (Vec<VecZnxViewMut<'a, B>>, Self)
     where
         B: 'a,
@@ -187,7 +185,7 @@ pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
         (slice, scratch)
     }
 
-    /// Takes a [`VmpPMat`] from the scratch arena.
+    /// Returns a [`VmpPMat`] of the given dimensions under `hint`, beside the remaining arena.
     fn take_vmp_pmat_scratch<M>(
         self,
         module: &M,
@@ -201,7 +199,7 @@ pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
         B: 'a,
         M: VmpPMatBytesOf + ModuleN;
 
-    /// Takes a [`MatZnx`] from the scratch arena.
+    /// Returns a degree-`n` [`MatZnx`] of the given dimensions, beside the remaining arena.
     fn take_mat_znx_scratch(
         self,
         n: usize,

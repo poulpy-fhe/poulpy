@@ -290,6 +290,10 @@ pub(crate) fn vmp_apply_dft_to_dft_neon<E: TaskExecutor>(
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
     let n = res.n();
     let nrows = pmat.cols_in() * pmat.rows();
     let ncols = pmat.cols_out() * pmat.size();
@@ -320,6 +324,10 @@ pub(crate) fn vmp_apply_dft_to_dft_add_neon<E: TaskExecutor>(
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
+    assert_eq!(res.n(), pmat.n());
+    assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
     let n = res.n();
     let nrows = pmat.cols_in() * pmat.rows();
     let ncols = pmat.cols_out() * pmat.size();

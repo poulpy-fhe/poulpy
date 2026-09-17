@@ -887,3 +887,68 @@ pub fn test_vmp_zero<BR: crate::test_suite::TestBackend, BT: crate::test_suite::
     assert_eq!(download_vec_znx::<BR>(&res_ref_backend), want);
     assert_eq!(download_vec_znx::<BT>(&res_test_backend), want);
 }
+
+/// `vmp_apply_dft_to_dft` and `vmp_apply_dft_to_dft_add` panic when `a` or
+/// `res` has a column count other than the matrix's.
+pub fn test_vmp_apply_dft_to_dft_shape_rejected<BE: crate::test_suite::TestBackend>(_params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: VmpPMatAlloc<BE>
+        + VmpZero<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxDftZero<BE>
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftAdd<BE>
+        + VmpApplyDftToDftTmpBytes
+        + VmpApplyDftToDftAddTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let (rows, cols, size) = (2usize, 2usize, 2usize);
+    let mut pmat: VmpPMatOwned<BE> = module.vmp_pmat_alloc(rows, cols, cols, size, PrepareHint::Reuse);
+    module.vmp_zero(&mut pmat.to_backend_mut());
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .vmp_apply_dft_to_dft_tmp_bytes(size, size, rows, cols, cols, size)
+            .max(module.vmp_apply_dft_to_dft_add_tmp_bytes(size, size, rows, cols, cols, size)),
+    );
+
+    for (a_cols, res_cols) in [(cols - 1, cols), (cols, cols - 1)] {
+        let mut a: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(a_cols, size);
+        let mut res: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(res_cols, size);
+        for col in 0..a_cols {
+            module.vec_znx_dft_zero(&mut a.to_backend_mut(), col);
+        }
+        for col in 0..res_cols {
+            module.vec_znx_dft_zero(&mut res.to_backend_mut(), col);
+        }
+
+        let apply_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.vmp_apply_dft_to_dft(
+                &mut res.to_backend_mut(),
+                &a.to_backend_ref(),
+                &pmat.to_backend_ref(),
+                0,
+                &mut scratch.arena(),
+            );
+        }))
+        .is_err();
+        assert!(
+            apply_panicked,
+            "vmp_apply_dft_to_dft accepted a.cols() = {a_cols}, res.cols() = {res_cols} against a {cols}-column matrix instead of panicking"
+        );
+
+        let add_panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.vmp_apply_dft_to_dft_add(
+                &mut res.to_backend_mut(),
+                &a.to_backend_ref(),
+                &pmat.to_backend_ref(),
+                0,
+                &mut scratch.arena(),
+            );
+        }))
+        .is_err();
+        assert!(
+            add_panicked,
+            "vmp_apply_dft_to_dft_add accepted a.cols() = {a_cols}, res.cols() = {res_cols} against a {cols}-column matrix instead of panicking"
+        );
+    }
+}
