@@ -784,6 +784,11 @@ pub fn ntt4x30_vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskEx
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
     let n = res.n();
     let cols = res.cols();
     let size = res.size().min(a.size());
@@ -792,7 +797,7 @@ pub fn ntt4x30_vec_znx_dft_automorphism_add<BE, E: poulpy_hal::execution::TaskEx
         let a_limb = limb_u64::<_, BE>(a, a_col, limb);
         let start = 4 * n * (limb * cols + res_col);
         let res_limb = unsafe { std::slice::from_raw_parts_mut(res_ptr.get().add(start), 4 * n) };
-        for (i, &source) in plan.perm.iter().enumerate().take(n) {
+        for (i, &source) in plan.perm.iter().enumerate() {
             let source = source as usize;
             let value = &a_limb[4 * source..4 * source + 4];
             BE::ntt_add_assign(&mut res_limb[4 * i..4 * i + 4], value);

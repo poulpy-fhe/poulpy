@@ -463,6 +463,7 @@ fn test_convolution_add_ntt3x42_ifma() {
 #[test]
 fn test_convolution_sum_ntt3x42_ifma() {
     let module = Module::<NTT3x42Ifma>::new(1 << 8);
+    test_convolution_sum(&module, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::MIN_DEGREE, 12);
     test_convolution_sum(&module, module.n(), 12);
 }
 
@@ -470,6 +471,11 @@ fn test_convolution_sum_ntt3x42_ifma() {
 #[test]
 fn test_convolution_sum_ntt3x42_ifma_rayon() {
     let module = Module::<crate::NTT3x42IfmaRayon>::new(1 << 8);
+    test_convolution_sum(
+        &module,
+        <crate::NTT3x42IfmaRayon as poulpy_hal::layouts::Backend>::MIN_DEGREE,
+        12,
+    );
     test_convolution_sum(&module, module.n(), 12);
 }
 

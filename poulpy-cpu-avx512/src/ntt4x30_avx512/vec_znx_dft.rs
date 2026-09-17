@@ -489,6 +489,11 @@ pub(crate) fn vec_znx_dft_automorphism(
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
     a_col: usize,
 ) {
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
     let n = res.n();
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());
@@ -515,6 +520,11 @@ pub(crate) fn vec_znx_dft_automorphism_add<E: TaskExecutor>(
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
     a_col: usize,
 ) {
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
     let n = res.n();
     let (rc, ac) = (res.cols(), a.cols());
     let size = res.size().min(a.size());

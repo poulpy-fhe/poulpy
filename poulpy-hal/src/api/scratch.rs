@@ -83,7 +83,7 @@ impl<'a> HostBufMut<'a> for &'a mut [u8] {
 /// op         take_*_scratch(n, dimensions)
 /// class      support
 /// mutation   none
-/// domain     n: a power of two, MIN_DEGREE <= n <= the module's degree; the arena holds at least the matching bytes_of_*
+/// domain     n: the degree of the carved layout, a power of two at most the module's degree; a take fed to a kernel obeys that kernel's degree floor; the arena holds at least the matching bytes_of_*
 /// ensures    consumes the arena and returns the carved layout, tagged with the requested dimensions, beside the remaining arena; the carved bytes are unspecified, so a caller that reads before writing zeroes first
 /// test       none
 /// ```

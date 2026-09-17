@@ -240,10 +240,16 @@ cross_backend_test_suite! {
 #[test]
 fn test_convolution_direct() {
     let module = Module::<NTT4x30Avx512Rayon>::new(1 << 8);
+    const FLOOR: usize = <NTT4x30Avx512Rayon as poulpy_hal::layouts::Backend>::MIN_DEGREE;
+    test_convolution(&module, FLOOR, 50);
     test_convolution(&module, module.n(), 50);
+    test_convolution_by_const(&module, FLOOR, 50);
     test_convolution_by_const(&module, module.n(), 50);
+    test_convolution_by_const_add(&module, FLOOR, 50);
     test_convolution_by_const_add(&module, module.n(), 50);
+    test_convolution_pairwise(&module, FLOOR, 50);
     test_convolution_pairwise(&module, module.n(), 50);
+    test_convolution_add(&module, FLOOR, 50);
     test_convolution_add(&module, module.n(), 50);
 }
 

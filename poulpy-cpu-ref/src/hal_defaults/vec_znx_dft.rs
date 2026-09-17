@@ -250,7 +250,7 @@ where
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         plan: &Fft64AutomorphismPlan,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -261,11 +261,12 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
+        check_degree::<Self>(module.n(), res.n());
         fft64_vec_znx_dft_automorphism::<Self>(plan, res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_automorphism_add_with_plan_default(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         plan: &Fft64AutomorphismPlan,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -276,6 +277,7 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
+        check_degree::<Self>(module.n(), res.n());
         fft64_vec_znx_dft_automorphism_add::<Self, poulpy_hal::execution::SerialTaskExecutor>(plan, res, res_col, a, a_col);
     }
 }
@@ -464,7 +466,7 @@ where
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         plan: &NttAutomorphismPlan,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -475,11 +477,12 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
+        check_degree::<Self>(module.n(), res.n());
         ntt4x30_default_vec_znx_dft_automorphism::<Self>(plan, res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_automorphism_add_with_plan_default(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         plan: &NttAutomorphismPlan,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -490,6 +493,7 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
+        check_degree::<Self>(module.n(), res.n());
         ntt4x30_default_vec_znx_dft_automorphism_add::<Self, poulpy_hal::execution::SerialTaskExecutor>(
             plan, res, res_col, a, a_col,
         );

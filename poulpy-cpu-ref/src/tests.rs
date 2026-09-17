@@ -354,14 +354,16 @@ backend_test_suite! {
 poulpy_core::core_backend_test_suite!(
     mod fft64,
     backend = crate::FFT64Ref,
-    params = TestParams { size: 1<<8, base2k: 17, n: 8 },
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 17, n: 1<<8 },
 );
 
 #[cfg(feature = "enable-core")]
 poulpy_core::core_backend_test_suite!(
     mod ntt4x30,
     backend = crate::NTT4x30Ref,
-    params = TestParams { size: 1<<8, base2k: 52, n: 8 },
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 52, n: 1<<8 },
 );
 
 #[test]
@@ -450,7 +452,8 @@ poulpy_core::core_parity_test_suite! {
     mod core_parity_cross_family,
     backend_ref = crate::NTT4x30Ref,
     backend_test = crate::FFT64Ref,
-    params = TestParams { size: 1<<8, base2k: 12, n: 8 },
+    // computes at the module degree, no sweep
+    params = TestParams { size: 1<<8, base2k: 12, n: 1<<8 },
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,

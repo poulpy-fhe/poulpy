@@ -203,9 +203,14 @@ backend_test_suite! {
 #[test]
 fn test_convolution_direct() {
     let module = Module::<FFT64Neon>::new(1 << 8);
+    const FLOOR: usize = <FFT64Neon as poulpy_hal::layouts::Backend>::MIN_DEGREE;
+    test_convolution(&module, FLOOR, 12);
     test_convolution(&module, module.n(), 12);
+    test_convolution_by_const(&module, FLOOR, 12);
     test_convolution_by_const(&module, module.n(), 12);
+    test_convolution_by_const_add(&module, FLOOR, 12);
     test_convolution_by_const_add(&module, module.n(), 12);
+    test_convolution_pairwise(&module, FLOOR, 12);
     test_convolution_pairwise(&module, module.n(), 12);
 }
 
