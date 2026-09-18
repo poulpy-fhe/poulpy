@@ -39,7 +39,7 @@
 //! slices, then encoded directly by the destination module into its own
 //! plaintext storage. The result is evaluated through the
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps) trait (see
-//! [`crate::default::eval_mod`] for the evaluation itself).
+//! [`crate::reference::eval_mod`] for the evaluation itself).
 
 use anyhow::{Result, anyhow, ensure};
 use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth, bsgs_op_counts};

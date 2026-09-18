@@ -26,7 +26,7 @@ pub fn gglwe_product_digit_output_size(res_size: usize, key_size: usize, dsize: 
 /// Backend implementation of the interleaved-digit GGLWE product.
 ///
 /// For `dsize >= 2`, it must reproduce
-/// [`gglwe_product_digits_strided_default`](crate::default::keyswitching::glwe::gglwe_product_digits_strided_default)
+/// [`gglwe_product_digits_strided_default`](crate::reference::keyswitching::glwe::gglwe_product_digits_strided_default)
 /// bit for bit. `product_limbs` is the caller-derived spill width for the full
 /// coefficient-product accumulation.
 ///
@@ -74,7 +74,7 @@ macro_rules! impl_gglwe_product_digits_strided_default {
                 pmat_cols_out: usize,
                 pmat_size: usize,
             ) -> usize {
-                $crate::default::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
+                $crate::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
                     module,
                     res_size,
                     a_cols,
@@ -96,7 +96,7 @@ macro_rules! impl_gglwe_product_digits_strided_default {
                 pmat: &::poulpy_hal::layouts::VmpPMatBackendRef<'_, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) {
-                $crate::default::keyswitching::glwe::gglwe_product_digits_strided_default(
+                $crate::reference::keyswitching::glwe::gglwe_product_digits_strided_default(
                     module,
                     res,
                     a,
@@ -537,7 +537,7 @@ macro_rules! impl_glwe_keyswitch_defaults_full {
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::keyswitching::glwe::glwe_keyswitch_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::keyswitching::glwe::glwe_keyswitch_tmp_bytes_default::<$be, _, _, _, _>(
                     self, res_infos, a_infos, key_infos,
                 )
             }
@@ -552,7 +552,7 @@ macro_rules! impl_glwe_keyswitch_defaults_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::keyswitching::glwe::glwe_keyswitch_default::<$be, _, _, _>(self, res, a, key, scratch)
+                $crate::reference::keyswitching::glwe::glwe_keyswitch_default::<$be, _, _, _>(self, res, a, key, scratch)
             }
 
             fn glwe_keyswitch_assign_default<R>(
@@ -563,7 +563,7 @@ macro_rules! impl_glwe_keyswitch_defaults_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::keyswitching::glwe::glwe_keyswitch_assign_default::<$be, _, _>(self, res, key, scratch)
+                $crate::reference::keyswitching::glwe::glwe_keyswitch_assign_default::<$be, _, _>(self, res, key, scratch)
             }
         }
     };
@@ -581,7 +581,7 @@ macro_rules! impl_gglwe_keyswitch_defaults_full {
                 A: $crate::layouts::GGLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::keyswitching::gglwe::gglwe_keyswitch_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::keyswitching::gglwe::gglwe_keyswitch_tmp_bytes_default::<$be, _, _, _, _>(
                     self, res_infos, a_infos, key_infos,
                 )
             }
@@ -596,7 +596,7 @@ macro_rules! impl_gglwe_keyswitch_defaults_full {
                 R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GGLWEInfos,
                 A: $crate::layouts::GGLWEToBackendRef<$be> + $crate::layouts::GGLWEInfos,
             {
-                $crate::default::keyswitching::gglwe::gglwe_keyswitch_default::<$be, _, _, _>(self, res, a, b, scratch)
+                $crate::reference::keyswitching::gglwe::gglwe_keyswitch_default::<$be, _, _, _>(self, res, a, b, scratch)
             }
 
             fn gglwe_keyswitch_assign_default<R>(
@@ -607,7 +607,7 @@ macro_rules! impl_gglwe_keyswitch_defaults_full {
             ) where
                 R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GGLWEInfos,
             {
-                $crate::default::keyswitching::gglwe::gglwe_keyswitch_assign_default::<$be, _, _>(self, res, a, scratch)
+                $crate::reference::keyswitching::gglwe::gglwe_keyswitch_assign_default::<$be, _, _>(self, res, a, scratch)
             }
         }
     };
@@ -632,7 +632,7 @@ macro_rules! impl_ggsw_keyswitch_defaults_full {
                 K: $crate::layouts::GGLWEInfos,
                 T: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::keyswitching::ggsw::ggsw_keyswitch_tmp_bytes_default::<$be, _, _, _, _, _>(
+                $crate::reference::keyswitching::ggsw::ggsw_keyswitch_tmp_bytes_default::<$be, _, _, _, _, _>(
                     self, res_infos, a_infos, key_infos, tsk_infos,
                 )
             }
@@ -648,7 +648,7 @@ macro_rules! impl_ggsw_keyswitch_defaults_full {
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
                 A: $crate::layouts::GGSWToBackendRef<$be> + $crate::layouts::GGSWInfos,
             {
-                $crate::default::keyswitching::ggsw::ggsw_keyswitch_default::<$be, _, _, _>(self, res, a, key, tsk, scratch)
+                $crate::reference::keyswitching::ggsw::ggsw_keyswitch_default::<$be, _, _, _>(self, res, a, key, tsk, scratch)
             }
 
             fn ggsw_keyswitch_assign_default<R>(
@@ -660,7 +660,7 @@ macro_rules! impl_ggsw_keyswitch_defaults_full {
             ) where
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
             {
-                $crate::default::keyswitching::ggsw::ggsw_keyswitch_assign_default::<$be, _, _>(self, res, key, tsk, scratch)
+                $crate::reference::keyswitching::ggsw::ggsw_keyswitch_assign_default::<$be, _, _>(self, res, key, tsk, scratch)
             }
         }
     };
@@ -678,7 +678,7 @@ macro_rules! impl_lwe_keyswitch_defaults_full {
                 A: $crate::layouts::LWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::keyswitching::lwe::lwe_keyswitch_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::keyswitching::lwe::lwe_keyswitch_tmp_bytes_default::<$be, _, _, _, _>(
                     self, res_infos, a_infos, key_infos,
                 )
             }
@@ -693,7 +693,7 @@ macro_rules! impl_lwe_keyswitch_defaults_full {
                 R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
                 A: $crate::layouts::LWEToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
-                $crate::default::keyswitching::lwe::lwe_keyswitch_default::<$be, _, _, _>(self, res, a, ksk, scratch)
+                $crate::reference::keyswitching::lwe::lwe_keyswitch_default::<$be, _, _, _>(self, res, a, ksk, scratch)
             }
         }
     };

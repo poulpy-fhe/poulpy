@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::mul::CKKSMulDefault;
+use crate::reference::mul::CKKSMulDefault;
 use poulpy_core::layouts::GetTensorKey;
 use poulpy_core::layouts::IntPolyInfos;
 
@@ -153,7 +153,7 @@ pub unsafe trait CKKSMulImpl: Backend {
 unsafe impl<BE: Backend> CKKSMulImpl for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl,
-    Module<BE>: crate::default::mul::CKKSMulDefault<BE>
+    Module<BE>: crate::reference::mul::CKKSMulDefault<BE>
         + GLWEAdd<BE>
         + GLWECopy<BE>
         + GLWEMulConst<BE>
@@ -345,7 +345,7 @@ where
 #[macro_export]
 macro_rules! impl_ckks_mul_defaults {
     ($be:ty) => {
-        impl $crate::default::mul::CKKSMulDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::mul::CKKSMulDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
 pub use crate::impl_ckks_mul_defaults;

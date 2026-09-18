@@ -15,7 +15,7 @@ use crate::{
         CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps,
         CKKSEvalModOps, CKKSImagOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
-    default::bootstrapping::BootstrappingDefault,
+    reference::bootstrapping::BootstrappingDefault,
     layouts::EvalModPlan,
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSModuleAlloc,

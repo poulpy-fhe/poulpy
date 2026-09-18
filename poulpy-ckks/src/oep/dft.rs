@@ -19,7 +19,7 @@ use std::borrow::Borrow;
 
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    default::linear_transformation::DiagonalProd,
+    reference::linear_transformation::DiagonalProd,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
 };
 use poulpy_hal::{
@@ -34,7 +34,7 @@ use crate::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSImagOps, CKKSLinearTransformationOps,
         CKKSRotateOps, CKKSSubOps, LtDiagonalScale,
     },
-    default::dft::matrices::DftScalar,
+    reference::dft::matrices::DftScalar,
     layouts::{
         CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard,
     },
@@ -197,7 +197,7 @@ pub trait DFTMatrixDefault<BE: Backend, F: CKKSEncodingScalar> {
         BE: CKKSEncodingImpl<F>,
         Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     {
-        crate::default::dft::ckks_new_dft_matrix::<Dir, Fmt, BE, F>(self.borrow(), base2k, literal, scratch)
+        crate::reference::dft::ckks_new_dft_matrix::<Dir, Fmt, BE, F>(self.borrow(), base2k, literal, scratch)
     }
 }
 
@@ -228,7 +228,7 @@ where
 /// Override surface for the homomorphic-DFT family.
 ///
 /// Every method has a default body forwarding to the reference algorithms in
-/// [`crate::default::dft`] (with per-method bounds — the Default layer may
+/// [`crate::reference::dft`] (with per-method bounds — the Default layer may
 /// carry bounds; the bound-free override seam is [`DFTImpl`]). A backend opts
 /// in with the one-line [`impl_ckks_dft_defaults`] marker; to substitute a
 /// fused kernel for one format, override just that method and inherit the rest.
@@ -244,7 +244,7 @@ pub trait DFTDefault<BE: Backend> {
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     {
-        crate::default::dft::ckks_prepare_dft_matrix::<Dir, Fmt, BE, P>(self.borrow(), dft, scratch)
+        crate::reference::dft::ckks_prepare_dft_matrix::<Dir, Fmt, BE, P>(self.borrow(), dft, scratch)
     }
 
     fn ckks_dft_evaluate_assign_default<Dir, Fmt, P, Dst, H>(
@@ -261,7 +261,7 @@ pub trait DFTDefault<BE: Backend> {
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     {
-        crate::default::dft::ckks_dft_evaluate_assign(self.borrow(), ct, dft, keys, scratch)
+        crate::reference::dft::ckks_dft_evaluate_assign(self.borrow(), ct, dft, keys, scratch)
     }
 
     fn ckks_coeffs_to_slots_default<P, Dst, H>(
@@ -278,7 +278,7 @@ pub trait DFTDefault<BE: Backend> {
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     {
-        crate::default::dft::ckks_coeffs_to_slots_assign(self.borrow(), ct, dft, keys, scratch)
+        crate::reference::dft::ckks_coeffs_to_slots_assign(self.borrow(), ct, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_default<P, Dst, H>(
@@ -295,7 +295,7 @@ pub trait DFTDefault<BE: Backend> {
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     {
-        crate::default::dft::ckks_slots_to_coeffs_assign(self.borrow(), ct, dft, keys, scratch)
+        crate::reference::dft::ckks_slots_to_coeffs_assign(self.borrow(), ct, dft, keys, scratch)
     }
 
     fn ckks_coeffs_to_slots_split_default<P, Dst, Src, H>(
@@ -322,7 +322,7 @@ pub trait DFTDefault<BE: Backend> {
             + CKKSSubOps<BE>
             + CKKSImagOps<BE>,
     {
-        crate::default::dft::ckks_coeffs_to_slots_split(self.borrow(), ct_real, ct_imag, ct_in, dft, keys, scratch)
+        crate::reference::dft::ckks_coeffs_to_slots_split(self.borrow(), ct_real, ct_imag, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_split_default<P, Dst, Src, H>(
@@ -342,7 +342,7 @@ pub trait DFTDefault<BE: Backend> {
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     {
-        crate::default::dft::ckks_slots_to_coeffs_split(self.borrow(), op_out, ct_real, ct_imag, dft, keys, scratch)
+        crate::reference::dft::ckks_slots_to_coeffs_split(self.borrow(), op_out, ct_real, ct_imag, dft, keys, scratch)
     }
 
     fn ckks_coeffs_to_slots_repack_default<P, Dst, Src, H>(
@@ -369,7 +369,7 @@ pub trait DFTDefault<BE: Backend> {
             + CKKSImagOps<BE>
             + CKKSRotateOps<BE>,
     {
-        crate::default::dft::ckks_coeffs_to_slots_repack(self.borrow(), ct_out, ct_in, dft, keys, scratch)
+        crate::reference::dft::ckks_coeffs_to_slots_repack(self.borrow(), ct_out, ct_in, dft, keys, scratch)
     }
 
     fn ckks_slots_to_coeffs_repack_default<P, Dst, Src, H>(
@@ -388,7 +388,7 @@ pub trait DFTDefault<BE: Backend> {
         Self: Borrow<Module<BE>>,
         Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE>,
     {
-        crate::default::dft::ckks_slots_to_coeffs_repack(self.borrow(), op_out, ct_in, dft, keys, scratch)
+        crate::reference::dft::ckks_slots_to_coeffs_repack(self.borrow(), op_out, ct_in, dft, keys, scratch)
     }
 }
 
@@ -535,7 +535,7 @@ where
 
 /// Wires a backend into the reference homomorphic-DFT chain: implements the
 /// [`DFTDefault`] and [`DFTMatrixDefault`] marker impls, inheriting every
-/// default-bodied method (which forward to [`crate::default::dft`]).
+/// default-bodied method (which forward to [`crate::reference::dft`]).
 ///
 /// For partial override (a fused device kernel for one format, defaults for
 /// the rest), write the impl block by hand, override just the methods you

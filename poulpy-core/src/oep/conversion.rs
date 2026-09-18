@@ -333,7 +333,7 @@ macro_rules! impl_conversion_defaults_full {
                 R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::conversion::lwe_sample_extract_default::<$be, _, _, _>(self, res, a)
+                $crate::reference::conversion::lwe_sample_extract_default::<$be, _, _, _>(self, res, a)
             }
 
             fn glwe_from_lwe_tmp_bytes_default<R, A, K>(&self, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
@@ -342,7 +342,7 @@ macro_rules! impl_conversion_defaults_full {
                 A: $crate::layouts::LWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::conversion::glwe_from_lwe_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::conversion::glwe_from_lwe_tmp_bytes_default::<$be, _, _, _, _>(
                     self, glwe_infos, lwe_infos, key_infos,
                 )
             }
@@ -357,7 +357,7 @@ macro_rules! impl_conversion_defaults_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::LWEToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
-                $crate::default::conversion::glwe_from_lwe_default::<$be, _, _, _>(self, res, lwe, ksk, scratch)
+                $crate::reference::conversion::glwe_from_lwe_default::<$be, _, _, _>(self, res, lwe, ksk, scratch)
             }
 
             fn lwe_from_glwe_tmp_bytes_default<R, A, K>(&self, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
@@ -366,7 +366,7 @@ macro_rules! impl_conversion_defaults_full {
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::conversion::lwe_from_glwe_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::conversion::lwe_from_glwe_tmp_bytes_default::<$be, _, _, _, _>(
                     self, lwe_infos, glwe_infos, key_infos,
                 )
             }
@@ -382,7 +382,7 @@ macro_rules! impl_conversion_defaults_full {
                 R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::conversion::lwe_from_glwe_default::<$be, _, _, _>(self, res, a, a_idx, key, scratch)
+                $crate::reference::conversion::lwe_from_glwe_default::<$be, _, _, _>(self, res, a, a_idx, key, scratch)
             }
 
             fn ggsw_from_gglwe_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
@@ -390,7 +390,7 @@ macro_rules! impl_conversion_defaults_full {
                 R: $crate::layouts::GGSWInfos,
                 A: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::conversion::ggsw_from_gglwe_tmp_bytes_default::<$be, _, _, _>(self, res_infos, tsk_infos)
+                $crate::reference::conversion::ggsw_from_gglwe_tmp_bytes_default::<$be, _, _, _>(self, res_infos, tsk_infos)
             }
 
             fn ggsw_from_gglwe_default<R, A>(
@@ -403,7 +403,7 @@ macro_rules! impl_conversion_defaults_full {
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
                 A: $crate::layouts::GGLWEToBackendRef<$be> + $crate::layouts::GGLWEInfos,
             {
-                $crate::default::conversion::ggsw_from_gglwe_default::<$be, _, _, _>(self, res, a, tsk, scratch)
+                $crate::reference::conversion::ggsw_from_gglwe_default::<$be, _, _, _>(self, res, a, tsk, scratch)
             }
 
             fn glwe_expand_lwe_tmp_bytes_default<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
@@ -411,7 +411,7 @@ macro_rules! impl_conversion_defaults_full {
                 R: $crate::layouts::LWEInfos,
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::default::conversion::glwe_expand_lwe_tmp_bytes_default::<$be, _, _, _>(self, lwe_infos, a_infos)
+                $crate::reference::conversion::glwe_expand_lwe_tmp_bytes_default::<$be, _, _, _>(self, lwe_infos, a_infos)
             }
 
             fn glwe_expand_lwe_default<R, A>(
@@ -423,7 +423,7 @@ macro_rules! impl_conversion_defaults_full {
                 R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::conversion::glwe_expand_lwe_default::<$be, _, _, _>(self, res, a, scratch)
+                $crate::reference::conversion::glwe_expand_lwe_default::<$be, _, _, _>(self, res, a, scratch)
             }
 
             fn glwe_expand_lwe_matrix_tmp_bytes_default<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
@@ -431,7 +431,7 @@ macro_rules! impl_conversion_defaults_full {
                 R: $crate::layouts::LWEMatrixInfos,
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::default::conversion::glwe_expand_lwe_matrix_tmp_bytes_default::<$be, _, _, _>(self, res_infos, a_infos)
+                $crate::reference::conversion::glwe_expand_lwe_matrix_tmp_bytes_default::<$be, _, _, _>(self, res_infos, a_infos)
             }
 
             fn glwe_expand_lwe_matrix_default<R, A>(
@@ -443,7 +443,7 @@ macro_rules! impl_conversion_defaults_full {
                 R: $crate::layouts::LWEMatrixToBackendMut<$be> + $crate::layouts::LWEMatrixInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::conversion::glwe_expand_lwe_matrix_default::<$be, _, _, _>(self, res, a, scratch)
+                $crate::reference::conversion::glwe_expand_lwe_matrix_default::<$be, _, _, _>(self, res, a, scratch)
             }
 
             fn ggsw_expand_rows_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
@@ -451,7 +451,7 @@ macro_rules! impl_conversion_defaults_full {
                 R: $crate::layouts::GGSWInfos,
                 A: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::conversion::ggsw_expand_rows_tmp_bytes_default::<$be, _, _, _>(self, res_infos, tsk_infos)
+                $crate::reference::conversion::ggsw_expand_rows_tmp_bytes_default::<$be, _, _, _>(self, res_infos, tsk_infos)
             }
 
             fn ggsw_expand_row_default<R>(
@@ -462,7 +462,7 @@ macro_rules! impl_conversion_defaults_full {
             ) where
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
             {
-                $crate::default::conversion::ggsw_expand_row_default::<$be, _, _>(self, res, tsk, scratch)
+                $crate::reference::conversion::ggsw_expand_row_default::<$be, _, _>(self, res, tsk, scratch)
             }
         }
     };

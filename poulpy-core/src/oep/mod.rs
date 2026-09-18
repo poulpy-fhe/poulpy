@@ -75,7 +75,7 @@
 //! the plain and assign forms plus the `add`, `sub` and `sub_negate`
 //! compositions. An accelerator that only wants to replace the core map still
 //! writes the other six, forwarding them to
-//! `crate::default::automorphism::glwe`.
+//! `crate::reference::automorphism::glwe`.
 //!
 //! `poulpy-cpu-ref`'s `core_impl` module (feature `enable-core`) is the in-tree
 //! worked example, forwarding every family.

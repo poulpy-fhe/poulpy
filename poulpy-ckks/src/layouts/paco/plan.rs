@@ -36,7 +36,7 @@ use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{LinearTransformationLayout, LinearTransformationStrategy};
 use poulpy_hal::layouts::{galois_element, galois_elements_from_rotations};
 
-use crate::default::paco::{
+use crate::reference::paco::{
     lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors},
     ops::{conj_rotate_galois_element, fold_rotations},
 };

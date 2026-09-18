@@ -26,7 +26,7 @@
 use crate::layouts::CKKSPlaintextOwned;
 use anyhow::{Result, ensure};
 use poulpy_core::{
-    default::linear_transformation::DiagonalProd,
+    reference::linear_transformation::DiagonalProd,
     layouts::{Base2K, GLWEToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};

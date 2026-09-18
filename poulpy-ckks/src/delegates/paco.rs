@@ -14,7 +14,7 @@ use crate::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSPaCoOps, CKKSRotateOps,
         CKKSSubOps, PaCoScalar,
     },
-    default::paco::{
+    reference::paco::{
         ops::PaCoSlotOps,
         parallel::{
             paco_bootstrap_direct_into, paco_bootstrap_into, paco_bootstrap_parallel_direct_into, paco_bootstrap_parallel_into,

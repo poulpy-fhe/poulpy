@@ -82,7 +82,7 @@ where
             .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
             .max(self.ckks_square_tmp_bytes(ct_infos, ct_infos, tsk_infos))
             .max(polynomial_giant_steps_tmp_bytes)
-            .max(crate::default::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(
+            .max(crate::reference::polynomial_evaluation::eval_baby_linear_combination_tmp_bytes(
                 self,
                 ct_infos.max_size(),
                 pt_prec.k().as_usize().div_ceil(ct_infos.base2k().as_usize()).max(1),

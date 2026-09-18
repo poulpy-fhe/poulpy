@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::plaintext::CKKSPlaintextDefault;
+use crate::reference::plaintext::CKKSPlaintextDefault;
 use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
@@ -55,7 +55,7 @@ where
 #[macro_export]
 macro_rules! impl_ckks_plaintext_defaults {
     ($be:ty) => {
-        impl $crate::default::plaintext::CKKSPlaintextDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::plaintext::CKKSPlaintextDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
 pub use crate::impl_ckks_plaintext_defaults;

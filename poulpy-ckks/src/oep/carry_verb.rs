@@ -8,7 +8,7 @@
 /// Generates a `CKKS{Add,Sub}Impl` OEP trait and its blanket impl forwarding
 /// to the verb's `CKKS{Add,Sub}Default` reference implementation.
 ///
-/// Parameters mirror [`ckks_carry_verb_default!`](crate::default::carry_verb::ckks_carry_verb_default):
+/// Parameters mirror [`ckks_carry_verb_default!`](crate::reference::carry_verb::ckks_carry_verb_default):
 /// the verb stem, the generated trait name, the default trait to forward to,
 /// the core GLWE verb bound, and the verb-specific coefficient-wise HAL bounds
 /// (needed by the blanket impl's where-clause).

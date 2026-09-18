@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::neg::CKKSNegDefault;
+use crate::reference::neg::CKKSNegDefault;
 
 use poulpy_core::{GLWENegate, GLWEShift, layouts::GLWEInfos};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -32,7 +32,7 @@ pub unsafe trait CKKSNegImpl: Backend {
 unsafe impl<BE: Backend> CKKSNegImpl for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl,
-    Module<BE>: crate::default::neg::CKKSNegDefault<BE> + GLWENegate<BE> + GLWEShift<BE>,
+    Module<BE>: crate::reference::neg::CKKSNegDefault<BE> + GLWENegate<BE> + GLWEShift<BE>,
 {
     fn ckks_neg_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
         module.ckks_neg_tmp_bytes_default(res_size)
@@ -62,7 +62,7 @@ where
 #[macro_export]
 macro_rules! impl_ckks_neg_defaults {
     ($be:ty) => {
-        impl $crate::default::neg::CKKSNegDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::neg::CKKSNegDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
 pub use crate::impl_ckks_neg_defaults;

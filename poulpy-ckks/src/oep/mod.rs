@@ -1,7 +1,7 @@
 //! Backend override seams: one `unsafe trait CKKS*Impl` per op family.
 //!
 //! Each OEP trait is keyed on the backend type and is the contract a backend implements (or inherits) to power the corresponding [`api`](crate::api) trait through the delegates layer.
-//! The layering is `api::CKKS*Ops` → delegates on `Module<BE>` → `oep::CKKS*Impl` (this module, bound-free) ← `default::CKKS*Default` (the reference implementation, carrying per-method bounds).
+//! The layering is `api::CKKS*Ops` → delegates on `Module<BE>` → `oep::CKKS*Impl` (this module, bound-free) ← `reference::CKKS*Default` (the reference implementation, carrying per-method bounds).
 //!
 //! # Wiring patterns
 //!

@@ -127,7 +127,7 @@ macro_rules! impl_decryption_defaults_full {
             where
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::default::decryption::glwe::glwe_decrypt_tmp_bytes_default::<Self, $be, _>(self, infos)
+                $crate::reference::decryption::glwe::glwe_decrypt_tmp_bytes_default::<Self, $be, _>(self, infos)
             }
 
             fn glwe_decrypt_default<R, P, S>(
@@ -141,14 +141,14 @@ macro_rules! impl_decryption_defaults_full {
                 P: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos + $crate::layouts::SetBase2k,
                 S: $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::decryption::glwe::glwe_decrypt_default::<Self, $be, _, _, _>(self, res, pt, sk, scratch)
+                $crate::reference::decryption::glwe::glwe_decrypt_default::<Self, $be, _, _, _>(self, res, pt, sk, scratch)
             }
 
             fn lwe_decrypt_tmp_bytes_default<A>(&self, infos: &A) -> usize
             where
                 A: $crate::layouts::LWEInfos,
             {
-                $crate::default::decryption::lwe::lwe_decrypt_tmp_bytes_default::<Self, $be, _>(self, infos)
+                $crate::reference::decryption::lwe::lwe_decrypt_tmp_bytes_default::<Self, $be, _>(self, infos)
             }
 
             fn lwe_decrypt_default<R, P, S>(
@@ -162,14 +162,14 @@ macro_rules! impl_decryption_defaults_full {
                 P: $crate::layouts::LWEPlaintextToBackendMut<$be> + $crate::layouts::SetBase2k + $crate::layouts::LWEInfos,
                 S: $crate::layouts::LWESecretToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
-                $crate::default::decryption::lwe::lwe_decrypt_default::<Self, $be, _, _, _>(self, res, pt, sk, scratch)
+                $crate::reference::decryption::lwe::lwe_decrypt_default::<Self, $be, _, _, _>(self, res, pt, sk, scratch)
             }
 
             fn lwe_matrix_decrypt_tmp_bytes_default<A>(&self, infos: &A) -> usize
             where
                 A: $crate::layouts::LWEMatrixInfos,
             {
-                $crate::default::decryption::lwe_matrix::lwe_matrix_decrypt_tmp_bytes_default::<$be, _>(self, infos)
+                $crate::reference::decryption::lwe_matrix::lwe_matrix_decrypt_tmp_bytes_default::<$be, _>(self, infos)
             }
 
             fn lwe_matrix_decrypt_default<R, P, S>(
@@ -183,7 +183,7 @@ macro_rules! impl_decryption_defaults_full {
                 P: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::SetBase2k + $crate::layouts::GLWEInfos,
                 S: $crate::layouts::LWESecretToBackendRef<$be> + $crate::layouts::LWEInfos,
             {
-                $crate::default::decryption::lwe_matrix::lwe_matrix_decrypt_default::<$be, _, _, _>(self, res, pt, sk, scratch)
+                $crate::reference::decryption::lwe_matrix::lwe_matrix_decrypt_default::<$be, _, _, _>(self, res, pt, sk, scratch)
             }
 
             fn glwe_tensor_decrypt_default<
@@ -208,7 +208,7 @@ macro_rules! impl_decryption_defaults_full {
                 $crate::layouts::GLWESecretTensorPrepared<S1, $be>:
                     $crate::layouts::prepared::GLWESecretTensorPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::decryption::glwe_tensor::glwe_tensor_decrypt_default::<Self, $be, R, P, S0, S1>(
+                $crate::reference::decryption::glwe_tensor::glwe_tensor_decrypt_default::<Self, $be, R, P, S0, S1>(
                     self, res, pt, sk, sk_tensor, scratch,
                 )
             }
@@ -217,7 +217,7 @@ macro_rules! impl_decryption_defaults_full {
             where
                 A: $crate::layouts::GLWEInfos,
             {
-                $crate::default::decryption::glwe_tensor::glwe_tensor_decrypt_tmp_bytes_default::<Self, $be, _>(self, infos)
+                $crate::reference::decryption::glwe_tensor::glwe_tensor_decrypt_tmp_bytes_default::<Self, $be, _>(self, infos)
             }
         }
     };

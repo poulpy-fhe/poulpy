@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
+    reference::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
     layouts::{
         GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos,
         GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
@@ -478,7 +478,7 @@ macro_rules! impl_glwe_tensoring_default {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_apply_tmp_bytes_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringDefault<$be>>::glwe_tensor_apply_tmp_bytes_default(
                     module, res, a, b,
                 )
             }
@@ -492,7 +492,7 @@ macro_rules! impl_glwe_tensoring_default {
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_square_apply_tmp_bytes_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringDefault<$be>>::glwe_tensor_square_apply_tmp_bytes_default(
                     module, res, a,
                 )
             }
@@ -509,7 +509,7 @@ macro_rules! impl_glwe_tensoring_default {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_apply_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringDefault<$be>>::glwe_tensor_apply_default(
                     module, cnv_offset, res, a, b, scratch,
                 )
             }
@@ -524,7 +524,7 @@ macro_rules! impl_glwe_tensoring_default {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_square_apply_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringDefault<$be>>::glwe_tensor_square_apply_default(
                     module, cnv_offset, res, a, scratch,
                 )
             }
@@ -540,7 +540,7 @@ macro_rules! impl_glwe_tensoring_default {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetTensorKey<$be>,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_relinearize_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringDefault<$be>>::glwe_tensor_relinearize_default(
                     module, res, a, tsk, scratch,
                 )
             }
@@ -556,7 +556,7 @@ macro_rules! impl_glwe_tensoring_default {
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GGLWEInfos,
             {
-                <::poulpy_hal::layouts::Module<$be> as $crate::default::operations::GLWETensoringDefault<$be>>::glwe_tensor_relinearize_tmp_bytes_default(
+                <::poulpy_hal::layouts::Module<$be> as $crate::reference::operations::GLWETensoringDefault<$be>>::glwe_tensor_relinearize_tmp_bytes_default(
                     module, res, a, tsk,
                 )
             }
@@ -807,7 +807,7 @@ where
 
 unsafe impl<BE: Backend> GLWETraceImpl for BE
 where
-    Module<BE>: crate::default::glwe_trace::GLWETraceDefault<BE>,
+    Module<BE>: crate::reference::glwe_trace::GLWETraceDefault<BE>,
 {
     fn glwe_trace_galois_elements(module: &Module<BE>) -> Vec<i64> {
         module.glwe_trace_galois_elements_default()
@@ -844,7 +844,7 @@ where
 
 unsafe impl<BE: Backend> GLWEPackImpl for BE
 where
-    Module<BE>: crate::default::glwe_packing::GLWEPackingDefault<BE>,
+    Module<BE>: crate::reference::glwe_packing::GLWEPackingDefault<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE>,
 {
     fn glwe_pack_galois_elements(module: &Module<BE>) -> Vec<i64> {
@@ -880,19 +880,19 @@ where
 #[macro_export]
 macro_rules! impl_glwe_trace_defaults_full {
     ($be:ty) => {
-        impl $crate::default::glwe_trace::GLWETraceDefault<$be> for ::poulpy_hal::layouts::Module<$be> {
+        impl $crate::reference::glwe_trace::GLWETraceDefault<$be> for ::poulpy_hal::layouts::Module<$be> {
             fn glwe_trace_assign_tmp_bytes_default<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
             where
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_assign_tmp_bytes_default::<$be, _, _, _>(
+                $crate::reference::glwe_trace::glwe_trace_defaults_impl::glwe_trace_assign_tmp_bytes_default::<$be, _, _, _>(
                     self, a_infos, key_infos,
                 )
             }
 
             fn glwe_trace_galois_elements_default(&self) -> ::std::vec::Vec<i64> {
-                $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_galois_elements_default::<$be, _>(self)
+                $crate::reference::glwe_trace::glwe_trace_defaults_impl::glwe_trace_galois_elements_default::<$be, _>(self)
             }
 
             fn glwe_trace_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -901,7 +901,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::glwe_trace::glwe_trace_defaults_impl::glwe_trace_tmp_bytes_default::<$be, _, _, _, _>(
                     self, res_infos, a_infos, key_infos,
                 )
             }
@@ -918,7 +918,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_default::<$be, _, _, _, _>(
+                $crate::reference::glwe_trace::glwe_trace_defaults_impl::glwe_trace_default::<$be, _, _, _, _>(
                     self, res, skip, a, keys, scratch,
                 )
             }
@@ -933,7 +933,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_assign_default::<$be, _, _, _>(
+                $crate::reference::glwe_trace::glwe_trace_defaults_impl::glwe_trace_assign_default::<$be, _, _, _>(
                     self, res, skip, keys, scratch,
                 )
             }
@@ -946,9 +946,9 @@ macro_rules! impl_glwe_trace_defaults_full {
 #[macro_export]
 macro_rules! impl_glwe_packing_defaults_full {
     ($be:ty) => {
-        impl $crate::default::glwe_packing::GLWEPackingDefault<$be> for ::poulpy_hal::layouts::Module<$be> {
+        impl $crate::reference::glwe_packing::GLWEPackingDefault<$be> for ::poulpy_hal::layouts::Module<$be> {
             fn glwe_pack_galois_elements_default(&self) -> ::std::vec::Vec<i64> {
-                $crate::default::glwe_packing::glwe_packing_defaults_impl::glwe_pack_galois_elements_default::<$be, _>(self)
+                $crate::reference::glwe_packing::glwe_packing_defaults_impl::glwe_pack_galois_elements_default::<$be, _>(self)
             }
 
             fn glwe_pack_tmp_bytes_default<R, K>(&self, res: &R, key: &K) -> usize
@@ -956,7 +956,7 @@ macro_rules! impl_glwe_packing_defaults_full {
                 R: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::glwe_packing::glwe_packing_defaults_impl::glwe_pack_tmp_bytes_default::<$be, _, _, _>(
+                $crate::reference::glwe_packing::glwe_packing_defaults_impl::glwe_pack_tmp_bytes_default::<$be, _, _, _>(
                     self, res, key,
                 )
             }
@@ -973,7 +973,7 @@ macro_rules! impl_glwe_packing_defaults_full {
                 A: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::default::glwe_packing::glwe_packing_defaults_impl::glwe_pack_default::<$be, _, _, _, _>(
+                $crate::reference::glwe_packing::glwe_packing_defaults_impl::glwe_pack_default::<$be, _, _, _, _>(
                     self,
                     res,
                     a,

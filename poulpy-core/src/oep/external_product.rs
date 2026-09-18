@@ -312,7 +312,7 @@ macro_rules! impl_glwe_external_product_defaults_full {
                 A: $crate::layouts::GLWEInfos,
                 G: $crate::layouts::GGSWInfos,
             {
-                $crate::default::external_product::glwe::glwe_external_product_dft_fill_tmp_bytes_default::<$be, _, _, _>(
+                $crate::reference::external_product::glwe::glwe_external_product_dft_fill_tmp_bytes_default::<$be, _, _, _>(
                     self, a_infos, ggsw_infos,
                 )
             }
@@ -323,7 +323,7 @@ macro_rules! impl_glwe_external_product_defaults_full {
                 A: $crate::layouts::GLWEInfos,
                 G: $crate::layouts::GGSWInfos,
             {
-                $crate::default::external_product::glwe::glwe_external_product_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::external_product::glwe::glwe_external_product_tmp_bytes_default::<$be, _, _, _, _>(
                     self, res_infos, a_infos, ggsw_infos,
                 )
             }
@@ -338,7 +338,7 @@ macro_rules! impl_glwe_external_product_defaults_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::external_product::glwe::glwe_external_product_default::<$be, _, _, _>(
+                $crate::reference::external_product::glwe::glwe_external_product_default::<$be, _, _, _>(
                     self, res, a, ggsw, scratch,
                 )
             }
@@ -351,7 +351,7 @@ macro_rules! impl_glwe_external_product_defaults_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::external_product::glwe::glwe_external_product_assign_default::<$be, _, _>(
+                $crate::reference::external_product::glwe::glwe_external_product_assign_default::<$be, _, _>(
                     self, res, ggsw, scratch,
                 )
             }
@@ -371,7 +371,7 @@ macro_rules! impl_gglwe_external_product_defaults_full {
                 A: $crate::layouts::GGLWEInfos,
                 B: $crate::layouts::GGSWInfos,
             {
-                $crate::default::external_product::gglwe::gglwe_external_product_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::external_product::gglwe::gglwe_external_product_tmp_bytes_default::<$be, _, _, _, _>(
                     self, res_infos, a_infos, b_infos,
                 )
             }
@@ -386,7 +386,7 @@ macro_rules! impl_gglwe_external_product_defaults_full {
                 R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GGLWEInfos,
                 A: $crate::layouts::GGLWEToBackendRef<$be> + $crate::layouts::GGLWEInfos,
             {
-                $crate::default::external_product::gglwe::gglwe_external_product_default::<$be, _, _, _>(self, res, a, b, scratch)
+                $crate::reference::external_product::gglwe::gglwe_external_product_default::<$be, _, _, _>(self, res, a, b, scratch)
             }
 
             fn gglwe_external_product_assign_default<R>(
@@ -397,7 +397,7 @@ macro_rules! impl_gglwe_external_product_defaults_full {
             ) where
                 R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::GGLWEInfos,
             {
-                $crate::default::external_product::gglwe::gglwe_external_product_assign_default::<$be, _, _>(
+                $crate::reference::external_product::gglwe::gglwe_external_product_assign_default::<$be, _, _>(
                     self, res, a, scratch,
                 )
             }
@@ -417,7 +417,7 @@ macro_rules! impl_ggsw_external_product_defaults_full {
                 A: $crate::layouts::GGSWInfos,
                 B: $crate::layouts::GGSWInfos,
             {
-                $crate::default::external_product::ggsw::ggsw_external_product_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::external_product::ggsw::ggsw_external_product_tmp_bytes_default::<$be, _, _, _, _>(
                     self, res_infos, a_infos, b_infos,
                 )
             }
@@ -432,7 +432,7 @@ macro_rules! impl_ggsw_external_product_defaults_full {
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWAtViewMut<$be> + $crate::layouts::GGSWInfos,
                 A: $crate::layouts::GGSWToBackendRef<$be> + $crate::layouts::GGSWAtViewRef<$be> + $crate::layouts::GGSWInfos,
             {
-                $crate::default::external_product::ggsw::ggsw_external_product_default::<$be, _, _, _>(self, res, a, b, scratch)
+                $crate::reference::external_product::ggsw::ggsw_external_product_default::<$be, _, _, _>(self, res, a, b, scratch)
             }
 
             fn ggsw_external_product_assign_default<R>(
@@ -443,7 +443,7 @@ macro_rules! impl_ggsw_external_product_defaults_full {
             ) where
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWAtViewMut<$be> + $crate::layouts::GGSWInfos,
             {
-                $crate::default::external_product::ggsw::ggsw_external_product_assign_default::<$be, _, _>(self, res, a, scratch)
+                $crate::reference::external_product::ggsw::ggsw_external_product_assign_default::<$be, _, _>(self, res, a, scratch)
             }
         }
     };

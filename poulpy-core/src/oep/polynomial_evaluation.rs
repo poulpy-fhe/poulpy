@@ -3,7 +3,7 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    default::polynomial_evaluation::BSGSOps,
+    reference::polynomial_evaluation::BSGSOps,
     layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
 };
 

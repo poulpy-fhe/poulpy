@@ -1,7 +1,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
-    default::keyswitching::glwe::GGLWEProductDefault,
+    reference::keyswitching::glwe::GGLWEProductDefault,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
@@ -16,7 +16,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSShipOps, CKKSSubOps, ShipScalar},
-    default::ship::{
+    reference::ship::{
         bootstrap::{ship_bootstrap_complex_into, ship_bootstrap_into},
         preflight::ship_bootstrap_tmp_bytes,
     },

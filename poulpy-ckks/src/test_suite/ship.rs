@@ -4,7 +4,7 @@ use std::f64::consts::TAU;
 
 use poulpy_core::{
     GLWEZero, TransferInto,
-    default::keyswitching::glwe::GGLWEProductDefault,
+    reference::keyswitching::glwe::GGLWEProductDefault,
     layouts::{
         BackendGLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::GLWESecretPrepared,
@@ -326,13 +326,13 @@ where
     let group_id = vec![gen_key(true, 0, &mut scratch), gen_key(false, 5, &mut scratch)];
     let group_zero = vec![gen_key(false, 0, &mut scratch), gen_key(false, 5, &mut scratch)];
 
-    let mux_bytes = crate::default::ship::mux::ship_mux_rotate_tmp_bytes(
+    let mux_bytes = crate::reference::ship::mux::ship_mux_rotate_tmp_bytes(
         module,
         &alloc_ct(&params, module, k),
         &group_rot[0].key,
         group_rot.len(),
     );
-    let plans = crate::default::ship::mux::ship_mux_plans(
+    let plans = crate::reference::ship::mux::ship_mux_plans(
         module,
         [group_rot.as_slice(), group_id.as_slice(), group_zero.as_slice()].into_iter(),
     );
@@ -354,7 +354,7 @@ where
     let (want_re, want_im) = want_rotate(&re1, &im1, -5, m);
     let mut out = alloc_ct(&params, module, k);
     module.ckks_copy(&mut out, &ct, &mut scratch.borrow()).unwrap();
-    crate::default::ship::mux::ship_mux_rotate(module, &mut out, &group_rot, &plans, &mut mux_scratch.borrow()).unwrap();
+    crate::reference::ship::mux::ship_mux_rotate(module, &mut out, &group_rot, &plans, &mut mux_scratch.borrow()).unwrap();
     assert_eq!(out.log_delta(), ct.log_delta());
     assert_eq!(out.log_budget(), ct.log_budget());
     assert_decrypt_precision(
@@ -372,7 +372,7 @@ where
     // digit = 0: identity.
     let mut out_id = alloc_ct(&params, module, k);
     module.ckks_copy(&mut out_id, &ct, &mut scratch.borrow()).unwrap();
-    crate::default::ship::mux::ship_mux_rotate(module, &mut out_id, &group_id, &plans, &mut mux_scratch.borrow()).unwrap();
+    crate::reference::ship::mux::ship_mux_rotate(module, &mut out_id, &group_id, &plans, &mut mux_scratch.borrow()).unwrap();
     assert_decrypt_precision(
         "mux_rotate(digit=0)",
         &params,
@@ -389,7 +389,7 @@ where
     let zeros = vec![F::zero(); m];
     let mut out_zero = alloc_ct(&params, module, k);
     module.ckks_copy(&mut out_zero, &ct, &mut scratch.borrow()).unwrap();
-    crate::default::ship::mux::ship_mux_rotate(module, &mut out_zero, &group_zero, &plans, &mut mux_scratch.borrow()).unwrap();
+    crate::reference::ship::mux::ship_mux_rotate(module, &mut out_zero, &group_zero, &plans, &mut mux_scratch.borrow()).unwrap();
     assert_decrypt_precision(
         "mux_rotate(empty)",
         &params,

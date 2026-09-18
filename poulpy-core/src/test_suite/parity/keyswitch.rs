@@ -20,7 +20,7 @@ use poulpy_hal::{
 use crate::{
     GGLWEKeyswitch, GLWEKeyswitch,
     api::TransferInto,
-    default::keyswitching::GGLWEProductDefault,
+    reference::keyswitching::GGLWEProductDefault,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWELayout, LWEInfos, ModuleCoreAlloc,
         Rank, TorusPrecision, gadget_product_limbs, key_size, prepared::GGLWEPreparedFactory,
@@ -78,7 +78,7 @@ where
         let size_out = a_size;
         let product_terms = module.n().saturating_mul(rows).saturating_mul(dsize).saturating_mul(cols_in);
         let product_limbs = gadget_product_limbs(Base2K(base2k as u32), product_terms);
-        let default_tmp = crate::default::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
+        let default_tmp = crate::reference::keyswitching::glwe::gglwe_product_digits_strided_tmp_bytes_default(
             module, size_out, cols_in, a_size, dsize, rows, cols_in, cols_out, size_out,
         );
         let backend_tmp = BE::gglwe_product_digits_strided_tmp_bytes(
@@ -114,7 +114,7 @@ where
         let mut want = module.vec_znx_dft_alloc(module.n(), cols_out, size_out);
         let sentinel = vec![1u8; BE::len_bytes(&want.data)];
         BE::copy_from_host(&mut want.data, &sentinel);
-        crate::default::keyswitching::glwe::gglwe_product_digits_strided_default(
+        crate::reference::keyswitching::glwe::gglwe_product_digits_strided_default(
             module,
             &mut want.to_backend_mut(),
             &a_dft.to_backend_ref(),

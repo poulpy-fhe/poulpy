@@ -70,13 +70,13 @@ pub unsafe trait LinearTransformationImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos,
-        P: crate::default::linear_transformation::DiagonalProd<Self>,
+        P: crate::reference::linear_transformation::DiagonalProd<Self>,
         H: GetAutomorphismKey<Self>;
 }
 
 /// Override surface for the linear-transformation family.
 ///
-/// Abstract: no method bodies. See [`crate::default::linear_transformation`]
+/// Abstract: no method bodies. See [`crate::reference::linear_transformation`]
 /// for the reference algorithms a backend may forward to (the
 /// [`crate::impl_linear_transformation_defaults_full`] macro wires every method
 /// to them).
@@ -138,7 +138,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: crate::default::linear_transformation::DiagonalProd<BE>,
+        P: crate::reference::linear_transformation::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE>;
 }
 
@@ -222,7 +222,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: crate::default::linear_transformation::DiagonalProd<BE>,
+        P: crate::reference::linear_transformation::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE>,
     {
         module.glwe_eval_linear_transformation_into_default(cnv_offset, res, lhs, rhs, keys, scratch)
@@ -230,7 +230,7 @@ where
 }
 
 /// Implements [`LinearTransformationDefault`] for `Module<$be>` by forwarding
-/// every method to the corresponding `crate::default::linear_transformation`
+/// every method to the corresponding `crate::reference::linear_transformation`
 /// reference function.
 ///
 /// For partial override (custom kernel for one method, defaults for the rest),
@@ -246,7 +246,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 B: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_default::<$be, _, _, _, _, _>(
+                $crate::reference::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_default::<$be, _, _, _, _, _>(
                     self, res, a, pt, key,
                 )
             }
@@ -264,7 +264,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 B: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::linear_transformation::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default::<
+                $crate::reference::linear_transformation::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default::<
                     $be,
                     _,
                     _,
@@ -279,7 +279,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::linear_transformation::glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default::<
+                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default::<
                     $be,
                     _,
                     _,
@@ -291,7 +291,7 @@ macro_rules! impl_linear_transformation_defaults_full {
             where
                 P: $crate::layouts::LWEInfos,
             {
-                $crate::default::linear_transformation::glwe_prepare_linear_transformation_rhs_tmp_bytes_default::<$be, _, _>(
+                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_rhs_tmp_bytes_default::<$be, _, _>(
                     self, pt_infos,
                 )
             }
@@ -306,7 +306,7 @@ macro_rules! impl_linear_transformation_defaults_full {
             ) where
                 P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::linear_transformation::glwe_prepare_linear_transformation_rhs_default::<$be, _, _>(
+                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_rhs_default::<$be, _, _>(
                     self, prepared, lt, scratch,
                 )
             }
@@ -321,7 +321,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::default::linear_transformation::glwe_prepare_linear_transformation_baby_steps_default::<$be, _, _, _>(
+                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_baby_steps_default::<$be, _, _, _>(
                     self, cache, a, keys, scratch,
                 )
             }
@@ -336,10 +336,10 @@ macro_rules! impl_linear_transformation_defaults_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                P: $crate::default::linear_transformation::DiagonalProd<$be>,
+                P: $crate::reference::linear_transformation::DiagonalProd<$be>,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::default::linear_transformation::glwe_eval_linear_transformation_into_default::<$be, _, _, _, _>(
+                $crate::reference::linear_transformation::glwe_eval_linear_transformation_into_default::<$be, _, _, _, _>(
                     self, cnv_offset, res, lhs, rhs, keys, scratch,
                 )
             }

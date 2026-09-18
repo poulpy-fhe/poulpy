@@ -60,7 +60,7 @@ use poulpy_hal::layouts::Backend;
 pub mod api;
 pub mod approximation;
 pub(crate) mod cosine;
-pub mod default;
+pub mod reference;
 pub(crate) mod delegates;
 
 /// Re-exports for use inside this crate's exported macros (e.g.

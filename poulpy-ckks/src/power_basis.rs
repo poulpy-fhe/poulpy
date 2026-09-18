@@ -8,7 +8,7 @@ use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSMulOps, CKKSPow2Ops, CKKSSubOps},
     checked_mul_ct_log_budget,
-    default::carry_verb::ckks_one_pt,
+    reference::carry_verb::ckks_one_pt,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
 };
 

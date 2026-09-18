@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::conjugate::CKKSConjugateDefault;
+use crate::reference::conjugate::CKKSConjugateDefault;
 
 use poulpy_core::{
     GLWEAutomorphism,
@@ -80,7 +80,7 @@ where
 #[macro_export]
 macro_rules! impl_ckks_conjugate_defaults {
     ($be:ty) => {
-        impl $crate::default::conjugate::CKKSConjugateDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::conjugate::CKKSConjugateDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
 pub use crate::impl_ckks_conjugate_defaults;

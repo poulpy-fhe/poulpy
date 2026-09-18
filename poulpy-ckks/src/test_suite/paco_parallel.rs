@@ -27,7 +27,7 @@ use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
-    default::paco::ops::PaCoSlotOps,
+    reference::paco::ops::PaCoSlotOps,
     layouts::{CKKSModuleAlloc, PaCoContext, PaCoDFTPlan, PaCoKeySet, PaCoKeysPrepared, PaCoPlan, PaCoSecretSpec, PaCoWorker},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{

@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::CKKSResult as Result;
-use crate::default::encryption::CKKSEncryptionDefault;
+use crate::reference::encryption::CKKSEncryptionDefault;
 use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::{
@@ -16,7 +16,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, default::plaintext::CKKSPlaintextDefault};
+use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, reference::plaintext::CKKSPlaintextDefault};
 
 /// # Safety
 ///
@@ -134,7 +134,7 @@ where
 #[macro_export]
 macro_rules! impl_ckks_encryption_defaults {
     ($be:ty) => {
-        impl $crate::default::encryption::CKKSEncryptionDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::encryption::CKKSEncryptionDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
 pub use crate::impl_ckks_encryption_defaults;

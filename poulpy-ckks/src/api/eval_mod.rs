@@ -12,7 +12,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::eval_mod::EvalMod};
 ///
 /// The reduction is configured by an [`EvalMod`] (compiled from an
 /// [`EvalModPlan`](crate::layouts::eval_mod::EvalModPlan)
-/// and uploaded to this backend); see the [`eval_mod`](crate::default::eval_mod)
+/// and uploaded to this backend); see the [`eval_mod`](crate::reference::eval_mod)
 /// module for the base-polynomial / range-extension / inverse pipeline.
 pub trait CKKSEvalModOps<BE: Backend> {
     /// Scratch space, in bytes, required by [`Self::ckks_eval_mod`] for an output

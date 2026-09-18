@@ -8,7 +8,7 @@ use crate::{
         GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPacking,
         GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
     },
-    default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
+    reference::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
     layouts::{
         GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
         GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,

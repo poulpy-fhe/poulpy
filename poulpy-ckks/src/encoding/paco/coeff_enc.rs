@@ -32,7 +32,7 @@ use std::fmt::Debug;
 
 use super::cpx::Cpx;
 use crate::SlotsKind;
-use crate::default::dft::DftScalar;
+use crate::reference::dft::DftScalar;
 use crate::layouts::paco::{
     plan::PaCoPlan,
     secret::{PaCoPackingWorkspace, pack_chunk_into_with},

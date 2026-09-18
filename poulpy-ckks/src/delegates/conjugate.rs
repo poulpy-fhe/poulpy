@@ -7,7 +7,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, default::paco::ops::conj_rotate_galois_element, oep::CKKSConjugateImpl,
+    CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, reference::paco::ops::conj_rotate_galois_element, oep::CKKSConjugateImpl,
 };
 
 use crate::api::CKKSConjugateOps;

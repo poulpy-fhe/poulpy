@@ -27,7 +27,7 @@ use std::fmt::Debug;
 use num_traits::{FromPrimitive, ToPrimitive};
 use poulpy_hal::{api::NegacyclicFFT, source::Source};
 
-use crate::{default::dft::DftScalar, test_suite::reference_encoder::ReferenceEncoder};
+use crate::{reference::dft::DftScalar, test_suite::reference_encoder::ReferenceEncoder};
 use crate::{
     encoding::paco::cpx::Cpx,
     layouts::{PaCoPlan, PaCoSecretSpec},

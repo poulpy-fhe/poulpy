@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::imag::CKKSImagDefault;
+use crate::reference::imag::CKKSImagDefault;
 
 use poulpy_core::{
     GLWECopy, GLWENegate, GLWERotate, GLWEShift,
@@ -55,7 +55,7 @@ unsafe impl<BE: Backend> CKKSImagImpl for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl,
     Module<BE>:
-        crate::default::imag::CKKSImagDefault<BE> + GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
+        crate::reference::imag::CKKSImagDefault<BE> + GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
 {
     fn ckks_mul_i_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
         module.ckks_mul_i_tmp_bytes_default(res_size)
@@ -109,7 +109,7 @@ where
 #[macro_export]
 macro_rules! impl_ckks_imag_defaults {
     ($be:ty) => {
-        impl $crate::default::imag::CKKSImagDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::imag::CKKSImagDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
 pub use crate::impl_ckks_imag_defaults;

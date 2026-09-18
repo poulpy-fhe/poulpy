@@ -248,7 +248,7 @@ pub trait GLWEAutomorphismDefault<BE: Backend> {
 /// Override surface for the GGSW-automorphism sub-family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
-/// [`crate::default::automorphism::ggsw`] for reference algorithms a backend may forward to.
+/// [`crate::reference::automorphism::ggsw`] for reference algorithms a backend may forward to.
 pub trait GGSWAutomorphismDefault<BE: Backend> {
     fn ggsw_automorphism_tmp_bytes_default<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
@@ -281,7 +281,7 @@ pub trait GGSWAutomorphismDefault<BE: Backend> {
 /// Override surface for the GGLWE key-automorphism sub-family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
-/// [`crate::default::automorphism::gglwe`] for reference algorithms a backend may forward to.
+/// [`crate::reference::automorphism::gglwe`] for reference algorithms a backend may forward to.
 pub trait GGLWEAutomorphismDefault<BE: Backend> {
     fn glwe_automorphism_key_automorphism_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -514,7 +514,7 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::automorphism::glwe::glwe_automorphism_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::automorphism::glwe::glwe_automorphism_tmp_bytes_default::<$be, _, _, _, _>(
                     self, res_infos, a_infos, key_infos,
                 )
             }
@@ -529,7 +529,7 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::automorphism::glwe::glwe_automorphism_default::<$be, _, _, _>(self, res, a, key, scratch)
+                $crate::reference::automorphism::glwe::glwe_automorphism_default::<$be, _, _, _>(self, res, a, key, scratch)
             }
 
             fn glwe_automorphism_assign_default<R>(
@@ -540,7 +540,7 @@ macro_rules! impl_glwe_automorphism_defaults_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::automorphism::glwe::glwe_automorphism_assign_default::<$be, _, _>(self, res, key, scratch)
+                $crate::reference::automorphism::glwe::glwe_automorphism_assign_default::<$be, _, _>(self, res, key, scratch)
             }
 
             fn glwe_automorphism_add_default<R, A>(
@@ -553,7 +553,7 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::automorphism::glwe::glwe_automorphism_add_default::<$be, _, _, _>(self, res, a, key, scratch)
+                $crate::reference::automorphism::glwe::glwe_automorphism_add_default::<$be, _, _, _>(self, res, a, key, scratch)
             }
 
             fn glwe_automorphism_add_assign_default<R>(
@@ -564,7 +564,7 @@ macro_rules! impl_glwe_automorphism_defaults_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::automorphism::glwe::glwe_automorphism_add_assign_default::<$be, _, _>(self, res, key, scratch)
+                $crate::reference::automorphism::glwe::glwe_automorphism_add_assign_default::<$be, _, _>(self, res, key, scratch)
             }
 
             fn glwe_automorphism_sub_default<R, A>(
@@ -577,7 +577,7 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::automorphism::glwe::glwe_automorphism_sub_default::<$be, _, _, _>(self, res, a, key, scratch)
+                $crate::reference::automorphism::glwe::glwe_automorphism_sub_default::<$be, _, _, _>(self, res, a, key, scratch)
             }
 
             fn glwe_automorphism_sub_negate_default<R, A>(
@@ -590,7 +590,7 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::automorphism::glwe::glwe_automorphism_sub_negate_default::<$be, _, _, _>(
+                $crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_default::<$be, _, _, _>(
                     self, res, a, key, scratch,
                 )
             }
@@ -603,7 +603,7 @@ macro_rules! impl_glwe_automorphism_defaults_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::automorphism::glwe::glwe_automorphism_sub_assign_default::<$be, _, _>(self, res, key, scratch)
+                $crate::reference::automorphism::glwe::glwe_automorphism_sub_assign_default::<$be, _, _>(self, res, key, scratch)
             }
 
             fn glwe_automorphism_sub_negate_assign_default<R>(
@@ -614,7 +614,7 @@ macro_rules! impl_glwe_automorphism_defaults_full {
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::default::automorphism::glwe::glwe_automorphism_sub_negate_assign_default::<$be, _, _>(
+                $crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_assign_default::<$be, _, _>(
                     self, res, key, scratch,
                 )
             }
@@ -641,7 +641,7 @@ macro_rules! impl_ggsw_automorphism_defaults_full {
                 K: $crate::layouts::GGLWEInfos,
                 T: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::automorphism::ggsw::ggsw_automorphism_tmp_bytes_default::<$be, _, _, _, _, _>(
+                $crate::reference::automorphism::ggsw::ggsw_automorphism_tmp_bytes_default::<$be, _, _, _, _, _>(
                     self, res_infos, a_infos, key_infos, tsk_infos,
                 )
             }
@@ -657,7 +657,7 @@ macro_rules! impl_ggsw_automorphism_defaults_full {
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
                 A: $crate::layouts::GGSWToBackendRef<$be> + $crate::layouts::GGSWInfos,
             {
-                $crate::default::automorphism::ggsw::ggsw_automorphism_default::<$be, _, _, _>(self, res, a, key, tsk, scratch)
+                $crate::reference::automorphism::ggsw::ggsw_automorphism_default::<$be, _, _, _>(self, res, a, key, tsk, scratch)
             }
 
             fn ggsw_automorphism_assign_default<R>(
@@ -669,7 +669,7 @@ macro_rules! impl_ggsw_automorphism_defaults_full {
             ) where
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
             {
-                $crate::default::automorphism::ggsw::ggsw_automorphism_assign_default::<$be, _, _>(self, res, key, tsk, scratch)
+                $crate::reference::automorphism::ggsw::ggsw_automorphism_assign_default::<$be, _, _>(self, res, key, tsk, scratch)
             }
         }
     };
@@ -692,7 +692,7 @@ macro_rules! impl_gglwe_automorphism_defaults_full {
                 A: $crate::layouts::GGLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::automorphism::gglwe::glwe_automorphism_key_automorphism_tmp_bytes_default::<$be, _, _, _, _>(
+                $crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_tmp_bytes_default::<$be, _, _, _, _>(
                     self, res_infos, a_infos, key_infos,
                 )
             }
@@ -707,7 +707,7 @@ macro_rules! impl_gglwe_automorphism_defaults_full {
                 R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::SetGaloisElement + $crate::layouts::GGLWEInfos,
                 A: $crate::layouts::GGLWEToBackendRef<$be> + $crate::layouts::GetGaloisElement + $crate::layouts::GGLWEInfos,
             {
-                $crate::default::automorphism::gglwe::glwe_automorphism_key_automorphism_default::<$be, _, _, _>(
+                $crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_default::<$be, _, _, _>(
                     self, res, a, key, scratch,
                 )
             }
@@ -723,7 +723,7 @@ macro_rules! impl_gglwe_automorphism_defaults_full {
                     + $crate::layouts::GetGaloisElement
                     + $crate::layouts::GGLWEInfos,
             {
-                $crate::default::automorphism::gglwe::glwe_automorphism_key_automorphism_assign_default::<$be, _, _>(
+                $crate::reference::automorphism::gglwe::glwe_automorphism_key_automorphism_assign_default::<$be, _, _>(
                     self, res, key, scratch,
                 )
             }

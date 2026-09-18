@@ -6,7 +6,7 @@ use crate::{FFT64Avx512, NTT4x30Avx512};
 #[cfg(feature = "enable-rayon")]
 use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 use poulpy_core::{
-    default::operations::{GLWETensoringDefault, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
+    reference::operations::{GLWETensoringDefault, cnv_offset_to_limb_offset, normalize_input_limb_bound_with_offset},
     impl_conversion_defaults_full, impl_decryption_defaults_full, impl_encryption_defaults_full,
     impl_gglwe_automorphism_defaults_full, impl_gglwe_external_product_defaults_full, impl_gglwe_keyswitch_defaults_full,
     impl_gglwe_product_digits_strided_default, impl_ggsw_automorphism_defaults_full, impl_ggsw_external_product_defaults_full,

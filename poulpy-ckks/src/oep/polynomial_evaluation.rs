@@ -15,7 +15,7 @@ use crate::{
         BSGSPolynomialInfos, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps,
         PolynomialInputTransform, PowerBasisHelper,
     },
-    default::polynomial_evaluation::PolynomialEvaluationDefault,
+    reference::polynomial_evaluation::PolynomialEvaluationDefault,
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     polynomial::ComplexBSGSPolynomial,
     power_basis::{PowerBasis, PowerBasisGen},
@@ -55,7 +55,7 @@ where
             let mut doubled = module.ckks_ciphertext_alloc(src.base2k(), k.into());
             module.ckks_square_into(&mut doubled, src, tsk, scratch)?;
             module.ckks_mul_pow2_assign(&mut doubled, 1, scratch)?;
-            let one = crate::default::carry_verb::ckks_one_pt(module, src.base2k())?;
+            let one = crate::reference::carry_verb::ckks_one_pt(module, src.base2k())?;
             module.ckks_sub_pt_const_assign(&mut doubled, 0, &one, 0, scratch)?;
             Ok(doubled)
         }

@@ -6,12 +6,12 @@ use crate::NTT4x30AvxRayon;
 use poulpy_ckks::{
     CKKSCtBounds, CKKSMeta, CKKSResult, SetCKKSInfos,
     api::CKKSPow2Ops,
-    default::bootstrapping::{ckks_encapsulated_mod_up_default, ckks_encapsulated_mod_up_tmp_bytes_default},
+    reference::bootstrapping::{ckks_encapsulated_mod_up_default, ckks_encapsulated_mod_up_tmp_bytes_default},
     oep::CKKSEncapsulatedModUpImpl,
 };
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
-    default::keyswitching::glwe::gglwe_product_output_size,
+    reference::keyswitching::glwe::gglwe_product_output_size,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},

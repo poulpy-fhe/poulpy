@@ -37,7 +37,7 @@ use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta,
     api::{CKKSAddOps, CKKSLinearTransformationOps, CKKSMulOps},
-    default::paco::{
+    reference::paco::{
         lt::paco_c2s_factors,
         ops::{PaCoSlotOps, fold_rotations},
     },
@@ -230,7 +230,7 @@ where
     let lts: Vec<_> = factors
         .iter()
         .map(|cd| {
-            crate::default::ckks_encode_linear_transformation_from_diagonals(
+            crate::reference::ckks_encode_linear_transformation_from_diagonals(
                 &module,
                 Base2K(params.base2k as u32),
                 crate::CoeffsMeta {
@@ -288,7 +288,7 @@ where
         crate::layouts::PaCoSlotOrder::BitRevLow => {
             let log_p = p.log_c() - 1;
             (0..oracle.partial_c2s.len())
-                .map(|j| oracle.partial_c2s[crate::default::paco::ops::ext_bitrev_low(j, log_p)])
+                .map(|j| oracle.partial_c2s[crate::reference::paco::ops::ext_bitrev_low(j, log_p)])
                 .collect()
         }
     };

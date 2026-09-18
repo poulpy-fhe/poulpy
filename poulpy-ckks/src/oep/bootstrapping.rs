@@ -66,7 +66,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
                 D2S: ::poulpy_core::layouts::GGLWEInfos,
                 S2D: ::poulpy_core::layouts::GGLWEInfos,
             {
-                $crate::default::bootstrapping::ckks_encapsulated_mod_up_tmp_bytes_default(
+                $crate::reference::bootstrapping::ckks_encapsulated_mod_up_tmp_bytes_default(
                     module,
                     dst_infos,
                     src_infos,
@@ -94,7 +94,7 @@ macro_rules! impl_ckks_encapsulated_mod_up_default {
                     + $crate::CKKSCtBounds
                     + $crate::SetCKKSInfos,
             {
-                $crate::default::bootstrapping::ckks_encapsulated_mod_up_default(
+                $crate::reference::bootstrapping::ckks_encapsulated_mod_up_default(
                     module,
                     dst,
                     src,

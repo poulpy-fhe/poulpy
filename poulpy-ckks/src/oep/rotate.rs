@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::default::rotate::CKKSRotateDefault;
+use crate::reference::rotate::CKKSRotateDefault;
 
 use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
@@ -80,7 +80,7 @@ where
 #[macro_export]
 macro_rules! impl_ckks_rotate_defaults {
     ($be:ty) => {
-        impl $crate::default::rotate::CKKSRotateDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::rotate::CKKSRotateDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
 pub use crate::impl_ckks_rotate_defaults;
