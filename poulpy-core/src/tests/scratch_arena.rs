@@ -35,10 +35,6 @@ impl Backend for TestBackend {
         bytes.to_vec()
     }
 
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        bytes
-    }
-
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
         buf.clone()
     }

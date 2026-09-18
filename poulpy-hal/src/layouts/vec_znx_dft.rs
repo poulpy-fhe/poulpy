@@ -278,7 +278,7 @@ impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
     /// its padded length is what is compared.
     pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxDftOwned<B> {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == B::bytes_of_vec_znx_dft(n, cols, size));
+        assert!(data.len() == crate::layouts::padded_bytes(B::bytes_of_vec_znx_dft(n, cols, size)));
         let data: <B as Backend>::OwnedBuf = B::from_host_bytes(&data);
         VecZnxDft {
             data,

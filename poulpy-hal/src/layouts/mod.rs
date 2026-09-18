@@ -188,10 +188,6 @@ impl Backend for HostBytesBackend {
         AlignedBuf::from(bytes)
     }
 
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        AlignedBuf::from(bytes)
-    }
-
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
         buf.to_vec()
     }
@@ -543,10 +539,6 @@ macro_rules! impl_backend_from {
                 <$from as poulpy_hal::layouts::Backend>::from_host_bytes(bytes)
             }
 
-            fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-                <$from as poulpy_hal::layouts::Backend>::from_bytes(bytes)
-            }
-
             fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
                 <$from as poulpy_hal::layouts::Backend>::to_host_bytes(buf)
             }
@@ -695,9 +687,27 @@ macro_rules! impl_backend_from {
     };
 }
 
+/// The byte length of an owned allocation of `len` bytes: `len` rounded up to
+/// the [`DEFAULTALIGN`](crate::DEFAULTALIGN) padding of
+/// [`alloc_aligned`](crate::alloc_aligned), what a layout's `from_bytes`
+/// compares its buffer against.
+pub fn padded_bytes(len: usize) -> usize {
+    len.next_multiple_of(crate::DEFAULTALIGN)
+}
+
 #[cfg(test)]
 mod host_transfer_tests {
     use super::*;
+
+    /// A layout whose `bytes_of` is not a multiple of the padding accepts a
+    /// buffer of exactly that many bytes: it is padded on the way in.
+    #[test]
+    fn layout_from_bytes_accepts_an_unpadded_byte_count() {
+        let bytes = VecZnx::<AlignedBuf, i64>::bytes_of(4, 1, 1);
+        assert_eq!(bytes, 32);
+        let v = VecZnx::<AlignedBuf, i64>::from_bytes(4, 1, 1, vec![0u8; bytes]);
+        assert_eq!((v.n(), v.data().len()), (4, padded_bytes(bytes)));
+    }
 
     /// `from_bytes` always copies into aligned storage, padding the length up
     /// to the allocation granularity and zeroing the tail.

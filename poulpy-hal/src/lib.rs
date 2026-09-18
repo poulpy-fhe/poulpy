@@ -168,25 +168,6 @@ pub fn is_aligned<T>(ptr: *const T) -> bool {
     is_aligned_custom(ptr, DEFAULTALIGN)
 }
 
-/// Panics if `ptr` is not aligned to [`DEFAULTALIGN`] bytes.
-///
-/// # Panics
-///
-/// Panics with a descriptive message when the pointer does not satisfy the
-/// default alignment requirement.
-pub fn assert_alignment<T>(ptr: *const T) {
-    assert!(
-        is_aligned(ptr),
-        "invalid alignment: ensure passed bytes have been allocated with [alloc_aligned]"
-    )
-}
-
-/// Deprecated spelling variant. Use [`assert_alignment`] instead.
-#[inline]
-pub fn assert_alignement<T>(ptr: *const T) {
-    assert_alignment(ptr)
-}
-
 /// Reinterprets a `&[T]` as a `&[V]`.
 ///
 /// # Safety (via assertions)

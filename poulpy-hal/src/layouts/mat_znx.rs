@@ -236,7 +236,7 @@ impl<W: ZnxWord> MatZnx<AlignedBuf, W> {
 
     pub fn from_bytes(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, bytes: impl Into<AlignedBuf>) -> Self {
         let data: AlignedBuf = bytes.into();
-        assert!(data.len() == Self::bytes_of(n, rows, cols_in, cols_out, size));
+        assert!(data.len() == crate::layouts::padded_bytes(Self::bytes_of(n, rows, cols_in, cols_out, size)));
         Self {
             data,
             shape: MatZnxShape::new(n, rows, cols_in, cols_out, size),

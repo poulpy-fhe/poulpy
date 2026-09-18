@@ -58,7 +58,7 @@ impl<T: Copy + Zeroable> AlignedVec<T> {
             size.is_multiple_of(align),
             "AlignedVec: the byte size must be a multiple of the alignment"
         );
-        let layout: Layout = Layout::from_size_align(size, align).expect("Invalid alignment");
+        let layout: Layout = Layout::from_size_align(size, align).expect("AlignedVec: the byte size exceeds isize::MAX");
         if size == 0 {
             return Self {
                 ptr: dangling_aligned(align),
@@ -96,6 +96,11 @@ impl<T: Copy + Zeroable> AlignedVec<T> {
     /// Alignment in bytes of the first element.
     pub fn align(&self) -> usize {
         self.layout.align()
+    }
+
+    /// Number of elements the allocation holds, `len` or more.
+    pub fn capacity(&self) -> usize {
+        self.layout.size() / size_of::<T>()
     }
 
     /// The elements as a slice.
@@ -141,9 +146,13 @@ impl<T: Copy + Zeroable> Default for AlignedVec<T> {
     }
 }
 
+/// The clone allocates for its own length, padded to the alignment, whatever
+/// the original's allocation holds.
 impl<T: Copy + Zeroable> Clone for AlignedVec<T> {
     fn clone(&self) -> Self {
-        let mut out: Self = Self::zeroed(self.layout.size() / size_of::<T>(), self.layout.align());
+        let align = self.layout.align();
+        let size = (self.len * size_of::<T>()).next_multiple_of(align);
+        let mut out: Self = Self::zeroed(size / size_of::<T>(), align);
         out.truncate(self.len);
         out.as_mut_slice().copy_from_slice(self.as_slice());
         out
@@ -320,6 +329,18 @@ mod tests {
         };
         assert_eq!(hash(&a), hash(&b));
         assert_eq!(format!("{:?}", a), format!("{:?}", a.as_slice()));
+    }
+
+    /// The clone of a truncated buffer allocates for the truncated length.
+    #[test]
+    fn clone_allocates_for_the_truncated_length() {
+        let mut v = AlignedVec::<u64>::zeroed(64, 64);
+        v.as_mut_slice()[..8].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        v.truncate(8);
+        let c = v.clone();
+        assert_eq!(c.as_slice(), &[1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!((c.len(), c.capacity(), c.align()), (8, 8, 64));
+        assert_eq!((v.len(), v.capacity()), (8, 64));
     }
 
     #[test]

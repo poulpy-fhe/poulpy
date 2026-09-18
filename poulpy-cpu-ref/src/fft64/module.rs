@@ -60,9 +60,6 @@ impl Backend for FFT64Ref {
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
         AlignedBuf::from(bytes)
     }
-    fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        AlignedBuf::from(bytes)
-    }
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
         buf.to_vec()
     }
