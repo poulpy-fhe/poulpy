@@ -8,7 +8,7 @@
 //! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
 
 use core::marker::PhantomData;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_core::{
     LinearTransformationPrepared,
@@ -397,6 +397,65 @@ impl DFTPlan {
         self.format == DFTOutputFormat::RepackImagAsReal && self.log_slots() < log_n.saturating_sub(1)
     }
 
+    /// Replays the radix-2 merges of every factor without generating any
+    /// diagonal value: per factor, the map from a non-zero diagonal index to
+    /// the slot count that diagonal repeats over (its period).
+    fn replay_diagonals(&self, log_n: usize) -> Vec<BTreeMap<i64, usize>> {
+        let log_slots = self.log_slots();
+        let slots = 1i64 << log_slots;
+        let sparse = self.is_sparse_repack(log_n);
+        // The factor diagonals live in the `2·slots` working vector on the
+        // sparse-repack path, else in `slots`.
+        let dslots = if sparse { (slots << 1) as usize } else { slots as usize };
+
+        let mut out = Vec::with_capacity(self.num_factors());
+        let mut fft_level = log_slots;
+        for (i, m) in self.schedule.steps.iter().map(|s| s.depth).enumerate() {
+            // Only the sparse-repack first Decode factor starts from the repack
+            // matrix ({0, slots}) and wraps its rotations modulo 2·slots.
+            let repack_first = sparse && self.kind == DFTType::Decode && i == 0;
+            let merge_n = if repack_first { slots << 1 } else { slots };
+            let mask = merge_n - 1;
+
+            // The identity seed is constant (period 1); the repack seed `(1 | i)`
+            // spans the whole doubled working vector.
+            let mut map: BTreeMap<i64, usize> = if repack_first {
+                BTreeMap::from([(0, dslots), (slots, dslots)])
+            } else {
+                BTreeMap::from([(0, 1)])
+            };
+            let mut level = fft_level;
+            for _ in 0..m {
+                let rot = dft_layer_rotation(self.kind, self.bit_reversed, level, log_slots, mask);
+                // In the natural order a layer's diagonals repeat over its
+                // butterfly width `2·rot`; bit reversal turns that periodicity
+                // into a block structure the polynomial does not see, so the
+                // replay claims the dense width there.
+                let layer_period = if self.bit_reversed { dslots } else { 2 * rot as usize };
+                let mut next: BTreeMap<i64, usize> = BTreeMap::new();
+                for (&d, &period) in &map {
+                    let period = period.max(layer_period);
+                    for index in dft_layer_spread(d, rot, mask) {
+                        let entry = next.entry(index).or_insert(1);
+                        *entry = (*entry).max(period);
+                    }
+                }
+                map = next;
+                level -= 1;
+            }
+            // Sparse-repack Encode zeroes the right half of the last factor's
+            // diagonals, which breaks any period below the doubled vector.
+            if sparse && self.kind == DFTType::Encode && i + 1 == self.num_factors() {
+                for period in map.values_mut() {
+                    *period = dslots;
+                }
+            }
+            out.push(map);
+            fft_level -= m;
+        }
+        out
+    }
+
     /// Non-zero diagonal indexes of each factor matrix, in evaluation order
     /// (`diagonal_indexes(..)[i]` sorted ascending), **derived without generating
     /// any diagonal value**.
@@ -413,38 +472,65 @@ impl DFTPlan {
     /// Infallible: every `DFTPlan` is shape-valid by construction
     /// ([`Self::new`]).
     pub fn diagonal_indexes(&self, log_n: usize) -> Vec<Vec<i64>> {
-        let log_slots = self.log_slots();
-        let slots = 1i64 << log_slots;
-        let sparse = self.is_sparse_repack(log_n);
+        self.replay_diagonals(log_n)
+            .iter()
+            .map(|map| map.keys().copied().collect())
+            .collect()
+    }
 
-        let mut out = Vec::with_capacity(self.num_factors());
-        let mut fft_level = log_slots;
-        for (i, m) in self.schedule.steps.iter().map(|s| s.depth).enumerate() {
-            // Only the sparse-repack first Decode factor starts from the repack
-            // matrix ({0, slots}) and wraps its rotations modulo 2·slots.
-            let repack_first = sparse && self.kind == DFTType::Decode && i == 0;
-            let merge_n = if repack_first { slots << 1 } else { slots };
-            let mask = merge_n - 1;
+    /// Sparsity of every non-zero diagonal of each factor matrix, in evaluation
+    /// order and sorted by index like [`Self::diagonal_indexes`], **derived
+    /// without generating any diagonal value**.
+    ///
+    /// The value `s` paired with a diagonal means that, encoded on a ring of
+    /// degree `2^log_n`, the diagonal's plaintext polynomial is `M(X^(2^s))`
+    /// (the [`CKKSMeta::log_sparsity`] convention): the diagonal repeats every
+    /// `2^(log_n - 1 - s)` slots and stores compactly at degree `2^(log_n - s)`;
+    /// `0` is a dense diagonal at full packing.
+    ///
+    /// Derivation. In the natural slot order a radix-2 layer of butterfly width
+    /// `m` is the block-diagonal replication of one `m × m` butterfly, so each
+    /// of its diagonals (`0`, `+m/2` and `-m/2`, the last two coinciding when
+    /// `m` is the slot count) repeats every `m` slots: the layer's diagonals
+    /// are sparse by the factor `slots / m`, and the layers of a transform walk
+    /// `m = 2, 4, .., slots`. Merging a layer into a factor rotates every
+    /// accumulated diagonal by `±m/2`, which keeps its period, multiplies it
+    /// slot-wise by a layer diagonal, which yields the larger of the two
+    /// periods, and adds the terms landing on one index, which keeps it too.
+    /// Every diagonal of a merged factor therefore repeats over the widest
+    /// butterfly the factor merges, whichever path built it, so the value is
+    /// uniform within a factor; the replay tracks it per index all the same.
+    /// The sparse-repack seed `(1 | i)` spans the doubled working vector and
+    /// the right-half zeroing of the last `Encode` factor breaks any shorter
+    /// period, so those two factors keep only the packing sparsity. A
+    /// bit-reversed plan turns the periodicity into a block structure the
+    /// polynomial does not see, so its diagonals are reported dense: the value
+    /// is exact on the natural order and a safe lower bound on the reversed
+    /// one, pinned against the generated values by the generator's tests. The
+    /// BSGS pre-rotation of a diagonal keeps its period, so the value holds
+    /// for the encoded transformation under any strategy.
+    ///
+    /// Infallible: every `DFTPlan` is shape-valid by construction
+    /// ([`Self::new`]).
+    pub fn diagonal_log_sparsity(&self, log_n: usize) -> Vec<Vec<(i64, usize)>> {
+        self.replay_diagonals(log_n)
+            .iter()
+            .map(|map| {
+                map.iter()
+                    .map(|(&index, &period)| (index, log_n.saturating_sub(1 + period.ilog2() as usize)))
+                    .collect()
+            })
+            .collect()
+    }
 
-            let mut set: BTreeSet<i64> = if repack_first {
-                BTreeSet::from([0, slots])
-            } else {
-                BTreeSet::from([0])
-            };
-            let mut level = fft_level;
-            for _ in 0..m {
-                let rot = dft_layer_rotation(self.kind, self.bit_reversed, level, log_slots, mask);
-                let mut next: BTreeSet<i64> = BTreeSet::new();
-                for &d in &set {
-                    next.extend(dft_layer_spread(d, rot, mask));
-                }
-                set = next;
-                level -= 1;
-            }
-            out.push(set.into_iter().collect());
-            fft_level -= m;
-        }
-        out
+    /// The sparsity every diagonal of each factor matrix has, in evaluation
+    /// order: the minimum of [`Self::diagonal_log_sparsity`] over the factor,
+    /// which is the value to store and prepare the factor's diagonals at.
+    pub fn factor_log_sparsity(&self, log_n: usize) -> Vec<usize> {
+        self.diagonal_log_sparsity(log_n)
+            .iter()
+            .map(|factor| factor.iter().map(|&(_, s)| s).min().unwrap_or(0))
+            .collect()
     }
 
     /// Number of non-zero diagonals of each factor matrix, in evaluation order
@@ -695,6 +781,33 @@ mod tests {
         let decode = decode.with_optimal_bsgs(4);
         assert_eq!(decode.schedule().giant_steps(), vec![4, 2]);
         assert_eq!(decode.consumed_bits(), consumed_bits);
+    }
+
+    /// Every diagonal of a factor repeats over the widest butterfly the factor
+    /// merges: the full-packing presets on a degree-2^16 ring, a sparse
+    /// transform (its packing gap adds up), the two sparse-repack factors that
+    /// keep only the packing sparsity, and the dense report on a bit-reversed
+    /// plan.
+    #[test]
+    fn diagonal_log_sparsity_follows_the_widest_merged_butterfly() {
+        let decode = plan(DFTType::Decode, &[3, 4, 4, 4], DFTOutputFormat::SplitRealAndImag);
+        assert_eq!(decode.factor_log_sparsity(16), vec![12, 8, 4, 0]);
+        for (factor, s) in decode.diagonal_log_sparsity(16).iter().zip([12, 8, 4, 0]) {
+            assert!(factor.iter().all(|&(_, v)| v == s), "sparsity is not uniform over the factor");
+        }
+        let encode = plan(DFTType::Encode, &[4, 4, 4, 3], DFTOutputFormat::SplitRealAndImag);
+        assert_eq!(encode.factor_log_sparsity(16), vec![0, 4, 8, 12]);
+
+        let sparse = plan(DFTType::Decode, &[2, 2], DFTOutputFormat::SplitRealAndImag);
+        assert_eq!(sparse.factor_log_sparsity(7), vec![4, 2]);
+
+        let repack = plan(DFTType::Decode, &[2, 2], DFTOutputFormat::RepackImagAsReal);
+        assert_eq!(repack.factor_log_sparsity(7), vec![1, 2]);
+        let repack = plan(DFTType::Encode, &[2, 2], DFTOutputFormat::RepackImagAsReal);
+        assert_eq!(repack.factor_log_sparsity(7), vec![2, 1]);
+
+        let reversed = plan(DFTType::Decode, &[3, 4, 4, 4], DFTOutputFormat::SplitRealAndImag).with_bit_reversed(true);
+        assert_eq!(reversed.factor_log_sparsity(16), vec![0; 4]);
     }
 
     fn bsgs_cost(indexes: &[i64], slots: usize, giant_step: usize) -> (usize, [usize; 2], BTreeSet<i64>) {

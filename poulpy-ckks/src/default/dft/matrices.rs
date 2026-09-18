@@ -776,6 +776,66 @@ mod tests {
         }
     }
 
+    /// Smallest power-of-two slot count a generated diagonal repeats over,
+    /// by exact float equality (every position is computed from the same
+    /// table entries in the same order, so periodic values are bit-identical).
+    fn minimal_period(cd: &ComplexDiagonals<f64>, index: i64) -> usize {
+        let dslots = cd.slots();
+        let zero = vec![0.0f64; dslots];
+        let re = cd.re.get(index).unwrap_or(&zero);
+        let im = cd.im.get(index).unwrap_or(&zero);
+        let mut period = 1;
+        while period < dslots {
+            if (0..dslots).all(|j| re[j] == re[j % period] && im[j] == im[j % period]) {
+                break;
+            }
+            period <<= 1;
+        }
+        period
+    }
+
+    /// The plan's value-free sparsity replay ([`DFTPlan::diagonal_log_sparsity`])
+    /// must be exact on the natural slot order and safe on the bit-reversed one:
+    /// every generated diagonal repeats over the slot count the replay claims,
+    /// and over no shorter one unless the plan is bit-reversed.
+    #[test]
+    fn plan_diagonal_log_sparsity_matches_generated_factors() {
+        let schedules: &[Vec<usize>] = &[vec![1, 1, 1, 1], vec![2, 2], vec![4], vec![1, 3], vec![3, 1], vec![2, 1, 1]];
+        for kind in [DFTType::Encode, DFTType::Decode] {
+            for bit_reversed in [false, true] {
+                for schedule in schedules {
+                    for (log_n, format) in [
+                        (5usize, DFTOutputFormat::SplitRealAndImag),
+                        (7usize, DFTOutputFormat::SplitRealAndImag),
+                        (7usize, DFTOutputFormat::RepackImagAsReal),
+                    ] {
+                        let mut plan = literal(kind, schedule.clone(), bit_reversed);
+                        plan.format = format;
+                        plan.scaling = None;
+                        let factors = gen_dft_matrices::<f64>(&plan, log_n);
+                        for (factor, replayed) in factors.iter().zip(plan.diagonal_log_sparsity(log_n)) {
+                            for (index, log_sparsity) in replayed {
+                                let claimed = 1usize << (log_n - 1 - log_sparsity);
+                                let actual = minimal_period(factor, index);
+                                let context = format!(
+                                    "kind={kind:?} bit_reversed={bit_reversed} schedule={schedule:?} log_n={log_n} format={format:?} diagonal {index}"
+                                );
+                                assert_eq!(
+                                    claimed % actual,
+                                    0,
+                                    "replay claims a period the diagonal does not have: {context}"
+                                );
+                                if !bit_reversed {
+                                    assert_eq!(claimed, actual, "replay is not tight: {context}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Under full packing, `RepackImagAsReal` must generate exactly the same
     /// factor matrices as `SplitRealAndImag` (the sparse-only steps are skipped
     /// when `logSlots == logMaxSlots`; the two share the `1/(2·slots)` scaling).
