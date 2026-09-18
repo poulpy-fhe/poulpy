@@ -3,6 +3,7 @@
 //! A CKKS ciphertext is represented as [`CKKSCiphertext<D>`], a thin wrapper
 //! over `poulpy-core`'s `GLWE<D, CKKS>`.
 
+use poulpy_hal::AlignedBuf;
 use std::{
     fmt,
     marker::PhantomData,
@@ -62,12 +63,12 @@ impl<D: Data, W: ZnxWord, S: CKKSNormalizationState> CKKSCiphertext<D, W, S> {
         }
     }
 
-    /// Rebuilds this backend-owned ciphertext as a host-owned [`CKKSCiphertext<Vec<u8>, i64>`].
-    pub fn to_host_owned<BE>(&self) -> CKKSCiphertext<Vec<u8>, W, S>
+    /// Rebuilds this backend-owned ciphertext as a host-owned [`CKKSCiphertext<AlignedBuf, i64>`].
+    pub fn to_host_owned<BE>(&self) -> CKKSCiphertext<AlignedBuf, W, S>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {
-        CKKSCiphertext::<Vec<u8>, W, S>::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
+        CKKSCiphertext::<AlignedBuf, W, S>::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
     }
 
     /// Formats this backend-owned ciphertext through the existing host [`fmt::Display`] implementation.

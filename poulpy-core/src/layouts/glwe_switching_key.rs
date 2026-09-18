@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
     source::Source,
@@ -80,7 +81,7 @@ impl GGLWEInfos for GLWESwitchingKeyLayout {
 /// Wraps a [`GGLWE`] and additionally stores the polynomial degrees of
 /// the input and output secret keys (`input_degree` / `output_degree`).
 ///
-/// `D: Data` is the backing storage type (e.g. `Vec<u8>`, `&[u8]`,
+/// `D: Data` is the backing storage type (e.g. `AlignedBuf`, `&[u8]`,
 /// `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWESwitchingKey<D: Data, W: ZnxWord> {
@@ -213,7 +214,7 @@ impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWESwitchingKey<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWESwitchingKey<Vec<u8>, W> {
+impl<W: ZnxWord> GLWESwitchingKey<AlignedBuf, W> {
     /// Allocates a new [`GLWESwitchingKey`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
@@ -273,7 +274,7 @@ impl<W: ZnxWord> GLWESwitchingKey<Vec<u8>, W> {
         rank_in: Rank,
         rank_out: Rank,
     ) -> usize {
-        GGLWE::<Vec<u8>, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank_in, rank_out)
+        GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank_in, rank_out)
     }
 }
 

@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use std::marker::PhantomData;
 
 use poulpy_core::layouts::{
@@ -271,7 +272,7 @@ impl<T: UnsignedInteger + ToBits, BE: Backend<OwnedBuf: HostDataMut + HostDataRe
     }
 }
 
-impl<T: UnsignedInteger + FromBits, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend>
+impl<T: UnsignedInteger + FromBits, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend>
     FheUintPrepared<BE::OwnedBuf, T, BE>
 where
     BE::OwnedBuf: HostDataRef,

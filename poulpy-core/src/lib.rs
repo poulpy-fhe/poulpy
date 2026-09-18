@@ -21,7 +21,7 @@
 //! | **Compressed** (`GLWECompressed<D>`, ...) | Reduced storage via seed-based mask regeneration | `D: Data` |
 //! | **Prepared** (`GLWEPrepared<D, B>`, ...) | DFT-domain, optimised for fast polynomial arithmetic | `D: Data, B: Backend` |
 //!
-//! `D: Data` abstracts ownership: `Vec<u8>` (owned), `&[u8]` (borrowed),
+//! `D: Data` abstracts ownership: `AlignedBuf` (owned), `&[u8]` (borrowed),
 //! or `&mut [u8]` (mutable borrow).
 //!
 //! ## Scratch-space allocation

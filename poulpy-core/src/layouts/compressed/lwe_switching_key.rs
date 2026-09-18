@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo},
     source::Source,
@@ -145,11 +146,11 @@ impl<D: Data, W: ZnxWord> LWESwitchingKeyCompressed<D, W> {
             1,
             "rank_out > 1 is not supported for LWESwitchingKeyCompressed"
         );
-        GLWESwitchingKeyCompressed::<Vec<u8>, W>::bytes_of_from_infos(infos)
+        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of_from_infos(infos)
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> usize {
-        GLWESwitchingKeyCompressed::<Vec<u8>, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, Rank(1))
+        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, Rank(1))
     }
 }
 

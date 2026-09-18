@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::HostStaged;
 use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
 use crate::blind_rotation::host_znx::{znx_rotate, znx_switch_ring};
@@ -111,7 +112,7 @@ impl LookupTableInfos for LookUpTableLayout {
 /// - `data` is non-empty; its length equals `extension_factor`.
 /// - All `VecZnx` elements share the same `n`, `base2k`, and `size`.
 /// - `drift` records the half-step pre-rotation applied during encoding.
-pub struct LookupTable<D: Data = Vec<u8>> {
+pub struct LookupTable<D: Data = AlignedBuf> {
     pub(crate) data: Vec<GLWE<D, BE::ZnxWord>>,
     pub(crate) rot_dir: LookUpTableRotationDirection,
     pub(crate) base2k: Base2K,
@@ -276,7 +277,7 @@ where
 {
     fn lookup_table_set(&self, res: &mut LookupTable<BE::OwnedBuf, BE::ZnxWord>, f: &[i64], k: usize) {
         // TODO: add a direct backend-native LUT construction path. This builder
-        // still materializes host-owned `Vec<u8>` polynomials before any upload.
+        // still materializes host-owned `AlignedBuf` polynomials before any upload.
         assert!(f.len() <= self.n());
 
         let base2k: usize = res.base2k.into();

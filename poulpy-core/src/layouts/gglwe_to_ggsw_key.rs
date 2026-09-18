@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
     source::Source,
@@ -236,7 +237,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWEToGGSWKey<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GGLWEToGGSWKey<Vec<u8>, W> {
+impl<W: ZnxWord> GGLWEToGGSWKey<AlignedBuf, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
@@ -284,7 +285,7 @@ impl<W: ZnxWord> GGLWEToGGSWKey<Vec<u8>, W> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        rank.as_usize() * GGLWE::<Vec<u8>, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank, rank)
+        rank.as_usize() * GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank, rank)
     }
 }
 

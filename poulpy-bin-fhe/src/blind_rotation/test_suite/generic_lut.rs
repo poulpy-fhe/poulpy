@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use std::vec;
 
 use poulpy_core::api::TransferInto;
@@ -8,7 +9,7 @@ use crate::blind_rotation::{DivRound, LookUpTableLayout, LookUpTableRotationDire
 
 pub fn test_lut_standard<M>(module: &M)
 where
-    M: LookupTableFactory<Vec<u8>, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+    M: LookupTableFactory<AlignedBuf, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
 {
     let base2k: usize = 20;
     let k_lut: usize = 40;
@@ -27,7 +28,7 @@ where
         base2k: base2k.into(),
     };
 
-    let mut lut: LookupTable<Vec<u8>, i64> = LookupTable::alloc(module, &lut_infos);
+    let mut lut: LookupTable<AlignedBuf, i64> = LookupTable::alloc(module, &lut_infos);
     lut.set(module, &f, log_scale);
 
     let half_step: i64 = lut.domain_size().div_round(message_modulus << 1) as i64;
@@ -47,7 +48,7 @@ where
 
 pub fn test_lut_extended<M>(module: &M)
 where
-    M: LookupTableFactory<Vec<u8>, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+    M: LookupTableFactory<AlignedBuf, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
 {
     let base2k: usize = 20;
     let k_lut: usize = 40;
@@ -66,7 +67,7 @@ where
         base2k: base2k.into(),
     };
 
-    let mut lut: LookupTable<Vec<u8>, i64> = LookupTable::alloc(module, &lut_infos);
+    let mut lut: LookupTable<AlignedBuf, i64> = LookupTable::alloc(module, &lut_infos);
     lut.set(module, &f, log_scale);
 
     let half_step: i64 = lut.domain_size().div_round(message_modulus << 1) as i64;
@@ -89,7 +90,7 @@ where
 /// The upload carries `drift`, which `set` makes non-zero and `alloc` leaves at 0.
 pub fn test_lut_transfer_into_carries_scalars<M>(module: &M)
 where
-    M: LookupTableFactory<Vec<u8>, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+    M: LookupTableFactory<AlignedBuf, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
 {
     let infos = LookUpTableLayout {
         n: module.n().into(),
@@ -98,13 +99,13 @@ where
         base2k: 20usize.into(),
     };
 
-    let mut src: LookupTable<Vec<u8>, i64> = LookupTable::alloc(module, &infos);
+    let mut src: LookupTable<AlignedBuf, i64> = LookupTable::alloc(module, &infos);
     let f: Vec<i64> = (0..8).map(|i| i - 4).collect();
     src.set(module, &f, 21);
     src.set_rotation_direction(LookUpTableRotationDirection::Right);
     assert_ne!(src.drift, 0);
 
-    let mut dst: LookupTable<Vec<u8>, i64> = LookupTable::alloc(module, &infos);
+    let mut dst: LookupTable<AlignedBuf, i64> = LookupTable::alloc(module, &infos);
     src.transfer_into(&mut dst);
 
     assert_eq!(dst.drift, src.drift);

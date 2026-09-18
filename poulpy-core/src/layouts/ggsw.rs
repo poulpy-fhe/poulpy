@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxAtBackendMut, MatZnxAtBackendRef, MatZnxToBackendMut,
@@ -104,7 +105,7 @@ impl GGSWInfos for GGSWLayout {
 /// `rank_in = rank + 1` input columns and `rank_out = rank + 1` output columns.
 /// Used as the left operand of external products.
 ///
-/// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
+/// `D: Data` is the storage backend (e.g. `AlignedBuf`, `&[u8]`, `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
 pub struct GGSW<D: Data, W: ZnxWord> {
     pub(crate) data: MatZnx<D, W>,
@@ -508,7 +509,7 @@ impl<D: Data, W: ZnxWord> GGSW<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GGSW<Vec<u8>, W> {
+impl<W: ZnxWord> GGSW<AlignedBuf, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGSWInfos,
@@ -528,7 +529,7 @@ impl<W: ZnxWord> GGSW<Vec<u8>, W> {
 
         GGSW {
             data: MatZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<Vec<u8>, W>::bytes_of(
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<AlignedBuf, W>::bytes_of(
                     n.into(),
                     dnum.into(),
                     (rank + 1).into(),
@@ -564,7 +565,7 @@ impl<W: ZnxWord> GGSW<Vec<u8>, W> {
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        MatZnx::<Vec<u8>, W>::bytes_of(n.into(), dnum.into(), (rank + 1).into(), (rank + 1).into(), size)
+        MatZnx::<AlignedBuf, W>::bytes_of(n.into(), dnum.into(), (rank + 1).into(), (rank + 1).into(), size)
     }
 }
 

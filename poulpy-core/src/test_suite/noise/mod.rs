@@ -38,6 +38,7 @@ use crate::{
     api::TransferInto,
     layouts::{GGLWE, GGLWEToGGSWKey, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWESecret, ModuleCoreAlloc},
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
     layouts::{
@@ -79,7 +80,7 @@ pub trait TestBackend:
     + AutomorphismImpl
     + SamplingImpl
 where
-    Self: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+    Self: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> Self::BufRef<'a>: HostDataRef,
     for<'a> Self::BufMut<'a>: HostDataMut,
 {
@@ -115,7 +116,7 @@ where
         + ConversionImpl
         + AutomorphismImpl
         + SamplingImpl,
-    BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+    BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -129,14 +130,14 @@ where
 }
 
 pub fn upload_scalar_znx<BE: Backend>(
-    src: &poulpy_hal::layouts::ScalarZnx<Vec<u8>, BE::ZnxWord>,
+    src: &poulpy_hal::layouts::ScalarZnx<AlignedBuf, BE::ZnxWord>,
 ) -> poulpy_hal::layouts::ScalarZnx<BE::OwnedBuf, BE::ZnxWord> {
     hal_upload_scalar_znx::<BE>(src)
 }
 
 pub fn download_scalar_znx<BE: Backend>(
     src: &poulpy_hal::layouts::ScalarZnx<BE::OwnedBuf, BE::ZnxWord>,
-) -> poulpy_hal::layouts::ScalarZnx<Vec<u8>, BE::ZnxWord> {
+) -> poulpy_hal::layouts::ScalarZnx<AlignedBuf, BE::ZnxWord> {
     hal_download_scalar_znx::<BE>(src)
 }
 
@@ -150,82 +151,82 @@ pub fn scalar_znx_as_vec_znx_backend_mut<BE: Backend>(
     <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxAsVecZnxBackendMut<BE>>::as_vec_znx_backend_mut(src)
 }
 
-pub fn upload_glwe<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostStaged>(
+pub fn upload_glwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
     module: &Module<BE>,
-    src: &GLWE<Vec<u8>, i64>,
+    src: &GLWE<AlignedBuf, i64>,
 ) -> GLWE<BE::OwnedBuf, BE::ZnxWord> {
     let mut dst = module.glwe_alloc_from_infos(src);
     src.transfer_into(&mut dst);
     dst
 }
 
-pub fn download_glwe<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+pub fn download_glwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
     _module: &Module<BE>,
     src: &GLWE<BE::OwnedBuf, BE::ZnxWord>,
-) -> GLWE<Vec<u8>, BE::ZnxWord> {
+) -> GLWE<AlignedBuf, BE::ZnxWord> {
     let shape = src.data.shape();
     GLWE {
-        data: poulpy_hal::layouts::VecZnx::from_shape(BE::to_host_bytes(src.data.data()), shape),
+        data: poulpy_hal::layouts::VecZnx::from_shape(AlignedBuf::from(BE::to_host_bytes(src.data.data())), shape),
         k: src.k,
         base2k: src.base2k,
     }
 }
 
-pub fn upload_glwe_plaintext<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostStaged>(
+pub fn upload_glwe_plaintext<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
     module: &Module<BE>,
-    src: &GLWEPlaintext<Vec<u8>, i64>,
+    src: &GLWEPlaintext<AlignedBuf, i64>,
 ) -> GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> {
     let mut dst = module.glwe_plaintext_alloc_from_infos(src);
     src.transfer_into(&mut dst);
     dst
 }
 
-pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
     _module: &Module<BE>,
     src: &GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>,
-) -> GLWEPlaintext<Vec<u8>, BE::ZnxWord> {
+) -> GLWEPlaintext<AlignedBuf, BE::ZnxWord> {
     let shape = src.data.shape();
     GLWEPlaintext {
-        data: poulpy_hal::layouts::VecZnx::from_shape(BE::to_host_bytes(src.data.data()), shape),
+        data: poulpy_hal::layouts::VecZnx::from_shape(AlignedBuf::from(BE::to_host_bytes(src.data.data())), shape),
         k: src.k,
         base2k: src.base2k,
     }
 }
 
-pub fn upload_glwe_secret<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostStaged>(
+pub fn upload_glwe_secret<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
     module: &Module<BE>,
-    src: &GLWESecret<Vec<u8>, i64>,
+    src: &GLWESecret<AlignedBuf, i64>,
 ) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord> {
     let mut dst = module.glwe_secret_alloc_from_infos(src);
     src.transfer_into(&mut dst);
     dst
 }
 
-pub fn upload_gglwe<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostStaged>(
+pub fn upload_gglwe<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
     module: &Module<BE>,
-    src: &GGLWE<Vec<u8>, i64>,
+    src: &GGLWE<AlignedBuf, i64>,
 ) -> GGLWE<BE::OwnedBuf, BE::ZnxWord> {
     let mut dst = module.gglwe_alloc_from_infos(src);
     src.transfer_into(&mut dst);
     dst
 }
 
-pub fn upload_ggsw<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostStaged>(
+pub fn upload_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
     module: &Module<BE>,
-    src: &GGSW<Vec<u8>, i64>,
+    src: &GGSW<AlignedBuf, i64>,
 ) -> GGSW<BE::OwnedBuf, BE::ZnxWord> {
     let mut dst = module.ggsw_alloc_from_infos(src);
     src.transfer_into(&mut dst);
     dst
 }
 
-pub fn download_ggsw<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+pub fn download_ggsw<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64>>(
     _module: &Module<BE>,
     src: &GGSW<BE::OwnedBuf, BE::ZnxWord>,
-) -> GGSW<Vec<u8>, BE::ZnxWord> {
+) -> GGSW<AlignedBuf, BE::ZnxWord> {
     GGSW {
         data: poulpy_hal::layouts::MatZnx::from_data(
-            BE::to_host_bytes(src.data.data()),
+            AlignedBuf::from(BE::to_host_bytes(src.data.data())),
             src.data.n(),
             src.data.rows(),
             src.data.cols_in(),
@@ -238,9 +239,9 @@ pub fn download_ggsw<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     }
 }
 
-pub fn upload_glwe_automorphism_key<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostStaged>(
+pub fn upload_glwe_automorphism_key<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
     module: &Module<BE>,
-    src: &GLWEAutomorphismKey<Vec<u8>, i64>,
+    src: &GLWEAutomorphismKey<AlignedBuf, i64>,
 ) -> GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> {
     GLWEAutomorphismKey {
         key: upload_gglwe(module, &src.key),
@@ -248,9 +249,9 @@ pub fn upload_glwe_automorphism_key<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord 
     }
 }
 
-pub fn upload_gglwe_to_ggsw_key<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostStaged>(
+pub fn upload_gglwe_to_ggsw_key<BE: HostBackend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostStaged>(
     module: &Module<BE>,
-    src: &GGLWEToGGSWKey<Vec<u8>, i64>,
+    src: &GGLWEToGGSWKey<AlignedBuf, i64>,
 ) -> GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> {
     GGLWEToGGSWKey {
         keys: src.keys.iter().map(|key| upload_gglwe(module, key)).collect(),

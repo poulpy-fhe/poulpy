@@ -3,6 +3,7 @@ use poulpy_core::{
     EncryptionLayout, GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     layouts::{GGSW, GGSWPrepared, GGSWPreparedFactory, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc},
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{HostDataMut, HostDataRef};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -343,7 +344,7 @@ where
         + GLWEBlindRetrieval<BE>
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,

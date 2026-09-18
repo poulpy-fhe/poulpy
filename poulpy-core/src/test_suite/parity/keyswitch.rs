@@ -1,6 +1,7 @@
 //! Key-switch parity: the gadget digit loop, compared across backends.
 
 use crate::layouts::prepared::GGLWEPreparedToBackendRef;
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{
         ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
@@ -447,7 +448,7 @@ where
         let selected: Vec<usize> = (0..sel_rows).map(|i| (i + 1) * s as usize - 1).collect();
         let row_len: usize = n as usize * cols_out * size;
         // Poison every skipped row: reading any of it changes the result.
-        let poison = |mat: &mut MatZnx<Vec<u8>, i64>, with: i64| {
+        let poison = |mat: &mut MatZnx<AlignedBuf, i64>, with: i64| {
             for row in 0..rows {
                 for c in 0..cols_in {
                     if !selected.contains(&row) {
@@ -469,7 +470,7 @@ where
             }
         }
 
-        let prepare = |m: &MatZnx<Vec<u8>, i64>, rows: usize, scratch: &mut ScratchOwned<BE>| {
+        let prepare = |m: &MatZnx<AlignedBuf, i64>, rows: usize, scratch: &mut ScratchOwned<BE>| {
             let mut pmat = module.vmp_pmat_alloc(module.n(), rows, cols_in, cols_out, size, PrepareHint::Reuse);
             module.vmp_prepare(
                 &mut pmat.to_backend_mut(),

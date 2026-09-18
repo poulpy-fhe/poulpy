@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
@@ -104,7 +105,7 @@ impl<D: Data, W: ZnxWord> LWECompressed<D, W> {
     }
 
     pub fn bytes_of(base2k: Base2K, k: TorusPrecision) -> usize {
-        VecZnx::<Vec<u8>, W>::bytes_of(1, 1, k.0.div_ceil(base2k.0) as usize)
+        VecZnx::<AlignedBuf, W>::bytes_of(1, 1, k.0.div_ceil(base2k.0) as usize)
     }
 }
 

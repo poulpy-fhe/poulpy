@@ -16,6 +16,7 @@ use poulpy_core::{
         GLWETensorKeyPreparedFactory, LWESecretSampling,
     },
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Backend, HostBackend, Module, ScratchOwned},
@@ -46,7 +47,7 @@ pub use super::ckks_bootstrapping::bench_ckks_bootstrapping;
 
 // ── add ──────────────────────────────────────────────────────────────────────
 
-pub fn ckks_add_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
+pub fn ckks_add_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 3]
 where
     Module<BE>: ModuleNew<BE> + CKKSAddOps<BE>,
@@ -72,7 +73,7 @@ where
 
 // ── sub ──────────────────────────────────────────────────────────────────────
 
-pub fn ckks_sub_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
+pub fn ckks_sub_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 3]
 where
     Module<BE>: ModuleNew<BE> + CKKSSubOps<BE>,
@@ -98,7 +99,7 @@ where
 
 // ── neg ──────────────────────────────────────────────────────────────────────
 
-pub fn ckks_neg_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
+pub fn ckks_neg_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 1]
 where
     Module<BE>: ModuleNew<BE> + CKKSNegOps<BE>,
@@ -112,7 +113,7 @@ where
 
 // ── pow2 ─────────────────────────────────────────────────────────────────────
 
-pub fn ckks_pow2_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
+pub fn ckks_pow2_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 2]
 where
     Module<BE>: ModuleNew<BE> + CKKSPow2Ops<BE>,
@@ -133,7 +134,7 @@ where
 
 // ── mul ──────────────────────────────────────────────────────────────────────
 
-pub fn ckks_mul_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
+pub fn ckks_mul_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 4]
 where
     Module<BE>: ModuleNew<BE> + CKKSMulOps<BE> + GLWETensorKeyPreparedFactory<BE>,
@@ -164,7 +165,7 @@ where
 
 // ── rotate ───────────────────────────────────────────────────────────────────
 
-pub fn ckks_rotate_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
+pub fn ckks_rotate_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 1]
 where
     Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
@@ -178,7 +179,7 @@ where
 
 // ── conjugate ────────────────────────────────────────────────────────────────
 
-pub fn ckks_conjugate_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
+pub fn ckks_conjugate_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 1]
 where
     Module<BE>: ModuleNew<BE> + CKKSConjugateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
@@ -192,7 +193,7 @@ where
 
 // ── encoding ─────────────────────────────────────────────────────────────────
 
-pub fn ckks_encoding_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
+pub fn ckks_encoding_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 4]
 where
     Module<BE>: ModuleNew<BE> + CKKSEncodingOps<BE, f64>,
@@ -226,7 +227,7 @@ where
 /// Concatenates every CKKS-layer group into a single table. Requires a
 /// backend that implements the full CKKS API; a backend supporting only part
 /// of it should instead compose the `ckks_*_ops` tables it needs directly.
-pub fn all_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, M: criterion::measurement::Measurement>()
+pub fn all_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend, M: criterion::measurement::Measurement>()
 -> Vec<BenchOp<M, CkksBenchParams>>
 where
     Module<BE>: ModuleNew<BE>
@@ -256,7 +257,7 @@ where
 // ── bin_fhe ──────────────────────────────────────────────────────────────────
 
 pub fn blind_rotate_ops<
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
     BRA: BlindRotationAlgo,
     M: criterion::measurement::Measurement,
 >() -> [BenchOp<M, BlindRotateBenchParams>; 1]
@@ -282,7 +283,7 @@ where
 }
 
 pub fn circuit_bootstrapping_ops<
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
     BRA: BlindRotationAlgo,
     M: criterion::measurement::Measurement,
 >() -> [BenchOp<M, CircuitBootstrappingBenchParam>; 1]
@@ -318,7 +319,7 @@ where
 /// than one combined function) since the two schemes are typically
 /// benchmarked against different backends (e.g. an NTT-friendly backend for
 /// CKKS, an FFT-friendly one for bin-fhe).
-pub fn ckks_standard_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
+pub fn ckks_standard_ops<BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> Vec<BenchOp<M, CkksBenchParams>>
 where
     Module<BE>: ModuleNew<BE>
@@ -369,7 +370,7 @@ where
 /// [`ckks_standard_ops`] for why this is kept separate from the CKKS table.
 #[allow(clippy::type_complexity)]
 pub fn bin_fhe_standard_ops<
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
     BRA: BlindRotationAlgo,
     M: criterion::measurement::Measurement,
 >() -> (
@@ -418,7 +419,7 @@ where
 /// `criterion_group!` registers it once per backend to cover.
 pub fn bench_ckks<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
     Module<BE>: ModuleNew<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -440,7 +441,7 @@ where
 /// [`bin_fhe_standard_ops`]'s own.
 pub fn bench_binfhe<BE, BRA>(c: &mut Criterion<WallTime>)
 where
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend,
     BRA: BlindRotationAlgo,
     Module<BE>: ModuleN
         + ModuleNew<BE>
@@ -478,7 +479,7 @@ pub mod standard {
     use std::marker::PhantomData;
 
     use criterion::{Criterion, measurement::WallTime};
-    use poulpy_hal::layouts::Backend;
+    use poulpy_hal::{AlignedBuf, layouts::Backend};
 
     use super::{
         CKKSAddOps, CKKSEncodingOps, CKKSMulOps, CKKSRotateOps, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory,
@@ -490,7 +491,7 @@ pub mod standard {
     /// 13/14/15. `where` clause matches [`ckks_standard_ops`]'s own.
     pub fn bench_ckks<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+        BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
             + CKKSAddOps<BE>
             + CKKSMulOps<BE>
@@ -513,7 +514,7 @@ pub mod light {
     use std::marker::PhantomData;
 
     use criterion::{Criterion, measurement::WallTime};
-    use poulpy_hal::layouts::Backend;
+    use poulpy_hal::{AlignedBuf, layouts::Backend};
 
     use super::{
         CKKSAddOps, CKKSEncodingOps, CKKSMulOps, CKKSRotateOps, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory,
@@ -526,7 +527,7 @@ pub mod light {
     /// own.
     pub fn bench_ckks<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+        BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
         Module<BE>: ModuleNew<BE>
             + CKKSAddOps<BE>
             + CKKSMulOps<BE>

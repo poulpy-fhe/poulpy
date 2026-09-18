@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     layouts::{
@@ -317,7 +318,7 @@ impl<D: Data, W: ZnxWord> GGLWECompressed<D, W> {
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank_in: Rank) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        MatZnx::<Vec<u8>, W>::bytes_of(n.into(), dnum.into(), rank_in.into(), 1, size)
+        MatZnx::<AlignedBuf, W>::bytes_of(n.into(), dnum.into(), rank_in.into(), 1, size)
     }
 }
 

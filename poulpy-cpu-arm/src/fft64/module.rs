@@ -4,7 +4,7 @@ use std::ptr::NonNull;
 
 use poulpy_cpu_ref::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
 use poulpy_hal::{
-    alloc_aligned, assert_alignment,
+    AlignedBuf, alloc_aligned,
     layouts::{Backend, Host},
 };
 
@@ -29,7 +29,7 @@ impl Backend for FFT64Neon {
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
-    type OwnedBuf = Vec<u8>;
+    type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
     type Handle = FFT64NeonHandle;
@@ -38,17 +38,13 @@ impl Backend for FFT64Neon {
         alloc_aligned::<u8>(len)
     }
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
-        let mut buf = alloc_aligned::<u8>(bytes.len());
-        buf[..bytes.len()].copy_from_slice(bytes);
-        buf[bytes.len()..].fill(0);
-        buf
+        AlignedBuf::from(bytes)
     }
     fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        assert_alignment(bytes.as_ptr());
-        bytes
+        AlignedBuf::from(bytes)
     }
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
-        buf.clone()
+        buf.to_vec()
     }
     fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
         assert!(buf.len() >= dst.len());

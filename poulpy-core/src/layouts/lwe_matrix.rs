@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord};
 
 use crate::layouts::{Base2K, Degree, LWEInfos, SetBase2k, TorusPrecision};
@@ -120,7 +121,7 @@ impl<D: Data, W: ZnxWord> LWEMatrix<D, W> {
 }
 
 impl<D: HostDataRef, W: ZnxWord> LWEMatrix<D, W> {
-    pub fn to_host_owned<BE>(&self) -> LWEMatrix<Vec<u8>, W>
+    pub fn to_host_owned<BE>(&self) -> LWEMatrix<AlignedBuf, W>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {

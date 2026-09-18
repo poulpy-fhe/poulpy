@@ -50,7 +50,7 @@
 use std::marker::PhantomData;
 
 use crate::reference::ntt4x30::primes::PrimeSetCrt4;
-use poulpy_hal::alloc_aligned;
+use poulpy_hal::{AlignedVec, alloc_aligned};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Precomputation data structures
@@ -106,7 +106,7 @@ pub struct NttTable<P: PrimeSetCrt4> {
     /// Packing: each u64 stores `(t1 << 32) | t` where `t = ω^i mod Q[k]`
     /// and `t1 = (t << half_bs) mod Q[k]`.  The four consecutive u64
     /// values (one per prime) form one logical entry.
-    pub powomega: Vec<u64>,
+    pub powomega: AlignedVec<u64>,
     /// Reduction metadata (shared across all levels).
     pub reduc_metadata: NttReducMeta,
     /// Input bit-size (64 for q120b inputs).
@@ -125,7 +125,7 @@ pub struct NttTableInv<P: PrimeSetCrt4> {
     /// Per-level metadata (length = log2(n) + 1).
     pub level_metadata: Vec<NttStepMeta>,
     /// Packed inverse twiddle factors (same packing as `NttTable::powomega`).
-    pub powomega: Vec<u64>,
+    pub powomega: AlignedVec<u64>,
     /// Reduction metadata.
     pub reduc_metadata: NttReducMeta,
     /// Input bit-size.
@@ -234,8 +234,7 @@ impl<P: PrimeSetCrt4> NttTable<P> {
 
         let input_bit_size = bs;
 
-        let powomega_capacity = alloc_aligned::<u64>(4 * 2 * n.max(1));
-        let mut powomega: Vec<u64> = powomega_capacity;
+        let mut powomega: AlignedVec<u64> = alloc_aligned::<u64>(4 * 2 * n.max(1));
         let mut po_ptr = 0usize; // index into powomega
 
         let mut level_metadata: Vec<NttStepMeta> = Vec::new();
@@ -377,8 +376,7 @@ impl<P: PrimeSetCrt4> NttTableInv<P> {
         let (reduc_metadata, bs_after_reduc) = fill_reduction_meta::<P>(bs);
 
         let input_bit_size = bs;
-        let powomega_capacity = alloc_aligned::<u64>(4 * 2 * n.max(1));
-        let mut powomega: Vec<u64> = powomega_capacity;
+        let mut powomega: AlignedVec<u64> = alloc_aligned::<u64>(4 * 2 * n.max(1));
         let mut po_ptr = 0usize;
 
         let mut level_metadata: Vec<NttStepMeta> = Vec::new();

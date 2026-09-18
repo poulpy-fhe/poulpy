@@ -38,6 +38,7 @@ use poulpy_core::{
     },
 };
 use poulpy_cpu_ref::NTT4x30Ref;
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, Module, ScratchOwned},
@@ -98,18 +99,18 @@ struct SetupArtifacts {
 struct EncodingArtifacts {
     x_re: Vec<f64>,
     poly: Polynomial<f64>,
-    bsgs: BSGSPolynomial<CKKSPlaintext<Vec<u8>, i64>>,
-    pt_znx: CKKSPlaintext<Vec<u8>, i64>,
+    bsgs: BSGSPolynomial<CKKSPlaintext<AlignedBuf, i64>>,
+    pt_znx: CKKSPlaintext<AlignedBuf, i64>,
 }
 
 /// Ciphertext produced by the encryption phase.
 struct EncryptionArtifacts {
-    ct_x: CKKSCiphertext<Vec<u8>, i64>,
+    ct_x: CKKSCiphertext<AlignedBuf, i64>,
 }
 
 /// Ciphertext produced by the homomorphic evaluation phase.
 struct EvaluationArtifacts {
-    ct_sin: CKKSCiphertext<Vec<u8>, i64>,
+    ct_sin: CKKSCiphertext<AlignedBuf, i64>,
 }
 
 /// Decoded values recovered after decryption.
@@ -160,7 +161,7 @@ fn print_phase(name: &str) {
     println!("\n== {name} ==");
 }
 
-fn print_ct_meta(label: &str, ct: &CKKSCiphertext<Vec<u8>, i64>) {
+fn print_ct_meta(label: &str, ct: &CKKSCiphertext<AlignedBuf, i64>) {
     println!(
         "  {label:<28} log_delta={:>2} log_budget={:>3} k={:>3} limbs={:>2} max_k={:>3}",
         ct.log_delta(),
@@ -171,7 +172,7 @@ fn print_ct_meta(label: &str, ct: &CKKSCiphertext<Vec<u8>, i64>) {
     );
 }
 
-fn print_pt_meta(label: &str, pt: &CKKSPlaintext<Vec<u8>, i64>) {
+fn print_pt_meta(label: &str, pt: &CKKSPlaintext<AlignedBuf, i64>) {
     println!(
         "  {label:<28} log_delta={:>2} log_budget={:>3} k={:>3} limbs={:>2} max_k={:>3}",
         pt.log_delta(),
@@ -341,7 +342,7 @@ fn evaluation(
             let mut scratch = setup.scratch.borrow();
             setup
                 .module
-                .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>, i64>, _, _>(
+                .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<AlignedBuf, i64>, _, _>(
                     &mut ct_sin,
                     &encoding.bsgs,
                     &pb,

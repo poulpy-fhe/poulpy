@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::VecZnxCopy,
     layouts::{
@@ -251,7 +252,7 @@ impl<D: Data, W: ZnxWord> GLWECompressed<D, W> {
 
     /// Returns the serialized byte size for a compressed GLWE with the given parameters.
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision) -> usize {
-        VecZnx::<Vec<u8>, W>::bytes_of(n.into(), 1, k.0.div_ceil(base2k.0) as usize)
+        VecZnx::<AlignedBuf, W>::bytes_of(n.into(), 1, k.0.div_ceil(base2k.0) as usize)
     }
 }
 

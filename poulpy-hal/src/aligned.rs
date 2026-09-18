@@ -55,7 +55,7 @@ impl<T: Copy> AlignedVec<T> {
         let layout: Layout = Layout::from_size_align(size, align).expect("Invalid alignment");
         if size == 0 {
             return Self {
-                ptr: NonNull::dangling(),
+                ptr: dangling_aligned(align),
                 len: 0,
                 layout,
             };
@@ -113,6 +113,13 @@ impl<T: Copy> AlignedVec<T> {
     }
 }
 
+/// A non-null, unallocated pointer on an `align`-byte boundary, the empty
+/// buffer's address. Readers assert the alignment of their word type even on a
+/// zero-length buffer, which `NonNull::dangling` does not give for `u8`.
+fn dangling_aligned<T>(align: usize) -> NonNull<T> {
+    NonNull::new(std::ptr::without_provenance_mut::<T>(align)).expect("align is non-zero")
+}
+
 impl<T: Copy> Drop for AlignedVec<T> {
     fn drop(&mut self) {
         if self.layout.size() != 0 {
@@ -125,7 +132,7 @@ impl<T: Copy> Drop for AlignedVec<T> {
 impl<T: Copy> Default for AlignedVec<T> {
     fn default() -> Self {
         Self {
-            ptr: NonNull::dangling(),
+            ptr: dangling_aligned(crate::DEFAULTALIGN),
             len: 0,
             layout: Layout::from_size_align(0, crate::DEFAULTALIGN).expect("Invalid alignment"),
         }
@@ -229,6 +236,10 @@ mod tests {
         assert_eq!(alloc_aligned::<u64>(3).len(), 8);
         assert_eq!(alloc_aligned::<f64>(0).len(), 0);
         assert_eq!(alloc_aligned::<u8>(64).align(), DEFAULTALIGN);
+        // An empty buffer still reports an aligned address: its readers assert
+        // the alignment of their word type whatever the length.
+        assert!(is_aligned(alloc_aligned::<u8>(0).as_ptr()));
+        assert!(is_aligned(AlignedBuf::default().as_ptr()));
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
     source::Source,
@@ -33,7 +34,7 @@ pub struct GLWETensorKeyLayout {
 /// Wraps a [`GGLWE`] whose `rank_in` equals the number of unique
 /// pairs `max(1, rank*(rank+1)/2)` produced by the tensor product.
 ///
-/// `D: Data` is the backing storage type (e.g. `Vec<u8>`, `&[u8]`,
+/// `D: Data` is the backing storage type (e.g. `AlignedBuf`, `&[u8]`,
 /// `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWETensorKey<D: Data, W: ZnxWord>(pub(crate) GGLWE<D, W>);
@@ -170,7 +171,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWETensorKey<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWETensorKey<Vec<u8>, W> {
+impl<W: ZnxWord> GLWETensorKey<AlignedBuf, W> {
     /// Allocates a new [`GLWETensorKey`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
@@ -210,7 +211,7 @@ impl<W: ZnxWord> GLWETensorKey<Vec<u8>, W> {
     /// Returns the byte count required for a [`GLWETensorKey`] with the given parameters.
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.0 + 1) * rank.0) >> 1).max(1);
-        GGLWE::<Vec<u8>, W>::bytes_of(n, base2k, dnum, dsize, k_aux, Rank(pairs), rank)
+        GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, Rank(pairs), rank)
     }
 }
 

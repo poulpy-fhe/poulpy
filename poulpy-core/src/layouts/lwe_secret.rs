@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     api::VecZnxZero,
@@ -31,11 +32,11 @@ pub type LWESecretBackendMut<'a, BE> = LWESecret<<BE as Backend>::BufMut<'a>, <B
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> LWESecret<Vec<u8>, W> {
+impl<W: ZnxWord> LWESecret<AlignedBuf, W> {
     pub(crate) fn alloc(n: Degree) -> Self {
         LWESecret {
             data: ScalarZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(ScalarZnx::<Vec<u8>, W>::bytes_of(n.into(), 1)),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(ScalarZnx::<AlignedBuf, W>::bytes_of(n.into(), 1)),
                 n.into(),
                 1,
             ),

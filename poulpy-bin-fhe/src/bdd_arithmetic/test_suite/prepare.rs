@@ -2,6 +2,7 @@ use poulpy_core::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
     layouts::{GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, LWEInfos, prepared::GLWESecretPrepared},
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Stats},
@@ -18,7 +19,7 @@ use crate::{
     blind_rotation::BlindRotationAlgo,
 };
 
-pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend>(
+pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend>(
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: ModuleNew<BE>
@@ -69,7 +70,7 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>, 
 
     // GGSW(0)
     let mut c_enc_prep_debug: FheUintPreparedDebug<BE::OwnedBuf, u32, BE::ZnxWord> =
-        FheUintPreparedDebug::<Vec<u8>, u32, i64>::alloc_from_infos(module, &ggsw_infos);
+        FheUintPreparedDebug::<AlignedBuf, u32, i64>::alloc_from_infos(module, &ggsw_infos);
 
     let mut scratch_2 = ScratchOwned::alloc(module.fhe_uint_prepare_tmp_bytes(7, 1, &c_enc_prep_debug, &c_enc, bdd_key_prepared));
 

@@ -1,4 +1,5 @@
 use poulpy_core::layouts::IntPolyInfos;
+use poulpy_hal::AlignedBuf;
 use std::{
     fmt::{self},
     ops::{Deref, DerefMut},
@@ -28,8 +29,8 @@ impl<D: Data, W: ZnxWord> CKKSPlaintext<D, W> {
         Self { inner, meta }
     }
 
-    /// Rebuilds this backend-owned plaintext as a host-owned [`CKKSPlaintext<Vec<u8>, i64>`].
-    pub fn to_host_owned<BE>(&self) -> CKKSPlaintext<Vec<u8>, W>
+    /// Rebuilds this backend-owned plaintext as a host-owned [`CKKSPlaintext<AlignedBuf, i64>`].
+    pub fn to_host_owned<BE>(&self) -> CKKSPlaintext<AlignedBuf, W>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
     {

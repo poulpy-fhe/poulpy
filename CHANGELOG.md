@@ -89,6 +89,7 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - Every kernel picks its transform table by the operand degree and asserts the module serves it (`check_degree` at entry, the operand equalities beside it); the IFMA handle holds forward and inverse tables for every degree from 8 to `N`; the four module-degree table accessors are gone; the suites sweep the floor degree on every backend. Floors: 8 on every backend except `FFT64Avx512` (16, its complex multiply kernels need `m` a multiple of 8); the rayon twins inherit theirs.
 - `NTT3x42Ifma` serves degree 8: its floor drops from 16 to 8 (the forward NTT has a scalar tail below 16 and the inverse a scalar fallback, both already pinned), and every IFMA HAL suite now sweeps `n = 8`. `NTT3x42IfmaRayon` gains the core parity suite (keyswitch, automorphism, external product, add, sub, negate, normalize, rotate) it never had; only the fused rank-1 tensor was covered.
 - The NEON crate drops the dead `vec_znx_idft_apply_consume` path and its `compact_all_blocks_neon` helper: the HAL operation they implemented no longer exists.
+- Every host backend's `OwnedBuf` is `AlignedBuf`; `from_host_bytes` and `from_bytes` copy into padded aligned storage through `AlignedBuf::from`, `to_host_bytes` is `to_vec`. The NTT twiddle tables (`powomega` in the reference NTT4x30 and the IFMA tables) and the reim FFT tables (`omg`) hold `AlignedVec`, so they too free with the layout they were allocated with.
 
 ### `poulpy-bench`
 

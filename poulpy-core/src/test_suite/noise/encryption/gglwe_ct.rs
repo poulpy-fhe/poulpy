@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{Module, ScratchOwned},
@@ -138,7 +139,7 @@ where
 
         let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1_u32.into());
         module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
-        let mut sk_out: GLWESecret<Vec<u8>, i64> = GLWESecret::alloc(smaller_n.into(), 1_u32.into());
+        let mut sk_out: GLWESecret<AlignedBuf, i64> = GLWESecret::alloc(smaller_n.into(), 1_u32.into());
         module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
 
         module.glwe_switching_key_encrypt_sk(
@@ -283,7 +284,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
 
         let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1_u32.into());
         module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
-        let mut sk_out: GLWESecret<Vec<u8>, i64> = GLWESecret::alloc(smaller_n.into(), 1_u32.into());
+        let mut sk_out: GLWESecret<AlignedBuf, i64> = GLWESecret::alloc(smaller_n.into(), 1_u32.into());
         module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
 
         module.glwe_switching_key_compressed_encrypt_sk(

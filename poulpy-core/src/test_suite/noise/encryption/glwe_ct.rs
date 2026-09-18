@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSource},
     layouts::{Module, ScratchOwned, ZnxView},
@@ -17,7 +18,7 @@ use crate::{
     },
 };
 
-fn assert_canonical(ct: &GLWE<Vec<u8>, i64>) {
+fn assert_canonical(ct: &GLWE<AlignedBuf, i64>) {
     let padding = ct.max_k().as_usize() - ct.k().as_usize();
     if padding == 0 {
         return;

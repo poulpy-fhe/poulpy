@@ -20,6 +20,7 @@ use poulpy_core::{
         ModuleCoreAlloc, Rank,
     },
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::HostStaged;
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
@@ -351,7 +352,7 @@ impl<D: Data, BE: Backend> ShipKeysPrepared<D, BE> {
 pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
-    sk_dense_host: &GLWESecret<Vec<u8>, i64>,
+    sk_dense_host: &GLWESecret<AlignedBuf, i64>,
     beta: bool,
     rot: usize,
     k_ct: usize,
@@ -365,7 +366,7 @@ where
     BE: HostStaged,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     Module<BE>: GLWESwitchingKeyEncryptSk<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + GaloisElement,
-    Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+    Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
 {
     let n = sk_dense_host.n();
     let m = n.as_usize() / 2;
@@ -413,7 +414,7 @@ where
 }
 
 // Generation is word-pinned, not by choice: `generate` stages its key material
-// through `Module<HostBytesBackend>` (and already took a host `GLWESecret<Vec<u8>,
+// through `Module<HostBytesBackend>` (and already took a host `GLWESecret<AlignedBuf,
 // i64>`), so the material it uploads carries that backend's word. Because it
 // returns `Self`, the word cannot be constrained per-method and lands here.
 impl<D: Data> ShipKeySet<D, i64> {
@@ -432,7 +433,7 @@ impl<D: Data> ShipKeySet<D, i64> {
         plan: &ShipPlan,
         base2k: Base2K,
         spec: &ShipSecretSpec,
-        sk_dense_host: &GLWESecret<Vec<u8>, i64>,
+        sk_dense_host: &GLWESecret<AlignedBuf, i64>,
         layout: &ShipKeysLayout,
         source_xe: &mut Source,
         source_xa: &mut Source,
@@ -451,7 +452,7 @@ impl<D: Data> ShipKeySet<D, i64> {
             + CKKSEncryptOps<BE>
             + CKKSEncodingOps<BE, F>
             + GaloisElement,
-        Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+        Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = AlignedBuf, ZnxWord = i64>,
         CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE>,
         CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     {

@@ -1,4 +1,5 @@
 use dashu_float::{FBig, round::mode::HalfEven};
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize},
     layouts::{FillUniform, Module, ReaderFrom, ScratchOwned, ZnxView},
@@ -50,7 +51,7 @@ pub fn test_lwe_read_from_rejects_malformed_shape<BE: crate::test_suite::noise::
         k: TorusPrecision(64),
     };
 
-    let mut lwe = LWE::<Vec<u8>, i64>::alloc_from_infos(&infos);
+    let mut lwe = LWE::<AlignedBuf, i64>::alloc_from_infos(&infos);
     let mut bytes = Vec::new();
 
     bytes.write_u32::<LittleEndian>(32).unwrap();

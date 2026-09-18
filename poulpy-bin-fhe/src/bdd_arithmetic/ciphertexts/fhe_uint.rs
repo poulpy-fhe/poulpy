@@ -7,6 +7,7 @@ use poulpy_core::{
         GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, LWEToBackendMut, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
     api::{ModuleLogN, ModuleN},
@@ -507,7 +508,7 @@ impl<D: Data, T: UnsignedInteger, W: ZnxWord> FheUint<D, T, W> {
     }
 }
 
-impl<T: UnsignedInteger> FheUint<Vec<u8>, T, i64> {
+impl<T: UnsignedInteger> FheUint<AlignedBuf, T, i64> {
     pub fn from_fhe_uint_prepared<M, H, BE>(
         &mut self,
         module: &M,
@@ -515,14 +516,14 @@ impl<T: UnsignedInteger> FheUint<Vec<u8>, T, i64> {
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + 'static,
+        BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + 'static,
         M: GLWEBytesOf<BE>
             + Cmux<BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ModuleLogN
             + GLWEPacking<BE>
             + GLWECopy<BE>,
-        GLWE<Vec<u8>, BE::ZnxWord>: GLWEToBackendMut<BE>,
+        GLWE<AlignedBuf, BE::ZnxWord>: GLWEToBackendMut<BE>,
         Self: GLWEToBackendMut<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
         H: GetAutomorphismKey<BE>,
