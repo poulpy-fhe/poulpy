@@ -40,6 +40,7 @@ impl<T: Copy> AlignedVec<T> {
     /// If `T` is zero-sized, `align` is not a power of two, `align` is below
     /// the alignment of `T`, or `len * size_of::<T>()` is not a multiple of
     /// `align`.
+    /// - If `len * size_of::<T>()` overflows `usize`.
     pub fn zeroed(len: usize, align: usize) -> Self {
         assert!(size_of::<T>() > 0, "AlignedVec: zero-sized types are not supported");
         assert!(align.is_power_of_two(), "Alignment must be a power of two but is {align}");
@@ -131,11 +132,7 @@ impl<T: Copy> Drop for AlignedVec<T> {
 
 impl<T: Copy> Default for AlignedVec<T> {
     fn default() -> Self {
-        Self {
-            ptr: dangling_aligned(crate::DEFAULTALIGN),
-            len: 0,
-            layout: Layout::from_size_align(0, crate::DEFAULTALIGN).expect("Invalid alignment"),
-        }
+        Self::zeroed(0, crate::DEFAULTALIGN.max(align_of::<T>()))
     }
 }
 
@@ -196,6 +193,9 @@ impl<T: Copy + fmt::Debug> fmt::Debug for AlignedVec<T> {
 /// Copies the slice into storage padded to a multiple of
 /// [`DEFAULTALIGN`](crate::DEFAULTALIGN) bytes; the tail past the copied
 /// elements is zero.
+/// The padded length is computed in bytes, so a `T` whose size does not
+/// divide 64 may not fit its own length; every word type these buffers
+/// carry has a size that divides 64.
 impl<T: Copy> From<&[T]> for AlignedVec<T> {
     fn from(src: &[T]) -> Self {
         let mut out: Self = crate::alloc_aligned::<T>(src.len());
@@ -333,5 +333,19 @@ mod tests {
     #[should_panic(expected = "is below the alignment of the element type")]
     fn zeroed_rejects_an_alignment_below_the_element() {
         let _ = AlignedVec::<u64>::zeroed(8, 4);
+    }
+
+    #[test]
+    fn default_respects_an_element_alignment_above_the_default() {
+        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        #[repr(align(128))]
+        struct Wide([u8; 128]);
+        let empty = AlignedVec::<Wide>::default();
+        assert!(empty.is_empty());
+        assert_eq!(empty.align(), 128);
+        assert!((empty.as_ptr() as usize).is_multiple_of(128));
+        let copy = empty.clone();
+        assert_eq!(copy.len(), 0);
+        assert_eq!(copy.align(), 128);
     }
 }

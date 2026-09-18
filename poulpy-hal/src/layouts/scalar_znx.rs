@@ -148,7 +148,9 @@ impl<W: ZnxWord> ScalarZnx<AlignedBuf, W> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `bytes_of(n, cols)`.
+    /// Panics if the buffer length does not equal `bytes_of(n, cols)`; a `Vec<u8>`
+    /// argument is first copied into storage padded to a 64-byte multiple, so its padded
+    /// length is what is compared.
     pub fn from_bytes(n: usize, cols: usize, bytes: impl Into<AlignedBuf>) -> Self {
         let data: AlignedBuf = bytes.into();
         assert!(data.len() == Self::bytes_of(n, cols));

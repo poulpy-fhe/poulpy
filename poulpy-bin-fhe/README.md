@@ -40,5 +40,5 @@ Public traits and helpers use the backend-owned HAL/core surface
 (`ScratchArena<'_, BE>`, `...ToBackendRef<BE>`, and `...ToBackendMut<BE>`),
 and the crate depends on no backend: it names only `poulpy-hal` and
 `poulpy-core`. Backend crates instantiate its tests through
-`bin_fhe_backend_test_suite!`. Several host `Vec<u8>` / `HostBackend` bounds
+`bin_fhe_backend_test_suite!`. Several host `AlignedBuf` / `HostBackend` bounds
 remain and are follow-up work.

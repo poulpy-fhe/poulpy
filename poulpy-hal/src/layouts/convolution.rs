@@ -127,7 +127,9 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_right(n, cols, size, hint)`.
+    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_right(n, cols, size, hint)`;
+    /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
+    /// its padded length is what is compared.
     pub fn from_bytes(
         n: usize,
         cols: usize,
@@ -252,7 +254,9 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_left(n, cols, size, hint)`.
+    /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_left(n, cols, size, hint)`;
+    /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
+    /// its padded length is what is compared.
     pub fn from_bytes(
         n: usize,
         cols: usize,

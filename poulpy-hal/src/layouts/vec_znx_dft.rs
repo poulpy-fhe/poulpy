@@ -273,7 +273,9 @@ impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_dft(n, cols, size)`.
+    /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_dft(n, cols, size)`;
+    /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
+    /// its padded length is what is compared.
     pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxDftOwned<B> {
         let data: AlignedBuf = bytes.into();
         assert!(data.len() == B::bytes_of_vec_znx_dft(n, cols, size));

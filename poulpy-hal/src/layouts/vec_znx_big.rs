@@ -169,7 +169,9 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_big(n, cols, size)`.
+    /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_big(n, cols, size)`;
+    /// a `Vec<u8>` argument is first copied into storage padded to a 64-byte multiple, so
+    /// its padded length is what is compared.
     pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxBigOwned<B>
     where
         B: Backend<OwnedBuf = D>,

@@ -406,4 +406,4 @@ jobs:
             exit 1
           fi
 
-          echo "Portable, AVX, Intel macOS AVX, Apple Silicon Quad, AVX-512 and NEON CI jobs passed."
+          echo "Portable, AVX, Intel macOS AVX, Apple Silicon Quad, AVX-512, NEON and Miri CI jobs passed."
