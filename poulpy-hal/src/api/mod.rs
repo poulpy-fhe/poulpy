@@ -188,16 +188,15 @@
 //! sparse-capable slot has the width of `res`. The coefficient-domain `add`
 //! and `sub` families and `vec_znx_big_from_small` accept the slot, so the
 //! derived small-operand forms inherit it. The shift-add and shift-sub forms
-//! of `VecZnx` accept it in `a`: their temporary takes `a`'s degree and the
-//! add or sub that follows reads it. In the convolution only the
-//! prepared right operand is sparse-capable, and the prepares are not
-//! sparsity-aware: a degree-`n` right operand is prepared at degree `n`, like
-//! any dense prepare, and the degree-`N` apply forms read it through the
-//! backend's slot correspondence, while the left operand and the result take
-//! the degree `N` of the call. A backend may reject a sparse degree below its
-//! transform block width in the apply; the coefficient-domain add and sub
-//! families accept any power-of-two divisor. `switch_ring` states both
-//! directions of the coefficient map explicitly.
+//! of `VecZnx` accept it in `a`. In the convolution only the prepared right
+//! operand is sparse-capable, and the prepares are not sparsity-aware: a
+//! degree-`n` right operand is prepared at degree `n`, like any dense
+//! prepare, and the degree-`N` apply forms read it through the backend's slot
+//! correspondence, while the left operand and the result take the degree `N`
+//! of the call. A backend may reject a sparse degree below its transform
+//! block width in the apply; the coefficient-domain add and sub families
+//! accept any power-of-two divisor. `switch_ring` states both directions of
+//! the coefficient map explicitly.
 //!
 //! Coefficient-wise reductions and products act on visible coefficient
 //! vectors rather than `R_N`; their contracts specify all degree relations.

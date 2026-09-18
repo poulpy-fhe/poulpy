@@ -439,9 +439,6 @@ where
 
 #[doc(hidden)]
 pub trait GLWEMulPlainDefault<BE: Backend> {
-    /// The right operand may be compact: a degree that is a power-of-two divisor
-    /// of the module's, not below the backend floor, stands for its ring
-    /// embedding; the budget is an upper bound for it.
     fn glwe_mul_plain_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,

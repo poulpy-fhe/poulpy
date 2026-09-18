@@ -183,13 +183,14 @@ pub struct CKKSMeta {
     /// slot replication). `0` is dense / full packing (`N/2` slots). For
     /// `log_sparsity = s` the message polynomial is sparse — `M(X^{2^s})` — and
     /// carries `(N/2) >> s` distinct slots, each replicated `2^s` times, i.e. a
-    /// coefficient gap of `2^s`. A plaintext may store its `M` compactly, at the
-    /// degree `ckks_pt_vec_alloc_compact` picks for its slot count; its own `n()`
-    /// is then below the ring degree and every consumer reads it through the ring
-    /// embedding.
-    /// `log_sparsity` keeps counting the gap under the ring embedding, `log2` of
-    /// the replication among the `N/2` ring slots, whatever degree the plaintext
-    /// is stored at.
+    /// coefficient gap of `2^s`.
+    ///
+    /// A plaintext may store its `M` compactly, at the degree
+    /// `ckks_pt_vec_alloc_compact` picks for its slot count; its own `n()` is
+    /// then below the ring degree and every consumer reads it through the ring
+    /// embedding. `log_sparsity` keeps counting the gap under the ring
+    /// embedding, `log2` of the replication among the `N/2` ring slots,
+    /// whatever degree the plaintext is stored at.
     pub log_sparsity: usize,
     /// Subfield the slots are known to live in. See [`SlotsKind`].
     pub slots: SlotsKind,

@@ -101,10 +101,6 @@ pub trait GLWEMulConst<BE: Backend> {
 /// `k` it declares and is expected normalized, hence canonical at it (see the
 /// normalized form on [`crate::layouts::GLWE`]); the convolution reads every
 /// bit of its live limbs and does not check.
-///
-/// The right operand may be compact: a degree that is a power-of-two divisor of
-/// the module's, not below the backend floor, stands for its ring embedding; the
-/// budget is an upper bound for it.
 pub trait GLWEMulPlain<BE: Backend> {
     /// The right operand may be compact: a degree that is a power-of-two divisor
     /// of the module's, not below the backend floor, stands for its ring

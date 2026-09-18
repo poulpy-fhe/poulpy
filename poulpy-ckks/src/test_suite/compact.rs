@@ -28,9 +28,10 @@ use crate::{
     },
 };
 
-/// The slot count every compact test uses: a quarter of the dense count, so
-/// the plaintext is a degree-`N/4` object (`2 * slots`), above every backend
-/// floor at the suite's `N = 256`.
+/// The default slot count of the compact tests: a quarter of the dense count,
+/// so the plaintext is a degree-`N/4` object (`2 * slots`), above every backend
+/// floor at the suite's `N = 256`. The embedding test additionally runs two
+/// slots, where `2 * slots` falls below every floor and the degree is clamped.
 fn compact_slots(params: &CKKSTestParams) -> usize {
     params.n / 8
 }
@@ -55,14 +56,28 @@ where
     let mut dense = host_module.ckks_pt_vec_alloc(params.base2k.into(), prec.k());
     dense.set_meta(prec.meta());
     encoder.encode_reim(&mut dense, re, im).unwrap();
-    let mut compact = host_module.ckks_pt_vec_alloc_compact(re.len(), params.base2k.into(), prec.k());
+    // The host module's floor is below a vector backend's, so the compact degree
+    // is derived for `BE` and the host plaintext is allocated at it directly.
+    let n = (2 * re.len()).max(BE::MIN_DEGREE).min(params.n);
+    let mut compact = host_module.ckks_pt_coeffs_alloc(n, params.base2k.into(), prec.k());
     compact.set_meta(prec.meta());
     encoder.encode_reim(&mut compact, re, im).unwrap();
-    assert_eq!(compact.n().as_usize(), 2 * re.len(), "compact plaintext degree");
+    assert_eq!(
+        module
+            .ckks_pt_vec_alloc_compact(re.len(), params.base2k.into(), prec.k())
+            .n()
+            .as_usize(),
+        n,
+        "compact plaintext degree"
+    );
     (upload_pt(module, &dense), upload_pt(module, &compact))
 }
 
-/// `switch_ring` of the compact plaintext decodes to the dense plaintext's slots.
+/// `switch_ring` of the compact plaintext decodes to the dense plaintext's
+/// slots, at the suite's compact slot count and at two slots. Two slots puts
+/// `2 * m` below every backend floor, so the degree is clamped to the floor and
+/// the encoder writes a gap inside the compact polynomial; the identity must
+/// hold there too.
 pub fn test_compact_plaintext_embedding<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -75,25 +90,30 @@ pub fn test_compact_plaintext_embedding<BE, F, E>(
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let m = compact_slots(&params);
-    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
-    let (re, im) = test_vector_1::<F>(m);
-    let (dense, compact) = encode_dense_and_compact(host_module, module, &params, &encoder, &re, &im);
-    let mut embedded = module.ckks_plaintext_alloc_from_infos(&dense);
-    {
-        let mut res = crate::GLWEToBackendMut::<BE>::to_backend_mut(&mut embedded);
-        let src = crate::GLWEToBackendRef::<BE>::to_backend_ref(&compact);
-        module.vec_znx_switch_ring(res.data_mut(), 0, src.data(), 0);
+    for m in [compact_slots(&params), 2] {
+        let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+        let (re, im) = test_vector_1::<F>(m);
+        let (dense, compact) = encode_dense_and_compact(host_module, module, &params, &encoder, &re, &im);
+        let mut embedded = module.ckks_plaintext_alloc_from_infos(&dense);
+        {
+            let mut res = crate::GLWEToBackendMut::<BE>::to_backend_mut(&mut embedded);
+            let src = crate::GLWEToBackendRef::<BE>::to_backend_ref(&compact);
+            module.vec_znx_switch_ring(res.data_mut(), 0, src.data(), 0);
+        }
+        let (mut want_re, mut want_im) = (vec![F::zero(); m], vec![F::zero(); m]);
+        let (mut have_re, mut have_im) = (vec![F::zero(); m], vec![F::zero(); m]);
+        encoder
+            .decode_reim(&dense.to_host_owned::<BE>(), &mut want_re, &mut want_im)
+            .unwrap();
+        encoder
+            .decode_reim(&embedded.to_host_owned::<BE>(), &mut have_re, &mut have_im)
+            .unwrap();
+        assert_eq!(
+            (want_re, want_im),
+            (have_re, have_im),
+            "switch_ring(compact) != dense at {m} slots"
+        );
     }
-    let (mut want_re, mut want_im) = (vec![F::zero(); m], vec![F::zero(); m]);
-    let (mut have_re, mut have_im) = (vec![F::zero(); m], vec![F::zero(); m]);
-    encoder
-        .decode_reim(&dense.to_host_owned::<BE>(), &mut want_re, &mut want_im)
-        .unwrap();
-    encoder
-        .decode_reim(&embedded.to_host_owned::<BE>(), &mut have_re, &mut have_im)
-        .unwrap();
-    assert_eq!((want_re, want_im), (have_re, have_im), "switch_ring(compact) != dense");
 }
 
 /// `ct + compact`, `ct - compact` and `ct * compact` decrypt to exactly what the
