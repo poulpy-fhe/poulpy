@@ -60,7 +60,8 @@ impl Backend for NTT4x30Avx {
     }
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
         let mut buf = alloc_aligned::<u8>(bytes.len());
-        buf.copy_from_slice(bytes);
+        buf[..bytes.len()].copy_from_slice(bytes);
+        buf[bytes.len()..].fill(0);
         buf
     }
     fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
@@ -81,12 +82,14 @@ impl Backend for NTT4x30Avx {
         buf[src_len..].fill(0);
     }
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-        assert_eq!(buf.len(), dst.len());
-        dst.copy_from_slice(buf);
+        assert!(buf.len() >= dst.len());
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-        assert_eq!(buf.len(), src.len());
-        buf.copy_from_slice(src);
+        assert!(buf.len() >= src.len());
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()

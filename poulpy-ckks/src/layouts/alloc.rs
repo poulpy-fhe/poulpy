@@ -78,6 +78,21 @@ pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf,
     {
         self.ckks_plaintext_alloc(self.ring_degree(), base2k, k)
     }
+
+    /// Allocates the compact plaintext for `slots` complex slots: degree
+    /// `2 * slots`, raised to the backend's minimum degree and capped at the
+    /// ring degree. Its value under the ring embedding is `M(X^(N/n))` for the
+    /// degree-`n` polynomial `M` it stores; `slots == N/2` gives the dense
+    /// plaintext.
+    fn ckks_pt_vec_alloc_compact(&self, slots: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintextOwned<BE>
+    where
+        Self: GetDegree,
+    {
+        assert!(slots.is_power_of_two(), "a compact plaintext holds a power-of-two slot count");
+        let ring = self.ring_degree().as_usize();
+        let n = (2 * slots).max(BE::MIN_DEGREE).min(ring);
+        self.ckks_plaintext_alloc(n.into(), base2k, k)
+    }
 }
 
 impl<BE: Backend> CKKSModuleAlloc<BE> for Module<BE> where

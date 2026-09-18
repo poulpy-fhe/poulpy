@@ -23,7 +23,7 @@
 //!
 //! ```ignore
 //! // setup, once per transform / per input shape
-//! let mut prepared = LinearTransformation::alloc_prepared(module, &layout, &pt_proxy);
+//! let mut prepared = LinearTransformation::alloc_prepared(module, &layout, lt.first_diagonal_plaintext().unwrap());
 //! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch);
 //! let mut babies = LinearTransformationBabySteps::alloc(module, prepared.baby_steps(), &ct);
 //!
@@ -117,7 +117,9 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ///
     /// `prepared` must have been sized via
     /// [`LinearTransformation::alloc_prepared`] for the same BSGS schedule as
-    /// `lt`. Performs zero `CnvPVecR` allocations.
+    /// `lt`. Performs zero `CnvPVecR` allocations. The proxy must also carry the
+    /// diagonals' degree, which a compact diagonal sets below the ring degree;
+    /// `lt.first_diagonal_plaintext()` is the proxy every caller should pass.
     fn ckks_prepare_linear_transformation_rhs<P>(
         &self,
         prepared: &mut LinearTransformationPrepared<BE>,

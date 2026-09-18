@@ -113,7 +113,8 @@ pub trait CKKSAddOps<BE: Backend> {
     /// - `dst_coeff`: target ZNX coefficient of `dst`.  Use `0` for the
     ///   real-slot constant term and `n/2` for the imaginary-slot constant
     ///   term (standard CKKS real/imaginary packing split).
-    /// - `pt_coeff`: source coefficient index in `pt`.
+    /// - `pt_coeff`: source coefficient index in `pt`. It indexes the
+    ///   coefficients of the plaintext as stored, whatever its degree.
     ///
     /// Metadata is inherited from `a` with the capacity offset applied.
     fn ckks_add_pt_const_into<Dst, A, P>(
@@ -133,7 +134,8 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Computes `dst += pt[pt_coeff]` in-place.
     ///
     /// See [`Self::ckks_add_pt_const_into`] for the semantics of `dst_coeff`
-    /// and `pt_coeff`.
+    /// and `pt_coeff`. `pt_coeff` indexes the coefficients of the plaintext as
+    /// stored, whatever its degree.
     fn ckks_add_pt_const_assign<Dst, P>(
         &self,
         dst: &mut Dst,

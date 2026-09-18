@@ -186,7 +186,8 @@ impl Backend for HostBytesBackend {
 
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
         let mut out = crate::alloc_aligned::<u8>(bytes.len());
-        out.copy_from_slice(bytes);
+        out[..bytes.len()].copy_from_slice(bytes);
+        out[bytes.len()..].fill(0);
         out
     }
 
@@ -195,7 +196,8 @@ impl Backend for HostBytesBackend {
             bytes
         } else {
             let mut out = crate::alloc_aligned::<u8>(bytes.len());
-            out.copy_from_slice(&bytes);
+            out[..bytes.len()].copy_from_slice(&bytes);
+            out[bytes.len()..].fill(0);
             out
         }
     }
@@ -227,13 +229,25 @@ impl Backend for HostBytesBackend {
     }
 
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-        assert_eq!(buf.len(), dst.len());
-        dst.copy_from_slice(buf);
+        assert!(
+            buf.len() >= dst.len(),
+            "backend view length {} is smaller than destination host slice length {}",
+            buf.len(),
+            dst.len()
+        );
+        dst.copy_from_slice(&buf[..dst.len()]);
     }
 
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-        assert_eq!(buf.len(), src.len());
-        buf.copy_from_slice(src);
+        assert!(
+            buf.len() >= src.len(),
+            "backend view length {} is smaller than source host slice length {}",
+            buf.len(),
+            src.len()
+        );
+        let src_len = src.len();
+        buf[..src_len].copy_from_slice(src);
+        buf[src_len..].fill(0);
     }
 
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
@@ -665,4 +679,63 @@ macro_rules! impl_backend_from {
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };
+}
+
+#[cfg(test)]
+mod host_transfer_tests {
+    use super::*;
+
+    /// `from_bytes` returns an aligned vector as is, and copies an unaligned
+    /// one into a buffer padded to the allocation granularity with a zero
+    /// tail. Each path is pinned on the very vector handed over: alignment is
+    /// a property of one allocation, not of its clones.
+    #[test]
+    fn from_bytes_keeps_aligned_and_pads_unaligned() {
+        let aligned: Vec<u8> = crate::alloc_aligned::<u8>(100);
+        let ptr = aligned.as_ptr();
+        let buf = <HostBytesBackend as Backend>::from_bytes(aligned);
+        assert_eq!(buf.as_ptr(), ptr, "the aligned fast path returns the vector as is");
+        assert_eq!(buf.len(), 128);
+
+        // Hold allocations until one lands off the 64-byte grid; a 16-byte
+        // allocation granularity yields one within a few tries.
+        let mut held: Vec<Vec<u8>> = Vec::new();
+        let unaligned: Vec<u8> = loop {
+            let candidate = vec![1u8; 100];
+            if !crate::is_aligned(candidate.as_ptr()) {
+                break candidate;
+            }
+            assert!(held.len() < 64, "no unaligned allocation found");
+            held.push(candidate);
+        };
+        let expected = unaligned.clone();
+        let buf = <HostBytesBackend as Backend>::from_bytes(unaligned);
+        assert_eq!(buf.len(), 128, "unaligned input is copied into a padded buffer");
+        assert_eq!(&buf[..100], &expected[..]);
+        assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
+    }
+
+    /// `from_host_bytes` always copies, so an unaligned length is padded and
+    /// the tail zeroed; the view-based copies round trip over the padded
+    /// buffer and leave the tail zero as well.
+    #[test]
+    fn from_host_bytes_unaligned_length_pads_and_zeroes() {
+        let src = [7u8; 100];
+        let buf = <HostBytesBackend as Backend>::from_host_bytes(&src);
+        assert_eq!(buf.len(), 128);
+        assert_eq!(&buf[..100], &src[..]);
+        assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
+
+        let mut owned = <HostBytesBackend as Backend>::alloc_bytes(100);
+        let src2 = [9u8; 100];
+        <HostBytesBackend as Backend>::copy_host_to_view(&mut <HostBytesBackend as Backend>::view_mut(&mut owned), &src2);
+        let mut dst = vec![0u8; 100];
+        <HostBytesBackend as Backend>::copy_view_to_host(&<HostBytesBackend as Backend>::view(&owned), &mut dst);
+        assert_eq!(dst, src2, "copy_host_to_view/copy_view_to_host round trip");
+
+        let mut all = vec![0xffu8; 128];
+        <HostBytesBackend as Backend>::copy_to_host(&owned, &mut all);
+        assert_eq!(&all[..100], &src2[..]);
+        assert!(all[100..].iter().all(|&b| b == 0), "tail not zero after copy_host_to_view");
+    }
 }

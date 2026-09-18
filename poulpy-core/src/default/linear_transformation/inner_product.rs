@@ -114,6 +114,9 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     // width, so its width and size are `max_k`/`max_size`, not the (possibly
     // smaller) effective `k`/`size`.
     let diagonal_size = first.plaintext.max_size();
+    // A compact diagonal is prepared at its own degree; the apply reads it
+    // through the sparse right slot of the convolution.
+    let diagonal_n = first.plaintext.n().as_usize();
     let res_dft_size = lhs.size() + diagonal_size - cnv_offset_hi;
     assert_eq!(prod_dft.cols(), cols);
     assert_eq!(prod_dft.size(), res_dft_size);
@@ -122,7 +125,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     let (mut diagonal, mut scratch_1) =
         scratch
             .borrow()
-            .take_cnv_pvec_right_scratch(module.n(), 1, diagonal_size, PrepareHint::OneShot);
+            .take_cnv_pvec_right_scratch(diagonal_n, 1, diagonal_size, PrepareHint::OneShot);
 
     // Baby is the outer loop, so the first baby initializes every output column
     // (overwrite) and the rest accumulate in place; each diagonal is prepared once.
@@ -130,6 +133,11 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
         let baby = lhs.baby_step(d.baby);
         assert_eq!(baby.cols(), cols);
         assert_eq!(baby.size() + diagonal_size - cnv_offset_hi, res_dft_size);
+        assert_eq!(
+            d.plaintext.n().as_usize(),
+            diagonal_n,
+            "streamed linear transformation diagonals do not share one degree"
+        );
 
         // Stream the RHS: prepare this diagonal on the fly, then reuse the slot.
         {

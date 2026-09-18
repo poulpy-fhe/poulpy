@@ -341,7 +341,29 @@ mod tests {
     use super::*;
     use crate::SlotsKind;
     use crate::layouts::CKKSModuleAlloc;
-    use poulpy_hal::layouts::{HostBytesBackend, Module};
+    use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
+
+    #[test]
+    fn compact_plaintext_degree_is_twice_the_slots_clamped_to_the_floor_and_the_ring() {
+        let module = Module::<HostBytesBackend>::new(64);
+        let base2k = Base2K(12);
+        let k = TorusPrecision(24);
+        // 8 slots: 16 coefficients, compact at degree 16.
+        assert_eq!(module.ckks_pt_vec_alloc_compact(8, base2k, k).n().as_usize(), 16);
+        // 2 slots: 4 coefficients, clamped to the floor.
+        assert_eq!(
+            module.ckks_pt_vec_alloc_compact(2, base2k, k).n().as_usize(),
+            <HostBytesBackend as Backend>::MIN_DEGREE
+        );
+        // 32 slots: the dense plaintext, degree N.
+        assert_eq!(module.ckks_pt_vec_alloc_compact(32, base2k, k).n().as_usize(), 64);
+        // A module at the floor: never above the ring degree.
+        let tiny = Module::<HostBytesBackend>::new(<HostBytesBackend as Backend>::MIN_DEGREE as u64);
+        assert_eq!(
+            tiny.ckks_pt_vec_alloc_compact(1, base2k, k).n().as_usize(),
+            <HostBytesBackend as Backend>::MIN_DEGREE
+        );
+    }
 
     #[test]
     fn plaintext_coeff_pack_allocates_requested_degree() {

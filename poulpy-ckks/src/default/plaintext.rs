@@ -10,7 +10,7 @@ use crate::GLWEToBackendRef;
 
 use crate::{
     CKKSInfos, CKKSMeta, SetCKKSInfos, ensure_base2k_match, ensure_plaintext_alignment, ensure_plaintext_coeff_in_range,
-    ensure_plaintext_degree_match,
+    ensure_plaintext_degree_embeds,
 };
 
 #[derive(Clone, Copy)]
@@ -38,7 +38,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     {
         const OP: &str = "ckks_add_pt_vec";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
-        ensure_plaintext_degree_match(OP, ct.n().as_usize(), pt.n().as_usize())?;
+        ensure_plaintext_degree_embeds(OP, ct.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
@@ -123,7 +123,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     {
         const OP: &str = "ckks_sub_pt_vec";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
-        ensure_plaintext_degree_match(OP, ct.n().as_usize(), pt.n().as_usize())?;
+        ensure_plaintext_degree_embeds(OP, ct.n().as_usize(), pt.n().as_usize(), BE::MIN_DEGREE)?;
         ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
