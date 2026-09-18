@@ -1,5 +1,6 @@
 //! Owned storage that frees with the layout it was allocated with.
 
+use bytemuck::Zeroable;
 use std::{
     alloc::Layout,
     fmt,
@@ -14,10 +15,11 @@ use std::{
 /// Built by [`alloc_aligned`](crate::alloc_aligned) and
 /// [`alloc_aligned_custom`](crate::alloc_aligned_custom), or by
 /// [`AlignedVec::zeroed`]; the layout used for the allocation is kept and
-/// handed back on drop. Dereferences to `[T]`. `T` is `Copy`: elements are
-/// never dropped one by one, and an all-zero byte pattern must be a valid
-/// `T`, which holds for every word type these buffers carry.
-pub struct AlignedVec<T: Copy> {
+/// handed back on drop. Dereferences to `[T]`. `T` is `Copy`, so elements are
+/// never dropped one by one, and [`Zeroable`], so the zero fill of a fresh
+/// buffer and of the padding past a copied slice is a valid `T`; a type with
+/// a niche at zero (`NonZeroU64`, a reference) does not qualify.
+pub struct AlignedVec<T: Copy + Zeroable> {
     ptr: NonNull<T>,
     len: usize,
     layout: Layout,
@@ -28,10 +30,10 @@ pub type AlignedBuf = AlignedVec<u8>;
 
 // SAFETY: the buffer owns its allocation exclusively; sharing or sending it is
 // sharing or sending a `[T]`.
-unsafe impl<T: Copy + Send> Send for AlignedVec<T> {}
-unsafe impl<T: Copy + Sync> Sync for AlignedVec<T> {}
+unsafe impl<T: Copy + Zeroable + Send> Send for AlignedVec<T> {}
+unsafe impl<T: Copy + Zeroable + Sync> Sync for AlignedVec<T> {}
 
-impl<T: Copy> AlignedVec<T> {
+impl<T: Copy + Zeroable> AlignedVec<T> {
     /// Zero-initialized storage of `len` elements whose first element sits on
     /// an `align`-byte boundary.
     ///
@@ -124,7 +126,7 @@ fn dangling_aligned<T>(align: usize) -> NonNull<T> {
     NonNull::new(std::ptr::without_provenance_mut::<T>(align)).expect("align is non-zero")
 }
 
-impl<T: Copy> Drop for AlignedVec<T> {
+impl<T: Copy + Zeroable> Drop for AlignedVec<T> {
     fn drop(&mut self) {
         if self.layout.size() != 0 {
             // SAFETY: `ptr` was returned by `alloc(self.layout)` in `zeroed`.
@@ -133,13 +135,13 @@ impl<T: Copy> Drop for AlignedVec<T> {
     }
 }
 
-impl<T: Copy> Default for AlignedVec<T> {
+impl<T: Copy + Zeroable> Default for AlignedVec<T> {
     fn default() -> Self {
         Self::zeroed(0, crate::DEFAULTALIGN.max(align_of::<T>()))
     }
 }
 
-impl<T: Copy> Clone for AlignedVec<T> {
+impl<T: Copy + Zeroable> Clone for AlignedVec<T> {
     fn clone(&self) -> Self {
         let mut out: Self = Self::zeroed(self.layout.size() / size_of::<T>(), self.layout.align());
         out.truncate(self.len);
@@ -148,46 +150,46 @@ impl<T: Copy> Clone for AlignedVec<T> {
     }
 }
 
-impl<T: Copy> Deref for AlignedVec<T> {
+impl<T: Copy + Zeroable> Deref for AlignedVec<T> {
     type Target = [T];
     fn deref(&self) -> &[T] {
         self.as_slice()
     }
 }
 
-impl<T: Copy> DerefMut for AlignedVec<T> {
+impl<T: Copy + Zeroable> DerefMut for AlignedVec<T> {
     fn deref_mut(&mut self) -> &mut [T] {
         self.as_mut_slice()
     }
 }
 
-impl<T: Copy> AsRef<[T]> for AlignedVec<T> {
+impl<T: Copy + Zeroable> AsRef<[T]> for AlignedVec<T> {
     fn as_ref(&self) -> &[T] {
         self.as_slice()
     }
 }
 
-impl<T: Copy> AsMut<[T]> for AlignedVec<T> {
+impl<T: Copy + Zeroable> AsMut<[T]> for AlignedVec<T> {
     fn as_mut(&mut self) -> &mut [T] {
         self.as_mut_slice()
     }
 }
 
-impl<T: Copy + PartialEq> PartialEq for AlignedVec<T> {
+impl<T: Copy + Zeroable + PartialEq> PartialEq for AlignedVec<T> {
     fn eq(&self, other: &Self) -> bool {
         self.as_slice() == other.as_slice()
     }
 }
 
-impl<T: Copy + Eq> Eq for AlignedVec<T> {}
+impl<T: Copy + Zeroable + Eq> Eq for AlignedVec<T> {}
 
-impl<T: Copy + Hash> Hash for AlignedVec<T> {
+impl<T: Copy + Zeroable + Hash> Hash for AlignedVec<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.as_slice().hash(state);
     }
 }
 
-impl<T: Copy + fmt::Debug> fmt::Debug for AlignedVec<T> {
+impl<T: Copy + Zeroable + fmt::Debug> fmt::Debug for AlignedVec<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(self.as_slice(), f)
     }
@@ -199,7 +201,7 @@ impl<T: Copy + fmt::Debug> fmt::Debug for AlignedVec<T> {
 /// The padded length is computed in bytes, so a `T` whose size does not
 /// divide 64 may not fit its own length; every word type these buffers
 /// carry has a size that divides 64.
-impl<T: Copy> From<&[T]> for AlignedVec<T> {
+impl<T: Copy + Zeroable> From<&[T]> for AlignedVec<T> {
     fn from(src: &[T]) -> Self {
         let mut out: Self = crate::alloc_aligned::<T>(src.len());
         out.as_mut_slice()[..src.len()].copy_from_slice(src);
@@ -208,7 +210,7 @@ impl<T: Copy> From<&[T]> for AlignedVec<T> {
 }
 
 /// Copies the vector into padded aligned storage, as the slice conversion does.
-impl<T: Copy> From<Vec<T>> for AlignedVec<T> {
+impl<T: Copy + Zeroable> From<Vec<T>> for AlignedVec<T> {
     fn from(src: Vec<T>) -> Self {
         Self::from(src.as_slice())
     }
@@ -343,6 +345,8 @@ mod tests {
         #[derive(Clone, Copy, PartialEq, Eq, Debug)]
         #[repr(align(128))]
         struct Wide([u8; 128]);
+        // SAFETY: an all-zero byte array is a valid `Wide`.
+        unsafe impl Zeroable for Wide {}
         let empty = AlignedVec::<Wide>::default();
         assert!(empty.is_empty());
         assert_eq!(empty.align(), 128);

@@ -295,7 +295,7 @@ fn advise_hugepage(_ptr: *mut u8, _size: usize) {}
 /// - If `align` is not a power of two.
 /// - If `align` is below the alignment of `T`.
 /// - If `size * size_of::<T>()` is not a multiple of `align`.
-pub fn alloc_aligned_custom<T: Copy>(size: usize, align: usize) -> AlignedVec<T> {
+pub fn alloc_aligned_custom<T: Copy + bytemuck::Zeroable>(size: usize, align: usize) -> AlignedVec<T> {
     AlignedVec::zeroed(size, align)
 }
 
@@ -308,7 +308,7 @@ pub fn alloc_aligned_custom<T: Copy>(size: usize, align: usize) -> AlignedVec<T>
 /// # Panics
 ///
 /// Panics if `T` is zero-sized.
-pub fn alloc_aligned<T: Copy>(size: usize) -> AlignedVec<T> {
+pub fn alloc_aligned<T: Copy + bytemuck::Zeroable>(size: usize) -> AlignedVec<T> {
     alloc_aligned_custom::<T>(
         (size * size_of::<T>()).next_multiple_of(DEFAULTALIGN) / size_of::<T>(),
         DEFAULTALIGN,

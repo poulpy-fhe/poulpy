@@ -20,6 +20,7 @@ use std::fmt::Debug;
 use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::reference::fft64::reim::{ReimFFTExecute, fft_ref, frac_rev_bits};
+use bytemuck::Zeroable;
 use poulpy_hal::{AlignedVec, alloc_aligned};
 
 pub struct ReimFFTRef;
@@ -30,12 +31,12 @@ impl ReimFFTExecute<ReimFFTTable<f64>, f64> for ReimFFTRef {
     }
 }
 
-pub struct ReimFFTTable<R: Float + FloatConst + Debug> {
+pub struct ReimFFTTable<R: Float + FloatConst + Debug + Zeroable> {
     m: usize,
     omg: AlignedVec<R>,
 }
 
-impl<R: Float + FloatConst + Debug> ReimFFTTable<R> {
+impl<R: Float + FloatConst + Debug + Zeroable> ReimFFTTable<R> {
     pub fn new(m: usize) -> Self {
         assert!(m & (m - 1) == 0, "m must be a power of two but is {m}");
         let mut omg: AlignedVec<R> = alloc_aligned::<R>(2 * m);
