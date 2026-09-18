@@ -125,9 +125,10 @@ pub(crate) fn dft_layer_spread(d: i64, rot: i64, mask: i64) -> [i64; 3] {
 /// natural order the layer's butterfly width `2·rot`, the block-diagonal
 /// replication of one butterfly; under bit reversal the periodicity turns
 /// into a block structure the polynomial does not see, so the layer counts
-/// as repeating over its full width `slots`. Single-sourced between the
-/// generator's period tags and the value-free replay
-/// ([`DFTPlan::diagonal_log_sparsity`]).
+/// as repeating over its full width `slots`. The generator stores its layer
+/// vectors at this width, so the value-free replay
+/// ([`DFTPlan::diagonal_log_sparsity`]) mirrors the lengths the generated
+/// diagonals come out at.
 pub(crate) fn dft_layer_period(bit_reversed: bool, rot: i64, slots: usize) -> usize {
     if bit_reversed { slots } else { 2 * rot as usize }
 }
@@ -513,11 +514,12 @@ impl DFTPlan {
     /// bit-reversed plan turns the periodicity into a block structure the
     /// polynomial does not see, so each of its layers counts at its full
     /// width: the value is exact on the natural order and a safe lower bound
-    /// on the reversed one. The generator computes the same period alongside
-    /// each merge and tags the generated diagonals with it
-    /// ([`ComplexDiagonals::diagonal_period`](crate::layouts::ComplexDiagonals::diagonal_period)),
-    /// which is what the encoder stores them at; the generator's tests pin
-    /// the replay, the tags and the generated values against each other. The
+    /// on the reversed one. The generator stores one period of each diagonal,
+    /// so the generated diagonals' lengths
+    /// ([`ComplexDiagonals::diagonal_period`](crate::layouts::ComplexDiagonals::diagonal_period))
+    /// carry the same value, which is what the encoder stores them at; the
+    /// generator's tests pin the replay, the stored lengths and the values
+    /// against each other. The
     /// BSGS pre-rotation of a diagonal keeps its period, so the value holds
     /// for the encoded transformation under any strategy.
     ///

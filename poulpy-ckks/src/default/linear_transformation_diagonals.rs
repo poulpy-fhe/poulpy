@@ -29,7 +29,12 @@ fn validate_compile_inputs<F>(
         (1..=63).contains(&base2k.as_usize()),
         "linear-transformation base2k must be in [1, 63], got {base2k}",
     );
-    let slots = diagonals.slots();
+    let slots = diagonals.re.slots();
+    ensure!(
+        slots == diagonals.im.slots(),
+        "complex diagonal maps have different slot counts: real {slots}, imaginary {}",
+        diagonals.im.slots(),
+    );
     ensure!(
         !diagonals.indexes().is_empty(),
         "linear transformation must contain at least one diagonal"
@@ -173,6 +178,14 @@ mod tests {
 
     #[test]
     fn malformed_diagonal_layout_is_rejected_before_schedule_construction() {
+        let mut re = Diagonals::new(4);
+        re.set(0, vec![1.0; 4]);
+        let mismatched = ComplexDiagonals {
+            re,
+            im: Diagonals::new(8),
+        };
+        assert!(validate_compile_inputs(8, Base2K(2), &mismatched, LinearTransformationStrategy::Direct).is_err());
+
         let mut re = Diagonals::new(4);
         re.set(0, vec![1.0; 4]);
         let valid = ComplexDiagonals::new(re, Diagonals::new(4));

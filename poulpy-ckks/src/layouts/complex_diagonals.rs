@@ -16,8 +16,14 @@
 //! [`ComplexDiagonals::build_transform`] performs the BSGS pre-rotation +
 //! giant-step bucketing in scheme-agnostic code; only the per-diagonal encode
 //! into a CKKS plaintext is supplied by the scheme layer.
+//!
+//! Every diagonal is stored as one period of its values ([`Diagonals::set`]);
+//! the readers here index modulo the stored length, and
+//! [`ComplexDiagonals::build_transform`] encodes every diagonal on the map's
+//! [`ComplexDiagonals::period`], so a map of periodic diagonals (a merged DFT
+//! butterfly) is encoded at the degree that holds one period.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use poulpy_core::layouts::{
     DiagonalArithmetic, Diagonals, Evaluate, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
@@ -27,95 +33,19 @@ use poulpy_core::layouts::{
 /// A complex slot-matrix linear map for CKKS.
 ///
 /// Both real and imaginary diagonal maps share the same `rows`/`cols` packing.
-/// A diagonal may carry a period tag ([`Self::set_periodic`]): the slot count
-/// after which the complex vector repeats. [`Self::build_transform`] encodes a
-/// tagged diagonal on that many slots, its plaintext polynomial being sparse
-/// by the factor `slots / period`; an untagged diagonal ([`Self::set_re`],
-/// [`Self::set_im`]) reads as dense. The maps are private so every write goes
-/// through a setter that keeps the tag honest.
 #[derive(Clone, Debug)]
 pub struct ComplexDiagonals<T> {
     /// Real parts of the diagonals.
-    re: Diagonals<T>,
+    pub re: Diagonals<T>,
     /// Imaginary parts of the diagonals.
-    im: Diagonals<T>,
-    /// Period tags per diagonal, keyed like the maps; a missing key means
-    /// `slots`.
-    periods: BTreeMap<i64, usize>,
+    pub im: Diagonals<T>,
 }
 
 impl<T> ComplexDiagonals<T> {
-    /// Wraps a real/imaginary pair, untagged, asserting matching slot count.
+    /// Wraps a real/imaginary pair, asserting matching slot count.
     pub fn new(re: Diagonals<T>, im: Diagonals<T>) -> Self {
         assert_eq!(re.slots(), im.slots(), "complex diagonals slot count mismatch");
-        Self {
-            re,
-            im,
-            periods: BTreeMap::new(),
-        }
-    }
-
-    /// Real parts of the diagonals.
-    pub fn re(&self) -> &Diagonals<T> {
-        &self.re
-    }
-
-    /// Imaginary parts of the diagonals.
-    pub fn im(&self) -> &Diagonals<T> {
-        &self.im
-    }
-
-    fn key(&self, index: i64) -> i64 {
-        index.rem_euclid(self.slots() as i64)
-    }
-
-    /// Sets the real part of the diagonal at `index`, which becomes untagged.
-    pub fn set_re(&mut self, index: i64, values: Vec<T>) {
-        self.periods.remove(&self.key(index));
-        self.re.set(index, values);
-    }
-
-    /// Sets the imaginary part of the diagonal at `index`, which becomes
-    /// untagged.
-    pub fn set_im(&mut self, index: i64, values: Vec<T>) {
-        self.periods.remove(&self.key(index));
-        self.im.set(index, values);
-    }
-
-    /// Sets both parts of the diagonal at `index` and tags it with `period`,
-    /// the slot count after which the complex vector repeats:
-    /// `re[j] == re[j % period]` and `im[j] == im[j % period]` for every `j`,
-    /// checked here, with `period` a power-of-two divisor of `slots`.
-    /// `period == slots` stores the diagonal untagged.
-    pub fn set_periodic(&mut self, index: i64, re: Vec<T>, im: Vec<T>, period: usize)
-    where
-        T: PartialEq,
-    {
-        let slots = self.slots();
-        let key = self.key(index);
-        if period == slots {
-            self.periods.remove(&key);
-        } else {
-            assert!(
-                period.is_power_of_two() && slots.is_multiple_of(period),
-                "period {period} must be a power-of-two divisor of slots {slots}",
-            );
-            for values in [&re, &im] {
-                assert_eq!(
-                    values.len(),
-                    slots,
-                    "diagonal length ({}) must equal slots ({slots})",
-                    values.len()
-                );
-                assert!(
-                    values.iter().enumerate().all(|(j, v)| *v == values[j % period]),
-                    "diagonal does not repeat every {period} slots",
-                );
-            }
-            self.periods.insert(key, period);
-        }
-        self.re.set(index, re);
-        self.im.set(index, im);
+        Self { re, im }
     }
 
     /// Slot vector length shared by the real and imaginary diagonal maps.
@@ -131,18 +61,19 @@ impl<T> ComplexDiagonals<T> {
         set.into_iter().collect()
     }
 
-    /// The slot count after which the diagonal at `index` repeats: its
-    /// [`Self::set_periodic`] tag, `slots` for an untagged diagonal, `None`
-    /// when neither part carries the index.
+    /// The slot count after which the complex diagonal at `index` repeats: the
+    /// longer of its two stored periods ([`Diagonals::period`]), an absent
+    /// part counting as constant; `None` when neither part carries the index.
     pub fn diagonal_period(&self, index: i64) -> Option<usize> {
-        let key = self.key(index);
-        (self.re.get(key).is_some() || self.im.get(key).is_some())
-            .then(|| self.periods.get(&key).copied().unwrap_or(self.slots()))
+        match (self.re.period(index), self.im.period(index)) {
+            (None, None) => None,
+            (re, im) => Some(re.unwrap_or(1).max(im.unwrap_or(1))),
+        }
     }
 
-    /// The slot count every diagonal of the map repeats over: the largest
-    /// [`Self::diagonal_period`], `slots` for an untagged or empty map. This
-    /// is the slot count [`Self::build_transform`] encodes on.
+    /// The slot count every diagonal of the map repeats over: the longest
+    /// [`Self::diagonal_period`], `slots` for an empty map. This is the slot
+    /// count [`Self::build_transform`] encodes on.
     pub fn period(&self) -> usize {
         self.indexes()
             .into_iter()
@@ -156,16 +87,10 @@ impl<T> ComplexDiagonals<T> {
     /// Since `(Bre + i·Bim)ᵀ = (Bre)ᵀ + i·(Bim)ᵀ` (transpose is entry-wise on
     /// the complex matrix), this delegates to [`Diagonals::transpose`] on each
     /// part. After the call, [`Self::evaluate`] computes `Bᵀ·v = v·B` instead
-    /// of `B·v`, with no allocation of new diagonal vectors. A rotation keeps
-    /// a period, so the tags travel with their diagonals.
+    /// of `B·v`, with no allocation of new diagonal vectors.
     pub fn transpose(&mut self) {
         self.re.transpose();
         self.im.transpose();
-        let slots = self.slots() as i64;
-        let periods = std::mem::take(&mut self.periods);
-        for (j, period) in periods {
-            self.periods.insert((-j).rem_euclid(slots), period);
-        }
     }
 }
 
@@ -203,7 +128,7 @@ impl<T: DiagonalArithmetic> Evaluate<(&[T], &[T]), (Vec<T>, Vec<T>)> for Complex
 
 impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     /// Entry-wise complex conjugation of the underlying matrix (negates the
-    /// imaginary diagonals in place, keeping their period tags). Satisfies
+    /// imaginary diagonals in place). Satisfies
     /// `conj(M·v) = conj(M)·conj(v)`.
     pub fn conjugate(&mut self) {
         for i in self.im.indexes() {
@@ -213,12 +138,11 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
                 neg.sub_assign(x);
                 *x = neg;
             }
-            // Negation keeps a period, so the tag stays.
             self.im.set(i, v);
         }
     }
 
-    /// Multiplies every stored value by `s`, keeping the period tags.
+    /// Multiplies every stored value by `s`.
     pub fn scale(&mut self, s: &T) {
         for part in [&mut self.re, &mut self.im] {
             for i in part.indexes() {
@@ -241,13 +165,10 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     /// long as one divides the other; the result's slot count is the larger
     /// tile. Diagonal indexes add (`diag_{a+b}[j] += A_a[j] · B_b[j+a]`, all
     /// complex), so the output carries at most `|A|·|B|` diagonals, fewer when
-    /// index sums collide. Period tags propagate: a term repeats over the
-    /// larger of its two operands' periods, and a diagonal over the largest of
-    /// its terms.
-    pub fn compose(&self, rhs: &Self) -> Self
-    where
-        T: PartialEq,
-    {
+    /// index sums collide. Each stored period is read modulo its length; a
+    /// term repeats over the longer of its operands' periods and an output
+    /// diagonal is stored at the longest period among its terms.
+    pub fn compose(&self, rhs: &Self) -> Self {
         let (ta, tb) = (self.slots() as i64, rhs.slots() as i64);
         assert!(
             ta % tb == 0 || tb % ta == 0,
@@ -255,23 +176,23 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
         );
         let t = ta.max(tb);
         let mut out = ComplexDiagonals::new(Diagonals::new(t as usize), Diagonals::new(t as usize));
-        let zeros = vec![T::zero(); t as usize];
-        let read = |d: &Diagonals<T>, idx: i64, j: i64, tile: i64| -> T {
-            d.get(idx).map_or_else(T::zero, |v| v[(j % tile) as usize].clone())
+        let read = |d: &Diagonals<T>, idx: i64, j: i64| -> T {
+            d.get(idx)
+                .map_or_else(T::zero, |v| v[j.rem_euclid(v.len() as i64) as usize].clone())
         };
         for ia in self.indexes() {
             let period_a = self.diagonal_period(ia).expect("indexed diagonal present");
             for ib in rhs.indexes() {
                 let period_b = rhs.diagonal_period(ib).expect("indexed diagonal present");
                 let idx = (ia + ib).rem_euclid(t);
-                let period = out.diagonal_period(idx).unwrap_or(1).max(period_a).max(period_b);
-                let mut re = out.re.get(idx).cloned().unwrap_or_else(|| zeros.clone());
-                let mut im = out.im.get(idx).cloned().unwrap_or_else(|| zeros.clone());
-                for j in 0..t {
-                    let ar = read(&self.re, ia, j, ta);
-                    let ai = read(&self.im, ia, j, ta);
-                    let br = read(&rhs.re, ib, j + ia, tb);
-                    let bi = read(&rhs.im, ib, j + ia, tb);
+                let len = out.diagonal_period(idx).unwrap_or(1).max(period_a).max(period_b) as i64;
+                let mut re: Vec<T> = (0..len).map(|j| read(&out.re, idx, j)).collect();
+                let mut im: Vec<T> = (0..len).map(|j| read(&out.im, idx, j)).collect();
+                for j in 0..len {
+                    let ar = read(&self.re, ia, j);
+                    let ai = read(&self.im, ia, j);
+                    let br = read(&rhs.re, ib, j + ia);
+                    let bi = read(&rhs.im, ib, j + ia);
                     // (ar + i·ai)(br + i·bi)
                     let mut re_term = ar.mul(&br);
                     re_term.sub_assign(&ai.mul(&bi));
@@ -280,7 +201,8 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
                     im_term.add_assign(&ai.mul(&br));
                     im[j as usize].add_assign(&im_term);
                 }
-                out.set_periodic(idx, re, im, period);
+                out.re.set(idx, re);
+                out.im.set(idx, im);
             }
         }
         out
@@ -290,19 +212,18 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     ///
     /// Performs the BSGS pre-rotation `ũ_{j,k} = rot(diag_{n1·j+k}, −n1·j)` and
     /// the giant-step bucketing; `encode` only turns a pre-rotated `(re, im)`
-    /// diagonal into the scheme's encoded plaintext `P` (e.g. via
-    /// `encode_reim`). It receives every diagonal on [`Self::period`] slots,
-    /// the whole `slots` for an untagged map: a tagged map (a merged DFT
-    /// butterfly) is encoded at the degree that holds one period, the same
-    /// value under the ring embedding as the dense encoding, and one degree
-    /// for the whole transformation. The pre-rotation keeps every period.
+    /// diagonal, each [`Self::period`] long (the whole `slots` for a dense
+    /// map), into the scheme's encoded plaintext `P` (e.g. via `encode_reim`):
+    /// a map of periodic diagonals (a merged DFT butterfly) is encoded at the
+    /// degree that holds one period, the same value under the ring embedding
+    /// as the dense encoding, one degree for the whole transformation. The
+    /// pre-rotation keeps every period.
     pub fn build_transform<P>(
         &self,
         strategy: LinearTransformationStrategy,
         mut encode: impl FnMut(&[T], &[T]) -> P,
     ) -> LinearTransformation<P> {
         let slots = self.slots();
-        let period = self.period();
         let index = LinearTransformationLayout {
             indexes: self.indexes(),
             slots,
@@ -310,9 +231,12 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
         }
         .index();
 
-        let mut pre_re = vec![T::zero(); slots];
-        let mut pre_im = vec![T::zero(); slots];
-        let zero_block = vec![T::zero(); slots];
+        // Every diagonal is encoded on the map's period; an absent part is the
+        // constant zero, whose period is one.
+        let period = self.period();
+        let mut pre_re = vec![T::zero(); period];
+        let mut pre_im = vec![T::zero(); period];
+        let zero_block = [T::zero()];
 
         let mut giant_steps = Vec::with_capacity(index.giant_steps.len());
         for (g, &giant_rot) in index.giant_steps.iter().enumerate() {
@@ -323,7 +247,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
                 let dim = self.im.get(d).map_or(&zero_block[..], |v| v.as_slice());
                 rotate_slots_into(dre, -giant_rot, &mut pre_re);
                 rotate_slots_into(dim, -giant_rot, &mut pre_im);
-                let plaintext = encode(&pre_re[..period], &pre_im[..period]);
+                let plaintext = encode(&pre_re, &pre_im);
                 diagonals.push(LinearTransformationDiagonal { baby, plaintext });
             }
             giant_steps.push(LinearTransformationGiantStep {
@@ -355,63 +279,80 @@ mod tests {
         d
     }
 
+    /// Diagonals stored as one period evaluate, compose, conjugate, scale,
+    /// transpose and encode like their dense replication; `build_transform`
+    /// hands the encoder the map's period.
     #[test]
-    fn build_transform_encodes_on_the_largest_period() {
-        let mut cd = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-        cd.set_periodic(0, vec![1.0, 2.0, 1.0, 2.0], vec![0.0; 4], 2);
-        cd.set_periodic(1, vec![0.0; 4], vec![3.0; 4], 1);
-        assert_eq!(cd.period(), 2);
-        let lt = cd.build_transform(LinearTransformationStrategy::Direct, |re, im| (re.to_vec(), im.to_vec()));
+    fn compact_diagonals_behave_like_their_replication() {
+        let mut compact = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
+        compact.re.set(0, vec![1.0, 2.0]);
+        compact.im.set(0, vec![0.5]);
+        compact.re.set(1, vec![3.0]);
+        compact.im.set(3, vec![1.0, 0.0, -1.0, 0.0]);
+        let mut dense = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
+        dense.re.set(0, vec![1.0, 2.0, 1.0, 2.0]);
+        dense.im.set(0, vec![0.5; 4]);
+        dense.re.set(1, vec![3.0; 4]);
+        dense.im.set(3, vec![1.0, 0.0, -1.0, 0.0]);
+        assert_eq!(compact.diagonal_period(0), Some(2));
+        assert_eq!(compact.diagonal_period(1), Some(1));
+        assert_eq!(compact.diagonal_period(3), Some(4));
+        assert_eq!(compact.diagonal_period(2), None);
+        assert_eq!(compact.period(), 4);
+
+        let (vre, vim) = (vec![1.0, -1.0, 2.0, 0.5], vec![0.5, 2.0, -1.0, 1.0]);
+        let strategies = [
+            LinearTransformationStrategy::Direct,
+            LinearTransformationStrategy::Bsgs { giant_step: 2 },
+        ];
+        for strategy in strategies {
+            assert_eq!(
+                compact.evaluate((vre.as_slice(), vim.as_slice()), strategy),
+                dense.evaluate((vre.as_slice(), vim.as_slice()), strategy),
+                "{strategy:?}"
+            );
+        }
+        let cc = compact.compose(&compact);
+        let dd = dense.compose(&dense);
+        assert_eq!(cc.diagonal_period(1), Some(2), "composed period is the longest term");
+        for strategy in strategies {
+            assert_eq!(
+                cc.evaluate((vre.as_slice(), vim.as_slice()), strategy),
+                dd.evaluate((vre.as_slice(), vim.as_slice()), strategy),
+                "compose {strategy:?}"
+            );
+        }
+
+        let mut c2 = compact.clone();
+        c2.conjugate();
+        c2.scale(&2.0);
+        assert_eq!(c2.re.get(0), Some(&vec![2.0, 4.0]));
+        assert_eq!(c2.im.get(0), Some(&vec![-1.0]));
+        let mut t = compact.clone();
+        t.transpose();
+        assert_eq!(t.re.get(-1), Some(&vec![3.0]));
+        assert_eq!(t.diagonal_period(-3), Some(4));
+
+        // A map whose longest period is two is encoded on two slots.
+        let mut small = compact.clone();
+        small.im.set(3, vec![1.0, 0.0]);
+        assert_eq!(small.period(), 2);
+        let lt = small.build_transform(LinearTransformationStrategy::Bsgs { giant_step: 2 }, |re, im| {
+            (re.to_vec(), im.to_vec())
+        });
         let got: Vec<_> = lt
             .giant_steps
             .iter()
             .flat_map(|g| g.diagonals.iter().map(|d| d.plaintext.clone()))
             .collect();
-        assert_eq!(got, vec![(vec![1.0, 2.0], vec![0.0, 0.0]), (vec![0.0, 0.0], vec![3.0, 3.0])]);
-
-        // One untagged diagonal makes the whole transformation dense.
-        cd.set_re(2, vec![1.0, 2.0, 3.0, 4.0]);
-        assert_eq!(cd.period(), 4);
-        let lt = cd.build_transform(LinearTransformationStrategy::Bsgs { giant_step: 2 }, |re, _| re.len());
-        assert!(lt.giant_steps.iter().all(|g| g.diagonals.iter().all(|d| d.plaintext == 4)));
-    }
-
-    #[test]
-    fn period_tags_are_checked_and_follow_compose_conjugate_scale_and_transpose() {
-        let mut a = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-        a.set_periodic(0, vec![1.0, 2.0, 1.0, 2.0], vec![0.0; 4], 2);
-        a.set_periodic(1, vec![0.0; 4], vec![1.0; 4], 1);
-        let mut b = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-        b.set_periodic(0, vec![3.0; 4], vec![0.0; 4], 1);
-        b.set_im(2, vec![1.0, 0.0, 0.0, 0.0]);
-        assert_eq!(b.diagonal_period(2), Some(4), "an untagged diagonal reads as dense");
-        assert_eq!(b.diagonal_period(3), None);
-        let c = a.compose(&b);
-        assert_eq!(c.diagonal_period(0), Some(2));
-        assert_eq!(c.diagonal_period(1), Some(1));
-        assert_eq!(c.diagonal_period(2), Some(4));
-        assert_eq!(c.diagonal_period(3), Some(4));
-
-        let mut d = a.clone();
-        d.conjugate();
-        assert_eq!(d.diagonal_period(1), Some(1));
-        assert_eq!(d.im().get(1), Some(&vec![-1.0; 4]));
-        d.scale(&2.0);
-        assert_eq!(d.diagonal_period(0), Some(2));
-        assert_eq!(d.re().get(0), Some(&vec![2.0, 4.0, 2.0, 4.0]));
-        d.set_re(0, vec![0.0; 4]);
-        assert_eq!(d.diagonal_period(0), Some(4), "a direct write drops the tag");
-
-        let mut t = a.clone();
-        t.transpose();
-        assert_eq!(t.diagonal_period(0), Some(2));
-        assert_eq!(t.diagonal_period(-1), Some(1));
-
-        let lying = std::panic::catch_unwind(|| {
-            let mut e = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-            e.set_periodic(0, vec![1.0, 2.0, 3.0, 2.0], vec![0.0; 4], 2);
-        });
-        assert!(lying.is_err(), "a tag the values do not satisfy must panic");
+        assert_eq!(
+            got,
+            vec![
+                (vec![1.0, 2.0], vec![0.5, 0.5]),
+                (vec![3.0, 3.0], vec![0.0, 0.0]),
+                (vec![0.0, 0.0], vec![1.0, 0.0]),
+            ]
+        );
     }
 
     #[test]
@@ -501,11 +442,11 @@ mod tests {
         // produce the tile-4 map matching the manual tiled evaluation
         // out[j] = Σ_i d_i[j mod tile] · v[(j + i) mod 4].
         let mut a = ComplexDiagonals::new(Diagonals::new(2), Diagonals::new(2));
-        a.set_re(0, vec![2.0, 3.0]);
-        a.set_im(1, vec![1.0, -1.0]);
+        a.re.set(0, vec![2.0, 3.0]);
+        a.im.set(1, vec![1.0, -1.0]);
         let mut b = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-        b.set_re(0, vec![1.0, 0.0, -1.0, 0.5]);
-        b.set_re(2, vec![0.0, 1.0, 2.0, 0.0]);
+        b.re.set(0, vec![1.0, 0.0, -1.0, 0.5]);
+        b.re.set(2, vec![0.0, 1.0, 2.0, 0.0]);
 
         let v: Vec<(f64, f64)> = vec![(1.0, 0.5), (-1.0, 2.0), (2.0, -1.0), (0.5, 1.0)];
         let tiled = |cd: &ComplexDiagonals<f64>, v: &[(f64, f64)]| -> Vec<(f64, f64)> {

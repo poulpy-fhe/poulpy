@@ -87,7 +87,7 @@ fn validate_factor_encoding<F: CKKSScalar>(diagonals: &crate::layouts::ComplexDi
     ensure!(scale.is_finite(), "PaCo factor scale 2^{} is not finite", dft.log_delta());
 
     let mut nonzero = false;
-    for map in [diagonals.re(), diagonals.im()] {
+    for map in [&diagonals.re, &diagonals.im] {
         for index in map.indexes() {
             let values = map
                 .get(index)

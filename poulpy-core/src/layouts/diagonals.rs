@@ -27,6 +27,13 @@
 //! corresponding sub-slice. Keeping the core map 1D keeps the algebra clean
 //! (`(B·a)[j] = Σ_k B[j][k]·a[k]`) and pushes packing concerns to the scheme
 //! layer.
+//!
+//! A diagonal is stored as **one period** of its values: [`Diagonals::set`]
+//! takes a vector whose length divides `slots`, and the diagonal reads
+//! `diag_i[j] = v[j mod v.len()]`. A full-length vector is a dense diagonal;
+//! a shorter one is a periodic diagonal stored once, which a scheme encodes on
+//! that many slots (its plaintext polynomial is sparse by the factor
+//! `slots / v.len()`). Every reader indexes modulo the stored length.
 
 use std::collections::BTreeMap;
 
@@ -88,15 +95,17 @@ pub trait Evaluate<In, Out> {
     fn evaluate(&self, input: In, strategy: LinearTransformationStrategy) -> Out;
 }
 
-/// Left-rotates `src` by `k` slots into `out`: `out[j] = src[(j + k) mod len]`.
+/// Left-rotates `src` by `k` slots into `out`: `out[j] = src[(j + k) mod src.len()]`.
 ///
 /// Public utility matching the scheme slot-rotation convention
 /// `rot(v, k)[j] = v[(j+k) mod n]`; downstream diagonal-map flavors (e.g. the
 /// CKKS `ComplexDiagonals`) use it to apply baby / giant pre-rotations under
-/// the same convention as the homomorphic engine.
+/// the same convention as the homomorphic engine. `src` is read as a periodic
+/// vector, so `out` may be any multiple of its length: one stored period
+/// rotates into any replication of itself.
 pub fn rotate_slots_into<T: Clone>(src: &[T], k: i64, out: &mut [T]) {
     let n = src.len() as i64;
-    debug_assert_eq!(src.len(), out.len());
+    debug_assert!(out.len().is_multiple_of(src.len()));
     for (j, slot) in out.iter_mut().enumerate() {
         *slot = src[(j as i64 + k).rem_euclid(n) as usize].clone();
     }
@@ -105,7 +114,8 @@ pub fn rotate_slots_into<T: Clone>(src: &[T], k: i64, out: &mut [T]) {
 /// The non-zero generalized diagonals of a square slot-matrix linear map.
 ///
 /// One-dimensional: the matrix has `slots × slots` shape and every diagonal is a
-/// length-`slots` vector. Keys are diagonal indexes normalized to `[0, slots)`.
+/// length-`slots` vector, stored as one period of its values (see the module
+/// docs). Keys are diagonal indexes normalized to `[0, slots)`.
 /// See the module docs for the diagonal convention and for how schemes layer
 /// multi-dimensional packings on top.
 #[derive(Clone, Debug)]
@@ -129,22 +139,31 @@ impl<T> Diagonals<T> {
         self.slots
     }
 
-    /// Sets the diagonal at `index` (normalized modulo `slots`). `values` must
-    /// have length `slots`.
+    /// Sets the diagonal at `index` (normalized modulo `slots`) from one period
+    /// of its values: `values.len()` divides `slots` and the diagonal reads
+    /// `diag[j] = values[j % values.len()]`. A full-length vector is a dense
+    /// diagonal; a shorter one stores a periodic diagonal once.
     pub fn set(&mut self, index: i64, values: Vec<T>) {
-        assert_eq!(
-            values.len(),
-            self.slots,
-            "diagonal length ({}) must equal slots ({})",
+        assert!(
+            !values.is_empty() && self.slots.is_multiple_of(values.len()),
+            "diagonal length ({}) must divide slots ({})",
             values.len(),
             self.slots,
         );
         self.map.insert(index.rem_euclid(self.slots as i64), values);
     }
 
-    /// Returns the diagonal at `index` (normalized modulo `slots`), if present.
+    /// Returns one period of the diagonal at `index` (normalized modulo
+    /// `slots`), if present: `diag[j] = v[j % v.len()]`.
     pub fn get(&self, index: i64) -> Option<&Vec<T>> {
         self.map.get(&index.rem_euclid(self.slots as i64))
+    }
+
+    /// The slot count after which the diagonal at `index` repeats, the length
+    /// of its stored period; `None` when the diagonal is absent. The diagonal's
+    /// plaintext is sparse by the factor `slots / period`.
+    pub fn period(&self, index: i64) -> Option<usize> {
+        self.get(index).map(Vec::len)
     }
 
     /// The (normalized, sorted) indexes of the stored non-zero diagonals.
@@ -169,13 +188,16 @@ impl<T> Diagonals<T> {
     ///
     /// After [`Self::transpose`], [`Self::evaluate`] on `self` computes
     /// `Mᵀ·v = v·M` (where `M` was the matrix before the call).
+    ///
+    /// A stored period rotates by the same amount modulo its length.
     pub fn transpose(&mut self) {
         let slots = self.slots as i64;
         let old = std::mem::take(&mut self.map);
         for (j, mut vec) in old {
             // In-place cyclic left rotation by (-j) mod slots, matching the
             // `rot(v, k)[i] = v[(i + k) mod n]` convention.
-            vec.rotate_left((-j).rem_euclid(slots) as usize);
+            let period = vec.len();
+            vec.rotate_left((-j).rem_euclid(slots) as usize % period);
             self.map.insert((-j).rem_euclid(slots), vec);
         }
     }
@@ -263,6 +285,41 @@ mod tests {
                 assert!((a - b).abs() < 1e-9, "{strategy:?}: {got:?} != {want:?}");
             }
         }
+    }
+
+    /// A diagonal stored as one period evaluates, transposes and reads like its
+    /// dense replication, and a length that does not divide `slots` is rejected.
+    #[test]
+    fn a_compact_diagonal_reads_as_its_periodic_replication() {
+        let v = vec![1.0, -2.0, 0.5, 3.0];
+        let mut dense = Diagonals::new(4);
+        dense.set(1, vec![2.0, -1.0, 2.0, -1.0]);
+        dense.set(3, vec![0.5; 4]);
+        let mut compact = Diagonals::new(4);
+        compact.set(1, vec![2.0, -1.0]);
+        compact.set(3, vec![0.5]);
+        assert_eq!(compact.period(1), Some(2));
+        assert_eq!(compact.period(3), Some(1));
+        assert_eq!(compact.period(0), None);
+        let strategies = [
+            LinearTransformationStrategy::Direct,
+            LinearTransformationStrategy::Bsgs { giant_step: 2 },
+        ];
+        for strategy in strategies {
+            assert_eq!(compact.evaluate(&v, strategy), dense.evaluate(&v, strategy), "{strategy:?}");
+        }
+        compact.transpose();
+        dense.transpose();
+        assert_eq!(compact.get(-1), Some(&vec![-1.0, 2.0]));
+        assert_eq!(compact.period(-3), Some(1));
+        for strategy in strategies {
+            assert_eq!(compact.evaluate(&v, strategy), dense.evaluate(&v, strategy), "{strategy:?}");
+        }
+        let rejected = std::panic::catch_unwind(|| {
+            let mut d = Diagonals::new(4);
+            d.set(0, vec![1.0, 2.0, 3.0]);
+        });
+        assert!(rejected.is_err(), "a length that does not divide slots must be rejected");
     }
 
     #[test]

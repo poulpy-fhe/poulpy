@@ -179,14 +179,14 @@ pub(crate) fn paco_psi_c2s_factors<F: DftScalar + DiagonalArithmetic>(
     );
     let mut mu_diag = vec![<F as num_traits::Zero>::zero(); two_c];
     mu_diag[..p.c()].fill(F::one());
-    mu.set_re(0, mu_diag);
+    mu.re.set(0, mu_diag);
 
     // R_C: slot rotation by C (`out[j] = v[j+C]`).
     let mut rot_c = ComplexDiagonals::new(
         poulpy_core::layouts::Diagonals::<F>::new(two_c),
         poulpy_core::layouts::Diagonals::<F>::new(two_c),
     );
-    rot_c.set_re(p.c() as i64, vec![F::one(); two_c]);
+    rot_c.re.set(p.c() as i64, vec![F::one(); two_c]);
 
     let a = mu.compose(&last);
     let mut conj_last = last;
@@ -337,10 +337,10 @@ pub(crate) fn conjugate_by_low_bitrev<F: DftScalar>(cd: &ComplexDiagonals<F>, lo
     let mut re = poulpy_core::layouts::Diagonals::<F>::new(m);
     let mut im = poulpy_core::layouts::Diagonals::<F>::new(m);
     for i in cd.indexes() {
-        let (dre, dim) = (cd.re().get(i), cd.im().get(i));
+        let (dre, dim) = (cd.re.get(i), cd.im.get(i));
         for r in 0..m {
-            let vre = dre.map_or_else(F::zero, |d| d[r]);
-            let vim = dim.map_or_else(F::zero, |d| d[r]);
+            let vre = dre.map_or_else(F::zero, |d| d[r % d.len()]);
+            let vim = dim.map_or_else(F::zero, |d| d[r % d.len()]);
             if vre == F::zero() && vim == F::zero() {
                 continue;
             }
@@ -371,13 +371,13 @@ fn bit_reverse_columns<F: DftScalar>(cd: &ComplexDiagonals<F>) -> ComplexDiagona
     let mut re = poulpy_core::layouts::Diagonals::<F>::new(m);
     let mut im = poulpy_core::layouts::Diagonals::<F>::new(m);
     for i in cd.indexes() {
-        let (dre, dim) = (cd.re().get(i), cd.im().get(i));
+        let (dre, dim) = (cd.re.get(i), cd.im.get(i));
         for r in 0..m {
             let c_old = (r + i as usize) % m;
             let c_new = br(c_old);
             let idx = ((c_new + m - r) % m) as i64;
-            let vre = dre.map_or(F::zero(), |d| d[r]);
-            let vim = dim.map_or(F::zero(), |d| d[r]);
+            let vre = dre.map_or(F::zero(), |d| d[r % d.len()]);
+            let vim = dim.map_or(F::zero(), |d| d[r % d.len()]);
             if vre != F::zero() {
                 let mut d = re.get(idx).cloned().unwrap_or_else(|| vec![F::zero(); m]);
                 d[r] = d[r] + vre;
@@ -408,10 +408,13 @@ pub(crate) fn mul_vec_tiled<F: DftScalar>(cd: &ComplexDiagonals<F>, v: &[Cpx<F>]
     debug_assert!(len.is_multiple_of(m));
     let mut out = vec![Cpx::zero(); len];
     for i in cd.indexes() {
-        let re = cd.re().get(i);
-        let im = cd.im().get(i);
+        let re = cd.re.get(i);
+        let im = cd.im.get(i);
         for (j, o) in out.iter_mut().enumerate() {
-            let d = Cpx::new(re.map_or_else(F::zero, |d| d[j % m]), im.map_or_else(F::zero, |d| d[j % m]));
+            let d = Cpx::new(
+                re.map_or_else(F::zero, |d| d[j % d.len()]),
+                im.map_or_else(F::zero, |d| d[j % d.len()]),
+            );
             *o = *o + d * v[(j as i64 + i).rem_euclid(len as i64) as usize];
         }
     }
@@ -592,9 +595,11 @@ mod tests {
         offsets.dedup();
         let zeros = vec![0.0; m];
         for i in offsets {
-            for (pa, pb, part) in [(a.re(), b.re(), "re"), (a.im(), b.im(), "im")] {
+            for (pa, pb, part) in [(&a.re, &b.re, "re"), (&a.im, &b.im, "im")] {
                 let x = pa.get(i).unwrap_or(&zeros);
                 let y = pb.get(i).unwrap_or(&zeros);
+                let x: Vec<f64> = (0..m).map(|j| x[j % x.len()]).collect();
+                let y: Vec<f64> = (0..m).map(|j| y[j % y.len()]).collect();
                 assert_eq!(x, y, "{ctx}: diag {i} {part}");
             }
         }
@@ -678,11 +683,11 @@ mod tests {
         let mut mu = ComplexDiagonals::new(Diagonals::<f64>::new(two_c), Diagonals::<f64>::new(two_c));
         let mut d = vec![0.0; two_c];
         d[..p.c()].fill(1.0);
-        mu.set_re(0, d);
+        mu.re.set(0, d);
         assert_cd_eq(&mu, &conjugate_by_low_bitrev(&mu, log_p), "mu");
 
         let mut rc = ComplexDiagonals::new(Diagonals::<f64>::new(two_c), Diagonals::<f64>::new(two_c));
-        rc.set_re(p.c() as i64, vec![1.0; two_c]);
+        rc.re.set(p.c() as i64, vec![1.0; two_c]);
         assert_cd_eq(&rc, &conjugate_by_low_bitrev(&rc, log_p), "rot_C");
     }
 
