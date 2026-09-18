@@ -389,6 +389,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::encryption::test_decrypt_extract_base2k_mismatch_error
             );
             run_test!(
+                decrypt_extract_degree_mismatch_error,
+                $crate::test_suite::encryption::test_decrypt_extract_degree_mismatch_error
+            );
+            run_test!(
                 add_pt_vec_alignment_error,
                 $crate::test_suite::errors::test_add_pt_vec_alignment_error
             );

@@ -133,7 +133,7 @@ pub trait CKKSMulReference<BE: Backend> {
         let cols = a.rank().as_usize() + 1;
         let k: usize = a.k().into();
         let size = k.div_ceil(a.base2k().as_usize());
-        let mut prep = self.cnv_pvec_right_alloc(self.n(), cols, size, PrepareHint::Reuse);
+        let mut prep = self.cnv_pvec_right_alloc(a.n().as_usize(), cols, size, PrepareHint::Reuse);
         glwe_prepare_right(self, &mut prep, a, k, scratch);
         Ok(CKKSPreparedRight {
             prep,
