@@ -60,20 +60,24 @@ where
     assert_eq!(&original, &receiver, "Deserialized object does not match the original");
 }
 
+/// Degree of the serialized layouts: small under Miri, where a 1024-degree
+/// round trip takes minutes.
+const N: usize = if cfg!(miri) { 16 } else { 1024 };
+
 #[test]
 fn scalar_znx_serialize() {
-    let original = allocate_host_scalar_znx::<i64>(1024, 3);
+    let original = allocate_host_scalar_znx::<i64>(N, 3);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn vec_znx_serialize() {
-    let original = allocate_host_vec_znx::<i64>(1024, 3, 4);
+    let original = allocate_host_vec_znx::<i64>(N, 3, 4);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn mat_znx_serialize() {
-    let original = allocate_host_mat_znx::<i64>(1024, 3, 2, 2, 4);
+    let original = allocate_host_mat_znx::<i64>(N, 3, 2, 2, 4);
     test_reader_writer_interface(original);
 }

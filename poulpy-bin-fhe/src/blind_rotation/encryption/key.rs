@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{Backend, Data, ScratchArena, ZnxWord},
     source::Source,
@@ -75,7 +76,7 @@ impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
     }
 }
 
-impl<BRA: BlindRotationAlgo> BlindRotationKey<Vec<u8>, BRA, i64> {
+impl<BRA: BlindRotationAlgo> BlindRotationKey<AlignedBuf, BRA, i64> {
     pub fn encrypt_sk_tmp_bytes<A, M, BE: Backend>(module: &M, infos: &A) -> usize
     where
         A: GGSWInfos,

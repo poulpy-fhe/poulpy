@@ -6,6 +6,7 @@
 //! Tests validate correctness against the reference implementation in
 //! [`poulpy-cpu-ref`](https://docs.rs/poulpy-cpu-ref).
 
+use crate::AlignedBuf;
 use crate::layouts::{
     Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef,
     ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxOwned,
@@ -112,7 +113,7 @@ pub fn upload_scalar_znx<BE: Backend>(host: &ScalarZnx<impl HostDataRef, BE::Znx
     ScalarZnx::from_data(BE::from_host_bytes(host.data.as_ref()), shape.n(), shape.cols())
 }
 
-pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnx<Vec<u8>, BE::ZnxWord> {
+pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(&backend.data);
     ScalarZnx::from_data(HostBytesBackend::from_host_bytes(&host_bytes), shape.n(), shape.cols())
@@ -123,7 +124,7 @@ pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef, BE::ZnxWord>)
     VecZnx::from_shape(BE::from_host_bytes(host.data().as_ref()), shape)
 }
 
-pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnx<Vec<u8>, BE::ZnxWord> {
+pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(backend.data());
     VecZnx::from_shape(HostBytesBackend::from_host_bytes(&host_bytes), shape)
@@ -141,7 +142,7 @@ pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef, BE::ZnxWord>)
     )
 }
 
-pub fn download_mat_znx<BE: Backend>(backend: &MatZnx<BE::OwnedBuf, BE::ZnxWord>) -> MatZnx<Vec<u8>, BE::ZnxWord> {
+pub fn download_mat_znx<BE: Backend>(backend: &MatZnx<BE::OwnedBuf, BE::ZnxWord>) -> MatZnx<AlignedBuf, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(backend.data());
     MatZnx::from_data(

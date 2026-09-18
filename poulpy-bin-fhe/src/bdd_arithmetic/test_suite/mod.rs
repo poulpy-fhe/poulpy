@@ -22,6 +22,7 @@ pub use ggsw_blind_rotations::*;
 pub use glwe_blind_rotation::*;
 pub use glwe_blind_selection::*;
 pub use or::*;
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -58,7 +59,7 @@ pub struct TestContext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut
     pub bdd_key: BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend> Default for TestContext<BRA, BE>
+impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend> Default for TestContext<BRA, BE>
 where
     Module<BE>: ModuleNew<BE>
         + BDDKeyEncryptSk<BRA, BE>
@@ -77,7 +78,9 @@ where
     }
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + HalModuleImpl> TestContext<BRA, BE> {
+impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + HostBackend + HalModuleImpl>
+    TestContext<BRA, BE>
+{
     pub fn glwe_infos(&self) -> GLWELayout {
         TEST_GLWE_INFOS
     }

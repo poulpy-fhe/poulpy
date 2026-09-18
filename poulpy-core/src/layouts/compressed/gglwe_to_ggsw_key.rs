@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
     source::Source,
@@ -249,7 +250,7 @@ impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
 
     /// Returns the serialized byte size for a compressed GGLWE-to-GGSW key with the given parameters.
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        rank.as_usize() * GGLWECompressed::<Vec<u8>, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank)
+        rank.as_usize() * GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank)
     }
 }
 

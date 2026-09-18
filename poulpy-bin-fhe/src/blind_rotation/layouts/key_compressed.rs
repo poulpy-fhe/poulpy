@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::ModuleN,
     layouts::{Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord},
@@ -55,7 +56,7 @@ pub trait BlindRotationKeyCompressedFactory<BRA: BlindRotationAlgo> {
         A: BlindRotationKeyInfos;
 }
 
-impl<BRA: BlindRotationAlgo> BlindRotationKeyCompressed<Vec<u8>, BRA, i64>
+impl<BRA: BlindRotationAlgo> BlindRotationKeyCompressed<AlignedBuf, BRA, i64>
 where
     Self: BlindRotationKeyCompressedFactory<BRA>,
 {

@@ -2,6 +2,7 @@
 //! HAL runner functions in this module tree — not part of the crate's public
 //! API.
 
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::{
     Backend, CnvPVecLOwned, CnvPVecROwned, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, PrepareHint, ScalarZnx,
     ScalarZnxBackendRef, ScalarZnxToBackendRef, SvpPPol, SvpPPolOwned, VecZnx, VecZnxBigBackendMut, VecZnxBigBackendRef,
@@ -11,21 +12,23 @@ use poulpy_hal::layouts::{
 use poulpy_hal::source::Source;
 use rand::Rng;
 
-fn random_aligned_host_bytes(len: usize, source: &mut Source) -> Vec<u8> {
+fn random_aligned_host_bytes(len: usize, source: &mut Source) -> AlignedBuf {
     let mut bytes = poulpy_hal::alloc_aligned_custom::<u8>(len, poulpy_hal::DEFAULTALIGN);
     source.fill_bytes(&mut bytes);
     bytes
 }
 
-pub fn upload_host_vec_znx<BE: Backend<ZnxWord = i64>>(src: &VecZnx<Vec<u8>, i64>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
+pub fn upload_host_vec_znx<BE: Backend<ZnxWord = i64>>(src: &VecZnx<AlignedBuf, i64>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
     VecZnx::from_shape(BE::from_host_bytes(src.data()), src.shape())
 }
 
-pub fn upload_host_scalar_znx<BE: Backend<ZnxWord = i64>>(src: &ScalarZnx<Vec<u8>, i64>) -> ScalarZnx<BE::OwnedBuf, BE::ZnxWord> {
+pub fn upload_host_scalar_znx<BE: Backend<ZnxWord = i64>>(
+    src: &ScalarZnx<AlignedBuf, i64>,
+) -> ScalarZnx<BE::OwnedBuf, BE::ZnxWord> {
     ScalarZnx::from_data(BE::from_host_bytes(src.data()), src.n(), src.cols())
 }
 
-pub fn upload_host_mat_znx<BE: Backend<ZnxWord = i64>>(src: &MatZnx<Vec<u8>, i64>) -> MatZnx<BE::OwnedBuf, BE::ZnxWord> {
+pub fn upload_host_mat_znx<BE: Backend<ZnxWord = i64>>(src: &MatZnx<AlignedBuf, i64>) -> MatZnx<BE::OwnedBuf, BE::ZnxWord> {
     MatZnx::from_data(
         BE::from_host_bytes(src.data()),
         src.n(),
@@ -36,17 +39,17 @@ pub fn upload_host_mat_znx<BE: Backend<ZnxWord = i64>>(src: &MatZnx<Vec<u8>, i64
     )
 }
 
-pub fn random_host_scalar_znx(n: usize, cols: usize, source: &mut Source) -> ScalarZnx<Vec<u8>, i64> {
-    let bytes = random_aligned_host_bytes(ScalarZnx::<Vec<u8>, i64>::bytes_of(n, cols), source);
+pub fn random_host_scalar_znx(n: usize, cols: usize, source: &mut Source) -> ScalarZnx<AlignedBuf, i64> {
+    let bytes = random_aligned_host_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, cols), source);
     ScalarZnx::from_bytes(n, cols, bytes)
 }
 
-pub fn random_host_vec_znx(n: usize, cols: usize, size: usize, source: &mut Source) -> VecZnx<Vec<u8>, i64> {
-    let bytes = random_aligned_host_bytes(VecZnx::<Vec<u8>, i64>::bytes_of(n, cols, size), source);
+pub fn random_host_vec_znx(n: usize, cols: usize, size: usize, source: &mut Source) -> VecZnx<AlignedBuf, i64> {
+    let bytes = random_aligned_host_bytes(VecZnx::<AlignedBuf, i64>::bytes_of(n, cols, size), source);
     VecZnx::from_bytes(n, cols, size, bytes)
 }
 
-fn random_normalization_bytes(len: usize, word_bytes: usize, source: &mut Source) -> Vec<u8> {
+fn random_normalization_bytes(len: usize, word_bytes: usize, source: &mut Source) -> AlignedBuf {
     let mut bytes = random_aligned_host_bytes(len, source);
     for word in bytes.chunks_exact_mut(word_bytes) {
         match word_bytes {
@@ -65,8 +68,8 @@ fn random_normalization_bytes(len: usize, word_bytes: usize, source: &mut Source
 }
 
 /// Random coefficients with the signed headroom required by normalization.
-pub fn random_normalization_vec_znx(n: usize, cols: usize, size: usize, source: &mut Source) -> VecZnx<Vec<u8>, i64> {
-    let bytes = random_normalization_bytes(VecZnx::<Vec<u8>, i64>::bytes_of(n, cols, size), size_of::<i64>(), source);
+pub fn random_normalization_vec_znx(n: usize, cols: usize, size: usize, source: &mut Source) -> VecZnx<AlignedBuf, i64> {
+    let bytes = random_normalization_bytes(VecZnx::<AlignedBuf, i64>::bytes_of(n, cols, size), size_of::<i64>(), source);
     VecZnx::from_bytes(n, cols, size, bytes)
 }
 
@@ -88,8 +91,8 @@ pub fn random_host_mat_znx(
     cols_out: usize,
     size: usize,
     source: &mut Source,
-) -> MatZnx<Vec<u8>, i64> {
-    let bytes = random_aligned_host_bytes(MatZnx::<Vec<u8>, i64>::bytes_of(n, rows, cols_in, cols_out, size), source);
+) -> MatZnx<AlignedBuf, i64> {
+    let bytes = random_aligned_host_bytes(MatZnx::<AlignedBuf, i64>::bytes_of(n, rows, cols_in, cols_out, size), source);
     MatZnx::from_bytes(n, rows, cols_in, cols_out, size, bytes)
 }
 

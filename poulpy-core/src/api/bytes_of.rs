@@ -13,13 +13,13 @@ use crate::layouts::{Base2K, Degree, GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos,
 ///
 /// Scratch sizing must go through this trait rather than through the static
 /// `Type::bytes_of` constructors. Those compute the size from the *host* layout
-/// (`VecZnx::<Vec<u8>, W>::bytes_of`), which silently bypasses a backend's
+/// (`VecZnx::<AlignedBuf, W>::bytes_of`), which silently bypasses a backend's
 /// [`Backend::bytes_of_vec_znx`] / [`Backend::bytes_of_scalar_znx`] overrides.
 /// A device backend that pads or aligns differently from the host would
 /// otherwise have its override ignored by every core scratch computation.
 ///
 /// The static constructors remain correct for genuinely host-owned buffers,
-/// where naming `Vec<u8>` is the truth rather than a placeholder.
+/// where naming `AlignedBuf` is the truth rather than a placeholder.
 ///
 /// Sizing is keyed on the storage *domain*, never on the coefficient word: one
 /// word maps to several layouts (`DftWord` covers `VecZnxDft`, `SvpPPol`,

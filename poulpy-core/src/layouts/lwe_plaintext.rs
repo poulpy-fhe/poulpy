@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use std::fmt;
 
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, ZnxWord};
@@ -93,7 +94,7 @@ impl<D: Data, W: ZnxWord> LWEPlaintext<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> LWEPlaintext<Vec<u8>, W> {
+impl<W: ZnxWord> LWEPlaintext<AlignedBuf, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: LWEInfos,
@@ -105,7 +106,7 @@ impl<W: ZnxWord> LWEPlaintext<Vec<u8>, W> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWEPlaintext {
             data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, W>::bytes_of(1, 1, size)),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)),
                 1,
                 1,
                 size,
@@ -123,7 +124,7 @@ impl<W: ZnxWord> LWEPlaintext<Vec<u8>, W> {
     }
 
     pub fn bytes_of(size: usize) -> usize {
-        VecZnx::<Vec<u8>, W>::bytes_of(1, 1, size)
+        VecZnx::<AlignedBuf, W>::bytes_of(1, 1, size)
     }
 }
 

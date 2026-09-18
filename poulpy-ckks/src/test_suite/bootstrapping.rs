@@ -33,6 +33,7 @@ use crate::api::CKKSEncodingOps;
 use crate::ckks_set_log_delta_normalized;
 use crate::layouts::CKKSCiphertextOwned;
 use crate::layouts::CKKSPlaintextOwned;
+use poulpy_hal::AlignedBuf;
 use std::time::Instant;
 
 use poulpy_core::layouts::{
@@ -1213,7 +1214,7 @@ fn decrypt_coeffs<BE, S>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Vec<f64>
 where
-    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + TestContextBackend,
+    BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64> + TestContextBackend,
     Module<BE>: CKKSDecryptOps<BE>,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,

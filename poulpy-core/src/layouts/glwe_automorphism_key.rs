@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
     source::Source,
@@ -33,7 +34,7 @@ pub struct GLWEAutomorphismKeyLayout {
 /// Wraps a [`GGLWE`] together with the Galois element index `p` that
 /// identifies which automorphism this key materialises.
 ///
-/// `D: Data` is the backing storage type (e.g. `Vec<u8>`, `&[u8]`,
+/// `D: Data` is the backing storage type (e.g. `AlignedBuf`, `&[u8]`,
 /// `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWEAutomorphismKey<D: Data, W: ZnxWord> {
@@ -210,7 +211,7 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEAutomorphismKey<D, W> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl<W: ZnxWord> GLWEAutomorphismKey<Vec<u8>, W> {
+impl<W: ZnxWord> GLWEAutomorphismKey<AlignedBuf, W> {
     /// Allocates a new [`GLWEAutomorphismKey`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
@@ -256,7 +257,7 @@ impl<W: ZnxWord> GLWEAutomorphismKey<Vec<u8>, W> {
 
     /// Returns the byte count required for a [`GLWEAutomorphismKey`] with the given parameters.
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        GGLWE::<Vec<u8>, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank, rank)
+        GGLWE::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank, rank)
     }
 }
 

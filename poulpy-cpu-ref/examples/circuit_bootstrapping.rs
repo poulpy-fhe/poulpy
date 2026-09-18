@@ -8,6 +8,7 @@ use poulpy_core::{
         prepared::{GGSWPrepared, GGSWPreparedFactory, GLWESecretPrepared, GLWESecretPreparedFactory},
     },
 };
+use poulpy_hal::AlignedBuf;
 use std::time::Instant;
 
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
@@ -162,7 +163,7 @@ fn main() {
         base2k,
         pt_lwe.size() * base2k,
         0,
-        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_lwe.data_mut()),
+        &mut <poulpy_hal::layouts::VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_lwe.data_mut()),
         0,
         &mut scratch.borrow(),
     );
@@ -189,7 +190,7 @@ fn main() {
     let now: Instant = Instant::now();
 
     // Circuit bootstrapping evaluation key
-    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, CGGI, i64> =
+    let mut cbt_key: CircuitBootstrappingKey<AlignedBuf, CGGI, i64> =
         CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_layout);
 
     module.circuit_bootstrapping_key_encrypt_sk(
@@ -264,7 +265,9 @@ fn main() {
         base2k,
         pt_glwe.size() * base2k,
         0,
-        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_glwe.data_mut()),
+        &mut <poulpy_hal::layouts::VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(
+            pt_glwe.data_mut(),
+        ),
         0,
         &mut scratch.borrow(),
     );

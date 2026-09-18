@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, WriterTo},
     source::Source,
@@ -156,12 +157,12 @@ impl<D: Data, W: ZnxWord> GLWESwitchingKeyCompressed<D, W> {
     where
         A: GGLWEInfos,
     {
-        GGLWECompressed::<Vec<u8>, W>::bytes_of_from_infos(infos)
+        GGLWECompressed::<AlignedBuf, W>::bytes_of_from_infos(infos)
     }
 
     /// Returns the serialized byte size for a compressed GLWE switching key with the given parameters.
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank_in: Rank) -> usize {
-        GGLWECompressed::<Vec<u8>, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank_in)
+        GGLWECompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank_in)
     }
 }
 

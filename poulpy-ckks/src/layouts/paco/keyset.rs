@@ -687,11 +687,12 @@ fn validate_active_ciphertext_storage<K: LWEInfos + ActiveCiphertextStorage + ?S
 mod tests {
     use super::*;
     use poulpy_core::layouts::{Base2K, Degree, GLWE, GLWEInfos, Rank, TorusPrecision};
+    use poulpy_hal::AlignedBuf;
     use poulpy_hal::layouts::HostBytesBackend;
 
     use crate::layouts::CKKSModuleAlloc;
 
-    struct MisreportedCiphertext(CKKSCiphertext<Vec<u8>, i64>);
+    struct MisreportedCiphertext(CKKSCiphertext<AlignedBuf, i64>);
 
     impl LWEInfos for MisreportedCiphertext {
         fn n(&self) -> Degree {
@@ -719,7 +720,7 @@ mod tests {
 
     impl GLWEToBackendRef<HostBytesBackend> for MisreportedCiphertext {
         fn to_backend_ref(&self) -> GLWE<<HostBytesBackend as Backend>::BufRef<'_>, i64> {
-            <CKKSCiphertext<Vec<u8>, i64> as GLWEToBackendRef<HostBytesBackend>>::to_backend_ref(&self.0)
+            <CKKSCiphertext<AlignedBuf, i64> as GLWEToBackendRef<HostBytesBackend>>::to_backend_ref(&self.0)
         }
     }
 

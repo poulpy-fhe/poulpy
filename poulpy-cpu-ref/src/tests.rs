@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
@@ -416,7 +417,7 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
             if k / base2k + 1 > size {
                 continue;
             }
-            let mut a: VecZnx<Vec<u8>, i64> = module_host.vec_znx_alloc(module_host.n(), 1, size);
+            let mut a: VecZnx<AlignedBuf, i64> = module_host.vec_znx_alloc(module_host.n(), 1, size);
             a.fill_uniform(base2k, &mut source);
             let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
             let mut want_be = upload_vec_znx::<NTT4x30Ref>(&module_host.vec_znx_alloc(module_host.n(), 1, size));
@@ -598,7 +599,12 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
     for a_base2k in 1..=62 {
         for res_base2k in 1..=62 {
             for a_size in 0..=8 {
-                let mut input = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16 * N * a_size], N, 1, a_size);
+                let mut input = VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(
+                    AlignedBuf::from(vec![0; 16 * N * a_size]),
+                    N,
+                    1,
+                    a_size,
+                );
                 for j in 0..a_size {
                     for i in 0..N {
                         random ^= random << 17;
@@ -613,7 +619,8 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                         };
                     }
                 }
-                let mut small_input = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * N * a_size], N, 1, a_size);
+                let mut small_input =
+                    VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * N * a_size]), N, 1, a_size);
                 for j in 0..a_size {
                     for i in 0..N {
                         small_input.at_mut(0, j)[i] = if (4..=5).contains(&i) {
@@ -624,8 +631,10 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                     }
                 }
                 for res_size in 1..=8 {
-                    let mut output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * N * res_size], N, 1, res_size);
-                    let mut small_output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * N * res_size], N, 1, res_size);
+                    let mut output =
+                        VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * N * res_size]), N, 1, res_size);
+                    let mut small_output =
+                        VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * N * res_size]), N, 1, res_size);
                     let bracket = (a_size * a_base2k + res_size * res_base2k + 128) as i64;
                     let gap = (a_size * a_base2k) as i64 - (res_size * res_base2k) as i64;
                     for offset in [
@@ -652,12 +661,12 @@ fn test_vec_znx_big_normalize_input_bound_integer() {
                             &mut carry,
                         );
                         vec_znx_normalize::<FFT64Ref>(
-                            &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small_output),
+                            &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small_output),
                             res_base2k,
                             res_size * res_base2k,
                             offset,
                             0,
-                            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&small_input),
+                            &<VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&small_input),
                             a_base2k,
                             0,
                             &mut [0i64; 3 * N],
@@ -704,13 +713,19 @@ fn test_normalize_exact_canonical_precision() {
         (&[i64::MAX], 64, 64, 62, 0, &[i64::MIN]),
     ];
     for &(values, a_base2k, res_base2k, res_k, offset, expected) in cases {
-        let mut small = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * values.len()], 1, 1, values.len());
-        let mut big = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16 * values.len()], 1, 1, values.len());
+        let mut small = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * values.len()]), 1, 1, values.len());
+        let mut big = VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(
+            AlignedBuf::from(vec![0; 16 * values.len()]),
+            1,
+            1,
+            values.len(),
+        );
         for (j, &value) in values.iter().enumerate() {
             small.at_mut(0, j)[0] = value;
             big.at_mut(0, j)[0] = value as i128;
         }
-        let mut output = VecZnx::<Vec<u8>, i64>::from_data(vec![93; 8 * expected.len()], 1, 1, expected.len());
+        let mut output =
+            VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![93; 8 * expected.len()]), 1, 1, expected.len());
         ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
             &mut output,
             res_base2k,
@@ -725,12 +740,12 @@ fn test_normalize_exact_canonical_precision() {
         assert_eq!((0..expected.len()).map(|j| output.at(0, j)[0]).collect::<Vec<_>>(), expected);
         if a_base2k <= 62 && res_base2k <= 62 {
             vec_znx_normalize::<FFT64Ref>(
-                &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
+                &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
                 res_base2k,
                 res_k,
                 offset,
                 0,
-                &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&small),
+                &<VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&small),
                 a_base2k,
                 0,
                 &mut [0; 3],
@@ -741,7 +756,7 @@ fn test_normalize_exact_canonical_precision() {
                 res_base2k,
                 res_k,
                 0,
-                &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small),
+                &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut small),
                 0,
                 &mut [0],
             );
@@ -757,9 +772,9 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
         vec_znx_big::{AddOp, SubOp},
     };
     use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxShape, ZnxView, ZnxViewMut};
-    let mut regression_input = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16], 1, 1, 1);
+    let mut regression_input = VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(AlignedBuf::from(vec![0; 16]), 1, 1, 1);
     regression_input.at_mut(0, 0)[0] = 3;
-    let mut regression_output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 24], 1, 1, 3);
+    let mut regression_output = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 24]), 1, 1, 3);
     ntt4x30_vec_znx_big_normalize_assign::<SubOp, _, _, NTT4x30Ref>(
         &mut regression_output,
         2,
@@ -775,13 +790,14 @@ fn test_vec_znx_big_normalize_assign_and_ranges() {
     for a_base2k in [1, 2, 17, 50, 62] {
         for res_base2k in [1, 2, 19, 51, 62] {
             for offset in [i64::MIN, -400, -63, -1, 0, 1, 63, 400, i64::MAX] {
-                let mut input = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16 * N * 3], N, 1, 3);
+                let mut input =
+                    VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(AlignedBuf::from(vec![0; 16 * N * 3]), N, 1, 3);
                 for j in 0..3 {
                     for i in 0..N {
                         input.at_mut(0, j)[i] = (NORMALIZE_IDFT_BOUND / (i as i128 + 1)) * if (i + j) % 2 == 0 { -1 } else { 1 };
                     }
                 }
-                let alloc = || VecZnx::<Vec<u8>, i64>::from_data(vec![0; 8 * N * 3], N, 1, 3);
+                let alloc = || VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 8 * N * 3]), N, 1, 3);
                 let mut want = alloc();
                 let mut carry = [0i128; 3 * N];
                 ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
@@ -938,13 +954,14 @@ fn test_vec_znx_big_normalize_wide_radices() {
     for a_base2k in [1, 63, 64, 65, 126, 127] {
         for res_base2k in [1, 17, 63, 64] {
             for size in 1..=3 {
-                let mut input = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 32 * size], 2, 1, size);
+                let mut input =
+                    VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(AlignedBuf::from(vec![0; 32 * size]), 2, 1, size);
                 for j in 0..size {
                     input
                         .at_mut(0, j)
                         .copy_from_slice(&[-NORMALIZE_IDFT_BOUND, NORMALIZE_IDFT_BOUND]);
                 }
-                let mut output = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 16 * size], 2, 1, size);
+                let mut output = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 16 * size]), 2, 1, size);
                 for offset in [-400, -64, -(a_base2k as i64), -1, 0, 1, 64, 400] {
                     ntt4x30_vec_znx_big_normalize::<_, _, NTT4x30Ref>(
                         &mut output,
@@ -958,7 +975,7 @@ fn test_vec_znx_big_normalize_wide_radices() {
                         &mut [0; 6],
                     );
                     for sub in [false, true] {
-                        let mut assigned = VecZnx::<Vec<u8>, i64>::from_data(vec![0; 16 * size], 2, 1, size);
+                        let mut assigned = VecZnx::<AlignedBuf, i64>::from_data(AlignedBuf::from(vec![0; 16 * size]), 2, 1, size);
                         for j in 0..size {
                             assigned.at_mut(0, j).copy_from_slice(&[-(1i64 << 62), 1i64 << 62]);
                         }
@@ -1026,6 +1043,7 @@ mod canonical_precision_tests {
         },
     };
     use dashu_int::IBig;
+    use poulpy_hal::AlignedBuf;
     use poulpy_hal::layouts::{VecZnx, VecZnxBig, VecZnxShape, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut};
 
     const N: usize = 9;
@@ -1054,14 +1072,15 @@ mod canonical_precision_tests {
         result
     }
 
-    fn small(size: usize) -> VecZnx<Vec<u8>, i64> {
-        VecZnx::from_data(vec![0xa5; 8 * N * 2 * size], N, 2, size)
+    fn small(size: usize) -> VecZnx<AlignedBuf, i64> {
+        VecZnx::from_data(AlignedBuf::from(vec![0xa5; 8 * N * 2 * size]), N, 2, size)
     }
 
     #[allow(clippy::too_many_arguments)]
     fn check(a: &[Vec<i128>], ka: usize, kr: usize, k: usize, size: usize, offset: i64, ranges: bool) {
         let mut input = small(a.len());
-        let mut wide = VecZnxBig::<Vec<u8>, i128, NTT4x30Ref>::from_data(vec![0; 16 * N * 2 * a.len()], N, 2, a.len());
+        let mut wide =
+            VecZnxBig::<AlignedBuf, i128, NTT4x30Ref>::from_data(AlignedBuf::from(vec![0; 16 * N * 2 * a.len()]), N, 2, a.len());
         for (j, values) in a.iter().enumerate() {
             for (i, &value) in values.iter().enumerate() {
                 input.at_mut(1, j)[i] = value as i64;
@@ -1072,7 +1091,7 @@ mod canonical_precision_tests {
         let expected: Vec<_> = (0..N)
             .map(|i| oracle(&a.iter().map(|v| v[i]).collect::<Vec<_>>(), ka, kr, k, size, offset))
             .collect();
-        let verify = |name: &str, output: &VecZnx<Vec<u8>, i64>| {
+        let verify = |name: &str, output: &VecZnx<AlignedBuf, i64>| {
             for (i, want) in expected.iter().enumerate() {
                 let got: Vec<_> = (0..size).map(|j| output.at(1, j)[i]).collect();
                 assert_eq!(
@@ -1086,7 +1105,7 @@ mod canonical_precision_tests {
         };
         let mut output = small(size);
         if narrow {
-            let src = <VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input);
+            let src = <VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&input);
             if ranges {
                 let ptr = output.data_mut().as_mut_ptr().cast::<i64>();
                 for (start, len) in [(0, 2), (2, 3), (5, 4)] {
@@ -1109,7 +1128,7 @@ mod canonical_precision_tests {
                 }
             } else {
                 vec_znx_normalize::<FFT64Ref>(
-                    &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
+                    &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut output),
                     kr,
                     k,
                     offset,
@@ -1170,7 +1189,7 @@ mod canonical_precision_tests {
                     kr,
                     k,
                     0,
-                    &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut input),
+                    &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut input),
                     1,
                     &mut [73; N],
                 );

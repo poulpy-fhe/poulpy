@@ -234,13 +234,14 @@ macro_rules! bin_fhe_parity_test_suite {
         mod $modname {
             use poulpy_core::layouts::{GLWE, GLWEInfos};
             use poulpy_hal::{
+                AlignedBuf,
                 api::ModuleNew,
                 layouts::{Module, ZnxInfos, ZnxView},
             };
 
             use $crate::blind_rotation::{CGGI, test_suite::generic_blind_rotation::test_blind_rotation};
 
-            fn coeffs(ct: &GLWE<Vec<u8>, i64>) -> Vec<i64> {
+            fn coeffs(ct: &GLWE<AlignedBuf, i64>) -> Vec<i64> {
                 let mut out: Vec<i64> = Vec::new();
                 for col in 0..(ct.rank().as_usize() + 1) {
                     for limb in 0..ct.data().size() {

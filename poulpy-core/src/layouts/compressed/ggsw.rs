@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, MatZnx, MatZnxToBackendMut, MatZnxToBackendRef, Module, ReaderFrom,
@@ -325,7 +326,7 @@ impl<D: Data, W: ZnxWord> GGSWCompressed<D, W> {
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        MatZnx::<Vec<u8>, W>::bytes_of(n.into(), dnum.into(), (rank + 1).into(), 1, size)
+        MatZnx::<AlignedBuf, W>::bytes_of(n.into(), dnum.into(), (rank + 1).into(), 1, size)
     }
 }
 

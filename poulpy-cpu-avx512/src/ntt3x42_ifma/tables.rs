@@ -17,7 +17,7 @@
 
 use std::marker::PhantomData;
 
-use poulpy_hal::alloc_aligned;
+use poulpy_hal::{AlignedVec, alloc_aligned};
 
 use super::primes::{PrimeSetNtt3x42Ifma, modq_pow64};
 
@@ -38,7 +38,7 @@ pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma> {
     pub q4: [u64; 4],
     /// Packed twiddle factors: each entry is 8 u64.
     /// Layout: level-0 (n entries), then butterfly levels (halfnn-1 entries each).
-    pub powomega: Vec<u64>,
+    pub powomega: AlignedVec<u64>,
     /// Scrambled forward roots, prime-major.
     /// Entry for prime `k`, scrambled index `j` is at `[k*n + j]`.
     /// `root[bitrev(i)] = w^i`, where `w` is the primitive `2n`-th root.
@@ -63,7 +63,7 @@ pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma> {
     pub q4: [u64; 4],
     /// Packed twiddle factors: butterfly levels (halfnn-1 entries each),
     /// then last-pass (n entries with ω^{-i}/n baked in).
-    pub powomega: Vec<u64>,
+    pub powomega: AlignedVec<u64>,
     /// Reordered inverse roots, prime-major (stride `n`).
     /// Entry for prime `k`, reordered index `j` is at `[k*n + j]`.
     pub inv_root: Vec<u64>,
@@ -321,8 +321,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
 
         // Split layout: each segment has m entries of ω (4 u64 each) then m entries of ωq (4 u64 each)
         // Total u64 count is same: 8 * total_entries
-        let mut powomega: Vec<u64> = alloc_aligned::<u64>(8 * total_entries);
-        powomega.resize(8 * total_entries, 0);
+        let mut powomega: AlignedVec<u64> = alloc_aligned::<u64>(8 * total_entries);
         let mut seg_base = 0usize; // base offset (in u64) for current segment
 
         if n <= 1 {
@@ -420,8 +419,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
                 })
                 .sum::<usize>();
 
-        let mut powomega: Vec<u64> = alloc_aligned::<u64>(8 * total_entries);
-        powomega.resize(8 * total_entries, 0);
+        let mut powomega: AlignedVec<u64> = alloc_aligned::<u64>(8 * total_entries);
         let mut seg_base = 0usize;
 
         if n <= 1 {

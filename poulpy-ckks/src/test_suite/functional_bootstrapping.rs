@@ -5,6 +5,7 @@ use poulpy_core::{
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
@@ -53,7 +54,7 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
+    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -80,7 +81,7 @@ pub fn test_functional_bootstrapping_non_power_of_two_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
+    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -112,7 +113,7 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
+    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -139,7 +140,7 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
-    BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
+    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>
@@ -168,7 +169,7 @@ fn run_case<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     guard_bits: usize,
 ) where
-    BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
+    BE: TestContextBackend + Backend<OwnedBuf = AlignedBuf>,
     Module<BE>: TestContextModule<BE>
         + CKKSEncodingOps<BE, F>
         + CKKSBootstrappingOps<BE>

@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
@@ -146,11 +147,11 @@ impl<D: Data, W: ZnxWord> GLWEToLWESwitchingKeyCompressed<D, W> {
             1,
             "dsize > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
         );
-        GLWESwitchingKeyCompressed::<Vec<u8>, W>::bytes_of_from_infos(infos)
+        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of_from_infos(infos)
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
-        GLWESwitchingKeyCompressed::<Vec<u8>, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, rank_in)
+        GLWESwitchingKeyCompressed::<AlignedBuf, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, rank_in)
     }
 }
 

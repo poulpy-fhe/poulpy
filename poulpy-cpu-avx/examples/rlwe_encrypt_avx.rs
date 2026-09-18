@@ -5,6 +5,7 @@ use poulpy_cpu_ref::layouts::SvpPPolToBackendRef;
 use poulpy_cpu_ref::layouts::VecZnxBigToBackendMut;
 use poulpy_cpu_ref::layouts::VecZnxBigToBackendRef;
 use poulpy_cpu_ref::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::AlignedBuf;
 
 #[cfg(all(
     feature = "enable-avx",
@@ -51,7 +52,7 @@ fn main() {
     let mut source: Source = Source::new(seed);
 
     // s <- Z_{-1, 0, 1}[X]/(X^{N}+1)
-    let mut s: ScalarZnx<Vec<u8>, i64> = module.scalar_znx_alloc(module.n(), 1);
+    let mut s: ScalarZnx<AlignedBuf, i64> = module.scalar_znx_alloc(module.n(), 1);
     // Sampled on the host; `poulpy_core::GLWESecretSampling` uploads secrets to a backend the same way.
     s.fill_ternary_prob(0, 0.5, &mut source);
 
@@ -62,12 +63,12 @@ fn main() {
     module.svp_prepare(
         &mut s_dft.to_backend_mut(),
         0,
-        &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<BackendImpl>>::to_backend_ref(&s),
+        &<ScalarZnx<AlignedBuf, i64> as ScalarZnxToBackendRef<BackendImpl>>::to_backend_ref(&s),
         0,
     );
 
     // Allocates a VecZnx with two columns: ct=(0, 0)
-    let mut ct: VecZnx<Vec<u8>, i64> = module.vec_znx_alloc(
+    let mut ct: VecZnx<AlignedBuf, i64> = module.vec_znx_alloc(
         module.n(),
         2,       // Number of columns
         ct_size, // Number of small poly per column
@@ -77,14 +78,14 @@ fn main() {
     module.vec_znx_fill_uniform_source(
         base2k,
         base2k * ct_size,
-        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
+        &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
         1,
         &mut source,
     );
 
     let mut buf_dft: VecZnxDftOwned<BackendImpl> = module.vec_znx_dft_alloc(module.n(), 1, ct_size);
 
-    let ct_backend = <VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct);
+    let ct_backend = <VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct);
     module.vec_znx_dft_apply(1, 0, &mut buf_dft.to_backend_mut(), 0, &ct_backend, 1);
 
     // Applies DFT(ct[1]) * DFT(s)
@@ -114,7 +115,7 @@ fn main() {
         base2k,
         msg_size * base2k,
         0,
-        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut m),
+        &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut m),
         0,
         &mut scratch.borrow(),
     );
@@ -123,14 +124,14 @@ fn main() {
     module.vec_znx_big_sub_small_negate_assign(
         &mut buf_big.to_backend_mut(),
         0, // Selects the first column of the receiver
-        &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&m),
+        &<VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&m),
         0, // Selects the first column of the message
     );
 
     // Normalizes back to VecZnx
     // ct[0] <- m - BIG(c1 * s)
     module.vec_znx_big_normalize(
-        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
+        &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
         base2k,
         ct_size * base2k,
         0,
@@ -145,7 +146,7 @@ fn main() {
     // ct[0] <- ct[0] + e
     module.vec_znx_add_normal(
         base2k,
-        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
+        &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut ct),
         0, // Selects the first column of ct (ct[0])
         noise_infos,
         &mut source,
@@ -156,7 +157,7 @@ fn main() {
     // Decryption
 
     // DFT(ct[1] * s)
-    let ct_backend = <VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct);
+    let ct_backend = <VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct);
     module.vec_znx_dft_apply(1, 0, &mut buf_dft.to_backend_mut(), 0, &ct_backend, 1);
     module.svp_apply_dft_to_dft_assign(
         &mut buf_dft.to_backend_mut(),
@@ -172,14 +173,14 @@ fn main() {
     module.vec_znx_big_add_small_assign(
         &mut buf_big.to_backend_mut(),
         0,
-        &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct),
+        &<VecZnx<AlignedBuf, i64> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct),
         0,
     );
 
     // m + e <- BIG(ct[1] * s + ct[0])
     let mut res = module.vec_znx_alloc(module.n(), 1, ct_size);
     module.vec_znx_big_normalize(
-        &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut res),
+        &mut <VecZnx<AlignedBuf, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut res),
         base2k,
         ct_size * base2k,
         0,

@@ -42,6 +42,7 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     ///
     /// This buffer may be host-resident or device-resident. It is intentionally
     /// no longer required to expose direct host byte slices.
+    /// Host-resident backends use [`AlignedBuf`](crate::AlignedBuf).
     type OwnedBuf: Data + Send + Sync;
     /// Shared borrowed view into backend-owned storage.
     type BufRef<'a>: Data + Sync
@@ -74,10 +75,9 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     ///
     /// The buffer may be longer than `bytes`; the extra bytes are zero.
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf;
-    /// Wraps/Uploads a host-owned byte buffer into backend-owned storage.
+    /// Copies a host-owned byte buffer into backend-owned storage.
     ///
-    /// Backends may override this for a zero-copy fast path when the input is
-    /// already in a compatible host representation.
+    /// The buffer may be longer than `bytes`; the extra bytes are zero.
     fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf;
     /// Copies the contents of a backend-owned buffer into a fresh host `Vec<u8>`.
     ///

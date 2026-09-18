@@ -2,6 +2,7 @@ use poulpy_core::{
     api::{GLWEMulXpMinusOne, GLWERotate},
     layouts::{Base2K, Degree, GLWE, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision},
 };
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     layouts::{FillUniform, Module},
     source::Source,
@@ -9,7 +10,7 @@ use poulpy_hal::{
 
 use crate::{FFT64Ref, hal_impl::delegating_backend::DelegatingFFT64Ref};
 
-fn sample_glwe() -> GLWE<Vec<u8>, i64> {
+fn sample_glwe() -> GLWE<AlignedBuf, i64> {
     let layout = GLWELayout {
         n: Degree(256),
         base2k: Base2K(17),
@@ -17,7 +18,7 @@ fn sample_glwe() -> GLWE<Vec<u8>, i64> {
         rank: Rank(2),
     };
     let module: Module<FFT64Ref> = Module::new(256);
-    let mut ct: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&layout);
+    let mut ct: GLWE<AlignedBuf, i64> = module.glwe_alloc_from_infos(&layout);
     let mut source = Source::new([7u8; 32]);
     ct.fill_uniform(40, &mut source);
     ct

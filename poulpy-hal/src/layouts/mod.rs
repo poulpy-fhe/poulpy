@@ -78,7 +78,7 @@ pub use znx_base::*;
 
 use std::ptr::NonNull;
 
-use crate::oep::HalModuleImpl;
+use crate::{AlignedBuf, oep::HalModuleImpl};
 
 /// Base trait alias for all data containers.
 ///
@@ -170,7 +170,7 @@ impl Backend for HostBytesBackend {
     type ZnxWord = i64;
     type BigWord = i128;
     type DftWord = i64;
-    type OwnedBuf = Vec<u8>;
+    type OwnedBuf = AlignedBuf;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
     type Handle = ();
@@ -185,25 +185,15 @@ impl Backend for HostBytesBackend {
     }
 
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
-        let mut out = crate::alloc_aligned::<u8>(bytes.len());
-        out[..bytes.len()].copy_from_slice(bytes);
-        out[bytes.len()..].fill(0);
-        out
+        AlignedBuf::from(bytes)
     }
 
     fn from_bytes(bytes: Vec<u8>) -> Self::OwnedBuf {
-        if crate::is_aligned(bytes.as_ptr()) {
-            bytes
-        } else {
-            let mut out = crate::alloc_aligned::<u8>(bytes.len());
-            out[..bytes.len()].copy_from_slice(&bytes);
-            out[bytes.len()..].fill(0);
-            out
-        }
+        AlignedBuf::from(bytes)
     }
 
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
-        buf.clone()
+        buf.to_vec()
     }
 
     fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
@@ -405,6 +395,30 @@ impl CopyToHost for Vec<u8> {
 }
 
 impl CopyFromHost for Vec<u8> {
+    fn len_bytes(&self) -> usize {
+        self.len()
+    }
+    fn copy_from_host(&mut self, src: &[u8]) {
+        self.copy_from_slice(src);
+    }
+    fn as_host_bytes_mut(&mut self) -> Option<&mut [u8]> {
+        Some(self)
+    }
+}
+
+impl CopyToHost for AlignedBuf {
+    fn len_bytes(&self) -> usize {
+        self.len()
+    }
+    fn copy_to_host(&self, dst: &mut [u8]) {
+        dst.copy_from_slice(self);
+    }
+    fn as_host_bytes(&self) -> Option<&[u8]> {
+        Some(self)
+    }
+}
+
+impl CopyFromHost for AlignedBuf {
     fn len_bytes(&self) -> usize {
         self.len()
     }
@@ -685,33 +699,14 @@ macro_rules! impl_backend_from {
 mod host_transfer_tests {
     use super::*;
 
-    /// `from_bytes` returns an aligned vector as is, and copies an unaligned
-    /// one into a buffer padded to the allocation granularity with a zero
-    /// tail. Each path is pinned on the very vector handed over: alignment is
-    /// a property of one allocation, not of its clones.
+    /// `from_bytes` always copies into aligned storage, padding the length up
+    /// to the allocation granularity and zeroing the tail.
     #[test]
-    fn from_bytes_keeps_aligned_and_pads_unaligned() {
-        let aligned: Vec<u8> = crate::alloc_aligned::<u8>(100);
-        let ptr = aligned.as_ptr();
-        let buf = <HostBytesBackend as Backend>::from_bytes(aligned);
-        assert_eq!(buf.as_ptr(), ptr, "the aligned fast path returns the vector as is");
-        assert_eq!(buf.len(), 128);
-
-        // Hold allocations until one lands off the 64-byte grid; a 16-byte
-        // allocation granularity yields one within a few tries.
-        let mut held: Vec<Vec<u8>> = Vec::new();
-        let unaligned: Vec<u8> = loop {
-            let candidate = vec![1u8; 100];
-            if !crate::is_aligned(candidate.as_ptr()) {
-                break candidate;
-            }
-            assert!(held.len() < 64, "no unaligned allocation found");
-            held.push(candidate);
-        };
-        let expected = unaligned.clone();
-        let buf = <HostBytesBackend as Backend>::from_bytes(unaligned);
-        assert_eq!(buf.len(), 128, "unaligned input is copied into a padded buffer");
-        assert_eq!(&buf[..100], &expected[..]);
+    fn from_bytes_pads_and_zeroes() {
+        let input = vec![1u8; 100];
+        let buf = <HostBytesBackend as Backend>::from_bytes(input.clone());
+        assert_eq!(buf.len(), 128, "input is copied into a padded buffer");
+        assert_eq!(&buf[..100], &input[..]);
         assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
     }
 

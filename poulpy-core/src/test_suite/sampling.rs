@@ -7,6 +7,7 @@
 //! standard deviation to hold, so those two are registered by hand next to a
 //! suite that runs that wide, not from `core_backend_test_suite!` (degree 256).
 
+use poulpy_hal::AlignedBuf;
 use std::f64::consts::SQRT_2;
 
 use poulpy_hal::{
@@ -39,8 +40,8 @@ fn fill_and_download<BE: TestBackend>(
 where
     Module<BE>: ScalarZnxFillDistribution<BE>,
 {
-    let mut host: ScalarZnx<Vec<u8>, BE::ZnxWord> = ScalarZnx::from_data(
-        HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<Vec<u8>, BE::ZnxWord>::bytes_of(module.n(), COLS)),
+    let mut host: ScalarZnx<AlignedBuf, BE::ZnxWord> = ScalarZnx::from_data(
+        HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, BE::ZnxWord>::bytes_of(module.n(), COLS)),
         module.n(),
         COLS,
     );

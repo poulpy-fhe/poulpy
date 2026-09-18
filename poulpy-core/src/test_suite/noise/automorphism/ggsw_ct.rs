@@ -1,3 +1,4 @@
+use poulpy_hal::AlignedBuf;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssign},
     layouts::{HostBytesBackend, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned},
@@ -208,7 +209,7 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<HostBytesBackend>>::to_backend_ref(
+                            &<ScalarZnx<AlignedBuf, i64> as ScalarZnxToBackendRef<HostBytesBackend>>::to_backend_ref(
                                 &pt_scalar_noise,
                             ),
                             &sk_prepared,
@@ -394,7 +395,7 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<HostBytesBackend>>::to_backend_ref(
+                            &<ScalarZnx<AlignedBuf, i64> as ScalarZnxToBackendRef<HostBytesBackend>>::to_backend_ref(
                                 &pt_scalar_noise,
                             ),
                             &sk_prepared,

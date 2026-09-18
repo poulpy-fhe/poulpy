@@ -112,11 +112,12 @@ impl<D: HostDataMut, W: ZnxWord> ScalarZnxFill for ScalarZnx<D, W> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use poulpy_hal::AlignedBuf;
     use poulpy_hal::layouts::{Backend, HostBytesBackend, ZnxView};
 
-    fn fresh(n: usize, cols: usize) -> ScalarZnx<Vec<u8>, i64> {
+    fn fresh(n: usize, cols: usize) -> ScalarZnx<AlignedBuf, i64> {
         ScalarZnx::from_data(
-            HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<Vec<u8>, i64>::bytes_of(n, cols)),
+            HostBytesBackend::alloc_zeroed_bytes(ScalarZnx::<AlignedBuf, i64>::bytes_of(n, cols)),
             n,
             cols,
         )

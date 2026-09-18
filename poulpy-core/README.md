@@ -41,7 +41,7 @@ where
     // then call the safe `poulpy_core::api::*` traits through `module`
     // or the convenience methods on `GLWE`.
     let _ = module;
-    let _phantom: Option<GLWE<Vec<u8>>> = None;
+    let _phantom: Option<GLWE<AlignedBuf>> = None;
 }
 ```
 
@@ -97,9 +97,9 @@ flowchart TD
 Equivalent Rust:
 
 ```rust
-let mut atk_compressed: GLWEAutomorphismKeyCompressed<Vec<u8>> =
+let mut atk_compressed: GLWEAutomorphismKeyCompressed<AlignedBuf> =
     GLWEAutomorphismKeyCompressed::alloc(...);
-let mut atk: GLWEAutomorphismKey<Vec<u8>> =
+let mut atk: GLWEAutomorphismKey<AlignedBuf> =
     GLWEAutomorphismKey::alloc(...);
     module.decompress_automorphism_key(&mut atk, &atk_compressed);
 let mut atk_prep = atk.prepare_alloc(module);
@@ -114,7 +114,7 @@ let mut atk_prep = atk.prepare_alloc(module);
   However, it remains naturally usable on `GGLWE` and `GGSW` objects, since these are vectors/matrices of `GLWECiphertext`.
 
 ```rust
-let mut atk: GLWEAutomorphismKey<Vec<u8>> =
+let mut atk: GLWEAutomorphismKey<AlignedBuf> =
         GLWEAutomorphismKey::alloc(...);
 module.glwe_automorphism_key_encrypt_sk(&mut atk, ...);
 module.glwe_decrypt(&atk.at(row, 0), ...);

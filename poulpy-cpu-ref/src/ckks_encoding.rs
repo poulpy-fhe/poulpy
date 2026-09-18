@@ -451,6 +451,7 @@ mod tests {
     };
     use poulpy_core::layouts::{Base2K, Degree, GLWEPlaintext, TorusPrecision};
     use poulpy_hal::{
+        AlignedBuf,
         api::ScratchOwnedAlloc,
         layouts::{Backend, Module, ScratchOwned},
     };
@@ -463,7 +464,7 @@ mod tests {
 
     fn roundtrip_all_dimensions<BE, F>(module: &Module<BE>)
     where
-        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+        BE: Backend<OwnedBuf = AlignedBuf, ZnxWord = i64>,
         F: CKKSEncodingScalar,
         Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     {
@@ -523,7 +524,7 @@ mod tests {
             log_delta: 40,
             slots: SlotsKind::Complex,
         });
-        let bytes = GLWEPlaintext::<Vec<u8>, i64>::bytes_of_from_infos(&layout);
+        let bytes = GLWEPlaintext::<AlignedBuf, i64>::bytes_of_from_infos(&layout);
         let mut pt_scratch = ScratchOwned::<FFT64Ref>::alloc(bytes);
         let (mut pt, _) = pt_scratch.arena().take_ckks_plaintext_like_scratch(&layout);
 
@@ -531,11 +532,11 @@ mod tests {
         let re: Vec<f64> = (0..slots).map(|i| (i as f64 + 1.0) / 17.0).collect();
         let im: Vec<f64> = (0..slots).map(|i| -(i as f64 + 1.0) / 29.0).collect();
         let values = re.iter().chain(&im).copied().collect::<Vec<_>>();
-        let mut values = CKKSEncodingBuffer::<Vec<u8>, f64>::from_host::<FFT64Ref>(&values);
+        let mut values = CKKSEncodingBuffer::<AlignedBuf, f64>::from_host::<FFT64Ref>(&values);
         module.ckks_encode_slots_assign_into(&mut pt, &mut values).unwrap();
         let coeffs = values.to_host::<FFT64Ref>();
 
-        let mut decoded = CKKSEncodingBuffer::<Vec<u8>, f64>::from_host::<FFT64Ref>(&vec![0.0; 2 * slots]);
+        let mut decoded = CKKSEncodingBuffer::<AlignedBuf, f64>::from_host::<FFT64Ref>(&vec![0.0; 2 * slots]);
         module.ckks_decode_slots_into(&pt, &mut decoded).unwrap();
         let values = decoded.to_host::<FFT64Ref>();
         let (got_re, got_im) = values.split_at(slots);
