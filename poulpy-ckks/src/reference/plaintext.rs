@@ -29,8 +29,8 @@ fn plaintext_shift<P: CKKSInfos + IntPolyInfos>(ct_log_budget: usize, pt: &P) ->
     }
 }
 
-pub trait CKKSPlaintextDefault<BE: Backend> {
-    fn ckks_add_pt_vec_into_default<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+pub trait CKKSPlaintextReference<BE: Backend> {
+    fn ckks_add_pt_vec_into_reference<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: VecZnxRshAdd<BE> + VecZnxLshAdd<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
@@ -51,7 +51,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_add_pt_const_into_default<Dst, A>(
+    fn ckks_add_pt_const_into_reference<Dst, A>(
         &self,
         ct: &mut Dst,
         coeff_ct: usize,
@@ -83,7 +83,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_sub_pt_const_into_default<Dst, A>(
+    fn ckks_sub_pt_const_into_reference<Dst, A>(
         &self,
         ct: &mut Dst,
         coeff_ct: usize,
@@ -115,7 +115,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_sub_pt_vec_into_default<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_sub_pt_vec_into_reference<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: VecZnxRshSub<BE> + VecZnxLshSub<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
@@ -136,23 +136,23 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_extract_pt_tmp_bytes_default(&self, res_size: usize) -> usize
+    fn ckks_extract_pt_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
         Self: VecZnxLshTmpBytes + VecZnxRshTmpBytes,
     {
         self.vec_znx_rsh_tmp_bytes(res_size).max(self.vec_znx_lsh_tmp_bytes(res_size))
     }
 
-    fn ckks_extract_pt_default<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_extract_pt_reference<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         D: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         S: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
         Self: VecZnxLsh<BE> + VecZnxRsh<BE>,
     {
-        self.ckks_extract_pt_with_meta_default(dst, src, src.meta(), scratch)
+        self.ckks_extract_pt_with_meta_reference(dst, src, src.meta(), scratch)
     }
 
-    fn ckks_extract_pt_with_meta_default<D, S>(
+    fn ckks_extract_pt_with_meta_reference<D, S>(
         &self,
         dst: &mut D,
         src: &S,

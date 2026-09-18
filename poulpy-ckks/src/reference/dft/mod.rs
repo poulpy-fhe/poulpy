@@ -1,4 +1,4 @@
-//! Homomorphic DFT (CoeffsToSlots / SlotsToCoeffs) — default implementation.
+//! Homomorphic DFT (CoeffsToSlots / SlotsToCoeffs) — reference implementation.
 //!
 //! Phase 1 hosts the scheme-free factor-matrix generator ([`matrices`]); the
 //! evaluation layer (encode factors, chain linear transforms + rescale, the

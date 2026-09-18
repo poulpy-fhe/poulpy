@@ -1,9 +1,9 @@
 //! Reference implementations of the linear-transformation eval / baby-prep
 //! methods.
 //!
-//! These free `*_default` functions are the reference algorithms a backend
-//! forwards to from its [`crate::oep::LinearTransformationDefault`] impl (see
-//! [`crate::impl_linear_transformation_defaults_full`]). The prepared path
+//! These free `*_reference` functions are the reference algorithms a backend
+//! forwards to from its [`crate::oep::LinearTransformationReference`] impl (see
+//! [`crate::impl_linear_transformation_reference_full`]). The prepared path
 //! follows docs/linear_transformation.md: hoisted baby rotations, DFT-domain inner
 //! products, lazy giant rotations, and one final BIG normalization.
 
@@ -23,8 +23,9 @@ use poulpy_hal::{
 
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, ModuleCoreAlloc},
     reference::{
-        keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
+        keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal},
         linear_transformation::{
             baby_steps::{
                 glwe_prepare_linear_transformation_baby_steps, glwe_prepare_linear_transformation_baby_steps_tmp_bytes,
@@ -34,7 +35,6 @@ use crate::{
             prepared_giants::{DiagonalProd, glwe_eval_giant_steps},
         },
     },
-    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, ModuleCoreAlloc},
 };
 
 use super::LinearTransformationBabySteps;
@@ -42,7 +42,13 @@ use crate::api::GLWEBytesOf;
 
 /// HAL/op bounds required by the eval reference path. Repeated on each free
 /// function so backends only pull in what a method actually needs.
-pub fn glwe_eval_linear_transformation_tmp_bytes_default<BE, M, R, A, B, K>(module: &M, res: &R, a: &A, pt: &B, key: &K) -> usize
+pub fn glwe_eval_linear_transformation_tmp_bytes_reference<BE, M, R, A, B, K>(
+    module: &M,
+    res: &R,
+    a: &A,
+    pt: &B,
+    key: &K,
+) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE>
@@ -50,7 +56,7 @@ where
         + GLWEAutomorphism<BE>
         + GLWEMulPlain<BE>
         + Convolution<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
@@ -106,18 +112,18 @@ where
         .max(lazy_dft_path)
 }
 
-/// Reference impl: scratch bytes for [`glwe_prepare_linear_transformation_baby_steps_default`].
+/// Reference impl: scratch bytes for [`glwe_prepare_linear_transformation_baby_steps_reference`].
 ///
 /// Sizes both the hoisted baby route (DFT the mask once, VMP per key) and the
 /// plain per-baby `glwe_automorphism` fallback, and takes the larger.
-pub fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default<BE, M, A, K>(module: &M, a: &A, key: &K) -> usize
+pub fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference<BE, M, A, K>(module: &M, a: &A, key: &K) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + poulpy_hal::api::ModuleN
         + Convolution<BE>
         + GLWEAutomorphism<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
@@ -138,7 +144,7 @@ where
 /// diagonals, so the same prepared cache is reused across every giant step and
 /// across transforms that share the input. Forwards to the internal
 /// `glwe_prepare_linear_transformation_baby_steps`.
-pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
+pub fn glwe_prepare_linear_transformation_baby_steps_reference<BE, M, A, H>(
     module: &M,
     cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
@@ -150,7 +156,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
         + CnvPVecAlloc<BE>
         + Convolution<BE>
         + GLWEAutomorphism<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + poulpy_hal::api::ModuleN
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigBytesOf
@@ -182,7 +188,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H>(
 ///
 /// Asserts at least one non-empty giant step (a fully-pruned transform is a
 /// caller bug), then delegates to the shared `glwe_eval_giant_steps` loop.
-pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
+pub fn glwe_eval_linear_transformation_into_reference<BE, M, R, P, H>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
@@ -200,7 +206,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
         + CnvPVecBytesOf
         + Convolution<BE>
         + poulpy_hal::api::ModuleN
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + GLWEKeyswitchInternal<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigAlloc<BE>
@@ -241,7 +247,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
 /// diagonal slot and a `cnv_prepare_right` scratch on top of the prepared
 /// evaluation budget, both sized at the module degree, an upper bound for a
 /// compact diagonal.
-pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default<BE, M, R, A, B, K>(
+pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference<BE, M, R, A, B, K>(
     module: &M,
     res: &R,
     a: &A,
@@ -256,7 +262,7 @@ where
         + GLWEMulPlain<BE>
         + CnvPVecBytesOf
         + Convolution<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + crate::reference::keyswitching::GLWEKeyswitchInternal<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
@@ -272,7 +278,7 @@ where
     B: GLWEInfos,
     K: GGLWEInfos,
 {
-    glwe_eval_linear_transformation_tmp_bytes_default::<BE, _, _, _, _, _>(module, res, a, pt, key)
+    glwe_eval_linear_transformation_tmp_bytes_reference::<BE, _, _, _, _, _>(module, res, a, pt, key)
         + module.bytes_of_cnv_pvec_right(module.n(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
 }

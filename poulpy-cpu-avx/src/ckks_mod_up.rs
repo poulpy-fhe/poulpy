@@ -6,17 +6,17 @@ use crate::NTT4x30AvxRayon;
 use poulpy_ckks::{
     CKKSCtBounds, CKKSMeta, CKKSResult, SetCKKSInfos,
     api::CKKSPow2Ops,
-    reference::bootstrapping::{ckks_encapsulated_mod_up_default, ckks_encapsulated_mod_up_tmp_bytes_default},
     oep::CKKSEncapsulatedModUpImpl,
+    reference::bootstrapping::{ckks_encapsulated_mod_up_reference, ckks_encapsulated_mod_up_tmp_bytes_reference},
 };
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
-    reference::keyswitching::glwe::gglwe_product_output_size,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     },
     oep::GGLWEProductDigitsStridedImpl,
+    reference::keyswitching::glwe::gglwe_product_output_size,
 };
 use poulpy_hal::{
     api::{
@@ -133,7 +133,7 @@ where
     let k_large = dst.k().as_usize();
     let k_small = src.k().as_usize();
     if dst.base2k() != sparse_to_dense.base2k() || sparse_to_dense.dsize().as_usize() < 2 || k_large < k_small + scale_up {
-        return ckks_encapsulated_mod_up_default(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch);
+        return ckks_encapsulated_mod_up_reference(module, dst, src, scale_up, dense_to_sparse, sparse_to_dense, scratch);
     }
 
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
@@ -235,7 +235,7 @@ macro_rules! impl_encapsulated_mod_up {
                 D2S: GGLWEInfos,
                 S2D: GGLWEInfos,
             {
-                ckks_encapsulated_mod_up_tmp_bytes_default(
+                ckks_encapsulated_mod_up_tmp_bytes_reference(
                     module,
                     dst_infos,
                     src_infos,

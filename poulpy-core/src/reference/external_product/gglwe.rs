@@ -1,29 +1,29 @@
-//! Reference implementations of the [`GGLWEExternalProductDefault`] methods.
+//! Reference implementations of the [`GGLWEExternalProductReference`] methods.
 //!
-//! Re-exported publicly through `crate::oep::gglwe_external_product_defaults`.
+//! Re-exported publicly through `crate::oep::gglwe_external_product_reference`.
 
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
-    reference::operations::GLWEZeroDefault,
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GLWEInfos, GLWEViewMut, prepared::GGSWPreparedBackendRef,
     },
-    oep::{GGLWEExternalProductDefault, GLWEExternalProductDefault},
+    oep::{GGLWEExternalProductReference, GLWEExternalProductReference},
+    reference::operations::GLWEZeroReference,
 };
 
-pub fn gglwe_external_product_tmp_bytes_default<BE, M, R, A, B>(module: &M, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+pub fn gglwe_external_product_tmp_bytes_reference<BE, M, R, A, B>(module: &M, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
 where
     BE: Backend,
-    M: GLWEExternalProductDefault<BE>,
+    M: GLWEExternalProductReference<BE>,
     R: GGLWEInfos,
     A: GGLWEInfos,
     B: GGSWInfos,
 {
-    module.glwe_external_product_tmp_bytes_default(res_infos, a_infos, b_infos)
+    module.glwe_external_product_tmp_bytes_reference(res_infos, a_infos, b_infos)
 }
 
-pub fn gglwe_external_product_default<BE, M, R, A>(
+pub fn gglwe_external_product_reference<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -31,7 +31,7 @@ pub fn gglwe_external_product_default<BE, M, R, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GGLWEExternalProductDefault<BE> + GLWEExternalProductDefault<BE> + GLWEZeroDefault<BE>,
+    M: GGLWEExternalProductReference<BE> + GLWEExternalProductReference<BE> + GLWEZeroReference<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     A: GGLWEToBackendRef<BE> + GGLWEInfos,
 {
@@ -58,10 +58,10 @@ pub fn gglwe_external_product_default<BE, M, R, A>(
     );
     assert_eq!(res.base2k(), a.base2k());
     assert!(
-        scratch.available() >= module.gglwe_external_product_tmp_bytes_default(res, a, b),
+        scratch.available() >= module.gglwe_external_product_tmp_bytes_reference(res, a, b),
         "scratch.available(): {} < GGLWEExternalProduct::gglwe_external_product_tmp_bytes: {}",
         scratch.available(),
-        module.gglwe_external_product_tmp_bytes_default(res, a, b)
+        module.gglwe_external_product_tmp_bytes_reference(res, a, b)
     );
 
     let min_dnum: usize = res.dnum().min(a.dnum()).into();
@@ -74,7 +74,7 @@ pub fn gglwe_external_product_default<BE, M, R, A>(
             for col in 0..res_rank_in {
                 let mut res_at = res.at_view_mut(row, col);
                 let a_at = a.at_view(row, col);
-                module.glwe_external_product_default(&mut res_at, &a_at, b, &mut scratch.borrow());
+                module.glwe_external_product_reference(&mut res_at, &a_at, b, &mut scratch.borrow());
             }
         }
     }
@@ -84,20 +84,20 @@ pub fn gglwe_external_product_default<BE, M, R, A>(
         for row in min_dnum..res_dnum {
             for col in 0..res_rank_in {
                 let mut ct: GLWEViewMut<'_, BE> = res.at_view_mut(row, col);
-                module.glwe_zero_default(&mut ct);
+                module.glwe_zero_reference(&mut ct);
             }
         }
     }
 }
 
-pub fn gglwe_external_product_assign_default<BE, M, R>(
+pub fn gglwe_external_product_assign_reference<BE, M, R>(
     module: &M,
     res: &mut R,
     a: &GGSWPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GGLWEExternalProductDefault<BE> + GLWEExternalProductDefault<BE>,
+    M: GGLWEExternalProductReference<BE> + GLWEExternalProductReference<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
 {
     assert_eq!(
@@ -108,10 +108,10 @@ pub fn gglwe_external_product_assign_default<BE, M, R>(
         a.rank()
     );
     assert!(
-        scratch.available() >= module.gglwe_external_product_tmp_bytes_default(res, res, a),
+        scratch.available() >= module.gglwe_external_product_tmp_bytes_reference(res, res, a),
         "scratch.available(): {} < GGLWEExternalProduct::gglwe_external_product_tmp_bytes: {}",
         scratch.available(),
-        module.gglwe_external_product_tmp_bytes_default(res, res, a)
+        module.gglwe_external_product_tmp_bytes_reference(res, res, a)
     );
 
     let res_dnum: usize = res.dnum().into();
@@ -120,7 +120,7 @@ pub fn gglwe_external_product_assign_default<BE, M, R>(
     for row in 0..res_dnum {
         for col in 0..res_rank_in {
             let mut res_at = res.at_view_mut(row, col);
-            module.glwe_external_product_assign_default(&mut res_at, a, &mut scratch.borrow());
+            module.glwe_external_product_assign_reference(&mut res_at, a, &mut scratch.borrow());
         }
     }
 }

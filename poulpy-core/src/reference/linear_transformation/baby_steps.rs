@@ -29,11 +29,11 @@ use poulpy_hal::{
 use crate::{
     GLWEAutomorphism, ScratchArenaTakeCore,
     api::GLWEBytesOf,
-    reference::keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
     layouts::{
         GGLWEInfos, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos,
         prepared::{GGLWEPreparedBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
+    reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
 };
 
 use super::{LinearTransformationBabySteps, LinearTransformationLayout};
@@ -86,7 +86,7 @@ where
         + ModuleN
         + Convolution<BE>
         + GLWEAutomorphism<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
@@ -103,7 +103,7 @@ where
     let hoisted_a_dft = module.bytes_of_vec_znx_dft(module.n(), cols - 1, a_size);
     let hoisted_rot = module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
         + module
-            .gglwe_product_dft_tmp_bytes_default(key_size, a_size, key_infos)
+            .gglwe_product_dft_tmp_bytes_reference(key_size, a_size, key_infos)
             .max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size));
     let hoisted_worker = worker_scratch_bytes::<BE>(baby + hoisted_rot.max(prepare));
     let hoisted = hoisted_a_dft + scratch_workers::<BE::TaskExecutor>(BABY_ROTATION_WORKERS) * hoisted_worker;
@@ -127,7 +127,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
     M: GLWEBytesOf<BE>
         + ModuleN
         + GaloisElement
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
@@ -139,7 +139,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R>(
 
     // `key_size` is this key's own product width; limbs above it stay zeroed.
     let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), cols, key_size);
-    module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
+    module.gglwe_product_dft_reference(&mut res_dft, a_dft_ref, key_ref, 1, &mut scratch_1.borrow());
 
     let baby_base2k = baby.base2k().as_usize();
     let baby_k = baby.k().as_usize();
@@ -186,7 +186,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
         + Convolution<BE>
         + GaloisElement
         + GLWEAutomorphism<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + ModuleN
         + VecZnxAutomorphismAssign<BE>
         + VecZnxDftApply<BE>
@@ -245,7 +245,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H>(
             .map(|(key, key_size)| {
                 module.bytes_of_vec_znx_dft(module.n(), cols, key_size)
                     + module
-                        .gglwe_product_dft_tmp_bytes_default(key_size, a_size, key)
+                        .gglwe_product_dft_tmp_bytes_reference(key_size, a_size, key)
                         .max(module.vec_znx_idft_normalize_consume_tmp_bytes(a_size, key_size))
             })
             .max()

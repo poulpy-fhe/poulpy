@@ -37,12 +37,12 @@
 use poulpy_core::layouts::DiagonalArithmetic;
 
 use crate::{
-    reference::dft::{DftScalar, gen_dft_matrices_blockwise},
-    layouts::{ComplexDiagonals, dft::DFTType},
-};
-use crate::{
     encoding::paco::cpx::Cpx,
     layouts::paco::plan::{PaCoPlan, PaCoSlotOrder},
+};
+use crate::{
+    layouts::{ComplexDiagonals, dft::DFTType},
+    reference::dft::{DftScalar, gen_dft_matrices_blockwise},
 };
 
 /// The grouped partial-CoeffToSlot **butterfly** factors (seqPaCo line 7), in

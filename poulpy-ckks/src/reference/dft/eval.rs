@@ -23,10 +23,10 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    reference::linear_transformation::DiagonalProd,
     layouts::{
         Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation, LinearTransformationStrategy,
     },
+    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::{
     api::CnvPVecAlloc,
@@ -40,12 +40,12 @@ use crate::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSEncodingOps, CKKSEncodingScalar, CKKSImagOps, CKKSLinearTransformationOps,
         CKKSRotateOps, CKKSSubOps, LinearTransformationBabySteps, LinearTransformationPrepared, LtDiagonalScale,
     },
-    reference::dft::matrices::{DftScalar, gen_dft_matrices},
     layouts::{
         CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, Decode,
         DftDirection, DftFormat, Encode, Repack, Split, Standard,
     },
     oep::CKKSEncodingImpl,
+    reference::dft::matrices::{DftScalar, gen_dft_matrices},
 };
 
 /// One unprepared factor: the diagonals of a single DFT factor matrix encoded

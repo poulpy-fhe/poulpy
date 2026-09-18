@@ -78,17 +78,17 @@ pub unsafe trait LinearTransformationImpl: Backend {
 ///
 /// Abstract: no method bodies. See [`crate::reference::linear_transformation`]
 /// for the reference algorithms a backend may forward to (the
-/// [`crate::impl_linear_transformation_defaults_full`] macro wires every method
+/// [`crate::impl_linear_transformation_reference_full`] macro wires every method
 /// to them).
-pub trait LinearTransformationDefault<BE: Backend> {
-    fn glwe_eval_linear_transformation_tmp_bytes_default<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+pub trait LinearTransformationReference<BE: Backend> {
+    fn glwe_eval_linear_transformation_tmp_bytes_reference<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default<R, A, B, K>(
+    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference<R, A, B, K>(
         &self,
         res: &R,
         a: &A,
@@ -101,16 +101,16 @@ pub trait LinearTransformationDefault<BE: Backend> {
         B: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default<A, K>(&self, a: &A, key: &K) -> usize
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference<A, K>(&self, a: &A, key: &K) -> usize
     where
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_prepare_linear_transformation_rhs_tmp_bytes_default<P>(&self, pt_infos: &P) -> usize
+    fn glwe_prepare_linear_transformation_rhs_tmp_bytes_reference<P>(&self, pt_infos: &P) -> usize
     where
         P: LWEInfos;
 
-    fn glwe_prepare_linear_transformation_rhs_default<P>(
+    fn glwe_prepare_linear_transformation_rhs_reference<P>(
         &self,
         prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
         lt: &LinearTransformation<P>,
@@ -118,7 +118,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_prepare_linear_transformation_baby_steps_default<A, H>(
+    fn glwe_prepare_linear_transformation_baby_steps_reference<A, H>(
         &self,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
@@ -128,7 +128,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 
-    fn glwe_eval_linear_transformation_into_default<R, P, H>(
+    fn glwe_eval_linear_transformation_into_reference<R, P, H>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -145,7 +145,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
 unsafe impl<BE> LinearTransformationImpl for BE
 where
     BE: Backend,
-    Module<BE>: LinearTransformationDefault<BE>,
+    Module<BE>: LinearTransformationReference<BE>,
 {
     fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(module: &Module<BE>, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
@@ -154,7 +154,7 @@ where
         B: GLWEInfos,
         K: GGLWEInfos,
     {
-        module.glwe_eval_linear_transformation_tmp_bytes_default(res, a, pt, key)
+        module.glwe_eval_linear_transformation_tmp_bytes_reference(res, a, pt, key)
     }
 
     fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(
@@ -170,7 +170,7 @@ where
         B: GLWEInfos,
         K: GGLWEInfos,
     {
-        module.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default(res, a, pt, key)
+        module.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference(res, a, pt, key)
     }
 
     fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &Module<BE>, a: &A, key: &K) -> usize
@@ -178,14 +178,14 @@ where
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default(a, key)
+        module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference(a, key)
     }
 
     fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(module: &Module<BE>, pt_infos: &P) -> usize
     where
         P: LWEInfos,
     {
-        module.glwe_prepare_linear_transformation_rhs_tmp_bytes_default(pt_infos)
+        module.glwe_prepare_linear_transformation_rhs_tmp_bytes_reference(pt_infos)
     }
 
     fn glwe_prepare_linear_transformation_rhs<P>(
@@ -196,7 +196,7 @@ where
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_prepare_linear_transformation_rhs_default(prepared, lt, scratch)
+        module.glwe_prepare_linear_transformation_rhs_reference(prepared, lt, scratch)
     }
 
     fn glwe_prepare_linear_transformation_baby_steps<A, H>(
@@ -209,7 +209,7 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>,
     {
-        module.glwe_prepare_linear_transformation_baby_steps_default(cache, a, keys, scratch)
+        module.glwe_prepare_linear_transformation_baby_steps_reference(cache, a, keys, scratch)
     }
 
     fn glwe_eval_linear_transformation_into<R, P, H>(
@@ -225,33 +225,33 @@ where
         P: crate::reference::linear_transformation::DiagonalProd<BE>,
         H: GetAutomorphismKey<BE>,
     {
-        module.glwe_eval_linear_transformation_into_default(cnv_offset, res, lhs, rhs, keys, scratch)
+        module.glwe_eval_linear_transformation_into_reference(cnv_offset, res, lhs, rhs, keys, scratch)
     }
 }
 
-/// Implements [`LinearTransformationDefault`] for `Module<$be>` by forwarding
+/// Implements [`LinearTransformationReference`] for `Module<$be>` by forwarding
 /// every method to the corresponding `crate::reference::linear_transformation`
 /// reference function.
 ///
 /// For partial override (custom kernel for one method, defaults for the rest),
 /// write the impl block by hand and forward only the methods you keep.
 #[macro_export]
-macro_rules! impl_linear_transformation_defaults_full {
+macro_rules! impl_linear_transformation_reference_full {
     ($be:ty) => {
-        impl $crate::oep::LinearTransformationDefault<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn glwe_eval_linear_transformation_tmp_bytes_default<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+        impl $crate::oep::LinearTransformationReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+            fn glwe_eval_linear_transformation_tmp_bytes_reference<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
             where
                 R: $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEInfos,
                 B: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::reference::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_default::<$be, _, _, _, _, _>(
+                $crate::reference::linear_transformation::glwe_eval_linear_transformation_tmp_bytes_reference::<$be, _, _, _, _, _>(
                     self, res, a, pt, key,
                 )
             }
 
-            fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default<R, A, B, K>(
+            fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference<R, A, B, K>(
                 &self,
                 res: &R,
                 a: &A,
@@ -264,7 +264,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 B: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::reference::linear_transformation::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default::<
+                $crate::reference::linear_transformation::glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_reference::<
                     $be,
                     _,
                     _,
@@ -274,12 +274,12 @@ macro_rules! impl_linear_transformation_defaults_full {
                 >(self, res, a, pt, key)
             }
 
-            fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default<A, K>(&self, a: &A, key: &K) -> usize
+            fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference<A, K>(&self, a: &A, key: &K) -> usize
             where
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default::<
+                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_baby_steps_tmp_bytes_reference::<
                     $be,
                     _,
                     _,
@@ -287,16 +287,16 @@ macro_rules! impl_linear_transformation_defaults_full {
                 >(self, a, key)
             }
 
-            fn glwe_prepare_linear_transformation_rhs_tmp_bytes_default<P>(&self, pt_infos: &P) -> usize
+            fn glwe_prepare_linear_transformation_rhs_tmp_bytes_reference<P>(&self, pt_infos: &P) -> usize
             where
                 P: $crate::layouts::LWEInfos,
             {
-                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_rhs_tmp_bytes_default::<$be, _, _>(
+                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_rhs_tmp_bytes_reference::<$be, _, _>(
                     self, pt_infos,
                 )
             }
 
-            fn glwe_prepare_linear_transformation_rhs_default<P>(
+            fn glwe_prepare_linear_transformation_rhs_reference<P>(
                 &self,
                 prepared: &mut $crate::layouts::LinearTransformation<
                     $crate::layouts::prepared::PreparedDiagonal<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, $be>,
@@ -306,12 +306,12 @@ macro_rules! impl_linear_transformation_defaults_full {
             ) where
                 P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
-                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_rhs_default::<$be, _, _>(
+                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_rhs_reference::<$be, _, _>(
                     self, prepared, lt, scratch,
                 )
             }
 
-            fn glwe_prepare_linear_transformation_baby_steps_default<A, H>(
+            fn glwe_prepare_linear_transformation_baby_steps_reference<A, H>(
                 &self,
                 cache: &mut $crate::layouts::prepared::LinearTransformationBabySteps<$be>,
                 a: &A,
@@ -321,12 +321,12 @@ macro_rules! impl_linear_transformation_defaults_full {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_baby_steps_default::<$be, _, _, _>(
+                $crate::reference::linear_transformation::glwe_prepare_linear_transformation_baby_steps_reference::<$be, _, _, _>(
                     self, cache, a, keys, scratch,
                 )
             }
 
-            fn glwe_eval_linear_transformation_into_default<R, P, H>(
+            fn glwe_eval_linear_transformation_into_reference<R, P, H>(
                 &self,
                 cnv_offset: usize,
                 res: &mut R,
@@ -339,7 +339,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 P: $crate::reference::linear_transformation::DiagonalProd<$be>,
                 H: $crate::layouts::GetAutomorphismKey<$be>,
             {
-                $crate::reference::linear_transformation::glwe_eval_linear_transformation_into_default::<$be, _, _, _, _>(
+                $crate::reference::linear_transformation::glwe_eval_linear_transformation_into_reference::<$be, _, _, _, _>(
                     self, cnv_offset, res, lhs, rhs, keys, scratch,
                 )
             }

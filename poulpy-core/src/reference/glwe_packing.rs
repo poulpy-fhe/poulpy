@@ -78,15 +78,15 @@ fn pack_internal<M, A, B, H, BE: Backend>(
 }
 
 #[doc(hidden)]
-pub trait GLWEPackingDefault<BE: Backend> {
-    fn glwe_pack_galois_elements_default(&self) -> Vec<i64>;
+pub trait GLWEPackingReference<BE: Backend> {
+    fn glwe_pack_galois_elements_reference(&self) -> Vec<i64>;
 
-    fn glwe_pack_tmp_bytes_default<R, K>(&self, res: &R, key: &K) -> usize
+    fn glwe_pack_tmp_bytes_reference<R, K>(&self, res: &R, key: &K) -> usize
     where
         R: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_pack_default<R, A, H>(
+    fn glwe_pack_reference<R, A, H>(
         &self,
         res: &mut R,
         a: HashMap<usize, &mut A>,
@@ -99,11 +99,11 @@ pub trait GLWEPackingDefault<BE: Backend> {
         H: GetAutomorphismKey<BE>;
 }
 
-/// Reference implementations of the [`GLWEPackingDefault`] methods.
-pub mod glwe_packing_defaults_impl {
+/// Reference implementations of the [`GLWEPackingReference`] methods.
+pub mod glwe_packing_reference_impl {
     use super::*;
 
-    pub fn glwe_pack_galois_elements_default<BE, M>(module: &M) -> Vec<i64>
+    pub fn glwe_pack_galois_elements_reference<BE, M>(module: &M) -> Vec<i64>
     where
         BE: Backend,
         M: GLWETrace<BE>,
@@ -111,7 +111,7 @@ pub mod glwe_packing_defaults_impl {
         module.glwe_trace_galois_elements()
     }
 
-    pub fn glwe_pack_tmp_bytes_default<BE, M, R, K>(module: &M, res: &R, key: &K) -> usize
+    pub fn glwe_pack_tmp_bytes_reference<BE, M, R, K>(module: &M, res: &R, key: &K) -> usize
     where
         BE: Backend,
         M: GLWEBytesOf<BE>
@@ -137,7 +137,7 @@ pub mod glwe_packing_defaults_impl {
         (lvl_0 + lvl_1).max(module.glwe_trace_tmp_bytes(res, res, key))
     }
 
-    pub fn glwe_pack_default<BE, M, R, A, H>(
+    pub fn glwe_pack_reference<BE, M, R, A, H>(
         module: &M,
         res: &mut R,
         mut a: HashMap<usize, &mut A>,
@@ -169,10 +169,10 @@ pub mod glwe_packing_defaults_impl {
             .get_automorphism_key(-1, res.k())
             .unwrap_or_else(|e| panic!("packing rotation -1: {e}"));
         assert!(
-            scratch.available() >= glwe_pack_tmp_bytes_default::<BE, _, _, _>(module, res, &key_infos),
+            scratch.available() >= glwe_pack_tmp_bytes_reference::<BE, _, _, _>(module, res, &key_infos),
             "scratch.available(): {} < GLWEPacking::glwe_pack_tmp_bytes: {}",
             scratch.available(),
-            glwe_pack_tmp_bytes_default::<BE, _, _, _>(module, res, &key_infos)
+            glwe_pack_tmp_bytes_reference::<BE, _, _, _>(module, res, &key_infos)
         );
 
         let mut scratch_local = scratch.borrow();

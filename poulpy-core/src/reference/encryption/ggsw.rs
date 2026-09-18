@@ -7,7 +7,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::{
     EncryptionInfos, GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
-    encryption::glwe::GLWEMaskFillDefault,
+    encryption::glwe::GLWEMaskFillReference,
     layouts::{
         GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::GLWESecretPreparedToBackendRef,
@@ -15,12 +15,12 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait GGSWEncryptSkDefault<BE: Backend> {
-    fn ggsw_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GGSWEncryptSkReference<BE: Backend> {
+    fn ggsw_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos;
 
-    fn ggsw_encrypt_sk_default<R, P, S, E>(
+    fn ggsw_encrypt_sk_reference<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -36,19 +36,19 @@ pub trait GGSWEncryptSkDefault<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos;
 }
 
-impl<BE: Backend> GGSWEncryptSkDefault<BE> for Module<BE>
+impl<BE: Backend> GGSWEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
         + GLWEEncryptSk<BE>
-        + GLWEMaskFillDefault<BE>
+        + GLWEMaskFillReference<BE>
         + VecZnxDftBytesOf
         + VecZnxNormalizeAssign<BE>
         + VecZnxAddScalarAssign<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxZero<BE>,
 {
-    fn ggsw_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn ggsw_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGSWInfos,
     {
@@ -59,7 +59,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn ggsw_encrypt_sk_default<R, P, S, E>(
+    fn ggsw_encrypt_sk_reference<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -79,10 +79,10 @@ where
         assert_eq!(pt.n(), self.n());
         assert_eq!(sk.n(), self.n() as u32);
         assert!(
-            scratch.available() >= self.ggsw_encrypt_sk_tmp_bytes_default(res),
+            scratch.available() >= self.ggsw_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GGSWEncryptSk::ggsw_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.ggsw_encrypt_sk_tmp_bytes_default(res)
+            self.ggsw_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let base2k: usize = res.base2k().into();
@@ -108,7 +108,7 @@ where
             self.vec_znx_normalize_assign(base2k, tmp_pt_k, 0, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
             for col_j in 0..rank + 1 {
                 let mut ct = res.at_view_mut(row_i, col_j);
-                self.fill_glwe_mask_from_source_default(base2k, &mut ct, 1, rank, source_xa);
+                self.fill_glwe_mask_from_source_reference(base2k, &mut ct, 1, rank, source_xa);
                 self.glwe_encrypt_sk_internal(
                     base2k,
                     &mut ct.data,

@@ -16,12 +16,12 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait GGLWEToGGSWKeyCompressedEncryptSkDefault<BE: Backend> {
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GGLWEToGGSWKeyCompressedEncryptSkReference<BE: Backend> {
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_default<R, S, E>(
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_reference<R, S, E>(
         &self,
         res: &mut R,
         sk: &S,
@@ -35,11 +35,11 @@ pub trait GGLWEToGGSWKeyCompressedEncryptSkDefault<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GGLWEToGGSWKeyCompressedEncryptSkDefault<BE> for Module<BE>
+impl<BE: Backend> GGLWEToGGSWKeyCompressedEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN + GGLWECompressedEncryptSk<BE> + GLWESecretTensorFactory<BE> + GLWESecretPreparedFactory<BE> + VecZnxCopy<BE>,
 {
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -58,7 +58,7 @@ where
         lvl_0 + lvl_1 + lvl_2 + lvl_3 + lvl_4_encrypt
     }
 
-    fn gglwe_to_ggsw_key_compressed_encrypt_sk_default<R, S, E>(
+    fn gglwe_to_ggsw_key_compressed_encrypt_sk_reference<R, S, E>(
         &self,
         res: &mut R,
         sk: &S,
@@ -74,10 +74,10 @@ where
         assert_eq!(res.rank(), sk.rank());
         assert_eq!(res.n(), sk.n());
         assert!(
-            scratch.available() >= self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_default(res),
+            scratch.available() >= self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GGLWEToGGSWKeyCompressedEncryptSk::gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_default(res)
+            self.gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let mut res = res.to_backend_mut();

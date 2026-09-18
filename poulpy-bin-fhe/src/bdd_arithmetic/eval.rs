@@ -2,11 +2,11 @@ use core::panic;
 use poulpy_core::{
     GLWECopy, GLWENormalize, GLWESub, GLWEZero, ScratchArenaTakeCore,
     api::GLWEExternalProductInternal,
-    reference::external_product::glwe::glwe_external_product_output_size,
     layouts::{
         GGSWInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
         prepared::{GGSWPreparedBackendRef, GGSWPreparedToBackendRef},
     },
+    reference::external_product::glwe::glwe_external_product_output_size,
 };
 use poulpy_hal::{
     api::{

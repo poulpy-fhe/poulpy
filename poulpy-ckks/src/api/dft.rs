@@ -8,8 +8,8 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
-    reference::linear_transformation::DiagonalProd,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LinearTransformation},
+    reference::linear_transformation::DiagonalProd,
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 

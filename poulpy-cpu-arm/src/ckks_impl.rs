@@ -2,30 +2,30 @@ use crate::{FFT64Neon, NTT4x30Neon};
 #[cfg(feature = "enable-rayon")]
 use crate::{FFT64NeonRayon, NTT4x30NeonRayon};
 use poulpy_ckks::{
-    impl_ckks_add_defaults, impl_ckks_conjugate_defaults, impl_ckks_copy_defaults, impl_ckks_dft_defaults,
-    impl_ckks_encapsulated_mod_up_default, impl_ckks_encryption_defaults, impl_ckks_imag_defaults, impl_ckks_mul_defaults,
-    impl_ckks_neg_defaults, impl_ckks_plaintext_defaults, impl_ckks_pow2_defaults, impl_ckks_rotate_defaults,
-    impl_ckks_sub_defaults,
+    impl_ckks_add_reference, impl_ckks_conjugate_reference, impl_ckks_copy_reference, impl_ckks_dft_reference,
+    impl_ckks_encapsulated_mod_up_reference, impl_ckks_encryption_reference, impl_ckks_imag_reference, impl_ckks_mul_reference,
+    impl_ckks_neg_reference, impl_ckks_plaintext_reference, impl_ckks_pow2_reference, impl_ckks_rotate_reference,
+    impl_ckks_sub_reference,
 };
 
-impl_ckks_encapsulated_mod_up_default!(FFT64Neon);
-impl_ckks_encapsulated_mod_up_default!(NTT4x30Neon);
-impl_ckks_conjugate_defaults!(FFT64Neon);
-impl_ckks_conjugate_defaults!(NTT4x30Neon);
-impl_ckks_copy_defaults!(FFT64Neon);
-impl_ckks_copy_defaults!(NTT4x30Neon);
-impl_ckks_encryption_defaults!(FFT64Neon);
-impl_ckks_encryption_defaults!(NTT4x30Neon);
-impl_ckks_imag_defaults!(FFT64Neon);
-impl_ckks_imag_defaults!(NTT4x30Neon);
-impl_ckks_mul_defaults!(FFT64Neon);
-impl_ckks_mul_defaults!(NTT4x30Neon);
-impl_ckks_neg_defaults!(FFT64Neon);
-impl_ckks_neg_defaults!(NTT4x30Neon);
-impl_ckks_pow2_defaults!(FFT64Neon);
-impl_ckks_pow2_defaults!(NTT4x30Neon);
-impl_ckks_rotate_defaults!(FFT64Neon);
-impl_ckks_rotate_defaults!(NTT4x30Neon);
+impl_ckks_encapsulated_mod_up_reference!(FFT64Neon);
+impl_ckks_encapsulated_mod_up_reference!(NTT4x30Neon);
+impl_ckks_conjugate_reference!(FFT64Neon);
+impl_ckks_conjugate_reference!(NTT4x30Neon);
+impl_ckks_copy_reference!(FFT64Neon);
+impl_ckks_copy_reference!(NTT4x30Neon);
+impl_ckks_encryption_reference!(FFT64Neon);
+impl_ckks_encryption_reference!(NTT4x30Neon);
+impl_ckks_imag_reference!(FFT64Neon);
+impl_ckks_imag_reference!(NTT4x30Neon);
+impl_ckks_mul_reference!(FFT64Neon);
+impl_ckks_mul_reference!(NTT4x30Neon);
+impl_ckks_neg_reference!(FFT64Neon);
+impl_ckks_neg_reference!(NTT4x30Neon);
+impl_ckks_pow2_reference!(FFT64Neon);
+impl_ckks_pow2_reference!(NTT4x30Neon);
+impl_ckks_rotate_reference!(FFT64Neon);
+impl_ckks_rotate_reference!(NTT4x30Neon);
 // `f64` encodes through the NEON kernels; `Quad` has no accelerated transform
 // and falls back to the generic scalar table. Rust has no specialization, so
 // accelerated backends list their precisions explicitly.
@@ -50,14 +50,14 @@ select_neon_encoding_transform!(NTT4x30Neon);
 ::poulpy_cpu_ref::impl_ckks_encoding!(NTT4x30Neon);
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT4x30Neon);
 ::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT4x30Neon);
-impl_ckks_add_defaults!(FFT64Neon);
-impl_ckks_add_defaults!(NTT4x30Neon);
-impl_ckks_sub_defaults!(FFT64Neon);
-impl_ckks_sub_defaults!(NTT4x30Neon);
-impl_ckks_plaintext_defaults!(FFT64Neon);
-impl_ckks_plaintext_defaults!(NTT4x30Neon);
-impl_ckks_dft_defaults!(FFT64Neon);
-impl_ckks_dft_defaults!(NTT4x30Neon);
+impl_ckks_add_reference!(FFT64Neon);
+impl_ckks_add_reference!(NTT4x30Neon);
+impl_ckks_sub_reference!(FFT64Neon);
+impl_ckks_sub_reference!(NTT4x30Neon);
+impl_ckks_plaintext_reference!(FFT64Neon);
+impl_ckks_plaintext_reference!(NTT4x30Neon);
+impl_ckks_dft_reference!(FFT64Neon);
+impl_ckks_dft_reference!(NTT4x30Neon);
 
 #[cfg(feature = "enable-rayon")]
 mod rayon_defaults {
@@ -65,23 +65,23 @@ mod rayon_defaults {
 
     macro_rules! impl_ckks_defaults {
         ($backend:ty) => {
-            impl_ckks_encapsulated_mod_up_default!($backend);
-            impl_ckks_conjugate_defaults!($backend);
-            impl_ckks_copy_defaults!($backend);
-            impl_ckks_encryption_defaults!($backend);
-            impl_ckks_imag_defaults!($backend);
-            impl_ckks_mul_defaults!($backend);
-            impl_ckks_neg_defaults!($backend);
-            impl_ckks_pow2_defaults!($backend);
-            impl_ckks_rotate_defaults!($backend);
+            impl_ckks_encapsulated_mod_up_reference!($backend);
+            impl_ckks_conjugate_reference!($backend);
+            impl_ckks_copy_reference!($backend);
+            impl_ckks_encryption_reference!($backend);
+            impl_ckks_imag_reference!($backend);
+            impl_ckks_mul_reference!($backend);
+            impl_ckks_neg_reference!($backend);
+            impl_ckks_pow2_reference!($backend);
+            impl_ckks_rotate_reference!($backend);
             select_neon_encoding_transform!($backend);
             ::poulpy_cpu_ref::impl_ckks_encoding!($backend);
             ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!($backend);
             ::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!($backend);
-            impl_ckks_add_defaults!($backend);
-            impl_ckks_sub_defaults!($backend);
-            impl_ckks_plaintext_defaults!($backend);
-            impl_ckks_dft_defaults!($backend);
+            impl_ckks_add_reference!($backend);
+            impl_ckks_sub_reference!($backend);
+            impl_ckks_plaintext_reference!($backend);
+            impl_ckks_dft_reference!($backend);
         };
     }
 

@@ -7,7 +7,7 @@
 //! [`LinearTransformation::alloc_prepared`] from a [`LinearTransformationLayout`]
 //! and a plaintext-shape proxy; this module's `_into` function only fills the
 //! pre-allocated `CnvPVecR` slots, performing zero `CnvPVecR` allocations.
-//! Backends forward to them from their [`crate::oep::LinearTransformationDefault`]
+//! Backends forward to them from their [`crate::oep::LinearTransformationReference`]
 //! impl.
 
 use poulpy_hal::layouts::CnvPVecRToBackendMut;
@@ -98,7 +98,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
 ///
 /// Sized at the module degree, an upper bound for a compact diagonal, which is
 /// prepared at its own degree.
-pub fn glwe_prepare_linear_transformation_rhs_tmp_bytes_default<BE, M, P>(module: &M, pt_infos: &P) -> usize
+pub fn glwe_prepare_linear_transformation_rhs_tmp_bytes_reference<BE, M, P>(module: &M, pt_infos: &P) -> usize
 where
     BE: Backend,
     M: Convolution<BE>,
@@ -114,7 +114,7 @@ where
 /// [`LinearTransformation::alloc_prepared`](LinearTransformation::alloc_prepared)
 /// for the same BSGS schedule (giant rotations and baby rotations) that `lt`
 /// follows.
-pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
+pub fn glwe_prepare_linear_transformation_rhs_reference<BE, M, P>(
     module: &M,
     prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
     lt: &LinearTransformation<P>,

@@ -10,8 +10,8 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait GLWEPublicKeyGenerateDefault<BE: Backend> {
-    fn glwe_public_key_generate_default<R, S, E>(
+pub trait GLWEPublicKeyGenerateReference<BE: Backend> {
+    fn glwe_public_key_generate_reference<R, S, E>(
         &self,
         res: &mut R,
         sk: &S,
@@ -24,12 +24,12 @@ pub trait GLWEPublicKeyGenerateDefault<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE> + GetDistribution;
 }
 
-impl<BE: Backend> GLWEPublicKeyGenerateDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEPublicKeyGenerateReference<BE> for Module<BE>
 where
     Self: GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    fn glwe_public_key_generate_default<R, S, E>(
+    fn glwe_public_key_generate_reference<R, S, E>(
         &self,
         res: &mut R,
         sk: &S,

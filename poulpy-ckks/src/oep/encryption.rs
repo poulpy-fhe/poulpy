@@ -1,13 +1,13 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::CKKSResult as Result;
-use crate::reference::encryption::CKKSEncryptionDefault;
+use crate::reference::encryption::CKKSEncryptionReference;
 use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::{
     EncryptionInfos,
     layouts::{GLWEInfos, GLWESecretPreparedToBackendRef},
-    oep::{DecryptionDefault, EncryptionDefault},
+    oep::{DecryptionReference, EncryptionReference},
 };
 use poulpy_hal::{
     api::{VecZnxLsh, VecZnxLshAdd, VecZnxLshTmpBytes, VecZnxRsh, VecZnxRshAdd, VecZnxRshTmpBytes},
@@ -16,7 +16,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, reference::plaintext::CKKSPlaintextDefault};
+use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, reference::plaintext::CKKSPlaintextReference};
 
 /// # Safety
 ///
@@ -68,10 +68,10 @@ pub unsafe trait CKKSEncryptionImpl: Backend {
 unsafe impl<BE: Backend> CKKSEncryptionImpl for BE
 where
     BE: HalVecZnxImpl + HalVecZnxBigImpl + HalVecZnxDftImpl + HalSvpImpl + HostBackend,
-    Module<BE>: CKKSEncryptionDefault<BE>
-        + CKKSPlaintextDefault<BE>
-        + EncryptionDefault<BE>
-        + DecryptionDefault<BE>
+    Module<BE>: CKKSEncryptionReference<BE>
+        + CKKSPlaintextReference<BE>
+        + EncryptionReference<BE>
+        + DecryptionReference<BE>
         + poulpy_core::GLWENormalize<BE>
         + VecZnxLshAdd<BE>
         + VecZnxRshAdd<BE>
@@ -86,7 +86,7 @@ where
     where
         A: CKKSCtBounds,
     {
-        module.ckks_encrypt_sk_tmp_bytes_default(ct_infos)
+        module.ckks_encrypt_sk_tmp_bytes_reference(ct_infos)
     }
 
     fn ckks_encrypt_sk_impl<Dct, S, E, Pt>(
@@ -105,14 +105,14 @@ where
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        module.ckks_encrypt_sk_default(ct, pt, sk, enc_infos, source_xe, source_xa, scratch)
+        module.ckks_encrypt_sk_reference(ct, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
     fn ckks_decrypt_tmp_bytes_impl<A>(module: &Module<BE>, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds,
     {
-        module.ckks_decrypt_tmp_bytes_default(ct_infos)
+        module.ckks_decrypt_tmp_bytes_reference(ct_infos)
     }
 
     fn ckks_decrypt_impl<S, Dct, Pt>(
@@ -127,14 +127,14 @@ where
         Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
-        module.ckks_decrypt_default(pt, ct, sk, scratch)
+        module.ckks_decrypt_reference(pt, ct, sk, scratch)
     }
 }
 
 #[macro_export]
-macro_rules! impl_ckks_encryption_defaults {
+macro_rules! impl_ckks_encryption_reference {
     ($be:ty) => {
-        impl $crate::reference::encryption::CKKSEncryptionDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::encryption::CKKSEncryptionReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
-pub use crate::impl_ckks_encryption_defaults;
+pub use crate::impl_ckks_encryption_reference;

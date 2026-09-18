@@ -11,10 +11,10 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
-    reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
     layouts::{
         GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, TorusPrecision, prepared::PreparedDiagonal,
     },
+    reference::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN},
@@ -24,8 +24,8 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LtDiagonalScale},
-    reference::mul::mul_pt_params_raw,
     layouts::{CKKSModuleAlloc, CKKSPlaintext, ScratchArenaTakeCKKS},
+    reference::mul::mul_pt_params_raw,
 };
 use poulpy_core::GLWEBytesOf;
 

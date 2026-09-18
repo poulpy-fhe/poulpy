@@ -17,12 +17,12 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait GLWESwitchingKeyEncryptSkDefault<BE: Backend> {
-    fn glwe_switching_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GLWESwitchingKeyEncryptSkReference<BE: Backend> {
+    fn glwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_switching_key_encrypt_sk_default<R, S1, S2, E>(
+    fn glwe_switching_key_encrypt_sk_reference<R, S1, S2, E>(
         &self,
         res: &mut R,
         sk_in: &S1,
@@ -38,11 +38,11 @@ pub trait GLWESwitchingKeyEncryptSkDefault<BE: Backend> {
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GLWESwitchingKeyEncryptSkDefault<BE> for Module<BE>
+impl<BE: Backend> GLWESwitchingKeyEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN + GGLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + VecZnxSwitchRing<BE>,
 {
-    fn glwe_switching_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn glwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -56,7 +56,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_switching_key_encrypt_sk_default<R, S1, S2, E>(
+    fn glwe_switching_key_encrypt_sk_reference<R, S1, S2, E>(
         &self,
         res: &mut R,
         sk_in: &S1,
@@ -77,10 +77,11 @@ where
         assert!(sk_in.n().0 <= self.n() as u32);
         assert!(sk_out_ref.n().0 <= self.n() as u32);
         assert!(
-            scratch.available() >= GLWESwitchingKeyEncryptSkDefault::glwe_switching_key_encrypt_sk_tmp_bytes_default(self, res),
+            scratch.available()
+                >= GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_tmp_bytes_reference(self, res),
             "scratch.available(): {} < GLWESwitchingKeyEncryptSk::glwe_switching_key_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            GLWESwitchingKeyEncryptSkDefault::glwe_switching_key_encrypt_sk_tmp_bytes_default(self, res)
+            GLWESwitchingKeyEncryptSkReference::glwe_switching_key_encrypt_sk_tmp_bytes_reference(self, res)
         );
 
         let (mut sk_in_lifted, scratch_1) = scratch.borrow().take_scalar_znx_scratch(self.n(), sk_in.rank().into());
@@ -118,14 +119,14 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWESwitchingKeyEncryptPkDefault<BE: Backend> {
-    fn glwe_switching_key_encrypt_pk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GLWESwitchingKeyEncryptPkReference<BE: Backend> {
+    fn glwe_switching_key_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 }
 
-impl<BE: Backend> GLWESwitchingKeyEncryptPkDefault<BE> for Module<BE> {
-    fn glwe_switching_key_encrypt_pk_tmp_bytes_default<A>(&self, _infos: &A) -> usize
+impl<BE: Backend> GLWESwitchingKeyEncryptPkReference<BE> for Module<BE> {
+    fn glwe_switching_key_encrypt_pk_tmp_bytes_reference<A>(&self, _infos: &A) -> usize
     where
         A: GGLWEInfos,
     {

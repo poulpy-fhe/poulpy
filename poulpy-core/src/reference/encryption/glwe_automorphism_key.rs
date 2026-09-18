@@ -16,12 +16,12 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait GLWEAutomorphismKeyEncryptSkDefault<BE: Backend> {
-    fn glwe_automorphism_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GLWEAutomorphismKeyEncryptSkReference<BE: Backend> {
+    fn glwe_automorphism_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_automorphism_key_encrypt_sk_default<R, S, E>(
+    fn glwe_automorphism_key_encrypt_sk_reference<R, S, E>(
         &self,
         res: &mut R,
         p: i64,
@@ -36,11 +36,11 @@ pub trait GLWEAutomorphismKeyEncryptSkDefault<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEAutomorphismKeyEncryptSkDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEAutomorphismKeyEncryptSkReference<BE> for Module<BE>
 where
     Self: GGLWEEncryptSk<BE> + VecZnxAutomorphism<BE> + GaloisElement + SvpPPolBytesOf + GLWESecretPreparedFactory<BE>,
 {
-    fn glwe_automorphism_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn glwe_automorphism_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -60,7 +60,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_automorphism_key_encrypt_sk_default<R, S, E>(
+    fn glwe_automorphism_key_encrypt_sk_reference<R, S, E>(
         &self,
         res: &mut R,
         p: i64,
@@ -81,10 +81,10 @@ where
         assert_eq!(res.rank_out(), res.rank_in());
         assert_eq!(sk.rank(), res.rank_out());
         assert!(
-            scratch.available() >= self.glwe_automorphism_key_encrypt_sk_tmp_bytes_default(res),
+            scratch.available() >= self.glwe_automorphism_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWEAutomorphismKeyEncryptSk::glwe_automorphism_key_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_automorphism_key_encrypt_sk_tmp_bytes_default(res)
+            self.glwe_automorphism_key_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let scratch = scratch.borrow();
@@ -117,17 +117,17 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWEAutomorphismKeyEncryptPkDefault<BE: Backend> {
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GLWEAutomorphismKeyEncryptPkReference<BE: Backend> {
+    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 }
 
-impl<BE: Backend> GLWEAutomorphismKeyEncryptPkDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEAutomorphismKeyEncryptPkReference<BE> for Module<BE>
 where
     Self:,
 {
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_default<A>(&self, _infos: &A) -> usize
+    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_reference<A>(&self, _infos: &A) -> usize
     where
         A: GGLWEInfos,
     {

@@ -1,6 +1,6 @@
 //! Safe, user-facing traits for the GLWE linear transformation (BSGS).
 //!
-//! Dispatch follows the same `api -> oep -> delegates <- default` pattern as the
+//! Dispatch follows the same `api -> oep -> delegates <- reference` pattern as the
 //! other operation families: this module defines the abstract trait, the backend
 //! extension point lives in [`crate::oep::LinearTransformationImpl`], the blanket
 //! wiring is in the (private) `delegates` module, and the reference algorithms

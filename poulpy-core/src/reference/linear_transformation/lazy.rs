@@ -20,8 +20,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    reference::keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
     layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, LWEInfos, prepared::GGLWEPreparedBackendRef},
+    reference::keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal},
 };
 
 pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(module: &M, a_infos: &R, key_infos: &K) -> usize
@@ -52,7 +52,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft_tmp_bytes<BE, M, K>(
 where
     BE: Backend,
     M: ModuleN
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + VecZnxBigBytesOf
         + VecZnxDftAutomorphismAddWithPlanTmpBytes
         + VecZnxDftBytesOf
@@ -67,7 +67,7 @@ where
     let mask_small = mask_small_size * core::mem::size_of::<i64>() * module.n();
     let ks_dft = module.bytes_of_vec_znx_dft(module.n(), cols, key_size);
     let inner = module
-        .gglwe_product_dft_tmp_bytes_default(key_size, mask_small_size, key_infos)
+        .gglwe_product_dft_tmp_bytes_reference(key_size, mask_small_size, key_infos)
         .max(module.vec_znx_dft_automorphism_add_with_plan_tmp_bytes(key_size, key_size));
 
     mask_dft + mask_big + mask_small + module.vec_znx_idft_apply_tmp_bytes() + ks_dft + inner
@@ -94,7 +94,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
 ) where
     BE: Backend,
     M: ModuleN
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftAddAssign<BE>
@@ -137,7 +137,7 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M>(
     }
 
     let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module.n(), cols, output_size);
-    module.gglwe_product_dft_default(&mut ks_dft, &a_dft.to_backend_ref(), key, term_count, &mut scratch_2.borrow());
+    module.gglwe_product_dft_reference(&mut ks_dft, &a_dft.to_backend_ref(), key, term_count, &mut scratch_2.borrow());
 
     // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `output_size`,
     // matching the existing BIG lazy path's rotated contribution size.

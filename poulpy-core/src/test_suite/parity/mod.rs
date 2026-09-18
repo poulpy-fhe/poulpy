@@ -14,7 +14,7 @@
 //!   needs none of those. A bound is a weak oracle: a gadget-product
 //!   accumulator one limb too narrow passes the key-switch noise sweep
 //!   comfortably (see the width contract on
-//!   [`crate::oep::GLWEKeyswitchDefault`]). Equality is not weak.
+//!   [`crate::oep::GLWEKeyswitchReference`]). Equality is not weak.
 //!
 //! Because nothing is decrypted, the operands need not be valid ciphertexts:
 //! they are filled with uniform noise, which exercises the limb arithmetic

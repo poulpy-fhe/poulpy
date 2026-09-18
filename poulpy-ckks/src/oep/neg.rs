@@ -1,5 +1,5 @@
 use crate::CKKSResult as Result;
-use crate::reference::neg::CKKSNegDefault;
+use crate::reference::neg::CKKSNegReference;
 
 use poulpy_core::{GLWENegate, GLWEShift, layouts::GLWEInfos};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -32,10 +32,10 @@ pub unsafe trait CKKSNegImpl: Backend {
 unsafe impl<BE: Backend> CKKSNegImpl for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl,
-    Module<BE>: crate::reference::neg::CKKSNegDefault<BE> + GLWENegate<BE> + GLWEShift<BE>,
+    Module<BE>: crate::reference::neg::CKKSNegReference<BE> + GLWENegate<BE> + GLWEShift<BE>,
 {
     fn ckks_neg_tmp_bytes_impl(module: &Module<BE>, res_size: usize) -> usize {
-        module.ckks_neg_tmp_bytes_default(res_size)
+        module.ckks_neg_tmp_bytes_reference(res_size)
     }
 
     fn ckks_neg_into_impl<Dst, Src>(
@@ -48,21 +48,21 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
     {
-        module.ckks_neg_into_default(dst, src, scratch)
+        module.ckks_neg_into_reference(dst, src, scratch)
     }
 
     fn ckks_neg_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        module.ckks_neg_assign_default(dst)
+        module.ckks_neg_assign_reference(dst)
     }
 }
 
 #[macro_export]
-macro_rules! impl_ckks_neg_defaults {
+macro_rules! impl_ckks_neg_reference {
     ($be:ty) => {
-        impl $crate::reference::neg::CKKSNegDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::reference::neg::CKKSNegReference<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
-pub use crate::impl_ckks_neg_defaults;
+pub use crate::impl_ckks_neg_reference;

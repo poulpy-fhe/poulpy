@@ -1,8 +1,8 @@
-//! Reference implementations of the [`ConversionDefault`] methods.
+//! Reference implementations of the [`ConversionReference`] methods.
 //!
 //! Each free function carries the HAL bounds it actually needs in its own `where` clause.
 //!
-//! Re-exported publicly through `crate::oep::conversion_defaults`.
+//! Re-exported publicly through `crate::oep::conversion_reference`.
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
@@ -19,20 +19,20 @@ use poulpy_hal::{
 
 use crate::{
     GLWERotate, ScratchArenaTakeCore,
-    reference::{
-        keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
-        operations::GLWECopyDefault,
-    },
     layouts::{
         GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut,
         GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut,
         LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
     },
-    oep::{ConversionDefault, GLWEKeyswitchDefault},
+    oep::{ConversionReference, GLWEKeyswitchReference},
+    reference::{
+        keyswitching::{GGLWEProductReference, gglwe_product_output_size},
+        operations::GLWECopyReference,
+    },
 };
 
-pub fn lwe_sample_extract_default<BE, M, R, A>(module: &M, res: &mut R, a: &A)
+pub fn lwe_sample_extract_reference<BE, M, R, A>(module: &M, res: &mut R, a: &A)
 where
     BE: Backend,
     M: ModuleN + VecZnxCopy<BE>,
@@ -61,7 +61,7 @@ where
     );
 }
 
-pub fn glwe_expand_lwe_tmp_bytes_default<BE, M, R, A>(module: &M, lwe_infos: &R, a_infos: &A) -> usize
+pub fn glwe_expand_lwe_tmp_bytes_reference<BE, M, R, A>(module: &M, lwe_infos: &R, a_infos: &A) -> usize
 where
     BE: Backend,
     M: ModuleN,
@@ -105,7 +105,7 @@ where
     );
 }
 
-pub fn glwe_expand_lwe_default<BE, M, R, A>(module: &M, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
+pub fn glwe_expand_lwe_reference<BE, M, R, A>(module: &M, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
     M: ModuleN + VecZnxCopy<BE> + VecZnxRotate<BE>,
@@ -161,7 +161,7 @@ where
     }
 }
 
-pub fn glwe_expand_lwe_matrix_tmp_bytes_default<BE, M, R, A>(module: &M, _res_infos: &R, a_infos: &A) -> usize
+pub fn glwe_expand_lwe_matrix_tmp_bytes_reference<BE, M, R, A>(module: &M, _res_infos: &R, a_infos: &A) -> usize
 where
     BE: Backend,
     M: ModuleN,
@@ -171,7 +171,7 @@ where
     BE::bytes_of_vec_znx(module.n(), 1, a_infos.size())
 }
 
-pub fn glwe_expand_lwe_matrix_default<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+pub fn glwe_expand_lwe_matrix_reference<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
     M: ModuleN + VecZnxRotate<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
@@ -194,10 +194,10 @@ where
     assert!(rows <= n, "glwe_expand_lwe_matrix: rows > module.n()");
     assert_eq!(res.base2k(), a.base2k(), "glwe_expand_lwe_matrix: base2k mismatch");
     assert!(
-        scratch.available() >= glwe_expand_lwe_matrix_tmp_bytes_default::<BE, _, _, _>(module, &res, &a),
+        scratch.available() >= glwe_expand_lwe_matrix_tmp_bytes_reference::<BE, _, _, _>(module, &res, &a),
         "scratch.available(): {} < GLWEExpandLWEMatrix::glwe_expand_lwe_matrix_tmp_bytes: {}",
         scratch.available(),
-        glwe_expand_lwe_matrix_tmp_bytes_default::<BE, _, _, _>(module, &res, &a)
+        glwe_expand_lwe_matrix_tmp_bytes_reference::<BE, _, _, _>(module, &res, &a)
     );
 
     for col in 0..res.n().as_usize() {
@@ -231,10 +231,10 @@ where
     }
 }
 
-pub fn glwe_from_lwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
+pub fn glwe_from_lwe_tmp_bytes_reference<BE, M, R, A, K>(module: &M, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxNormalizeTmpBytes,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchReference<BE> + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
@@ -249,7 +249,7 @@ where
         1u32.into(),
     );
 
-    let lvl_1_ks: usize = module.glwe_keyswitch_tmp_bytes_default(glwe_infos, glwe_infos, key_infos);
+    let lvl_1_ks: usize = module.glwe_keyswitch_tmp_bytes_reference(glwe_infos, glwe_infos, key_infos);
     let lvl_1_a_conv: usize = if lwe_infos.base2k() == key_infos.base2k() {
         0
     } else {
@@ -261,7 +261,7 @@ where
     lvl_0 + lvl_1
 }
 
-pub fn glwe_from_lwe_default<BE, M, R, A>(
+pub fn glwe_from_lwe_reference<BE, M, R, A>(
     module: &M,
     res: &mut R,
     lwe: &A,
@@ -270,9 +270,9 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + ConversionDefault<BE>
+        + ConversionReference<BE>
         + ModuleN
-        + GLWEKeyswitchDefault<BE>
+        + GLWEKeyswitchReference<BE>
         + VecZnxCopy<BE>
         + VecZnxZero<BE>
         + VecZnxNormalize<BE>
@@ -292,10 +292,10 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
     assert_eq!(ksk.n(), module.n() as u32);
     assert!(lwe.n() <= module.n() as u32);
     assert!(
-        scratch.available() >= module.glwe_from_lwe_tmp_bytes_default(&res_infos, &lwe, ksk),
+        scratch.available() >= module.glwe_from_lwe_tmp_bytes_reference(&res_infos, &lwe, ksk),
         "scratch.available(): {} < GLWEFromLWE::glwe_from_lwe_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_from_lwe_tmp_bytes_default(&res_infos, &lwe, ksk)
+        module.glwe_from_lwe_tmp_bytes_reference(&res_infos, &lwe, ksk)
     );
 
     let scratch = scratch.borrow();
@@ -364,13 +364,13 @@ pub fn glwe_from_lwe_default<BE, M, R, A>(
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
-    module.glwe_keyswitch_default(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
+    module.glwe_keyswitch_reference(&mut res_view, &glwe_view, &ksk.to_backend_ref(), &mut scratch_1)
 }
 
-pub fn lwe_from_glwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
+pub fn lwe_from_glwe_tmp_bytes_reference<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchDefault<BE>,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchReference<BE>,
     R: LWEInfos,
     A: GLWEInfos,
     K: GGLWEInfos,
@@ -386,13 +386,13 @@ where
     };
 
     let lvl_0: usize = module.glwe_bytes_of(module.n().into(), lwe_infos.base2k(), lwe_infos.k(), 1u32.into());
-    let lvl_1: usize = module.glwe_keyswitch_tmp_bytes_default(&res_infos, glwe_infos, key_infos);
+    let lvl_1: usize = module.glwe_keyswitch_tmp_bytes_reference(&res_infos, glwe_infos, key_infos);
     let lvl_2: usize = module.glwe_bytes_of_from_infos(glwe_infos);
 
     lvl_0 + lvl_1 + lvl_2
 }
 
-pub fn lwe_from_glwe_default<BE, M, R, A>(
+pub fn lwe_from_glwe_reference<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -401,7 +401,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEBytesOf<BE> + ConversionDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + GLWERotate<BE> + VecZnxCopy<BE>,
+    M: GLWEBytesOf<BE> + ConversionReference<BE> + ModuleN + GLWEKeyswitchReference<BE> + GLWERotate<BE> + VecZnxCopy<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
@@ -411,10 +411,10 @@ pub fn lwe_from_glwe_default<BE, M, R, A>(
     assert_eq!(key.n(), module.n() as u32);
     assert!(res.n() <= module.n() as u32);
     assert!(
-        scratch.available() >= module.lwe_from_glwe_tmp_bytes_default(res, a, key),
+        scratch.available() >= module.lwe_from_glwe_tmp_bytes_reference(res, a, key),
         "scratch.available(): {} < LWEFromGLWE::lwe_from_glwe_tmp_bytes: {}",
         scratch.available(),
-        module.lwe_from_glwe_tmp_bytes_default(res, a, key)
+        module.lwe_from_glwe_tmp_bytes_reference(res, a, key)
     );
 
     let glwe_layout: GLWELayout = GLWELayout {
@@ -428,7 +428,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A>(
     let (mut tmp_glwe_rank_1, mut scratch_1) = scratch.take_glwe_scratch(&glwe_layout);
 
     let a_backend_view = &a_backend;
-    module.glwe_keyswitch_default(&mut tmp_glwe_rank_1, &a_backend_view, &key.to_backend_ref(), &mut scratch_1);
+    module.glwe_keyswitch_reference(&mut tmp_glwe_rank_1, &a_backend_view, &key.to_backend_ref(), &mut scratch_1);
     if a_idx != 0 {
         module.glwe_rotate_assign(-(a_idx as i64), &mut tmp_glwe_rank_1, &mut scratch_1);
     }
@@ -451,17 +451,17 @@ pub fn lwe_from_glwe_default<BE, M, R, A>(
     );
 }
 
-pub fn ggsw_from_gglwe_tmp_bytes_default<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
+pub fn ggsw_from_gglwe_tmp_bytes_reference<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
 where
     BE: Backend,
-    M: ConversionDefault<BE>,
+    M: ConversionReference<BE>,
     R: GGSWInfos,
     A: GGLWEInfos,
 {
-    module.ggsw_expand_rows_tmp_bytes_default(res_infos, tsk_infos)
+    module.ggsw_expand_rows_tmp_bytes_reference(res_infos, tsk_infos)
 }
 
-pub fn ggsw_from_gglwe_default<BE, M, R, A>(
+pub fn ggsw_from_gglwe_reference<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -469,7 +469,7 @@ pub fn ggsw_from_gglwe_default<BE, M, R, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: ConversionDefault<BE> + ModuleN + GLWECopyDefault<BE>,
+    M: ConversionReference<BE> + ModuleN + GLWECopyReference<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     A: GGLWEToBackendRef<BE> + GGLWEInfos,
 {
@@ -483,27 +483,27 @@ pub fn ggsw_from_gglwe_default<BE, M, R, A>(
     assert_eq!(tsk.n(), module.n() as u32);
     assert_eq!(res_backend.base2k(), a_backend.base2k());
     assert!(
-        scratch.available() >= module.ggsw_from_gglwe_tmp_bytes_default(&res_backend, tsk),
+        scratch.available() >= module.ggsw_from_gglwe_tmp_bytes_reference(&res_backend, tsk),
         "scratch.available(): {} < GGSWFromGGLWE::ggsw_from_gglwe_tmp_bytes: {}",
         scratch.available(),
-        module.ggsw_from_gglwe_tmp_bytes_default(&res_backend, tsk)
+        module.ggsw_from_gglwe_tmp_bytes_reference(&res_backend, tsk)
     );
 
     for row in 0..res_backend.dnum().into() {
         let mut res_at = res_backend.at_view_mut(row, 0);
         let a_at = a_backend.at_view(row, 0);
-        module.glwe_copy_default(&mut res_at, &a_at, scratch);
+        module.glwe_copy_reference(&mut res_at, &a_at, scratch);
     }
 
-    module.ggsw_expand_row_default(&mut res_backend, tsk, scratch)
+    module.ggsw_expand_row_reference(&mut res_backend, tsk, scratch)
 }
 
-pub fn ggsw_expand_rows_tmp_bytes_default<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
+pub fn ggsw_expand_rows_tmp_bytes_reference<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE>
         + ModuleN
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
@@ -525,7 +525,7 @@ where
 
     let lvl_0: usize = module.bytes_of_vec_znx_dft(module.n(), cols - 1, a_size) + BE::bytes_of_vec_znx(module.n(), 1, a_size);
     let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(module.n(), cols, output_size);
-    let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, tsk_infos);
+    let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_reference(output_size, a_size, tsk_infos);
     let lvl_1_big: usize = module.bytes_of_vec_znx_big(module.n(), cols, output_size)
         + module
             .vec_znx_idft_apply_tmp_bytes()
@@ -536,7 +536,7 @@ where
     lvl_0 + lvl_1.max(lvl_2)
 }
 
-pub fn ggsw_expand_row_default<BE, M, R>(
+pub fn ggsw_expand_row_reference<BE, M, R>(
     module: &M,
     res: &mut R,
     tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
@@ -544,9 +544,9 @@ pub fn ggsw_expand_row_default<BE, M, R>(
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + ConversionDefault<BE>
+        + ConversionReference<BE>
         + ModuleN
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
@@ -563,10 +563,10 @@ pub fn ggsw_expand_row_default<BE, M, R>(
     let tsk_base2k: usize = tsk.base2k().into();
 
     assert!(
-        scratch.available() >= module.ggsw_expand_rows_tmp_bytes_default(&res_backend, tsk),
+        scratch.available() >= module.ggsw_expand_rows_tmp_bytes_reference(&res_backend, tsk),
         "scratch.available(): {} < GGSWExpandRows::ggsw_expand_rows_tmp_bytes: {}",
         scratch.available(),
-        module.ggsw_expand_rows_tmp_bytes_default(&res_backend, tsk)
+        module.ggsw_expand_rows_tmp_bytes_reference(&res_backend, tsk)
     );
 
     let rank: usize = res_backend.rank().into();
@@ -638,7 +638,7 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: GLWEBytesOf<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + ModuleN
         + VecZnxBigBytesOf
         + VecZnxBigAddSmallAssign<BE>
@@ -656,7 +656,7 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, BE: Backend>(
         let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(module.n(), cols, output_size);
         {
             let mut scratch_prod = scratch_1.borrow();
-            module.gglwe_product_dft_default(&mut res_dft, a_dft, tsk.at(col - 1), 1, &mut scratch_prod);
+            module.gglwe_product_dft_reference(&mut res_dft, a_dft, tsk.at(col - 1), 1, &mut scratch_prod);
         }
 
         let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module.n(), cols, res_dft.size());

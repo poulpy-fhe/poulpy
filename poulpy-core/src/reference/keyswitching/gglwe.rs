@@ -1,6 +1,6 @@
-//! Reference implementations of the [`GGLWEKeyswitchDefault`] methods.
+//! Reference implementations of the [`GGLWEKeyswitchReference`] methods.
 //!
-//! Re-exported publicly through `crate::oep::gglwe_keyswitch_defaults`.
+//! Re-exported publicly through `crate::oep::gglwe_keyswitch_reference`.
 
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -9,21 +9,21 @@ use crate::{
         GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     },
-    oep::{GGLWEKeyswitchDefault, GLWEKeyswitchDefault},
+    oep::{GGLWEKeyswitchReference, GLWEKeyswitchReference},
 };
 
-pub fn gglwe_keyswitch_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub fn gglwe_keyswitch_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: GLWEKeyswitchDefault<BE>,
+    M: GLWEKeyswitchReference<BE>,
     R: GGLWEInfos,
     A: GGLWEInfos,
     K: GGLWEInfos,
 {
-    module.glwe_keyswitch_tmp_bytes_default(res_infos, a_infos, key_infos)
+    module.glwe_keyswitch_tmp_bytes_reference(res_infos, a_infos, key_infos)
 }
 
-pub fn gglwe_keyswitch_default<BE, M, R, A>(
+pub fn gglwe_keyswitch_reference<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -31,7 +31,7 @@ pub fn gglwe_keyswitch_default<BE, M, R, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GGLWEKeyswitchDefault<BE> + GLWEKeyswitchDefault<BE>,
+    M: GGLWEKeyswitchReference<BE> + GLWEKeyswitchReference<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     A: GGLWEToBackendRef<BE> + GGLWEInfos,
 {
@@ -60,10 +60,10 @@ pub fn gglwe_keyswitch_default<BE, M, R, A>(
     assert_eq!(res.dsize(), a.dsize(), "res dsize: {} != a dsize: {}", res.dsize(), a.dsize());
     assert_eq!(res.base2k(), a.base2k());
     assert!(
-        scratch.available() >= module.gglwe_keyswitch_tmp_bytes_default(res, a, b),
+        scratch.available() >= module.gglwe_keyswitch_tmp_bytes_reference(res, a, b),
         "scratch.available(): {} < GGLWEKeyswitch::gglwe_keyswitch_tmp_bytes: {}",
         scratch.available(),
-        module.gglwe_keyswitch_tmp_bytes_default(res, a, b)
+        module.gglwe_keyswitch_tmp_bytes_reference(res, a, b)
     );
 
     let mut res = res.to_backend_mut();
@@ -73,19 +73,19 @@ pub fn gglwe_keyswitch_default<BE, M, R, A>(
         for col in 0..res.rank_in().into() {
             let mut res_at = res.at_view_mut(row, col);
             let a_at = a.at_view(row, col);
-            module.glwe_keyswitch_default(&mut res_at, &a_at, &b.to_backend_ref(), &mut scratch.borrow());
+            module.glwe_keyswitch_reference(&mut res_at, &a_at, &b.to_backend_ref(), &mut scratch.borrow());
         }
     }
 }
 
-pub fn gglwe_keyswitch_assign_default<BE, M, R>(
+pub fn gglwe_keyswitch_assign_reference<BE, M, R>(
     module: &M,
     res: &mut R,
     a: &GGLWEPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GGLWEKeyswitchDefault<BE> + GLWEKeyswitchDefault<BE>,
+    M: GGLWEKeyswitchReference<BE> + GLWEKeyswitchReference<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
 {
     let mut res = res.to_backend_mut();
@@ -98,16 +98,16 @@ pub fn gglwe_keyswitch_assign_default<BE, M, R>(
         a.rank_out()
     );
     assert!(
-        scratch.available() >= module.gglwe_keyswitch_tmp_bytes_default(&res, &res, a),
+        scratch.available() >= module.gglwe_keyswitch_tmp_bytes_reference(&res, &res, a),
         "scratch.available(): {} < GGLWEKeyswitch::gglwe_keyswitch_tmp_bytes: {}",
         scratch.available(),
-        module.gglwe_keyswitch_tmp_bytes_default(&res, &res, a)
+        module.gglwe_keyswitch_tmp_bytes_reference(&res, &res, a)
     );
 
     for row in 0..res.dnum().into() {
         for col in 0..res.rank_in().into() {
             let mut res_at = res.at_view_mut(row, col);
-            module.glwe_keyswitch_assign_default(&mut res_at, &a.to_backend_ref(), &mut scratch.borrow());
+            module.glwe_keyswitch_assign_reference(&mut res_at, &a.to_backend_ref(), &mut scratch.borrow());
         }
     }
 }

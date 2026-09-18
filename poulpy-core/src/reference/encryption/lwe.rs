@@ -13,21 +13,21 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait LWEFillMaskDefault<BE: Backend> {
-    fn fill_lwe_mask_from_source_default<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
+pub trait LWEFillMaskReference<BE: Backend> {
+    fn fill_lwe_mask_from_source_reference<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
         R: LWEToBackendMut<BE>;
 
-    fn fill_lwe_mask_from_seed_default<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    fn fill_lwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
         R: LWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> LWEFillMaskDefault<BE> for Module<BE>
+impl<BE: Backend> LWEFillMaskReference<BE> for Module<BE>
 where
     Self: VecZnxFillUniformSource<BE>,
 {
-    fn fill_lwe_mask_from_source_default<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
+    fn fill_lwe_mask_from_source_reference<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
     where
         R: LWEToBackendMut<BE>,
     {
@@ -36,22 +36,22 @@ where
         self.vec_znx_fill_uniform_source(base2k, res.k().as_usize(), &mut res.mask, 0, source_xa);
     }
 
-    fn fill_lwe_mask_from_seed_default<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    fn fill_lwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
     where
         R: LWEToBackendMut<BE>,
     {
         let mut source_xa = Source::new(seed_xa);
-        self.fill_lwe_mask_from_source_default(base2k, res, &mut source_xa);
+        self.fill_lwe_mask_from_source_reference(base2k, res, &mut source_xa);
     }
 }
 
 #[doc(hidden)]
-pub trait LWEEncryptSkDefault<BE: Backend> {
-    fn lwe_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait LWEEncryptSkReference<BE: Backend> {
+    fn lwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: LWEInfos;
 
-    fn lwe_encrypt_sk_default<R, P, S, E>(
+    fn lwe_encrypt_sk_reference<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -67,10 +67,10 @@ pub trait LWEEncryptSkDefault<BE: Backend> {
         E: EncryptionInfos;
 }
 
-impl<BE: Backend> LWEEncryptSkDefault<BE> for Module<BE>
+impl<BE: Backend> LWEEncryptSkReference<BE> for Module<BE>
 where
     Self: Sized
-        + LWEFillMaskDefault<BE>
+        + LWEFillMaskReference<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigBytesOf
         + VecZnxBigInnerSum<BE>
@@ -79,7 +79,7 @@ where
         + VecZnxScalarProduct<BE>
         + VecZnxBigSubSmallNegateAssign<BE>,
 {
-    fn lwe_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn lwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: LWEInfos,
     {
@@ -92,7 +92,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn lwe_encrypt_sk_default<R, P, S, E>(
+    fn lwe_encrypt_sk_reference<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -116,16 +116,16 @@ where
         }
 
         assert!(
-            scratch.available() >= self.lwe_encrypt_sk_tmp_bytes_default(res),
+            scratch.available() >= self.lwe_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < LWEEncryptSk::lwe_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.lwe_encrypt_sk_tmp_bytes_default(res)
+            self.lwe_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let base2k: usize = res.base2k().into();
         let res_n: usize = res.n().into();
         let res_size = res.size();
-        self.fill_lwe_mask_from_source_default(base2k, res, source_xa);
+        self.fill_lwe_mask_from_source_reference(base2k, res, source_xa);
 
         // tmp_hadamard[limb][k] = mask[limb][k] * sk[k]  (element-wise, BigScalar)
         let (mut tmp_hadamard, scratch_1) = scratch.borrow().take_vec_znx_big_scratch(res_n, 1, res_size);

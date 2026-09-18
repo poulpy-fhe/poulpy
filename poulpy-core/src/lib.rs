@@ -67,23 +67,23 @@
 //! | scratch | Arena-style scratch allocation for ciphertext temporaries |
 
 pub mod api;
-pub mod reference;
 mod delegates;
 mod dist;
 pub mod error;
 pub mod oep;
+pub mod reference;
 mod scratch;
 mod utils;
 
 pub mod layouts;
 pub use api::*;
+pub use dist::*;
+pub use error::{CoreError, Result};
 pub use reference::encryption::*;
 pub use reference::linear_transformation::*;
 pub(crate) use reference::noise::{log2_std_noise_glwe_tensor, log2_std_noise_glwe_tensor_relinearized};
 pub use reference::operations::*;
 pub use reference::polynomial_evaluation::{BSGSOps, GiantStepTensorBounds};
-pub use dist::*;
-pub use error::{CoreError, Result};
 pub use scratch::*;
 
 pub(crate) mod decryption {

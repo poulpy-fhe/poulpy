@@ -27,8 +27,8 @@ use poulpy_hal::{
 };
 
 use super::{context::PaCoContext, plan::PaCoPlan};
-use crate::reference::dft::DftScalar;
 use crate::encoding::paco::cpx::Cpx;
+use crate::reference::dft::DftScalar;
 use crate::{
     api::{CKKSEncodingOps, PaCoScalar},
     layouts::{CKKSEncodingBuffer, ScratchArenaTakeCKKS, copy_encoding_buffer_into_reim_host, copy_host_into_encoding_buffer},

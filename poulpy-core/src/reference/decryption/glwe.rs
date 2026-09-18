@@ -12,7 +12,7 @@ use crate::layouts::{
     prepared::{GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendRef},
 };
 
-pub fn glwe_decrypt_tmp_bytes_default<M, BE: Backend, A>(module: &M, infos: &A) -> usize
+pub fn glwe_decrypt_tmp_bytes_reference<M, BE: Backend, A>(module: &M, infos: &A) -> usize
 where
     M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
     A: GLWEInfos,
@@ -27,8 +27,13 @@ where
     lvl_0 + lvl_1
 }
 
-pub fn glwe_decrypt_default<M, BE: Backend, R, P, S>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
-where
+pub fn glwe_decrypt_reference<M, BE: Backend, R, P, S>(
+    module: &M,
+    res: &R,
+    pt: &mut P,
+    sk: &S,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
     M: ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -75,10 +80,10 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
         assert_eq!(pt.n(), sk.n());
     }
     assert!(
-        scratch.available() >= glwe_decrypt_tmp_bytes_default::<M, BE, _>(module, res),
+        scratch.available() >= glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res),
         "scratch.available(): {} < GLWEDecrypt::glwe_decrypt_tmp_bytes: {}",
         scratch.available(),
-        glwe_decrypt_tmp_bytes_default::<M, BE, _>(module, res)
+        glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, res)
     );
 
     let cols: usize = (res.rank() + 1).into();

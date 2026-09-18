@@ -13,7 +13,7 @@ use crate::layouts::{
     GLWEInfos, GLWEToBackendMut, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWESecretToBackendRef, Rank, SetBase2k,
 };
 
-pub fn lwe_matrix_decrypt_tmp_bytes_default<BE: Backend, A>(module: &Module<BE>, infos: &A) -> usize
+pub fn lwe_matrix_decrypt_tmp_bytes_reference<BE: Backend, A>(module: &Module<BE>, infos: &A) -> usize
 where
     Module<BE>: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
     A: LWEMatrixInfos,
@@ -24,7 +24,7 @@ where
         + 3 * (BE::SCRATCH_ALIGN - 1)
 }
 
-pub fn lwe_matrix_decrypt_default<BE, R, P, S>(
+pub fn lwe_matrix_decrypt_reference<BE, R, P, S>(
     module: &Module<BE>,
     res: &R,
     pt: &mut P,
@@ -48,10 +48,10 @@ pub fn lwe_matrix_decrypt_default<BE, R, P, S>(
 
     assert_eq!(res.n(), sk.n(), "lwe_matrix_decrypt: secret dimension mismatch");
     assert!(
-        scratch.available() >= lwe_matrix_decrypt_tmp_bytes_default::<BE, _>(module, &res),
+        scratch.available() >= lwe_matrix_decrypt_tmp_bytes_reference::<BE, _>(module, &res),
         "scratch.available(): {} < LWEMatrixDecrypt::lwe_matrix_decrypt_tmp_bytes: {}",
         scratch.available(),
-        lwe_matrix_decrypt_tmp_bytes_default::<BE, _>(module, &res)
+        lwe_matrix_decrypt_tmp_bytes_reference::<BE, _>(module, &res)
     );
 
     let pt_base2k = pt.base2k().into();

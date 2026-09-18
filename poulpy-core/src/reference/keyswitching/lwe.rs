@@ -1,6 +1,6 @@
-//! Reference implementations of the [`LWEKeyswitchDefault`] methods.
+//! Reference implementations of the [`LWEKeyswitchReference`] methods.
 //!
-//! Re-exported publicly through `crate::oep::lwe_keyswitch_defaults`.
+//! Re-exported publicly through `crate::oep::lwe_keyswitch_reference`.
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
@@ -14,13 +14,13 @@ use crate::{
         GGLWEInfos, GLWELayout, LWEInfos, LWEToBackendMut, LWEToBackendRef, Rank, TorusPrecision, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef},
     },
-    oep::{GLWEKeyswitchDefault, LWEKeyswitchDefault},
+    oep::{GLWEKeyswitchReference, LWEKeyswitchReference},
 };
 
-pub fn lwe_keyswitch_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub fn lwe_keyswitch_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchDefault<BE>,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchReference<BE>,
     R: LWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
@@ -45,12 +45,12 @@ where
 
     let lvl_0: usize = module.glwe_bytes_of_from_infos(&glwe_a_infos);
     let lvl_1: usize = module.glwe_bytes_of_from_infos(&glwe_res_infos);
-    let lvl_2: usize = module.glwe_keyswitch_tmp_bytes_default(&glwe_res_infos, &glwe_a_infos, key_infos);
+    let lvl_2: usize = module.glwe_keyswitch_tmp_bytes_reference(&glwe_res_infos, &glwe_a_infos, key_infos);
 
     lvl_0 + lvl_1 + lvl_2
 }
 
-pub fn lwe_keyswitch_default<BE, M, R, A>(
+pub fn lwe_keyswitch_reference<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -58,7 +58,7 @@ pub fn lwe_keyswitch_default<BE, M, R, A>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEBytesOf<BE> + LWEKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
+    M: GLWEBytesOf<BE> + LWEKeyswitchReference<BE> + ModuleN + GLWEKeyswitchReference<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
 {
@@ -66,10 +66,10 @@ pub fn lwe_keyswitch_default<BE, M, R, A>(
     assert!(a.n().as_usize() <= module.n());
     assert_eq!(ksk.n(), module.n() as u32);
     assert!(
-        scratch.available() >= module.lwe_keyswitch_tmp_bytes_default(res, a, ksk),
+        scratch.available() >= module.lwe_keyswitch_tmp_bytes_reference(res, a, ksk),
         "scratch.available(): {} < LWEKeyswitch::lwe_keyswitch_tmp_bytes: {}",
         scratch.available(),
-        module.lwe_keyswitch_tmp_bytes_default(res, a, ksk)
+        module.lwe_keyswitch_tmp_bytes_reference(res, a, ksk)
     );
 
     let scratch = scratch.borrow();
@@ -107,7 +107,7 @@ pub fn lwe_keyswitch_default<BE, M, R, A>(
 
     let glwe_in_ref = glwe_backend_ref_from_mut::<BE>(&glwe_in);
     let glwe_in_view = &glwe_in_ref;
-    module.glwe_keyswitch_default(&mut glwe_out, &glwe_in_view, &ksk.to_backend_ref(), &mut scratch_2);
+    module.glwe_keyswitch_reference(&mut glwe_out, &glwe_in_view, &ksk.to_backend_ref(), &mut scratch_2);
 
     let mut res_backend = res.to_backend_mut();
     let glwe_out_ref = glwe_backend_ref_from_mut::<BE>(&glwe_out);

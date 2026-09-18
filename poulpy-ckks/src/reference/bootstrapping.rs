@@ -61,15 +61,15 @@ where
 /// Private backend-generic implementation of the CKKS bootstrapping
 /// composition. Keeping this as a helper value, rather than another trait,
 /// leaves the public operation trait as the single execution abstraction.
-pub(crate) struct BootstrappingDefault<'a, BE: Backend>(&'a Module<BE>);
+pub(crate) struct BootstrappingReference<'a, BE: Backend>(&'a Module<BE>);
 
-impl<'a, BE: Backend> BootstrappingDefault<'a, BE> {
+impl<'a, BE: Backend> BootstrappingReference<'a, BE> {
     pub(crate) fn new(module: &'a Module<BE>) -> Self {
         Self(module)
     }
 }
 
-impl<BE: Backend> Deref for BootstrappingDefault<'_, BE> {
+impl<BE: Backend> Deref for BootstrappingReference<'_, BE> {
     type Target = Module<BE>;
 
     fn deref(&self) -> &Self::Target {
@@ -77,16 +77,16 @@ impl<BE: Backend> Deref for BootstrappingDefault<'_, BE> {
     }
 }
 
-impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
-    pub(crate) fn ckks_mod_up_tmp_bytes_default(&self, res_size: usize) -> usize
+impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingReference<'_, BE> {
+    pub(crate) fn ckks_mod_up_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
         Module<BE>: GLWEShift<BE>,
     {
         self.glwe_shift_tmp_bytes(res_size)
     }
 
-    /// Scratch upper bound for [`Self::ckks_bootstrap_default`].
-    pub(crate) fn ckks_bootstrap_tmp_bytes_default<C1, C2, F>(
+    /// Scratch upper bound for [`Self::ckks_bootstrap_reference`].
+    pub(crate) fn ckks_bootstrap_tmp_bytes_reference<C1, C2, F>(
         &self,
         ct_out: &C1,
         ct_in: &C2,
@@ -167,10 +167,10 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
         carved + nested
     }
 
-    /// Scratch upper bound for [`ckks_functional_bootstrap_default`], for one
+    /// Scratch upper bound for [`ckks_functional_bootstrap_reference`], for one
     /// LUT or a batch: the batch folds each imaginary half as it is produced,
     /// so the carved working set does not grow with `luts.len()`.
-    pub(crate) fn ckks_functional_bootstrap_tmp_bytes_default<C1, C2, F>(
+    pub(crate) fn ckks_functional_bootstrap_tmp_bytes_reference<C1, C2, F>(
         &self,
         ct_out: &C1,
         ct_in: &C2,
@@ -185,7 +185,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds,
     {
-        let base = self.ckks_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, keys_layout);
+        let base = self.ckks_bootstrap_tmp_bytes_reference(ct_out, ct_in, ctx, keys_layout);
         let (boot_layout, in_layout) = bootstrap_layouts(ct_out, ct_in);
         let boot_bytes = self.glwe_bytes_of_from_infos(&boot_layout);
         let in_bytes = self.glwe_bytes_of_from_infos(&in_layout);
@@ -218,7 +218,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
 
     /// `scale_up` lifts the message that many bits above its natural magnitude,
     /// fused into the widening shift rather than costing a second pass.
-    pub(crate) fn ckks_mod_up_into_default<Dst, Src>(
+    pub(crate) fn ckks_mod_up_into_reference<Dst, Src>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -271,7 +271,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
     /// Whole raise step: lift to the plan's message ratio, (encapsulate) ModUp
     /// with the second lift fused into its shift, then relabel by the message
     /// ratio so `I(X)·q` is the integer part and the message the residue.
-    pub(crate) fn ckks_bootstrap_mod_up_default<Dst, Src, K>(
+    pub(crate) fn ckks_bootstrap_mod_up_reference<Dst, Src, K>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -355,7 +355,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
                     scratch,
                 )?;
             }
-            None => self.ckks_mod_up_into_default(dst, src, scale_up, scratch)?,
+            None => self.ckks_mod_up_into_reference(dst, src, scale_up, scratch)?,
         }
         Ok(())
     }
@@ -633,7 +633,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
     /// [`CKKSBootstrappingOps::ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap).
     /// Pipeline is selected from the context.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn ckks_bootstrap_default<F, K>(
+    pub(crate) fn ckks_bootstrap_reference<F, K>(
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
@@ -706,7 +706,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
             // integer wrap-around `I·q` exposed by ModUp is bounded by the *sparse* secret's
             // Hamming weight (https://eprint.iacr.org/2022/024).
             let (mut ct, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
-            self.ckks_bootstrap_mod_up_default(&mut ct, ct_in, &ctx.eval_mod().plan, keys, &mut scratch_local)?;
+            self.ckks_bootstrap_mod_up_reference(&mut ct, ct_in, &ctx.eval_mod().plan, keys, &mut scratch_local)?;
 
             // CoeffsToSlots (split): coefficients → (real, imag) slots. In the standard
             // pipeline this feeds EvalMod directly; in EvalRound+ it is the low-precision
@@ -782,7 +782,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
     }
 
     /// Real-slot S2C-first pipeline: one EvalMod instead of two. Selected by
-    /// [`Self::ckks_bootstrap_default`] from `ct_in.slots()`; the recipe
+    /// [`Self::ckks_bootstrap_reference`] from `ct_in.slots()`; the recipe
     /// preconditions are part of that selection, not checked again here.
     fn bootstrap_real_inner<F, K>(
         &self,
@@ -837,7 +837,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
     /// and general LUTs additionally share the power basis of each transformed
     /// half. The slot kind of `ct_in` selects the pipeline: real slots skip the
     /// imaginary branch entirely.
-    pub(crate) fn ckks_functional_bootstrap_default<F, K>(
+    pub(crate) fn ckks_functional_bootstrap_reference<F, K>(
         &self,
         ct_outs: &mut [CKKSCiphertextOwned<BE>],
         ct_in: &CKKSCiphertextOwned<BE>,
@@ -996,7 +996,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
 /// Reference SSE pipeline: switch to the sparse secret before ModUp to bound
 /// wrap-around, then restore the dense secret afterward.
 #[doc(hidden)]
-pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src>(
+pub fn ckks_encapsulated_mod_up_reference<BE, Dst, Src>(
     module: &Module<BE>,
     dst: &mut Dst,
     src: &mut Src,
@@ -1014,14 +1014,14 @@ where
     module.glwe_keyswitch_assign(src, &dense_to_sparse.to_backend_ref(), scratch);
     // The lift is fused into ModUp, so the message is already at its final scale
     // when sparse-to-dense adds its noise.
-    BootstrappingDefault::new(module).ckks_mod_up_into_default(dst, src, scale_up, scratch)?;
+    BootstrappingReference::new(module).ckks_mod_up_into_reference(dst, src, scale_up, scratch)?;
     module.glwe_keyswitch_assign(dst, &sparse_to_dense.to_backend_ref(), scratch);
     Ok(())
 }
 
-/// Scratch bound for [`ckks_encapsulated_mod_up_default`].
+/// Scratch bound for [`ckks_encapsulated_mod_up_reference`].
 #[doc(hidden)]
-pub fn ckks_encapsulated_mod_up_tmp_bytes_default<BE, Dst, Src, D2S, S2D>(
+pub fn ckks_encapsulated_mod_up_tmp_bytes_reference<BE, Dst, Src, D2S, S2D>(
     module: &Module<BE>,
     dst_infos: &Dst,
     src_infos: &Src,

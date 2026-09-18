@@ -15,12 +15,12 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait LWESwitchingKeyEncryptDefault<BE: Backend> {
-    fn lwe_switching_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait LWESwitchingKeyEncryptReference<BE: Backend> {
+    fn lwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn lwe_switching_key_encrypt_sk_default<R, S1, S2, E>(
+    fn lwe_switching_key_encrypt_sk_reference<R, S1, S2, E>(
         &self,
         res: &mut R,
         sk_lwe_in: &S1,
@@ -36,11 +36,11 @@ pub trait LWESwitchingKeyEncryptDefault<BE: Backend> {
         S2: LWESecretToBackendRef<BE>;
 }
 
-impl<BE: Backend> LWESwitchingKeyEncryptDefault<BE> for Module<BE>
+impl<BE: Backend> LWESwitchingKeyEncryptReference<BE> for Module<BE>
 where
     Self: ModuleN + GLWESwitchingKeyEncryptSk<BE> + VecZnxAutomorphism<BE> + VecZnxCopy<BE> + VecZnxZero<BE>,
 {
-    fn lwe_switching_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn lwe_switching_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -58,7 +58,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn lwe_switching_key_encrypt_sk_default<R, S1, S2, E>(
+    fn lwe_switching_key_encrypt_sk_reference<R, S1, S2, E>(
         &self,
         res: &mut R,
         sk_lwe_in: &S1,
@@ -80,10 +80,10 @@ where
         assert!(sk_lwe_out.n().0 <= res.n().0);
         assert!(res.n() <= self.n() as u32);
         assert!(
-            scratch.available() >= self.lwe_switching_key_encrypt_sk_tmp_bytes_default(res),
+            scratch.available() >= self.lwe_switching_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < LWESwitchingKeyEncrypt::lwe_switching_key_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.lwe_switching_key_encrypt_sk_tmp_bytes_default(res)
+            self.lwe_switching_key_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let scratch = scratch.borrow();

@@ -31,7 +31,6 @@ use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps},
-    reference::paco::lt::{mul_vec_tiled, paco_c2s_factors, paco_stc_factors},
     encoding::paco::cpx::Cpx,
     layouts::ComplexDiagonals,
     layouts::PaCoPlan,
@@ -39,6 +38,7 @@ use crate::{
         CKKSEncodingBuffer, CKKSModuleAlloc, ScratchArenaTakeCKKS, copy_encoding_buffer_into_reim_host,
         copy_host_into_encoding_buffer,
     },
+    reference::paco::lt::{mul_vec_tiled, paco_c2s_factors, paco_stc_factors},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -289,8 +289,8 @@ where
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
 {
-    use crate::reference::paco::ops::ext_bitrev_low;
     use crate::layouts::paco::secret::pack_chunk;
+    use crate::reference::paco::ops::ext_bitrev_low;
 
     let base = PaCoPlan::new(params.n.trailing_zeros() as usize, PACO_H, PACO_C, 29).unwrap();
     let (two_c, n) = (2 * base.c(), base.slots());

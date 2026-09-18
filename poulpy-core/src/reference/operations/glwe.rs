@@ -15,8 +15,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    reference::keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
     layouts::{Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetTensorKey, IntPolyInfos, LWEInfos},
+    reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
 };
 
 fn normalize_glwe_assign<BE, M, R>(module: &M, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
@@ -37,14 +37,14 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWEMulConstDefault<BE: Backend> {
-    fn glwe_mul_const_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+pub trait GLWEMulConstReference<BE: Backend> {
+    fn glwe_mul_const_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos;
 
-    fn glwe_mul_const_default<R, A, B>(
+    fn glwe_mul_const_reference<R, A, B>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -57,7 +57,7 @@ pub trait GLWEMulConstDefault<BE: Backend> {
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_mul_const_assign_default<R, B>(
+    fn glwe_mul_const_assign_reference<R, B>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -69,12 +69,12 @@ pub trait GLWEMulConstDefault<BE: Backend> {
         B: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEMulConstDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEMulConstReference<BE> for Module<BE>
 where
     Self: Convolution<BE> + VecZnxBigBytesOf + VecZnxBigNormalize<BE> + VecZnxBigNormalizeTmpBytes,
     Self: VecZnxCopy<BE>,
 {
-    fn glwe_mul_const_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    fn glwe_mul_const_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -94,7 +94,7 @@ where
         lvl_0 + lvl_1
     }
 
-    fn glwe_mul_const_default<R, A, B>(
+    fn glwe_mul_const_reference<R, A, B>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -111,10 +111,10 @@ where
         assert_eq!(res.rank(), a.rank());
         let b_size = b.size();
         assert!(
-            scratch.available() >= self.glwe_mul_const_tmp_bytes_default(res, a, b),
+            scratch.available() >= self.glwe_mul_const_tmp_bytes_reference(res, a, b),
             "scratch.available(): {} < GLWEMulConst::glwe_mul_const_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_mul_const_tmp_bytes_default(res, a, b)
+            self.glwe_mul_const_tmp_bytes_reference(res, a, b)
         );
 
         let cols: usize = res.rank().as_usize() + 1;
@@ -162,7 +162,7 @@ where
         }
     }
 
-    fn glwe_mul_const_assign_default<R, B>(
+    fn glwe_mul_const_assign_reference<R, B>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -175,10 +175,10 @@ where
     {
         let scratch = scratch.borrow();
         assert!(
-            scratch.available() >= self.glwe_mul_const_tmp_bytes_default(res, res, b),
+            scratch.available() >= self.glwe_mul_const_tmp_bytes_reference(res, res, b),
             "scratch.available(): {} < GLWEMulConst::glwe_mul_const_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_mul_const_tmp_bytes_default(res, res, b)
+            self.glwe_mul_const_tmp_bytes_reference(res, res, b)
         );
 
         let cols: usize = res.rank().as_usize() + 1;
@@ -224,7 +224,7 @@ where
     }
 }
 
-impl<BE: Backend> GLWEMulPlainDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEMulPlainReference<BE> for Module<BE>
 where
     Self: Sized
         + ModuleN
@@ -236,7 +236,7 @@ where
         + VecZnxBigNormalizeTmpBytes
         + VecZnxCopy<BE>,
 {
-    fn glwe_mul_plain_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    fn glwe_mul_plain_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -277,7 +277,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_default<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_mul_plain_reference<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -286,10 +286,10 @@ where
         let scratch = scratch.borrow();
         assert_eq!(res.rank(), a.rank());
         assert!(
-            scratch.available() >= self.glwe_mul_plain_tmp_bytes_default(res, a, b),
+            scratch.available() >= self.glwe_mul_plain_tmp_bytes_reference(res, a, b),
             "scratch.available(): {} < GLWEMulPlain::glwe_mul_plain_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_mul_plain_tmp_bytes_default(res, a, b)
+            self.glwe_mul_plain_tmp_bytes_reference(res, a, b)
         );
 
         let a_k = a.k().as_usize();
@@ -358,17 +358,17 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_assign_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_mul_plain_assign_reference<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert!(
-            scratch.available() >= self.glwe_mul_plain_tmp_bytes_default(res, res, a),
+            scratch.available() >= self.glwe_mul_plain_tmp_bytes_reference(res, res, a),
             "scratch.available(): {} < GLWEMulPlain::glwe_mul_plain_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_mul_plain_tmp_bytes_default(res, res, a)
+            self.glwe_mul_plain_tmp_bytes_reference(res, res, a)
         );
 
         let res_k = res.k().as_usize();
@@ -438,57 +438,57 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWEMulPlainDefault<BE: Backend> {
-    fn glwe_mul_plain_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+pub trait GLWEMulPlainReference<BE: Backend> {
+    fn glwe_mul_plain_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_default<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_mul_plain_reference<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 
-    fn glwe_mul_plain_assign_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_mul_plain_assign_reference<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
 #[doc(hidden)]
-pub trait GLWETensoringDefault<BE: Backend> {
-    fn glwe_tensor_square_apply_tmp_bytes_default<R, A>(&self, res: &R, a: &A) -> usize
+pub trait GLWETensoringReference<BE: Backend> {
+    fn glwe_tensor_square_apply_tmp_bytes_reference<R, A>(&self, res: &R, a: &A) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos;
 
-    fn glwe_tensor_apply_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    fn glwe_tensor_apply_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GLWEInfos;
 
-    fn glwe_tensor_relinearize_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, tsk: &B) -> usize
+    fn glwe_tensor_relinearize_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, tsk: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGLWEInfos;
 
-    fn glwe_tensor_relinearize_default<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_tensor_relinearize_reference<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetTensorKey<BE>;
 
-    fn glwe_tensor_square_apply_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_tensor_square_apply_reference<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_tensor_apply_default<R, A, B>(
+    fn glwe_tensor_apply_reference<R, A, B>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -501,7 +501,7 @@ pub trait GLWETensoringDefault<BE: Backend> {
         B: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWETensoringDefault<BE> for Module<BE>
+impl<BE: Backend> GLWETensoringReference<BE> for Module<BE>
 where
     Self: Sized
         + ModuleN
@@ -518,11 +518,11 @@ where
         + VecZnxDftApply<BE>
         + VecZnxCopy<BE>
         + VecZnxNegate<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxNormalizeTmpBytes,
 {
-    fn glwe_tensor_square_apply_tmp_bytes_default<R, A>(&self, res: &R, a: &A) -> usize
+    fn glwe_tensor_square_apply_tmp_bytes_reference<R, A>(&self, res: &R, a: &A) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -560,7 +560,7 @@ where
         lvl_0 + lvl_diag_cache + lvl_1.max(lvl_2)
     }
 
-    fn glwe_tensor_apply_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
+    fn glwe_tensor_apply_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -605,7 +605,7 @@ where
         lvl_0 + lvl_1.max(lvl_2)
     }
 
-    fn glwe_tensor_relinearize_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, tsk: &B) -> usize
+    fn glwe_tensor_relinearize_tmp_bytes_reference<R, A, B>(&self, res: &R, a: &A, tsk: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -636,7 +636,7 @@ where
             0
         };
         let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(self.n(), cols, output_size);
-        let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_default(output_size, a_dft_size, tsk);
+        let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_reference(output_size, a_dft_size, tsk);
         let lvl_1_post_conv: usize = if res_base2k != key_base2k {
             BE::bytes_of_vec_znx(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
         } else {
@@ -651,7 +651,7 @@ where
         lvl_0 + lvl_1
     }
 
-    fn glwe_tensor_relinearize_default<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_tensor_relinearize_reference<R, A, H>(&self, res: &mut R, a: &A, tsk: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -660,10 +660,10 @@ where
         let tsk = &tsk.get_tensor_key(a.k()).unwrap_or_else(|e| panic!("{e}"));
         let scratch = scratch.borrow();
         assert!(
-            scratch.available() >= self.glwe_tensor_relinearize_tmp_bytes_default(res, a, tsk),
+            scratch.available() >= self.glwe_tensor_relinearize_tmp_bytes_reference(res, a, tsk),
             "scratch.available(): {} < GLWETensoring::glwe_tensor_relinearize_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_tensor_relinearize_tmp_bytes_default(res, a, tsk)
+            self.glwe_tensor_relinearize_tmp_bytes_reference(res, a, tsk)
         );
 
         let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, tsk);
@@ -710,7 +710,7 @@ where
 
         let (mut res_dft, mut scratch_2) = scratch.borrow().take_vec_znx_dft_scratch(self.n(), cols, output_size);
         let a_dft_ref = a_dft.to_backend_ref();
-        self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2);
+        self.gglwe_product_dft_reference(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2);
         let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self.n(), cols, output_size);
         {
             let mut res_big_backend = res_big.to_backend_mut();
@@ -762,17 +762,17 @@ where
         }
     }
 
-    fn glwe_tensor_square_apply_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_tensor_square_apply_reference<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert!(
-            scratch.available() >= self.glwe_tensor_square_apply_tmp_bytes_default(res, a),
+            scratch.available() >= self.glwe_tensor_square_apply_tmp_bytes_reference(res, a),
             "scratch.available(): {} < GLWETensoring::glwe_tensor_square_apply_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_tensor_square_apply_tmp_bytes_default(res, a)
+            self.glwe_tensor_square_apply_tmp_bytes_reference(res, a)
         );
 
         // The operand's effective torus width is its GLWE `k`.
@@ -814,18 +814,24 @@ where
         );
     }
 
-    fn glwe_tensor_apply_default<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn glwe_tensor_apply_reference<R, A, B>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b: &B,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert!(
-            scratch.available() >= self.glwe_tensor_apply_tmp_bytes_default(res, a, b),
+            scratch.available() >= self.glwe_tensor_apply_tmp_bytes_reference(res, a, b),
             "scratch.available(): {} < GLWETensoring::glwe_tensor_apply_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_tensor_apply_tmp_bytes_default(res, a, b)
+            self.glwe_tensor_apply_tmp_bytes_reference(res, a, b)
         );
 
         // The operands' effective torus widths are their GLWE `k`.
@@ -1354,24 +1360,24 @@ pub fn normalize_input_limb_bound_with_offset(
 }
 
 #[doc(hidden)]
-pub trait GLWEAddDefault<BE: Backend> {
-    fn glwe_add_into_default<R, A, B>(&self, res: &mut R, a: &A, b: &B)
+pub trait GLWEAddReference<BE: Backend> {
+    fn glwe_add_into_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>;
 
-    fn glwe_add_assign_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_add_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 }
 
-impl<BE: Backend> GLWEAddDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEAddReference<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxAdd<BE> + VecZnxCopy<BE> + VecZnxAddAssign<BE> + VecZnxZero<BE>,
 {
-    fn glwe_add_into_default<R, A, B>(&self, res: &mut R, a: &A, b: &B)
+    fn glwe_add_into_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1419,7 +1425,7 @@ where
         }
     }
 
-    fn glwe_add_assign_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_add_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1438,25 +1444,25 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWESubDefault<BE: Backend> {
-    fn glwe_sub_default<R, A, B>(&self, res: &mut R, a: &A, b: &B)
+pub trait GLWESubReference<BE: Backend> {
+    fn glwe_sub_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
         B: GLWEToBackendRef<BE>;
 
-    fn glwe_sub_assign_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_sub_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 
-    fn glwe_sub_negate_assign_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_sub_negate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 }
 
-impl<BE: Backend> GLWESubDefault<BE> for Module<BE>
+impl<BE: Backend> GLWESubReference<BE> for Module<BE>
 where
     Self: ModuleN
         + VecZnxSub<BE>
@@ -1466,7 +1472,7 @@ where
         + VecZnxNegate<BE>
         + VecZnxZero<BE>,
 {
-    fn glwe_sub_default<R, A, B>(&self, res: &mut R, a: &A, b: &B)
+    fn glwe_sub_reference<R, A, B>(&self, res: &mut R, a: &A, b: &B)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1513,7 +1519,7 @@ where
         }
     }
 
-    fn glwe_sub_assign_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_sub_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1530,7 +1536,7 @@ where
         }
     }
 
-    fn glwe_sub_negate_assign_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_sub_negate_assign_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1549,22 +1555,22 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWENegateDefault<BE: Backend> {
-    fn glwe_negate_default<R, A>(&self, res: &mut R, a: &A)
+pub trait GLWENegateReference<BE: Backend> {
+    fn glwe_negate_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 
-    fn glwe_negate_assign_default<R>(&self, res: &mut R)
+    fn glwe_negate_assign_reference<R>(&self, res: &mut R)
     where
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWENegateDefault<BE> for Module<BE>
+impl<BE: Backend> GLWENegateReference<BE> for Module<BE>
 where
     Self: VecZnxNegate<BE> + VecZnxNegateAssign<BE> + ModuleN,
 {
-    fn glwe_negate_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_negate_reference<R, A>(&self, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1582,7 +1588,7 @@ where
         res.base2k = a.base2k;
     }
 
-    fn glwe_negate_assign_default<R>(&self, res: &mut R)
+    fn glwe_negate_assign_reference<R>(&self, res: &mut R)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -1597,17 +1603,17 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWEZeroDefault<BE: Backend> {
-    fn glwe_zero_default<R>(&self, res: &mut R)
+pub trait GLWEZeroReference<BE: Backend> {
+    fn glwe_zero_reference<R>(&self, res: &mut R)
     where
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWEZeroDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEZeroReference<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxZero<BE>,
 {
-    fn glwe_zero_default<R>(&self, res: &mut R)
+    fn glwe_zero_reference<R>(&self, res: &mut R)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -1622,28 +1628,28 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWERotateDefault<BE: Backend> {
-    fn glwe_rotate_tmp_bytes_default(&self) -> usize;
+pub trait GLWERotateReference<BE: Backend> {
+    fn glwe_rotate_tmp_bytes_reference(&self) -> usize;
 
-    fn glwe_rotate_default<R, A>(&self, k: i64, res: &mut R, a: &A)
+    fn glwe_rotate_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 
-    fn glwe_rotate_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rotate_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWERotateDefault<BE> for Module<BE>
+impl<BE: Backend> GLWERotateReference<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxRotate<BE> + VecZnxRotateAssign<BE> + VecZnxRotateAssignTmpBytes + VecZnxZero<BE>,
 {
-    fn glwe_rotate_tmp_bytes_default(&self) -> usize {
+    fn glwe_rotate_tmp_bytes_reference(&self) -> usize {
         self.vec_znx_rotate_assign_tmp_bytes()
     }
 
-    fn glwe_rotate_default<R, A>(&self, k: i64, res: &mut R, a: &A)
+    fn glwe_rotate_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1666,17 +1672,17 @@ where
         }
     }
 
-    fn glwe_rotate_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rotate_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         let mut res = res.to_backend_mut();
 
         assert!(
-            scratch.available() >= Self::glwe_rotate_tmp_bytes_default(self),
+            scratch.available() >= Self::glwe_rotate_tmp_bytes_reference(self),
             "scratch.available(): {} < GLWERotate::glwe_rotate_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_rotate_tmp_bytes_default(self)
+            Self::glwe_rotate_tmp_bytes_reference(self)
         );
 
         for i in 0..(res.rank() + 1).into() {
@@ -1687,22 +1693,22 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWEMulXpMinusOneDefault<BE: Backend> {
-    fn glwe_mul_xp_minus_one_default<R, A>(&self, k: i64, res: &mut R, a: &A)
+pub trait GLWEMulXpMinusOneReference<BE: Backend> {
+    fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 
-    fn glwe_mul_xp_minus_one_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_mul_xp_minus_one_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWEMulXpMinusOneDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEMulXpMinusOneReference<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxMulXpMinusOne<BE> + VecZnxMulXpMinusOneAssign<BE>,
 {
-    fn glwe_mul_xp_minus_one_default<R, A>(&self, k: i64, res: &mut R, a: &A)
+    fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1719,7 +1725,7 @@ where
         }
     }
 
-    fn glwe_mul_xp_minus_one_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_mul_xp_minus_one_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
@@ -1735,20 +1741,20 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWECopyDefault<BE: Backend> {
-    fn glwe_copy_tmp_bytes_default<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize;
+pub trait GLWECopyReference<BE: Backend> {
+    fn glwe_copy_tmp_bytes_reference<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize;
 
-    fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_copy_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 }
 
-impl<BE: Backend> GLWECopyDefault<BE> for Module<BE>
+impl<BE: Backend> GLWECopyReference<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxCopy<BE> + VecZnxZero<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
-    fn glwe_copy_tmp_bytes_default<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
+    fn glwe_copy_tmp_bytes_reference<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
         if res.base2k() == a.base2k() && res.k() >= a.k() {
             0
         } else {
@@ -1756,7 +1762,7 @@ where
         }
     }
 
-    fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_copy_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1805,34 +1811,34 @@ fn shift_offset(k: usize, bound: usize) -> i64 {
 }
 
 #[doc(hidden)]
-pub trait GLWEShiftDefault<BE: Backend> {
-    fn glwe_shift_tmp_bytes_default(&self, res_size: usize) -> usize;
+pub trait GLWEShiftReference<BE: Backend> {
+    fn glwe_shift_tmp_bytes_reference(&self, res_size: usize) -> usize;
 
-    fn glwe_rsh_default<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rsh_reference<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;
 
-    fn glwe_lsh_assign_default<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_assign_reference<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;
 
-    fn glwe_lsh_default<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 
-    fn glwe_lsh_add_default<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_add_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 
-    fn glwe_lsh_sub_default<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_sub_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 }
 
-impl<BE: Backend> GLWEShiftDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEShiftReference<BE> for Module<BE>
 where
     Self: ModuleN
         + VecZnxRshAssign<BE>
@@ -1846,7 +1852,7 @@ where
         + VecZnxNormalizeTmpBytes
         + VecZnxCopy<BE>,
 {
-    fn glwe_shift_tmp_bytes_default(&self, res_size: usize) -> usize {
+    fn glwe_shift_tmp_bytes_reference(&self, res_size: usize) -> usize {
         // The partial-width `glwe_rsh` path normalizes into a one-column
         // temporary, and `glwe_lsh_assign` normalizes in place after the
         // kernel; both need the normalization scratch on top of the kernels'.
@@ -1859,16 +1865,16 @@ where
             .max(normalize)
     }
 
-    fn glwe_rsh_default<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_rsh_reference<R>(&self, k: usize, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         let res = &mut res.to_backend_mut();
         assert!(
-            scratch.available() >= Self::glwe_shift_tmp_bytes_default(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_shift_tmp_bytes_default(self, res.size())
+            Self::glwe_shift_tmp_bytes_reference(self, res.size())
         );
         let base2k: usize = res.base2k().into();
         let res_k: usize = res.k().as_usize();
@@ -1903,17 +1909,17 @@ where
         }
     }
 
-    fn glwe_lsh_assign_default<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_assign_reference<R>(&self, res: &mut R, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         let res = &mut res.to_backend_mut();
 
         assert!(
-            scratch.available() >= Self::glwe_shift_tmp_bytes_default(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_shift_tmp_bytes_default(self, res.size())
+            Self::glwe_shift_tmp_bytes_reference(self, res.size())
         );
 
         let base2k: usize = res.base2k().into();
@@ -1935,7 +1941,7 @@ where
         }
     }
 
-    fn glwe_lsh_default<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1943,10 +1949,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= Self::glwe_shift_tmp_bytes_default(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_shift_tmp_bytes_default(self, res.size())
+            Self::glwe_shift_tmp_bytes_reference(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -1975,7 +1981,7 @@ where
         }
     }
 
-    fn glwe_lsh_add_default<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_add_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1983,10 +1989,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= Self::glwe_shift_tmp_bytes_default(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_shift_tmp_bytes_default(self, res.size())
+            Self::glwe_shift_tmp_bytes_reference(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -2001,7 +2007,7 @@ where
         }
     }
 
-    fn glwe_lsh_sub_default<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_lsh_sub_reference<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -2009,10 +2015,10 @@ where
         let res = &mut res.to_backend_mut();
         let a = &a.to_backend_ref();
         assert!(
-            scratch.available() >= Self::glwe_shift_tmp_bytes_default(self, res.size()),
+            scratch.available() >= Self::glwe_shift_tmp_bytes_reference(self, res.size()),
             "scratch.available(): {} < GLWEShift::glwe_shift_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_shift_tmp_bytes_default(self, res.size())
+            Self::glwe_shift_tmp_bytes_reference(self, res.size())
         );
 
         assert_eq!(res.n(), self.n() as u32);
@@ -2029,29 +2035,29 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWENormalizeDefault<BE: Backend> {
-    fn glwe_normalize_tmp_bytes_default(&self) -> usize;
+pub trait GLWENormalizeReference<BE: Backend> {
+    fn glwe_normalize_tmp_bytes_reference(&self) -> usize;
 
-    fn glwe_normalize_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_normalize_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
 
-    fn glwe_normalize_assign_default<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_normalize_assign_reference<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWENormalizeDefault<BE> for Module<BE>
+impl<BE: Backend> GLWENormalizeReference<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxNormalize<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
 {
-    fn glwe_normalize_tmp_bytes_default(&self) -> usize {
+    fn glwe_normalize_tmp_bytes_reference(&self) -> usize {
         let lvl_0: usize = self.vec_znx_normalize_tmp_bytes();
         lvl_0
     }
 
-    fn glwe_normalize_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_normalize_reference<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -2063,10 +2069,10 @@ where
         assert_eq!(a.n(), self.n() as u32);
         assert_eq!(res.rank(), a.rank());
         assert!(
-            scratch.available() >= Self::glwe_normalize_tmp_bytes_default(self),
+            scratch.available() >= Self::glwe_normalize_tmp_bytes_reference(self),
             "scratch.available(): {} < GLWENormalize::glwe_normalize_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_normalize_tmp_bytes_default(self)
+            Self::glwe_normalize_tmp_bytes_reference(self)
         );
 
         let res_base2k = res.base2k().into();
@@ -2088,17 +2094,17 @@ where
         }
     }
 
-    fn glwe_normalize_assign_default<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_normalize_assign_reference<R>(&self, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
     {
         let mut res = res.to_backend_mut();
 
         assert!(
-            scratch.available() >= Self::glwe_normalize_tmp_bytes_default(self),
+            scratch.available() >= Self::glwe_normalize_tmp_bytes_reference(self),
             "scratch.available(): {} < GLWENormalize::glwe_normalize_tmp_bytes: {}",
             scratch.available(),
-            Self::glwe_normalize_tmp_bytes_default(self)
+            Self::glwe_normalize_tmp_bytes_reference(self)
         );
         let res_base2k = res.base2k().as_usize();
         let res_k = res.k().as_usize();

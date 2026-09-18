@@ -7,8 +7,8 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
 
-pub trait CKKSConjugateDefault<BE: Backend> {
-    fn ckks_conjugate_tmp_bytes_default<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
+pub trait CKKSConjugateReference<BE: Backend> {
+    fn ckks_conjugate_tmp_bytes_reference<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: GLWEInfos,
         K: GGLWEInfos,
@@ -17,7 +17,7 @@ pub trait CKKSConjugateDefault<BE: Backend> {
         self.glwe_automorphism_tmp_bytes(ct_infos, ct_infos, key_infos)
     }
 
-    fn ckks_conjugate_into_default<Dst, Src>(
+    fn ckks_conjugate_into_reference<Dst, Src>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -50,7 +50,7 @@ pub trait CKKSConjugateDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_conjugate_assign_default<Dst>(
+    fn ckks_conjugate_assign_reference<Dst>(
         &self,
         dst: &mut Dst,
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,

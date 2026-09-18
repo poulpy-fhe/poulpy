@@ -1,7 +1,7 @@
 //! GLWE external-product internals + reference implementations of the
-//! [`GLWEExternalProductDefault`] methods.
+//! [`GLWEExternalProductReference`] methods.
 //!
-//! Re-exported publicly through `crate::oep::glwe_external_product_defaults`.
+//! Re-exported publicly through `crate::oep::glwe_external_product_reference`.
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::layouts::VecZnxDftBackendMut;
@@ -17,12 +17,12 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     api::GLWEExternalProductInternal,
-    reference::operations::GLWENormalizeDefault,
     layouts::{
         GGSWInfos, GGSWPreparedBackendRef, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
         GadgetProductOutputSizeParams, LWEInfos, gadget_product_limbs, gadget_product_output_size,
     },
-    oep::{GLWEExternalProductDefault, gglwe_product_digit_output_size},
+    oep::{GLWEExternalProductReference, gglwe_product_digit_output_size},
+    reference::operations::GLWENormalizeReference,
 };
 
 /// Practical limb window used for an immediately normalized GGSW external
@@ -30,7 +30,7 @@ use crate::{
 ///
 /// This is public so fused higher-level operations which use
 /// [`GLWEExternalProductInternal`] can size their DFT/BIG intermediates with
-/// exactly the same rule as the default implementation. Although any lower
+/// exactly the same rule as the reference implementation. Although any lower
 /// limb can affect rounding through a sufficiently long carry chain, the
 /// window includes the worst-case norm growth of the signed DFT products and
 /// their VMP accumulation.
@@ -88,7 +88,7 @@ fn glwe_external_product_dft_fill<BE, M>(
         .saturating_mul(dsize)
         .saturating_mul(cols);
     let product_limbs = gadget_product_limbs(ggsw.base2k(), product_terms);
-    // Same shape as `gglwe_product_dft_default`, and the same two
+    // Same shape as `gglwe_product_dft_reference`, and the same two
     // constraints hold; see the comment there for why. In short:
     // `di == 0` is the overwriting pass and must run at the **full**
     // width so no limb of `res_dft` keeps stale scratch, and it must be
@@ -178,9 +178,9 @@ where
     }
 }
 
-// === Free-function defaults for GLWEExternalProductDefault ===
+// === Free-function defaults for GLWEExternalProductReference ===
 
-pub fn glwe_external_product_dft_fill_tmp_bytes_default<BE, M, A, G>(module: &M, a_infos: &A, ggsw_infos: &G) -> usize
+pub fn glwe_external_product_dft_fill_tmp_bytes_reference<BE, M, A, G>(module: &M, a_infos: &A, ggsw_infos: &G) -> usize
 where
     BE: Backend,
     M: ModuleN + VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes,
@@ -201,13 +201,13 @@ where
     lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2
 }
 
-pub fn glwe_external_product_tmp_bytes_default<BE, M, R, A, G>(module: &M, res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
+pub fn glwe_external_product_tmp_bytes_reference<BE, M, R, A, G>(module: &M, res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
 where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEExternalProductDefault<BE>
+        + GLWEExternalProductReference<BE>
         + GLWEExternalProductInternal<BE>
-        + GLWENormalizeDefault<BE>
+        + GLWENormalizeReference<BE>
         + ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -237,8 +237,8 @@ where
         };
         let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
-            .glwe_normalize_tmp_bytes_default()
-            .max(module.glwe_external_product_dft_fill_tmp_bytes_default(&a_conv_infos, ggsw_infos));
+            .glwe_normalize_tmp_bytes_reference()
+            .max(module.glwe_external_product_dft_fill_tmp_bytes_reference(&a_conv_infos, ggsw_infos));
         lvl_2_0 + lvl_2_1
     } else {
         module.glwe_external_product_internal_tmp_bytes(res_infos, a_infos, ggsw_infos)
@@ -246,7 +246,7 @@ where
     lvl_0.next_multiple_of(align) + lvl_1.max(lvl_2)
 }
 
-pub fn glwe_external_product_default<BE, M, R, A>(
+pub fn glwe_external_product_reference<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -255,9 +255,9 @@ pub fn glwe_external_product_default<BE, M, R, A>(
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEExternalProductDefault<BE>
+        + GLWEExternalProductReference<BE>
         + GLWEExternalProductInternal<BE>
-        + GLWENormalizeDefault<BE>
+        + GLWENormalizeReference<BE>
         + ModuleN
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
@@ -271,10 +271,10 @@ pub fn glwe_external_product_default<BE, M, R, A>(
     assert_eq!(ggsw.n(), res.n());
     assert_eq!(a.n(), res.n());
     assert!(
-        scratch.available() >= module.glwe_external_product_tmp_bytes_default(res, a, ggsw),
+        scratch.available() >= module.glwe_external_product_tmp_bytes_reference(res, a, ggsw),
         "scratch.available(): {} < GLWEExternalProduct::glwe_external_product_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_external_product_tmp_bytes_default(res, a, ggsw)
+        module.glwe_external_product_tmp_bytes_reference(res, a, ggsw)
     );
 
     let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, a, ggsw);
@@ -297,7 +297,7 @@ pub fn glwe_external_product_default<BE, M, R, A>(
                 k: (a.k().div_ceil(ggsw.base2k()) as usize * ggsw_base2k).into(),
                 rank: a.rank(),
             });
-            module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2.borrow());
+            module.glwe_normalize_reference(&mut a_conv, a, &mut scratch_2.borrow());
             module.glwe_external_product_dft(&mut res_dft, &a_conv, ggsw, &mut scratch_2);
         });
     } else {
@@ -326,7 +326,7 @@ pub fn glwe_external_product_default<BE, M, R, A>(
     }
 }
 
-pub fn glwe_external_product_assign_default<BE, M, R>(
+pub fn glwe_external_product_assign_reference<BE, M, R>(
     module: &M,
     res: &mut R,
     ggsw: &GGSWPreparedBackendRef<'_, BE>,
@@ -334,9 +334,9 @@ pub fn glwe_external_product_assign_default<BE, M, R>(
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + GLWEExternalProductDefault<BE>
+        + GLWEExternalProductReference<BE>
         + GLWEExternalProductInternal<BE>
-        + GLWENormalizeDefault<BE>
+        + GLWENormalizeReference<BE>
         + ModuleN
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
@@ -347,10 +347,10 @@ pub fn glwe_external_product_assign_default<BE, M, R>(
     assert_eq!(ggsw.rank(), res.rank());
     assert_eq!(ggsw.n(), res.n());
     assert!(
-        scratch.available() >= module.glwe_external_product_tmp_bytes_default(res, res, ggsw),
+        scratch.available() >= module.glwe_external_product_tmp_bytes_reference(res, res, ggsw),
         "scratch.available(): {} < GLWEExternalProduct::glwe_external_product_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_external_product_tmp_bytes_default(res, res, ggsw)
+        module.glwe_external_product_tmp_bytes_reference(res, res, ggsw)
     );
 
     let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, res, ggsw);
@@ -371,7 +371,7 @@ pub fn glwe_external_product_assign_default<BE, M, R>(
                 k: (res.k().div_ceil(ggsw.base2k()) as usize * ggsw_base2k).into(),
                 rank: res.rank(),
             });
-            module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2.borrow());
+            module.glwe_normalize_reference(&mut res_conv, res, &mut scratch_2.borrow());
             module.glwe_external_product_dft(&mut res_dft, &res_conv, ggsw, &mut scratch_2);
         });
     } else {

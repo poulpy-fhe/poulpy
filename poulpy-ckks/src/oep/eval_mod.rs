@@ -7,14 +7,14 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSSubOps},
-    reference::eval_mod::CKKSEvalModOpsDefault,
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, eval_mod::EvalMod},
+    reference::eval_mod::CKKSEvalModOpsReference,
 };
 
 /// Backend override hook for [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 ///
 /// The blanket impl below forwards to the backend-generic reference
-/// [`ckks_eval_mod_default`](crate::reference::eval_mod::CKKSEvalModOpsDefault::ckks_eval_mod_default);
+/// [`ckks_eval_mod_reference`](crate::reference::eval_mod::CKKSEvalModOpsReference::ckks_eval_mod_reference);
 /// a backend may instead provide a specialized `ckks_eval_mod` (e.g. a fused or
 /// accelerated pipeline) by implementing this trait directly. The public
 /// [`CKKSEvalModOps`](crate::api::CKKSEvalModOps) impl dispatches through it.
@@ -49,7 +49,7 @@ where
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
-        + CKKSEvalModOpsDefault<BE>,
+        + CKKSEvalModOpsReference<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     fn ckks_eval_mod_impl<R, C, P, F, H>(
@@ -66,6 +66,6 @@ where
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         H: GetTensorKey<BE>,
     {
-        module.ckks_eval_mod_default(res, ct, params, tsk, scratch)
+        module.ckks_eval_mod_reference(res, ct, params, tsk, scratch)
     }
 }

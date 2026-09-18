@@ -23,8 +23,12 @@ use poulpy_hal::{
 
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation, LinearTransformationGiantStep,
+    layouts::{
+        GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc,
+        prepared::{GLWEAutomorphismKeyPreparedBackendRef, PreparedDiagonal},
+    },
     reference::{
-        keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
+        keyswitching::{GGLWEProductReference, GLWEKeyswitchInternal},
         linear_transformation::{
             inner_product::{glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_unprepared_baby_steps_dft},
             lazy::{
@@ -33,10 +37,6 @@ use crate::{
             },
         },
         operations::cnv_offset_to_limb_offset,
-    },
-    layouts::{
-        GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, LWEInfos, ModuleCoreAlloc,
-        prepared::{GLWEAutomorphismKeyPreparedBackendRef, PreparedDiagonal},
     },
 };
 
@@ -148,7 +148,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H>(
         + CnvPVecBytesOf
         + Convolution<BE>
         + ModuleN
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + GLWEKeyswitchInternal<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigAlloc<BE>

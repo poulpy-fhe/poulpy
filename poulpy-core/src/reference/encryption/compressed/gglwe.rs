@@ -11,7 +11,7 @@ use poulpy_hal::{
 use crate::api::GLWEBytesOf;
 use crate::{
     EncryptionInfos, ScratchArenaTakeCore,
-    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, glwe::GLWEMaskFillDefault},
+    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, glwe::GLWEMaskFillReference},
     layouts::{
         GGLWECompressedSeedMut, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         compressed::GGLWECompressedToBackendMut, prepared::GLWESecretPreparedToBackendRef,
@@ -19,12 +19,12 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait GGLWECompressedEncryptSkDefault<BE: Backend> {
-    fn gglwe_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GGLWECompressedEncryptSkReference<BE: Backend> {
+    fn gglwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn gglwe_compressed_encrypt_sk_default<R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk_reference<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -40,12 +40,12 @@ pub trait GGLWECompressedEncryptSkDefault<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
-impl<BE: Backend> GGLWECompressedEncryptSkDefault<BE> for Module<BE>
+impl<BE: Backend> GGLWECompressedEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
         + GLWEEncryptSk<BE>
-        + GLWEMaskFillDefault<BE>
+        + GLWEMaskFillReference<BE>
         + VecZnxCopy<BE>
         + VecZnxDftBytesOf
         + VecZnxNormalizeAssign<BE>
@@ -53,7 +53,7 @@ where
         + VecZnxNormalizeTmpBytes
         + VecZnxZero<BE>,
 {
-    fn gglwe_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn gglwe_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -67,7 +67,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn gglwe_compressed_encrypt_sk_default<R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk_reference<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -106,10 +106,10 @@ where
             assert_eq!(res.n(), sk_ref.n());
             assert_eq!(pt_backend.n() as u32, sk_ref.n());
             assert!(
-                scratch.available() >= self.gglwe_compressed_encrypt_sk_tmp_bytes_default(&res),
+                scratch.available() >= self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res),
                 "scratch.available(): {} < GGLWECompressedEncryptSk::gglwe_compressed_encrypt_sk_tmp_bytes: {}",
                 scratch.available(),
-                self.gglwe_compressed_encrypt_sk_tmp_bytes_default(&res)
+                self.gglwe_compressed_encrypt_sk_tmp_bytes_reference(&res)
             );
             assert!(
                 res.dnum().0 * res.dsize().0 * res.base2k().0 <= res.k().0,
@@ -159,7 +159,7 @@ where
                     let base2k = res.base2k().into();
                     let scratch_full = scratch_1.borrow();
                     let (mut full_ct, mut scratch_2) = scratch_full.take_glwe_scratch(&res);
-                    self.fill_glwe_mask_from_seed_default(base2k, &mut full_ct, 1, rank_out, seed);
+                    self.fill_glwe_mask_from_seed_reference(base2k, &mut full_ct, 1, rank_out, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
                         &mut full_ct.data,

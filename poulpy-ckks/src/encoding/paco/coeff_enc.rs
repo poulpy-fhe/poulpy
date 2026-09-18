@@ -32,11 +32,11 @@ use std::fmt::Debug;
 
 use super::cpx::Cpx;
 use crate::SlotsKind;
-use crate::reference::dft::DftScalar;
 use crate::layouts::paco::{
     plan::PaCoPlan,
     secret::{PaCoPackingWorkspace, pack_chunk_into_with},
 };
+use crate::reference::dft::DftScalar;
 
 /// The circle-group embedding `ψ(a) = exp(2πi·a / 2^log_q)`, computed at the
 /// working precision `F`.

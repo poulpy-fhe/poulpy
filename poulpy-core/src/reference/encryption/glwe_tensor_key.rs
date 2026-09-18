@@ -14,12 +14,12 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait GLWETensorKeyEncryptSkDefault<BE: Backend> {
-    fn glwe_tensor_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GLWETensorKeyEncryptSkReference<BE: Backend> {
+    fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_tensor_key_encrypt_sk_default<R, S, E>(
+    fn glwe_tensor_key_encrypt_sk_reference<R, S, E>(
         &self,
         res: &mut R,
         sk: &S,
@@ -33,11 +33,11 @@ pub trait GLWETensorKeyEncryptSkDefault<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GLWETensorKeyEncryptSkDefault<BE> for Module<BE>
+impl<BE: Backend> GLWETensorKeyEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN + GGLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretTensorFactory<BE>,
 {
-    fn glwe_tensor_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -55,7 +55,7 @@ where
         lvl_0 + lvl_1 + lvl_2 + lvl_3_encrypt
     }
 
-    fn glwe_tensor_key_encrypt_sk_default<R, S, E>(
+    fn glwe_tensor_key_encrypt_sk_reference<R, S, E>(
         &self,
         res: &mut R,
         sk: &S,
@@ -71,10 +71,10 @@ where
         assert_eq!(res.rank_out(), sk.rank());
         assert_eq!(res.n(), sk.n());
         assert!(
-            scratch.available() >= self.glwe_tensor_key_encrypt_sk_tmp_bytes_default(res),
+            scratch.available() >= self.glwe_tensor_key_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWETensorKeyEncryptSk::glwe_tensor_key_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_tensor_key_encrypt_sk_tmp_bytes_default(res)
+            self.glwe_tensor_key_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let scratch = scratch.borrow();

@@ -2,7 +2,7 @@
 //! of CKKS bootstrapping.
 //!
 //! This module holds the *evaluation* — the backend-generic reference
-//! [`CKKSEvalModOpsDefault`] and the `eval_mod` pipeline. The parameterization
+//! [`CKKSEvalModOpsReference`] and the `eval_mod` pipeline. The parameterization
 //! it consumes (the periodic-function approximation polynomials and their
 //! encoding) lives in [`crate::layouts::eval_mod`]; see there for the maths and
 //! the [`EvalMod`] structure. The public entry point is
@@ -36,14 +36,14 @@ use crate::{
 /// constituent CKKS ops (polynomial evaluation, add/sub/mul/copy, allocation).
 /// Backends wire this into the public [`CKKSEvalModOps`] trait through the
 /// [`CKKSEvalModImpl`](crate::oep::CKKSEvalModImpl) OEP hook, which by default
-/// forwards to [`Self::ckks_eval_mod_default`].
+/// forwards to [`Self::ckks_eval_mod_reference`].
 ///
 /// [`CKKSEvalModOps`]: crate::api::CKKSEvalModOps
-pub trait CKKSEvalModOpsDefault<BE: Backend> {
+pub trait CKKSEvalModOpsReference<BE: Backend> {
     /// Reference `x mod 1` evaluation: see [`crate::layouts::eval_mod`] for the
     /// base-polynomial / range-extension / inverse pipeline and the `eval_mod`
     /// function for the implementation.
-    fn ckks_eval_mod_default<R, C, P, F, H>(
+    fn ckks_eval_mod_reference<R, C, P, F, H>(
         &self,
         res: &mut R,
         ct: &C,
@@ -67,7 +67,7 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
         CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
-impl<BE: Backend> CKKSEvalModOpsDefault<BE> for Module<BE>
+impl<BE: Backend> CKKSEvalModOpsReference<BE> for Module<BE>
 where
     Module<BE>: CKKSPolynomialEvaluationOps<BE>
         + CKKSAddOps<BE>
@@ -81,7 +81,7 @@ where
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn ckks_eval_mod_default<R, C, P, F, H>(
+    fn ckks_eval_mod_reference<R, C, P, F, H>(
         &self,
         res: &mut R,
         ct: &C,

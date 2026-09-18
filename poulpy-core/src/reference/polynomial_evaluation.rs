@@ -20,7 +20,7 @@ use poulpy_hal::{
 
 use crate::{
     layouts::{BabyStep, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper},
-    oep::PolynomialEvaluationDefault,
+    oep::PolynomialEvaluationReference,
 };
 
 /// HAL bounds required to run the hoisted prepared-right tensor product.
@@ -307,8 +307,8 @@ fn giant_step_power(degree: usize) -> usize {
     (degree + 1).next_power_of_two()
 }
 
-impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
-    fn glwe_eval_baby_step_default<Ops, R, P, A, G>(
+impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
+    fn glwe_eval_baby_step_reference<Ops, R, P, A, G>(
         &self,
         ops: &Ops,
         res: &mut R,
@@ -327,7 +327,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         eval_baby_step::<BE, Ops, R, P, G, A>(self, ops, res, parity, coeffs, power_basis, scratch)
     }
 
-    fn glwe_eval_giant_steps_default<Ops, R, B, V, P, A, G, H>(
+    fn glwe_eval_giant_steps_reference<Ops, R, B, V, P, A, G, H>(
         &self,
         ops: &Ops,
         res: &mut R,

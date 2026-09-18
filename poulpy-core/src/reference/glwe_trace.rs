@@ -50,7 +50,7 @@ where
         + GLWECopy<BE>
         + CyclotomicOrder
         + GLWENormalize<BE>
-        + GLWETraceDefault<BE>
+        + GLWETraceReference<BE>
         + ?Sized,
     H: GetAutomorphismKey<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -72,10 +72,10 @@ where
     assert_eq!(ksk_infos.rank_in(), res.rank());
     assert_eq!(ksk_infos.rank_out(), res.rank());
     assert!(
-        scratch.available() >= module.glwe_trace_assign_tmp_bytes_default(res, &ksk_infos),
+        scratch.available() >= module.glwe_trace_assign_tmp_bytes_reference(res, &ksk_infos),
         "scratch.available(): {} < GLWETrace::glwe_trace_assign_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_trace_assign_tmp_bytes_default(res, &ksk_infos)
+        module.glwe_trace_assign_tmp_bytes_reference(res, &ksk_infos)
     );
 
     if res.base2k() != ksk_infos.base2k() {
@@ -121,41 +121,41 @@ where
 }
 
 #[doc(hidden)]
-pub trait GLWETraceDefault<BE: Backend> {
-    fn glwe_trace_assign_tmp_bytes_default<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
+pub trait GLWETraceReference<BE: Backend> {
+    fn glwe_trace_assign_tmp_bytes_reference<A, K>(&self, a_infos: &A, key_infos: &K) -> usize
     where
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace_galois_elements_default(&self) -> Vec<i64>;
+    fn glwe_trace_galois_elements_reference(&self) -> Vec<i64>;
 
-    fn glwe_trace_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    fn glwe_trace_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace_default<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_trace_reference<R, A, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 
-    fn glwe_trace_assign_default<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_trace_assign_reference<R, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         H: GetAutomorphismKey<BE>;
 }
 
-/// Reference implementations of the [`GLWETraceDefault`] methods.
-pub mod glwe_trace_defaults_impl {
+/// Reference implementations of the [`GLWETraceReference`] methods.
+pub mod glwe_trace_reference_impl {
     use super::*;
 
-    pub fn glwe_trace_assign_tmp_bytes_default<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
+    pub fn glwe_trace_assign_tmp_bytes_reference<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
     where
         BE: Backend,
         M: GLWEBytesOf<BE>
-            + GLWETraceDefault<BE>
+            + GLWETraceReference<BE>
             + ModuleLogN
             + GaloisElement
             + GLWEAutomorphism<BE>
@@ -179,7 +179,7 @@ pub mod glwe_trace_defaults_impl {
             let lvl_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
             let lvl_1: usize = module
                 .glwe_normalize_tmp_bytes()
-                .max(module.glwe_trace_assign_tmp_bytes_default(&a_conv_infos, key_infos));
+                .max(module.glwe_trace_assign_tmp_bytes_reference(&a_conv_infos, key_infos));
             return lvl_0 + lvl_1;
         }
 
@@ -188,7 +188,7 @@ pub mod glwe_trace_defaults_impl {
             .max(module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos))
     }
 
-    pub fn glwe_trace_galois_elements_default<BE, M>(module: &M) -> Vec<i64>
+    pub fn glwe_trace_galois_elements_reference<BE, M>(module: &M) -> Vec<i64>
     where
         BE: Backend,
         M: ModuleLogN + CyclotomicOrder,
@@ -196,11 +196,11 @@ pub mod glwe_trace_defaults_impl {
         trace_galois_elements(module.log_n(), module.cyclotomic_order())
     }
 
-    pub fn glwe_trace_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    pub fn glwe_trace_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         BE: Backend,
         M: GLWEBytesOf<BE>
-            + GLWETraceDefault<BE>
+            + GLWETraceReference<BE>
             + ModuleLogN
             + GaloisElement
             + GLWEAutomorphism<BE>
@@ -224,13 +224,13 @@ pub mod glwe_trace_defaults_impl {
         };
         let lvl_0: usize = module.glwe_bytes_of_from_infos(&tmp_infos);
         let lvl_1 = module.glwe_copy_tmp_bytes(&tmp_infos, a_infos);
-        let lvl_2: usize = module.glwe_trace_assign_tmp_bytes_default(&tmp_infos, key_infos);
+        let lvl_2: usize = module.glwe_trace_assign_tmp_bytes_reference(&tmp_infos, key_infos);
         let lvl_3 = module.glwe_copy_tmp_bytes(res_infos, &tmp_infos);
 
         lvl_0 + lvl_1.max(lvl_2).max(lvl_3)
     }
 
-    pub fn glwe_trace_default<BE, M, R, A, H>(
+    pub fn glwe_trace_reference<BE, M, R, A, H>(
         module: &M,
         res: &mut R,
         skip: usize,
@@ -240,7 +240,7 @@ pub mod glwe_trace_defaults_impl {
     ) where
         BE: Backend,
         M: GLWEBytesOf<BE>
-            + GLWETraceDefault<BE>
+            + GLWETraceReference<BE>
             + ModuleLogN
             + GaloisElement
             + GLWEAutomorphism<BE>
@@ -259,10 +259,10 @@ pub mod glwe_trace_defaults_impl {
             .get_automorphism_key(first, a.k().max(res.k()))
             .unwrap_or_else(|e| panic!("trace rotation {first}: {e}"));
         assert!(
-            scratch.available() >= module.glwe_trace_tmp_bytes_default(res, a, &atk_layout),
+            scratch.available() >= module.glwe_trace_tmp_bytes_reference(res, a, &atk_layout),
             "scratch.available(): {} < GLWETrace::glwe_trace_tmp_bytes: {}",
             scratch.available(),
-            module.glwe_trace_tmp_bytes_default(res, a, &atk_layout)
+            module.glwe_trace_tmp_bytes_reference(res, a, &atk_layout)
         );
 
         let scratch_local = scratch.borrow();
@@ -285,7 +285,7 @@ pub mod glwe_trace_defaults_impl {
         module.glwe_copy(res, &tmp, &mut scratch_1);
     }
 
-    pub fn glwe_trace_assign_default<BE, M, R, H>(
+    pub fn glwe_trace_assign_reference<BE, M, R, H>(
         module: &M,
         res: &mut R,
         skip: usize,
@@ -294,7 +294,7 @@ pub mod glwe_trace_defaults_impl {
     ) where
         BE: Backend,
         M: GLWEBytesOf<BE>
-            + GLWETraceDefault<BE>
+            + GLWETraceReference<BE>
             + ModuleLogN
             + GaloisElement
             + GLWEAutomorphism<BE>

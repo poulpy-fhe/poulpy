@@ -7,8 +7,8 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
 
-pub trait CKKSRotateDefault<BE: Backend> {
-    fn ckks_rotate_tmp_bytes_default<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
+pub trait CKKSRotateReference<BE: Backend> {
+    fn ckks_rotate_tmp_bytes_reference<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: GLWEInfos,
         K: GGLWEInfos,
@@ -17,7 +17,7 @@ pub trait CKKSRotateDefault<BE: Backend> {
         self.glwe_automorphism_tmp_bytes(ct_infos, ct_infos, key_infos)
     }
 
-    fn ckks_rotate_into_default<Dst, Src>(
+    fn ckks_rotate_into_reference<Dst, Src>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -52,7 +52,7 @@ pub trait CKKSRotateDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_rotate_assign_default<Dst>(
+    fn ckks_rotate_assign_reference<Dst>(
         &self,
         dst: &mut Dst,
         key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,

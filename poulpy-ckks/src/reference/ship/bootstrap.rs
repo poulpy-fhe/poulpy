@@ -4,8 +4,8 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef;
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
-    reference::keyswitching::glwe::GGLWEProductDefault,
     layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
+    reference::keyswitching::glwe::GGLWEProductReference,
 };
 use poulpy_hal::{
     api::{
@@ -99,7 +99,7 @@ where
     BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
@@ -232,7 +232,7 @@ where
     BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
@@ -284,7 +284,7 @@ where
     BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>

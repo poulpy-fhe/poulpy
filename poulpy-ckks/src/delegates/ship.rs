@@ -1,8 +1,8 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWEKeyswitch, GLWEZero,
-    reference::keyswitching::glwe::GGLWEProductDefault,
     layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef},
+    reference::keyswitching::glwe::GGLWEProductReference,
 };
 use poulpy_hal::{
     api::{
@@ -16,12 +16,12 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSShipOps, CKKSSubOps, ShipScalar},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
+    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
     reference::ship::{
         bootstrap::{ship_bootstrap_complex_into, ship_bootstrap_into},
         preflight::ship_bootstrap_tmp_bytes,
     },
-    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
-    oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
 };
 
 impl<BE, F> CKKSShipOps<BE, F> for Module<BE>
@@ -29,7 +29,7 @@ where
     BE: Backend + CKKSShipCoeffEncodingImpl + CKKSEncodingImpl<F>,
     F: ShipScalar,
     Module<BE>: CKKSMulOps<BE>
-        + GGLWEProductDefault<BE>
+        + GGLWEProductReference<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>

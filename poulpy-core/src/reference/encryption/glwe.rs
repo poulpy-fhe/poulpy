@@ -23,8 +23,8 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait GLWEMaskFillDefault<BE: Backend> {
-    fn fill_glwe_mask_from_source_default<R>(
+pub trait GLWEMaskFillReference<BE: Backend> {
+    fn fill_glwe_mask_from_source_reference<R>(
         &self,
         base2k: usize,
         res: &mut R,
@@ -34,16 +34,16 @@ pub trait GLWEMaskFillDefault<BE: Backend> {
     ) where
         R: GLWEToBackendMut<BE>;
 
-    fn fill_glwe_mask_from_seed_default<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
+    fn fill_glwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
     where
         R: GLWEToBackendMut<BE>;
 }
 
-impl<BE: Backend> GLWEMaskFillDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEMaskFillReference<BE> for Module<BE>
 where
     Self: VecZnxFillUniformSource<BE>,
 {
-    fn fill_glwe_mask_from_source_default<R>(
+    fn fill_glwe_mask_from_source_reference<R>(
         &self,
         base2k: usize,
         res: &mut R,
@@ -65,22 +65,22 @@ where
         }
     }
 
-    fn fill_glwe_mask_from_seed_default<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
+    fn fill_glwe_mask_from_seed_reference<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
     where
         R: GLWEToBackendMut<BE>,
     {
         let mut source_xa = Source::new(seed_xa);
-        self.fill_glwe_mask_from_source_default(base2k, res, res_col, rank, &mut source_xa);
+        self.fill_glwe_mask_from_source_reference(base2k, res, res_col, rank, &mut source_xa);
     }
 }
 
 #[doc(hidden)]
-pub trait GLWEEncryptSkDefault<BE: Backend> {
-    fn glwe_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GLWEEncryptSkReference<BE: Backend> {
+    fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    fn glwe_encrypt_sk_default<R, P, S, E>(
+    fn glwe_encrypt_sk_reference<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -95,7 +95,7 @@ pub trait GLWEEncryptSkDefault<BE: Backend> {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 
-    fn glwe_encrypt_zero_sk_default<R, E, S>(
+    fn glwe_encrypt_zero_sk_reference<R, E, S>(
         &self,
         res: &mut R,
         sk: &S,
@@ -109,17 +109,17 @@ pub trait GLWEEncryptSkDefault<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>;
 }
 
-impl<BE: Backend> GLWEEncryptSkDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEEncryptSkReference<BE> for Module<BE>
 where
     Self: Sized
         + ModuleN
         + VecZnxNormalizeTmpBytes
         + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
-        + GLWEMaskFillDefault<BE>
+        + GLWEMaskFillReference<BE>
         + GLWEEncryptSkInternal<BE>,
 {
-    fn glwe_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn glwe_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
@@ -138,7 +138,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_sk_default<R, P, S, E>(
+    fn glwe_encrypt_sk_reference<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -162,17 +162,17 @@ where
         assert_eq!(sk_ref.n(), self.n() as u32);
         assert_eq!(pt_backend.n(), self.n() as u32);
         assert!(
-            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_default(res),
+            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_encrypt_sk_tmp_bytes_default(res)
+            self.glwe_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let base2k = res.base2k().into();
         let rank = res.rank().as_usize();
         {
             let mut res_ref = &mut *res;
-            self.fill_glwe_mask_from_source_default(base2k, &mut res_ref, 1, rank, source_xa);
+            self.fill_glwe_mask_from_source_reference(base2k, &mut res_ref, 1, rank, source_xa);
         }
         self.glwe_encrypt_sk_internal(
             res.base2k().into(),
@@ -185,7 +185,7 @@ where
         );
     }
 
-    fn glwe_encrypt_zero_sk_default<R, E, S>(
+    fn glwe_encrypt_zero_sk_reference<R, E, S>(
         &self,
         res: &mut R,
         sk: &S,
@@ -205,29 +205,29 @@ where
         assert_eq!(res.n(), self.n() as u32);
         assert_eq!(sk_ref.n(), self.n() as u32);
         assert!(
-            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_default(res),
+            scratch.available() >= self.glwe_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWE::encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_encrypt_sk_tmp_bytes_default(res)
+            self.glwe_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let base2k = res.base2k().into();
         let rank = res.rank().as_usize();
         {
             let mut res_ref = &mut *res;
-            self.fill_glwe_mask_from_source_default(base2k, &mut res_ref, 1, rank, source_xa);
+            self.fill_glwe_mask_from_source_reference(base2k, &mut res_ref, 1, rank, source_xa);
         }
         self.glwe_encrypt_sk_internal(res.base2k().into(), &mut res.data, None, sk, enc_infos, source_xe, scratch);
     }
 }
 
 #[doc(hidden)]
-pub trait GLWEEncryptPkDefault<BE: Backend> {
-    fn glwe_encrypt_pk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GLWEEncryptPkReference<BE: Backend> {
+    fn glwe_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    fn glwe_encrypt_pk_default<R, P, K, E>(
+    fn glwe_encrypt_pk_reference<R, P, K, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -242,7 +242,7 @@ pub trait GLWEEncryptPkDefault<BE: Backend> {
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 
-    fn glwe_encrypt_zero_pk_default<R, K, E>(
+    fn glwe_encrypt_zero_pk_reference<R, K, E>(
         &self,
         res: &mut R,
         pk: &K,
@@ -256,11 +256,11 @@ pub trait GLWEEncryptPkDefault<BE: Backend> {
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEEncryptPkDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEEncryptPkReference<BE> for Module<BE>
 where
     Self: GLWEEncryptPkInternal<BE> + VecZnxDftBytesOf + SvpPPolBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
 {
-    fn glwe_encrypt_pk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn glwe_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
@@ -279,7 +279,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_pk_default<R, P, K, E>(
+    fn glwe_encrypt_pk_reference<R, P, K, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -295,10 +295,10 @@ where
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         assert!(
-            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_default(res),
+            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWEEncryptPk::glwe_encrypt_pk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_encrypt_pk_tmp_bytes_default(res)
+            self.glwe_encrypt_pk_tmp_bytes_reference(res)
         );
         self.glwe_encrypt_pk_internal(
             res,
@@ -311,7 +311,7 @@ where
         );
     }
 
-    fn glwe_encrypt_zero_pk_default<R, K, E>(
+    fn glwe_encrypt_zero_pk_reference<R, K, E>(
         &self,
         res: &mut R,
         pk: &K,
@@ -325,10 +325,10 @@ where
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         assert!(
-            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_default(res),
+            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWEEncryptPk::glwe_encrypt_pk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_encrypt_pk_tmp_bytes_default(res)
+            self.glwe_encrypt_pk_tmp_bytes_reference(res)
         );
         self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch);
     }

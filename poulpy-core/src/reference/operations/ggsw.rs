@@ -1,33 +1,33 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    reference::operations::GLWERotateDefault,
     layouts::{GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut},
+    reference::operations::GLWERotateReference,
 };
 
 #[doc(hidden)]
-pub trait GGSWRotateDefault<BE: Backend> {
-    fn ggsw_rotate_tmp_bytes_default(&self) -> usize;
+pub trait GGSWRotateReference<BE: Backend> {
+    fn ggsw_rotate_tmp_bytes_reference(&self) -> usize;
 
-    fn ggsw_rotate_default<R, A>(&self, k: i64, res: &mut R, a: &A)
+    fn ggsw_rotate_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: crate::layouts::GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: crate::layouts::GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos;
 
-    fn ggsw_rotate_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn ggsw_rotate_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos;
 }
 
-impl<BE: Backend> GGSWRotateDefault<BE> for Module<BE>
+impl<BE: Backend> GGSWRotateReference<BE> for Module<BE>
 where
-    Module<BE>: GLWERotateDefault<BE>,
+    Module<BE>: GLWERotateReference<BE>,
 {
-    fn ggsw_rotate_tmp_bytes_default(&self) -> usize {
-        self.glwe_rotate_tmp_bytes_default()
+    fn ggsw_rotate_tmp_bytes_reference(&self) -> usize {
+        self.glwe_rotate_tmp_bytes_reference()
     }
 
-    fn ggsw_rotate_default<R, A>(&self, k: i64, res: &mut R, a: &A)
+    fn ggsw_rotate_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
     where
         R: crate::layouts::GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: crate::layouts::GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
@@ -42,20 +42,20 @@ where
             for col in 0..cols {
                 let mut res_at = res.at_view_mut(row, col);
                 let a_at = a.at_view(row, col);
-                self.glwe_rotate_default(k, &mut res_at, &a_at);
+                self.glwe_rotate_reference(k, &mut res_at, &a_at);
             }
         }
     }
 
-    fn ggsw_rotate_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
+    fn ggsw_rotate_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     {
         assert!(
-            scratch.available() >= Self::ggsw_rotate_tmp_bytes_default(self),
+            scratch.available() >= Self::ggsw_rotate_tmp_bytes_reference(self),
             "scratch.available(): {} < GGSWRotate::ggsw_rotate_tmp_bytes: {}",
             scratch.available(),
-            Self::ggsw_rotate_tmp_bytes_default(self)
+            Self::ggsw_rotate_tmp_bytes_reference(self)
         );
 
         let rows: usize = res.dnum().into();
@@ -65,7 +65,7 @@ where
             for col in 0..cols {
                 let mut scratch_iter = scratch.borrow();
                 let mut res_at = res.at_view_mut(row, col);
-                self.glwe_rotate_assign_default(k, &mut res_at, &mut scratch_iter);
+                self.glwe_rotate_assign_reference(k, &mut res_at, &mut scratch_iter);
             }
         }
     }

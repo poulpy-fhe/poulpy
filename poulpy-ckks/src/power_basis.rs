@@ -8,8 +8,8 @@ use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSMulOps, CKKSPow2Ops, CKKSSubOps},
     checked_mul_ct_log_budget,
-    reference::carry_verb::ckks_one_pt,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    reference::carry_verb::ckks_one_pt,
 };
 
 pub use crate::api::{Basis, Parity};

@@ -2,8 +2,8 @@
 
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
-    reference::keyswitching::glwe::{GGLWEProductDefault, gglwe_product_accumulation_output_size},
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GGLWEPreparedToBackendRef},
+    reference::keyswitching::glwe::{GGLWEProductReference, gglwe_product_accumulation_output_size},
 };
 use poulpy_hal::{
     api::{
@@ -51,11 +51,11 @@ where
     BE: Backend,
     C: LWEInfos,
     K: GGLWEInfos,
-    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + GGLWEProductDefault<BE>,
+    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + GGLWEProductReference<BE>,
 {
     let a_size = ct.size();
     let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
-    let product = module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, key);
+    let product = module.gglwe_product_dft_tmp_bytes_reference(output_size, a_size, key);
     let mux = 2 * module.bytes_of_vec_znx_dft(module.n(), 2, output_size) + product;
     let finalize = module.bytes_of_vec_znx_big(module.n(), 2, output_size) + module.vec_znx_big_normalize_tmp_bytes();
     module.bytes_of_vec_znx_dft(module.n(), 2, a_size)
@@ -84,7 +84,7 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
-        + GGLWEProductDefault<BE>,
+        + GGLWEProductReference<BE>,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
     const OP: &str = "ship_mux_rotate";
@@ -120,7 +120,7 @@ where
             ckks_ensure!(key.key.size() == key_size, "{OP}: inconsistent key sizes in group");
             {
                 let mut prod_dft_mut = prod_dft.to_backend_mut();
-                module.gglwe_product_dft_default(
+                module.gglwe_product_dft_reference(
                     &mut prod_dft_mut,
                     &a_dft_ref,
                     &key.key.to_backend_ref(),

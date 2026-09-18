@@ -324,8 +324,8 @@ where
     }
 }
 
-pub trait PolynomialEvaluationDefault<BE: Backend> {
-    fn ckks_eval_poly_real_const_coeffs_from_power_basis_default<R, B, A, G, H>(
+pub trait PolynomialEvaluationReference<BE: Backend> {
+    fn ckks_eval_poly_real_const_coeffs_from_power_basis_reference<R, B, A, G, H>(
         &self,
         res: &mut R,
         poly: &B,
@@ -351,7 +351,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         G: PowerBasisHelper<BE, A>,
         H: GetTensorKey<BE>;
 
-    fn ckks_eval_poly_complex_const_coeffs_from_power_basis_default<R, C, A, G, H>(
+    fn ckks_eval_poly_complex_const_coeffs_from_power_basis_reference<R, C, A, G, H>(
         &self,
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
@@ -378,8 +378,8 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         H: GetTensorKey<BE>;
 }
 
-impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
-    fn ckks_eval_poly_real_const_coeffs_from_power_basis_default<R, B, A, G, H>(
+impl<BE: Backend> PolynomialEvaluationReference<BE> for Module<BE> {
+    fn ckks_eval_poly_real_const_coeffs_from_power_basis_reference<R, B, A, G, H>(
         &self,
         res: &mut R,
         poly: &B,
@@ -459,7 +459,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         Ok(())
     }
 
-    fn ckks_eval_poly_complex_const_coeffs_from_power_basis_default<R, C, A, G, H>(
+    fn ckks_eval_poly_complex_const_coeffs_from_power_basis_reference<R, C, A, G, H>(
         &self,
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,

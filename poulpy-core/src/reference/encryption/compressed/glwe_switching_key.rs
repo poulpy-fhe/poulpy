@@ -15,12 +15,12 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait GLWESwitchingKeyCompressedEncryptSkDefault<BE: Backend> {
-    fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GLWESwitchingKeyCompressedEncryptSkReference<BE: Backend> {
+    fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_switching_key_compressed_encrypt_sk_default<R, S1, S2, E>(
+    fn glwe_switching_key_compressed_encrypt_sk_reference<R, S1, S2, E>(
         &self,
         res: &mut R,
         sk_in: &S1,
@@ -36,11 +36,11 @@ pub trait GLWESwitchingKeyCompressedEncryptSkDefault<BE: Backend> {
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend> GLWESwitchingKeyCompressedEncryptSkDefault<BE> for Module<BE>
+impl<BE: Backend> GLWESwitchingKeyCompressedEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN + GGLWECompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE> + VecZnxSwitchRing<BE>,
 {
-    fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -54,7 +54,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_switching_key_compressed_encrypt_sk_default<R, S1, S2, E>(
+    fn glwe_switching_key_compressed_encrypt_sk_reference<R, S1, S2, E>(
         &self,
         res: &mut R,
         sk_in: &S1,
@@ -75,10 +75,10 @@ where
         assert!(sk_in.n().0 <= self.n() as u32);
         assert!(sk_out_ref.n().0 <= self.n() as u32);
         assert!(
-            scratch.available() >= self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_default(res),
+            scratch.available() >= self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWESwitchingKeyCompressedEncryptSk::glwe_switching_key_compressed_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_default(res)
+            self.glwe_switching_key_compressed_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let (mut sk_in_lifted, scratch_1) = scratch.borrow().take_scalar_znx_scratch(self.n(), sk_in.rank().into());

@@ -7,15 +7,15 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
 
-pub trait CKKSNegDefault<BE: Backend> {
-    fn ckks_neg_tmp_bytes_default(&self, res_size: usize) -> usize
+pub trait CKKSNegReference<BE: Backend> {
+    fn ckks_neg_tmp_bytes_reference(&self, res_size: usize) -> usize
     where
         Self: GLWEShift<BE>,
     {
         self.glwe_shift_tmp_bytes(res_size)
     }
 
-    fn ckks_neg_into_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_neg_into_reference<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWENegate<BE> + GLWEShift<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
@@ -40,7 +40,7 @@ pub trait CKKSNegDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_neg_assign_default<Dst>(&self, dst: &mut Dst) -> Result<()>
+    fn ckks_neg_assign_reference<Dst>(&self, dst: &mut Dst) -> Result<()>
     where
         Self: GLWENegate<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,

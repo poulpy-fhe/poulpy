@@ -19,10 +19,10 @@ pub mod rotate;
 pub mod ship;
 pub mod sub;
 
-pub use add::CKKSAddDefault;
+pub use add::CKKSAddReference;
 pub use dft::gen_dft_matrices;
-pub use eval_mod::CKKSEvalModOpsDefault;
+pub use eval_mod::CKKSEvalModOpsReference;
 pub use linear_transformation_diagonals::ckks_encode_linear_transformation_from_diagonals;
-pub use plaintext::CKKSPlaintextDefault;
-pub use polynomial_evaluation::PolynomialEvaluationDefault;
-pub use sub::CKKSSubDefault;
+pub use plaintext::CKKSPlaintextReference;
+pub use polynomial_evaluation::PolynomialEvaluationReference;
+pub use sub::CKKSSubReference;

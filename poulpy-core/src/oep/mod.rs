@@ -32,11 +32,11 @@
 //! trait and macro-forwards the rest:
 //!
 //! ```ignore
-//! use poulpy_core::oep::{GLWEKeyswitchDefault, impl_gglwe_keyswitch_defaults_full,
-//!                        impl_ggsw_keyswitch_defaults_full, impl_lwe_keyswitch_defaults_full};
+//! use poulpy_core::oep::{GLWEKeyswitchReference, impl_gglwe_keyswitch_reference_full,
+//!                        impl_ggsw_keyswitch_reference_full, impl_lwe_keyswitch_reference_full};
 //!
-//! impl GLWEKeyswitchDefault<MyBackend> for Module<MyBackend> {
-//!     fn glwe_keyswitch_default<R, A>(&self, res: &mut R, a: &A,
+//! impl GLWEKeyswitchReference<MyBackend> for Module<MyBackend> {
+//!     fn glwe_keyswitch_reference<R, A>(&self, res: &mut R, a: &A,
 //!                                     key: &GGLWEPreparedBackendRef<'_, MyBackend>,
 //!                                     scratch: &mut ScratchArena<'_, MyBackend>)
 //!     where
@@ -48,30 +48,30 @@
 //!     // ... tmp_bytes and assign
 //! }
 //!
-//! impl_gglwe_keyswitch_defaults_full!(MyBackend);
-//! impl_ggsw_keyswitch_defaults_full!(MyBackend);
-//! impl_lwe_keyswitch_defaults_full!(MyBackend);
+//! impl_gglwe_keyswitch_reference_full!(MyBackend);
+//! impl_ggsw_keyswitch_reference_full!(MyBackend);
+//! impl_lwe_keyswitch_reference_full!(MyBackend);
 //! ```
 //!
 //! `Module<MyBackend>` now implements the public `GLWEKeyswitch` trait, and the
 //! override composes: the reference GGLWE and GGSW bodies call
-//! `glwe_keyswitch_default`, so they route through the fused kernel too.
+//! `glwe_keyswitch_reference`, so they route through the fused kernel too.
 //!
 //! The same shape applies where an `*Impl` trait spans several sub-families.
-//! `AutomorphismImpl` needs all three of `GLWEAutomorphismDefault`,
-//! `GGSWAutomorphismDefault` and `GGLWEAutomorphismDefault`, so a backend with
+//! `AutomorphismImpl` needs all three of `GLWEAutomorphismReference`,
+//! `GGSWAutomorphismReference` and `GGLWEAutomorphismReference`, so a backend with
 //! only a fused GLWE automorphism hand-writes that one and macro-forwards the
 //! other two:
 //!
 //! ```ignore
-//! impl GLWEAutomorphismDefault<MyBackend> for Module<MyBackend> { /* 9 methods */ }
-//! impl_ggsw_automorphism_defaults_full!(MyBackend);
-//! impl_gglwe_automorphism_defaults_full!(MyBackend);
+//! impl GLWEAutomorphismReference<MyBackend> for Module<MyBackend> { /* 9 methods */ }
+//! impl_ggsw_automorphism_reference_full!(MyBackend);
+//! impl_gglwe_automorphism_reference_full!(MyBackend);
 //! ```
 //!
 //! Note the size of that first impl. A `*Default` trait is abstract, so an
 //! override owes *every* method, not just the interesting one:
-//! `GLWEKeyswitchDefault` is 3 methods, but `GLWEAutomorphismDefault` is 9 —
+//! `GLWEKeyswitchReference` is 3 methods, but `GLWEAutomorphismReference` is 9 —
 //! the plain and assign forms plus the `add`, `sub` and `sub_negate`
 //! compositions. An accelerator that only wants to replace the core map still
 //! writes the other six, forwarding them to
@@ -103,10 +103,10 @@ pub use polynomial_evaluation::*;
 pub use sampling::*;
 
 pub use crate::{
-    impl_conversion_defaults_full, impl_decryption_defaults_full, impl_encryption_defaults_full,
-    impl_gglwe_automorphism_defaults_full, impl_gglwe_external_product_defaults_full, impl_gglwe_keyswitch_defaults_full,
-    impl_ggsw_automorphism_defaults_full, impl_ggsw_external_product_defaults_full, impl_ggsw_keyswitch_defaults_full,
-    impl_glwe_automorphism_defaults_full, impl_glwe_external_product_defaults_full, impl_glwe_keyswitch_defaults_full,
-    impl_glwe_packing_defaults_full, impl_glwe_trace_defaults_full, impl_linear_transformation_defaults_full,
-    impl_lwe_keyswitch_defaults_full,
+    impl_conversion_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
+    impl_gglwe_automorphism_reference_full, impl_gglwe_external_product_reference_full, impl_gglwe_keyswitch_reference_full,
+    impl_ggsw_automorphism_reference_full, impl_ggsw_external_product_reference_full, impl_ggsw_keyswitch_reference_full,
+    impl_glwe_automorphism_reference_full, impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full,
+    impl_glwe_packing_reference_full, impl_glwe_trace_reference_full, impl_linear_transformation_reference_full,
+    impl_lwe_keyswitch_reference_full,
 };

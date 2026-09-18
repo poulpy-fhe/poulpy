@@ -21,8 +21,8 @@ use crate::{
 };
 use poulpy_core::GLWEBytesOf;
 
-pub trait CKKSMulDefault<BE: Backend> {
-    fn ckks_mul_tmp_bytes_default<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
+pub trait CKKSMulReference<BE: Backend> {
+    fn ckks_mul_tmp_bytes_reference<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
@@ -54,7 +54,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         lvl_0 + lvl_1
     }
 
-    fn ckks_mul_into_default<Dst, A, B, T>(
+    fn ckks_mul_into_reference<Dst, A, B, T>(
         &self,
         dst: &mut Dst,
         a: &A,
@@ -89,7 +89,13 @@ pub trait CKKSMulDefault<BE: Backend> {
         )
     }
 
-    fn ckks_mul_assign_default<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_assign_reference<Dst, A, T>(
+        &self,
+        dst: &mut Dst,
+        a: &A,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
@@ -116,7 +122,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         )
     }
 
-    fn ckks_prepare_right_default<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    fn ckks_prepare_right_reference<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
         Self: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
@@ -145,7 +151,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         })
     }
 
-    fn ckks_mul_prepared_assign_default<Dst, T>(
+    fn ckks_mul_prepared_assign_reference<Dst, T>(
         &self,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<BE>,
@@ -180,7 +186,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         )
     }
 
-    fn ckks_square_tmp_bytes_default<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
+    fn ckks_square_tmp_bytes_reference<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
     where
         Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
@@ -188,7 +194,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         T: GGLWEInfos,
         Self: GLWETensoring<BE>,
     {
-        // Mirror of `ckks_mul_tmp_bytes_default`: the op's tensor intermediate is
+        // Mirror of `ckks_mul_tmp_bytes_reference`: the op's tensor intermediate is
         // carved at the operand's effective width, which may exceed the
         // destination's.
         let tensor_layout = GLWELayout {
@@ -209,7 +215,13 @@ pub trait CKKSMulDefault<BE: Backend> {
         lvl_0 + lvl_1
     }
 
-    fn ckks_square_into_default<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_into_reference<Dst, A, T>(
+        &self,
+        dst: &mut Dst,
+        a: &A,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
@@ -235,7 +247,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         )
     }
 
-    fn ckks_square_assign_default<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_assign_reference<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
@@ -262,7 +274,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         )
     }
 
-    fn ckks_mul_pt_vec_tmp_bytes_default<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
+    fn ckks_mul_pt_vec_tmp_bytes_reference<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
     where
         Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
@@ -277,7 +289,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         self.glwe_bytes_of_from_infos(a) + self.glwe_mul_plain_tmp_bytes(res, a, &b_infos)
     }
 
-    fn ckks_mul_pt_const_tmp_bytes_default<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
+    fn ckks_mul_pt_const_tmp_bytes_reference<R, A>(&self, res: &R, a: &A, b_k: TorusPrecision) -> usize
     where
         Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
@@ -295,7 +307,7 @@ pub trait CKKSMulDefault<BE: Backend> {
                 .max(self.glwe_rotate_tmp_bytes())
     }
 
-    fn ckks_mul_pt_vec_into_default<Dst, A, P>(
+    fn ckks_mul_pt_vec_into_reference<Dst, A, P>(
         &self,
         dst: &mut Dst,
         a: &A,
@@ -322,7 +334,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_mul_pt_vec_assign_default<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_pt_vec_assign_reference<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
         Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + VecZnxCopy<BE>,
@@ -349,7 +361,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_mul_pt_const_into_default<Dst, A, P>(
+    fn ckks_mul_pt_const_into_reference<Dst, A, P>(
         &self,
         dst: &mut Dst,
         a: &A,
@@ -378,7 +390,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_mul_pt_const_assign_default<Dst, P>(
+    fn ckks_mul_pt_const_assign_reference<Dst, P>(
         &self,
         dst: &mut Dst,
         cnst: &P,

@@ -10,14 +10,14 @@ use poulpy_hal::{
 
 use crate::{
     CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_binary,
-    reference::{CKKSPlaintextDefault, carry_verb::ckks_carry_verb_default},
     layouts::CKKSModuleAlloc,
+    reference::{CKKSPlaintextReference, carry_verb::ckks_carry_verb_reference},
 };
 
-ckks_carry_verb_default! {
+ckks_carry_verb_reference! {
     verb: add,
     doc_verb: "addition",
-    trait_name: CKKSAddDefault,
+    trait_name: CKKSAddReference,
     glwe_bound: GLWEAdd,
     glwe_into: glwe_add_into,
     glwe_assign: glwe_add_assign,

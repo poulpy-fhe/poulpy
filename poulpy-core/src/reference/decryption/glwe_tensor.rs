@@ -8,7 +8,7 @@ use poulpy_hal::{
 
 use crate::{
     ScratchArenaTakeCore,
-    decryption::{glwe_decrypt_backend_inner, glwe_decrypt_tmp_bytes_default},
+    decryption::{glwe_decrypt_backend_inner, glwe_decrypt_tmp_bytes_reference},
     layouts::{
         GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
         prepared::{
@@ -18,7 +18,7 @@ use crate::{
     },
 };
 
-pub fn glwe_tensor_decrypt_tmp_bytes_default<M, BE: Backend, A>(module: &M, infos: &A) -> usize
+pub fn glwe_tensor_decrypt_tmp_bytes_reference<M, BE: Backend, A>(module: &M, infos: &A) -> usize
 where
     M: ModuleN
         + VecZnxDftBytesOf
@@ -32,12 +32,12 @@ where
 
     let rank: usize = infos.rank().into();
     let lvl_0: usize = module.glwe_secret_prepared_bytes_of((crate::layouts::pairs(rank) + rank).into());
-    let lvl_1: usize = glwe_decrypt_tmp_bytes_default::<M, BE, _>(module, infos);
+    let lvl_1: usize = glwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, infos);
 
     lvl_0 + lvl_1
 }
 
-pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S1: Data>(
+pub fn glwe_tensor_decrypt_reference<M, BE: Backend, R: Data, P: Data, S0: Data, S1: Data>(
     module: &M,
     res: &GLWETensor<R, BE::ZnxWord>,
     pt: &mut GLWEPlaintext<P, BE::ZnxWord>,
@@ -64,10 +64,10 @@ pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S
     GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
 {
     assert!(
-        scratch.available() >= glwe_tensor_decrypt_tmp_bytes_default::<M, BE, _>(module, res),
+        scratch.available() >= glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _>(module, res),
         "scratch.available(): {} < GLWETensorDecrypt::glwe_tensor_decrypt_tmp_bytes: {}",
         scratch.available(),
-        glwe_tensor_decrypt_tmp_bytes_default::<M, BE, _>(module, res)
+        glwe_tensor_decrypt_tmp_bytes_reference::<M, BE, _>(module, res)
     );
 
     let rank: usize = sk.rank().as_usize();

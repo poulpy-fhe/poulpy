@@ -634,7 +634,7 @@ pub fn ggsw_backend_mut_from_mut<'a, 'b, BE: Backend>(ggsw: &'a mut GGSW<BE::Buf
 }
 
 /// Row-view adapter that lets a `GGSWToBackendMut` type satisfy both `GGSWAtViewRef` and
-/// `GGSWAtViewMut` simultaneously, which is required by several default algorithms that need
+/// `GGSWAtViewMut` simultaneously, which is required by several reference algorithms that need
 /// to read and write individual GLWE rows through the trait interface.
 pub struct GGSWBackendRowViewMut<'a, BE: Backend + 'a> {
     inner: GGSWBackendMut<'a, BE>,

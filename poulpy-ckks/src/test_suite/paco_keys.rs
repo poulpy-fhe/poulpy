@@ -37,12 +37,12 @@ use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta,
     api::{CKKSAddOps, CKKSLinearTransformationOps, CKKSMulOps},
+    encoding::paco::{coeff_enc::glwe_column_residues, cpx::Cpx},
+    layouts::{PaCoPlan, PaCoSecretSpec},
     reference::paco::{
         lt::paco_c2s_factors,
         ops::{PaCoSlotOps, fold_rotations},
     },
-    encoding::paco::{coeff_enc::glwe_column_residues, cpx::Cpx},
-    layouts::{PaCoPlan, PaCoSecretSpec},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,

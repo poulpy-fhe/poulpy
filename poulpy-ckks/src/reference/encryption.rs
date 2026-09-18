@@ -11,11 +11,11 @@ use poulpy_hal::{
 use crate::GLWEToBackendRef;
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub};
 
-use super::CKKSPlaintextDefault;
+use super::CKKSPlaintextReference;
 use poulpy_core::GLWEBytesOf;
 
-pub trait CKKSEncryptionDefault<BE: Backend> {
-    fn ckks_encrypt_sk_tmp_bytes_default<A>(&self, ct_infos: &A) -> usize
+pub trait CKKSEncryptionReference<BE: Backend> {
+    fn ckks_encrypt_sk_tmp_bytes_reference<A>(&self, ct_infos: &A) -> usize
     where
         A: GLWEInfos + CKKSInfos,
         Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshAdd<BE> + VecZnxRshTmpBytes,
@@ -27,7 +27,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn ckks_encrypt_sk_default<Dct, Dpt, S, E>(
+    fn ckks_encrypt_sk_reference<Dct, Dpt, S, E>(
         &self,
         ct: &mut Dct,
         pt: &Dpt,
@@ -42,7 +42,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
-        Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextDefault<BE>,
+        Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshAdd<BE> + VecZnxRshAdd<BE> + CKKSPlaintextReference<BE>,
     {
         self.glwe_encrypt_zero_sk(ct, sk, enc_infos, source_xe, source_xa, scratch);
         ct.set_log_budget(checked_log_budget_sub(
@@ -51,7 +51,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
             pt.log_delta(),
         )?);
         ct.set_log_delta(pt.log_delta());
-        self.ckks_add_pt_vec_into_default(ct, pt, scratch)?;
+        self.ckks_add_pt_vec_into_reference(ct, pt, scratch)?;
         // The raw limb-add above can leave digits one bit beyond the `base2k`
         // normalized range; a fresh encryption is typed `Normalized`, so
         // propagate the carries before returning (the crate's digit contract
@@ -60,11 +60,12 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_decrypt_tmp_bytes_default<A>(&self, ct_infos: &A) -> usize
+    fn ckks_decrypt_tmp_bytes_reference<A>(&self, ct_infos: &A) -> usize
     where
         Self: GLWEBytesOf<BE>,
         A: GLWEInfos + CKKSInfos,
-        Self: GLWEDecrypt<BE> + VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes + CKKSPlaintextDefault<BE>,
+        Self:
+            GLWEDecrypt<BE> + VecZnxLsh<BE> + VecZnxLshTmpBytes + VecZnxRsh<BE> + VecZnxRshTmpBytes + CKKSPlaintextReference<BE>,
     {
         self.glwe_plaintext_bytes_of_from_infos(ct_infos)
             + self
@@ -72,20 +73,26 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
                 // `ckks_extract_pt` shifts into the destination plaintext, not
                 // into the ciphertext: size it by the destination's allocated
                 // limb width, which this signature bounds by the ciphertext's.
-                .max(self.ckks_extract_pt_tmp_bytes_default(ct_infos.max_size()))
+                .max(self.ckks_extract_pt_tmp_bytes_reference(ct_infos.max_size()))
     }
 
-    fn ckks_decrypt_default<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_decrypt_reference<Dpt, Dct, S>(
+        &self,
+        pt: &mut Dpt,
+        ct: &Dct,
+        sk: &S,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         Dpt: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
-        Self: GLWEDecrypt<BE> + CKKSPlaintextDefault<BE> + VecZnxLsh<BE> + VecZnxRsh<BE>,
+        Self: GLWEDecrypt<BE> + CKKSPlaintextReference<BE> + VecZnxLsh<BE> + VecZnxRsh<BE>,
     {
         let (mut full_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
         self.glwe_decrypt(ct, &mut full_pt, sk, &mut scratch_1);
 
-        CKKSPlaintextDefault::ckks_extract_pt_with_meta_default(self, pt, &full_pt, ct.meta(), &mut scratch_1)?;
+        CKKSPlaintextReference::ckks_extract_pt_with_meta_reference(self, pt, &full_pt, ct.meta(), &mut scratch_1)?;
 
         Ok(())
     }

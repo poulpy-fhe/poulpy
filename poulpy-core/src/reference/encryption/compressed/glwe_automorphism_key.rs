@@ -19,12 +19,12 @@ use crate::{
 };
 
 #[doc(hidden)]
-pub trait GLWEAutomorphismKeyCompressedEncryptSkDefault<BE: Backend> {
-    fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+pub trait GLWEAutomorphismKeyCompressedEncryptSkReference<BE: Backend> {
+    fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn glwe_automorphism_key_compressed_encrypt_sk_default<R, S, E>(
+    fn glwe_automorphism_key_compressed_encrypt_sk_reference<R, S, E>(
         &self,
         res: &mut R,
         p: i64,
@@ -39,11 +39,11 @@ pub trait GLWEAutomorphismKeyCompressedEncryptSkDefault<BE: Backend> {
         S: GLWESecretToBackendRef<BE> + GLWEInfos;
 }
 
-impl<BE: Backend> GLWEAutomorphismKeyCompressedEncryptSkDefault<BE> for Module<BE>
+impl<BE: Backend> GLWEAutomorphismKeyCompressedEncryptSkReference<BE> for Module<BE>
 where
     Self: ModuleN + GaloisElement + VecZnxAutomorphism<BE> + GGLWECompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
 {
-    fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    fn glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
@@ -56,7 +56,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_automorphism_key_compressed_encrypt_sk_default<R, S, E>(
+    fn glwe_automorphism_key_compressed_encrypt_sk_reference<R, S, E>(
         &self,
         res: &mut R,
         p: i64,
@@ -75,10 +75,10 @@ where
         assert_eq!(res.rank_out(), res.rank_in());
         assert_eq!(sk.rank(), res.rank_out());
         assert!(
-            scratch.available() >= self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_default(res),
+            scratch.available() >= self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference(res),
             "scratch.available(): {} < GLWEAutomorphismKeyCompressedEncryptSk::glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_default(res)
+            self.glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes_reference(res)
         );
 
         let scratch = scratch.borrow();

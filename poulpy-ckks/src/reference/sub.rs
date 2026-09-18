@@ -10,14 +10,14 @@ use poulpy_hal::{
 
 use crate::{
     CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_binary,
-    reference::{CKKSPlaintextDefault, carry_verb::ckks_carry_verb_default},
     layouts::CKKSModuleAlloc,
+    reference::{CKKSPlaintextReference, carry_verb::ckks_carry_verb_reference},
 };
 
-ckks_carry_verb_default! {
+ckks_carry_verb_reference! {
     verb: sub,
     doc_verb: "subtraction",
-    trait_name: CKKSSubDefault,
+    trait_name: CKKSSubReference,
     glwe_bound: GLWESub,
     glwe_into: glwe_sub,
     glwe_assign: glwe_sub_assign,

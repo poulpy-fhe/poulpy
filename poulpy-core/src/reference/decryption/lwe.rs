@@ -8,7 +8,7 @@ use poulpy_hal::{
 
 use crate::layouts::{LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetBase2k};
 
-pub fn lwe_decrypt_tmp_bytes_default<M, BE: Backend, A>(module: &M, infos: &A) -> usize
+pub fn lwe_decrypt_tmp_bytes_reference<M, BE: Backend, A>(module: &M, infos: &A) -> usize
 where
     M: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
     A: LWEInfos,
@@ -19,7 +19,7 @@ where
         + 2 * (BE::SCRATCH_ALIGN - 1)
 }
 
-pub fn lwe_decrypt_default<M, BE, R, P, S>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+pub fn lwe_decrypt_reference<M, BE, R, P, S>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
 where
     M: VecZnxScalarProduct<BE>
         + VecZnxBigInnerSum<BE>
@@ -40,10 +40,10 @@ where
         assert_eq!(res.n(), sk.n());
     }
     assert!(
-        scratch.available() >= lwe_decrypt_tmp_bytes_default::<M, BE, _>(module, &res),
+        scratch.available() >= lwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, &res),
         "scratch.available(): {} < LWEDecrypt::lwe_decrypt_tmp_bytes: {}",
         scratch.available(),
-        lwe_decrypt_tmp_bytes_default::<M, BE, _>(module, &res)
+        lwe_decrypt_tmp_bytes_reference::<M, BE, _>(module, &res)
     );
 
     let scratch = scratch.borrow();
