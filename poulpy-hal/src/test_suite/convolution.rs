@@ -1,4 +1,5 @@
 use super::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+use crate::AlignedBuf;
 use crate::layouts::CnvPVecLToBackendMut;
 use crate::layouts::CnvPVecLToBackendRef;
 use crate::layouts::CnvPVecRToBackendMut;
@@ -1087,7 +1088,7 @@ fn idft_normalized<M, BE: crate::test_suite::TestBackend>(
     res_dft: &mut VecZnxDftOwned<BE>,
     res_col: usize,
     scratch: &mut ScratchOwned<BE>,
-) -> VecZnx<Vec<u8>, i64>
+) -> VecZnx<AlignedBuf, i64>
 where
     M: ModuleN + VecZnxIdftApplyTmpA<BE> + VecZnxBigAlloc<BE> + VecZnxBigNormalize<BE>,
 {

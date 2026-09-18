@@ -1,5 +1,5 @@
 use crate::{
-    alloc_aligned,
+    AlignedBuf, alloc_aligned,
     layouts::{
         Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, MatZnxInfos, ReaderFrom,
         ToOwnedDeep, VecZnx, WriterTo, ZnxInfos, ZnxWord, ZnxZero,
@@ -91,10 +91,10 @@ impl<D: HostDataRef, W: ZnxWord> DigestU64 for MatZnx<D, W> {
 }
 
 impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for MatZnx<D, W> {
-    type Owned = MatZnx<Vec<u8>, W>;
+    type Owned = MatZnx<AlignedBuf, W>;
     fn to_owned_deep(&self) -> Self::Owned {
         MatZnx {
-            data: self.data.as_ref().to_vec(),
+            data: AlignedBuf::from(self.data.as_ref()),
             shape: self.shape,
             _phantom: PhantomData,
         }
@@ -217,16 +217,16 @@ impl<D: Data, W: ZnxWord> MatZnx<D, W> {
     /// Returns the number of bytes required to store the matrix.
     pub fn bytes_of(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
         crate::layouts::checked_product(
-            &[rows, cols_in, VecZnx::<Vec<u8>, W>::bytes_of(n, cols_out, size)],
+            &[rows, cols_in, VecZnx::<AlignedBuf, W>::bytes_of(n, cols_out, size)],
             "MatZnx byte size",
         )
     }
 }
 
-impl<W: ZnxWord> MatZnx<Vec<u8>, W> {
+impl<W: ZnxWord> MatZnx<AlignedBuf, W> {
     /// Allocates a zero-initialized `MatZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
     pub(crate) fn alloc(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> Self {
-        let data: Vec<u8> = alloc_aligned(Self::bytes_of(n, rows, cols_in, cols_out, size));
+        let data: AlignedBuf = alloc_aligned(Self::bytes_of(n, rows, cols_in, cols_out, size));
         Self {
             data,
             shape: MatZnxShape::new(n, rows, cols_in, cols_out, size),
@@ -234,10 +234,9 @@ impl<W: ZnxWord> MatZnx<Vec<u8>, W> {
         }
     }
 
-    pub fn from_bytes(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, bytes: impl Into<Vec<u8>>) -> Self {
-        let data: Vec<u8> = bytes.into();
+    pub fn from_bytes(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, bytes: impl Into<AlignedBuf>) -> Self {
+        let data: AlignedBuf = bytes.into();
         assert!(data.len() == Self::bytes_of(n, rows, cols_in, cols_out, size));
-        crate::assert_alignment(data.as_ptr());
         Self {
             data,
             shape: MatZnxShape::new(n, rows, cols_in, cols_out, size),
@@ -440,8 +439,8 @@ impl<D: HostDataMut, W: ZnxWord> FillUniform for MatZnx<D, W> {
     }
 }
 
-/// Owned `MatZnx` backed by a `Vec<u8>`.
-pub type MatZnxOwned<W> = MatZnx<Vec<u8>, W>;
+/// Owned `MatZnx` backed by an `AlignedBuf`.
+pub type MatZnxOwned<W> = MatZnx<AlignedBuf, W>;
 /// Mutably borrowed `MatZnx`.
 pub type MatZnxMut<'a, W> = MatZnx<&'a mut [u8], W>;
 /// Immutably borrowed `MatZnx`.

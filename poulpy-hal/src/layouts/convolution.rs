@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use crate::AlignedBuf;
 use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, HostDataRef, PrepareHint, VecZnxInfos, ZnxInfos, ZnxView};
 
 #[repr(C)]
@@ -132,12 +133,12 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
         cols: usize,
         size: usize,
         hint: PrepareHint,
-        bytes: impl Into<Vec<u8>>,
+        bytes: impl Into<AlignedBuf>,
     ) -> CnvPVecR<B::OwnedBuf, W, B>
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: Vec<u8> = bytes.into();
+        let data: AlignedBuf = bytes.into();
         assert!(data.len() == B::bytes_of_cnv_pvec_right(n, cols, size, hint));
         let data: B::OwnedBuf = B::from_host_bytes(&data);
         CnvPVecR {
@@ -257,12 +258,12 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
         cols: usize,
         size: usize,
         hint: PrepareHint,
-        bytes: impl Into<Vec<u8>>,
+        bytes: impl Into<AlignedBuf>,
     ) -> CnvPVecL<B::OwnedBuf, W, B>
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: Vec<u8> = bytes.into();
+        let data: AlignedBuf = bytes.into();
         assert!(data.len() == B::bytes_of_cnv_pvec_left(n, cols, size, hint));
         let data: B::OwnedBuf = B::from_host_bytes(&data);
         CnvPVecL {

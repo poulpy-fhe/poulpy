@@ -5,6 +5,7 @@ use std::{
 
 use std::fmt;
 
+use crate::AlignedBuf;
 use crate::layouts::{
     Backend, BigWord, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, VecZnxInfos, VecZnxShape, ZnxInfos,
     ZnxView, ZnxViewMut, ZnxZero,
@@ -169,11 +170,11 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     /// # Panics
     ///
     /// Panics if the buffer length does not equal `B::bytes_of_vec_znx_big(n, cols, size)`.
-    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<Vec<u8>>) -> VecZnxBigOwned<B>
+    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> VecZnxBigOwned<B>
     where
         B: Backend<OwnedBuf = D>,
     {
-        let data: Vec<u8> = bytes.into();
+        let data: AlignedBuf = bytes.into();
         assert!(data.len() == B::bytes_of_vec_znx_big(n, cols, size));
         let data: <B as Backend>::OwnedBuf = B::from_host_bytes(&data);
         VecZnxBig {

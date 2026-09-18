@@ -6,7 +6,7 @@ use std::{
 use rand_core::Rng;
 
 use crate::{
-    alloc_aligned,
+    AlignedBuf, alloc_aligned,
     layouts::{
         Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx,
         VecZnxBackendMut, VecZnxBackendRef, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
@@ -20,7 +20,7 @@ use crate::{
 /// (`size == 1`). It is the primary type for plaintext polynomials,
 /// secret keys, and other single-precision ring elements.
 ///
-/// The type parameter `D` controls ownership: `Vec<u8>` for owned,
+/// The type parameter `D` controls ownership: `AlignedBuf` for owned,
 /// `&[u8]` for shared borrows, `&mut [u8]` for mutable borrows.
 /// The type parameter `W` names the coefficient word (byte-layout
 /// contract) of the buffer.
@@ -78,10 +78,10 @@ impl<D: HostDataRef, W: ZnxWord> DigestU64 for ScalarZnx<D, W> {
 }
 
 impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for ScalarZnx<D, W> {
-    type Owned = ScalarZnx<Vec<u8>, W>;
+    type Owned = ScalarZnx<AlignedBuf, W>;
     fn to_owned_deep(&self) -> Self::Owned {
         ScalarZnx {
-            data: self.data.as_ref().to_vec(),
+            data: AlignedBuf::from(self.data.as_ref()),
             shape: self.shape,
             _phantom: PhantomData,
         }
@@ -133,10 +133,10 @@ impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
     }
 }
 
-impl<W: ZnxWord> ScalarZnx<Vec<u8>, W> {
+impl<W: ZnxWord> ScalarZnx<AlignedBuf, W> {
     /// Allocates a zero-initialized `ScalarZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
     pub(crate) fn alloc(n: usize, cols: usize) -> Self {
-        let data: Vec<u8> = alloc_aligned::<u8>(Self::bytes_of(n, cols));
+        let data: AlignedBuf = alloc_aligned::<u8>(Self::bytes_of(n, cols));
         Self {
             data,
             shape: ScalarZnxShape::new(n, cols),
@@ -148,12 +148,10 @@ impl<W: ZnxWord> ScalarZnx<Vec<u8>, W> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `bytes_of(n, cols)` or
-    /// the buffer is not aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
-    pub fn from_bytes(n: usize, cols: usize, bytes: impl Into<Vec<u8>>) -> Self {
-        let data: Vec<u8> = bytes.into();
+    /// Panics if the buffer length does not equal `bytes_of(n, cols)`.
+    pub fn from_bytes(n: usize, cols: usize, bytes: impl Into<AlignedBuf>) -> Self {
+        let data: AlignedBuf = bytes.into();
         assert!(data.len() == Self::bytes_of(n, cols));
-        crate::assert_alignment(data.as_ptr());
         Self {
             data,
             shape: ScalarZnxShape::new(n, cols),
@@ -192,8 +190,8 @@ impl<D: HostDataMut, W: ZnxWord> FillUniform for ScalarZnx<D, W> {
     }
 }
 
-/// Owned `ScalarZnx` backed by a `Vec<u8>`.
-pub type ScalarZnxOwned<W> = ScalarZnx<Vec<u8>, W>;
+/// Owned `ScalarZnx` backed by an `AlignedBuf`.
+pub type ScalarZnxOwned<W> = ScalarZnx<AlignedBuf, W>;
 /// Shared backend-native borrow of a `ScalarZnx`.
 pub type ScalarZnxBackendRef<'a, B> = ScalarZnx<<B as Backend>::BufRef<'a>, <B as Backend>::ZnxWord>;
 /// Mutable backend-native borrow of a `ScalarZnx`.

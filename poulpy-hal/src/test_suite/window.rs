@@ -3,6 +3,7 @@
 //! leaves everything outside the window untouched.
 
 use crate::{
+    AlignedBuf,
     api::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxAdd, VecZnxAutomorphism, VecZnxBigAdd, VecZnxBigFromSmall,
         VecZnxBigNegate, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxCopy, VecZnxDftAlloc,
@@ -294,7 +295,7 @@ where
     assert!(add_into_ok, "vec_znx_add rejected a windowed view unexpectedly");
 }
 
-fn download_big<BE: Backend>(v: &VecZnxBigOwned<BE>) -> VecZnxBig<Vec<u8>, BE::BigWord, BE> {
+fn download_big<BE: Backend>(v: &VecZnxBigOwned<BE>) -> VecZnxBig<AlignedBuf, BE::BigWord, BE> {
     let host_bytes = BE::to_host_bytes(v.data());
     VecZnxBig::from_shape(HostBytesBackend::from_host_bytes(&host_bytes), v.shape())
 }

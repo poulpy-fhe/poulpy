@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    alloc_aligned,
+    AlignedBuf, alloc_aligned,
     layouts::{
         Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx,
         ToOwnedDeep, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
@@ -182,7 +182,7 @@ impl VecZnxShape {
 ///
 /// **Memory layout:** see [`VecZnxShape`].
 ///
-/// The type parameter `D` controls ownership: `Vec<u8>` for owned,
+/// The type parameter `D` controls ownership: `AlignedBuf` for owned,
 /// `&[u8]` for shared borrows, `&mut [u8]` for mutable borrows.
 /// The type parameter `W` names the coefficient word (byte-layout
 /// contract) of the buffer.
@@ -241,11 +241,11 @@ impl<D: HostDataRef, W: ZnxWord> DigestU64 for VecZnx<D, W> {
 }
 
 impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for VecZnx<D, W> {
-    type Owned = VecZnx<Vec<u8>, W>;
+    type Owned = VecZnx<AlignedBuf, W>;
     fn to_owned_deep(&self) -> Self::Owned {
         crate::layouts::assert_dense(self, "VecZnx::to_owned_deep");
         VecZnx {
-            data: self.data.as_ref().to_vec(),
+            data: AlignedBuf::from(self.data.as_ref()),
             shape: self.shape,
             _phantom: PhantomData,
         }
@@ -253,8 +253,8 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for VecZnx<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> VecZnx<D, W> {
-    /// Rebuilds this backend-owned vector as a host-owned [`VecZnx<Vec<u8>>`].
-    pub fn to_host_owned<BE>(&self) -> VecZnx<Vec<u8>, W>
+    /// Rebuilds this backend-owned vector as a host-owned [`VecZnx<AlignedBuf>`].
+    pub fn to_host_owned<BE>(&self) -> VecZnx<AlignedBuf, W>
     where
         BE: Backend<OwnedBuf = D>,
     {
@@ -385,10 +385,10 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     }
 }
 
-impl<W: ZnxWord> VecZnx<Vec<u8>, W> {
+impl<W: ZnxWord> VecZnx<AlignedBuf, W> {
     /// Allocates a zero-initialized `VecZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
     pub(crate) fn alloc(n: usize, cols: usize, size: usize) -> Self {
-        let data: Vec<u8> = alloc_aligned::<u8>(Self::bytes_of(n, cols, size));
+        let data: AlignedBuf = alloc_aligned::<u8>(Self::bytes_of(n, cols, size));
         Self {
             data,
             shape: VecZnxShape::new(n, cols, size),
@@ -400,10 +400,9 @@ impl<W: ZnxWord> VecZnx<Vec<u8>, W> {
     ///
     /// # Panics
     ///
-    /// Panics if the buffer length does not equal `bytes_of(n, cols, size)` or
-    /// the buffer is not aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
-    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<Vec<u8>>) -> Self {
-        let data: Vec<u8> = bytes.into();
+    /// Panics if the buffer length does not equal `bytes_of(n, cols, size)`.
+    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<AlignedBuf>) -> Self {
+        let data: AlignedBuf = bytes.into();
         assert!(
             data.len() == Self::bytes_of(n, cols, size),
             "from_bytes: data.len()={} != bytes_of({}, {}, {})={}",
@@ -413,7 +412,6 @@ impl<W: ZnxWord> VecZnx<Vec<u8>, W> {
             size,
             Self::bytes_of(n, cols, size)
         );
-        crate::assert_alignment(data.as_ptr());
         Self {
             data,
             shape: VecZnxShape::new(n, cols, size),
@@ -519,8 +517,8 @@ impl<D: HostDataMut, W: ZnxWord> FillUniform for VecZnx<D, W> {
     }
 }
 
-/// Owned `VecZnx` backed by a `Vec<u8>`.
-pub type VecZnxOwned<W> = VecZnx<Vec<u8>, W>;
+/// Owned `VecZnx` backed by an `AlignedBuf`.
+pub type VecZnxOwned<W> = VecZnx<AlignedBuf, W>;
 /// Mutably borrowed `VecZnx`.
 pub type VecZnxMut<'a, W> = VecZnx<&'a mut [u8], W>;
 /// Immutably borrowed `VecZnx`.
@@ -837,7 +835,7 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for VecZnx<D, W> {
 
 #[cfg(test)]
 mod window_shape_tests {
-    use super::VecZnxShape;
+    use super::{AlignedBuf, VecZnxShape};
 
     #[test]
     fn dense_shape_matches_legacy_formula() {
@@ -887,8 +885,8 @@ mod window_shape_tests {
 
     use crate::layouts::{VecZnx, ZnxView, ZnxViewMut, ZnxZero};
 
-    fn ramp(n: usize, cols: usize, size: usize) -> VecZnx<Vec<u8>, i64> {
-        let mut v = VecZnx::<Vec<u8>, i64>::alloc(n, cols, size);
+    fn ramp(n: usize, cols: usize, size: usize) -> VecZnx<AlignedBuf, i64> {
+        let mut v = VecZnx::<AlignedBuf, i64>::alloc(n, cols, size);
         for j in 0..size {
             for i in 0..cols {
                 for (k, x) in v.at_mut(i, j).iter_mut().enumerate() {
