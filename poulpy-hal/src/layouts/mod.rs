@@ -685,21 +685,34 @@ macro_rules! impl_backend_from {
 mod host_transfer_tests {
     use super::*;
 
-    /// `from_bytes` takes the aligned fast path unchanged, but on the copying
-    /// path it pads an unaligned length up to the allocation granularity and
-    /// zeroes the tail.
+    /// `from_bytes` returns an aligned vector as is, and copies an unaligned
+    /// one into a buffer padded to the allocation granularity with a zero
+    /// tail. Each path is pinned on the very vector handed over: alignment is
+    /// a property of one allocation, not of its clones.
     #[test]
-    fn from_bytes_unaligned_length_pads_and_zeroes() {
-        let input = vec![1u8; 100];
-        let was_aligned = crate::is_aligned(input.as_ptr());
-        let buf = <HostBytesBackend as Backend>::from_bytes(input.clone());
-        if was_aligned {
-            assert_eq!(buf.len(), 100, "the aligned fast path returns the vector as is");
-        } else {
-            assert_eq!(buf.len(), 128, "unaligned input is copied into a padded buffer");
-            assert_eq!(&buf[..100], &input[..]);
-            assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
-        }
+    fn from_bytes_keeps_aligned_and_pads_unaligned() {
+        let aligned: Vec<u8> = crate::alloc_aligned::<u8>(100);
+        let ptr = aligned.as_ptr();
+        let buf = <HostBytesBackend as Backend>::from_bytes(aligned);
+        assert_eq!(buf.as_ptr(), ptr, "the aligned fast path returns the vector as is");
+        assert_eq!(buf.len(), 128);
+
+        // Hold allocations until one lands off the 64-byte grid; a 16-byte
+        // allocation granularity yields one within a few tries.
+        let mut held: Vec<Vec<u8>> = Vec::new();
+        let unaligned: Vec<u8> = loop {
+            let candidate = vec![1u8; 100];
+            if !crate::is_aligned(candidate.as_ptr()) {
+                break candidate;
+            }
+            assert!(held.len() < 64, "no unaligned allocation found");
+            held.push(candidate);
+        };
+        let expected = unaligned.clone();
+        let buf = <HostBytesBackend as Backend>::from_bytes(unaligned);
+        assert_eq!(buf.len(), 128, "unaligned input is copied into a padded buffer");
+        assert_eq!(&buf[..100], &expected[..]);
+        assert!(buf[100..].iter().all(|&b| b == 0), "padding tail not zero");
     }
 
     /// `from_host_bytes` always copies, so an unaligned length is padded and
