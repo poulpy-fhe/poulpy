@@ -307,22 +307,22 @@ fn test_convolution_by_const_add_rayon() {
 
 #[test]
 fn large_ring_ntt_log17() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Neon>(1 << 17, 50);
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Neon>(1 << 17);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn large_ring_ntt_rayon_log17() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30NeonRayon>(1 << 17, 50);
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30NeonRayon>(1 << 17);
 }
 
 #[test]
 fn large_ring_ntt_log18() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Neon>(1 << 18, 50);
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Neon>(1 << 18);
 }
 
 #[cfg(feature = "enable-rayon")]
 #[test]
 fn large_ring_ntt_rayon_log18() {
-    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30NeonRayon>(1 << 18, 50);
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30NeonRayon>(1 << 18);
 }
