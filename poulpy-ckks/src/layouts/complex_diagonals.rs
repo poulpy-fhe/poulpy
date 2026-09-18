@@ -17,7 +17,7 @@
 //! giant-step bucketing in scheme-agnostic code; only the per-diagonal encode
 //! into a CKKS plaintext is supplied by the scheme layer.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use poulpy_core::layouts::{
     DiagonalArithmetic, Diagonals, Evaluate, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
@@ -27,19 +27,95 @@ use poulpy_core::layouts::{
 /// A complex slot-matrix linear map for CKKS.
 ///
 /// Both real and imaginary diagonal maps share the same `rows`/`cols` packing.
+/// A diagonal may carry a period tag ([`Self::set_periodic`]): the slot count
+/// after which the complex vector repeats. [`Self::build_transform`] encodes a
+/// tagged diagonal on that many slots, its plaintext polynomial being sparse
+/// by the factor `slots / period`; an untagged diagonal ([`Self::set_re`],
+/// [`Self::set_im`]) reads as dense. The maps are private so every write goes
+/// through a setter that keeps the tag honest.
 #[derive(Clone, Debug)]
 pub struct ComplexDiagonals<T> {
     /// Real parts of the diagonals.
-    pub re: Diagonals<T>,
+    re: Diagonals<T>,
     /// Imaginary parts of the diagonals.
-    pub im: Diagonals<T>,
+    im: Diagonals<T>,
+    /// Period tags per diagonal, keyed like the maps; a missing key means
+    /// `slots`.
+    periods: BTreeMap<i64, usize>,
 }
 
 impl<T> ComplexDiagonals<T> {
-    /// Wraps a real/imaginary pair, asserting matching slot count.
+    /// Wraps a real/imaginary pair, untagged, asserting matching slot count.
     pub fn new(re: Diagonals<T>, im: Diagonals<T>) -> Self {
         assert_eq!(re.slots(), im.slots(), "complex diagonals slot count mismatch");
-        Self { re, im }
+        Self {
+            re,
+            im,
+            periods: BTreeMap::new(),
+        }
+    }
+
+    /// Real parts of the diagonals.
+    pub fn re(&self) -> &Diagonals<T> {
+        &self.re
+    }
+
+    /// Imaginary parts of the diagonals.
+    pub fn im(&self) -> &Diagonals<T> {
+        &self.im
+    }
+
+    fn key(&self, index: i64) -> i64 {
+        index.rem_euclid(self.slots() as i64)
+    }
+
+    /// Sets the real part of the diagonal at `index`, which becomes untagged.
+    pub fn set_re(&mut self, index: i64, values: Vec<T>) {
+        self.periods.remove(&self.key(index));
+        self.re.set(index, values);
+    }
+
+    /// Sets the imaginary part of the diagonal at `index`, which becomes
+    /// untagged.
+    pub fn set_im(&mut self, index: i64, values: Vec<T>) {
+        self.periods.remove(&self.key(index));
+        self.im.set(index, values);
+    }
+
+    /// Sets both parts of the diagonal at `index` and tags it with `period`,
+    /// the slot count after which the complex vector repeats:
+    /// `re[j] == re[j % period]` and `im[j] == im[j % period]` for every `j`,
+    /// checked here, with `period` a power-of-two divisor of `slots`.
+    /// `period == slots` stores the diagonal untagged.
+    pub fn set_periodic(&mut self, index: i64, re: Vec<T>, im: Vec<T>, period: usize)
+    where
+        T: PartialEq,
+    {
+        let slots = self.slots();
+        let key = self.key(index);
+        if period == slots {
+            self.periods.remove(&key);
+        } else {
+            assert!(
+                period.is_power_of_two() && slots.is_multiple_of(period),
+                "period {period} must be a power-of-two divisor of slots {slots}",
+            );
+            for values in [&re, &im] {
+                assert_eq!(
+                    values.len(),
+                    slots,
+                    "diagonal length ({}) must equal slots ({slots})",
+                    values.len()
+                );
+                assert!(
+                    values.iter().enumerate().all(|(j, v)| *v == values[j % period]),
+                    "diagonal does not repeat every {period} slots",
+                );
+            }
+            self.periods.insert(key, period);
+        }
+        self.re.set(index, re);
+        self.im.set(index, im);
     }
 
     /// Slot vector length shared by the real and imaginary diagonal maps.
@@ -55,14 +131,13 @@ impl<T> ComplexDiagonals<T> {
         set.into_iter().collect()
     }
 
-    /// The slot count after which the diagonal at `index` repeats: the larger
-    /// of its real and imaginary tags ([`Diagonals::period`]), an absent side
-    /// counting as constant; `None` when neither side carries the index.
+    /// The slot count after which the diagonal at `index` repeats: its
+    /// [`Self::set_periodic`] tag, `slots` for an untagged diagonal, `None`
+    /// when neither part carries the index.
     pub fn diagonal_period(&self, index: i64) -> Option<usize> {
-        match (self.re.period(index), self.im.period(index)) {
-            (None, None) => None,
-            (re, im) => Some(re.unwrap_or(1).max(im.unwrap_or(1))),
-        }
+        let key = self.key(index);
+        (self.re.get(key).is_some() || self.im.get(key).is_some())
+            .then(|| self.periods.get(&key).copied().unwrap_or(self.slots()))
     }
 
     /// The slot count every diagonal of the map repeats over: the largest
@@ -81,10 +156,16 @@ impl<T> ComplexDiagonals<T> {
     /// Since `(Bre + i·Bim)ᵀ = (Bre)ᵀ + i·(Bim)ᵀ` (transpose is entry-wise on
     /// the complex matrix), this delegates to [`Diagonals::transpose`] on each
     /// part. After the call, [`Self::evaluate`] computes `Bᵀ·v = v·B` instead
-    /// of `B·v`, with no allocation of new diagonal vectors.
+    /// of `B·v`, with no allocation of new diagonal vectors. A rotation keeps
+    /// a period, so the tags travel with their diagonals.
     pub fn transpose(&mut self) {
         self.re.transpose();
         self.im.transpose();
+        let slots = self.slots() as i64;
+        let periods = std::mem::take(&mut self.periods);
+        for (j, period) in periods {
+            self.periods.insert((-j).rem_euclid(slots), period);
+        }
     }
 }
 
@@ -124,37 +205,30 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     /// Entry-wise complex conjugation of the underlying matrix (negates the
     /// imaginary diagonals in place, keeping their period tags). Satisfies
     /// `conj(M·v) = conj(M)·conj(v)`.
-    pub fn conjugate(&mut self)
-    where
-        T: PartialEq,
-    {
+    pub fn conjugate(&mut self) {
         for i in self.im.indexes() {
-            let period = self.im.period(i).expect("indexed diagonal present");
             let mut v = self.im.get(i).cloned().expect("indexed diagonal present");
             for x in v.iter_mut() {
                 let mut neg = T::zero();
                 neg.sub_assign(x);
                 *x = neg;
             }
-            self.im.set_periodic(i, v, period);
+            // Negation keeps a period, so the tag stays.
+            self.im.set(i, v);
         }
     }
 
     /// Multiplies every stored value by `s`, keeping the period tags.
-    pub fn scale(&mut self, s: &T)
-    where
-        T: PartialEq,
-    {
+    pub fn scale(&mut self, s: &T) {
         for part in [&mut self.re, &mut self.im] {
             for i in part.indexes() {
-                let period = part.period(i).expect("indexed diagonal present");
                 let scaled: Vec<T> = part
                     .get(i)
                     .expect("indexed diagonal present")
                     .iter()
                     .map(|x| x.mul(s))
                     .collect();
-                part.set_periodic(i, scaled, period);
+                part.set(i, scaled);
             }
         }
     }
@@ -206,8 +280,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
                     im_term.add_assign(&ai.mul(&br));
                     im[j as usize].add_assign(&im_term);
                 }
-                out.re.set_periodic(idx, re, period);
-                out.im.set_periodic(idx, im, period);
+                out.set_periodic(idx, re, im, period);
             }
         }
         out
@@ -285,8 +358,8 @@ mod tests {
     #[test]
     fn build_transform_encodes_on_the_largest_period() {
         let mut cd = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-        cd.re.set_periodic(0, vec![1.0, 2.0, 1.0, 2.0], 2);
-        cd.im.set_periodic(1, vec![3.0; 4], 1);
+        cd.set_periodic(0, vec![1.0, 2.0, 1.0, 2.0], vec![0.0; 4], 2);
+        cd.set_periodic(1, vec![0.0; 4], vec![3.0; 4], 1);
         assert_eq!(cd.period(), 2);
         let lt = cd.build_transform(LinearTransformationStrategy::Direct, |re, im| (re.to_vec(), im.to_vec()));
         let got: Vec<_> = lt
@@ -297,20 +370,22 @@ mod tests {
         assert_eq!(got, vec![(vec![1.0, 2.0], vec![0.0, 0.0]), (vec![0.0, 0.0], vec![3.0, 3.0])]);
 
         // One untagged diagonal makes the whole transformation dense.
-        cd.re.set(2, vec![1.0, 2.0, 3.0, 4.0]);
+        cd.set_re(2, vec![1.0, 2.0, 3.0, 4.0]);
         assert_eq!(cd.period(), 4);
         let lt = cd.build_transform(LinearTransformationStrategy::Bsgs { giant_step: 2 }, |re, _| re.len());
         assert!(lt.giant_steps.iter().all(|g| g.diagonals.iter().all(|d| d.plaintext == 4)));
     }
 
     #[test]
-    fn compose_conjugate_and_scale_keep_the_period_tags() {
+    fn period_tags_are_checked_and_follow_compose_conjugate_scale_and_transpose() {
         let mut a = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-        a.re.set_periodic(0, vec![1.0, 2.0, 1.0, 2.0], 2);
-        a.im.set_periodic(1, vec![1.0; 4], 1);
+        a.set_periodic(0, vec![1.0, 2.0, 1.0, 2.0], vec![0.0; 4], 2);
+        a.set_periodic(1, vec![0.0; 4], vec![1.0; 4], 1);
         let mut b = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-        b.re.set_periodic(0, vec![3.0; 4], 1);
-        b.im.set(2, vec![1.0, 0.0, 0.0, 0.0]);
+        b.set_periodic(0, vec![3.0; 4], vec![0.0; 4], 1);
+        b.set_im(2, vec![1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(b.diagonal_period(2), Some(4), "an untagged diagonal reads as dense");
+        assert_eq!(b.diagonal_period(3), None);
         let c = a.compose(&b);
         assert_eq!(c.diagonal_period(0), Some(2));
         assert_eq!(c.diagonal_period(1), Some(1));
@@ -320,10 +395,23 @@ mod tests {
         let mut d = a.clone();
         d.conjugate();
         assert_eq!(d.diagonal_period(1), Some(1));
-        assert_eq!(d.im.get(1), Some(&vec![-1.0; 4]));
+        assert_eq!(d.im().get(1), Some(&vec![-1.0; 4]));
         d.scale(&2.0);
         assert_eq!(d.diagonal_period(0), Some(2));
-        assert_eq!(d.re.get(0), Some(&vec![2.0, 4.0, 2.0, 4.0]));
+        assert_eq!(d.re().get(0), Some(&vec![2.0, 4.0, 2.0, 4.0]));
+        d.set_re(0, vec![0.0; 4]);
+        assert_eq!(d.diagonal_period(0), Some(4), "a direct write drops the tag");
+
+        let mut t = a.clone();
+        t.transpose();
+        assert_eq!(t.diagonal_period(0), Some(2));
+        assert_eq!(t.diagonal_period(-1), Some(1));
+
+        let lying = std::panic::catch_unwind(|| {
+            let mut e = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
+            e.set_periodic(0, vec![1.0, 2.0, 3.0, 2.0], vec![0.0; 4], 2);
+        });
+        assert!(lying.is_err(), "a tag the values do not satisfy must panic");
     }
 
     #[test]
@@ -413,11 +501,11 @@ mod tests {
         // produce the tile-4 map matching the manual tiled evaluation
         // out[j] = Σ_i d_i[j mod tile] · v[(j + i) mod 4].
         let mut a = ComplexDiagonals::new(Diagonals::new(2), Diagonals::new(2));
-        a.re.set(0, vec![2.0, 3.0]);
-        a.im.set(1, vec![1.0, -1.0]);
+        a.set_re(0, vec![2.0, 3.0]);
+        a.set_im(1, vec![1.0, -1.0]);
         let mut b = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
-        b.re.set(0, vec![1.0, 0.0, -1.0, 0.5]);
-        b.re.set(2, vec![0.0, 1.0, 2.0, 0.0]);
+        b.set_re(0, vec![1.0, 0.0, -1.0, 0.5]);
+        b.set_re(2, vec![0.0, 1.0, 2.0, 0.0]);
 
         let v: Vec<(f64, f64)> = vec![(1.0, 0.5), (-1.0, 2.0), (2.0, -1.0), (0.5, 1.0)];
         let tiled = |cd: &ComplexDiagonals<f64>, v: &[(f64, f64)]| -> Vec<(f64, f64)> {

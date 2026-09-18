@@ -228,8 +228,8 @@ fn plain_layer<F: DftScalar>(
 /// Reads diagonal `index` of a [`ComplexDiagonals`] as a contiguous `Cpx` vector
 /// (zeros where a side is absent).
 fn cd_get<F: DftScalar>(cd: &ComplexDiagonals<F>, index: i64, dslots: usize) -> Vec<Cpx<F>> {
-    let re = cd.re.get(index);
-    let im = cd.im.get(index);
+    let re = cd.re().get(index);
+    let im = cd.im().get(index);
     (0..dslots)
         .map(|j| Cpx::new(re.map_or(F::zero(), |v| v[j]), im.map_or(F::zero(), |v| v[j])))
         .collect()
@@ -241,16 +241,15 @@ fn cd_get<F: DftScalar>(cd: &ComplexDiagonals<F>, index: i64, dslots: usize) -> 
 /// larger of it and the previous one.
 fn cd_accumulate<F: DftScalar>(cd: &mut ComplexDiagonals<F>, index: i64, vec: &[Cpx<F>], period: usize) {
     let period = cd.diagonal_period(index).unwrap_or(1).max(period);
-    let new_re = match cd.re.get(index) {
+    let new_re = match cd.re().get(index) {
         Some(cur) => cur.iter().zip(vec).map(|(&a, c)| a + c.re).collect(),
         None => vec.iter().map(|c| c.re).collect(),
     };
-    cd.re.set_periodic(index, new_re, period);
-    let new_im = match cd.im.get(index) {
+    let new_im = match cd.im().get(index) {
         Some(cur) => cur.iter().zip(vec).map(|(&a, c)| a + c.im).collect(),
         None => vec.iter().map(|c| c.im).collect(),
     };
-    cd.im.set_periodic(index, new_im, period);
+    cd.set_periodic(index, new_re, new_im, period);
 }
 
 /// An empty `dslots`-wide complex diagonal map.
@@ -299,7 +298,7 @@ fn maybe_bit_reverse<F: DftScalar>(v: &[Cpx<F>], log_l: usize, bit_reversed: boo
 /// uniformly.
 fn identity_diag<F: DftScalar>(dslots: usize) -> ComplexDiagonals<F> {
     let mut diag = empty_cd(dslots);
-    diag.re.set_periodic(0, vec![F::one(); dslots], 1);
+    diag.set_periodic(0, vec![F::one(); dslots], vec![F::zero(); dslots], 1);
     diag
 }
 
@@ -476,14 +475,14 @@ pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<Co
     if sparse && imag_repack && kind == DFTType::Encode {
         let last = plain_vector.last_mut().expect("dft has at least one factor");
         for idx in last.indexes() {
-            let mut re = last.re.get(idx).cloned().unwrap_or_else(|| vec![F::zero(); dslots]);
-            let mut im = last.im.get(idx).cloned().unwrap_or_else(|| vec![F::zero(); dslots]);
+            let mut re = last.re().get(idx).cloned().unwrap_or_else(|| vec![F::zero(); dslots]);
+            let mut im = last.im().get(idx).cloned().unwrap_or_else(|| vec![F::zero(); dslots]);
             for x in 0..slots {
                 re[x + slots] = F::zero();
                 im[x + slots] = F::zero();
             }
-            last.re.set(idx, re);
-            last.im.set(idx, im);
+            last.set_re(idx, re);
+            last.set_im(idx, im);
         }
     }
 
@@ -784,8 +783,8 @@ mod tests {
     fn minimal_period(cd: &ComplexDiagonals<f64>, index: i64) -> usize {
         let dslots = cd.slots();
         let zero = vec![0.0f64; dslots];
-        let re = cd.re.get(index).unwrap_or(&zero);
-        let im = cd.im.get(index).unwrap_or(&zero);
+        let re = cd.re().get(index).unwrap_or(&zero);
+        let im = cd.im().get(index).unwrap_or(&zero);
         let mut period = 1;
         while period < dslots {
             if (0..dslots).all(|j| re[j] == re[j % period] && im[j] == im[j % period]) {
@@ -862,8 +861,8 @@ mod tests {
             for (a, b) in fs.iter().zip(&fr) {
                 assert_eq!(a.indexes(), b.indexes());
                 for idx in a.indexes() {
-                    assert_eq!(a.re.get(idx), b.re.get(idx), "re diag {idx}");
-                    assert_eq!(a.im.get(idx), b.im.get(idx), "im diag {idx}");
+                    assert_eq!(a.re().get(idx), b.re().get(idx), "re diag {idx}");
+                    assert_eq!(a.im().get(idx), b.im().get(idx), "im diag {idx}");
                 }
             }
         }
@@ -888,9 +887,9 @@ mod tests {
         let enc = gen_dft_matrices::<f64>(&mk(DFTType::Encode), log_n);
         assert_eq!(enc.last().unwrap().slots(), dslots, "encode value width");
         let last = enc.last().unwrap();
-        for idx in last.re.indexes() {
-            let re = last.re.get(idx).unwrap();
-            let im = last.im.get(idx).unwrap();
+        for idx in last.re().indexes() {
+            let re = last.re().get(idx).unwrap();
+            let im = last.im().get(idx).unwrap();
             for x in slots..dslots {
                 assert_eq!(re[x], 0.0, "encode right-half re zeroed at idx {idx} pos {x}");
                 assert_eq!(im[x], 0.0, "encode right-half im zeroed at idx {idx} pos {x}");
