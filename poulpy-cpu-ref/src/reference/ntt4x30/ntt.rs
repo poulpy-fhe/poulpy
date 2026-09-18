@@ -97,7 +97,7 @@ pub struct NttReducMeta {
 ///
 /// Construct with [`NttTable::new`].
 pub struct NttTable<P: PrimeSetCrt4> {
-    /// NTT size (power of two, ≤ 2^16).
+    /// NTT size (a power of two at most `1 << P::MAX_LOG_N`).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
     pub level_metadata: Vec<NttStepMeta>,
@@ -120,7 +120,7 @@ pub struct NttTable<P: PrimeSetCrt4> {
 ///
 /// Construct with [`NttTableInv::new`].
 pub struct NttTableInv<P: PrimeSetCrt4> {
-    /// NTT size (power of two, ≤ 2^16).
+    /// NTT size (a power of two at most `1 << P::MAX_LOG_N`).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
     pub level_metadata: Vec<NttStepMeta>,
@@ -162,8 +162,8 @@ pub fn modq_pow(x: u32, n: i64, q: u32) -> u32 {
 
 /// Returns the primitive `2n`-th roots of unity for each prime.
 fn fill_omegas<P: PrimeSetCrt4>(n: usize) -> [u32; 4] {
-    assert!((1..=(1 << 16)).contains(&n), "n must be a power of two in [1, 2^16], got {n}");
-    std::array::from_fn(|k| modq_pow(P::OMEGA[k], (1i64 << 16) / n as i64, P::Q[k]))
+    assert!(n.is_power_of_two() && n <= (1 << P::MAX_LOG_N));
+    std::array::from_fn(|k| modq_pow(P::OMEGA[k], (1i64 << P::MAX_LOG_N) / n as i64, P::Q[k]))
 }
 
 /// Finds the optimal `h` for the lazy Barrett reduction step.
@@ -218,11 +218,12 @@ fn pack_omega(t: u64, half_bs: u64, q: u64) -> u64 {
 impl<P: PrimeSetCrt4> NttTable<P> {
     /// Builds the forward NTT precomputation table for size `n`.
     ///
-    /// `n` must be a power of two with `1 ≤ n ≤ 2^16`.
+    /// `n` must be a power of two with `1 ≤ n ≤ (1 << P::MAX_LOG_N)`.
     pub fn new(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << 16),
-            "NTT size must be a power of two ≤ 2^16, got {n}"
+            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
+            "NTT size must be a power of two ≤ 2^{}, got {n}",
+            P::MAX_LOG_N
         );
 
         let omega_vec = fill_omegas::<P>(n);
@@ -361,11 +362,12 @@ impl<P: PrimeSetCrt4> NttTable<P> {
 impl<P: PrimeSetCrt4> NttTableInv<P> {
     /// Builds the inverse NTT precomputation table for size `n`.
     ///
-    /// `n` must be a power of two with `1 ≤ n ≤ 2^16`.
+    /// `n` must be a power of two with `1 ≤ n ≤ (1 << P::MAX_LOG_N)`.
     pub fn new(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << 16),
-            "iNTT size must be a power of two ≤ 2^16, got {n}"
+            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
+            "iNTT size must be a power of two ≤ 2^{}, got {n}",
+            P::MAX_LOG_N
         );
 
         let omega_vec = fill_omegas::<P>(n);
@@ -908,5 +910,72 @@ mod tests {
 
         let expected: Vec<i128> = [3, 10, 8, 0, 0, 0, 0, 0].to_vec();
         assert_eq!(result, expected, "NTT convolution mismatch");
+    }
+
+    fn large_ring_convolution<P: PrimeSetCrt4>(bits: u32) {
+        for log_n in [P::MAX_LOG_N - 1, P::MAX_LOG_N] {
+            let n = 1 << log_n;
+            let fwd = NttTable::<P>::new(n);
+            let inv = NttTableInv::<P>::new(n);
+            let mut data = vec![0; 4 * n];
+            b_from_znx64_ref::<P>(n, &mut data, &vec![1 << bits; n]);
+            ntt_ref::<P>(&fwd, &mut data);
+            for lanes in data.chunks_exact_mut(4) {
+                for (k, x) in lanes.iter_mut().enumerate() {
+                    let q = P::Q[k] as u64;
+                    *x = (*x % q).pow(2) % q;
+                }
+            }
+            intt_ref::<P>(&inv, &mut data);
+            let mut result = vec![0; n];
+            b_to_znx128_ref::<P>(n, &mut result, &data);
+            for (i, &x) in result.iter().enumerate() {
+                assert_eq!(x, (2 * i as i128 + 2 - n as i128) * (1i128 << (2 * bits)));
+            }
+        }
+    }
+
+    #[test]
+    fn large_ring_alternate_prime_sets() {
+        large_ring_convolution::<crate::reference::ntt4x30::primes::Primes29>(48);
+        large_ring_convolution::<crate::reference::ntt4x30::primes::Primes31>(52);
+    }
+
+    #[test]
+    fn custom_prime_set_uses_default_root_order() {
+        struct Roots17;
+
+        impl PrimeSet for Roots17 {
+            type PrimeElem = u32;
+            type Lanes<T: crate::layouts::LaneElem> = [T; 4];
+            const Q: [u32; 4] = Primes30::Q;
+            const OMEGA: [u32; 4] = [1_016_586_755, 452_565_796, 616_497_877, 411_779_064];
+            const LOG_Q: u64 = 30;
+        }
+
+        impl PrimeSetCrt4 for Roots17 {
+            const CRT_CST: [u32; 4] = Primes30::CRT_CST;
+        }
+
+        large_ring_convolution::<Roots17>(50);
+        assert!(std::panic::catch_unwind(|| NttTable::<Roots17>::new(1 << 17)).is_err());
+        assert!(std::panic::catch_unwind(|| NttTableInv::<Roots17>::new(1 << 17)).is_err());
+    }
+
+    #[test]
+    fn unsupported_ring_degrees_rejected() {
+        use crate::reference::ntt4x30::vec_znx_dft::NttPlanSet;
+
+        for n in [
+            0,
+            3,
+            (1 << Primes30::MAX_LOG_N) + 1,
+            1 << (Primes30::MAX_LOG_N + 1),
+            usize::MAX,
+        ] {
+            assert!(std::panic::catch_unwind(|| NttTable::<Primes30>::new(n)).is_err());
+            assert!(std::panic::catch_unwind(|| NttTableInv::<Primes30>::new(n)).is_err());
+            assert!(std::panic::catch_unwind(|| NttPlanSet::<Primes30>::new(n)).is_err());
+        }
     }
 }

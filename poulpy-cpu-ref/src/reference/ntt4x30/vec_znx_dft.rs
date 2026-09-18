@@ -18,8 +18,7 @@
 //!
 //! # Prime set
 //!
-//! All arithmetic is hardcoded to [`Primes30`] (the spqlios-arithmetic
-//! default, Q ≈ 2^120).  Generalisation to `Primes29` / `Primes31`
+//! All arithmetic uses [`Primes30`] (Q ≈ 2^120).  Generalisation to `Primes29` / `Primes31`
 //! is future work.
 
 use bytemuck::{cast_slice, cast_slice_mut};
@@ -78,8 +77,9 @@ pub struct NttPlanSet<P: PrimeSetCrt4> {
 impl<P: PrimeSetCrt4> NttPlanSet<P> {
     pub fn new(max_n: usize) -> Self {
         assert!(
-            max_n.is_power_of_two(),
-            "maximum ring degree must be a power of two, got {max_n}"
+            max_n.is_power_of_two() && max_n <= (1 << P::MAX_LOG_N),
+            "maximum ring degree must be a power of two ≤ 2^{}, got {max_n}",
+            P::MAX_LOG_N
         );
         let plans = (0..=max_n.ilog2() as usize)
             .map(|log_n| NttPlan::new(1usize << log_n))
@@ -112,7 +112,7 @@ impl<P: PrimeSetCrt4> NttPlanSet<P> {
 /// `NttHandleProvider` for their concrete handle type; they do *not* implement
 /// this trait directly (which would violate the orphan rule).
 ///
-/// <!-- DOCUMENTED EXCEPTION: Primes30 hardcoded for spqlios compatibility.
+/// <!-- DOCUMENTED EXCEPTION: Primes30 is the default NTT4x30 prime set.
 ///   Generalisation path: add `type PrimeSet: PrimeSet` as an associated type here,
 ///   then parameterise NttTable/NttTableInv/BbcMeta accordingly. -->
 pub trait NttModuleHandle: poulpy_hal::api::ModuleN {

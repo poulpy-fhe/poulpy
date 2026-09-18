@@ -299,3 +299,25 @@ fn test_convolution_direct() {
 fn test_gglwe_product_digits_strided_bit_identical() {
     poulpy_core::test_suite::parity::test_gglwe_product_digits_strided(&Module::<NTT4x30Avx512>::new(64), 50);
 }
+
+#[test]
+fn large_ring_ntt_log17() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512>(1 << 17);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn large_ring_ntt_rayon_log17() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512Rayon>(1 << 17);
+}
+
+#[test]
+fn large_ring_ntt_log18() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512>(1 << 18);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn large_ring_ntt_rayon_log18() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx512Rayon>(1 << 18);
+}

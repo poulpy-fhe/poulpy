@@ -7,8 +7,8 @@ use poulpy_hal::layouts::{LaneElem, PrimeSet};
 ///
 /// The product `Q = Q[0]·Q[1]·Q[2]` is approximately 2^126 (fits in `i128`
 /// with two bits of margin).
-/// All three primes support a primitive `2^17`-th root of unity, so
-/// NTT sizes up to `2^16` are supported.
+/// All three primes support a primitive `2^19`-th root of unity, so
+/// NTT sizes up to `2^18` are supported.
 ///
 /// Unlike the full-CRT constants of
 /// [`PrimeSetCrt4`](poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSetCrt4),
@@ -23,10 +23,10 @@ pub trait PrimeSetNtt3x42Ifma: PrimeSet<PrimeElem = u64, Lanes<u64> = [u64; 3]> 
     const CRT_CST: [u64; 3];
 }
 
-/// 42-bit NTT-friendly primes with `2·2^16`-th roots of unity.
+/// 42-bit NTT-friendly primes with `2·2^18`-th roots of unity.
 ///
 /// - `Q ≈ 2^126` (product fits in `i128` with two bits of margin).
-/// - Each prime is of the form `c·2^17 + 1` with `c·2^17 + 1 < 2^42`.
+/// - Each prime is of the form `c·2^19 + 1` with `c·2^19 + 1 < 2^42`.
 /// - Designed for use with AVX512-IFMA52 instructions (primes < 2^49).
 pub struct Primes42;
 
@@ -34,20 +34,17 @@ impl PrimeSet for Primes42 {
     type PrimeElem = u64;
     type Lanes<T: LaneElem> = [T; 3];
     const Q: [u64; 3] = [
-        4_398_044_938_241, // 33554420 * 2^17 + 1
-        4_398_043_496_449, // 33554409 * 2^17 + 1
-        4_398_042_972_161, // 33554405 * 2^17 + 1
+        4_398_044_938_241, // 8_388_605 * 2^19 + 1
+        4_398_021_869_569, // 8_388_561 * 2^19 + 1
+        4_398_021_345_281, // 8_388_560 * 2^19 + 1
     ];
-    const OMEGA: [u64; 3] = [178_422_821_038, 2_962_575_618_789, 4_244_078_245_315];
+    const OMEGA: [u64; 3] = [2_628_857_985_221, 3_217_638_597_750, 1_217_792_891_299];
     const LOG_Q: u64 = 42;
+    const MAX_LOG_N: u32 = 18;
 }
 
 impl PrimeSetNtt3x42Ifma for Primes42 {
-    // Garner CRT constants:
-    // CRT_CST[0] = inv(Q[0], Q[1])
-    // CRT_CST[1] = inv(Q[0]*Q[1], Q[2])
-    // CRT_CST[2] = unused
-    const CRT_CST: [u64; 3] = [399_819_085_640, 806_292_778_743, 0];
+    const CRT_CST: [u64; 3] = [2_498_875_871_606, 2_541_070_051_698, 0];
 }
 
 /// Computes `x^n mod q` using square-and-multiply with 128-bit intermediates.
@@ -79,6 +76,7 @@ mod tests {
     fn primes42_are_prime() {
         for &q in &Primes42::Q {
             assert!(is_prime(q), "{q} is not prime");
+            assert_eq!(u64::BITS - q.leading_zeros(), Primes42::LOG_Q as u32);
         }
     }
 
@@ -87,10 +85,16 @@ mod tests {
         for k in 0..3 {
             let q = Primes42::Q[k];
             let omega = Primes42::OMEGA[k];
-            // omega^(2^17) == 1 mod q
-            assert_eq!(modq_pow64(omega, 1 << 17, q), 1, "omega[{k}]^(2^17) != 1");
-            // omega^(2^16) != 1 mod q (primitive, not a 2^16-th root)
-            assert_ne!(modq_pow64(omega, 1 << 16, q), 1, "omega[{k}] is not primitive");
+            assert_eq!(
+                modq_pow64(omega, 1 << (Primes42::MAX_LOG_N + 1), q),
+                1,
+                "omega[{k}]^(2^19) != 1"
+            );
+            assert_eq!(
+                modq_pow64(omega, 1 << Primes42::MAX_LOG_N, q),
+                q - 1,
+                "omega[{k}] is not primitive"
+            );
         }
     }
 
@@ -100,11 +104,20 @@ mod tests {
         let q01 = q[0] as u128 * q[1] as u128;
         let big_q = q01 * q[2] as u128;
 
-        for &x in &[0i64, 1, -1, 42, i64::MAX, i64::MIN + 1] {
+        for x in [
+            0i128,
+            1,
+            -1,
+            42,
+            i64::MAX as i128,
+            i64::MIN as i128,
+            (big_q / 2) as i128,
+            -((big_q / 2) as i128),
+        ] {
             let r: [u64; 3] = [
-                (x.rem_euclid(q[0] as i64)) as u64,
-                (x.rem_euclid(q[1] as i64)) as u64,
-                (x.rem_euclid(q[2] as i64)) as u64,
+                (x.rem_euclid(q[0] as i128)) as u64,
+                (x.rem_euclid(q[1] as i128)) as u64,
+                (x.rem_euclid(q[2] as i128)) as u64,
             ];
 
             // Garner reconstruction
@@ -131,7 +144,7 @@ mod tests {
             }
             let result = result as i128;
 
-            let expected = x as i128;
+            let expected = x;
             assert_eq!(result, expected, "CRT roundtrip failed for x={x}");
         }
     }

@@ -1146,7 +1146,7 @@ mod tests {
     /// AVX-512F NTT followed by AVX-512F iNTT is the identity — mirrors the ref test.
     #[test]
     fn ntt_intt_identity_avx512() {
-        for log_n in 1..=8usize {
+        for log_n in 1..=18usize {
             let n = 1 << log_n;
             let fwd = NttTable::<Primes30>::new(n);
             let inv = NttTableInv::<Primes30>::new(n);
@@ -1218,7 +1218,7 @@ mod tests {
     /// AVX-512F NTT output matches reference NTT output.
     #[test]
     fn ntt_avx2_vs_ref() {
-        for log_n in 1..=8usize {
+        for log_n in 1..=18usize {
             let n = 1 << log_n;
             let fwd = NttTable::<Primes30>::new(n);
 

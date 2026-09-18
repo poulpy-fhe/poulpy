@@ -1057,7 +1057,7 @@ mod tests {
     /// and stay within `[0, 4q)`.
     #[test]
     fn ntt_avx512_lazy_output_matches_full() {
-        for log_n in [4usize, 8, 11, 13] {
+        for log_n in [4usize, 8, 11, 13, 17, 18] {
             let n = 1 << log_n;
             let fwd = Ntt3x42IfmaTable::<Primes42>::new(n);
             let coeffs = pseudorandom_coeffs(n);
@@ -1169,8 +1169,10 @@ mod tests {
     }
 
     #[test]
-    fn ntt_avx512_vs_ref_n65536_pseudorandom() {
-        ntt_avx512_vs_ref_pseudorandom(65536);
+    fn ntt_avx512_vs_ref_large_pseudorandom() {
+        for n in [65536, 131072, 262144] {
+            ntt_avx512_vs_ref_pseudorandom(n);
+        }
     }
 
     #[test]
@@ -1194,8 +1196,10 @@ mod tests {
     }
 
     #[test]
-    fn intt_avx512_vs_ref_n65536_pseudorandom() {
-        intt_avx512_vs_ref_pseudorandom(65536);
+    fn intt_avx512_vs_ref_large_pseudorandom() {
+        for n in [65536, 131072, 262144] {
+            intt_avx512_vs_ref_pseudorandom(n);
+        }
     }
 
     #[test]

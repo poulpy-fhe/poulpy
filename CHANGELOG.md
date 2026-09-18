@@ -6,6 +6,9 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 
 ### `poulpy-hal`
 
+- `PrimeSet::MAX_LOG_N` describes the supported negacyclic NTT degree and root order.
+  It defaults to 16 for compatibility with existing custom prime sets.
+
 - **Breaking:** the vestigial `_backend` and `_into` suffixes are dropped from every api trait and method, the matching OEP methods and the `poulpy-cpu-ref` default bodies: `vec_znx_add_into_backend` is `vec_znx_add`, `VecZnxAddIntoBackend` is `VecZnxAdd`, `vec_znx_rotate_backend_default` is `vec_znx_rotate_default`. The accumulation class uses one suffix: `vmp_apply_dft_to_dft_accumulate` is `vmp_apply_dft_to_dft_add`, `cnv_apply_dft_accumulate` is `cnv_apply_dft_add`; the multi-term `cnv_accumulate_dft`, which overwrites its output, is `cnv_apply_dft_sum`. Purely lexical; bench ids follow. The rename table is generated from the api and OEP sources by the script in the PR description.
 - **Breaking:** removed operations, each with its OEP methods, delegates and backend overrides. Thirty unused api methods (coefficient shift/normalize variants, `add_const`, `add_scalar_into`, `sub_scalar`, `automorphism_rotate`, `split_ring`, `merge_rings`, `transpose`, `hadamard_product_scalar_znx`, `*_from_bytes` wrappers, `vec_znx_big_alloc_n`, `ModuleNew::new_with`) and the eight seeded `[u8; 32]` sampler twins, including `HalModuleImpl::Config` and `new_with`. The single-coefficient and sub-range operations `vec_znx_copy_range`, `vec_znx_extract_coeff`, `vec_znx_rsh_coeff`, `vec_znx_rsh_add_coeff`, `vec_znx_rsh_sub_coeff`, `vec_znx_lsh_add_coeff_to_coeff` and `vec_znx_lsh_sub_coeff_to_coeff`, which `copy`, `rsh`, `rsh_add`, `rsh_sub`, `lsh_add` and `lsh_sub` on `window_coeffs` / `window_limbs` views replace bit for bit. `cnv_prepare_left_lazy`, `cnv_prepare_right_lazy`, `cnv_apply_dft_lazy` and their `_tmp_bytes`, which forwarded to the eager forms callers now use directly, and `vec_znx_dft_add_scaled_assign` with its five kernels, which had no caller anywhere in the workspace.
 - Window views on `VecZnx` and `VecZnxBig` (`window_coeffs`, `window_limbs`, `from_shape`, `with_shape`); `VecZnxDft::from_shape` and `with_shape` accept only dense shapes. `zero`, `copy`, `add`, `sub`, `negate`, `big_from_small`, `vec_znx_normalize`, `vec_znx_normalize_assign`, `vec_znx_big_normalize` and every shift accept windows on every backend, including the Rayon variants, pinned by the window parity tests. Ring operations and transforms (`rotate`, `automorphism`, `mul_xp_minus_one`, `switch_ring`, `dft`, `idft`, prepares, coefficient-input products) and the flat accessors `raw` / `as_ptr` reject window views with a panic in the backend kernels; only coefficient-wise operations accept them.
@@ -65,6 +68,11 @@ The first pass of the HAL/OEP cleanup of [#234](https://github.com/poulpy-fhe/po
 - The CGGI blind-rotation scratch budget explicitly includes `vec_znx_mul_xp_minus_one_assign_tmp_bytes`.
 
 ### CPU backends
+
+- NTT4x30 (scalar, AVX2, AVX-512, NEON) and NTT3x42 IFMA, including Rayon variants, support ring degrees through `2^18`.
+  The scalar 29-bit and 31-bit prime sets also support this limit.
+  **Breaking for prepared data:** the new primes and roots change raw NTT/prepared representations at every degree; regenerate them from coefficient-domain data.
+  CRT widths are unchanged, so larger rings need appropriate coefficient and accumulation headroom; see [NTT ring dimensions](docs/ntt-ring-dimensions.md).
 
 - `poulpy-cpu-ref`: `hal_defaults` loses every composite that now has an OEP default body, and the `hal_impl_*!` macros shrink to the basis plus the fused kernels a backend still overrides; the reference `lsh`, `rsh`, `lsh_add`/`lsh_sub`/`rsh_add`/`rsh_sub`, `rsh_assign`, out-of-place `mul_xp_minus_one` and `add_scalar` kernels are deleted. `lsh_assign`, `mul_xp_minus_one_assign`, `big_add_small`, `big_sub_small_a` and `big_sub_small_b` keep their fused kernels as explicit backend overrides (bit-exact with the OEP defaults, pinned by `test_suite::derived`) because the default bodies measured 23% to 88% slower on the AVX-512 backends, and `vec_znx_mul_xp_minus_one_assign_tmp_bytes` returns the one-limb temporary on CPU.
 - `poulpy-cpu-ref` gains `ScalarZnxFill`, the host secret-distribution samplers moved from the HAL; `impl_sampling_host!` dispatches to them.

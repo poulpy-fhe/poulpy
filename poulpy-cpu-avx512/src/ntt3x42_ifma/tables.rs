@@ -30,7 +30,7 @@ use super::primes::{PrimeSetNtt3x42Ifma, modq_pow64};
 /// No per-level metadata is needed — the IFMA-native butterfly keeps all
 /// values in `[0, 2q)` without explicit reduction levels.
 pub struct Ntt3x42IfmaTable<P: PrimeSetNtt3x42Ifma> {
-    /// NTT size (power of two, ≤ 2^16).
+    /// NTT size (a power of two at most `1 << P::MAX_LOG_N`).
     pub n: usize,
     /// `2q[k]` for each prime (lane 3 = 0); used for the final `[0, 4q)` → `[0, 2q)` pass.
     pub q2: [u64; 4],
@@ -78,8 +78,8 @@ pub struct Ntt3x42IfmaTableInv<P: PrimeSetNtt3x42Ifma> {
 
 /// Returns the primitive `2n`-th roots of unity for each of the 3 primes.
 fn fill_omegas_ntt3x42_ifma<P: PrimeSetNtt3x42Ifma>(n: usize) -> [u64; 3] {
-    assert!((1..=(1 << 16)).contains(&n), "n must be a power of two in [1, 2^16], got {n}");
-    std::array::from_fn(|k| modq_pow64(P::OMEGA[k], (1i64 << 16) / n as i64, P::Q[k]))
+    assert!(n.is_power_of_two() && n <= (1 << P::MAX_LOG_N));
+    std::array::from_fn(|k| modq_pow64(P::OMEGA[k], (1i64 << P::MAX_LOG_N) / n as i64, P::Q[k]))
 }
 
 /// Compute Harvey quotient: `floor(omega * 2^52 / q)`.
@@ -99,7 +99,7 @@ fn reverse_bits(x: usize, bits: u32) -> usize {
 
 /// Build the scrambled forward root tables (prime-major).
 ///
-/// For each prime `k`: `w = OMEGA[k] ^ (2^16 / n)` (primitive `2n`-th root),
+/// For each prime `k`: `w = OMEGA[k] ^ ((1 << P::MAX_LOG_N) / n)` (primitive `2n`-th root),
 /// then `root[bitrev(i)] = w^i` for `i in 0..n` (`root[0] = 1`).
 /// Returns `(root, root_quot)`, each of length `3*n`, with entry for
 /// prime `k`, scrambled index `j` at `[k*n + j]`.
@@ -112,7 +112,7 @@ fn build_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64>) {
     let log_n = n.trailing_zeros();
     for k in 0..3 {
         let q = P::Q[k];
-        let w = modq_pow64(P::OMEGA[k], (1i64 << 16) / n as i64, q);
+        let w = modq_pow64(P::OMEGA[k], (1i64 << P::MAX_LOG_N) / n as i64, q);
         // root[bitrev(i)] = w^i, built incrementally from the previous scrambled index.
         let mut root = vec![0u64; n];
         root[0] = 1;
@@ -151,7 +151,7 @@ fn build_inv_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64>
     let log_n = n.trailing_zeros();
     for k in 0..3 {
         let q = P::Q[k];
-        let w = modq_pow64(P::OMEGA[k], (1i64 << 16) / n as i64, q);
+        let w = modq_pow64(P::OMEGA[k], (1i64 << P::MAX_LOG_N) / n as i64, q);
         // Scrambled forward roots: root[bitrev(i)] = w^i.
         let mut fwd = vec![0u64; n];
         fwd[0] = 1;
@@ -203,7 +203,7 @@ fn build_tail_root_table<P: PrimeSetNtt3x42Ifma>(n: usize) -> (Vec<u64>, Vec<u64
     let log_n = n.trailing_zeros();
     for k in 0..3 {
         let q = P::Q[k];
-        let w = modq_pow64(P::OMEGA[k], (1i64 << 16) / n as i64, q);
+        let w = modq_pow64(P::OMEGA[k], (1i64 << P::MAX_LOG_N) / n as i64, q);
         // root[bitrev(i)] = w^i, built incrementally (same as build_root_table).
         let mut root = vec![0u64; n];
         root[0] = 1;
@@ -293,8 +293,9 @@ fn store_twiddle_split<P: PrimeSetNtt3x42Ifma>(
 impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
     pub fn new(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << 16),
-            "NTT size must be a power of two ≤ 2^16, got {n}"
+            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
+            "NTT size must be a power of two ≤ 2^{}, got {n}",
+            P::MAX_LOG_N
         );
 
         let q2: [u64; 4] = [2 * P::Q[0], 2 * P::Q[1], 2 * P::Q[2], 0];
@@ -395,8 +396,9 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTable<P> {
 impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
     pub fn new(n: usize) -> Self {
         assert!(
-            n.is_power_of_two() && n <= (1 << 16),
-            "NTT size must be a power of two ≤ 2^16, got {n}"
+            n.is_power_of_two() && n <= (1 << P::MAX_LOG_N),
+            "NTT size must be a power of two ≤ 2^{}, got {n}",
+            P::MAX_LOG_N
         );
 
         let q2: [u64; 4] = [2 * P::Q[0], 2 * P::Q[1], 2 * P::Q[2], 0];
@@ -488,6 +490,20 @@ mod tests {
     use super::super::primes::Primes42;
     use super::*;
     use poulpy_hal::layouts::PrimeSet;
+
+    #[test]
+    fn unsupported_ring_degrees_rejected() {
+        for n in [
+            0,
+            3,
+            (1 << Primes42::MAX_LOG_N) + 1,
+            1 << (Primes42::MAX_LOG_N + 1),
+            usize::MAX,
+        ] {
+            assert!(std::panic::catch_unwind(|| Ntt3x42IfmaTable::<Primes42>::new(n)).is_err());
+            assert!(std::panic::catch_unwind(|| Ntt3x42IfmaTableInv::<Primes42>::new(n)).is_err());
+        }
+    }
 
     #[test]
     fn harvey_modmul_correctness() {

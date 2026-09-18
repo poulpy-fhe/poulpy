@@ -375,3 +375,25 @@ fn test_convolution_direct_rayon() {
     test_convolution_sum(&module, FLOOR, 50);
     test_convolution_sum(&module, module.n(), 50);
 }
+
+#[test]
+fn large_ring_ntt_log17() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx>(1 << 17);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn large_ring_ntt_rayon_log17() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30AvxRayon>(1 << 17);
+}
+
+#[test]
+fn large_ring_ntt_log18() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30Avx>(1 << 18);
+}
+
+#[cfg(feature = "enable-rayon")]
+#[test]
+fn large_ring_ntt_rayon_log18() {
+    poulpy_cpu_ref::test_suite::ntt::test_ntt_ring_degree::<crate::NTT4x30AvxRayon>(1 << 18);
+}
