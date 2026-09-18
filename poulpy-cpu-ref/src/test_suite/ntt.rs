@@ -26,7 +26,7 @@ where
 {
     let module = Module::<BE>::new(n as u64);
     let host = Module::<HostBytesBackend>::new(n as u64);
-    let mut a = host.vec_znx_alloc(1, 2);
+    let mut a = host.vec_znx_alloc(n, 1, 2);
     for limb in 0..2 {
         for (i, x) in a.at_mut(0, limb).iter_mut().enumerate() {
             *x = match i % 4 {
@@ -37,8 +37,8 @@ where
         }
     }
     let input = upload_vec_znx::<BE>(&a);
-    let mut dft = module.vec_znx_dft_alloc(1, 2);
-    let mut big = module.vec_znx_big_alloc(1, 2);
+    let mut dft = module.vec_znx_dft_alloc(n, 1, 2);
+    let mut big = module.vec_znx_big_alloc(n, 1, 2);
     module.vec_znx_dft_apply(1, 0, &mut dft.to_backend_mut(), 0, &vec_znx_backend_ref::<BE>(&input), 0);
     module.vec_znx_idft_apply_tmpa(&mut big.to_backend_mut(), 0, &mut dft.to_backend_mut(), 0);
     for limb in 0..2 {
@@ -47,11 +47,11 @@ where
         }
     }
 
-    let mut b = host.vec_znx_alloc(1, 2);
-    let mut left = module.cnv_pvec_left_alloc(1, 2, PrepareHint::Reuse);
-    let mut right = module.cnv_pvec_right_alloc(1, 2, PrepareHint::Reuse);
-    let mut product = module.vec_znx_dft_alloc(2, 4);
-    let mut result = module.vec_znx_big_alloc(1, 4);
+    let mut b = host.vec_znx_alloc(n, 1, 2);
+    let mut left = module.cnv_pvec_left_alloc(n, 1, 2, PrepareHint::Reuse);
+    let mut right = module.cnv_pvec_right_alloc(n, 1, 2, PrepareHint::Reuse);
+    let mut product = module.vec_znx_dft_alloc(n, 2, 4);
+    let mut result = module.vec_znx_big_alloc(n, 1, 4);
     let mut scratch = ScratchOwned::<BE>::alloc(
         module
             .cnv_prepare_left_tmp_bytes(4, 2)

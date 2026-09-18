@@ -202,14 +202,14 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, &ct, &keys, &mut prep_scratch.borrow());
         assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
 
-        let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size(), PrepareHint::Reuse);
+        let mut right_prepared = module.cnv_pvec_right_alloc(module.n(), 1, pt.size(), PrepareHint::Reuse);
         let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
         module.cnv_prepare_right(&mut right_prepared.to_backend_mut(), &pt_ref.data, &mut scratch.borrow());
 
         for &rot in &baby_steps {
             let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct);
             if rot == 0 {
-                module.glwe_copy(&mut expected, &ct);
+                module.glwe_copy(&mut expected, &ct, &mut scratch.borrow());
             } else {
                 let p = module.galois_element(rot);
                 let key = keys
@@ -218,7 +218,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                 module.glwe_automorphism(&mut expected, &ct, &key, &mut scratch.borrow());
             }
 
-            let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size(), PrepareHint::Reuse);
+            let mut expected_prepared = module.cnv_pvec_left_alloc(module.n(), rank + 1, expected.size(), PrepareHint::Reuse);
             let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
             module.cnv_prepare_left(
                 &mut expected_prepared.to_backend_mut(),
@@ -234,12 +234,12 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             );
 
             for col in 0..rank + 1 {
-                let mut have: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, product_size);
-                let mut want: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, product_size);
-                let mut have_dft = module.vec_znx_dft_alloc(1, product_size);
-                let mut want_dft = module.vec_znx_dft_alloc(1, product_size);
-                let mut have_big = module.vec_znx_big_alloc(1, product_size);
-                let mut want_big = module.vec_znx_big_alloc(1, product_size);
+                let mut have: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, product_size);
+                let mut want: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(module.n(), 1, product_size);
+                let mut have_dft = module.vec_znx_dft_alloc(module.n(), 1, product_size);
+                let mut want_dft = module.vec_znx_dft_alloc(module.n(), 1, product_size);
+                let mut have_big = module.vec_znx_big_alloc(module.n(), 1, product_size);
+                let mut want_big = module.vec_znx_big_alloc(module.n(), 1, product_size);
                 let right_ref = right_prepared.to_backend_ref();
 
                 module.cnv_apply_dft(

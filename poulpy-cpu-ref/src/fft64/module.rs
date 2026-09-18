@@ -40,6 +40,8 @@ pub struct FFT64RefHandle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Ref {}
 
 impl Backend for FFT64Ref {
+    const MAX_BASE2K: usize = 19;
+
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;

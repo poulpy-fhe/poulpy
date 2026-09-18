@@ -223,17 +223,9 @@ pub mod glwe_trace_defaults_impl {
             rank: res_infos.rank(),
         };
         let lvl_0: usize = module.glwe_bytes_of_from_infos(&tmp_infos);
-        let lvl_1: usize = if a_infos.base2k() == key_infos.base2k() {
-            0
-        } else {
-            module.glwe_normalize_tmp_bytes()
-        };
+        let lvl_1 = module.glwe_copy_tmp_bytes(&tmp_infos, a_infos);
         let lvl_2: usize = module.glwe_trace_assign_tmp_bytes_default(&tmp_infos, key_infos);
-        let lvl_3: usize = if res_infos.base2k() == key_infos.base2k() {
-            0
-        } else {
-            module.glwe_bytes_of_from_infos(res_infos) + module.glwe_normalize_tmp_bytes()
-        };
+        let lvl_3 = module.glwe_copy_tmp_bytes(res_infos, &tmp_infos);
 
         lvl_0 + lvl_1.max(lvl_2).max(lvl_3)
     }
@@ -282,13 +274,7 @@ pub mod glwe_trace_defaults_impl {
         });
         let mut scratch_1 = scratch_1;
 
-        if a.base2k() == atk_layout.base2k() {
-            module.glwe_copy(&mut tmp, a);
-        } else {
-            scratch_1 = scratch_1.apply_mut(|scratch| {
-                module.glwe_normalize(&mut tmp, a, scratch);
-            });
-        }
+        module.glwe_copy(&mut tmp, a, &mut scratch_1);
 
         {
             scratch_1 = scratch_1.apply_mut(|scratch| {
@@ -296,17 +282,7 @@ pub mod glwe_trace_defaults_impl {
             });
         }
 
-        if res.base2k() == atk_layout.base2k() {
-            module.glwe_copy(res, &tmp);
-        } else {
-            let (mut res_out, scratch_2) = scratch_1.take_glwe_scratch(&res.glwe_layout());
-            {
-                scratch_2.apply_mut(|scratch| {
-                    module.glwe_normalize(&mut res_out, &tmp, scratch);
-                });
-            }
-            module.glwe_copy(res, &res_out);
-        }
+        module.glwe_copy(res, &tmp, &mut scratch_1);
     }
 
     pub fn glwe_trace_assign_default<BE, M, R, H>(

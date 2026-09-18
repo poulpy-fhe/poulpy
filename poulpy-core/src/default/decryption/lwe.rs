@@ -13,8 +13,8 @@ where
     M: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
     A: LWEInfos,
 {
-    module.bytes_of_vec_znx_big_n(infos.n().as_usize(), 1, infos.size())
-        + module.bytes_of_vec_znx_big_n(1, 1, infos.size())
+    module.bytes_of_vec_znx_big(infos.n().as_usize(), 1, infos.size())
+        + module.bytes_of_vec_znx_big(1, 1, infos.size())
         + module.vec_znx_big_normalize_tmp_bytes()
         + 2 * (BE::SCRATCH_ALIGN - 1)
 }
@@ -47,10 +47,10 @@ where
     );
 
     let scratch = scratch.borrow();
-    let (mut tmp_hadamard, scratch_1) = scratch.take_vec_znx_big_scratch_n(res.n().as_usize(), 1, res.size());
+    let (mut tmp_hadamard, scratch_1) = scratch.take_vec_znx_big_scratch(res.n().as_usize(), 1, res.size());
     module.vec_znx_scalar_product(&mut tmp_hadamard, 0, &res.mask, 0, &sk.data, 0);
 
-    let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch_n(1, 1, res.size());
+    let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(1, 1, res.size());
     module.vec_znx_big_inner_sum(&mut tmp_scalar, 0, 0, &tmp_hadamard.to_backend_ref(), 0);
     module.vec_znx_big_add_small_assign(&mut tmp_scalar, 0, &res.body, 0);
 

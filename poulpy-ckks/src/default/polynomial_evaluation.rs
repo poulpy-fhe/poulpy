@@ -181,7 +181,7 @@ where
 
         scratch.scope(|scratch_local| -> anyhow::Result<()> {
             let (mut g, scratch_local) = scratch_local.take_vec_znx_scratch(1, 1, pt_size + 1);
-            let (mut acc, mut scratch_local) = scratch_local.take_vec_znx_big_scratch(module, 1, acc_size);
+            let (mut acc, mut scratch_local) = scratch_local.take_vec_znx_big_scratch(module.n(), 1, acc_size);
             for col in 0..cols {
                 for (t_idx, ((t, coeff_idx), (_, off))) in terms.iter().zip(term_params.iter()).enumerate() {
                     let (r, rho) = shift_split(*off);

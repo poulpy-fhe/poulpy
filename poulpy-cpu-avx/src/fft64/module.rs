@@ -84,6 +84,8 @@ pub struct FFT64AvxHandle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Avx {}
 
 impl Backend for FFT64Avx {
+    const MAX_BASE2K: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::MAX_BASE2K;
+
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;
@@ -658,12 +660,13 @@ impl Reim4Convolution for FFT64Avx {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
+        unsafe { reim4_convolution_apply_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp) }
     }
 
     #[inline(always)]
@@ -677,12 +680,15 @@ impl Reim4Convolution for FFT64Avx {
         a_size: usize,
         b: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_accumulate_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
+        unsafe {
+            reim4_convolution_apply_accumulate_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, b_log_gap, tmp)
+        }
     }
 
     #[inline(always)]
@@ -698,12 +704,17 @@ impl Reim4Convolution for FFT64Avx {
         b0: &[f64],
         b1: &[f64],
         b_size: usize,
+        b_log_gap: usize,
         tmp: &mut [f64],
     ) {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_pairwise_apply_avx(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp) }
+        unsafe {
+            reim4_convolution_pairwise_apply_avx(
+                m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, b_log_gap, tmp,
+            )
+        }
     }
 
     #[inline(always)]

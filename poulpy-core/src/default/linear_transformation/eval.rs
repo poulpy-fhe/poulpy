@@ -79,12 +79,12 @@ where
     let cnv_offset_hi = pt_size.saturating_sub(1);
     let prod_size = a_size + pt_size - cnv_offset_hi;
     let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(module, cnv_offset_hi, a_size, pt_size);
-    let prod_col_big = module.bytes_of_vec_znx_big(1, prod_size);
-    let prod_dft = module.bytes_of_vec_znx_dft(cols, prod_size);
+    let prod_col_big = module.bytes_of_vec_znx_big(module.n(), 1, prod_size);
+    let prod_dft = module.bytes_of_vec_znx_dft(module.n(), cols, prod_size);
     let lazy_size = key.size().max(prod_size);
-    let lazy_acc_dft = module.bytes_of_vec_znx_dft(cols, lazy_size);
-    let lazy_acc_big = module.bytes_of_vec_znx_big(cols, lazy_size);
-    let rot_dft = module.bytes_of_vec_znx_dft(cols, key.size());
+    let lazy_acc_dft = module.bytes_of_vec_znx_dft(module.n(), cols, lazy_size);
+    let lazy_acc_big = module.bytes_of_vec_znx_big(module.n(), cols, lazy_size);
+    let rot_dft = module.bytes_of_vec_znx_dft(module.n(), cols, key.size());
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
     let lazy_dft = glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key);
     let fallback_work = inner_dft
@@ -272,6 +272,6 @@ where
     K: GGLWEInfos,
 {
     glwe_eval_linear_transformation_tmp_bytes_default::<BE, _, _, _, _, _>(module, res, a, pt, key)
-        + module.bytes_of_cnv_pvec_right(1, pt.size(), PrepareHint::OneShot)
+        + module.bytes_of_cnv_pvec_right(module.n(), 1, pt.size(), PrepareHint::OneShot)
         + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
 }

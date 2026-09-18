@@ -194,7 +194,7 @@ pub fn test_circuit_bootstrapping_to_exponent<
     println!("CBT: {} ms", now.elapsed().as_millis());
 
     // X^{data * 2^log_gap_out}
-    let mut pt_ggsw: ScalarZnx<Vec<u8>, i64> = module.scalar_znx_alloc(1);
+    let mut pt_ggsw: ScalarZnx<Vec<u8>, i64> = module.scalar_znx_alloc(module.n(), 1);
     pt_ggsw.at_mut(0, 0)[data as usize * (1 << log_gap_out)] = 1;
     let pt_ggsw_ref = ScalarZnx::from_data(pt_ggsw.data.as_slice(), pt_ggsw.n(), pt_ggsw.cols());
 
@@ -392,7 +392,7 @@ pub fn test_circuit_bootstrapping_to_constant<
     println!("CBT: {} ms", now.elapsed().as_millis());
 
     // X^{data * 2^log_gap_out}
-    let mut pt_ggsw: ScalarZnx<Vec<u8>, i64> = module.scalar_znx_alloc(1);
+    let mut pt_ggsw: ScalarZnx<Vec<u8>, i64> = module.scalar_znx_alloc(module.n(), 1);
     pt_ggsw.at_mut(0, 0)[0] = data;
     let pt_ggsw_ref = ScalarZnx::from_data(pt_ggsw.data.as_slice(), pt_ggsw.n(), pt_ggsw.cols());
 

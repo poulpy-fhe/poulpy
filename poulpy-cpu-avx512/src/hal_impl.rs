@@ -93,7 +93,7 @@ unsafe impl HalVmpImpl for NTT4x30Avx512 {
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30_avx512::vmp::vmp_prepare_tmp_bytes_avx(module.n());
+        let bytes = crate::ntt4x30_avx512::vmp::vmp_prepare_tmp_bytes_avx(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         crate::ntt4x30_avx512::vmp::vmp_prepare_avx_pm(module, res, a, tmp);
     }
@@ -188,7 +188,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
+        let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         crate::ntt4x30_avx512::convolution::cnv_prepare_left::<SerialTaskExecutor>(module, res, a, tmp);
     }
@@ -203,7 +203,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
+        let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         crate::ntt4x30_avx512::convolution::cnv_prepare_right::<SerialTaskExecutor>(module, res, a, tmp);
     }
@@ -384,7 +384,7 @@ unsafe impl HalConvolutionImpl for NTT4x30Avx512 {
         a: &VecZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(module.n());
+        let bytes = crate::ntt4x30_avx512::convolution::cnv_prepare_tmp_bytes(left.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         crate::ntt4x30_avx512::convolution::cnv_prepare_self::<SerialTaskExecutor>(module, left, right, a, tmp);
     }
@@ -475,7 +475,9 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512 {
         addend: Option<(&VecZnxBackendRef<'_, Self>, usize)>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let n = module.n();
+        let n = a.n();
+        poulpy_hal::layouts::check_degree::<Self>(module.n(), n);
+        assert_eq!(res.n(), n, "vec_znx_idft_normalize_consume: res.n():{} != a.n():{n}", res.n());
         let arena = scratch.borrow();
         let (tmp, arena) = take_host_typed::<Self, u64>(arena, 4 * n);
         let (carry, _) = take_host_typed::<Self, i128>(arena, 3 * n);
@@ -531,7 +533,7 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512 {
         a_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30_avx512::vec_znx_dft::vec_znx_idft_apply_tmp_bytes(module.n());
+        let bytes = crate::ntt4x30_avx512::vec_znx_dft::vec_znx_idft_apply_tmp_bytes(res.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         crate::ntt4x30_avx512::vec_znx_dft::vec_znx_idft_apply(module, res, res_col, a, a_col, tmp);
     }
@@ -625,8 +627,9 @@ unsafe impl HalVecZnxDftImpl for NTT4x30Avx512 {
 
     type AutomorphismPlan = poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
 
-    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
-        poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(module.n(), p)
+    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
+        let _ = module;
+        poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan(
@@ -699,7 +702,7 @@ mod ifma_impl {
             a: &MatZnxBackendRef<'_, Self>,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::vmp::vmp_prepare_tmp_bytes_ifma(module.n());
+            let bytes = crate::ntt3x42_ifma::vmp::vmp_prepare_tmp_bytes_ifma(res.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
             crate::ntt3x42_ifma::vmp::vmp_prepare_ifma::<poulpy_hal::execution::SerialTaskExecutor>(module, res, a, tmp);
         }
@@ -877,7 +880,7 @@ mod ifma_impl {
             addend: Option<(&poulpy_hal::layouts::VecZnxBackendRef<'_, Self>, usize)>,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let n = module.n();
+            let n = a.n();
             let arena = scratch.borrow();
             let (tmp, arena) = take_host_typed::<Self, u64>(arena, 3 * n);
             let (carry, _) = take_host_typed::<Self, i128>(arena, 3 * n);
@@ -935,7 +938,7 @@ mod ifma_impl {
             a_col: usize,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::vec_znx_dft::vec_znx_idft_apply_tmp_bytes(module.n());
+            let bytes = crate::ntt3x42_ifma::vec_znx_dft::vec_znx_idft_apply_tmp_bytes(res.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
             crate::ntt3x42_ifma::vec_znx_dft::vec_znx_idft_apply(module, res, res_col, a, a_col, tmp);
         }
@@ -1034,12 +1037,13 @@ mod ifma_impl {
 
         type AutomorphismPlan = poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::NttAutomorphismPlan;
 
-        fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
+        fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan {
+            let _ = module;
             // The slot↔exponent map is determined by the DIF NTT structure
             // (bit-reversal over log2(n) bits + level-0 ω^i twiddle), not by
             // the prime set, so the NTT4x30 closed-form builder is identical
             // for NTT3x42.
-            poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(module.n(), p)
+            poulpy_cpu_ref::reference::ntt4x30::vec_znx_dft::build_ntt4x30_automorphism_plan(n, p)
         }
 
         fn vec_znx_dft_automorphism_with_plan(
@@ -1087,7 +1091,7 @@ mod ifma_impl {
             a: &VecZnxBackendRef<'_, Self>,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_left_tmp_bytes(module.n());
+            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_left_tmp_bytes(res.n());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             crate::ntt3x42_ifma::convolution::cnv_prepare_left::<SerialTaskExecutor>(module, res, a, tmp);
         }
@@ -1102,7 +1106,7 @@ mod ifma_impl {
             a: &VecZnxBackendRef<'_, Self>,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_right_tmp_bytes(module.n());
+            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_right_tmp_bytes(res.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
             crate::ntt3x42_ifma::convolution::cnv_prepare_right::<SerialTaskExecutor>(module, res, a, tmp);
         }
@@ -1181,7 +1185,7 @@ mod ifma_impl {
 
         #[allow(clippy::too_many_arguments)]
         fn cnv_apply_dft(
-            _module: &Module<Self>,
+            module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
             res_col: usize,
@@ -1195,7 +1199,7 @@ mod ifma_impl {
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
                 crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma::<SerialTaskExecutor>(
-                    res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
+                    module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
                 );
             }
         }
@@ -1212,7 +1216,7 @@ mod ifma_impl {
 
         #[allow(clippy::too_many_arguments)]
         fn cnv_apply_dft_add(
-            _module: &Module<Self>,
+            module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
             res_col: usize,
@@ -1226,7 +1230,7 @@ mod ifma_impl {
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
                 crate::ntt3x42_ifma::convolution::cnv_apply_dft_add_ifma::<SerialTaskExecutor>(
-                    res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
+                    module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
                 );
             }
         }
@@ -1242,7 +1246,7 @@ mod ifma_impl {
         }
 
         fn cnv_apply_dft_sum<'a>(
-            _module: &Module<Self>,
+            module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
             res_col: usize,
@@ -1257,7 +1261,7 @@ mod ifma_impl {
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
                 crate::ntt3x42_ifma::convolution::cnv_apply_dft_sum_ifma::<SerialTaskExecutor>(
-                    res, cnv_offset, res_col, terms, tmp,
+                    module, res, cnv_offset, res_col, terms, tmp,
                 );
             }
         }
@@ -1274,7 +1278,7 @@ mod ifma_impl {
 
         #[allow(clippy::too_many_arguments)]
         fn cnv_pairwise_apply_dft(
-            _module: &Module<Self>,
+            module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
             res_col: usize,
@@ -1288,7 +1292,7 @@ mod ifma_impl {
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
                 crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_dft_ifma::<SerialTaskExecutor>(
-                    res, cnv_offset, res_col, a, b, i, j, tmp,
+                    module, res, cnv_offset, res_col, a, b, i, j, tmp,
                 );
             }
         }
@@ -1304,7 +1308,7 @@ mod ifma_impl {
             a: &VecZnxBackendRef<'_, Self>,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_self_tmp_bytes(module.n());
+            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_self_tmp_bytes(left.n());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             crate::ntt3x42_ifma::convolution::cnv_prepare_self::<SerialTaskExecutor>(module, left, right, a, tmp);
         }

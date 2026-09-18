@@ -269,7 +269,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
                 masks
                     .iter()
                     .map(|ct| {
-                        let mut prep = module.cnv_pvec_left_alloc(2, mask_size, PrepareHint::Reuse);
+                        let mut prep = module.cnv_pvec_left_alloc(module.n(), 2, mask_size, PrepareHint::Reuse);
                         module.cnv_prepare_left(
                             &mut prep.to_backend_mut(),
                             GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),

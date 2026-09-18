@@ -170,8 +170,8 @@ pub unsafe trait HalVecZnxImpl: Backend {
     /// `vec_znx_lsh` itself needs. A backend that overrides some but not all
     /// bodies of the family must therefore either leave this on the default or
     /// return a value large enough for the ones it did not override.
-    /// `poulpy-cpu-ref` does exactly that: it overrides `vec_znx_lsh_assign` and
-    /// leaves this `_tmp_bytes` on the default.
+    /// A backend may do exactly that: override `vec_znx_lsh_assign` and
+    /// leave this `_tmp_bytes` on the default.
     fn vec_znx_lsh_tmp_bytes(module: &Module<Self>, res_size: usize) -> usize {
         crate::oep::vec_znx_lsh_tmp_bytes_derived::<Self>(module, res_size)
     }
@@ -415,7 +415,7 @@ pub unsafe trait HalVecZnxBigImpl: Backend {
     }
 
     /// Required, not derived: the composition would need a `VecZnxBig`
-    /// temporary and this form takes no scratch (spec section 4.2).
+    /// temporary and this form takes no scratch, so the derived body cannot be used.
     fn vec_znx_big_add_small_assign(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -467,7 +467,7 @@ pub unsafe trait HalVecZnxBigImpl: Backend {
     }
 
     /// Required, not derived: the composition would need a `VecZnxBig`
-    /// temporary and this form takes no scratch (spec section 4.2).
+    /// temporary and this form takes no scratch, so the derived body cannot be used.
     fn vec_znx_big_sub_small_assign(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -493,7 +493,7 @@ pub unsafe trait HalVecZnxBigImpl: Backend {
     }
 
     /// Required, not derived: the composition would need a `VecZnxBig`
-    /// temporary and this form takes no scratch (spec section 4.2).
+    /// temporary and this form takes no scratch, so the derived body cannot be used.
     fn vec_znx_big_sub_small_negate_assign(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -607,7 +607,7 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
 
     /// Required, not derived: the composition is `vec_znx_idft_apply(res, a)`,
     /// which needs `vec_znx_idft_apply_tmp_bytes` scratch this signature does
-    /// not carry (spec section 4.3, PR4 deviation).
+    /// not carry.
     fn vec_znx_idft_apply_tmpa(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -700,11 +700,11 @@ pub unsafe trait HalVecZnxDftImpl: Backend + HalVecZnxBigImpl {
 
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>, res_col: usize);
 
-    /// Backend-specific automorphism plan (e.g. a `Fft64AutomorphismPlan`
-    /// for FFT64 backends, a pure-permutation plan for NTT backends).
+    /// Backend-specific automorphism plan (e.g. a precomputed plan for a
+    /// floating-point FFT backend, a pure-permutation plan for an NTT backend).
     type AutomorphismPlan: Send + Sync;
 
-    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan;
+    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, n: usize, p: i64) -> Self::AutomorphismPlan;
 
     fn vec_znx_dft_automorphism_with_plan(
         module: &Module<Self>,
@@ -817,7 +817,7 @@ pub unsafe trait HalSvpImpl: Backend + HalVecZnxDftImpl {
     );
 
     /// Required, not derived: a default body would need a `VecZnxDft` temporary
-    /// the scratch-free signature does not carry (spec section 4.2).
+    /// the scratch-free signature does not carry, so the derived body cannot be used.
     fn svp_apply_dft_to_dft_assign(
         module: &Module<Self>,
         res: &mut crate::layouts::VecZnxDftBackendMut<'_, Self>,
@@ -972,10 +972,6 @@ pub unsafe trait HalConvolutionImpl: Backend + HalVecZnxDftImpl + HalVecZnxBigIm
         b_size: usize,
     ) -> usize;
 
-    /// Required, not derived: this is an exact big-domain product of `a` with
-    /// one coefficient column of `b`. The spec's DFT decomposition would route
-    /// it through an approximate transform on FFT64 (spec section 4.3, PR4
-    /// deviation).
     #[allow(clippy::too_many_arguments)]
     fn cnv_by_const_apply(
         module: &Module<Self>,

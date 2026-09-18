@@ -129,7 +129,9 @@ where
         let lvl_0: usize = BE::bytes_of_vec_znx(self.n(), 1, size);
         let lvl_1: usize = BE::bytes_of_vec_znx(self.n(), 1, size);
         let lvl_2: usize = self.vec_znx_normalize_tmp_bytes().max(
-            self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + self.vec_znx_big_normalize_tmp_bytes(),
+            self.bytes_of_vec_znx_dft(self.n(), 1, size)
+                + self.bytes_of_vec_znx_big(self.n(), 1, size)
+                + self.vec_znx_big_normalize_tmp_bytes(),
         );
 
         lvl_0 + lvl_1 + lvl_2
@@ -265,10 +267,12 @@ where
         let size: usize = infos.size();
         let cols: usize = (infos.rank() + 1).into();
         assert_eq!(self.n() as u32, infos.n());
-        let lvl_0: usize = self.bytes_of_svp_ppol(1, PrepareHint::Reuse);
+        let lvl_0: usize = self.bytes_of_svp_ppol(self.n(), 1, PrepareHint::Reuse);
         let lvl_1: usize = BE::bytes_of_scalar_znx(self.n(), 1);
         let lvl_2: usize = cols
-            * (self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + BE::bytes_of_vec_znx(self.n(), 1, size));
+            * (self.bytes_of_vec_znx_dft(self.n(), 1, size)
+                + self.bytes_of_vec_znx_big(self.n(), 1, size)
+                + BE::bytes_of_vec_znx(self.n(), 1, size));
         let lvl_3: usize = self.vec_znx_big_normalize_tmp_bytes();
 
         lvl_0 + lvl_1 + lvl_2 + lvl_3
@@ -393,7 +397,7 @@ where
 
         // Generates u according to the underlying secret distribution.
         let scratch = scratch.borrow();
-        let (mut u_dft, mut scratch_1) = scratch.take_svp_ppol_scratch(self, 1, PrepareHint::Reuse);
+        let (mut u_dft, mut scratch_1) = scratch.take_svp_ppol_scratch(self.n(), 1, PrepareHint::Reuse);
 
         {
             let (mut u_backend, scratch_2) = scratch_1.take_scalar_znx_scratch(self.n(), 1);
@@ -414,7 +418,7 @@ where
 
             // ct[i] = pk[i] * u + ei (+ m if col = i)
             for i in 0..cols {
-                let (mut ci_dft, scratch_2) = scratch_1.take_vec_znx_dft_scratch(self, 1, size_pk);
+                let (mut ci_dft, scratch_2) = scratch_1.take_vec_znx_dft_scratch(self.n(), 1, size_pk);
                 // ci_dft = DFT(u) * DFT(pk[i])
                 let u_dft_ref = u_dft.to_backend_ref();
                 {
@@ -423,7 +427,7 @@ where
                 }
 
                 // ci_big = u * p[i]
-                let (mut ci_big, scratch_3) = scratch_2.take_vec_znx_big_scratch(self, 1, size_pk);
+                let (mut ci_big, scratch_3) = scratch_2.take_vec_znx_big_scratch(self.n(), 1, size_pk);
                 {
                     let mut ci_big_backend = ci_big.to_backend_mut();
                     let mut ci_dft_backend = ci_dft.to_backend_mut();
@@ -545,10 +549,10 @@ where
             }
 
             {
-                let (mut ci_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(self, 1, size);
+                let (mut ci_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(self.n(), 1, size);
                 self.vec_znx_dft_apply(1, 0, &mut ci_dft.to_backend_mut(), 0, &ci.to_backend_ref(), 0);
                 self.svp_apply_dft_to_dft_assign(&mut ci_dft.to_backend_mut(), 0, &sk.data, i - 1);
-                let (mut ci_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, size);
+                let (mut ci_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self.n(), 1, size);
                 self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut ci_dft.to_backend_mut(), 0);
                 self.vec_znx_big_normalize(
                     &mut ci.to_backend_mut(),

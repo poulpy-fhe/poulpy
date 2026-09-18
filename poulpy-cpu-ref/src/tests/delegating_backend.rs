@@ -25,6 +25,7 @@ fn sample_glwe() -> GLWE<Vec<u8>, i64> {
 
 #[test]
 fn delegating_backend_manual_family_matches_fft64_ref() {
+    assert_eq!(Module::<DelegatingFFT64Ref>::MAX_BASE2K, Module::<FFT64Ref>::MAX_BASE2K);
     let module_delegating: Module<DelegatingFFT64Ref> = Module::new(256);
     let module_ref: Module<FFT64Ref> = Module::new(256);
 

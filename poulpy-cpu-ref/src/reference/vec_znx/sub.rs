@@ -1,3 +1,4 @@
+use super::{vec_znx_sub_assign_mixed, vec_znx_sub_mixed, vec_znx_sub_negate_assign_mixed};
 use crate::{
     layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
     reference::znx::{ZnxCopy, ZnxNegate, ZnxNegateAssign, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero},
@@ -15,9 +16,8 @@ pub fn vec_znx_sub<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    {
-        assert_eq!(a.n(), res.n());
-        assert_eq!(b.n(), res.n());
+    if a.n() != res.n() || b.n() != res.n() {
+        return vec_znx_sub_mixed(res, res_col, a, a_col, b, b_col);
     }
 
     let res_size: usize = res.size();
@@ -67,8 +67,8 @@ pub fn vec_znx_sub_assign<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    {
-        assert_eq!(a.n(), res.n());
+    if a.n() != res.n() {
+        return vec_znx_sub_assign_mixed(res, res_col, a, a_col);
     }
 
     let res_size: usize = res.size();
@@ -91,8 +91,8 @@ pub fn vec_znx_sub_negate_assign<'r, 'a, BE>(
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
-    {
-        assert_eq!(a.n(), res.n());
+    if a.n() != res.n() {
+        return vec_znx_sub_negate_assign_mixed(res, res_col, a, a_col);
     }
 
     let res_size: usize = res.size();

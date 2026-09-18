@@ -44,7 +44,7 @@ pub struct NTT4x30Avx512Handle {
 impl poulpy_hal::execution::ScratchWorkers for NTT4x30Avx512 {}
 
 impl Backend for NTT4x30Avx512 {
-    const DFT_IS_EXACT: bool = true;
+    const MAX_BASE2K: usize = <poulpy_cpu_ref::NTT4x30Ref as Backend>::MAX_BASE2K;
 
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = CrtWord<Primes30, u32>;

@@ -20,8 +20,8 @@ where
     let size: usize = infos.size();
     assert_eq!(module.n() as u32, infos.n());
 
-    let lvl_0: usize = module.bytes_of_vec_znx_big(1, size);
-    let lvl_1: usize = (module.bytes_of_vec_znx_dft(1, size) + module.bytes_of_vec_znx_big(1, size))
+    let lvl_0: usize = module.bytes_of_vec_znx_big(module.n(), 1, size);
+    let lvl_1: usize = (module.bytes_of_vec_znx_dft(module.n(), 1, size) + module.bytes_of_vec_znx_big(module.n(), 1, size))
         .max(module.vec_znx_big_normalize_tmp_bytes());
 
     lvl_0 + lvl_1
@@ -82,17 +82,17 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
     );
 
     let cols: usize = (res.rank() + 1).into();
-    let (mut c0_big, mut scratch_1) = scratch.borrow().take_vec_znx_big_scratch(module, 1, res.size());
+    let (mut c0_big, mut scratch_1) = scratch.borrow().take_vec_znx_big_scratch(module.n(), 1, res.size());
     module.vec_znx_big_from_small(&mut c0_big, 0, &res.data, 0);
 
     for i in 1..cols {
-        let (mut ci_dft, scratch_2) = scratch_1.borrow().take_vec_znx_dft_scratch(module, 1, res.size());
+        let (mut ci_dft, scratch_2) = scratch_1.borrow().take_vec_znx_dft_scratch(module.n(), 1, res.size());
         module.vec_znx_dft_apply(1, 0, &mut ci_dft, 0, &res.data, i);
         {
             let mut ci_dft_backend = ci_dft.to_backend_mut();
             module.svp_apply_dft_to_dft_assign(&mut ci_dft_backend, 0, &sk.data, i - 1);
         }
-        let (mut ci_big, _) = scratch_2.take_vec_znx_big_scratch(module, 1, res.size());
+        let (mut ci_big, _) = scratch_2.take_vec_znx_big_scratch(module.n(), 1, res.size());
         {
             let mut ci_big_backend = ci_big.to_backend_mut();
             let mut ci_dft_backend = ci_dft.to_backend_mut();

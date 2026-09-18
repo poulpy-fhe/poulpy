@@ -38,17 +38,13 @@ impl_vec_znx_big_delegate!(
 );
 
 impl<B: Backend> VecZnxBigAlloc<B> for Module<B> {
-    fn vec_znx_big_alloc(&self, cols: usize, size: usize) -> VecZnxBigOwned<B> {
-        VecZnxBigOwned::<B>::alloc(self.n(), cols, size)
+    fn vec_znx_big_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B> {
+        VecZnxBigOwned::<B>::alloc(n, cols, size)
     }
 }
 
 impl<B: Backend> VecZnxBigBytesOf for Module<B> {
-    fn bytes_of_vec_znx_big(&self, cols: usize, size: usize) -> usize {
-        self.bytes_of_vec_znx_big_n(self.n(), cols, size)
-    }
-
-    fn bytes_of_vec_znx_big_n(&self, n: usize, cols: usize, size: usize) -> usize {
+    fn bytes_of_vec_znx_big(&self, n: usize, cols: usize, size: usize) -> usize {
         B::bytes_of_vec_znx_big(n, cols, size)
     }
 }

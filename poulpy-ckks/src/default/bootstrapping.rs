@@ -244,7 +244,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
 
         // MSB-align `src` into the wider `dst`: the value occupies the top
         // `k_small` bits and the freshly-introduced low-order limbs are zero.
-        self.glwe_copy(dst, src);
+        self.glwe_copy(dst, src, scratch);
 
         // Shift the digits down to their natural integer magnitude. This is the
         // modulus raise: the raised-from modulus `q = 2^k_small` becomes an
@@ -381,17 +381,12 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: CKKSDFTOps<BE> + GLWENormalize<BE>,
+        Module<BE>: CKKSDFTOps<BE>,
         K: BootstrappingKeys<BE>,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        self.ckks_coeffs_to_slots_split(r0, i0, ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
-        let log_delta = r0.log_delta() - ctx.c2s_guard_bits();
-        ckks_set_log_delta_normalized(self.0, r0, log_delta, scratch);
-        let log_delta = i0.log_delta() - ctx.c2s_guard_bits();
-        ckks_set_log_delta_normalized(self.0, i0, log_delta, scratch);
-        Ok(())
+        self.ckks_coeffs_to_slots_split(r0, i0, ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)
     }
 
     fn ckks_bootstrap_coeffs_to_slots_real<F, K, R1, R2>(
@@ -403,7 +398,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: CKKSDFTOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + GLWENormalize<BE>,
+        Module<BE>: CKKSDFTOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
         K: BootstrappingKeys<BE>,
         R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -411,11 +406,18 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
         self.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
         self.ckks_conjugate_into(conjugate, &*ct, keys.rotation_keys(), scratch)?;
         self.ckks_add_assign(ct, &*conjugate, scratch)?;
-        let log_delta = ct.log_delta() - ctx.c2s_guard_bits();
-        ckks_set_log_delta_normalized(self.0, ct, log_delta, scratch);
         // `z + conj(z) = 2·Re(z)` holds the input polynomial's coefficients.
         ct.set_slots(SlotsKind::Real);
         Ok(())
+    }
+
+    fn remove_c2s_guard_bits<R>(&self, ct: &mut R, bits: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
+        Module<BE>: GLWENormalize<BE>,
+        R: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+    {
+        let log_delta = ct.log_delta() - bits;
+        ckks_set_log_delta_normalized(self.0, ct, log_delta, scratch);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -530,11 +532,6 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
                         keys.rotation_keys(),
                         &mut scratch_local,
                     )?;
-                    let log_delta = r0_hp.log_delta() - ctx.c2s_guard_bits();
-                    ckks_set_log_delta_normalized(self.0, &mut r0_hp, log_delta, &mut scratch_local);
-                    let log_delta = i0_hp.log_delta() - ctx.c2s_guard_bits();
-                    ckks_set_log_delta_normalized(self.0, &mut i0_hp, log_delta, &mut scratch_local);
-
                     {
                         let r0_ref = r0.to_backend_view_ref();
                         let i0_ref = i0.to_backend_view_ref();
@@ -565,13 +562,16 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
                     self.ckks_copy(ct_out, &r0_hp, &mut scratch_local)?;
                 }
             }
-            ct_out.set_meta(CKKSMeta {
-                log_sparsity: ct_in.log_sparsity(),
-                log_delta: ct_in.log_delta(),
-                slots: ct_in.slots(),
-            });
             Result::Ok(())
-        })
+        })?;
+        // Keep the C2S guard bits through EvalMod, then normalize at the output width.
+        self.remove_c2s_guard_bits(ct_out, ctx.c2s_guard_bits(), scratch);
+        ct_out.set_meta(CKKSMeta {
+            log_sparsity: ct_in.log_sparsity(),
+            log_delta: ct_in.log_delta(),
+            slots: ct_in.slots(),
+        });
+        Ok(())
     }
 
     fn ckks_bootstrap_s2c_mod_up<F, K, R>(
@@ -660,6 +660,10 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
+        ckks_ensure!(
+            ctx.functional_message_modulus().is_none(),
+            "ckks_bootstrap requires an identity bootstrapping context"
+        );
         // All pipeline intermediates are rank-1 working ciphertexts carved from
         // scratch (accounted for by `ckks_bootstrap_tmp_bytes`); reject
         // higher-rank inputs up front.
@@ -816,6 +820,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
             self.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
             self.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
             self.ckks_eval_mod(ct_out, &ct_raised, ctx.eval_mod(), keys.tensor_key(), &mut scratch_local)?;
+            self.remove_c2s_guard_bits(ct_out, ctx.c2s_guard_bits(), &mut scratch_local);
             ct_out.set_meta(CKKSMeta {
                 log_sparsity: ct_in.log_sparsity(),
                 log_delta: ct_in.log_delta(),
@@ -876,8 +881,8 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
         );
         let log_msg_ratio = luts[0].log_msg_ratio();
         ckks_ensure!(
-            luts.iter().all(|lut| lut.log_msg_ratio() == log_msg_ratio),
-            "functional bootstrap LUTs must have the same message ratio"
+            luts.iter().all(|lut| lut.message_modulus() == luts[0].message_modulus()),
+            "functional bootstrap LUTs must have the same message modulus"
         );
         if luts.iter().any(EncodedLut::requires_eval_mod) {
             ensure_unit_circle_exp_context(ctx)?;
@@ -896,14 +901,17 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
             "bootstrapping key encapsulation does not match the compiled recipe"
         );
         ensure_functional_message_ratio(ct_in, ctx.slots_to_coeffs().consumed_bits(), log_msg_ratio)?;
+        ckks_ensure!(
+            ctx.functional_message_modulus().unwrap_or(1usize << log_msg_ratio) == luts[0].message_modulus(),
+            "functional bootstrap context must be configured for message modulus {}",
+            luts[0].message_modulus()
+        );
         let output_contracts = ct_outs
             .iter()
             .zip(luts)
             .map(|(ct_out, lut)| functional_output_contract(ct_in, ctx, lut, ct_out.k().as_usize()))
             .collect::<Result<Vec<_>>>()?;
 
-        // A shared power basis pays for itself only across several general LUTs; a
-        // single LUT, or any batch containing a binary one, evaluates per LUT.
         let shared = luts.len() > 1 && luts.iter().all(|lut| lut.general_series().is_some());
         let boot_layout = GLWELayout {
             n: out_n,
@@ -918,12 +926,15 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl> BootstrappingDefault<'_, BE> {
             if ct_in.slots().is_real() {
                 let (mut r0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
                 self.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
+                self.remove_c2s_guard_bits(&mut ct_raised, ctx.c2s_guard_bits(), &mut scratch_local);
                 return eval_lut_batch(self, ct_outs, &ct_raised, ctx, luts, keys, shared, &mut scratch_local);
             }
 
             let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
             let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
             self.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
+            self.remove_c2s_guard_bits(&mut r0, ctx.c2s_guard_bits(), &mut scratch_local);
+            self.remove_c2s_guard_bits(&mut i0, ctx.c2s_guard_bits(), &mut scratch_local);
 
             eval_lut_batch(self, ct_outs, &r0, ctx, luts, keys, shared, &mut scratch_local)?;
 

@@ -68,7 +68,7 @@ where
 {
     fn glwe_secret_prepared_alloc(&self, rank: Rank) -> GLWESecretPrepared<B::OwnedBuf, B> {
         GLWESecretPrepared {
-            data: self.svp_ppol_alloc(rank.into(), PrepareHint::Reuse),
+            data: self.svp_ppol_alloc(self.ring_degree().into(), rank.into(), PrepareHint::Reuse),
             dist: Distribution::NONE,
         }
     }
@@ -81,7 +81,7 @@ where
     }
 
     fn glwe_secret_prepared_bytes_of(&self, rank: Rank) -> usize {
-        self.bytes_of_svp_ppol(rank.into(), PrepareHint::Reuse)
+        self.bytes_of_svp_ppol(self.ring_degree().into(), rank.into(), PrepareHint::Reuse)
     }
     fn glwe_secret_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where

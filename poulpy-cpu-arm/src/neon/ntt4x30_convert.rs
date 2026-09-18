@@ -511,7 +511,6 @@ pub(crate) fn vec_znx_idft_apply_consume<D: Data>(
 where
     VecZnxDft<D, <NTT4x30Neon as poulpy_hal::layouts::Backend>::DftWord, NTT4x30Neon>: VecZnxDftToBackendMut<NTT4x30Neon>,
 {
-    let table = module.get_intt_table();
     let (n, n_blocks, u64_ptr) = {
         let mut a_mut: VecZnxDftBackendMut<'_, NTT4x30Neon> = a.to_backend_mut();
         let n = a_mut.n();
@@ -522,6 +521,8 @@ where
         };
         (n, n_blocks, ptr)
     };
+    poulpy_hal::layouts::check_degree::<NTT4x30Neon>(module.n(), n);
+    let table = module.get_intt_table_for(n);
     unsafe { compact_all_blocks_neon(n, n_blocks, u64_ptr, table) };
     a.into_big()
 }

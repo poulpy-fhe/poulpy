@@ -7,11 +7,10 @@
 //! and the resulting word type [`CrtWord<P, T>`], a [`DftWord`] for any
 //! `(P, T)`.
 //!
-//! Concrete prime sets live with their kernel families in the backend crates
-//! (e.g. `Primes29/30/31` and the full-CRT `PrimeSetCrt4` extension in
-//! `poulpy-cpu-ref`'s ntt4x30 module, `Primes42` and the Garner
-//! `PrimeSetNtt3x42Ifma` extension in `poulpy-cpu-avx512`), as do the CRT
-//! *reconstruction* constants, whose semantics differ per family.
+//! Concrete prime sets live with their kernel families in the backend crates,
+//! each backend crate implementing the prime-set traits next to its concrete
+//! word, as do the CRT *reconstruction* constants, whose semantics differ per
+//! family.
 
 use std::fmt::{self, Debug, Display, LowerHex};
 use std::ops::Add;
@@ -88,11 +87,9 @@ impl<T: LaneElem, const N: usize> LaneArray<T> for [T; N] {
 /// The lane count and the storage element of the prime constants are part
 /// of the prime set (`Lanes<T> = [T; N]`, `PrimeElem` = `u32` for the
 /// ~30-bit family, `u64` for the ~42-bit family). CRT *reconstruction*
-/// constants are intentionally not part of this trait — their semantics
-/// differ per family (full-CRT vs Garner) and live on extension traits in
-/// the backend crates (e.g. `PrimeSetCrt4` in `poulpy-cpu-ref`,
-/// `PrimeSetNtt3x42Ifma` in `poulpy-cpu-avx512`), next to the concrete
-/// prime-set implementations.
+/// constants are intentionally not part of this trait, their semantics
+/// differ per family (full-CRT vs Garner) and live on extension traits a
+/// backend crate implements next to its concrete prime-set implementations.
 pub trait PrimeSet: Sized + Sync + Send + 'static {
     /// Storage element of the prime constants.
     type PrimeElem: LaneElem;

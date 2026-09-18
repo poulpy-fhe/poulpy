@@ -220,7 +220,7 @@ fn main() {
 
     // Allocate "ideal" GGSW(data) plaintext
     let mut pt_ggsw: ScalarZnx<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
-        module.scalar_znx_alloc(1);
+        module.scalar_znx_alloc(module.n(), 1);
     pt_ggsw.at_mut(0, 0)[0] = data;
     let pt_ggsw_ref = ScalarZnx::from_data(pt_ggsw.data.as_slice(), pt_ggsw.n(), pt_ggsw.cols());
 

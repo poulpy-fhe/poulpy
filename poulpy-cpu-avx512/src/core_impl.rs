@@ -162,19 +162,22 @@ impl RankOneTensorDft for NTT3x42IfmaRayon {
 /// Enforces the Core degree contract before specialized kernels size scratch
 /// from `module` and index the operands.
 #[inline]
-fn assert_degrees<BE: Backend>(module: &Module<BE>, degrees: [Degree; 3]) {
-    for n in degrees {
-        let n: u32 = n.into();
-        assert_eq!(module.n() as u32, n, "operand degree does not match the module");
+fn assert_degrees<BE: Backend>(module: &Module<BE>, degrees: [Degree; 3]) -> usize {
+    let n: usize = degrees[0].as_usize();
+    poulpy_hal::layouts::check_degree::<BE>(module.n(), n);
+    for other in &degrees[1..] {
+        assert_eq!(other.as_usize(), n, "operand degrees do not match each other");
     }
+    n
 }
 
-fn rank_one_tensor_supported<BE: Backend, R: GLWEInfos>(module: &Module<BE>, res: &R) -> bool {
-    res.rank().as_usize() == 1 && matches!(module.n(), 32768 | 65536)
+fn rank_one_tensor_supported<R: GLWEInfos>(res: &R) -> bool {
+    res.rank().as_usize() == 1 && matches!(res.n().as_usize(), 32768 | 65536)
 }
 
 fn rank_one_tensor_work_bytes<BE: RankOneTensorDft>(
     module: &Module<BE>,
+    n: usize,
     res_size: usize,
     dft_size: usize,
     a_size: usize,
@@ -184,12 +187,12 @@ where
     Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes + VecZnxNormalizeTmpBytes,
 {
     let kernel = BE::rank_one_tensor_dft_tmp_bytes(dft_size, a_size, b_size);
-    let normalize = module.bytes_of_vec_znx_big(1, dft_size)
-        + BE::bytes_of_vec_znx(module.n(), 1, res_size)
+    let normalize = module.bytes_of_vec_znx_big(n, 1, dft_size)
+        + BE::bytes_of_vec_znx(n, 1, res_size)
         + module
             .vec_znx_big_normalize_tmp_bytes()
             .max(module.vec_znx_normalize_tmp_bytes());
-    BE::bytes_of_vec_znx(module.n(), 2, res_size) + module.bytes_of_vec_znx_dft(3, dft_size) + kernel.max(normalize)
+    BE::bytes_of_vec_znx(n, 2, res_size) + module.bytes_of_vec_znx_dft(n, 3, dft_size) + kernel.max(normalize)
 }
 
 fn rank_one_tensor_apply_tmp_bytes<BE, R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
@@ -206,18 +209,18 @@ where
     A: GLWEInfos,
     B: GLWEInfos,
 {
-    assert_degrees(module, [res.n(), a.n(), b.n()]);
+    let n = assert_degrees(module, [res.n(), a.n(), b.n()]);
     let base2k = a.base2k().as_usize();
     assert_eq!(b.base2k().as_usize(), base2k);
     let a_size = a.k().as_usize().div_ceil(base2k);
     let b_size = b.k().as_usize().div_ceil(base2k);
     let dft_size = (a_size + b_size).min((res.size() * res.base2k().as_usize() + base2k - 1).div_ceil(base2k));
-    let prepared = module.bytes_of_cnv_pvec_left(2, a_size, PrepareHint::Reuse)
-        + module.bytes_of_cnv_pvec_right(2, b_size, PrepareHint::Reuse);
+    let prepared = module.bytes_of_cnv_pvec_left(n, 2, a_size, PrepareHint::Reuse)
+        + module.bytes_of_cnv_pvec_right(n, 2, b_size, PrepareHint::Reuse);
     let prepare = module
         .cnv_prepare_left_tmp_bytes(a_size, a_size)
         .max(module.cnv_prepare_right_tmp_bytes(b_size, b_size));
-    prepared + prepare.max(rank_one_tensor_work_bytes(module, res.size(), dft_size, a_size, b_size))
+    prepared + prepare.max(rank_one_tensor_work_bytes(module, n, res.size(), dft_size, a_size, b_size))
 }
 
 fn rank_one_tensor_square_tmp_bytes<BE, R, A>(module: &Module<BE>, res: &R, a: &A) -> usize
@@ -233,14 +236,14 @@ where
     R: GLWEInfos,
     A: GLWEInfos,
 {
-    assert_degrees(module, [res.n(), a.n(), a.n()]);
+    let n = assert_degrees(module, [res.n(), a.n(), a.n()]);
     let base2k = a.base2k().as_usize();
     let a_size = a.k().as_usize().div_ceil(base2k);
     let dft_size = (2 * a_size).min((res.size() * res.base2k().as_usize() + base2k - 1).div_ceil(base2k));
-    let prepared = module.bytes_of_cnv_pvec_left(2, a_size, PrepareHint::Reuse)
-        + module.bytes_of_cnv_pvec_right(2, a_size, PrepareHint::Reuse);
+    let prepared = module.bytes_of_cnv_pvec_left(n, 2, a_size, PrepareHint::Reuse)
+        + module.bytes_of_cnv_pvec_right(n, 2, a_size, PrepareHint::Reuse);
     let prepare = module.cnv_prepare_self_tmp_bytes(a_size, a_size);
-    prepared + prepare.max(rank_one_tensor_work_bytes(module, res.size(), dft_size, a_size, a_size))
+    prepared + prepare.max(rank_one_tensor_work_bytes(module, n, res.size(), dft_size, a_size, a_size))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -280,7 +283,9 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         in_base2k,
         cnv_offset_lo,
     );
-    let (mut tensor_dft, mut work) = scratch.borrow().take_vec_znx_dft_scratch(module, 3, dft_size);
+    let n: usize = res.n().as_usize();
+    poulpy_hal::layouts::check_degree::<BE>(module.n(), n);
+    let (mut tensor_dft, mut work) = scratch.borrow().take_vec_znx_dft_scratch(n, 3, dft_size);
     BE::rank_one_tensor_dft(
         module,
         &mut tensor_dft.to_backend_mut(),
@@ -291,7 +296,7 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
     );
 
     for (dft_col, res_col) in [(0, 0), (2, 2)] {
-        let (mut product_big, mut norm_scratch) = work.borrow().take_vec_znx_big_scratch(module, 1, dft_size);
+        let (mut product_big, mut norm_scratch) = work.borrow().take_vec_znx_big_scratch(n, 1, dft_size);
         module.vec_znx_idft_apply_tmpa(
             &mut product_big.to_backend_mut(),
             0,
@@ -311,9 +316,9 @@ fn rank_one_tensor_finish<BE, R, AP, BP>(
         );
     }
 
-    let (mut product_big, scratch) = work.borrow().take_vec_znx_big_scratch(module, 1, dft_size);
+    let (mut product_big, scratch) = work.borrow().take_vec_znx_big_scratch(n, 1, dft_size);
     module.vec_znx_idft_apply_tmpa(&mut product_big.to_backend_mut(), 0, &mut tensor_dft.to_backend_mut(), 1);
-    let (mut pairwise, mut norm_scratch) = scratch.take_vec_znx_scratch(module.n(), 1, res.size());
+    let (mut pairwise, mut norm_scratch) = scratch.take_vec_znx_scratch(n, 1, res.size());
     module.vec_znx_big_normalize(
         &mut pairwise.to_backend_mut(),
         res_base2k,
@@ -360,7 +365,7 @@ fn rank_one_tensor_apply<BE, R, A, B>(
     A: GLWEToBackendRef<BE> + GLWEInfos,
     B: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    assert_degrees(module, [res.n(), a.n(), b.n()]);
+    let n = assert_degrees(module, [res.n(), a.n(), b.n()]);
     assert!(scratch.available() >= rank_one_tensor_apply_tmp_bytes(module, res, a, b));
     let base2k = a.base2k().as_usize();
     assert_eq!(b.base2k().as_usize(), base2k);
@@ -368,10 +373,8 @@ fn rank_one_tensor_apply<BE, R, A, B>(
     let b_size = b.k().as_usize().div_ceil(base2k);
     assert!(a_size <= a.size());
     assert!(b_size <= b.size());
-    let (mut a_prep, scratch) = scratch
-        .borrow()
-        .take_cnv_pvec_left_scratch(module, 2, a_size, PrepareHint::Reuse);
-    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, b_size, PrepareHint::Reuse);
+    let (mut a_prep, scratch) = scratch.borrow().take_cnv_pvec_left_scratch(n, 2, a_size, PrepareHint::Reuse);
+    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(n, 2, b_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
         module.cnv_prepare_left(&mut a_prep, a.to_backend_ref().data(), &mut prep_scratch);
@@ -413,15 +416,13 @@ fn rank_one_tensor_square<BE, R, A>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    assert_degrees(module, [res.n(), a.n(), a.n()]);
+    let n = assert_degrees(module, [res.n(), a.n(), a.n()]);
     assert!(scratch.available() >= rank_one_tensor_square_tmp_bytes(module, res, a));
     let base2k = a.base2k().as_usize();
     let a_size = a.k().as_usize().div_ceil(base2k);
     assert!(a_size <= a.size());
-    let (mut a_prep, scratch) = scratch
-        .borrow()
-        .take_cnv_pvec_left_scratch(module, 2, a_size, PrepareHint::Reuse);
-    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(module, 2, a_size, PrepareHint::Reuse);
+    let (mut a_prep, scratch) = scratch.borrow().take_cnv_pvec_left_scratch(n, 2, a_size, PrepareHint::Reuse);
+    let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(n, 2, a_size, PrepareHint::Reuse);
     {
         let mut prep_scratch = scratch.borrow();
         module.cnv_prepare_self(&mut a_prep, &mut b_prep, a.to_backend_ref().data(), &mut prep_scratch);
@@ -448,7 +449,7 @@ macro_rules! impl_rank_one_tensoring {
                 A: GLWEInfos,
                 B: GLWEInfos,
             {
-                if rank_one_tensor_supported(module, res) {
+                if rank_one_tensor_supported(res) {
                     rank_one_tensor_apply_tmp_bytes(module, res, a, b)
                 } else {
                     module.glwe_tensor_apply_tmp_bytes_default(res, a, b)
@@ -460,7 +461,7 @@ macro_rules! impl_rank_one_tensoring {
                 R: GLWEInfos,
                 A: GLWEInfos,
             {
-                if rank_one_tensor_supported(module, res) {
+                if rank_one_tensor_supported(res) {
                     rank_one_tensor_square_tmp_bytes(module, res, a)
                 } else {
                     module.glwe_tensor_square_apply_tmp_bytes_default(res, a)
@@ -479,7 +480,7 @@ macro_rules! impl_rank_one_tensoring {
                 A: GLWEToBackendRef<$be> + GLWEInfos,
                 B: GLWEToBackendRef<$be> + GLWEInfos,
             {
-                if rank_one_tensor_supported(module, res) {
+                if rank_one_tensor_supported(res) {
                     rank_one_tensor_apply(module, cnv_offset, res, a, b, scratch)
                 } else {
                     module.glwe_tensor_apply_default(cnv_offset, res, a, b, scratch)
@@ -496,7 +497,7 @@ macro_rules! impl_rank_one_tensoring {
                 R: GLWEToBackendMut<$be> + GLWEInfos,
                 A: GLWEToBackendRef<$be> + GLWEInfos,
             {
-                if rank_one_tensor_supported(module, res) {
+                if rank_one_tensor_supported(res) {
                     rank_one_tensor_square(module, cnv_offset, res, a, scratch)
                 } else {
                     module.glwe_tensor_square_apply_default(cnv_offset, res, a, scratch)

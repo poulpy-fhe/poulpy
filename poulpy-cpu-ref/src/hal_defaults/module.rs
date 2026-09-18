@@ -14,6 +14,11 @@ where
     where
         Self::Handle: FFT64HandleFactory,
     {
+        assert!(
+            n as usize >= Self::MIN_DEGREE,
+            "Module::new: degree {n} is below the backend floor {}",
+            Self::MIN_DEGREE
+        );
         <Self::Handle as FFT64HandleFactory>::assert_fft64_runtime_support();
         let handle = <Self::Handle as FFT64HandleFactory>::create_fft64_handle(n as usize);
         let ptr: NonNull<Self::Handle> = NonNull::from(Box::leak(Box::new(handle)));
@@ -32,6 +37,11 @@ where
     where
         Self::Handle: NttHandleFactory,
     {
+        assert!(
+            n as usize >= Self::MIN_DEGREE,
+            "Module::new: degree {n} is below the backend floor {}",
+            Self::MIN_DEGREE
+        );
         <Self::Handle as NttHandleFactory>::assert_ntt_runtime_support();
         let handle = <Self::Handle as NttHandleFactory>::create_ntt_handle(n as usize);
         let ptr: NonNull<Self::Handle> = NonNull::from(Box::leak(Box::new(handle)));

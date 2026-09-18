@@ -1022,7 +1022,7 @@ mod tests {
 
     #[test]
     fn ntt_avx512_vs_ref() {
-        // NTT3x42Ifma operates on n >= 8 (enforced by Module::new); the kernel is
+        // NTT3x42Ifma operates on n >= 16 (enforced by Module::new); the kernel is
         // validated against the scalar reference over that supported range.
         for log_n in 3..=10usize {
             let n = 1 << log_n;
@@ -1236,7 +1236,7 @@ mod tests {
 
     #[test]
     fn ntt_intt_avx512_roundtrip() {
-        // NTT3x42Ifma operates on n >= 8 (enforced by Module::new); forward then
+        // NTT3x42Ifma operates on n >= 16 (enforced by Module::new); forward then
         // inverse recovers the input (mod q) over that supported range.
         for log_n in 3..=10usize {
             let n = 1 << log_n;

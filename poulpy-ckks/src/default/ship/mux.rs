@@ -38,7 +38,7 @@ where
             if key.gal_el != 1 {
                 plans
                     .entry(key.gal_el)
-                    .or_insert_with(|| module.vec_znx_dft_automorphism_plan(key.gal_el));
+                    .or_insert_with(|| module.vec_znx_dft_automorphism_plan(module.n(), key.gal_el));
             }
         }
     }
@@ -56,9 +56,11 @@ where
     let a_size = ct.size();
     let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
     let product = module.gglwe_product_dft_tmp_bytes_default(output_size, a_size, key);
-    let mux = 2 * module.bytes_of_vec_znx_dft(2, output_size) + product;
-    let finalize = module.bytes_of_vec_znx_big(2, output_size) + module.vec_znx_big_normalize_tmp_bytes();
-    module.bytes_of_vec_znx_dft(2, a_size) + module.bytes_of_vec_znx_dft(2, output_size) + mux.max(finalize)
+    let mux = 2 * module.bytes_of_vec_znx_dft(module.n(), 2, output_size) + product;
+    let finalize = module.bytes_of_vec_znx_big(module.n(), 2, output_size) + module.vec_znx_big_normalize_tmp_bytes();
+    module.bytes_of_vec_znx_dft(module.n(), 2, a_size)
+        + module.bytes_of_vec_znx_dft(module.n(), 2, output_size)
+        + mux.max(finalize)
 }
 
 /// Hoisted B-to-1 mux-rotate: `ct <- sum_d beta_d * Rot_{rot_d}(ct)` over the
@@ -97,7 +99,7 @@ where
     );
 
     let scratch = scratch.borrow();
-    let (mut a_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module, 2, a_size);
+    let (mut a_dft, scratch_1) = scratch.take_vec_znx_dft_scratch(module.n(), 2, a_size);
     {
         let a_ref = GLWEToBackendRef::<BE>::to_backend_ref(ct);
         let mut a_dft_mut = a_dft.to_backend_mut();
@@ -106,14 +108,14 @@ where
     }
     let a_dft_ref = a_dft.to_backend_ref();
 
-    let (mut sum_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, 2, output_size);
+    let (mut sum_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module.n(), 2, output_size);
     {
         let mut sum_dft_mut = sum_dft.to_backend_mut();
         for col in 0..2 {
             module.vec_znx_dft_zero(&mut sum_dft_mut, col);
         }
-        let (mut prod_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(module, 2, output_size);
-        let (mut rot_dft, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module, 2, output_size);
+        let (mut prod_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(module.n(), 2, output_size);
+        let (mut rot_dft, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module.n(), 2, output_size);
         for key in keys {
             ckks_ensure!(key.key.size() == key_size, "{OP}: inconsistent key sizes in group");
             {
@@ -150,7 +152,7 @@ where
         }
     }
 
-    let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(module, 2, output_size);
+    let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(module.n(), 2, output_size);
     {
         let mut res_big_mut = res_big.to_backend_mut();
         let mut sum_dft_mut = sum_dft.to_backend_mut();

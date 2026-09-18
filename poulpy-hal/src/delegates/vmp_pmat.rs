@@ -22,14 +22,22 @@ macro_rules! impl_vmp_delegate {
 }
 
 impl<B: Backend> VmpPMatAlloc<B> for Module<B> {
-    fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> VmpPMatOwned<B> {
-        VmpPMatOwned::<B>::alloc(self.n(), rows, cols_in, cols_out, size, hint)
+    fn vmp_pmat_alloc(
+        &self,
+        n: usize,
+        rows: usize,
+        cols_in: usize,
+        cols_out: usize,
+        size: usize,
+        hint: PrepareHint,
+    ) -> VmpPMatOwned<B> {
+        VmpPMatOwned::<B>::alloc(n, rows, cols_in, cols_out, size, hint)
     }
 }
 
 impl<B: Backend> VmpPMatBytesOf for Module<B> {
-    fn bytes_of_vmp_pmat(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize {
-        B::bytes_of_vmp_pmat(self.n(), rows, cols_in, cols_out, size, hint)
+    fn bytes_of_vmp_pmat(&self, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize, hint: PrepareHint) -> usize {
+        B::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size, hint)
     }
 }
 

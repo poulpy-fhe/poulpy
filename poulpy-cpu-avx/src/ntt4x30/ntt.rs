@@ -1025,9 +1025,16 @@ unsafe fn intt_iter_last_fused(
 /// # Safety
 ///
 /// Caller must ensure AVX2 is available (guaranteed by `NTT4x30Avx` construction).
-/// `data.len()` must be `>= 4 * table.n`.
+/// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn ntt_avx2<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
+    assert_eq!(
+        data.len(),
+        4 * table.n,
+        "ntt_avx2: data.len():{} != 4 * table.n:{}",
+        data.len(),
+        4 * table.n
+    );
     let n = table.n;
     if n == 1 {
         return;
@@ -1190,9 +1197,16 @@ pub(crate) unsafe fn ntt_avx2<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [
 /// # Safety
 ///
 /// Caller must ensure AVX2 is available (guaranteed by `NTT4x30Avx` construction).
-/// `data.len()` must be `>= 4 * table.n`.
+/// `data.len()` must be `4 * table.n`.
 #[target_feature(enable = "avx2")]
 pub(crate) unsafe fn intt_avx2<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
+    assert_eq!(
+        data.len(),
+        4 * table.n,
+        "intt_avx2: data.len():{} != 4 * table.n:{}",
+        data.len(),
+        4 * table.n
+    );
     let n = table.n;
     if n == 1 {
         return;

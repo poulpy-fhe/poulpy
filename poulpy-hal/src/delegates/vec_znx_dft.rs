@@ -24,14 +24,14 @@ macro_rules! impl_vec_znx_dft_delegate {
 }
 
 impl<B: Backend> VecZnxDftBytesOf for Module<B> {
-    fn bytes_of_vec_znx_dft(&self, cols: usize, size: usize) -> usize {
-        B::bytes_of_vec_znx_dft(self.n(), cols, size)
+    fn bytes_of_vec_znx_dft(&self, n: usize, cols: usize, size: usize) -> usize {
+        B::bytes_of_vec_znx_dft(n, cols, size)
     }
 }
 
 impl<B: Backend> VecZnxDftAlloc<B> for Module<B> {
-    fn vec_znx_dft_alloc(&self, cols: usize, size: usize) -> VecZnxDftOwned<B> {
-        VecZnxDftOwned::<B>::alloc(self.n(), cols, size)
+    fn vec_znx_dft_alloc(&self, n: usize, cols: usize, size: usize) -> VecZnxDftOwned<B> {
+        VecZnxDftOwned::<B>::alloc(n, cols, size)
     }
 }
 
@@ -206,8 +206,8 @@ where
 {
     type Plan = B::AutomorphismPlan;
 
-    fn vec_znx_dft_automorphism_plan(&self, p: i64) -> Self::Plan {
-        B::vec_znx_dft_automorphism_plan(self, p)
+    fn vec_znx_dft_automorphism_plan(&self, n: usize, p: i64) -> Self::Plan {
+        B::vec_znx_dft_automorphism_plan(self, n, p)
     }
 }
 

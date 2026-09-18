@@ -67,7 +67,7 @@ where
                 1,
             );
             (0..n << 1).for_each(|i| {
-                let mut res: SvpPPolOwned<BE> = self.svp_ppol_alloc(1, PrepareHint::Reuse);
+                let mut res: SvpPPolOwned<BE> = self.svp_ppol_alloc(self.n(), 1, PrepareHint::Reuse);
                 set_xai_plus_y(self, i, 0, &mut res, &mut buf);
                 x_pow_a.push(res);
             });

@@ -31,7 +31,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use crate::{
     layouts::{
         Backend, DataViewMut, HostDataMut, HostDataRef, MatZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
+        VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut, check_degree,
     },
     reference::ntt4x30::{
         NttCFromB, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, mat_vec::BbcMeta,
@@ -73,6 +73,7 @@ pub fn ntt4x30_vmp_prepare<BE>(
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     let n = res.n();
+    check_degree::<BE>(module.n(), n);
 
     assert_eq!(a.n(), n);
     assert_eq!(res.cols_in(), a.cols_in());
@@ -95,7 +96,7 @@ pub fn ntt4x30_vmp_prepare<BE>(
 
             // Step 1 & 2: i64 → q120b → NTT (in-place in tmp)
             BE::ntt_from_znx64(tmp, &mat_i64[pos..pos + n]);
-            BE::ntt_dft_execute(module.get_ntt_table(), tmp);
+            BE::ntt_dft_execute(module.get_ntt_table_for(n), tmp);
 
             // Step 3: q120b → q120c (write into a local Vec to avoid aliasing).
             let tmp_q120c: Vec<u32> = {
@@ -327,6 +328,8 @@ pub fn ntt4x30_vmp_apply_dft_to_dft<BE>(
 {
     assert_eq!(res.n(), pmat.n());
     assert_eq!(a.n(), pmat.n());
+    assert_eq!(res.cols(), pmat.cols_out());
+    assert_eq!(a.cols(), pmat.cols_in());
 
     let n = res.n();
     let nrows = pmat.cols_in() * pmat.rows();

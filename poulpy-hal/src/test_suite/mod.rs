@@ -13,7 +13,9 @@ use crate::layouts::{
 
 pub mod convolution;
 pub mod derived;
+pub mod reim;
 pub mod serialization;
+pub mod sparse;
 pub mod svp;
 pub mod vec_znx;
 pub mod vec_znx_big;
@@ -28,10 +30,10 @@ pub mod word_compat;
 ///
 /// Centralising these values at the macro call-site makes it possible to
 /// instantiate the same test suite with backend-appropriate parameters
-/// (e.g. different `base2k` for FFT64 vs NTT4x30).
+/// (e.g. different `base2k` for a floating-point FFT backend vs an NTT backend).
 #[derive(Clone, Copy, Debug)]
 pub struct TestParams {
-    /// Ring degree N (polynomial degree).
+    /// Ring degree N the module is built at.
     pub size: usize,
     /// Primary decomposition base (limbs are base-2^`base2k`).
     ///
@@ -39,6 +41,20 @@ pub struct TestParams {
     /// this value via fixed offsets that preserve the original relative
     /// relationships between bases.
     pub base2k: usize,
+    /// Operand degree `n`, a power of two at most `size`; every test
+    /// allocates and computes at `n`. The suite macros run each test at `n`
+    /// and, when it differs, at `size`.
+    pub n: usize,
+}
+
+/// The degrees the suite macros run a test at: `params.n`, then `params.size`
+/// when it differs.
+pub fn sweep_degrees(params: &TestParams) -> Vec<usize> {
+    if params.n == params.size {
+        vec![params.size]
+    } else {
+        vec![params.n, params.size]
+    }
 }
 
 /// Backend bound used by the generic test suites.
@@ -160,7 +176,10 @@ macro_rules! backend_test_suite {
                 $(#[$attr])*
                 #[test]
                 fn $test_name() {
-                    ($impl)(&*PARAMS, &*MODULE);
+                    for n in poulpy_hal::test_suite::sweep_degrees(&PARAMS) {
+                        let params = TestParams { n, ..*PARAMS };
+                        ($impl)(&params, &*MODULE);
+                    }
                 }
             )+
         }
@@ -195,7 +214,10 @@ macro_rules! cross_backend_test_suite {
                 $(#[$attr])*
                 #[test]
                 fn $test_name() {
-                    ($impl)(&*PARAMS, &*MODULE_HOST, &*MODULE_REF, &*MODULE_TEST);
+                    for n in poulpy_hal::test_suite::sweep_degrees(&PARAMS) {
+                        let params = TestParams { n, ..*PARAMS };
+                        ($impl)(&params, &*MODULE_HOST, &*MODULE_REF, &*MODULE_TEST);
+                    }
                 }
             )+
         }

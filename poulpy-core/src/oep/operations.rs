@@ -208,9 +208,12 @@ pub unsafe trait GLWEZeroImpl: Backend {
 /// Backend-provided GLWE copy operations.
 ///
 /// # Safety
-/// Implementations must preserve GLWE layout invariants and respect all backend buffer bounds.
+/// Implementations must honor [`crate::GLWECopy`]'s rounding and layout contract,
+/// stay within the advertised scratch size, and respect all backend buffer bounds.
 pub unsafe trait GLWECopyImpl: Backend {
-    fn glwe_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A)
+    fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<Self>, res: &R, a: &A) -> usize;
+
+    fn glwe_copy<R, A>(module: &Module<Self>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>;
@@ -649,12 +652,16 @@ unsafe impl<BE: Backend> GLWECopyImpl for BE
 where
     Module<BE>: GLWECopyDefault<BE>,
 {
-    fn glwe_copy<R, A>(module: &Module<BE>, res: &mut R, a: &A)
+    fn glwe_copy_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<BE>, res: &R, a: &A) -> usize {
+        module.glwe_copy_tmp_bytes_default(res, a)
+    }
+
+    fn glwe_copy<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
     {
-        module.glwe_copy_default(res, a)
+        module.glwe_copy_default(res, a, scratch)
     }
 }
 

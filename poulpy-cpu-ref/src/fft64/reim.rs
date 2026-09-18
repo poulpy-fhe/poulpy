@@ -93,3 +93,16 @@ impl Reim4BlkMatVec for FFT64Ref {}
 impl Reim4Convolution for FFT64Ref {}
 
 impl I64Ops for FFT64Ref {}
+
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+
+    #[test]
+    fn raw_transform_matches_contract() {
+        for m in [1, 2, 4, 8, 16, 32, 64] {
+            let table = FFT64ReimTable::<f64>::new(m);
+            poulpy_hal::test_suite::reim::test_negacyclic_fft(&table);
+        }
+    }
+}

@@ -45,7 +45,7 @@ use poulpy_hal::{
     api::HostBufMut,
     layouts::{
         Backend, HostDataMut, HostDataRef, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
-        VecZnxDftBackendRef,
+        VecZnxDftBackendRef, check_degree,
     },
 };
 
@@ -96,7 +96,9 @@ where
         Self: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
         for<'x> Self: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     {
-        fft64_vec_znx_dft_apply::<Self>(module.get_fft_table(), step, offset, res, res_col, a, a_col);
+        let n: usize = res.n();
+        check_degree::<Self>(module.n(), n);
+        fft64_vec_znx_dft_apply::<Self>(module.get_fft_table_for(n), step, offset, res, res_col, a, a_col);
     }
 
     fn vec_znx_idft_apply_tmp_bytes_default(_module: &Module<Self>) -> usize
@@ -121,7 +123,9 @@ where
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
         let _ = scratch;
-        fft64_vec_znx_idft_apply::<Self>(module.get_ifft_table(), res, res_col, a, a_col);
+        let n: usize = res.n();
+        check_degree::<Self>(module.n(), n);
+        fft64_vec_znx_idft_apply::<Self>(module.get_ifft_table_for(n), res, res_col, a, a_col);
     }
 
     fn vec_znx_idft_apply_tmpa_default(
@@ -136,7 +140,9 @@ where
             Backend<DftWord = f64, BigWord = i64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
     {
-        fft64_vec_znx_idft_apply_tmpa::<Self>(module.get_ifft_table(), res, res_col, a, a_col);
+        let n: usize = res.n();
+        check_degree::<Self>(module.n(), n);
+        fft64_vec_znx_idft_apply_tmpa::<Self>(module.get_ifft_table_for(n), res, res_col, a, a_col);
     }
     fn vec_znx_dft_add_default(
         _module: &Module<Self>,
@@ -236,15 +242,15 @@ where
         fft64_vec_znx_dft_zero::<Self>(res, res_col);
     }
 
-    fn vec_znx_dft_automorphism_plan_default(module: &Module<Self>, p: i64) -> Fft64AutomorphismPlan
+    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> Fft64AutomorphismPlan
     where
         Self: Backend<DftWord = f64, ZnxWord = i64>,
     {
-        build_fft64_automorphism_plan(module.n(), p)
+        build_fft64_automorphism_plan(n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         plan: &Fft64AutomorphismPlan,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -255,11 +261,12 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
+        check_degree::<Self>(module.n(), res.n());
         fft64_vec_znx_dft_automorphism::<Self>(plan, res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_automorphism_add_with_plan_default(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         plan: &Fft64AutomorphismPlan,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -270,6 +277,7 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
+        check_degree::<Self>(module.n(), res.n());
         fft64_vec_znx_dft_automorphism_add::<Self, poulpy_hal::execution::SerialTaskExecutor>(plan, res, res_col, a, a_col);
     }
 }
@@ -334,7 +342,7 @@ where
     {
         let (tmp, _) = take_host_typed::<Self, u64>(
             scratch.borrow(),
-            ntt4x30_default_vec_znx_idft_apply_tmp_bytes(module.n()) / size_of::<u64>(),
+            ntt4x30_default_vec_znx_idft_apply_tmp_bytes(res.n()) / size_of::<u64>(),
         );
         ntt4x30_default_vec_znx_idft_apply::<Self>(module, res, res_col, a, a_col, tmp);
     }
@@ -450,15 +458,15 @@ where
         ntt4x30_default_vec_znx_dft_zero::<Self>(res, res_col);
     }
 
-    fn vec_znx_dft_automorphism_plan_default(module: &Module<Self>, p: i64) -> NttAutomorphismPlan
+    fn vec_znx_dft_automorphism_plan_default(_module: &Module<Self>, n: usize, p: i64) -> NttAutomorphismPlan
     where
         Self: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
     {
-        build_ntt4x30_automorphism_plan(module.n(), p)
+        build_ntt4x30_automorphism_plan(n, p)
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         plan: &NttAutomorphismPlan,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -469,11 +477,12 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
+        check_degree::<Self>(module.n(), res.n());
         ntt4x30_default_vec_znx_dft_automorphism::<Self>(plan, res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_automorphism_add_with_plan_default(
-        _module: &Module<Self>,
+        module: &Module<Self>,
         plan: &NttAutomorphismPlan,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
@@ -484,6 +493,7 @@ where
         for<'x> <Self as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <Self as Backend>::BufRef<'x>: HostDataRef,
     {
+        check_degree::<Self>(module.n(), res.n());
         ntt4x30_default_vec_znx_dft_automorphism_add::<Self, poulpy_hal::execution::SerialTaskExecutor>(
             plan, res, res_col, a, a_col,
         );

@@ -347,12 +347,14 @@ unsafe fn intt_iter_red(
 }
 
 /// Forward Q120 NTT — NEON.
+///
+/// `data.len()` must be `4 * table.n`.
 pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
     let n = table.n;
+    assert_eq!(data.len(), 4 * n, "ntt_neon: data.len():{} != 4 * n:{}", data.len(), 4 * n);
     if n == 1 {
         return;
     }
-    assert!(data.len() >= 4 * n);
     unsafe {
         let begin = data.as_mut_ptr();
         let end = begin.add(4 * n) as *const u64;
@@ -414,12 +416,14 @@ pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
 }
 
 /// Inverse Q120 NTT — NEON.
+///
+/// `data.len()` must be `4 * table.n`.
 pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
     let n = table.n;
+    assert_eq!(data.len(), 4 * n, "intt_neon: data.len():{} != 4 * n:{}", data.len(), 4 * n);
     if n == 1 {
         return;
     }
-    assert!(data.len() >= 4 * n);
     unsafe {
         let begin = data.as_mut_ptr();
         let end = begin.add(4 * n) as *const u64;

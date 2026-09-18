@@ -86,7 +86,7 @@ where
         let b_size = b.size();
         // Offset-0 maximum of the runtime BIG span `a.size() + b_size - cnv_offset_hi`.
         let res_dft_size: usize = a.size() + b_size;
-        let lvl_0: usize = self.bytes_of_vec_znx_big(1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
+        let lvl_0: usize = self.bytes_of_vec_znx_big(self.n(), 1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
         let lvl_1_cnv: usize = self.cnv_by_const_apply_tmp_bytes(0, res_dft_size, a.size(), b_size);
         let lvl_1_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1: usize = lvl_1_cnv.max(lvl_1_norm);
@@ -127,7 +127,7 @@ where
 
         let res_dft_size = a.size() + b_size - cnv_offset_hi;
 
-        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(self, 1, res_dft_size);
+        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(self.n(), 1, res_dft_size);
         let b_backend = b.to_backend_ref();
         for i in 0..cols {
             {
@@ -187,7 +187,7 @@ where
 
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, res_base2k);
 
-        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(self, 1, res.size());
+        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(self.n(), 1, res.size());
         let b_backend = b.to_backend_ref();
         for i in 0..cols {
             {
@@ -254,8 +254,8 @@ where
         let a_size: usize = a.size();
         let b_size: usize = b.size();
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::OneShot)
-            + self.bytes_of_cnv_pvec_right(1, b_size, PrepareHint::OneShot);
+        let lvl_0: usize = self.bytes_of_cnv_pvec_left(self.n(), cols, a_size, PrepareHint::OneShot)
+            + self.bytes_of_cnv_pvec_right(self.n(), 1, b_size, PrepareHint::OneShot);
         let lvl_1: usize = self
             .cnv_prepare_left_tmp_bytes(a_size, a_size)
             .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
@@ -263,8 +263,9 @@ where
         let res_dft_size = a_size + b_size;
         let lvl_2_cnv_apply: usize = self.cnv_apply_dft_tmp_bytes(0, res_dft_size, a_size, b_size);
 
-        let lvl_2_res_dft: usize = self.bytes_of_vec_znx_dft(1, res_dft_size);
-        let lvl_2_res_tmp: usize = self.bytes_of_vec_znx_big(1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
+        let lvl_2_res_dft: usize = self.bytes_of_vec_znx_dft(self.n(), 1, res_dft_size);
+        let lvl_2_res_tmp: usize =
+            self.bytes_of_vec_znx_big(self.n(), 1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
         let lvl_2_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_2: usize = lvl_2_res_tmp + lvl_2_res_dft + lvl_2_cnv_apply.max(lvl_2_norm);
 
@@ -300,8 +301,8 @@ where
         let res_k = res.k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size(), PrepareHint::OneShot);
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, b.size(), PrepareHint::OneShot);
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, a.size(), PrepareHint::OneShot);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self.n(), 1, b.size(), PrepareHint::OneShot);
 
         let a_backend = a.to_backend_ref();
         let b_backend = b.to_backend_ref();
@@ -313,7 +314,7 @@ where
 
         let res_dft_size = a.size() + b.size() - cnv_offset_hi;
         for i in 0..cols {
-            let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self, 1, res_dft_size);
+            let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self.n(), 1, res_dft_size);
             {
                 let mut res_dft_backend = res_dft.to_backend_mut();
                 self.cnv_apply_dft(
@@ -327,7 +328,7 @@ where
                     &mut scratch_3,
                 );
             }
-            let (mut res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, res_dft_size);
+            let (mut res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self.n(), 1, res_dft_size);
             {
                 let mut res_big_backend = res_big.to_backend_mut();
                 let mut res_dft_backend = res_dft.to_backend_mut();
@@ -375,8 +376,8 @@ where
 
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, res.size(), PrepareHint::OneShot);
-        let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, a.size(), PrepareHint::OneShot);
+        let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, res.size(), PrepareHint::OneShot);
+        let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self.n(), 1, a.size(), PrepareHint::OneShot);
 
         let a_backend = a.to_backend_ref();
 
@@ -390,7 +391,7 @@ where
 
         let res_dft_size = a.size() + res.size() - cnv_offset_hi;
         for i in 0..cols {
-            let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self, 1, res_dft_size);
+            let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self.n(), 1, res_dft_size);
             {
                 let mut res_dft_backend = res_dft.to_backend_mut();
                 self.cnv_apply_dft(
@@ -404,7 +405,7 @@ where
                     &mut scratch_3,
                 );
             }
-            let (mut res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, res_dft_size);
+            let (mut res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self.n(), 1, res_dft_size);
             {
                 let mut res_big_backend = res_big.to_backend_mut();
                 let mut res_dft_backend = res_dft.to_backend_mut();
@@ -526,8 +527,8 @@ where
         let res_size: usize = res.size();
         let cnv_offset = a_size;
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::Reuse)
-            + self.bytes_of_cnv_pvec_right(cols, a_size, PrepareHint::Reuse);
+        let lvl_0: usize = self.bytes_of_cnv_pvec_left(self.n(), cols, a_size, PrepareHint::Reuse)
+            + self.bytes_of_cnv_pvec_right(self.n(), cols, a_size, PrepareHint::Reuse);
         let lvl_1: usize = self.cnv_prepare_self_tmp_bytes(a_size, a_size);
         let diag_dft_size =
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
@@ -538,12 +539,12 @@ where
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
         let lvl_2_pairwise: usize = self.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, pairwise_dft_size, a_size, a_size);
 
-        let lvl_2a: usize = self.bytes_of_vec_znx_dft(1, diag_dft_size)
-            + self.bytes_of_vec_znx_big(1, diag_dft_size)
+        let lvl_2a: usize = self.bytes_of_vec_znx_dft(self.n(), 1, diag_dft_size)
+            + self.bytes_of_vec_znx_big(self.n(), 1, diag_dft_size)
             + BE::bytes_of_vec_znx(self.n(), 1, res_size)
             + lvl_2_apply.max(self.vec_znx_big_normalize_tmp_bytes());
-        let lvl_2b: usize = self.bytes_of_vec_znx_dft(1, pairwise_dft_size)
-            + self.bytes_of_vec_znx_big(1, pairwise_dft_size)
+        let lvl_2b: usize = self.bytes_of_vec_znx_dft(self.n(), 1, pairwise_dft_size)
+            + self.bytes_of_vec_znx_big(self.n(), 1, pairwise_dft_size)
             + BE::bytes_of_vec_znx(self.n(), 1, res_size)
             + lvl_2_pairwise.max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_2: usize = lvl_2a.max(lvl_2b).max(self.vec_znx_normalize_tmp_bytes());
@@ -571,8 +572,8 @@ where
         let res_size: usize = res.size();
         let cnv_offset = a_size.min(b_size);
 
-        let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::Reuse)
-            + self.bytes_of_cnv_pvec_right(cols, b_size, PrepareHint::Reuse);
+        let lvl_0: usize = self.bytes_of_cnv_pvec_left(self.n(), cols, a_size, PrepareHint::Reuse)
+            + self.bytes_of_cnv_pvec_right(self.n(), cols, b_size, PrepareHint::Reuse);
         let lvl_1: usize = self
             .cnv_prepare_left_tmp_bytes(a_size, a_size)
             .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
@@ -583,12 +584,12 @@ where
             normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k.as_usize());
         let lvl_2_pairwise: usize = self.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, pairwise_dft_size, a_size, b_size);
 
-        let lvl_2a: usize = self.bytes_of_vec_znx_dft(1, diag_dft_size)
-            + self.bytes_of_vec_znx_big(1, diag_dft_size)
+        let lvl_2a: usize = self.bytes_of_vec_znx_dft(self.n(), 1, diag_dft_size)
+            + self.bytes_of_vec_znx_big(self.n(), 1, diag_dft_size)
             + BE::bytes_of_vec_znx(self.n(), 1, res_size)
             + lvl_2_apply.max(self.vec_znx_big_normalize_tmp_bytes());
-        let lvl_2b: usize = self.bytes_of_vec_znx_dft(1, pairwise_dft_size)
-            + self.bytes_of_vec_znx_big(1, pairwise_dft_size)
+        let lvl_2b: usize = self.bytes_of_vec_znx_dft(self.n(), 1, pairwise_dft_size)
+            + self.bytes_of_vec_znx_big(self.n(), 1, pairwise_dft_size)
             + BE::bytes_of_vec_znx(self.n(), 1, res_size)
             + lvl_2_pairwise.max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_2: usize = lvl_2a.max(lvl_2b).max(self.vec_znx_normalize_tmp_bytes());
@@ -619,21 +620,21 @@ where
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
         let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, tsk);
 
-        let lvl_0: usize = self.bytes_of_vec_znx_dft(pairs, a_dft_size);
+        let lvl_0: usize = self.bytes_of_vec_znx_dft(self.n(), pairs, a_dft_size);
 
         let lvl_1_pre_conv: usize = if a_base2k != key_base2k {
             BE::bytes_of_vec_znx(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
         } else {
             0
         };
-        let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(cols, output_size);
+        let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(self.n(), cols, output_size);
         let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_default(output_size, a_dft_size, tsk);
         let lvl_1_post_conv: usize = if res_base2k != key_base2k {
             BE::bytes_of_vec_znx(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
         } else {
             0
         };
-        let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(cols, output_size)
+        let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(self.n(), cols, output_size)
             + BE::bytes_of_vec_znx(self.n(), 1, res.size())
             + self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1_main: usize = lvl_1_res_dft + lvl_1_gglwe_product.max(lvl_1_post_conv).max(lvl_1_big_norm);
@@ -673,7 +674,7 @@ where
 
         let a_dft_size: usize = a.k().div_ceil(tsk.base2k()) as usize;
 
-        let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(self, pairs, a_dft_size);
+        let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(self.n(), pairs, a_dft_size);
 
         if a_base2k == key_base2k {
             for i in 0..pairs {
@@ -699,10 +700,10 @@ where
             }
         }
 
-        let (mut res_dft, mut scratch_2) = scratch.borrow().take_vec_znx_dft_scratch(self, cols, output_size);
+        let (mut res_dft, mut scratch_2) = scratch.borrow().take_vec_znx_dft_scratch(self.n(), cols, output_size);
         let a_dft_ref = a_dft.to_backend_ref();
         self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, &tsk.0, 1, &mut scratch_2);
-        let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self, cols, output_size);
+        let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self.n(), cols, output_size);
         {
             let mut res_big_backend = res_big.to_backend_mut();
             let mut res_dft_backend = res_dft.to_backend_mut();
@@ -775,8 +776,8 @@ where
         let res_base2k: usize = res.base2k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size, PrepareHint::Reuse);
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, a_size, PrepareHint::Reuse);
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, a_size, PrepareHint::Reuse);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self.n(), cols, a_size, PrepareHint::Reuse);
 
         let a_backend = a.to_backend_ref();
 
@@ -831,8 +832,8 @@ where
 
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size, PrepareHint::Reuse);
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, b_size, PrepareHint::Reuse);
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, a_size, PrepareHint::Reuse);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self.n(), cols, b_size, PrepareHint::Reuse);
 
         let a_backend = a.to_backend_ref();
         let b_backend = b.to_backend_ref();
@@ -893,7 +894,7 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
 
     for i in 0..cols {
         let col_i = i * cols - (i * (i + 1) / 2);
-        let (mut res_dft, mut cnv_scratch) = scratch.borrow().take_vec_znx_dft_scratch(module, 1, diag_dft_size);
+        let (mut res_dft, mut cnv_scratch) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, diag_dft_size);
         {
             let mut res_dft_backend = res_dft.to_backend_mut();
             module.cnv_apply_dft(
@@ -907,7 +908,7 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
                 &mut cnv_scratch,
             );
         }
-        let (mut res_big, norm_scratch) = cnv_scratch.take_vec_znx_big_scratch(module, 1, diag_dft_size);
+        let (mut res_big, norm_scratch) = cnv_scratch.take_vec_znx_big_scratch(module.n(), 1, diag_dft_size);
         {
             let mut res_big_backend = res_big.to_backend_mut();
             let mut res_dft_backend = res_dft.to_backend_mut();
@@ -933,7 +934,7 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
     for i in 0..cols {
         let col_i = i * cols - (i * (i + 1) / 2);
         for j in i + 1..cols {
-            let (mut res_dft, mut cnv_scratch) = scratch.borrow().take_vec_znx_dft_scratch(module, 1, pairwise_dft_size);
+            let (mut res_dft, mut cnv_scratch) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, pairwise_dft_size);
             {
                 let mut res_dft_backend = res_dft.to_backend_mut();
                 module.cnv_pairwise_apply_dft(
@@ -947,7 +948,7 @@ fn glwe_tensor_square_apply_symmetric<BE, M, R, AP, BP>(
                     &mut cnv_scratch,
                 );
             }
-            let (mut res_big, norm_scratch) = cnv_scratch.take_vec_znx_big_scratch(module, 1, pairwise_dft_size);
+            let (mut res_big, norm_scratch) = cnv_scratch.take_vec_znx_big_scratch(module.n(), 1, pairwise_dft_size);
             {
                 let mut res_big_backend = res_big.to_backend_mut();
                 let mut res_dft_backend = res_dft.to_backend_mut();
@@ -1053,7 +1054,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
     for i in 0..cols {
         let col_i: usize = i * cols - (i * (i + 1) / 2);
 
-        let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(module, 1, diag_dft_size);
+        let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, diag_dft_size);
         {
             let mut res_dft_backend = res_dft.to_backend_mut();
             module.cnv_apply_dft(
@@ -1067,7 +1068,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
                 &mut scratch_3,
             );
         }
-        let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(module, 1, diag_dft_size);
+        let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(module.n(), 1, diag_dft_size);
         {
             let mut res_big_backend = res_big.to_backend_mut();
             let mut res_dft_backend = res_dft.to_backend_mut();
@@ -1118,7 +1119,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
         for j in i..cols {
             if j != i {
                 // res_dft = (a[i] + a[j]) * (b[i] + b[j])
-                let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(module, 1, pairwise_dft_size);
+                let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(module.n(), 1, pairwise_dft_size);
                 {
                     let mut res_dft_backend = res_dft.to_backend_mut();
                     module.cnv_pairwise_apply_dft(
@@ -1132,7 +1133,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
                         &mut scratch_3,
                     );
                 }
-                let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(module, 1, pairwise_dft_size);
+                let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(module.n(), 1, pairwise_dft_size);
                 {
                     let mut res_big_backend = res_big.to_backend_mut();
                     let mut res_dft_backend = res_dft.to_backend_mut();
@@ -1186,19 +1187,19 @@ where
     let ab_base2k: usize = a.base2k().as_usize();
     let cnv_offset = a_size.min(b_size);
 
-    let lvl_0: usize = module.bytes_of_cnv_pvec_left(cols, a_size, PrepareHint::Reuse);
+    let lvl_0: usize = module.bytes_of_cnv_pvec_left(module.n(), cols, a_size, PrepareHint::Reuse);
     let lvl_1: usize = module.cnv_prepare_left_tmp_bytes(a_size, a_size);
     let diag_dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k);
     let lvl_2_apply: usize = module.cnv_apply_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, b_size);
     let pairwise_dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k);
     let lvl_2_pairwise: usize = module.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, pairwise_dft_size, a_size, b_size);
 
-    let lvl_2a: usize = module.bytes_of_vec_znx_dft(1, diag_dft_size)
-        + module.bytes_of_vec_znx_big(1, diag_dft_size)
+    let lvl_2a: usize = module.bytes_of_vec_znx_dft(module.n(), 1, diag_dft_size)
+        + module.bytes_of_vec_znx_big(module.n(), 1, diag_dft_size)
         + BE::bytes_of_vec_znx(module.n(), 1, res_size)
         + lvl_2_apply.max(module.vec_znx_big_normalize_tmp_bytes());
-    let lvl_2b: usize = module.bytes_of_vec_znx_dft(1, pairwise_dft_size)
-        + module.bytes_of_vec_znx_big(1, pairwise_dft_size)
+    let lvl_2b: usize = module.bytes_of_vec_znx_dft(module.n(), 1, pairwise_dft_size)
+        + module.bytes_of_vec_znx_big(module.n(), 1, pairwise_dft_size)
         + BE::bytes_of_vec_znx(module.n(), 1, res_size)
         + lvl_2_pairwise.max(module.vec_znx_big_normalize_tmp_bytes());
     let lvl_2: usize = lvl_2a.max(lvl_2b).max(module.vec_znx_normalize_tmp_bytes());
@@ -1259,7 +1260,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
 
     let cols: usize = res.rank().as_usize() + 1;
 
-    let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(module, cols, a_size, PrepareHint::Reuse);
+    let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(module.n(), cols, a_size, PrepareHint::Reuse);
 
     let a_backend = a.to_backend_ref();
 
@@ -1727,7 +1728,9 @@ where
 
 #[doc(hidden)]
 pub trait GLWECopyDefault<BE: Backend> {
-    fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_copy_tmp_bytes_default<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize;
+
+    fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
@@ -1735,9 +1738,17 @@ pub trait GLWECopyDefault<BE: Backend> {
 
 impl<BE: Backend> GLWECopyDefault<BE> for Module<BE>
 where
-    Self: ModuleN + VecZnxCopy<BE> + VecZnxZero<BE>,
+    Self: ModuleN + VecZnxCopy<BE> + VecZnxZero<BE> + VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
 {
-    fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A)
+    fn glwe_copy_tmp_bytes_default<R: GLWEInfos, A: GLWEInfos>(&self, res: &R, a: &A) -> usize {
+        if res.base2k() == a.base2k() && res.k() >= a.k() {
+            0
+        } else {
+            self.vec_znx_normalize_tmp_bytes()
+        }
+    }
+
+    fn glwe_copy_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
@@ -1750,9 +1761,26 @@ where
         assert!(res.rank() == a.rank() || a.rank() == 0);
 
         let min_rank: usize = res.rank().min(a.rank()).as_usize() + 1;
-
-        for i in 0..min_rank {
-            self.vec_znx_copy(&mut res.data, i, &a.data, i);
+        if res.base2k() == a.base2k() && res.k() >= a.k() {
+            for i in 0..min_rank {
+                self.vec_znx_copy(&mut res.data, i, &a.data, i);
+            }
+        } else {
+            let base2k = res.base2k().as_usize();
+            let k = res.k().as_usize();
+            for i in 0..min_rank {
+                self.vec_znx_normalize(
+                    &mut res.data,
+                    base2k,
+                    k,
+                    0,
+                    i,
+                    &a.data,
+                    a.base2k().as_usize(),
+                    i,
+                    &mut scratch.borrow(),
+                );
+            }
         }
 
         for i in min_rank..(res.rank() + 1).into() {

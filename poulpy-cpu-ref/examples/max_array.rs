@@ -232,7 +232,7 @@ where
 
         compare_enc_prepared.prepare(&module, &compare_enc, &bdd_key_prepared, &mut scratch.borrow());
 
-        module.glwe_copy(&mut max_enc_copy, &max_enc);
+        module.glwe_copy(&mut max_enc_copy, &max_enc, &mut scratch.borrow());
 
         let cts = HashMap::from([(0, input_i), (1, &mut max_enc_copy)]);
 

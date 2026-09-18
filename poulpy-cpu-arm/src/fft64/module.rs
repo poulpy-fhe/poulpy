@@ -23,6 +23,8 @@ pub struct FFT64NeonHandle {
 impl poulpy_hal::execution::ScratchWorkers for FFT64Neon {}
 
 impl Backend for FFT64Neon {
+    const MAX_BASE2K: usize = <poulpy_cpu_ref::FFT64Ref as Backend>::MAX_BASE2K;
+
     type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;

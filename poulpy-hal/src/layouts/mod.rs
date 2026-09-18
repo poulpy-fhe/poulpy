@@ -163,6 +163,9 @@ where
 pub struct HostBytesBackend;
 
 impl Backend for HostBytesBackend {
+    // Storage/normalization only; this backend does not perform products.
+    const MAX_BASE2K: usize = 62;
+
     type TaskExecutor = crate::execution::SerialTaskExecutor;
     type ZnxWord = i64;
     type BigWord = i128;
@@ -487,7 +490,8 @@ macro_rules! impl_backend_from {
     (@executor $from:ty) => { <$from as poulpy_hal::layouts::Backend>::TaskExecutor };
     ($be:ty, $from:ty $(, $executor:ty)?) => {
         impl poulpy_hal::layouts::Backend for $be {
-            const DFT_IS_EXACT: bool = <$from as poulpy_hal::layouts::Backend>::DFT_IS_EXACT;
+            const MIN_DEGREE: usize = <$from as poulpy_hal::layouts::Backend>::MIN_DEGREE;
+            const MAX_BASE2K: usize = <$from as poulpy_hal::layouts::Backend>::MAX_BASE2K;
 
             type TaskExecutor = poulpy_hal::impl_backend_from!(@executor $from $(, $executor)?);
             type ZnxWord = <$from as poulpy_hal::layouts::Backend>::ZnxWord;
@@ -612,7 +616,7 @@ macro_rules! impl_backend_from {
             // Sizing must be forwarded explicitly: these are defaulted trait
             // methods, so without forwarding the delegate would silently get
             // the word-derived defaults instead of the source backend's
-            // overrides (e.g. the packed IFMA `bytes_of_vmp_pmat`), breaking
+            // overrides (e.g. a backend's packed `bytes_of_vmp_pmat`), breaking
             // the layout compatibility asserted by the markers below.
             const SCRATCH_ALIGN: usize = <$from as poulpy_hal::layouts::Backend>::SCRATCH_ALIGN;
 
