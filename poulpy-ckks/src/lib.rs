@@ -105,7 +105,7 @@ pub mod test_suite;
 pub use error::{CKKSCompositionError, CKKSError, CKKSResult};
 pub(crate) use error::{
     checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ckks_bail, ckks_ensure, ensure_base2k_match,
-    ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_degree_match,
+    ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_degree_embeds,
 };
 /// Quad-precision (IEEE 754 binary128) CKKS scalar.
 ///
@@ -184,6 +184,13 @@ pub struct CKKSMeta {
     /// `log_sparsity = s` the message polynomial is sparse — `M(X^{2^s})` — and
     /// carries `(N/2) >> s` distinct slots, each replicated `2^s` times, i.e. a
     /// coefficient gap of `2^s`.
+    ///
+    /// A plaintext may store its `M` compactly, at the degree
+    /// `ckks_pt_vec_alloc_compact` picks for its slot count; its own `n()` is
+    /// then below the ring degree and every consumer reads it through the ring
+    /// embedding. `log_sparsity` keeps counting the gap under the ring
+    /// embedding, `log2` of the replication among the `N/2` ring slots,
+    /// whatever degree the plaintext is stored at.
     pub log_sparsity: usize,
     /// Subfield the slots are known to live in. See [`SlotsKind`].
     pub slots: SlotsKind,

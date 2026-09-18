@@ -71,6 +71,8 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
         buf
     }
     /// Uploads or copies host bytes into backend-owned storage.
+    ///
+    /// The buffer may be longer than `bytes`; the extra bytes are zero.
     fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf;
     /// Wraps/Uploads a host-owned byte buffer into backend-owned storage.
     ///
@@ -84,23 +86,31 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8>;
     /// Copies the contents of a backend-owned buffer into a host byte slice.
     ///
-    /// `dst.len()` must equal the byte length of `buf`.
+    /// `dst.len()` is at most the byte length of `buf`; the first `dst.len()`
+    /// bytes are copied.
     fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]);
     /// Copies a host byte slice into a backend-owned buffer.
     ///
-    /// `src.len()` must equal the byte length of `buf`.
+    /// `src.len()` is at most the byte length of `buf`; the bytes past
+    /// `src.len()` are zeroed.
     fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]);
     /// Copies a backend-native borrowed view into a host byte slice.
     ///
     /// Unlike [`Self::copy_to_host`], this accepts a view carved from an
     /// arena. Device backends should implement it with a device-to-host copy
     /// from the view's native address.
+    ///
+    /// `dst.len()` is at most the byte length of `buf`; the first `dst.len()`
+    /// bytes are copied.
     fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]);
     /// Copies a host byte slice into a backend-native mutable borrowed view.
     ///
     /// Unlike [`Self::copy_from_host`], this accepts a view carved from an
     /// arena. Device backends should implement it with a host-to-device copy
     /// to the view's native address.
+    ///
+    /// `src.len()` is at most the byte length of `buf`; the bytes past
+    /// `src.len()` are zeroed.
     fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]);
     /// Returns the number of bytes stored in a backend-owned buffer.
     fn len_bytes(buf: &Self::OwnedBuf) -> usize;

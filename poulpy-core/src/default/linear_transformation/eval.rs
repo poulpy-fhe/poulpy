@@ -239,7 +239,8 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H>(
 ///
 /// The streamed inner product additionally holds one resident `CnvPVecR`
 /// diagonal slot and a `cnv_prepare_right` scratch on top of the prepared
-/// evaluation budget.
+/// evaluation budget, both sized at the module degree, an upper bound for a
+/// compact diagonal.
 pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default<BE, M, R, A, B, K>(
     module: &M,
     res: &R,

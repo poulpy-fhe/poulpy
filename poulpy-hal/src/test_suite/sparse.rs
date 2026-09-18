@@ -9,7 +9,8 @@ use crate::{
         ModuleN, ScratchOwnedAlloc, VecZnxAdd, VecZnxAddAssign, VecZnxBigAdd, VecZnxBigAddAssign, VecZnxBigAddSmall,
         VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigFromSmall, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
         VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA, VecZnxBigSubSmallAssign,
-        VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing,
+        VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign, VecZnxLshAdd, VecZnxLshSub, VecZnxLshTmpBytes, VecZnxRshAdd,
+        VecZnxRshSub, VecZnxRshTmpBytes, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign, VecZnxSwitchRing,
     },
     layouts::{
         FillUniform, Module, ScratchOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut,
@@ -143,8 +144,9 @@ fn check_assign<BE: TestBackend>(
     );
 }
 
-/// `vec_znx_add`, `sub` and their in-place forms with a degree-`n` operand in
-/// each sparse-capable slot equal the same operation on the embedded operand.
+/// `vec_znx_add`, `sub`, their in-place forms and the shift-add family with a
+/// degree-`n` operand in each sparse-capable slot equal the same operation on
+/// the embedded operand.
 pub fn test_vec_znx_sparse_add_sub<BE: TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: ModuleN
@@ -153,7 +155,14 @@ where
         + VecZnxAddAssign<BE>
         + VecZnxSub<BE>
         + VecZnxSubAssign<BE>
-        + VecZnxSubNegateAssign<BE>,
+        + VecZnxSubNegateAssign<BE>
+        + VecZnxRshAdd<BE>
+        + VecZnxLshAdd<BE>
+        + VecZnxRshSub<BE>
+        + VecZnxLshSub<BE>
+        + VecZnxRshTmpBytes
+        + VecZnxLshTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let n = params.n;
     let base2k = params.base2k;
@@ -205,6 +214,56 @@ where
                 &mut source,
                 |r, rc, x, xc| module.vec_znx_sub_negate_assign(r, rc, x, xc),
             );
+
+            // The shift family: the default body's temporary takes a's degree.
+            let scratch = core::cell::RefCell::new(ScratchOwned::<BE>::alloc(
+                module
+                    .vec_znx_rsh_tmp_bytes(res_size)
+                    .max(module.vec_znx_lsh_tmp_bytes(res_size)),
+            ));
+            for k in [0usize, 3, base2k, base2k + 5] {
+                let a = random_host(sparse_n, cols, a_size, base2k, &mut source);
+                check_assign(
+                    module,
+                    n,
+                    "vec_znx_rsh_add",
+                    res_size,
+                    &a,
+                    base2k,
+                    &mut source,
+                    |r, rc, x, xc| module.vec_znx_rsh_add(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                );
+                check_assign(
+                    module,
+                    n,
+                    "vec_znx_lsh_add",
+                    res_size,
+                    &a,
+                    base2k,
+                    &mut source,
+                    |r, rc, x, xc| module.vec_znx_lsh_add(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                );
+                check_assign(
+                    module,
+                    n,
+                    "vec_znx_rsh_sub",
+                    res_size,
+                    &a,
+                    base2k,
+                    &mut source,
+                    |r, rc, x, xc| module.vec_znx_rsh_sub(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                );
+                check_assign(
+                    module,
+                    n,
+                    "vec_znx_lsh_sub",
+                    res_size,
+                    &a,
+                    base2k,
+                    &mut source,
+                    |r, rc, x, xc| module.vec_znx_lsh_sub(base2k, k, r, rc, x, xc, &mut scratch.borrow_mut().arena()),
+                );
+            }
         }
     }
 

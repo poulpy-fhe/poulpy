@@ -305,12 +305,13 @@ pub trait VecZnxLsh<B: Backend> {
 /// class      derived
 /// mutation   accumulate
 /// definition res[res_col,j] = old(res)[res_col,j] + canon([[a[a_col]]]_base2k * 2^k, base2k, res.size() * base2k, res.size())[j]; the other columns of res are untouched
-/// domain     res, a: VecZnx or windows of equal visible degree, read at base2k; base2k in 1..=62; every digit of a in [-2^62, 2^62]
+/// domain     res, a: VecZnx or windows of one, read at base2k; base2k in 1..=62; every digit of a in [-2^62, 2^62]
 /// requires   scratch >= vec_znx_lsh_tmp_bytes(res.size())
 /// ensures    res[res_col] gains the canonical vec_znx_lsh of a[a_col] on a res.size()-limb destination; the result is not renormalized
-/// fallback   default body: shift into a res.size()-limb temporary, then add_assign
+/// fallback   default body: shift into a res.size()-limb temporary of a's degree, then add_assign
 /// override   allowed, with vec_znx_lsh_tmp_bytes
-/// test       test_vec_znx_lsh_add_derived
+/// sparse     a is the sparse-capable slot, as for vec_znx_add_assign
+/// test       test_vec_znx_lsh_add_derived, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxLshAdd<B: Backend> {
     /// Adds `a[a_col]`, shifted up by `k` bits and normalized at `base2k`, into `res[res_col]`.
@@ -378,12 +379,13 @@ pub trait VecZnxRsh<B: Backend> {
 /// class      derived
 /// mutation   accumulate
 /// definition res[res_col,j] = old(res)[res_col,j] + canon([[a[a_col]]]_base2k / 2^k, base2k, res.size() * base2k, res.size())[j]; the other columns of res are untouched
-/// domain     res, a: VecZnx or windows of equal visible degree, read at base2k; base2k in 1..=62; every digit of a in [-2^62, 2^62]
+/// domain     res, a: VecZnx or windows of one, read at base2k; base2k in 1..=62; every digit of a in [-2^62, 2^62]
 /// requires   scratch >= vec_znx_rsh_tmp_bytes(res.size())
 /// ensures    res[res_col] gains the canonical vec_znx_rsh of a[a_col] on a res.size()-limb destination; the result is not renormalized
-/// fallback   default body: shift into a res.size()-limb temporary, then add_assign
+/// fallback   default body: shift into a res.size()-limb temporary of a's degree, then add_assign
 /// override   allowed, with vec_znx_rsh_tmp_bytes
-/// test       test_vec_znx_rsh_add_derived
+/// sparse     a is the sparse-capable slot, as for vec_znx_add_assign
+/// test       test_vec_znx_rsh_add_derived, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxRshAdd<B: Backend> {
     /// Adds `a[a_col]`, shifted down by `k` bits and normalized at `base2k`, into `res[res_col]`.
@@ -407,12 +409,13 @@ pub trait VecZnxRshAdd<B: Backend> {
 /// class      derived
 /// mutation   accumulate
 /// definition res[res_col,j] = old(res)[res_col,j] - canon([[a[a_col]]]_base2k * 2^k, base2k, res.size() * base2k, res.size())[j]; the other columns of res are untouched
-/// domain     res, a: VecZnx or windows of equal visible degree, read at base2k; base2k in 1..=62; every digit of a in [-2^62, 2^62]
+/// domain     res, a: VecZnx or windows of one, read at base2k; base2k in 1..=62; every digit of a in [-2^62, 2^62]
 /// requires   scratch >= vec_znx_lsh_tmp_bytes(res.size())
 /// ensures    res[res_col] loses the canonical vec_znx_lsh of a[a_col] on a res.size()-limb destination; the result is not renormalized
-/// fallback   default body: shift into a res.size()-limb temporary, then sub_assign
+/// fallback   default body: shift into a res.size()-limb temporary of a's degree, then sub_assign
 /// override   allowed, with vec_znx_lsh_tmp_bytes
-/// test       test_vec_znx_lsh_sub_derived
+/// sparse     a is the sparse-capable slot, as for vec_znx_sub_assign
+/// test       test_vec_znx_lsh_sub_derived, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxLshSub<B: Backend> {
     /// Subtracts `a[a_col]`, shifted up by `k` bits and normalized at `base2k`, from `res[res_col]`.
@@ -436,12 +439,13 @@ pub trait VecZnxLshSub<B: Backend> {
 /// class      derived
 /// mutation   accumulate
 /// definition res[res_col,j] = old(res)[res_col,j] - canon([[a[a_col]]]_base2k / 2^k, base2k, res.size() * base2k, res.size())[j]; the other columns of res are untouched
-/// domain     res, a: VecZnx or windows of equal visible degree, read at base2k; base2k in 1..=62; every digit of a in [-2^62, 2^62]
+/// domain     res, a: VecZnx or windows of one, read at base2k; base2k in 1..=62; every digit of a in [-2^62, 2^62]
 /// requires   scratch >= vec_znx_rsh_tmp_bytes(res.size())
 /// ensures    res[res_col] loses the canonical vec_znx_rsh of a[a_col] on a res.size()-limb destination; the result is not renormalized
-/// fallback   default body: shift into a res.size()-limb temporary, then sub_assign
+/// fallback   default body: shift into a res.size()-limb temporary of a's degree, then sub_assign
 /// override   allowed, with vec_znx_rsh_tmp_bytes
-/// test       test_vec_znx_rsh_sub_derived
+/// sparse     a is the sparse-capable slot, as for vec_znx_sub_assign
+/// test       test_vec_znx_rsh_sub_derived, test_vec_znx_sparse_add_sub
 /// ```
 pub trait VecZnxRshSub<B: Backend> {
     /// Subtracts `a[a_col]`, shifted down by `k` bits and normalized at `base2k`, from `res[res_col]`.

@@ -5,7 +5,7 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
     layouts::{
-        Backend, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
+        Backend, CnvDftAccTerm, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
         CnvPVecRToBackendRef, Module, PrepareHint, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
     },
     source::Source,
@@ -157,6 +157,55 @@ where
             0,
             &mut scratch.borrow(),
         );
+        black_box(());
+    });
+}
+
+/// Terms per `cnv_apply_dft_sum` call: the giant-step fan-in the linear
+/// transformation hands the kernel.
+const SUM_TERMS: usize = 4;
+
+/// `cnv_apply_dft_sum` over `SUM_TERMS` terms into one output column. With
+/// `SPARSE` the right operand is prepared at half the module degree, the
+/// shape a compact plaintext diagonal has; the runner asserts that half
+/// still clears the backend floor.
+pub fn runner_cnv_apply_dft_sum<BE, M: Measurement, const SPARSE: bool>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
+where
+    BE: Backend<ZnxWord = i64> + 'static,
+    Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let mut source: Source = Source::new([0u8; 32]);
+
+    let c_size: usize = sweep.size + sweep.size - 1;
+
+    let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
+
+    let b_n: usize = if SPARSE {
+        assert!(module.n() / 2 >= BE::MIN_DEGREE, "sparse sum runner below the backend floor");
+        module.n() / 2
+    } else {
+        module.n()
+    };
+    let a_prep: CnvPVecLOwned<BE> = random_backend_cnv_pvec_left::<BE>(module.n(), SUM_TERMS, sweep.size, &mut source);
+    let b_prep: CnvPVecROwned<BE> = random_backend_cnv_pvec_right::<BE>(b_n, SUM_TERMS, sweep.size, &mut source);
+    let mut c_dft = module.vec_znx_dft_alloc(module.n(), 1, c_size);
+
+    let mut scratch: ScratchOwned<BE> =
+        ScratchOwned::alloc(module.cnv_apply_dft_sum_tmp_bytes(0, c_size, sweep.size, sweep.size));
+
+    let terms: Vec<CnvDftAccTerm<'_, BE>> = (0..SUM_TERMS)
+        .map(|t| CnvDftAccTerm {
+            a: a_prep.to_backend_ref(),
+            a_col: t,
+            b: b_prep.to_backend_ref(),
+            b_col: t,
+        })
+        .collect();
+
+    bencher.iter(|| {
+        let mut c_dft_backend = c_dft.to_backend_mut();
+        module.cnv_apply_dft_sum(0, &mut c_dft_backend, 0, &terms, &mut scratch.borrow());
         black_box(());
     });
 }

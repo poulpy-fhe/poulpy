@@ -133,7 +133,10 @@ where
         diagonals
     };
     let encoded = cd.build_transform(strategy, |pre_re, pre_im| -> Result<_> {
-        let mut pt = module.ckks_pt_vec_alloc(base2k, coeffs_meta.k);
+        // The diagonal carries `pre_re.len()` slots: stored compactly, at the
+        // degree that holds them, and read by every consumer through the ring
+        // embedding.
+        let mut pt = module.ckks_pt_vec_alloc_compact(pre_re.len(), base2k, coeffs_meta.k);
         pt.set_meta_checked(coeffs_meta.meta)?;
         module
             .ckks_encode_reim_into(&mut pt, pre_re, pre_im, scratch)
