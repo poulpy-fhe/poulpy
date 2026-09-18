@@ -95,6 +95,22 @@ pub trait Evaluate<In, Out> {
     fn evaluate(&self, input: In, strategy: LinearTransformationStrategy) -> Out;
 }
 
+/// The period of a slot-wise combination (sum or product) of two periodic
+/// vectors: the least common multiple of their periods. It divides `slots`
+/// whenever both periods do, and is their maximum when both are powers of
+/// two.
+pub fn period_lcm(a: usize, b: usize) -> usize {
+    fn gcd(mut a: usize, mut b: usize) -> usize {
+        while b != 0 {
+            let r = a % b;
+            a = b;
+            b = r;
+        }
+        a
+    }
+    a / gcd(a, b) * b
+}
+
 /// Left-rotates `src` by `k` slots into `out`: `out[j] = src[(j + k) mod src.len()]`.
 ///
 /// Public utility matching the scheme slot-rotation convention
@@ -320,6 +336,10 @@ mod tests {
             d.set(0, vec![1.0, 2.0, 3.0]);
         });
         assert!(rejected.is_err(), "a length that does not divide slots must be rejected");
+
+        assert_eq!(period_lcm(2, 3), 6);
+        assert_eq!(period_lcm(4, 16), 16);
+        assert_eq!(period_lcm(1, 5), 5);
     }
 
     #[test]

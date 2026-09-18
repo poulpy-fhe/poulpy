@@ -23,13 +23,14 @@
 //!
 //! Every diagonal is stored as one period of its values: a layer's coefficient
 //! vectors are one butterfly wide, a merge reads its operands modulo their
-//! lengths and stores the longer one, so a factor's diagonals come out at the
+//! lengths and stores the combined period (the longer one, all widths being
+//! powers of two), so a factor's diagonals come out at the
 //! widest butterfly it merges (see [`DFTPlan::diagonal_log_sparsity`]) and the
 //! encoder stores each of them on that many slots
 //! ([`ComplexDiagonals::build_transform`]).
 
 use num_traits::{Float, FloatConst};
-use poulpy_core::layouts::Diagonals;
+use poulpy_core::layouts::{Diagonals, period_lcm};
 
 use crate::layouts::{
     ComplexDiagonals,
@@ -240,9 +241,10 @@ fn cd_get<F: DftScalar>(cd: &ComplexDiagonals<F>, index: i64) -> Vec<Cpx<F>> {
 
 /// Accumulating insert into a [`ComplexDiagonals`]: `cd[index] += vec` (set if
 /// absent), `vec` being one period of the added term. The sum is stored at the
-/// longer of the two periods, the shorter operand read modulo its length.
+/// least common multiple of the two periods, each operand read modulo its
+/// length.
 fn cd_accumulate<F: DftScalar>(cd: &mut ComplexDiagonals<F>, index: i64, vec: &[Cpx<F>]) {
-    let len = vec.len().max(cd.diagonal_period(index).unwrap_or(1));
+    let len = period_lcm(vec.len(), cd.diagonal_period(index).unwrap_or(1));
     let new_re: Vec<F> = match cd.re.get(index) {
         Some(cur) => (0..len).map(|j| cur[j % cur.len()] + vec[j % vec.len()].re).collect(),
         None => (0..len).map(|j| vec[j % vec.len()].re).collect(),
@@ -261,18 +263,19 @@ fn empty_cd<F: DftScalar>(dslots: usize) -> ComplexDiagonals<F> {
 }
 
 /// Element-wise `out[i] = multiplier[i mod multiplier.len()] · rotated[(i + k) mod rotated.len()]`
-/// over `out.len() = max(rotated.len(), multiplier.len())`.
+/// over `out.len() = lcm(rotated.len(), multiplier.len())`.
 ///
 /// Both operands are one period of a periodic vector: a rotation keeps a
-/// period and the product of two periodic vectors repeats over the longer
-/// period (powers of two), so reading each operand modulo its own length is
-/// exact. The same modular read replicates a `slots`-wide butterfly layer
-/// across both halves of the `dslots = 2·slots` working vector of the
-/// sparse-repack path.
+/// period and the product of two periodic vectors repeats over the least
+/// common multiple of the periods (the longer one here, every width being a
+/// power of two), so reading each operand modulo its own length is exact.
+/// The same modular read replicates a `slots`-wide butterfly layer across
+/// both halves of the `dslots = 2·slots` working vector of the sparse-repack
+/// path.
 fn rotate_and_mul<F: DftScalar>(rotated: &[Cpx<F>], k: i64, multiplier: &[Cpx<F>]) -> Vec<Cpx<F>> {
     let rot_len = rotated.len() as i64;
     let mul_len = multiplier.len();
-    (0..rotated.len().max(mul_len))
+    (0..period_lcm(rotated.len(), mul_len))
         .map(|i| {
             let m = multiplier[i % mul_len];
             let r = rotated[(i as i64 + k).rem_euclid(rot_len) as usize];

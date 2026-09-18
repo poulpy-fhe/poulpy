@@ -27,7 +27,7 @@ use std::collections::BTreeSet;
 
 use poulpy_core::layouts::{
     DiagonalArithmetic, Diagonals, Evaluate, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
-    LinearTransformationLayout, LinearTransformationStrategy, rotate_slots_into,
+    LinearTransformationLayout, LinearTransformationStrategy, period_lcm, rotate_slots_into,
 };
 
 /// A complex slot-matrix linear map for CKKS.
@@ -62,24 +62,32 @@ impl<T> ComplexDiagonals<T> {
     }
 
     /// The slot count after which the complex diagonal at `index` repeats: the
-    /// longer of its two stored periods ([`Diagonals::period`]), an absent
-    /// part counting as constant; `None` when neither part carries the index.
+    /// least common multiple of its two stored periods
+    /// ([`Diagonals::period`]), an absent part counting as constant; `None`
+    /// when neither part carries the index.
     pub fn diagonal_period(&self, index: i64) -> Option<usize> {
         match (self.re.period(index), self.im.period(index)) {
             (None, None) => None,
-            (re, im) => Some(re.unwrap_or(1).max(im.unwrap_or(1))),
+            (re, im) => Some(period_lcm(re.unwrap_or(1), im.unwrap_or(1))),
         }
     }
 
-    /// The slot count every diagonal of the map repeats over: the longest
-    /// [`Self::diagonal_period`], `slots` for an empty map. This is the slot
-    /// count [`Self::build_transform`] encodes on.
+    /// The slot count every diagonal of the map repeats over: the least
+    /// common multiple of the [`Self::diagonal_period`]s, `slots` for an
+    /// empty map. This is the slot count [`Self::build_transform`] encodes on.
     pub fn period(&self) -> usize {
-        self.indexes()
+        let periods: Vec<usize> = self
+            .indexes()
             .into_iter()
             .filter_map(|index| self.diagonal_period(index))
-            .max()
-            .unwrap_or(self.slots())
+            .collect();
+        if periods.is_empty() {
+            return self.slots();
+        }
+        let period = periods.into_iter().fold(1, period_lcm);
+        // Every stored period divides `slots`, so their least common multiple does.
+        debug_assert!(self.slots().is_multiple_of(period));
+        period
     }
 
     /// Transposes the underlying complex matrix in place.
@@ -166,8 +174,9 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     /// tile. Diagonal indexes add (`diag_{a+b}[j] += A_a[j] · B_b[j+a]`, all
     /// complex), so the output carries at most `|A|·|B|` diagonals, fewer when
     /// index sums collide. Each stored period is read modulo its length; a
-    /// term repeats over the longer of its operands' periods and an output
-    /// diagonal is stored at the longest period among its terms.
+    /// term repeats over the least common multiple of its operands' periods
+    /// and an output diagonal is stored at the least common multiple of its
+    /// terms' periods.
     pub fn compose(&self, rhs: &Self) -> Self {
         let (ta, tb) = (self.slots() as i64, rhs.slots() as i64);
         assert!(
@@ -185,7 +194,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
             for ib in rhs.indexes() {
                 let period_b = rhs.diagonal_period(ib).expect("indexed diagonal present");
                 let idx = (ia + ib).rem_euclid(t);
-                let len = out.diagonal_period(idx).unwrap_or(1).max(period_a).max(period_b) as i64;
+                let len = period_lcm(period_lcm(out.diagonal_period(idx).unwrap_or(1), period_a), period_b) as i64;
                 let mut re: Vec<T> = (0..len).map(|j| read(&out.re, idx, j)).collect();
                 let mut im: Vec<T> = (0..len).map(|j| read(&out.im, idx, j)).collect();
                 for j in 0..len {
@@ -314,7 +323,7 @@ mod tests {
         }
         let cc = compact.compose(&compact);
         let dd = dense.compose(&dense);
-        assert_eq!(cc.diagonal_period(1), Some(2), "composed period is the longest term");
+        assert_eq!(cc.diagonal_period(1), Some(2), "composed period is the lcm of the terms");
         for strategy in strategies {
             assert_eq!(
                 cc.evaluate((vre.as_slice(), vim.as_slice()), strategy),
@@ -352,6 +361,34 @@ mod tests {
                 (vec![3.0, 3.0], vec![0.0, 0.0]),
                 (vec![0.0, 0.0], vec![1.0, 0.0]),
             ]
+        );
+    }
+
+    /// Periods combine by least common multiple, not by maximum: on six slots a
+    /// period-2 and a period-3 diagonal compose to period 6.
+    #[test]
+    fn periods_combine_by_lcm_on_non_power_of_two_slot_counts() {
+        let mut a = ComplexDiagonals::new(Diagonals::new(6), Diagonals::new(6));
+        a.re.set(0, vec![1.0, 2.0]);
+        let mut b = ComplexDiagonals::new(Diagonals::new(6), Diagonals::new(6));
+        b.re.set(0, vec![10.0, 20.0, 30.0]);
+        let c = a.compose(&b);
+        assert_eq!(c.diagonal_period(0), Some(6));
+        assert_eq!(c.re.get(0), Some(&vec![10.0, 40.0, 30.0, 20.0, 20.0, 60.0]));
+
+        let mut mixed = ComplexDiagonals::new(Diagonals::new(6), Diagonals::new(6));
+        mixed.re.set(1, vec![1.0, 2.0]);
+        mixed.im.set(1, vec![5.0, 6.0, 7.0]);
+        assert_eq!(mixed.diagonal_period(1), Some(6));
+        mixed.re.set(2, vec![4.0, 5.0]);
+        mixed.im.set(3, vec![8.0, 9.0, 1.0]);
+        assert_eq!(mixed.period(), 6);
+        assert_eq!(mixed.slots() % mixed.period(), 0, "the map period divides the slot count");
+        let lt = mixed.build_transform(LinearTransformationStrategy::Direct, |re, im| (re.len(), im.len()));
+        assert!(
+            lt.giant_steps
+                .iter()
+                .all(|g| g.diagonals.iter().all(|d| d.plaintext == (6, 6)))
         );
     }
 
