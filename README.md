@@ -62,13 +62,13 @@ Every layer (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`) follows the same intern
 | Module | Role |
 |--------|------|
 | `api` | Public traits user code calls. Bounds reference `oep` for the backend capabilities they need. |
-| `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `default` method automatically. |
-| `default` | Portable algorithm implementations as safe trait methods — the fallback every new backend gets for free. |
+| `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `reference` method automatically. |
+| `reference` | The reference implementation of every operation: portable compositions of the HAL as safe trait methods, what every new backend gets for free. |
 | `delegates` | Implements each `api` trait on `Module<BE>` by dispatching through `oep`. Composite operations also live here. |
 
 ### Overriding at Any Level
 
-A backend overrides any operation by implementing the corresponding `oep` trait directly instead of relying on the blanket `default` wiring. Only the hot-path operations need overrides; everything else inherits the portable `default` implementation for free. This override mechanism is independent at every layer: a backend can override a `poulpy-hal` primitive without touching `poulpy-core` behavior, and vice versa.
+A backend overrides any operation by implementing the corresponding `oep` trait directly instead of relying on the blanket `reference` wiring. Only the hot-path operations need overrides; everything else inherits the portable `reference` implementation for free. This override mechanism is independent at every layer: a backend can override a `poulpy-hal` primitive without touching `poulpy-core` behavior, and vice versa.
 
 ### Integrating a Backend
 
@@ -77,7 +77,7 @@ A backend overrides any operation by implementing the corresponding `oep` trait 
 3. For each `poulpy-core` operation family, either call the corresponding `impl_*_defaults_full!` macro to inherit the portable implementation, or implement the OEP trait directly to override it.
 4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_defaults!` macros or direct OEP trait implementations.
 
-At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `default` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
+At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `reference` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
 
 See `poulpy-cpu-ref` for the reference implementation of all four steps.
 

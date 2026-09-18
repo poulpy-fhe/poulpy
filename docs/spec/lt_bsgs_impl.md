@@ -97,7 +97,7 @@ once, at setup (**saving #8**).
 and a plaintext-shape proxy (one `CnvPVecR(1, pt_size)` per real diagonal), recording the
 diagonals' `pt_base2k` / `pt_k` so the evaluator never needs the raw transform again.
 
-`glwe_prepare_linear_transformation_rhs_default` then fills each pre-allocated slot with
+`glwe_prepare_linear_transformation_rhs_reference` then fills each pre-allocated slot with
 `cnv_prepare_right(plaintext)`. Zero allocations happen here; it only populates. The
 diagonals are expected pre-encoded (and pre-rotated `ũ_{j,k} = rot(u_{n1·j+k}, −n1·j)`) by
 the CKKS layer — the core engine is scheme-agnostic.
@@ -205,18 +205,18 @@ this final normalize.
 ## 5. Public entry points + scratch ([`eval.rs`](../../poulpy-core/src/reference/linear_transformation/eval.rs))
 
 These `*_default` free functions are what a backend forwards to from its
-`crate::oep::LinearTransformationDefault` impl (via `impl_linear_transformation_defaults_full!`):
+`crate::oep::LinearTransformationReference` impl (via `impl_linear_transformation_reference_full!`):
 
 | Function | Does |
 |---|---|
-| `glwe_prepare_linear_transformation_rhs_default` | Setup §3.1 (prepare.rs). |
-| `glwe_prepare_linear_transformation_baby_steps_default` | Setup §3.2 / Phase A (baby_steps.rs). |
-| `glwe_eval_linear_transformation_into_default` | Prepared eval (§4) — asserts ≥ 1 non-empty giant step, then `glwe_eval_giant_steps`. |
+| `glwe_prepare_linear_transformation_rhs_reference` | Setup §3.1 (prepare.rs). |
+| `glwe_prepare_linear_transformation_baby_steps_reference` | Setup §3.2 / Phase A (baby_steps.rs). |
+| `glwe_eval_linear_transformation_into_reference` | Prepared eval (§4) — asserts ≥ 1 non-empty giant step, then `glwe_eval_giant_steps`. |
 | `glwe_eval_linear_transformation_unprepared_rhs_into_default` | Streamed eval (§6). |
 | `*_tmp_bytes_default` siblings | Scratch sizing. |
 
 **Scratch sizing.** The `*_tmp_bytes` functions follow the additive-layout pattern of
-`glwe_keyswitch_tmp_bytes_default`: they size each route (lazy DFT vs fallback, hoisted vs
+`glwe_keyswitch_tmp_bytes_reference`: they size each route (lazy DFT vs fallback, hoisted vs
 plain) and take the `max`. The eval budget covers the hoisted `a_dft`, the DFT PROD buffer
 + DFT temp, the DFT giant accumulator, the rotation scratch, the final BIG accumulator, and
 the per-op VMP/IDFT/normalize/convolution `*_tmp_bytes`. The streamed variant adds one
