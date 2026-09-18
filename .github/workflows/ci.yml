@@ -321,6 +321,40 @@ jobs:
       - name: Test NEON backend
         run: cargo test -p poulpy-cpu-arm --profile ci --features "$NEON_FEATURES"
 
+  miri:
+    name: Miri (poulpy-hal unit tests)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: miri
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-miri-${{ hashFiles('**/Cargo.lock', 'Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-miri-
+            ${{ runner.os }}-cargo-
+
+      - name: Miri setup
+        run: cargo miri setup
+
+      - name: Miri poulpy-hal unit tests
+        run: cargo miri test -p poulpy-hal --lib
+
   build-and-test:
     name: build-and-test
     runs-on: ubuntu-latest
@@ -331,6 +365,7 @@ jobs:
       - macos_arm_quad
       - avx512
       - neon
+      - miri
     if: always()
 
     steps:
@@ -363,6 +398,11 @@ jobs:
 
           if [ "${{ needs.neon.result }}" != "success" ]; then
             echo "NEON backend job finished with: ${{ needs.neon.result }}"
+            exit 1
+          fi
+
+          if [ "${{ needs.miri.result }}" != "success" ]; then
+            echo "Miri job finished with: ${{ needs.miri.result }}"
             exit 1
           fi
 

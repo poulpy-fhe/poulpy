@@ -243,7 +243,7 @@ pub fn cast_mut<T, V>(data: &mut [T]) -> &mut [V] {
 /// transparent huge pages. Overridable via `POULPY_HUGEPAGE_MIN_BYTES`.
 const HUGEPAGE_ADVISE_THRESHOLD: usize = 2 * 1024 * 1024;
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(miri)))]
 fn hugepage_min_bytes() -> usize {
     use once_cell::sync::Lazy;
     static THRESH: Lazy<usize> = Lazy::new(|| {
@@ -258,7 +258,7 @@ fn hugepage_min_bytes() -> usize {
 /// `madvise(MADV_HUGEPAGE)` on a freshly-allocated range. Skipped if the
 /// pointer is not page-aligned (non-mmap'd heap arenas) or the size is
 /// below the threshold. Failure is silently ignored — advisory only.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(miri)))]
 fn advise_hugepage(ptr: *mut u8, size: usize) {
     if size < hugepage_min_bytes() {
         return;
@@ -278,7 +278,7 @@ fn advise_hugepage(ptr: *mut u8, size: usize) {
     let _ = unsafe { libc::madvise(ptr.cast(), len, libc::MADV_HUGEPAGE) };
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(all(target_os = "linux", not(miri))))]
 #[inline(always)]
 fn advise_hugepage(_ptr: *mut u8, _size: usize) {}
 
