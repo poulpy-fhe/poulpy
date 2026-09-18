@@ -51,8 +51,11 @@ impl<T: Copy> AlignedVec<T> {
         );
         let size: usize = len
             .checked_mul(size_of::<T>())
-            .unwrap_or_else(|| panic!("AlignedVec: {len} elements of {} bytes overflow usize", size_of::<T>()));
-        assert!(size.is_multiple_of(align), "size={size} must be a multiple of align={align}");
+            .expect("AlignedVec: the element count times the element size overflows usize");
+        assert!(
+            size.is_multiple_of(align),
+            "AlignedVec: the byte size must be a multiple of the alignment"
+        );
         let layout: Layout = Layout::from_size_align(size, align).expect("Invalid alignment");
         if size == 0 {
             return Self {
@@ -318,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "must be a multiple of align")]
+    #[should_panic(expected = "must be a multiple of the alignment")]
     fn zeroed_rejects_an_unpadded_size() {
         let _ = AlignedVec::<u8>::zeroed(100, 64);
     }
