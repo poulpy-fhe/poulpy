@@ -79,12 +79,7 @@ pub(crate) fn paco_c2s_factors<F: DftScalar>(p: &PaCoPlan, schedule: &[usize]) -
 /// (already at the working precision `F` — never route irrational constants
 /// through `f64`, it would cap an `f128` chain at 53 bits).
 fn scale_factor<F: DftScalar>(cd: &mut ComplexDiagonals<F>, s: F) {
-    for part in [&mut cd.re, &mut cd.im] {
-        for i in part.indexes() {
-            let scaled: Vec<F> = part.get(i).expect("indexed").iter().map(|&x| x * s).collect();
-            part.set(i, scaled);
-        }
-    }
+    cd.scale(&s);
 }
 
 /// The ψ/μ tail of the partial-CoeffToSlot chain (seqPaCo lines 8–10), in

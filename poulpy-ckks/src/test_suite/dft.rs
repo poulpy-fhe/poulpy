@@ -34,7 +34,7 @@ use crate::{
     api::{CKKSDFTMatrixOps, CKKSDFTOps},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTMatrix, DFTOutputFormat, DFTPlan,
-        DFTType, Decode, Encode, Repack, Split, Standard,
+        DFTType, Decode, DftFormat, Encode, Repack, Split, Standard,
     },
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
@@ -682,6 +682,23 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
 /// This pins them to the compiled [`DFTMatrix`]: the Galois elements must match
 /// exactly (keys are addressed by Galois element), for both directions and the
 /// dense and sparse-repack paths.
+/// Every compiled factor stores its diagonals at the degree the plan's
+/// sparsity replay predicts, `N >> s`, raised to the backend floor.
+fn assert_factor_degrees<BE: Backend, Dir, Fmt: DftFormat>(
+    what: &str,
+    plan: &DFTPlan,
+    matrix: &DFTMatrix<BE, Dir, Fmt>,
+    n: usize,
+) {
+    let log_n = n.ilog2() as usize;
+    let sparsity = plan.factor_log_sparsity(log_n);
+    assert_eq!(matrix.factor_operands().len(), sparsity.len(), "{what}: factor count");
+    for (i, (lt, s)) in matrix.factor_operands().iter().zip(sparsity).enumerate() {
+        let degree = lt.first_diagonal_plaintext().expect("factor has diagonals").n().as_usize();
+        assert_eq!(degree, (n >> s).max(BE::MIN_DEGREE), "{what}: factor {i} plaintext degree");
+    }
+}
+
 pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
     params: CKKSTestParams,
     _module: &Module<BE>,
@@ -717,6 +734,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         );
         assert!(!pe.is_sparse_repack(log_n));
         assert_eq!(pe.num_diagonals(log_n).len(), pe.num_factors());
+        assert_factor_degrees("dense encode", &pe, &me, p.n);
 
         let pd = plan(DENSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::SplitRealAndImag, ld);
         let md: DFTMatrix<BE, Decode, Split> = module
@@ -727,6 +745,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
             md.galois_elements(order),
             "dense decode galois"
         );
+        assert_factor_degrees("dense decode", &pd, &md, p.n);
     }
 
     // ---- sparse RepackImagAsReal: Encode + Decode ----
@@ -749,6 +768,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
             me.galois_elements(order),
             "sparse encode galois"
         );
+        assert_factor_degrees("sparse encode", &pe, &me, p.n);
 
         let pd = plan(SPARSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::RepackImagAsReal, ld);
         let md: DFTMatrix<BE, Decode, Repack> = module
@@ -759,5 +779,6 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
             md.galois_elements(order),
             "sparse decode galois"
         );
+        assert_factor_degrees("sparse decode", &pd, &md, p.n);
     }
 }

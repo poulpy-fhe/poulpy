@@ -55,6 +55,27 @@ impl<T> ComplexDiagonals<T> {
         set.into_iter().collect()
     }
 
+    /// The slot count after which the diagonal at `index` repeats: the larger
+    /// of its real and imaginary tags ([`Diagonals::period`]), an absent side
+    /// counting as constant; `None` when neither side carries the index.
+    pub fn diagonal_period(&self, index: i64) -> Option<usize> {
+        match (self.re.period(index), self.im.period(index)) {
+            (None, None) => None,
+            (re, im) => Some(re.unwrap_or(1).max(im.unwrap_or(1))),
+        }
+    }
+
+    /// The slot count every diagonal of the map repeats over: the largest
+    /// [`Self::diagonal_period`], `slots` for an untagged or empty map. This
+    /// is the slot count [`Self::build_transform`] encodes on.
+    pub fn period(&self) -> usize {
+        self.indexes()
+            .into_iter()
+            .filter_map(|index| self.diagonal_period(index))
+            .max()
+            .unwrap_or(self.slots())
+    }
+
     /// Transposes the underlying complex matrix in place.
     ///
     /// Since `(Bre + i·Bim)ᵀ = (Bre)ᵀ + i·(Bim)ᵀ` (transpose is entry-wise on
@@ -101,17 +122,40 @@ impl<T: DiagonalArithmetic> Evaluate<(&[T], &[T]), (Vec<T>, Vec<T>)> for Complex
 
 impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     /// Entry-wise complex conjugation of the underlying matrix (negates the
-    /// imaginary diagonals in place). Satisfies
+    /// imaginary diagonals in place, keeping their period tags). Satisfies
     /// `conj(M·v) = conj(M)·conj(v)`.
-    pub fn conjugate(&mut self) {
+    pub fn conjugate(&mut self)
+    where
+        T: PartialEq,
+    {
         for i in self.im.indexes() {
+            let period = self.im.period(i).expect("indexed diagonal present");
             let mut v = self.im.get(i).cloned().expect("indexed diagonal present");
             for x in v.iter_mut() {
                 let mut neg = T::zero();
                 neg.sub_assign(x);
                 *x = neg;
             }
-            self.im.set(i, v);
+            self.im.set_periodic(i, v, period);
+        }
+    }
+
+    /// Multiplies every stored value by `s`, keeping the period tags.
+    pub fn scale(&mut self, s: &T)
+    where
+        T: PartialEq,
+    {
+        for part in [&mut self.re, &mut self.im] {
+            for i in part.indexes() {
+                let period = part.period(i).expect("indexed diagonal present");
+                let scaled: Vec<T> = part
+                    .get(i)
+                    .expect("indexed diagonal present")
+                    .iter()
+                    .map(|x| x.mul(s))
+                    .collect();
+                part.set_periodic(i, scaled, period);
+            }
         }
     }
 
@@ -123,8 +167,13 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     /// long as one divides the other; the result's slot count is the larger
     /// tile. Diagonal indexes add (`diag_{a+b}[j] += A_a[j] · B_b[j+a]`, all
     /// complex), so the output carries at most `|A|·|B|` diagonals, fewer when
-    /// index sums collide.
-    pub fn compose(&self, rhs: &Self) -> Self {
+    /// index sums collide. Period tags propagate: a term repeats over the
+    /// larger of its two operands' periods, and a diagonal over the largest of
+    /// its terms.
+    pub fn compose(&self, rhs: &Self) -> Self
+    where
+        T: PartialEq,
+    {
         let (ta, tb) = (self.slots() as i64, rhs.slots() as i64);
         assert!(
             ta % tb == 0 || tb % ta == 0,
@@ -137,8 +186,11 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
             d.get(idx).map_or_else(T::zero, |v| v[(j % tile) as usize].clone())
         };
         for ia in self.indexes() {
+            let period_a = self.diagonal_period(ia).expect("indexed diagonal present");
             for ib in rhs.indexes() {
+                let period_b = rhs.diagonal_period(ib).expect("indexed diagonal present");
                 let idx = (ia + ib).rem_euclid(t);
+                let period = out.diagonal_period(idx).unwrap_or(1).max(period_a).max(period_b);
                 let mut re = out.re.get(idx).cloned().unwrap_or_else(|| zeros.clone());
                 let mut im = out.im.get(idx).cloned().unwrap_or_else(|| zeros.clone());
                 for j in 0..t {
@@ -154,8 +206,8 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
                     im_term.add_assign(&ai.mul(&br));
                     im[j as usize].add_assign(&im_term);
                 }
-                out.re.set(idx, re);
-                out.im.set(idx, im);
+                out.re.set_periodic(idx, re, period);
+                out.im.set_periodic(idx, im, period);
             }
         }
         out
@@ -165,14 +217,19 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
     ///
     /// Performs the BSGS pre-rotation `ũ_{j,k} = rot(diag_{n1·j+k}, −n1·j)` and
     /// the giant-step bucketing; `encode` only turns a pre-rotated `(re, im)`
-    /// diagonal (each `slots` long) into the scheme's encoded plaintext `P`
-    /// (e.g. via `encode_reim`).
+    /// diagonal into the scheme's encoded plaintext `P` (e.g. via
+    /// `encode_reim`). It receives every diagonal on [`Self::period`] slots,
+    /// the whole `slots` for an untagged map: a tagged map (a merged DFT
+    /// butterfly) is encoded at the degree that holds one period, the same
+    /// value under the ring embedding as the dense encoding, and one degree
+    /// for the whole transformation. The pre-rotation keeps every period.
     pub fn build_transform<P>(
         &self,
         strategy: LinearTransformationStrategy,
         mut encode: impl FnMut(&[T], &[T]) -> P,
     ) -> LinearTransformation<P> {
         let slots = self.slots();
+        let period = self.period();
         let index = LinearTransformationLayout {
             indexes: self.indexes(),
             slots,
@@ -193,7 +250,7 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
                 let dim = self.im.get(d).map_or(&zero_block[..], |v| v.as_slice());
                 rotate_slots_into(dre, -giant_rot, &mut pre_re);
                 rotate_slots_into(dim, -giant_rot, &mut pre_im);
-                let plaintext = encode(&pre_re, &pre_im);
+                let plaintext = encode(&pre_re[..period], &pre_im[..period]);
                 diagonals.push(LinearTransformationDiagonal { baby, plaintext });
             }
             giant_steps.push(LinearTransformationGiantStep {
@@ -223,6 +280,50 @@ mod tests {
             }
         }
         d
+    }
+
+    #[test]
+    fn build_transform_encodes_on_the_largest_period() {
+        let mut cd = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
+        cd.re.set_periodic(0, vec![1.0, 2.0, 1.0, 2.0], 2);
+        cd.im.set_periodic(1, vec![3.0; 4], 1);
+        assert_eq!(cd.period(), 2);
+        let lt = cd.build_transform(LinearTransformationStrategy::Direct, |re, im| (re.to_vec(), im.to_vec()));
+        let got: Vec<_> = lt
+            .giant_steps
+            .iter()
+            .flat_map(|g| g.diagonals.iter().map(|d| d.plaintext.clone()))
+            .collect();
+        assert_eq!(got, vec![(vec![1.0, 2.0], vec![0.0, 0.0]), (vec![0.0, 0.0], vec![3.0, 3.0])]);
+
+        // One untagged diagonal makes the whole transformation dense.
+        cd.re.set(2, vec![1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(cd.period(), 4);
+        let lt = cd.build_transform(LinearTransformationStrategy::Bsgs { giant_step: 2 }, |re, _| re.len());
+        assert!(lt.giant_steps.iter().all(|g| g.diagonals.iter().all(|d| d.plaintext == 4)));
+    }
+
+    #[test]
+    fn compose_conjugate_and_scale_keep_the_period_tags() {
+        let mut a = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
+        a.re.set_periodic(0, vec![1.0, 2.0, 1.0, 2.0], 2);
+        a.im.set_periodic(1, vec![1.0; 4], 1);
+        let mut b = ComplexDiagonals::new(Diagonals::new(4), Diagonals::new(4));
+        b.re.set_periodic(0, vec![3.0; 4], 1);
+        b.im.set(2, vec![1.0, 0.0, 0.0, 0.0]);
+        let c = a.compose(&b);
+        assert_eq!(c.diagonal_period(0), Some(2));
+        assert_eq!(c.diagonal_period(1), Some(1));
+        assert_eq!(c.diagonal_period(2), Some(4));
+        assert_eq!(c.diagonal_period(3), Some(4));
+
+        let mut d = a.clone();
+        d.conjugate();
+        assert_eq!(d.diagonal_period(1), Some(1));
+        assert_eq!(d.im.get(1), Some(&vec![-1.0; 4]));
+        d.scale(&2.0);
+        assert_eq!(d.diagonal_period(0), Some(2));
+        assert_eq!(d.re.get(0), Some(&vec![2.0, 4.0, 2.0, 4.0]));
     }
 
     #[test]

@@ -108,10 +108,17 @@ pub fn rotate_slots_into<T: Clone>(src: &[T], k: i64, out: &mut [T]) {
 /// length-`slots` vector. Keys are diagonal indexes normalized to `[0, slots)`.
 /// See the module docs for the diagonal convention and for how schemes layer
 /// multi-dimensional packings on top.
+///
+/// A diagonal may carry a period tag ([`Self::set_periodic`]): the slot count
+/// after which its values repeat. A scheme encodes such a diagonal on that
+/// many slots, its plaintext polynomial being sparse by the factor
+/// `slots / period`; an untagged diagonal ([`Self::set`]) reads as dense.
 #[derive(Clone, Debug)]
 pub struct Diagonals<T> {
     slots: usize,
     map: BTreeMap<i64, Vec<T>>,
+    /// Period tags, keyed like `map`; a missing key means `slots`.
+    periods: BTreeMap<i64, usize>,
 }
 
 impl<T> Diagonals<T> {
@@ -121,6 +128,7 @@ impl<T> Diagonals<T> {
         Self {
             slots,
             map: BTreeMap::new(),
+            periods: BTreeMap::new(),
         }
     }
 
@@ -129,8 +137,8 @@ impl<T> Diagonals<T> {
         self.slots
     }
 
-    /// Sets the diagonal at `index` (normalized modulo `slots`). `values` must
-    /// have length `slots`.
+    /// Sets the diagonal at `index` (normalized modulo `slots`), untagged.
+    /// `values` must have length `slots`.
     pub fn set(&mut self, index: i64, values: Vec<T>) {
         assert_eq!(
             values.len(),
@@ -139,7 +147,51 @@ impl<T> Diagonals<T> {
             values.len(),
             self.slots,
         );
-        self.map.insert(index.rem_euclid(self.slots as i64), values);
+        let key = index.rem_euclid(self.slots as i64);
+        self.periods.remove(&key);
+        self.map.insert(key, values);
+    }
+
+    /// Sets the diagonal at `index` and tags it with `period`, the slot count
+    /// after which its values repeat: `values[j] == values[j % period]` for
+    /// every `j`, checked here, with `period` a power-of-two divisor of
+    /// `slots`. `period == slots` stores the diagonal untagged.
+    pub fn set_periodic(&mut self, index: i64, values: Vec<T>, period: usize)
+    where
+        T: PartialEq,
+    {
+        if period == self.slots {
+            return self.set(index, values);
+        }
+        assert_eq!(
+            values.len(),
+            self.slots,
+            "diagonal length ({}) must equal slots ({})",
+            values.len(),
+            self.slots,
+        );
+        assert!(
+            period.is_power_of_two() && self.slots.is_multiple_of(period),
+            "period {period} must be a power-of-two divisor of slots {}",
+            self.slots,
+        );
+        assert!(
+            values.iter().enumerate().all(|(j, v)| *v == values[j % period]),
+            "diagonal does not repeat every {period} slots",
+        );
+        let key = index.rem_euclid(self.slots as i64);
+        self.periods.insert(key, period);
+        self.map.insert(key, values);
+    }
+
+    /// The slot count after which the diagonal at `index` repeats: its
+    /// [`Self::set_periodic`] tag, `slots` for an untagged diagonal, `None`
+    /// when the diagonal is absent.
+    pub fn period(&self, index: i64) -> Option<usize> {
+        let key = index.rem_euclid(self.slots as i64);
+        self.map
+            .contains_key(&key)
+            .then(|| self.periods.get(&key).copied().unwrap_or(self.slots))
     }
 
     /// Returns the diagonal at `index` (normalized modulo `slots`), if present.
@@ -168,15 +220,21 @@ impl<T> Diagonals<T> {
     /// per-element clones, no extra `Vec<T>` allocations.
     ///
     /// After [`Self::transpose`], [`Self::evaluate`] on `self` computes
-    /// `Mᵀ·v = v·M` (where `M` was the matrix before the call).
+    /// `Mᵀ·v = v·M` (where `M` was the matrix before the call). A rotation
+    /// keeps a period, so the tags travel with their diagonals.
     pub fn transpose(&mut self) {
         let slots = self.slots as i64;
         let old = std::mem::take(&mut self.map);
+        let periods = std::mem::take(&mut self.periods);
         for (j, mut vec) in old {
             // In-place cyclic left rotation by (-j) mod slots, matching the
             // `rot(v, k)[i] = v[(i + k) mod n]` convention.
             vec.rotate_left((-j).rem_euclid(slots) as usize);
-            self.map.insert((-j).rem_euclid(slots), vec);
+            let key = (-j).rem_euclid(slots);
+            if let Some(&period) = periods.get(&j) {
+                self.periods.insert(key, period);
+            }
+            self.map.insert(key, vec);
         }
     }
 }
@@ -263,6 +321,33 @@ mod tests {
                 assert!((a - b).abs() < 1e-9, "{strategy:?}: {got:?} != {want:?}");
             }
         }
+    }
+
+    #[test]
+    fn periodic_tags_are_checked_and_follow_the_transpose() {
+        let mut d = Diagonals::new(4);
+        d.set_periodic(1, vec![1.0, 2.0, 1.0, 2.0], 2);
+        d.set(2, vec![1.0, 2.0, 1.0, 2.0]);
+        assert_eq!(d.period(1), Some(2));
+        assert_eq!(d.period(2), Some(4), "an untagged diagonal reads as dense");
+        assert_eq!(d.period(3), None);
+        d.transpose();
+        assert_eq!(d.period(-1), Some(2));
+        assert_eq!(d.get(-1), Some(&vec![2.0, 1.0, 2.0, 1.0]));
+        assert_eq!(d.period(-2), Some(4));
+        d.set(-1, vec![0.0; 4]);
+        assert_eq!(d.period(-1), Some(4), "set drops the tag");
+
+        let not_periodic = std::panic::catch_unwind(|| {
+            let mut d = Diagonals::new(4);
+            d.set_periodic(0, vec![1.0, 2.0, 3.0, 2.0], 2);
+        });
+        assert!(not_periodic.is_err());
+        let bad_period = std::panic::catch_unwind(|| {
+            let mut d = Diagonals::new(4);
+            d.set_periodic(0, vec![1.0; 4], 3);
+        });
+        assert!(bad_period.is_err());
     }
 
     #[test]

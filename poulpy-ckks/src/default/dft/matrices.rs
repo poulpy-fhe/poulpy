@@ -20,6 +20,13 @@
 //! `diag_i[j] = M[j][(j+i) mod slots]` (see [`poulpy_core::layouts::Diagonals`]),
 //! and the canonical embedding uses the Galois generator 5 (`pow5`), identical to
 //! the backend CKKS encoding plans.
+//!
+//! Every generated diagonal carries its period tag
+//! ([`ComplexDiagonals::diagonal_period`]), computed alongside the merge: a
+//! layer's diagonals repeat over its butterfly width and a merge keeps the
+//! larger period, so a factor's diagonals repeat over the widest butterfly it
+//! merges (see [`DFTPlan::diagonal_log_sparsity`]). The encoder stores each
+//! diagonal on that many slots.
 
 use num_traits::{Float, FloatConst};
 use poulpy_core::layouts::Diagonals;
@@ -230,17 +237,20 @@ fn cd_get<F: DftScalar>(cd: &ComplexDiagonals<F>, index: i64, dslots: usize) -> 
 
 /// Accumulating insert into a [`ComplexDiagonals`]: `cd[index] += vec` (set if
 /// absent). The re/im parts are stored in the two underlying [`Diagonals`].
-fn cd_accumulate<F: DftScalar>(cd: &mut ComplexDiagonals<F>, index: i64, vec: &[Cpx<F>]) {
+/// `period` is the slot count `vec` repeats over; the stored tag becomes the
+/// larger of it and the previous one.
+fn cd_accumulate<F: DftScalar>(cd: &mut ComplexDiagonals<F>, index: i64, vec: &[Cpx<F>], period: usize) {
+    let period = cd.diagonal_period(index).unwrap_or(1).max(period);
     let new_re = match cd.re.get(index) {
         Some(cur) => cur.iter().zip(vec).map(|(&a, c)| a + c.re).collect(),
         None => vec.iter().map(|c| c.re).collect(),
     };
-    cd.re.set(index, new_re);
+    cd.re.set_periodic(index, new_re, period);
     let new_im = match cd.im.get(index) {
         Some(cur) => cur.iter().zip(vec).map(|(&a, c)| a + c.im).collect(),
         None => vec.iter().map(|c| c.im).collect(),
     };
-    cd.im.set(index, new_im);
+    cd.im.set_periodic(index, new_im, period);
 }
 
 /// An empty `dslots`-wide complex diagonal map.
@@ -281,14 +291,15 @@ fn maybe_bit_reverse<F: DftScalar>(v: &[Cpx<F>], log_l: usize, bit_reversed: boo
 }
 
 /// The `slots × slots` identity diagonal matrix as a [`ComplexDiagonals`]:
-/// one diagonal at index `0` with all-ones real part (imaginary part empty).
+/// one diagonal at index `0` with all-ones real part (imaginary part empty),
+/// tagged constant (period 1).
 ///
 /// Used as the merge accumulator's initial state, so every butterfly layer —
 /// including the first of each factor — flows through [`merge_next_layer`]
 /// uniformly.
 fn identity_diag<F: DftScalar>(dslots: usize) -> ComplexDiagonals<F> {
     let mut diag = empty_cd(dslots);
-    diag.re.set(0, vec![F::one(); dslots]);
+    diag.re.set_periodic(0, vec![F::one(); dslots], 1);
     diag
 }
 
@@ -311,6 +322,10 @@ fn merge_next_layer<F: DftScalar>(
     // (`DFTPlan::diagonal_indexes`), so key provisioning cannot drift from the
     // generated diagonals.
     let rot = crate::layouts::dft::dft_layer_rotation(kind, bit_reversed, next_level, log_l, mask);
+    // The period the layer's diagonals repeat over, single-sourced with the
+    // plan's sparsity replay; a rotation keeps a period and a slot-wise
+    // product takes the larger one.
+    let layer_period = crate::layouts::dft::dft_layer_period(bit_reversed, rot, 1usize << log_l);
     let a = maybe_bit_reverse(a, log_l, bit_reversed);
     let b = maybe_bit_reverse(b, log_l, bit_reversed);
     let c = maybe_bit_reverse(c, log_l, bit_reversed);
@@ -318,10 +333,11 @@ fn merge_next_layer<F: DftScalar>(
     let mut new_vec = empty_cd(dslots);
     for i in vec.indexes() {
         let vi = cd_get(vec, i, dslots);
+        let period = vec.diagonal_period(i).expect("indexed diagonal present").max(layer_period);
         let [d_same, d_plus, d_minus] = crate::layouts::dft::dft_layer_spread(i, rot, mask);
-        cd_accumulate(&mut new_vec, d_same, &rotate_and_mul(&vi, 0, &a));
-        cd_accumulate(&mut new_vec, d_plus, &rotate_and_mul(&vi, rot, &b));
-        cd_accumulate(&mut new_vec, d_minus, &rotate_and_mul(&vi, -rot, &c));
+        cd_accumulate(&mut new_vec, d_same, &rotate_and_mul(&vi, 0, &a), period);
+        cd_accumulate(&mut new_vec, d_plus, &rotate_and_mul(&vi, rot, &b), period);
+        cd_accumulate(&mut new_vec, d_minus, &rotate_and_mul(&vi, -rot, &c), period);
     }
     new_vec
 }
@@ -330,7 +346,8 @@ fn merge_next_layer<F: DftScalar>(
 ///
 /// Two diagonals over `dslots = 2·slots`: index `0` with value `(1 | i)` (real 1
 /// in the left half, imag unit in the right half) and index `slots` with value
-/// `(i | 1)`. Prepended (merged) before the first DFT layer when decoding a
+/// `(i | 1)`, both spanning the whole doubled vector (period `dslots`).
+/// Prepended (merged) before the first DFT layer when decoding a
 /// sparsely-packed `RepackImagAsReal` vector; it recombines the `[Re | Im]` real
 /// packing back into the complex form.
 fn gen_repack_matrix<F: DftScalar>(log_l: usize, dslots: usize) -> ComplexDiagonals<F> {
@@ -346,8 +363,8 @@ fn gen_repack_matrix<F: DftScalar>(log_l: usize, dslots: usize) -> ComplexDiagon
         b[i + slots] = Cpx::new(one, zero);
     }
     let mut diag = empty_cd(dslots);
-    cd_accumulate(&mut diag, 0, &a);
-    cd_accumulate(&mut diag, slots as i64, &b);
+    cd_accumulate(&mut diag, 0, &a, dslots);
+    cd_accumulate(&mut diag, slots as i64, &b, dslots);
     diag
 }
 
@@ -454,7 +471,8 @@ pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<Co
         fft_level -= m;
     }
 
-    // Sparse-repack Encode: zero the right half of the last matrix's diagonals.
+    // Sparse-repack Encode: zero the right half of the last matrix's diagonals,
+    // which breaks any period below the doubled vector (`set` drops the tag).
     if sparse && imag_repack && kind == DFTType::Encode {
         let last = plain_vector.last_mut().expect("dft has at least one factor");
         for idx in last.indexes() {
@@ -549,7 +567,7 @@ pub fn gen_dft_matrices_blockwise<F: DftScalar>(
     let per_factor_caller = nth_root_scalar(F::from(scaling).unwrap(), factorization_depth.len());
     for (factor, &m) in factors.iter_mut().zip(factorization_depth) {
         let norm = if kind == DFTType::Encode { (1u64 << m) as f64 } else { 1.0 };
-        scale_complex_diagonals(factor, per_factor_caller / F::from(norm).unwrap());
+        factor.scale(&(per_factor_caller / F::from(norm).unwrap()));
     }
     factors
 }
@@ -599,23 +617,7 @@ fn apply_scaling<F: DftScalar>(factors: &mut [ComplexDiagonals<F>], literal: &DF
     let per_factor = nth_root_scalar(scaling, depth);
 
     for factor in factors.iter_mut() {
-        scale_complex_diagonals(factor, per_factor);
-    }
-}
-
-/// Scales every stored diagonal value (re and im) of a [`ComplexDiagonals`] by `s`.
-fn scale_complex_diagonals<F: DftScalar>(cd: &mut ComplexDiagonals<F>, s: F) {
-    for idx in cd.re.indexes() {
-        if let Some(v) = cd.re.get(idx) {
-            let scaled: Vec<F> = v.iter().map(|&x| x * s).collect();
-            cd.re.set(idx, scaled);
-        }
-    }
-    for idx in cd.im.indexes() {
-        if let Some(v) = cd.im.get(idx) {
-            let scaled: Vec<F> = v.iter().map(|&x| x * s).collect();
-            cd.im.set(idx, scaled);
-        }
+        factor.scale(&per_factor);
     }
 }
 
@@ -795,9 +797,10 @@ mod tests {
     }
 
     /// The plan's value-free sparsity replay ([`DFTPlan::diagonal_log_sparsity`])
-    /// must be exact on the natural slot order and safe on the bit-reversed one:
-    /// every generated diagonal repeats over the slot count the replay claims,
-    /// and over no shorter one unless the plan is bit-reversed.
+    /// must agree with the period tag the generator computes alongside the
+    /// merge, be exact on the natural slot order and safe on the bit-reversed
+    /// one: every generated diagonal repeats over the slot count the replay
+    /// claims, and over no shorter one unless the plan is bit-reversed.
     #[test]
     fn plan_diagonal_log_sparsity_matches_generated_factors() {
         let schedules: &[Vec<usize>] = &[vec![1, 1, 1, 1], vec![2, 2], vec![4], vec![1, 3], vec![3, 1], vec![2, 1, 1]];
@@ -819,6 +822,11 @@ mod tests {
                                 let actual = minimal_period(factor, index);
                                 let context = format!(
                                     "kind={kind:?} bit_reversed={bit_reversed} schedule={schedule:?} log_n={log_n} format={format:?} diagonal {index}"
+                                );
+                                assert_eq!(
+                                    factor.diagonal_period(index),
+                                    Some(claimed),
+                                    "generator tag diverges from the plan replay: {context}"
                                 );
                                 assert_eq!(
                                     claimed % actual,

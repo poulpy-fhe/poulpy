@@ -121,6 +121,17 @@ pub(crate) fn dft_layer_spread(d: i64, rot: i64, mask: i64) -> [i64; 3] {
     [d, (d + rot) & mask, (d - rot) & mask]
 }
 
+/// The slot count the three diagonals of a merged layer repeat over: in the
+/// natural order the layer's butterfly width `2·rot`, the block-diagonal
+/// replication of one butterfly; under bit reversal the periodicity turns
+/// into a block structure the polynomial does not see, so the layer counts
+/// as repeating over its full width `slots`. Single-sourced between the
+/// generator's period tags and the value-free replay
+/// ([`DFTPlan::diagonal_log_sparsity`]).
+pub(crate) fn dft_layer_period(bit_reversed: bool, rot: i64, slots: usize) -> usize {
+    if bit_reversed { slots } else { 2 * rot as usize }
+}
+
 /// One factor of a factorization schedule: how many radix-2 layers the
 /// factor matrix merges, and the BSGS giant-step width it is evaluated with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -427,11 +438,7 @@ impl DFTPlan {
             let mut level = fft_level;
             for _ in 0..m {
                 let rot = dft_layer_rotation(self.kind, self.bit_reversed, level, log_slots, mask);
-                // In the natural order a layer's diagonals repeat over its
-                // butterfly width `2·rot`; bit reversal turns that periodicity
-                // into a block structure the polynomial does not see, so the
-                // replay claims the dense width there.
-                let layer_period = if self.bit_reversed { dslots } else { 2 * rot as usize };
+                let layer_period = dft_layer_period(self.bit_reversed, rot, slots as usize);
                 let mut next: BTreeMap<i64, usize> = BTreeMap::new();
                 for (&d, &period) in &map {
                     let period = period.max(layer_period);
@@ -504,9 +511,13 @@ impl DFTPlan {
     /// the right-half zeroing of the last `Encode` factor breaks any shorter
     /// period, so those two factors keep only the packing sparsity. A
     /// bit-reversed plan turns the periodicity into a block structure the
-    /// polynomial does not see, so its diagonals are reported dense: the value
-    /// is exact on the natural order and a safe lower bound on the reversed
-    /// one, pinned against the generated values by the generator's tests. The
+    /// polynomial does not see, so each of its layers counts at its full
+    /// width: the value is exact on the natural order and a safe lower bound
+    /// on the reversed one. The generator computes the same period alongside
+    /// each merge and tags the generated diagonals with it
+    /// ([`ComplexDiagonals::diagonal_period`](crate::layouts::ComplexDiagonals::diagonal_period)),
+    /// which is what the encoder stores them at; the generator's tests pin
+    /// the replay, the tags and the generated values against each other. The
     /// BSGS pre-rotation of a diagonal keeps its period, so the value holds
     /// for the encoded transformation under any strategy.
     ///
