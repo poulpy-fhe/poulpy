@@ -506,7 +506,7 @@ where
 }
 
 /// Implements [`GLWEAutomorphismReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`glwe_automorphism_reference`] free function.
+/// the corresponding free function in [`crate::reference::automorphism::glwe`].
 ///
 /// Equivalent to writing all 9 forwarders by hand. For partial override (custom kernel for one
 /// or a few methods + defaults for the rest), write the impl block manually instead.
@@ -633,7 +633,7 @@ macro_rules! impl_glwe_automorphism_reference_full {
 }
 
 /// Implements [`GGSWAutomorphismReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`ggsw_automorphism_reference`] free function.
+/// the corresponding free function in [`crate::reference::automorphism::ggsw`].
 #[macro_export]
 macro_rules! impl_ggsw_automorphism_reference_full {
     ($be:ty) => {
@@ -690,7 +690,7 @@ macro_rules! impl_ggsw_automorphism_reference_full {
 }
 
 /// Implements [`GGLWEAutomorphismReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`gglwe_automorphism_reference`] free function.
+/// the corresponding free function in [`crate::reference::automorphism::gglwe`].
 #[macro_export]
 macro_rules! impl_gglwe_automorphism_reference_full {
     ($be:ty) => {

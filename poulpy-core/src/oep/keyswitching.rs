@@ -237,7 +237,7 @@ pub unsafe trait LWEKeyswitchImpl: Backend {
 
 /// Override surface for the GLWE key-switching sub-family.
 ///
-/// Abstract: no HAL supertraits, no default method bodies. See [`glwe_keyswitch_reference`]
+/// Abstract: no HAL supertraits, no default method bodies. See [`crate::reference::keyswitching::glwe`]
 /// for reference algorithms a backend may forward to.
 ///
 /// # Gadget-digit width contract
@@ -526,7 +526,7 @@ where
 // === Convenience macros for full-reference opt-in ===
 
 /// Implements [`GLWEKeyswitchReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`glwe_keyswitch_reference`] free function.
+/// the corresponding free function in [`crate::reference::keyswitching::glwe`].
 #[macro_export]
 macro_rules! impl_glwe_keyswitch_reference_full {
     ($be:ty) => {
@@ -570,7 +570,7 @@ macro_rules! impl_glwe_keyswitch_reference_full {
 }
 
 /// Implements [`GGLWEKeyswitchReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`gglwe_keyswitch_reference`] free function.
+/// the corresponding free function in [`crate::reference::keyswitching::gglwe`].
 #[macro_export]
 macro_rules! impl_gglwe_keyswitch_reference_full {
     ($be:ty) => {
@@ -614,7 +614,7 @@ macro_rules! impl_gglwe_keyswitch_reference_full {
 }
 
 /// Implements [`GGSWKeyswitchReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`ggsw_keyswitch_reference`] free function.
+/// the corresponding free function in [`crate::reference::keyswitching::ggsw`].
 #[macro_export]
 macro_rules! impl_ggsw_keyswitch_reference_full {
     ($be:ty) => {
@@ -667,7 +667,7 @@ macro_rules! impl_ggsw_keyswitch_reference_full {
 }
 
 /// Implements [`LWEKeyswitchReference`] for `Module<$be>` by forwarding every method to
-/// the corresponding [`lwe_keyswitch_reference`] free function.
+/// the corresponding free function in [`crate::reference::keyswitching::lwe`].
 #[macro_export]
 macro_rules! impl_lwe_keyswitch_reference_full {
     ($be:ty) => {
