@@ -79,12 +79,7 @@ pub(crate) fn paco_c2s_factors<F: DftScalar>(p: &PaCoPlan, schedule: &[usize]) -
 /// (already at the working precision `F` — never route irrational constants
 /// through `f64`, it would cap an `f128` chain at 53 bits).
 fn scale_factor<F: DftScalar>(cd: &mut ComplexDiagonals<F>, s: F) {
-    for part in [&mut cd.re, &mut cd.im] {
-        for i in part.indexes() {
-            let scaled: Vec<F> = part.get(i).expect("indexed").iter().map(|&x| x * s).collect();
-            part.set(i, scaled);
-        }
-    }
+    cd.scale(&s);
 }
 
 /// The ψ/μ tail of the partial-CoeffToSlot chain (seqPaCo lines 8–10), in
@@ -344,8 +339,8 @@ pub(crate) fn conjugate_by_low_bitrev<F: DftScalar>(cd: &ComplexDiagonals<F>, lo
     for i in cd.indexes() {
         let (dre, dim) = (cd.re.get(i), cd.im.get(i));
         for r in 0..m {
-            let vre = dre.map_or_else(F::zero, |d| d[r]);
-            let vim = dim.map_or_else(F::zero, |d| d[r]);
+            let vre = dre.map_or_else(F::zero, |d| d[r % d.len()]);
+            let vim = dim.map_or_else(F::zero, |d| d[r % d.len()]);
             if vre == F::zero() && vim == F::zero() {
                 continue;
             }
@@ -381,8 +376,8 @@ fn bit_reverse_columns<F: DftScalar>(cd: &ComplexDiagonals<F>) -> ComplexDiagona
             let c_old = (r + i as usize) % m;
             let c_new = br(c_old);
             let idx = ((c_new + m - r) % m) as i64;
-            let vre = dre.map_or(F::zero(), |d| d[r]);
-            let vim = dim.map_or(F::zero(), |d| d[r]);
+            let vre = dre.map_or(F::zero(), |d| d[r % d.len()]);
+            let vim = dim.map_or(F::zero(), |d| d[r % d.len()]);
             if vre != F::zero() {
                 let mut d = re.get(idx).cloned().unwrap_or_else(|| vec![F::zero(); m]);
                 d[r] = d[r] + vre;
@@ -416,7 +411,10 @@ pub(crate) fn mul_vec_tiled<F: DftScalar>(cd: &ComplexDiagonals<F>, v: &[Cpx<F>]
         let re = cd.re.get(i);
         let im = cd.im.get(i);
         for (j, o) in out.iter_mut().enumerate() {
-            let d = Cpx::new(re.map_or_else(F::zero, |d| d[j % m]), im.map_or_else(F::zero, |d| d[j % m]));
+            let d = Cpx::new(
+                re.map_or_else(F::zero, |d| d[j % d.len()]),
+                im.map_or_else(F::zero, |d| d[j % d.len()]),
+            );
             *o = *o + d * v[(j as i64 + i).rem_euclid(len as i64) as usize];
         }
     }
@@ -600,6 +598,8 @@ mod tests {
             for (pa, pb, part) in [(&a.re, &b.re, "re"), (&a.im, &b.im, "im")] {
                 let x = pa.get(i).unwrap_or(&zeros);
                 let y = pb.get(i).unwrap_or(&zeros);
+                let x: Vec<f64> = (0..m).map(|j| x[j % x.len()]).collect();
+                let y: Vec<f64> = (0..m).map(|j| y[j % y.len()]).collect();
                 assert_eq!(x, y, "{ctx}: diag {i} {part}");
             }
         }
