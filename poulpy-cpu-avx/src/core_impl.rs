@@ -3,10 +3,10 @@ use crate::{FFT64Avx, NTT4x30Avx};
 use crate::{FFT64AvxRayon, NTT4x30AvxRayon};
 use poulpy_core::{
     impl_conversion_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
-    impl_gglwe_automorphism_reference_full, impl_gglwe_product_digits_strided_reference, impl_glwe_automorphism_reference_full,
-    impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_packing_reference_full,
-    impl_glwe_tensoring_reference, impl_glwe_trace_reference_full, impl_linear_transformation_reference_full,
-    impl_lwe_keyswitch_reference_full,
+    impl_gglwe_automorphism_reference_full, impl_gglwe_product_digits_strided_reference, impl_ggsw_automorphism_reference_full,
+    impl_glwe_automorphism_reference_full, impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full,
+    impl_glwe_packing_reference_full, impl_glwe_tensoring_reference, impl_glwe_trace_reference_full,
+    impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full,
 };
 use poulpy_hal::layouts::{Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendRef};
 
@@ -69,7 +69,9 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx {
 }
 
 impl_glwe_automorphism_reference_full!(FFT64Avx);
+impl_ggsw_automorphism_reference_full!(FFT64Avx);
 impl_glwe_automorphism_reference_full!(NTT4x30Avx);
+impl_ggsw_automorphism_reference_full!(NTT4x30Avx);
 
 impl_gglwe_automorphism_reference_full!(FFT64Avx);
 impl_gglwe_automorphism_reference_full!(NTT4x30Avx);
@@ -105,6 +107,7 @@ mod rayon_defaults {
     use super::*;
 
     impl_glwe_automorphism_reference_full!(FFT64AvxRayon);
+    impl_ggsw_automorphism_reference_full!(FFT64AvxRayon);
     impl_gglwe_automorphism_reference_full!(FFT64AvxRayon);
     impl_decryption_reference_full!(FFT64AvxRayon);
     impl_glwe_trace_reference_full!(FFT64AvxRayon);
@@ -118,6 +121,7 @@ mod rayon_defaults {
     impl_linear_transformation_reference_full!(FFT64AvxRayon);
 
     impl_glwe_automorphism_reference_full!(NTT4x30AvxRayon);
+    impl_ggsw_automorphism_reference_full!(NTT4x30AvxRayon);
     impl_gglwe_automorphism_reference_full!(NTT4x30AvxRayon);
     impl_decryption_reference_full!(NTT4x30AvxRayon);
     impl_glwe_trace_reference_full!(NTT4x30AvxRayon);

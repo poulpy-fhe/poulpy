@@ -1,10 +1,11 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    api::{GLWEAutomorphism, GLWEAutomorphismKeyAutomorphism},
+    api::{GGSWAutomorphism, GLWEAutomorphism, GLWEAutomorphismKeyAutomorphism},
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        SetGaloisElement, prepared::GLWEAutomorphismKeyPreparedBackendRef,
+        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos,
+        GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
+        prepared::{GGLWEToGGSWKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
     },
     oep::AutomorphismImpl,
 };
@@ -90,6 +91,35 @@ impl_automorphism_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
         BE::glwe_automorphism_sub_negate_assign(self, res, key, scratch)
+    }
+);
+
+impl_automorphism_delegate!(
+    GGSWAutomorphism<BE>,
+    [BE: Backend + AutomorphismImpl + crate::oep::ConversionImpl, Module<BE>: crate::oep::ConversionReference<BE>],
+    fn ggsw_automorphism_tmp_bytes<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
+    where
+        R: GGSWInfos,
+        A: GGSWInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        BE::ggsw_automorphism_tmp_bytes(self, res_infos, a_infos, key_infos, tsk_infos)
+    }
+
+    fn ggsw_automorphism<R, A>(&self, res: &mut R, a: &A, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GGSWToBackendMut<BE> + GGSWInfos,
+        A: GGSWToBackendRef<BE> + GGSWInfos,
+    {
+        BE::ggsw_automorphism(self, res, a, key, tsk, scratch)
+    }
+
+    fn ggsw_automorphism_assign<R>(&self, res: &mut R, key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>, tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GGSWToBackendMut<BE> + GGSWInfos,
+    {
+        BE::ggsw_automorphism_assign(self, res, key, tsk, scratch)
     }
 );
 

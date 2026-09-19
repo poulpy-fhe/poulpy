@@ -128,7 +128,7 @@ For example:
 
 ```rust
 module.glwe_external_product(...);
-module.glwe_automorphism(...);
+module.ggsw_automorphism(...);
 ```
 
 ---

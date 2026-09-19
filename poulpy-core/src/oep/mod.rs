@@ -56,12 +56,14 @@
 //! so they route through the fused kernel too.
 //!
 //! The same shape applies where an `*Impl` trait spans several sub-families.
-//! `AutomorphismImpl` needs both `GLWEAutomorphismReference` and
-//! `GGLWEAutomorphismReference`, so a backend with only a fused GLWE
-//! automorphism hand-writes that one and macro-forwards the other:
+//! `AutomorphismImpl` needs all three of `GLWEAutomorphismReference`,
+//! `GGSWAutomorphismReference` and `GGLWEAutomorphismReference`, so a backend with
+//! only a fused GLWE automorphism hand-writes that one and macro-forwards the
+//! other two:
 //!
 //! ```ignore
 //! impl GLWEAutomorphismReference<MyBackend> for Module<MyBackend> { /* 9 methods */ }
+//! impl_ggsw_automorphism_reference_full!(MyBackend);
 //! impl_gglwe_automorphism_reference_full!(MyBackend);
 //! ```
 //!
@@ -100,7 +102,7 @@ pub use sampling::*;
 
 pub use crate::{
     impl_conversion_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
-    impl_gglwe_automorphism_reference_full, impl_glwe_automorphism_reference_full, impl_glwe_external_product_reference_full,
-    impl_glwe_keyswitch_reference_full, impl_glwe_packing_reference_full, impl_glwe_trace_reference_full,
-    impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full,
+    impl_gglwe_automorphism_reference_full, impl_ggsw_automorphism_reference_full, impl_glwe_automorphism_reference_full,
+    impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_packing_reference_full,
+    impl_glwe_trace_reference_full, impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full,
 };

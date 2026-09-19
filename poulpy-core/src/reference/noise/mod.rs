@@ -155,6 +155,71 @@ pub(crate) trait GGLWENoiseModel: GGLWEInfos {
             var_key_err_mask,
         ))
     }
+
+    /// `log2 sqrt(Var)` of the `col`-th column of a GGSW key-switched (or
+    /// automorphed) from `input` into `res` with `self`, then expanded with
+    /// `tsk`:
+    ///
+    /// ```text
+    /// col = 0: Var_ks
+    /// col > 0: n * var_xs_out * Var_ks + Var_key(tsk) + rank * n^2 * var_xs_out^2 * Var(r_tsk)
+    /// ```
+    ///
+    /// Column `0` is the key-switch of the row. Column `col` is rebuilt as
+    /// `sum_j a_j * tsk_j` with the row's body re-inserted, undecomposed, in
+    /// slot `col`, so decryption multiplies the whole row phase by `s_out,col`:
+    /// one ring product over `Var_ks`, and the tensor key's own error enters
+    /// unscaled next to it. Only the `rank` masks meet the gadget, and a residue
+    /// there is lost against `s_j * s_col`, of variance `n * var_xs_out^2`. The
+    /// operand of that second product is the key-switched row, hence `res`.
+    /// This branch runs up to ~0.2 bits under the measurement, the square
+    /// `s_col^2` carrying a mean a variance model ignores.
+    #[allow(clippy::too_many_arguments)]
+    fn log2_std_noise_ggsw_keyswitch<T: GGLWEInfos, A: GLWEInfos, B: GLWEInfos>(
+        &self,
+        tsk: &T,
+        col: usize,
+        input: &A,
+        res: &B,
+        var_xs_in: f64,
+        var_xs_out: f64,
+        var_in_err: f64,
+        var_key_err_body: f64,
+        var_key_err_mask: f64,
+    ) -> f64 {
+        let noise: f64 = self.var_noise_keyswitch(
+            res,
+            input,
+            var_xs_in,
+            var_xs_out,
+            var_in_err,
+            var_key_err_body,
+            var_key_err_mask,
+        );
+
+        if col == 0 {
+            return log2_std(noise);
+        }
+
+        let n: f64 = tsk.n().as_usize() as f64;
+        let rank: f64 = tsk.rank_in().as_usize() as f64;
+        // sum_j Var(s_j * s_col) over the rank masks: (rank-1) off-diagonal at
+        // n*var_xs^2, and the j = col square at twice that.
+        let var_s_x_s_col: f64 = (rank + 1.0) * n * var_xs_out * var_xs_out;
+
+        log2_std(
+            n * var_xs_out * noise
+                + tsk.var_key_error(res, var_xs_out, var_key_err_body, var_key_err_mask)
+                + n * var_s_x_s_col * tsk.var_residue(res)
+                + var_canonicalization(
+                    res.k().as_usize(),
+                    res.base2k().as_usize(),
+                    res.n().as_usize(),
+                    res.rank().as_usize(),
+                    var_xs_out,
+                ),
+        )
+    }
 }
 
 impl<T: GGLWEInfos + ?Sized> GGLWENoiseModel for T {}

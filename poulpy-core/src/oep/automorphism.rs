@@ -3,8 +3,9 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-    SetGaloisElement, prepared::GLWEAutomorphismKeyPreparedBackendRef,
+    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
+    GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
+    prepared::{GGLWEToGGSWKeyPreparedBackendRef, GLWEAutomorphismKeyPreparedBackendRef},
 };
 
 /// Backend hook for automorphism-family operations.
@@ -90,6 +91,39 @@ pub unsafe trait AutomorphismImpl: Backend {
         scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: GLWEToBackendMut<Self> + GLWEInfos;
+
+    fn ggsw_automorphism_tmp_bytes<R, A, K, T>(
+        module: &Module<Self>,
+        res_infos: &R,
+        a_infos: &A,
+        key_infos: &K,
+        tsk_infos: &T,
+    ) -> usize
+    where
+        R: GGSWInfos,
+        A: GGSWInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos;
+
+    fn ggsw_automorphism<R, A>(
+        module: &Module<Self>,
+        res: &mut R,
+        a: &A,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GGSWToBackendMut<Self> + GGSWInfos,
+        A: GGSWToBackendRef<Self> + GGSWInfos;
+
+    fn ggsw_automorphism_assign<R>(
+        module: &Module<Self>,
+        res: &mut R,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, Self>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        R: GGSWToBackendMut<Self> + GGSWInfos;
 
     fn glwe_automorphism_key_automorphism_tmp_bytes<R, A, K>(
         module: &Module<Self>,
@@ -211,6 +245,45 @@ pub trait GLWEAutomorphismReference<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos;
 }
 
+/// Override surface for the GGSW-automorphism sub-family.
+///
+/// Abstract: no HAL supertraits, no default method bodies. See
+/// [`crate::reference::automorphism::ggsw`] for reference algorithms a backend may forward to.
+pub trait GGSWAutomorphismReference<BE: Backend> {
+    fn ggsw_automorphism_tmp_bytes_reference<R, A, K, T>(
+        &self,
+        res_infos: &R,
+        a_infos: &A,
+        key_infos: &K,
+        tsk_infos: &T,
+    ) -> usize
+    where
+        R: GGSWInfos,
+        A: GGSWInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos;
+
+    fn ggsw_automorphism_reference<R, A>(
+        &self,
+        res: &mut R,
+        a: &A,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGSWToBackendMut<BE> + GGSWInfos,
+        A: GGSWToBackendRef<BE> + GGSWInfos;
+
+    fn ggsw_automorphism_assign_reference<R>(
+        &self,
+        res: &mut R,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGSWToBackendMut<BE> + GGSWInfos;
+}
+
 /// Override surface for the GGLWE key-automorphism sub-family.
 ///
 /// Abstract: no HAL supertraits, no default method bodies. See
@@ -244,7 +317,7 @@ pub trait GGLWEAutomorphismReference<BE: Backend> {
 unsafe impl<BE> AutomorphismImpl for BE
 where
     BE: Backend,
-    Module<BE>: GLWEAutomorphismReference<BE> + GGLWEAutomorphismReference<BE>,
+    Module<BE>: GLWEAutomorphismReference<BE> + GGSWAutomorphismReference<BE> + GGLWEAutomorphismReference<BE>,
 {
     fn glwe_automorphism_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -349,6 +422,48 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
     {
         module.glwe_automorphism_sub_negate_assign_reference(res, key, scratch)
+    }
+
+    fn ggsw_automorphism_tmp_bytes<R, A, K, T>(
+        module: &Module<BE>,
+        res_infos: &R,
+        a_infos: &A,
+        key_infos: &K,
+        tsk_infos: &T,
+    ) -> usize
+    where
+        R: GGSWInfos,
+        A: GGSWInfos,
+        K: GGLWEInfos,
+        T: GGLWEInfos,
+    {
+        module.ggsw_automorphism_tmp_bytes_reference(res_infos, a_infos, key_infos, tsk_infos)
+    }
+
+    fn ggsw_automorphism<R, A>(
+        module: &Module<BE>,
+        res: &mut R,
+        a: &A,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGSWToBackendMut<BE> + GGSWInfos,
+        A: GGSWToBackendRef<BE> + GGSWInfos,
+    {
+        module.ggsw_automorphism_reference(res, a, key, tsk, scratch)
+    }
+
+    fn ggsw_automorphism_assign<R>(
+        module: &Module<BE>,
+        res: &mut R,
+        key: &GLWEAutomorphismKeyPreparedBackendRef<'_, BE>,
+        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GGSWToBackendMut<BE> + GGSWInfos,
+    {
+        module.ggsw_automorphism_assign_reference(res, key, tsk, scratch)
     }
 
     fn glwe_automorphism_key_automorphism_tmp_bytes<R, A, K>(
@@ -511,6 +626,63 @@ macro_rules! impl_glwe_automorphism_reference_full {
             {
                 $crate::reference::automorphism::glwe::glwe_automorphism_sub_negate_assign_reference::<$be, _, _>(
                     self, res, key, scratch,
+                )
+            }
+        }
+    };
+}
+
+/// Implements [`GGSWAutomorphismReference`] for `Module<$be>` by forwarding every method to
+/// the corresponding [`ggsw_automorphism_reference`] free function.
+#[macro_export]
+macro_rules! impl_ggsw_automorphism_reference_full {
+    ($be:ty) => {
+        impl $crate::oep::GGSWAutomorphismReference<$be> for ::poulpy_hal::layouts::Module<$be> {
+            fn ggsw_automorphism_tmp_bytes_reference<R, A, K, T>(
+                &self,
+                res_infos: &R,
+                a_infos: &A,
+                key_infos: &K,
+                tsk_infos: &T,
+            ) -> usize
+            where
+                R: $crate::layouts::GGSWInfos,
+                A: $crate::layouts::GGSWInfos,
+                K: $crate::layouts::GGLWEInfos,
+                T: $crate::layouts::GGLWEInfos,
+            {
+                $crate::reference::automorphism::ggsw::ggsw_automorphism_tmp_bytes_reference::<$be, _, _, _, _, _>(
+                    self, res_infos, a_infos, key_infos, tsk_infos,
+                )
+            }
+
+            fn ggsw_automorphism_reference<R, A>(
+                &self,
+                res: &mut R,
+                a: &A,
+                key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
+                tsk: &$crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
+            ) where
+                R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
+                A: $crate::layouts::GGSWToBackendRef<$be> + $crate::layouts::GGSWInfos,
+            {
+                $crate::reference::automorphism::ggsw::ggsw_automorphism_reference::<$be, _, _, _>(
+                    self, res, a, key, tsk, scratch,
+                )
+            }
+
+            fn ggsw_automorphism_assign_reference<R>(
+                &self,
+                res: &mut R,
+                key: &$crate::layouts::prepared::GLWEAutomorphismKeyPreparedBackendRef<'_, $be>,
+                tsk: &$crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
+            ) where
+                R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
+            {
+                $crate::reference::automorphism::ggsw::ggsw_automorphism_assign_reference::<$be, _, _>(
+                    self, res, key, tsk, scratch,
                 )
             }
         }

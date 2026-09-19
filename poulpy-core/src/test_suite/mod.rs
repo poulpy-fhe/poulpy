@@ -82,6 +82,8 @@ macro_rules! core_backend_test_suite {
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism_assign,
                 ggsw_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_sk,
                 ggsw_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_compressed_encrypt_sk,
+                ggsw_automorphism => $crate::test_suite::noise::automorphism::test_ggsw_automorphism,
+                ggsw_automorphism_assign => $crate::test_suite::noise::automorphism::test_ggsw_automorphism_assign,
                 lwe_keyswitch => $crate::test_suite::noise::keyswitch::test_lwe_keyswitch,
                 glwe_to_lwe => $crate::test_suite::noise::test_glwe_to_lwe,
                 lwe_to_glwe => $crate::test_suite::noise::test_lwe_to_glwe,
