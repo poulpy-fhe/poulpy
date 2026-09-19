@@ -129,7 +129,8 @@
 //! # Platform support
 //!
 //! - **Required**: AArch64 (Apple Silicon, ARMv8-A and later).
-//! - **Tested under**: native AArch64 hosts; HAL CI falls back to QEMU on other runner architectures.
+//! - **Tested under**: native AArch64 hosts in required CI. Additional HAL tests under
+//!   QEMU on x86 are opt-in through the manual `run_neon_qemu` workflow input.
 //! - **Not supported**: 32-bit ARM, x86, RISC-V, or any other architecture.
 //!
 //! # Threat model

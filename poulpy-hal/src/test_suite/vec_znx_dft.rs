@@ -325,12 +325,7 @@ pub fn test_vec_znx_dft_copy<BR: crate::test_suite::TestBackend, BT: crate::test
             for step_offset in [[1, 0], [1, 1], [1, 2], [2, 2]] {
                 let steps = step_offset[0];
                 let offset = step_offset[1];
-                let mut res_init = module_host.vec_znx_alloc(params.n, cols, res_size);
-                for col in 0..cols {
-                    for limb in 0..res_size {
-                        res_init.at_mut(col, limb).fill(17 + col as i64);
-                    }
-                }
+                let mut res_init = poisoned_host(module_host, params.n, cols, res_size);
                 let mut res_dft_ref = dft_of_uploaded_vec_znx(module_ref, &res_init, 1, 0);
                 let mut res_dft_test = dft_of_uploaded_vec_znx(module_test, &res_init, 1, 0);
 
@@ -399,6 +394,16 @@ fn assert_idft_integer_limbs<BE>(
             assert_eq!(observed.at(0, 2), expected.at(col, limb), "col {col}, limb {limb}");
         }
     }
+}
+
+fn poisoned_host(module: &Module<HostBytesBackend>, n: usize, cols: usize, size: usize) -> VecZnxOwned<i64> {
+    let mut host = module.vec_znx_alloc(n, cols, size);
+    for col in 0..cols {
+        for limb in 0..size {
+            host.at_mut(col, limb).fill(17 + col as i64);
+        }
+    }
+    host
 }
 
 fn poison_idft_destination<BE>(module: &Module<BE>, host: &VecZnxOwned<i64>) -> VecZnxBigOwned<BE>
@@ -472,12 +477,7 @@ pub fn test_vec_znx_idft_apply<BR: crate::test_suite::TestBackend, BT: crate::te
             for [step, offset] in [[1, 0], [1, 1], [1, 2], [2, 2]] {
                 let dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, step, offset);
                 let dft_test = dft_of_uploaded_vec_znx(module_test, &a, step, offset);
-                let mut expected = module_host.vec_znx_alloc(params.n, cols, res_size);
-                for col in 0..cols {
-                    for limb in 0..res_size {
-                        expected.at_mut(col, limb).fill(17 + col as i64);
-                    }
-                }
+                let mut expected = poisoned_host(module_host, params.n, cols, res_size);
                 let mut big_ref = poison_idft_destination(module_ref, &expected);
                 let mut big_test = poison_idft_destination(module_test, &expected);
                 // Repeating the immutable operation also checks source preservation.
@@ -544,12 +544,7 @@ pub fn test_vec_znx_idft_apply_tmpa<BR: crate::test_suite::TestBackend, BT: crat
             for [step, offset] in [[1, 0], [1, 1], [1, 2], [2, 2]] {
                 let mut dft_ref = dft_of_uploaded_vec_znx(module_ref, &a, step, offset);
                 let mut dft_test = dft_of_uploaded_vec_znx(module_test, &a, step, offset);
-                let mut expected = module_host.vec_znx_alloc(params.n, cols, res_size);
-                for col in 0..cols {
-                    for limb in 0..res_size {
-                        expected.at_mut(col, limb).fill(17 + col as i64);
-                    }
-                }
+                let mut expected = poisoned_host(module_host, params.n, cols, res_size);
                 let mut big_ref = poison_idft_destination(module_ref, &expected);
                 let mut big_test = poison_idft_destination(module_test, &expected);
                 for col in 0..cols {
@@ -564,35 +559,6 @@ pub fn test_vec_znx_idft_apply_tmpa<BR: crate::test_suite::TestBackend, BT: crat
             }
         }
     }
-}
-
-/// Runs the scratch-taking inverse DFT against poisoned allocations of differing widths.
-pub fn test_vec_znx_idft_apply_alloc<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
-    params: &TestParams,
-    module_host: &Module<HostBytesBackend>,
-    module_ref: &Module<BR>,
-    module_test: &Module<BT>,
-) where
-    Module<BR>: VecZnxDftApply<BR>
-        + VecZnxDftAlloc<BR>
-        + VecZnxBigAlloc<BR>
-        + VecZnxBigFromSmall<BR>
-        + VecZnxBigNormalize<BR>
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApply<BR>
-        + VecZnxIdftApplyTmpBytes,
-    Module<BT>: VecZnxDftApply<BT>
-        + VecZnxDftAlloc<BT>
-        + VecZnxBigAlloc<BT>
-        + VecZnxBigFromSmall<BT>
-        + VecZnxBigNormalize<BT>
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxIdftApply<BT>
-        + VecZnxIdftApplyTmpBytes,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
-{
-    test_vec_znx_idft_apply(params, module_host, module_ref, module_test);
 }
 
 pub fn test_vec_znx_dft_sub<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
@@ -1205,15 +1171,8 @@ pub fn test_vec_znx_dft_apply<BR: crate::test_suite::TestBackend, BT: crate::tes
                 assert_eq!(got_ref, got_test, "step {step} offset {offset}");
 
                 let mut want = module_host.vec_znx_alloc(params.n, cols, res_size);
-                for j in 0..cols {
-                    for limb in 0..res_size {
-                        let src: usize = offset + limb * step;
-                        if src < a_size {
-                            want.at_mut(j, limb).copy_from_slice(a.at(j, src));
-                        } else {
-                            want.at_mut(j, limb).fill(0);
-                        }
-                    }
+                for col in 0..cols {
+                    set_expected_idft_column(&mut want, col, &a, step, offset);
                 }
                 assert_eq!(got_ref, want, "step {step} offset {offset}");
             }

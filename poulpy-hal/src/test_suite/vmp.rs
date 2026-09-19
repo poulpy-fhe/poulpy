@@ -256,7 +256,15 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                             j,
                         );
                     }
-                    if cols_in == 1 && cols_out == 1 && size_in == max_size && size_out == max_size {
+                    // Narrowed DFT views are an optional layout capability. The
+                    // VMP operation itself is tested for every backend below.
+                    if BR::DFT_LIMBS_CONTIGUOUS
+                        && BT::DFT_LIMBS_CONTIGUOUS
+                        && cols_in == 1
+                        && cols_out == 1
+                        && size_in == max_size
+                        && size_out == max_size
+                    {
                         let prefix_size = size_in - 1;
                         let mut a_dft_ref = a_dft_ref.to_backend_mut();
                         let mut prefix_ref = a_dft_ref.with_limb_range_mut(0, prefix_size);

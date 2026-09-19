@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      run_neon_qemu:
+        description: Run additional NEON HAL tests under QEMU on x86
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -240,7 +245,8 @@ jobs:
   avx512:
     name: AVX-512 backend (native or SDE)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Allow for workspace check/clippy, the separate ci-profile build and emulation.
+    timeout-minutes: 60
 
     # Hosted runners need not expose AVX-512, so we keep AVX-512 flags
     # off the host toolchain (build scripts, proc-macros). We pin --target and
@@ -329,11 +335,13 @@ jobs:
           echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=$RUNNER_TEMP/intel-sde/sde64 -icl --" >> "$GITHUB_ENV"
 
       - name: Test AVX-512 and IFMA HAL operations
+        # Enable the same CKKS wiring; profile ci still needs its own build.
         # These filters cover HAL parity, derived bodies and shape/window tests.
-        # Gaussian sampling belongs to core and is excluded from this HAL lane.
+        # Core Gaussian sampling and CKKS runtime tests, including ModUp, are excluded.
+        # CKKS ModUp runtime coverage remains part of the separate CKKS follow-up to #234.
         run: >-
           cargo test -p poulpy-cpu-avx512 --lib --profile ci
-          --features "enable-ifma,enable-rayon" --
+          --features "enable-ifma,enable-rayon,enable-ckks" --
           test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
           raw_transform_matches_contract
           --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
@@ -375,11 +383,12 @@ jobs:
       - name: Test NEON backend
         run: cargo test -p poulpy-cpu-arm --profile ci --features "$NEON_FEATURES"
 
-  # Run natively on AArch64; other runner architectures use QEMU.
+  # Optional emulator validation; the required native neon job runs the full suite.
   neon_hal:
-    name: NEON HAL (native or QEMU)
+    name: NEON HAL (manual QEMU)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_neon_qemu
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     env:
       CARGO_BUILD_TARGET: aarch64-unknown-linux-gnu
@@ -391,18 +400,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Detect native NEON support
-        id: neon
-        run: |
-          # NEON/ASIMD is baseline for the Linux AArch64 target.
-          if [ "$(uname -m)" = "aarch64" ]; then
-            echo "native=true" | tee -a "$GITHUB_OUTPUT"
-          else
-            echo "native=false" | tee -a "$GITHUB_OUTPUT"
-          fi
-
       - name: Install AArch64 toolchain and QEMU
-        if: steps.neon.outputs.native != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user
@@ -520,8 +518,13 @@ jobs:
             exit 1
           fi
 
-          if [ "${{ needs.neon_hal.result }}" != "success" ]; then
-            echo "NEON HAL job finished with: ${{ needs.neon_hal.result }}"
+          if [ "${{ github.event_name == 'workflow_dispatch' && inputs.run_neon_qemu }}" = "true" ]; then
+            if [ "${{ needs.neon_hal.result }}" != "success" ]; then
+              echo "Requested NEON QEMU job finished with: ${{ needs.neon_hal.result }}"
+              exit 1
+            fi
+          elif [ "${{ needs.neon_hal.result }}" != "skipped" ]; then
+            echo "NEON QEMU job was not requested but finished with: ${{ needs.neon_hal.result }}"
             exit 1
           fi
 
@@ -530,4 +533,4 @@ jobs:
             exit 1
           fi
 
-          echo "Portable, AVX, Intel macOS AVX, Apple Silicon Quad, AVX-512, native NEON, NEON HAL and Miri CI jobs passed."
+          echo "All required CI jobs passed, including NEON QEMU when requested."

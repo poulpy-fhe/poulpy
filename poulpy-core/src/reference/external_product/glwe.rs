@@ -1,7 +1,11 @@
 //! GLWE external-product internals + reference implementations of the
 //! [`GLWEExternalProductReference`] methods.
 //!
-//! Re-exported publicly through `crate::oep::glwe_external_product_reference`.
+//! The reference DFT accumulation requires [`Backend::DFT_LIMBS_CONTIGUOUS`]
+//! because later digits accumulate into partial DFT views. Instantiating that
+//! body without the capability fails at compile time. Backends with other
+//! layouts must implement [`GLWEExternalProductReference`] without forwarding
+//! computation to these bodies or to [`GLWEExternalProductInternal`].
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::layouts::VecZnxDftBackendMut;
@@ -78,6 +82,12 @@ fn glwe_external_product_dft_fill<BE, M>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes,
 {
+    const {
+        assert!(
+            BE::DFT_LIMBS_CONTIGUOUS,
+            "the reference external product requires contiguous DFT limbs; implement GLWEExternalProductReference for other layouts"
+        );
+    }
     let cols: usize = (ggsw.rank() + 1).into();
     let dsize: usize = ggsw.dsize().into();
     let a_size: usize = a.size();

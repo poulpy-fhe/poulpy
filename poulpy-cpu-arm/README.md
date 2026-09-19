@@ -54,11 +54,13 @@ To include CKKS and Rayon backend wiring in the NEON test build:
 cargo test -p poulpy-cpu-arm --features enable-neon,enable-rayon,enable-ckks
 ```
 
-The `neon_hal` job in [the CI workflow](../.github/workflows/ci.yml) runs HAL tests
-for `aarch64-unknown-linux-gnu`, including both Rayon backends. It executes them
-natively on AArch64 runners; other runner architectures install the cross-toolchain
-and use QEMU. Its current x86 runner selects QEMU. The separate native ARM job
-runs the full backend suite; use native hardware for benchmarks.
+The required `neon` job in [the CI workflow](../.github/workflows/ci.yml) runs the
+full backend suite on native AArch64 for every push and pull request, including
+CKKS and both Rayon backends. For additional emulator validation, manually run
+the workflow with `run_neon_qemu` enabled. This opt-in `neon_hal` job cross-compiles
+HAL tests for `aarch64-unknown-linux-gnu` and executes them under QEMU on an x86
+runner. It must pass when requested; routine CI skips it. Use native hardware
+for benchmarks.
 
 ## Basic Usage
 

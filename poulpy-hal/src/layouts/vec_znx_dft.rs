@@ -200,11 +200,7 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
         let n = self.n();
         let cols = self.cols();
         if start == 0 && end == self.size() {
-            return VecZnxDft {
-                data: B::view_mut_ref(&mut self.data),
-                shape: self.shape,
-                _phantom: PhantomData,
-            };
+            return vec_znx_dft_backend_mut_from_mut(self);
         }
         assert!(
             B::DFT_LIMBS_CONTIGUOUS,
@@ -238,6 +234,10 @@ impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> ZnxZero for VecZnxDft<
     }
 
     fn zero_at(&mut self, i: usize, j: usize) {
+        assert!(
+            B::DFT_LIMBS_CONTIGUOUS,
+            "VecZnxDft::zero_at: indexed zeroing requires contiguous DFT limbs and columns"
+        );
         if self.has_element_view() {
             self.at_mut(i, j).fill(W::zero());
             return;
@@ -517,168 +517,32 @@ mod limb_range_tests {
     use super::*;
     use crate::layouts::{HostBytesBackend, VecZnxDftToBackendMut};
 
-    // A host buffer whose DFT representation keeps all limbs of each column
-    // together. It deliberately inherits the default range capability.
+    // Capability-only fixtures, not a simulated column-major transform. PACKED
+    // changes the byte count to exercise the packed and element-sized cases.
     #[derive(PartialEq, Eq)]
-    struct ColumnMajorDft;
+    struct NonContiguousDft<const PACKED: bool>;
 
-    impl Backend for ColumnMajorDft {
+    impl<const PACKED: bool> Backend for NonContiguousDft<PACKED> {
         const MAX_BASE2K: usize = 62;
 
         type TaskExecutor = crate::execution::SerialTaskExecutor;
         type ZnxWord = i64;
         type BigWord = i128;
         type DftWord = i64;
-        type OwnedBuf = AlignedBuf;
-        type BufRef<'a> = &'a [u8];
-        type BufMut<'a> = &'a mut [u8];
-        type Handle = ();
-        type Location = crate::layouts::Host;
+        crate::layouts::impl_host_byte_storage!();
 
-        fn alloc_bytes(len: usize) -> Self::OwnedBuf {
-            crate::alloc_aligned::<u8>(len)
+        fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
+            n * cols * size * if PACKED { 4 } else { size_of::<i64>() }
         }
-
-        fn alloc_zeroed_bytes(len: usize) -> Self::OwnedBuf {
-            crate::alloc_aligned::<u8>(len)
-        }
-
-        fn from_host_bytes(bytes: &[u8]) -> Self::OwnedBuf {
-            AlignedBuf::from(bytes)
-        }
-
-        fn to_host_bytes(buf: &Self::OwnedBuf) -> Vec<u8> {
-            buf.to_vec()
-        }
-
-        fn copy_to_host(buf: &Self::OwnedBuf, dst: &mut [u8]) {
-            assert!(
-                buf.len() >= dst.len(),
-                "backend buffer length {} is smaller than destination host slice length {}",
-                buf.len(),
-                dst.len()
-            );
-            dst.copy_from_slice(&buf[..dst.len()]);
-        }
-
-        fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
-            assert!(
-                buf.len() >= src.len(),
-                "backend buffer length {} is smaller than source host slice length {}",
-                buf.len(),
-                src.len()
-            );
-            let src_len = src.len();
-            buf[..src_len].copy_from_slice(src);
-            buf[src_len..].fill(0);
-        }
-
-        fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
-            assert!(
-                buf.len() >= dst.len(),
-                "backend view length {} is smaller than destination host slice length {}",
-                buf.len(),
-                dst.len()
-            );
-            dst.copy_from_slice(&buf[..dst.len()]);
-        }
-
-        fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
-            assert!(
-                buf.len() >= src.len(),
-                "backend view length {} is smaller than source host slice length {}",
-                buf.len(),
-                src.len()
-            );
-            let src_len = src.len();
-            buf[..src_len].copy_from_slice(src);
-            buf[src_len..].fill(0);
-        }
-
-        fn len_bytes(buf: &Self::OwnedBuf) -> usize {
-            buf.len()
-        }
-
-        fn len_bytes_ref(buf: &Self::BufRef<'_>) -> usize {
-            buf.len()
-        }
-
-        fn len_bytes_mut(buf: &Self::BufMut<'_>) -> usize {
-            buf.len()
-        }
-
-        fn view(buf: &Self::OwnedBuf) -> Self::BufRef<'_> {
-            buf.as_slice()
-        }
-
-        fn view_ref<'a, 'b>(buf: &'a Self::BufRef<'b>) -> Self::BufRef<'a>
-        where
-            Self: 'b,
-        {
-            buf
-        }
-
-        fn view_ref_mut<'a, 'b>(buf: &'a Self::BufMut<'b>) -> Self::BufRef<'a>
-        where
-            Self: 'b,
-        {
-            buf
-        }
-
-        fn view_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>) -> Self::BufMut<'a>
-        where
-            Self: 'b,
-        {
-            buf
-        }
-
-        fn view_mut(buf: &mut Self::OwnedBuf) -> Self::BufMut<'_> {
-            buf.as_mut_slice()
-        }
-
-        fn region(buf: &Self::OwnedBuf, offset: usize, len: usize) -> Self::BufRef<'_> {
-            &buf[offset..offset + len]
-        }
-
-        fn region_mut(buf: &mut Self::OwnedBuf, offset: usize, len: usize) -> Self::BufMut<'_> {
-            &mut buf[offset..offset + len]
-        }
-
-        fn region_ref<'a, 'b>(buf: &'a Self::BufRef<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
-        where
-            Self: 'b,
-        {
-            &buf[offset..offset + len]
-        }
-
-        fn region_ref_mut<'a, 'b>(buf: &'a Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufRef<'a>
-        where
-            Self: 'b,
-        {
-            &buf[offset..offset + len]
-        }
-
-        fn region_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufMut<'a>
-        where
-            Self: 'b,
-        {
-            &mut buf[offset..offset + len]
-        }
-
-        unsafe fn destroy(_handle: std::ptr::NonNull<Self::Handle>) {}
     }
 
-    #[test]
-    fn column_major_partial_range_is_rejected_before_mutation() {
+    fn assert_non_contiguous_operations<const PACKED: bool>() {
         let (n, cols, size) = (4, 2, 4);
-        let bytes = ColumnMajorDft::bytes_of_vec_znx_dft(n, cols, size);
-        let mut dft = VecZnxDft::<AlignedBuf, i64, ColumnMajorDft>::from_shape(
+        let bytes = NonContiguousDft::<PACKED>::bytes_of_vec_znx_dft(n, cols, size);
+        let mut dft = VecZnxDft::<AlignedBuf, i64, NonContiguousDft<PACKED>>::from_shape(
             AlignedBuf::from(vec![0xA5; bytes]),
             VecZnxShape::new(n, cols, size),
         );
-        for (index, byte) in dft.data.iter_mut().enumerate() {
-            *byte = index as u8;
-        }
         let original = dft.data.clone();
         let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut backend = dft.to_backend_mut();
@@ -687,26 +551,40 @@ mod limb_range_tests {
         }));
         assert!(rejected.is_err());
         assert_eq!(dft.data, original);
-        assert_eq!((dft.n(), dft.cols(), dft.size()), (n, cols, size));
-    }
 
-    #[test]
-    fn column_major_full_range_preserves_native_storage() {
-        let (n, cols, size) = (4, 2, 4);
-        let bytes = ColumnMajorDft::bytes_of_vec_znx_dft(n, cols, size);
-        let mut dft = VecZnxDft::<AlignedBuf, i64, ColumnMajorDft>::from_shape(
-            AlignedBuf::from(vec![0xA5; bytes]),
-            VecZnxShape::new(n, cols, size),
-        );
-        let column_bytes = n * size * size_of::<i64>();
+        // Both physical sizes are block-linear, so byte-count equality alone
+        // cannot authorize indexed access to an unknown layout.
+        assert_eq!(NonContiguousDft::<PACKED>::bytes_of_vec_znx_dft(n, 1, 1) * cols * size, bytes);
+        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dft.zero_at(1, 1)));
+        assert!(rejected.is_err());
+        assert_eq!(dft.data, original);
+        assert_eq!((dft.n(), dft.cols(), dft.size()), (n, cols, size));
+
+        let ptr = dft.data.as_ptr();
         {
             let mut backend = dft.to_backend_mut();
             let full = backend.with_size_mut(size);
             assert_eq!((full.n(), full.cols(), full.size()), (n, cols, size));
-            full.data[column_bytes..2 * column_bytes].fill(0);
+            assert_eq!(full.data.as_ptr(), ptr);
+            assert_eq!(full.data, original.as_slice());
+            full.data[bytes / 2..bytes].fill(0);
         }
-        assert!(dft.data[..column_bytes].iter().all(|byte| *byte == 0xA5));
-        assert!(dft.data[column_bytes..2 * column_bytes].iter().all(|byte| *byte == 0));
+        assert_eq!(&dft.data[..bytes / 2], &original[..bytes / 2]);
+        assert!(dft.data[bytes / 2..bytes].iter().all(|byte| *byte == 0));
+
+        dft.zero();
+        assert!(dft.data[..bytes].iter().all(|byte| *byte == 0));
+        assert_eq!((dft.n(), dft.cols(), dft.size()), (n, cols, size));
+    }
+
+    #[test]
+    fn non_contiguous_element_sized_layout_rejects_indexed_mutation() {
+        assert_non_contiguous_operations::<false>();
+    }
+
+    #[test]
+    fn non_contiguous_packed_layout_rejects_indexed_mutation() {
+        assert_non_contiguous_operations::<true>();
     }
 
     #[test]

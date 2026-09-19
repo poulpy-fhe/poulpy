@@ -11,9 +11,11 @@ Implementors must uphold all of the following for **every** call:
   `n()` describe the logical shape defined by the HAL contracts; prepared and
   DFT storage may use a backend-specific representation. Declare
   `Backend::DFT_LIMBS_CONTIGUOUS` only when each DFT limb is one contiguous block
-  containing every column and a range of blocks is a valid independent DFT
-  vector with the same encoding. Partial `with_limb_range_mut` / `with_size_mut`
-  views require that capability; whole-buffer reborrows preserve every layout.
+  containing equal-sized column blocks in column order, and a range of limbs
+  is a valid independent DFT vector with the same encoding. Partial
+  `with_limb_range_mut` / `with_size_mut` views and generic host `zero_at` require
+  that capability; whole-buffer reborrows preserve every layout. Reference
+  compositions that require narrowing must declare and enforce that requirement.
 
 * **Scratch lifetime**: Any region carved from a `ScratchArena` must remain
   valid for the duration of the call; it may be reused by the caller

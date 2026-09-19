@@ -59,6 +59,12 @@ pub unsafe trait GGLWEProductDigitsStridedImpl: Backend {
 }
 
 /// Opts a backend into the canonical GGLWE interleaved-digit product.
+///
+/// Requires [`Backend::DFT_LIMBS_CONTIGUOUS`]: the reference body narrows DFT
+/// accumulators, and rejects incompatible backends at compile time when
+/// instantiated. A backend with another layout must implement
+/// [`GGLWEProductDigitsStridedImpl`] directly; the surrounding reference
+/// keyswitch can still dispatch through that implementation.
 #[macro_export]
 macro_rules! impl_gglwe_product_digits_strided_reference {
     ($be:ty) => {
