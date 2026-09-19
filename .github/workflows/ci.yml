@@ -236,9 +236,9 @@ jobs:
           cargo test -p poulpy-ckks --lib --features libquadmath scalar::tests::portable_special_value_semantics -- --exact
           cargo test -p poulpy-cpu-ref --lib --features "enable-ckks,poulpy-ckks/libquadmath" ckks_encoding::tests::fft64_precision_families_coexist_in_one_module -- --exact
 
-  # Intel SDE executes HAL tests even when the hosted CPU lacks AVX-512/IFMA.
+  # Run natively when every required CPU feature is usable; otherwise use SDE.
   avx512:
-    name: AVX-512 backend (HAL tests under SDE)
+    name: AVX-512 backend (native or SDE)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -289,7 +289,34 @@ jobs:
       - name: Clippy AVX-512 backend
         run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
 
+      - name: Detect native AVX-512 support
+        id: avx512
+        run: |
+          # Compile for the baseline host, without the target-scoped Cargo flags.
+          # Runtime detection also checks the OS enables AVX/AVX-512 register state.
+          rustc --edition=2024 -o "$RUNNER_TEMP/check-avx512" - <<'RS'
+          fn main() {
+              // Include the features LLVM enables implicitly with our target flags.
+              let native = std::is_x86_feature_detected!("avx2")
+                  && std::is_x86_feature_detected!("fma")
+                  && std::is_x86_feature_detected!("avx512f")
+                  && std::is_x86_feature_detected!("avx512ifma")
+                  && std::is_x86_feature_detected!("avx512vl")
+                  && std::is_x86_feature_detected!("bmi2")
+                  && std::is_x86_feature_detected!("adx")
+                  && std::is_x86_feature_detected!("avx")
+                  && std::is_x86_feature_detected!("f16c")
+                  && std::is_x86_feature_detected!("sse3")
+                  && std::is_x86_feature_detected!("ssse3")
+                  && std::is_x86_feature_detected!("sse4.1")
+                  && std::is_x86_feature_detected!("sse4.2");
+              println!("native={native}");
+          }
+          RS
+          "$RUNNER_TEMP/check-avx512" | tee -a "$GITHUB_OUTPUT"
+
       - name: Install Intel SDE
+        if: steps.avx512.outputs.native != 'true'
         run: |
           curl --fail --location --retry 3 "$SDE_URL" --output "$RUNNER_TEMP/$SDE_ARCHIVE"
           printf '%s  %s\n' "$SDE_SHA256" "$RUNNER_TEMP/$SDE_ARCHIVE" | sha256sum --check
@@ -348,18 +375,14 @@ jobs:
       - name: Test NEON backend
         run: cargo test -p poulpy-cpu-arm --profile ci --features "$NEON_FEATURES"
 
-  # QEMU executes AArch64 HAL tests on x86 runners without ARM hardware.
-  neon_emulated:
-    name: NEON backend (HAL tests under QEMU)
+  # Run natively on AArch64; other runner architectures use QEMU.
+  neon_hal:
+    name: NEON HAL (native or QEMU)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     env:
       CARGO_BUILD_TARGET: aarch64-unknown-linux-gnu
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-      # Cortex-A72 supplies baseline AArch64 NEON; -L locates the target libc.
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64 -cpu cortex-a72 -L /usr/aarch64-linux-gnu
-      CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
       RAYON_NUM_THREADS: 2
 
     steps:
@@ -368,10 +391,25 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Detect native NEON support
+        id: neon
+        run: |
+          # NEON/ASIMD is baseline for the Linux AArch64 target.
+          if [ "$(uname -m)" = "aarch64" ]; then
+            echo "native=true" | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "native=false" | tee -a "$GITHUB_OUTPUT"
+          fi
+
       - name: Install AArch64 toolchain and QEMU
+        if: steps.neon.outputs.native != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          # Cortex-A72 supplies baseline NEON; -L locates the target libc.
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER=qemu-aarch64 -cpu cortex-a72 -L /usr/aarch64-linux-gnu" >> "$GITHUB_ENV"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
@@ -386,9 +424,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-neon-qemu-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-neon-hal-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-neon-qemu-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-neon-hal-
 
       - name: Test NEON HAL operations
         # Match the SDE HAL coverage and include constant-convolution kernel tests.
@@ -445,7 +483,7 @@ jobs:
       - macos_arm_quad
       - avx512
       - neon
-      - neon_emulated
+      - neon_hal
       - miri
     if: always()
 
@@ -482,8 +520,8 @@ jobs:
             exit 1
           fi
 
-          if [ "${{ needs.neon_emulated.result }}" != "success" ]; then
-            echo "NEON emulation job finished with: ${{ needs.neon_emulated.result }}"
+          if [ "${{ needs.neon_hal.result }}" != "success" ]; then
+            echo "NEON HAL job finished with: ${{ needs.neon_hal.result }}"
             exit 1
           fi
 
@@ -492,4 +530,4 @@ jobs:
             exit 1
           fi
 
-          echo "Portable, AVX, Intel macOS AVX, Apple Silicon Quad, AVX-512, native NEON, emulated NEON and Miri CI jobs passed."
+          echo "Portable, AVX, Intel macOS AVX, Apple Silicon Quad, AVX-512, native NEON, NEON HAL and Miri CI jobs passed."
