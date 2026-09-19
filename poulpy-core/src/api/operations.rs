@@ -74,23 +74,11 @@ pub trait GLWEMulConst<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos;
-
-    fn glwe_mul_const_assign<R, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
 /// Multiplication of a GLWE ciphertext by a **plaintext** operand.
 ///
-/// The plain operand — `b` in [`Self::glwe_mul_plain`], `a` in
-/// [`Self::glwe_mul_plain_assign`] — is an **integer polynomial**, not a Torus
+/// The plain operand `b` is an **integer polynomial**, not a Torus
 /// element: LSB-anchored, every encoded limb carries data. The convolution
 /// therefore consumes it at its declared
 /// [`encoded_k()`](crate::layouts::IntPolyInfos::encoded_k) — the operand is
@@ -117,12 +105,6 @@ pub trait GLWEMulPlain<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
-
-    #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_assign<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
 /// Tensor products of GLWE ciphertexts.
@@ -201,11 +183,6 @@ pub trait GLWESub<BE: Backend> {
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
-
-    fn glwe_sub_negate_assign<R, A>(&self, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
 }
 
 pub trait GLWEZero<BE: Backend> {
@@ -241,11 +218,6 @@ pub trait GGSWRotate<BE: Backend> {
 }
 
 pub trait GLWEMulXpMinusOne<BE: Backend> {
-    fn glwe_mul_xp_minus_one<R, A>(&self, k: i64, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
-
     fn glwe_mul_xp_minus_one_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;

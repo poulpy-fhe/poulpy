@@ -185,7 +185,7 @@ where
 // ── operations ───────────────────────────────────────────────────────────────
 
 pub fn operations_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
--> [BenchOp<M, CoreParams>; 8]
+-> [BenchOp<M, CoreParams>; 7]
 where
     Module<BE>: ModuleNew<BE>
         + GLWEAdd<BE>
@@ -230,11 +230,6 @@ where
             layer: "core",
             name: "glwe_mul_plain",
             runner: operations::runner_glwe_mul_plain::<BE, _>,
-        },
-        BenchOp {
-            layer: "core",
-            name: "glwe_mul_plain_assign",
-            runner: operations::runner_glwe_mul_plain_assign::<BE, _>,
         },
     ]
 }

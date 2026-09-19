@@ -242,12 +242,12 @@ where
     assert_eq!(module.n() as u32, glwe_infos.n());
     assert_eq!(module.n() as u32, key_infos.n());
 
-    let lvl_0: usize = module.glwe_bytes_of(
-        module.n().into(),
-        key_infos.base2k(),
-        lwe_infos.k().max(glwe_infos.k()),
-        1u32.into(),
-    );
+    let lvl_0: usize = module.glwe_bytes_of_from_infos(&GLWELayout {
+        n: module.n().into(),
+        base2k: key_infos.base2k(),
+        k: lwe_infos.k().max(glwe_infos.k()),
+        rank: 1u32.into(),
+    });
 
     let lvl_1_ks: usize = module.glwe_keyswitch_tmp_bytes_reference(glwe_infos, glwe_infos, key_infos);
     let lvl_1_a_conv: usize = if lwe_infos.base2k() == key_infos.base2k() {
@@ -385,7 +385,12 @@ where
         rank: Rank(1),
     };
 
-    let lvl_0: usize = module.glwe_bytes_of(module.n().into(), lwe_infos.base2k(), lwe_infos.k(), 1u32.into());
+    let lvl_0: usize = module.glwe_bytes_of_from_infos(&GLWELayout {
+        n: module.n().into(),
+        base2k: lwe_infos.base2k(),
+        k: lwe_infos.k(),
+        rank: 1u32.into(),
+    });
     let lvl_1: usize = module.glwe_keyswitch_tmp_bytes_reference(&res_infos, glwe_infos, key_infos);
     let lvl_2: usize = module.glwe_bytes_of_from_infos(glwe_infos);
 

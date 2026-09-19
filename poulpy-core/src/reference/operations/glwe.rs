@@ -56,17 +56,6 @@ pub trait GLWEMulConstReference<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos;
-
-    fn glwe_mul_const_assign_reference<R, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
 impl<BE: Backend> GLWEMulConstReference<BE> for Module<BE>
@@ -156,67 +145,6 @@ where
                 i,
                 &res_big_ref,
                 a_base2k,
-                0,
-                &mut scratch_iter,
-            );
-        }
-    }
-
-    fn glwe_mul_const_assign_reference<R, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        let scratch = scratch.borrow();
-        assert!(
-            scratch.available() >= self.glwe_mul_const_tmp_bytes_reference(res, res, b),
-            "scratch.available(): {} < GLWEMulConst::glwe_mul_const_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_mul_const_tmp_bytes_reference(res, res, b)
-        );
-
-        let cols: usize = res.rank().as_usize() + 1;
-        let res_base2k: usize = res.base2k().as_usize();
-        let res_k = res.k().as_usize();
-
-        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, res_base2k);
-
-        let (mut res_big, mut scratch) = scratch.take_vec_znx_big_scratch(self.n(), 1, res.size());
-        let b_backend = b.to_backend_ref();
-        for i in 0..cols {
-            {
-                let res_backend = res.to_backend_ref();
-                let mut scratch_iter = scratch.borrow();
-                let mut res_big_backend = res_big.to_backend_mut();
-                self.cnv_by_const_apply(
-                    cnv_offset_hi,
-                    &mut res_big_backend,
-                    0,
-                    &res_backend.data,
-                    i,
-                    &poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(&b_backend.data),
-                    0,
-                    b_coeff,
-                    &mut scratch_iter,
-                );
-            }
-            let res_big_ref = res_big.to_backend_ref();
-            let mut res_backend = res.to_backend_mut();
-            let mut scratch_iter = scratch.borrow();
-            self.vec_znx_big_normalize(
-                &mut res_backend.data,
-                res_base2k,
-                res_k,
-                cnv_offset_lo,
-                i,
-                &res_big_ref,
-                res_base2k,
                 0,
                 &mut scratch_iter,
             );
@@ -356,85 +284,6 @@ where
             );
         }
     }
-
-    #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_assign_reference<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
-    {
-        let scratch = scratch.borrow();
-        assert!(
-            scratch.available() >= self.glwe_mul_plain_tmp_bytes_reference(res, res, a),
-            "scratch.available(): {} < GLWEMulPlain::glwe_mul_plain_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_mul_plain_tmp_bytes_reference(res, res, a)
-        );
-
-        let res_k = res.k().as_usize();
-        // `a` is the plaintext: an integer polynomial consumed at its declared
-        // `encoded_k()` (see `glwe_mul_plain`).
-        let a_k = a.encoded_k().as_usize();
-        let ab_base2k: usize = a.base2k().as_usize();
-        assert_eq!(res.base2k().as_usize(), ab_base2k);
-        assert_eq!(res_k.div_ceil(ab_base2k), res.size());
-        assert_eq!(a_k.div_ceil(ab_base2k), a.size());
-
-        let cols: usize = res.rank().as_usize() + 1;
-
-        let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self.n(), cols, res.size(), PrepareHint::OneShot);
-        // A compact right operand is prepared at its own degree; the apply
-        // reads it through the sparse right slot of the convolution.
-        let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(a.n().as_usize(), 1, a.size(), PrepareHint::OneShot);
-
-        let a_backend = a.to_backend_ref();
-
-        scratch = scratch.apply_mut(|scratch| {
-            let res_backend = res.to_backend_ref();
-            self.cnv_prepare_left(&mut res_prep, &res_backend.data, scratch)
-        });
-        scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut a_prep, &a_backend.data, scratch));
-
-        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
-
-        let res_dft_size = a.size() + res.size() - cnv_offset_hi;
-        for i in 0..cols {
-            let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self.n(), 1, res_dft_size);
-            {
-                let mut res_dft_backend = res_dft.to_backend_mut();
-                self.cnv_apply_dft(
-                    cnv_offset_hi,
-                    &mut res_dft_backend,
-                    0,
-                    &res_prep.to_backend_ref(),
-                    i,
-                    &a_prep.to_backend_ref(),
-                    0,
-                    &mut scratch_3,
-                );
-            }
-            let (mut res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self.n(), 1, res_dft_size);
-            {
-                let mut res_big_backend = res_big.to_backend_mut();
-                let mut res_dft_backend = res_dft.to_backend_mut();
-                self.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
-            }
-            let res_big_ref = res_big.to_backend_ref();
-            let mut scratch_iter = scratch_4.borrow();
-            let mut res_backend = res.to_backend_mut();
-            self.vec_znx_big_normalize(
-                &mut res_backend.data,
-                ab_base2k,
-                res_k,
-                cnv_offset_lo,
-                i,
-                &res_big_ref,
-                ab_base2k,
-                0,
-                &mut scratch_iter,
-            );
-        }
-    }
 }
 
 #[doc(hidden)]
@@ -451,11 +300,6 @@ pub trait GLWEMulPlainReference<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
-
-    fn glwe_mul_plain_assign_reference<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
 #[doc(hidden)]
@@ -1455,11 +1299,6 @@ pub trait GLWESubReference<BE: Backend> {
     where
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>;
-
-    fn glwe_sub_negate_assign_reference<R, A>(&self, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
 }
 
 impl<BE: Backend> GLWESubReference<BE> for Module<BE>
@@ -1533,23 +1372,6 @@ where
 
         for i in 0..(a.rank() + 1).into() {
             self.vec_znx_sub_assign(&mut res.data, i, &a.data, i);
-        }
-    }
-
-    fn glwe_sub_negate_assign_reference<R, A>(&self, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        let mut res = res.to_backend_mut();
-        let a = a.to_backend_ref();
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
-        assert_eq!(res.base2k(), a.base2k());
-        assert!(res.rank() == a.rank() || a.rank() == 0);
-
-        for i in 0..(a.rank() + 1).into() {
-            self.vec_znx_sub_negate_assign(&mut res.data, i, &a.data, i);
         }
     }
 }
@@ -1694,11 +1516,6 @@ where
 
 #[doc(hidden)]
 pub trait GLWEMulXpMinusOneReference<BE: Backend> {
-    fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>;
-
     fn glwe_mul_xp_minus_one_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;
@@ -1708,23 +1525,6 @@ impl<BE: Backend> GLWEMulXpMinusOneReference<BE> for Module<BE>
 where
     Self: ModuleN + VecZnxMulXpMinusOne<BE> + VecZnxMulXpMinusOneAssign<BE>,
 {
-    fn glwe_mul_xp_minus_one_reference<R, A>(&self, k: i64, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        let res = &mut res.to_backend_mut();
-        let a = &a.to_backend_ref();
-
-        assert_eq!(res.n(), self.n() as u32);
-        assert_eq!(a.n(), self.n() as u32);
-        assert_eq!(res.rank(), a.rank());
-
-        for i in 0..res.rank().as_usize() + 1 {
-            self.vec_znx_mul_xp_minus_one(k, &mut res.data, i, &a.data, i);
-        }
-    }
-
     fn glwe_mul_xp_minus_one_assign_reference<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,

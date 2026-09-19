@@ -11,7 +11,7 @@ use crate::api::GLWEBytesOf;
 use crate::{
     EncryptionInfos, GGLWEEncryptSk, ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef, LWEInfos,
+        GGLWEInfos, GGLWEToBackendMut, GLWESecretLayout, GLWESecretPreparedFactory, GLWESecretPreparedToBackendRef, LWEInfos,
         LWESecretToBackendRef, Rank,
     },
 };
@@ -53,8 +53,14 @@ where
         );
         assert_eq!(self.n() as u32, infos.n());
 
-        let lvl_0: usize = self.glwe_secret_bytes_of(self.n().into(), Rank(1));
-        let lvl_1: usize = self.glwe_secret_bytes_of(self.n().into(), Rank(1));
+        let lvl_0: usize = self.glwe_secret_bytes_of_from_infos(&GLWESecretLayout {
+            n: self.n().into(),
+            rank: Rank(1),
+        });
+        let lvl_1: usize = self.glwe_secret_bytes_of_from_infos(&GLWESecretLayout {
+            n: self.n().into(),
+            rank: Rank(1),
+        });
         let lvl_2_encrypt: usize = self.gglwe_encrypt_sk_tmp_bytes(infos);
 
         lvl_0 + lvl_1 + lvl_2_encrypt

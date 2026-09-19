@@ -115,22 +115,3 @@ where
         res.set_p(p);
     }
 }
-
-#[doc(hidden)]
-pub trait GLWEAutomorphismKeyEncryptPkReference<BE: Backend> {
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_reference<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
-}
-
-impl<BE: Backend> GLWEAutomorphismKeyEncryptPkReference<BE> for Module<BE>
-where
-    Self:,
-{
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_reference<A>(&self, _infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        unimplemented!()
-    }
-}

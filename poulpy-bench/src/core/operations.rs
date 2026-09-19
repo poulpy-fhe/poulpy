@@ -189,27 +189,3 @@ pub fn runner_glwe_mul_plain<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
         black_box(());
     });
 }
-
-pub fn runner_glwe_mul_plain_assign<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CoreParams,
-) where
-    Module<BE>: ModuleNew<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-{
-    let infos = glwe_layout(cp);
-    let module: Module<BE> = Module::<BE>::new(cp.n as u64);
-    let mut source: Source = Source::new([0u8; 32]);
-    let host = staging(cp.n as usize);
-
-    let mut ct: GLWE<BE::OwnedBuf, i64> = module.glwe_alloc_from_infos(&infos);
-    let mut pt: GLWEPlaintext<BE::OwnedBuf, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
-    host_glwe(&host, &infos, &mut source).transfer_into(&mut ct);
-    host_glwe_plaintext(&host, &infos, &mut source).transfer_into(&mut pt);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&infos, &ct, &pt));
-
-    bencher.iter(|| {
-        module.glwe_mul_plain_assign(0, &mut ct, &pt, &mut scratch.borrow());
-        black_box(());
-    });
-}

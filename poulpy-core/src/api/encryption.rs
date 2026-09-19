@@ -119,19 +119,6 @@ pub trait GLWEEncryptPk<BE: Backend> {
         P: GLWEToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
-
-    fn glwe_encrypt_zero_pk<R, K, E>(
-        &self,
-        res: &mut R,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut Source,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
 pub trait GLWEPublicKeyGenerate<BE: Backend> {
@@ -228,12 +215,6 @@ pub trait GLWESwitchingKeyEncryptSk<BE: Backend> {
         E: EncryptionInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos,
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
-}
-
-pub trait GLWESwitchingKeyEncryptPk<BE: Backend> {
-    fn glwe_switching_key_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
 }
 
 pub trait GLWETensorKeyEncryptSk<BE: Backend> {
@@ -336,12 +317,6 @@ pub trait GLWEAutomorphismKeyEncryptSk<BE: Backend> {
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<BE> + GLWEInfos;
-}
-
-pub trait GLWEAutomorphismKeyEncryptPk<BE: Backend> {
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
 }
 
 pub trait GLWECompressedEncryptSk<BE: Backend> {

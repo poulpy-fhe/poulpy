@@ -1,5 +1,5 @@
 use poulpy_core::{
-    api::{GLWEMulXpMinusOne, GLWERotate},
+    api::{GLWENegate, GLWERotate},
     layouts::{Base2K, Degree, GLWE, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 use poulpy_hal::AlignedBuf;
@@ -34,8 +34,8 @@ fn delegating_backend_manual_family_matches_fft64_ref() {
     let mut delegating_out = module_delegating.glwe_alloc_from_infos(&input);
     let mut ref_out = module_ref.glwe_alloc_from_infos(&input);
 
-    module_delegating.glwe_mul_xp_minus_one(-7, &mut delegating_out, &input);
-    module_ref.glwe_mul_xp_minus_one(-7, &mut ref_out, &input);
+    module_delegating.glwe_negate(&mut delegating_out, &input);
+    module_ref.glwe_negate(&mut ref_out, &input);
 
     assert_eq!(delegating_out, ref_out);
 }

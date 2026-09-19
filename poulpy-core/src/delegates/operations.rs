@@ -96,13 +96,6 @@ impl_operations_delegate!(
     {
         BE::glwe_sub_assign(self, res, a)
     },
-    fn glwe_sub_negate_assign<R, A>(&self, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        BE::glwe_sub_negate_assign(self, res, a)
-    }
 );
 
 impl_operations_delegate!(
@@ -160,19 +153,6 @@ impl_operations_delegate!(
     {
         BE::glwe_mul_const(self, cnv_offset, res, a, b, b_coeff, scratch)
     },
-    fn glwe_mul_const_assign<R, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        BE::glwe_mul_const_assign(self, cnv_offset, res, b, b_coeff, scratch)
-    }
 );
 
 impl_operations_delegate!(
@@ -195,13 +175,6 @@ impl_operations_delegate!(
     {
         BE::glwe_mul_plain(self, cnv_offset, res, a, b, scratch)
     },
-    fn glwe_mul_plain_assign<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
-    {
-        BE::glwe_mul_plain_assign(self, cnv_offset, res, a, scratch)
-    }
 );
 
 impl_operations_delegate!(
@@ -304,13 +277,6 @@ impl_operations_delegate!(
     GLWEMulXpMinusOne<BE>,
     GLWEMulXpMinusOneImpl,
     GLWEMulXpMinusOneReference<BE>,
-    fn glwe_mul_xp_minus_one<R, A>(&self, k: i64, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        BE::glwe_mul_xp_minus_one(self, k, res, a)
-    },
     fn glwe_mul_xp_minus_one_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,

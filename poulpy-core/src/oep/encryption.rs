@@ -10,12 +10,11 @@ use crate::{
     encryption::{
         GGLWECompressedEncryptSkReference, GGLWEEncryptSkReference, GGLWEToGGSWKeyCompressedEncryptSkReference,
         GGLWEToGGSWKeyEncryptSkReference, GGSWCompressedEncryptSkReference, GGSWEncryptSkReference,
-        GLWEAutomorphismKeyCompressedEncryptSkReference, GLWEAutomorphismKeyEncryptPkReference,
-        GLWEAutomorphismKeyEncryptSkReference, GLWECompressedEncryptSkReference, GLWEEncryptPkReference, GLWEEncryptSkReference,
-        GLWEMaskFillReference, GLWEPublicKeyGenerateReference, GLWESwitchingKeyCompressedEncryptSkReference,
-        GLWESwitchingKeyEncryptPkReference, GLWESwitchingKeyEncryptSkReference, GLWETensorKeyCompressedEncryptSkReference,
-        GLWETensorKeyEncryptSkReference, GLWEToLWESwitchingKeyEncryptSkReference, LWEEncryptSkReference, LWEFillMaskReference,
-        LWESwitchingKeyEncryptReference, LWEToGLWESwitchingKeyEncryptSkReference,
+        GLWEAutomorphismKeyCompressedEncryptSkReference, GLWEAutomorphismKeyEncryptSkReference, GLWECompressedEncryptSkReference,
+        GLWEEncryptPkReference, GLWEEncryptSkReference, GLWEMaskFillReference, GLWEPublicKeyGenerateReference,
+        GLWESwitchingKeyCompressedEncryptSkReference, GLWESwitchingKeyEncryptSkReference,
+        GLWETensorKeyCompressedEncryptSkReference, GLWETensorKeyEncryptSkReference, GLWEToLWESwitchingKeyEncryptSkReference,
+        LWEEncryptSkReference, LWEFillMaskReference, LWESwitchingKeyEncryptReference, LWEToGLWESwitchingKeyEncryptSkReference,
     },
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
@@ -131,19 +130,6 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<Self> + GetDistribution + GLWEInfos;
 
-    fn glwe_encrypt_zero_pk_reference<R, K, E>(
-        module: &Module<Self>,
-        res: &mut R,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut Source,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<Self> + GetDistribution + GLWEInfos;
-
     fn glwe_public_key_generate_reference<R, S, E>(
         module: &Module<Self>,
         res: &mut R,
@@ -229,10 +215,6 @@ pub unsafe trait EncryptionImpl: Backend {
         E: EncryptionInfos,
         S1: GLWESecretToBackendRef<Self> + GLWEInfos,
         S2: GLWESecretToBackendRef<Self> + GetDistribution + GLWEInfos;
-
-    fn glwe_switching_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
 
     fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
@@ -325,10 +307,6 @@ pub unsafe trait EncryptionImpl: Backend {
         R: GGLWEToBackendMut<Self> + SetGaloisElement + GGLWEInfos,
         E: EncryptionInfos,
         S: GLWESecretToBackendRef<Self> + GLWEInfos;
-
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
-    where
-        A: GGLWEInfos;
 
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<Self>, infos: &A) -> usize
     where
@@ -470,13 +448,11 @@ pub trait EncryptionReference<BE: Backend>:
     + GGSWEncryptSkReference<BE>
     + GGLWEToGGSWKeyEncryptSkReference<BE>
     + GLWESwitchingKeyEncryptSkReference<BE>
-    + GLWESwitchingKeyEncryptPkReference<BE>
     + GLWETensorKeyEncryptSkReference<BE>
     + GLWEToLWESwitchingKeyEncryptSkReference<BE>
     + LWESwitchingKeyEncryptReference<BE>
     + LWEToGLWESwitchingKeyEncryptSkReference<BE>
     + GLWEAutomorphismKeyEncryptSkReference<BE>
-    + GLWEAutomorphismKeyEncryptPkReference<BE>
     + GLWECompressedEncryptSkReference<BE>
     + GGLWECompressedEncryptSkReference<BE>
     + GGSWCompressedEncryptSkReference<BE>
@@ -622,22 +598,6 @@ where
         module.glwe_encrypt_pk_reference(res, pt, pk, enc_infos, source_xu, source_xe, scratch)
     }
 
-    fn glwe_encrypt_zero_pk_reference<R, K, E>(
-        module: &Module<BE>,
-        res: &mut R,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut Source,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-    {
-        module.glwe_encrypt_zero_pk_reference(res, pk, enc_infos, source_xu, source_xe, scratch)
-    }
-
     fn glwe_public_key_generate_reference<R, S, E>(
         module: &Module<BE>,
         res: &mut R,
@@ -749,13 +709,6 @@ where
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         module.glwe_switching_key_encrypt_sk_reference(res, sk_in, sk_out, enc_infos, source_xe, source_xa, scratch)
-    }
-
-    fn glwe_switching_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        module.glwe_switching_key_encrypt_pk_tmp_bytes_reference(infos)
     }
 
     fn glwe_tensor_key_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
@@ -878,13 +831,6 @@ where
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
         module.glwe_automorphism_key_encrypt_sk_reference(res, p, sk, enc_infos, source_xe, source_xa, scratch)
-    }
-
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        module.glwe_automorphism_key_encrypt_pk_tmp_bytes_reference(infos)
     }
 
     fn glwe_compressed_encrypt_sk_tmp_bytes_reference<A>(module: &Module<BE>, infos: &A) -> usize

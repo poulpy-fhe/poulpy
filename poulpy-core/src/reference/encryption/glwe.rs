@@ -241,19 +241,6 @@ pub trait GLWEEncryptPkReference<BE: Backend> {
         P: GLWEToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
-
-    fn glwe_encrypt_zero_pk_reference<R, K, E>(
-        &self,
-        res: &mut R,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut Source,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
 impl<BE: Backend> GLWEEncryptPkReference<BE> for Module<BE>
@@ -309,28 +296,6 @@ where
             source_xe,
             scratch,
         );
-    }
-
-    fn glwe_encrypt_zero_pk_reference<R, K, E>(
-        &self,
-        res: &mut R,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut Source,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-    {
-        assert!(
-            scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_reference(res),
-            "scratch.available(): {} < GLWEEncryptPk::glwe_encrypt_pk_tmp_bytes: {}",
-            scratch.available(),
-            self.glwe_encrypt_pk_tmp_bytes_reference(res)
-        );
-        self.glwe_encrypt_pk_internal(res, None, pk, enc_infos, source_xu, source_xe, scratch);
     }
 }
 

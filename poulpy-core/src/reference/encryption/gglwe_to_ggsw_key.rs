@@ -10,7 +10,7 @@ use crate::api::GLWEBytesOf;
 use crate::{
     EncryptionInfos, GGLWEEncryptSk, GetDistribution, ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEToGGSWKeyToBackendMut, GLWEInfos, GLWESecretTensorFactory, GLWESecretToBackendRef,
+        GGLWEInfos, GGLWEToGGSWKeyToBackendMut, GLWEInfos, GLWESecretLayout, GLWESecretTensorFactory, GLWESecretToBackendRef,
         prepared::GLWESecretPreparedFactory,
     },
 };
@@ -47,7 +47,10 @@ where
 
         let sk_prepared: usize = self.glwe_secret_prepared_bytes_of(infos.rank());
         let sk_tensor: usize = self.glwe_secret_tensor_bytes_of_from_infos(infos);
-        let sk_ij: usize = self.glwe_secret_bytes_of(self.n().into(), infos.rank());
+        let sk_ij: usize = self.glwe_secret_bytes_of_from_infos(&GLWESecretLayout {
+            n: self.n().into(),
+            rank: infos.rank(),
+        });
         let lvl_0: usize = sk_prepared;
         let lvl_1: usize = sk_tensor;
         let lvl_2: usize = sk_ij;

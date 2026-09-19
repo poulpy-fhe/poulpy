@@ -40,17 +40,6 @@ pub unsafe trait GLWEMulConstImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos,
         B: GLWEToBackendRef<Self> + GLWEInfos;
-
-    fn glwe_mul_const_assign<R, B>(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        B: GLWEToBackendRef<Self> + GLWEInfos;
 }
 
 /// Backend-provided GLWE-by-plaintext multiplication operations.
@@ -77,16 +66,6 @@ pub unsafe trait GLWEMulPlainImpl: Backend {
         R: GLWEToBackendMut<Self> + GLWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos,
         B: GLWEToBackendRef<Self> + IntPolyInfos + GLWEInfos;
-
-    fn glwe_mul_plain_assign<R, A>(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + IntPolyInfos + GLWEInfos;
 }
 
 /// Backend-provided GLWE tensoring and relinearization operations.
@@ -188,11 +167,6 @@ pub unsafe trait GLWESubImpl: Backend {
     where
         R: GLWEToBackendMut<Self>,
         A: GLWEToBackendRef<Self>;
-
-    fn glwe_sub_negate_assign<R, A>(module: &Module<Self>, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
 }
 
 /// Backend-provided GLWE zeroing operations.
@@ -262,11 +236,6 @@ pub unsafe trait GGSWRotateImpl: Backend {
 /// Implementations must apply the requested ring operation without violating the layout or memory
 /// invariants of the supplied ciphertext buffers.
 pub unsafe trait GLWEMulXpMinusOneImpl: Backend {
-    fn glwe_mul_xp_minus_one<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<Self>,
-        A: GLWEToBackendRef<Self>;
-
     fn glwe_mul_xp_minus_one_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>;
@@ -408,20 +377,6 @@ where
     {
         module.glwe_mul_const_reference(cnv_offset, res, a, b, b_coeff, scratch)
     }
-
-    fn glwe_mul_const_assign<R, B>(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut R,
-        b: &B,
-        b_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
-    {
-        module.glwe_mul_const_assign_reference(cnv_offset, res, b, b_coeff, scratch)
-    }
 }
 
 unsafe impl<BE: Backend> GLWEMulPlainImpl for BE
@@ -450,14 +405,6 @@ where
         B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         module.glwe_mul_plain_reference(cnv_offset, res, a, b, scratch)
-    }
-
-    fn glwe_mul_plain_assign<R, A>(module: &Module<BE>, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
-    {
-        module.glwe_mul_plain_assign_reference(cnv_offset, res, a, scratch)
     }
 }
 
@@ -627,14 +574,6 @@ where
     {
         module.glwe_sub_assign_reference(res, a)
     }
-
-    fn glwe_sub_negate_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_sub_negate_assign_reference(res, a)
-    }
 }
 
 unsafe impl<BE: Backend> GLWEZeroImpl for BE
@@ -694,14 +633,6 @@ unsafe impl<BE: Backend> GLWEMulXpMinusOneImpl for BE
 where
     Module<BE>: GLWEMulXpMinusOneReference<BE>,
 {
-    fn glwe_mul_xp_minus_one<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
-    where
-        R: GLWEToBackendMut<BE>,
-        A: GLWEToBackendRef<BE>,
-    {
-        module.glwe_mul_xp_minus_one_reference(k, res, a)
-    }
-
     fn glwe_mul_xp_minus_one_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>,

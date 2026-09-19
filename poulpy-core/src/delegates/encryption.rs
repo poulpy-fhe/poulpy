@@ -7,11 +7,10 @@ use crate::{
     GetDistribution, GetDistributionMut,
     api::{
         EncryptionInfos, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
-        GGSWCompressedEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptPk,
-        GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWEPublicKeyGenerate,
-        GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptPk, GLWESwitchingKeyEncryptSk,
-        GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk, GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk, LWEFillMask,
-        LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
+        GGSWCompressedEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk,
+        GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWEPublicKeyGenerate,
+        GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk,
+        GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk, LWEFillMask, LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
     },
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
@@ -166,21 +165,6 @@ impl_encryption_delegate!(
     {
         BE::glwe_encrypt_pk_reference(self, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
     },
-    fn glwe_encrypt_zero_pk<R, K, E>(
-        &self,
-        res: &mut R,
-        pk: &K,
-        enc_infos: &E,
-        source_xu: &mut Source,
-        source_xe: &mut Source,
-        scratch: &mut ScratchArena<BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-    {
-        BE::glwe_encrypt_zero_pk_reference(self, res, pk, enc_infos, source_xu, source_xe, scratch)
-    }
 );
 
 impl_encryption_delegate!(
@@ -309,17 +293,6 @@ impl_encryption_delegate!(
         S2: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         BE::glwe_switching_key_encrypt_sk_reference(self, res, sk_in, sk_out, enc_infos, source_xe, source_xa, scratch)
-    }
-);
-
-impl_encryption_delegate!(
-    GLWESwitchingKeyEncryptPk<BE>,
-    GLWESwitchingKeyEncryptPkReference<BE>,
-    fn glwe_switching_key_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        BE::glwe_switching_key_encrypt_pk_tmp_bytes_reference(self, infos)
     }
 );
 
@@ -457,17 +430,6 @@ impl_encryption_delegate!(
         S: GLWESecretToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_automorphism_key_encrypt_sk_reference(self, res, p, sk, enc_infos, source_xe, source_xa, scratch)
-    }
-);
-
-impl_encryption_delegate!(
-    GLWEAutomorphismKeyEncryptPk<BE>,
-    GLWEAutomorphismKeyEncryptPkReference<BE>,
-    fn glwe_automorphism_key_encrypt_pk_tmp_bytes<A>(&self, infos: &A) -> usize
-    where
-        A: GGLWEInfos,
-    {
-        BE::glwe_automorphism_key_encrypt_pk_tmp_bytes_reference(self, infos)
     }
 );
 

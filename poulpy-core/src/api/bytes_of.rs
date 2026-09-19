@@ -7,7 +7,7 @@
 
 use poulpy_hal::layouts::{Backend, Module};
 
-use crate::layouts::{Base2K, Degree, GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos, Rank, TorusPrecision, key_size, pairs};
+use crate::layouts::{GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos, key_size, pairs};
 
 /// Byte sizes of core layouts, routed through the backend.
 ///
@@ -28,13 +28,8 @@ use crate::layouts::{Base2K, Degree, GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos,
 /// of this trait is
 /// [`GLWEPreparedFactory::glwe_prepared_bytes_of`](crate::layouts::GLWEPreparedFactory::glwe_prepared_bytes_of).
 pub trait GLWEBytesOf<BE: Backend> {
-    /// Byte size of a [`GLWE`](crate::layouts::GLWE) over this backend.
-    fn glwe_bytes_of(&self, n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize;
-
     /// Byte size of a [`GLWE`](crate::layouts::GLWE) described by `infos`.
-    fn glwe_bytes_of_from_infos<A: GLWEInfos>(&self, infos: &A) -> usize {
-        self.glwe_bytes_of(infos.n(), infos.base2k(), infos.k(), infos.rank())
-    }
+    fn glwe_bytes_of_from_infos<A: GLWEInfos>(&self, infos: &A) -> usize;
 
     /// Byte size of a [`GLWEPlaintext`](crate::layouts::GLWEPlaintext) described by `infos`.
     ///
@@ -42,13 +37,8 @@ pub trait GLWEBytesOf<BE: Backend> {
     /// full width; for non-key infos `size() == ceil(k/base2k)`.
     fn glwe_plaintext_bytes_of_from_infos<A: GLWEInfos>(&self, infos: &A) -> usize;
 
-    /// Byte size of a [`GLWESecret`](crate::layouts::GLWESecret) over this backend.
-    fn glwe_secret_bytes_of(&self, n: Degree, rank: Rank) -> usize;
-
     /// Byte size of a [`GLWESecret`](crate::layouts::GLWESecret) described by `infos`.
-    fn glwe_secret_bytes_of_from_infos<A: GLWEInfos>(&self, infos: &A) -> usize {
-        self.glwe_secret_bytes_of(infos.n(), infos.rank())
-    }
+    fn glwe_secret_bytes_of_from_infos<A: GLWEInfos>(&self, infos: &A) -> usize;
 
     /// Byte size of a [`GLWESecretTensor`](crate::layouts::GLWESecretTensor) described by `infos`.
     fn glwe_secret_tensor_bytes_of_from_infos<A: GLWEInfos>(&self, infos: &A) -> usize;
@@ -67,16 +57,20 @@ pub trait GLWEBytesOf<BE: Backend> {
 }
 
 impl<B: Backend> GLWEBytesOf<B> for Module<B> {
-    fn glwe_bytes_of(&self, n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        B::bytes_of_vec_znx(n.into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
+    fn glwe_bytes_of_from_infos<A: GLWEInfos>(&self, infos: &A) -> usize {
+        B::bytes_of_vec_znx(
+            infos.n().into(),
+            (infos.rank() + 1).into(),
+            infos.k().0.div_ceil(infos.base2k().0) as usize,
+        )
     }
 
     fn glwe_plaintext_bytes_of_from_infos<A: GLWEInfos>(&self, infos: &A) -> usize {
         B::bytes_of_vec_znx(infos.n().into(), 1, infos.size())
     }
 
-    fn glwe_secret_bytes_of(&self, n: Degree, rank: Rank) -> usize {
-        B::bytes_of_scalar_znx(n.into(), rank.into())
+    fn glwe_secret_bytes_of_from_infos<A: GLWEInfos>(&self, infos: &A) -> usize {
+        B::bytes_of_scalar_znx(infos.n().into(), infos.rank().into())
     }
 
     fn glwe_secret_tensor_bytes_of_from_infos<A: GLWEInfos>(&self, infos: &A) -> usize {
