@@ -146,13 +146,17 @@ impl<T: Copy + Zeroable> Default for AlignedVec<T> {
     }
 }
 
-/// The clone allocates for its own length, padded to the alignment, whatever
-/// the original's allocation holds.
+/// The clone allocates for its own length, whatever the original's allocation
+/// holds, rounded up to the smallest element count whose byte size is a
+/// multiple of the alignment.
 impl<T: Copy + Zeroable> Clone for AlignedVec<T> {
     fn clone(&self) -> Self {
         let align = self.layout.align();
-        let size = (self.len * size_of::<T>()).next_multiple_of(align);
-        let mut out: Self = Self::zeroed(size / size_of::<T>(), align);
+        // `align` is a power of two, so `gcd(align, size_of::<T>())` is the
+        // largest power of two dividing both, and the byte size of `step`
+        // elements is the least common multiple of the two.
+        let step = align >> size_of::<T>().trailing_zeros().min(align.trailing_zeros());
+        let mut out: Self = Self::zeroed(self.len.next_multiple_of(step), align);
         out.truncate(self.len);
         out.as_mut_slice().copy_from_slice(self.as_slice());
         out
@@ -341,6 +345,19 @@ mod tests {
         assert_eq!(c.as_slice(), &[1, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!((c.len(), c.capacity(), c.align()), (8, 8, 64));
         assert_eq!((v.len(), v.capacity()), (8, 64));
+    }
+
+    /// An element size that does not divide the alignment: the clone rounds
+    /// its element count up so the byte size is a multiple of both.
+    #[test]
+    fn clone_rounds_to_the_alignment_and_the_element_size() {
+        let mut v = AlignedVec::<[u64; 3]>::zeroed(8, 64);
+        v.as_mut_slice()[0] = [1, 2, 3];
+        v.truncate(1);
+        let c = v.clone();
+        assert_eq!(c.as_slice(), &[[1, 2, 3]]);
+        assert_eq!((c.len(), c.capacity(), c.align()), (1, 8, 64));
+        assert!(is_aligned(c.as_ptr().cast::<u8>()));
     }
 
     #[test]
