@@ -348,6 +348,59 @@ jobs:
       - name: Test NEON backend
         run: cargo test -p poulpy-cpu-arm --profile ci --features "$NEON_FEATURES"
 
+  # QEMU executes AArch64 HAL tests on x86 runners without ARM hardware.
+  neon_emulated:
+    name: NEON backend (HAL tests under QEMU)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    env:
+      CARGO_BUILD_TARGET: aarch64-unknown-linux-gnu
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      # Cortex-A72 supplies baseline AArch64 NEON; -L locates the target libc.
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64 -cpu cortex-a72 -L /usr/aarch64-linux-gnu
+      CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
+      RAYON_NUM_THREADS: 2
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install AArch64 toolchain and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-neon-qemu-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-neon-qemu-
+
+      - name: Test NEON HAL operations
+        # Match the SDE HAL coverage and include constant-convolution kernel tests.
+        # Gaussian sampling belongs to core and is excluded from this HAL lane.
+        run: >-
+          cargo test -p poulpy-cpu-arm --lib --profile ci
+          --features "enable-neon,enable-rayon" --
+          test_vec_znx test_svp test_vmp test_convolution test_cnv test_word_compat test_transfer
+          raw_transform_matches_contract convolution_by_const
+          --skip test_vec_znx_add_normal --skip test_vec_znx_big_add_normal
+          --test-threads=2
+
   miri:
     name: Miri (poulpy-hal unit tests)
     runs-on: ubuntu-latest
@@ -392,6 +445,7 @@ jobs:
       - macos_arm_quad
       - avx512
       - neon
+      - neon_emulated
       - miri
     if: always()
 
@@ -428,9 +482,14 @@ jobs:
             exit 1
           fi
 
+          if [ "${{ needs.neon_emulated.result }}" != "success" ]; then
+            echo "NEON emulation job finished with: ${{ needs.neon_emulated.result }}"
+            exit 1
+          fi
+
           if [ "${{ needs.miri.result }}" != "success" ]; then
             echo "Miri job finished with: ${{ needs.miri.result }}"
             exit 1
           fi
 
-          echo "Portable, AVX, Intel macOS AVX, Apple Silicon Quad, AVX-512, NEON and Miri CI jobs passed."
+          echo "Portable, AVX, Intel macOS AVX, Apple Silicon Quad, AVX-512, native NEON, emulated NEON and Miri CI jobs passed."

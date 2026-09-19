@@ -129,7 +129,7 @@
 //! # Platform support
 //!
 //! - **Required**: AArch64 (Apple Silicon, ARMv8-A and later).
-//! - **Tested under**: native AArch64 hosts.
+//! - **Tested under**: native AArch64 hosts, plus HAL tests under QEMU on x86 CI runners.
 //! - **Not supported**: 32-bit ARM, x86, RISC-V, or any other architecture.
 //!
 //! # Threat model
