@@ -1,8 +1,8 @@
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef,
+    GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos,
+    LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef,
     prepared::{GGLWEPreparedBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
 };
 
@@ -48,23 +48,6 @@ pub trait LWEFromGLWE<BE: Backend> {
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
-}
-
-pub trait GGSWFromGGLWE<BE: Backend> {
-    fn ggsw_from_gglwe_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
-    where
-        R: GGSWInfos,
-        A: GGLWEInfos;
-
-    fn ggsw_from_gglwe<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos;
 }
 
 pub trait GLWEExpandLWE<BE: Backend> {

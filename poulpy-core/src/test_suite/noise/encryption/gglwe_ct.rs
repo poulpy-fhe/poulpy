@@ -8,8 +8,7 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    EncryptionLayout, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk,
-    GLWESwitchingKeyEncryptSk,
+    EncryptionLayout, GGLWECompressedEncryptSk, GGLWEEncryptSk, GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
     decryption::GLWEDecrypt,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
@@ -28,7 +27,6 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GGLWEEncryptSk<BE>
         + GGLWEPreparedFactory<BE>
-        + GGLWEKeyswitch<BE>
         + GLWEDecrypt<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
@@ -163,7 +161,6 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::noi
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GGLWEEncryptSk<BE>
         + GGLWEPreparedFactory<BE>
-        + GGLWEKeyswitch<BE>
         + GLWEDecrypt<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
@@ -306,7 +303,6 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GGLWEEncryptSk<BE>
         + GGLWEPreparedFactory<BE>
-        + GGLWEKeyswitch<BE>
         + GLWEDecrypt<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>

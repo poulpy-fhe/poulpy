@@ -3,10 +3,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::layouts::{
-    GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
-    GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
-};
+use crate::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
 
 pub trait GLWETrace<BE: Backend> {
     fn glwe_trace_galois_elements(&self) -> Vec<i64>;
@@ -202,19 +199,6 @@ pub trait GLWERotate<BE: Backend> {
     fn glwe_rotate_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE>;
-}
-
-pub trait GGSWRotate<BE: Backend> {
-    fn ggsw_rotate_tmp_bytes(&self) -> usize;
-
-    fn ggsw_rotate<R, A>(&self, k: i64, res: &mut R, a: &A)
-    where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos;
-
-    fn ggsw_rotate_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGSWToBackendMut<BE> + GGSWInfos;
 }
 
 pub trait GLWEMulXpMinusOne<BE: Backend> {

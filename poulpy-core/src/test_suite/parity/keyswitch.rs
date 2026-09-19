@@ -18,7 +18,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GGLWEKeyswitch, GLWEKeyswitch,
+    GLWEKeyswitch,
     api::TransferInto,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendRef, GLWELayout, LWEInfos, ModuleCoreAlloc,
@@ -307,71 +307,6 @@ pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
             let mut have = module_ref.glwe_alloc_from_infos(&res_infos);
             res_test.transfer_into(&mut have);
             assert_eq!(res_ref, have, "glwe_keyswitch_assign: rank={rank} dsize={dsize} k={k}");
-        }
-    }
-}
-
-/// `gglwe_keyswitch` agrees with the reference backend byte-for-byte.
-pub fn test_gglwe_keyswitch_parity<BR, BT>(
-    params: &TestParams,
-    shapes: &ParityShapes,
-    module_ref: &Module<BR>,
-    module_test: &Module<BT>,
-) where
-    BR: ParityBackend,
-    BT: ParityBackend,
-    BR::OwnedBuf: HostDataMut,
-    Module<BR>: GGLWEKeyswitch<BR> + GGLWEPreparedFactory<BR>,
-    Module<BT>: GGLWEKeyswitch<BT> + GGLWEPreparedFactory<BT>,
-    ScratchOwned<BR>: ScratchOwnedAlloc<BR> + ScratchOwnedBorrow<BR>,
-    ScratchOwned<BT>: ScratchOwnedAlloc<BT> + ScratchOwnedBorrow<BT>,
-{
-    assert_eq!(module_ref.n(), module_test.n());
-
-    let n = module_ref.n() as u32;
-    let base2k = params.base2k;
-    let k = 4 * base2k + 1;
-    let mut source = Source::new([23u8; 32]);
-
-    for &rank in &shapes.ranks {
-        for dsize in shapes.dsizes(k, base2k) {
-            let a_infos = key_layout(n, base2k, k, 1, rank, rank);
-            let res_infos = key_layout(n, base2k, k, 1, rank, rank);
-            let key_infos = key_layout(n, base2k, k, dsize, rank, rank);
-
-            let a_ref = ref_gglwe(module_ref, &a_infos, &mut source);
-            let key_ref_coeffs = ref_gglwe(module_ref, &key_infos, &mut source);
-
-            let mut a_test = module_test.gglwe_alloc_from_infos(&a_infos);
-            a_ref.transfer_into(&mut a_test);
-            let mut key_test_coeffs = module_test.gglwe_alloc_from_infos(&key_infos);
-            key_ref_coeffs.transfer_into(&mut key_test_coeffs);
-
-            let mut res_ref = module_ref.gglwe_alloc_from_infos(&res_infos);
-            let mut res_test = module_test.gglwe_alloc_from_infos(&res_infos);
-
-            let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(
-                module_ref
-                    .gglwe_prepare_tmp_bytes(&key_infos)
-                    .max(module_ref.gglwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos)),
-            );
-            let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(
-                module_test
-                    .gglwe_prepare_tmp_bytes(&key_infos)
-                    .max(module_test.gglwe_keyswitch_tmp_bytes(&res_infos, &a_infos, &key_infos)),
-            );
-
-            let mut key_ref = module_ref.gglwe_prepared_alloc_from_infos(&key_infos);
-            module_ref.gglwe_prepare(&mut key_ref, &key_ref_coeffs, &mut scratch_ref.borrow());
-            let mut key_test = module_test.gglwe_prepared_alloc_from_infos(&key_infos);
-            module_test.gglwe_prepare(&mut key_test, &key_test_coeffs, &mut scratch_test.borrow());
-
-            module_ref.gglwe_keyswitch(&mut res_ref, &a_ref, &key_ref.to_backend_ref(), &mut scratch_ref.borrow());
-            module_test.gglwe_keyswitch(&mut res_test, &a_test, &key_test.to_backend_ref(), &mut scratch_test.borrow());
-
-            let mut have = module_ref.gglwe_alloc_from_infos(&res_infos);
-            res_test.transfer_into(&mut have);
-            assert_eq!(res_ref, have, "gglwe_keyswitch: rank={rank} dsize={dsize} k={k}");
         }
     }
 }

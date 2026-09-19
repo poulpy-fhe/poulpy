@@ -28,8 +28,7 @@ pub use shift::*;
 pub use trace::*;
 
 use crate::oep::{
-    AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl,
-    GGLWEProductDigitsStridedImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
+    AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEProductDigitsStridedImpl, GLWEAddImpl, GLWECopyImpl,
     GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
     GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
     LWEKeyswitchImpl, SamplingImpl,
@@ -53,8 +52,6 @@ use poulpy_hal::{
 pub trait TestBackend:
     HalTestBackend
     + GLWEKeyswitchImpl
-    + GGLWEKeyswitchImpl
-    + GGSWKeyswitchImpl
     + LWEKeyswitchImpl
     + GLWEAddImpl
     + GLWENegateImpl
@@ -62,8 +59,6 @@ pub trait TestBackend:
     + GLWECopyImpl
     + HalVecZnxImpl
     + GLWEExternalProductImpl
-    + GGLWEExternalProductImpl
-    + GGSWExternalProductImpl
     + GLWETensoringImpl
     + GGLWEProductDigitsStridedImpl
     + GLWEMulConstImpl
@@ -74,7 +69,6 @@ pub trait TestBackend:
     + GLWENormalizeImpl
     + GLWETraceImpl
     + GLWEPackImpl
-    + GGSWRotateImpl
     + DecryptionImpl
     + ConversionImpl
     + AutomorphismImpl
@@ -90,8 +84,6 @@ impl<BE> TestBackend for BE
 where
     BE: HalTestBackend
         + GLWEKeyswitchImpl
-        + GGLWEKeyswitchImpl
-        + GGSWKeyswitchImpl
         + LWEKeyswitchImpl
         + GLWEAddImpl
         + GLWENegateImpl
@@ -99,8 +91,6 @@ where
         + GLWECopyImpl
         + HalVecZnxImpl
         + GLWEExternalProductImpl
-        + GGLWEExternalProductImpl
-        + GGSWExternalProductImpl
         + GLWETensoringImpl
         + GGLWEProductDigitsStridedImpl
         + GLWEMulConstImpl
@@ -111,7 +101,6 @@ where
         + GLWENormalizeImpl
         + GLWETraceImpl
         + GLWEPackImpl
-        + GGSWRotateImpl
         + DecryptionImpl
         + ConversionImpl
         + AutomorphismImpl

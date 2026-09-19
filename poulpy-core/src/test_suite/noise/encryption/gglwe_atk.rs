@@ -8,8 +8,8 @@ use poulpy_hal::{
 
 use crate::layouts::GLWESecretSampling;
 use crate::{
-    EncryptionLayout, GGLWEKeyswitch, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk,
-    GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
+    EncryptionLayout, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyCompressedEncryptSk,
+    GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyDecompress, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret,
@@ -27,7 +27,6 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::noise::Test
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWEAutomorphismKeyEncryptSk<BE>
-        + GGLWEKeyswitch<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESwitchingKeyCompressedEncryptSk<BE>
@@ -136,7 +135,6 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWEAutomorphismKeyCompressedEncryptSk<BE>
-        + GGLWEKeyswitch<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESwitchingKeyCompressedEncryptSk<BE>

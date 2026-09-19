@@ -5,22 +5,18 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     api::{
-        GGSWRotate, GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPacking,
-        GLWERotate, GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
+        GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWEMulXpMinusOne, GLWENegate, GLWENormalize, GLWEPacking, GLWERotate,
+        GLWEShift, GLWESub, GLWETensoring, GLWETrace, GLWEZero,
     },
-    layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
-        GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
-    },
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
     oep::{
-        GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
-        GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl,
-        GLWEZeroImpl,
+        GLWEAddImpl, GLWECopyImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl, GLWENormalizeImpl,
+        GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl, GLWEZeroImpl,
     },
     operations::{
-        GGSWRotateReference, GLWEAddReference, GLWECopyReference, GLWEMulConstReference, GLWEMulPlainReference,
-        GLWEMulXpMinusOneReference, GLWENegateReference, GLWENormalizeReference, GLWERotateReference, GLWEShiftReference,
-        GLWESubReference, GLWETensoringReference, GLWEZeroReference,
+        GLWEAddReference, GLWECopyReference, GLWEMulConstReference, GLWEMulPlainReference, GLWEMulXpMinusOneReference,
+        GLWENegateReference, GLWENormalizeReference, GLWERotateReference, GLWEShiftReference, GLWESubReference,
+        GLWETensoringReference, GLWEZeroReference,
     },
     reference::{glwe_packing::GLWEPackingReference, glwe_trace::GLWETraceReference},
 };
@@ -248,28 +244,6 @@ impl_operations_delegate!(
         R: GLWEToBackendMut<BE>,
     {
         BE::glwe_rotate_assign(self, k, res, scratch);
-    }
-);
-
-impl_operations_delegate!(
-    GGSWRotate<BE>,
-    GGSWRotateImpl,
-    GGSWRotateReference<BE>,
-    fn ggsw_rotate_tmp_bytes(&self) -> usize {
-        BE::ggsw_rotate_tmp_bytes(self)
-    },
-    fn ggsw_rotate<R, A>(&self, k: i64, res: &mut R, a: &A)
-    where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
-    {
-        BE::ggsw_rotate(self, k, res, a)
-    },
-    fn ggsw_rotate_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-    {
-        BE::ggsw_rotate_assign(self, k, res, scratch)
     }
 );
 

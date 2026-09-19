@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    api::{GGSWExpandRows, GGSWFromGGLWE, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFromGLWE, LWESampleExtract},
+    api::{GGSWExpandRows, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFromGLWE, LWESampleExtract},
     layouts::{
         GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos,
         LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef,
@@ -128,32 +128,6 @@ impl_conversion_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_expand_lwe_matrix(self, res, a, scratch)
-    }
-);
-
-impl_conversion_delegate!(
-    GGSWFromGGLWE<BE>,
-    [BE: Backend + ConversionImpl, Module<BE>: ConversionReference<BE>],
-    fn ggsw_from_gglwe_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
-    where
-        R: GGSWInfos,
-        A: GGLWEInfos,
-    {
-        BE::ggsw_from_gglwe_tmp_bytes(self, res_infos, tsk_infos)
-    }
-
-    fn ggsw_from_gglwe<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    )
-    where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: crate::layouts::GGLWEToBackendRef<BE> + GGLWEInfos,
-    {
-        BE::ggsw_from_gglwe(self, res, a, tsk, scratch)
     }
 );
 

@@ -7,9 +7,7 @@ use crate::{FFT64Avx512, NTT4x30Avx512};
 use crate::{FFT64Avx512Rayon, NTT4x30Avx512Rayon};
 use poulpy_core::{
     impl_conversion_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
-    impl_gglwe_automorphism_reference_full, impl_gglwe_external_product_reference_full, impl_gglwe_keyswitch_reference_full,
-    impl_gglwe_product_digits_strided_reference, impl_ggsw_automorphism_reference_full,
-    impl_ggsw_external_product_reference_full, impl_ggsw_keyswitch_reference_full, impl_glwe_automorphism_reference_full,
+    impl_gglwe_automorphism_reference_full, impl_gglwe_product_digits_strided_reference, impl_glwe_automorphism_reference_full,
     impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_packing_reference_full,
     impl_glwe_tensoring_reference, impl_glwe_trace_reference_full, impl_linear_transformation_reference_full,
     impl_lwe_keyswitch_reference_full,
@@ -641,11 +639,6 @@ impl_glwe_automorphism_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 impl_glwe_automorphism_reference_full!(NTT3x42Ifma);
 
-impl_ggsw_automorphism_reference_full!(FFT64Avx512);
-impl_ggsw_automorphism_reference_full!(NTT4x30Avx512);
-#[cfg(feature = "enable-ifma")]
-impl_ggsw_automorphism_reference_full!(NTT3x42Ifma);
-
 impl_gglwe_automorphism_reference_full!(FFT64Avx512);
 impl_gglwe_automorphism_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
@@ -676,16 +669,6 @@ impl_glwe_keyswitch_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 impl_glwe_keyswitch_reference_full!(NTT3x42Ifma);
 
-impl_gglwe_keyswitch_reference_full!(FFT64Avx512);
-impl_gglwe_keyswitch_reference_full!(NTT4x30Avx512);
-#[cfg(feature = "enable-ifma")]
-impl_gglwe_keyswitch_reference_full!(NTT3x42Ifma);
-
-impl_ggsw_keyswitch_reference_full!(FFT64Avx512);
-impl_ggsw_keyswitch_reference_full!(NTT4x30Avx512);
-#[cfg(feature = "enable-ifma")]
-impl_ggsw_keyswitch_reference_full!(NTT3x42Ifma);
-
 impl_lwe_keyswitch_reference_full!(FFT64Avx512);
 impl_lwe_keyswitch_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
@@ -705,16 +688,6 @@ impl_glwe_external_product_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 impl_glwe_external_product_reference_full!(NTT3x42Ifma);
 
-impl_gglwe_external_product_reference_full!(FFT64Avx512);
-impl_gglwe_external_product_reference_full!(NTT4x30Avx512);
-#[cfg(feature = "enable-ifma")]
-impl_gglwe_external_product_reference_full!(NTT3x42Ifma);
-
-impl_ggsw_external_product_reference_full!(FFT64Avx512);
-impl_ggsw_external_product_reference_full!(NTT4x30Avx512);
-#[cfg(feature = "enable-ifma")]
-impl_ggsw_external_product_reference_full!(NTT3x42Ifma);
-
 impl_linear_transformation_reference_full!(FFT64Avx512);
 impl_linear_transformation_reference_full!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
@@ -722,8 +695,6 @@ impl_linear_transformation_reference_full!(NTT3x42Ifma);
 
 #[cfg(feature = "enable-rayon")]
 impl_glwe_automorphism_reference_full!(FFT64Avx512Rayon);
-#[cfg(feature = "enable-rayon")]
-impl_ggsw_automorphism_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_gglwe_automorphism_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
@@ -737,10 +708,6 @@ impl_conversion_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_glwe_keyswitch_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_gglwe_keyswitch_reference_full!(FFT64Avx512Rayon);
-#[cfg(feature = "enable-rayon")]
-impl_ggsw_keyswitch_reference_full!(FFT64Avx512Rayon);
-#[cfg(feature = "enable-rayon")]
 impl_lwe_keyswitch_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
 impl_encryption_reference_full!(FFT64Avx512Rayon);
@@ -749,10 +716,6 @@ poulpy_cpu_ref::impl_sampling_host!(FFT64Avx512Rayon, fft64);
 #[cfg(feature = "enable-rayon")]
 impl_glwe_external_product_reference_full!(FFT64Avx512Rayon);
 #[cfg(feature = "enable-rayon")]
-impl_gglwe_external_product_reference_full!(FFT64Avx512Rayon);
-#[cfg(feature = "enable-rayon")]
-impl_ggsw_external_product_reference_full!(FFT64Avx512Rayon);
-#[cfg(feature = "enable-rayon")]
 impl_linear_transformation_reference_full!(FFT64Avx512Rayon);
 
 #[cfg(feature = "enable-rayon")]
@@ -760,21 +723,16 @@ mod ntt4x30_rayon_defaults {
     use super::*;
 
     impl_glwe_automorphism_reference_full!(NTT4x30Avx512Rayon);
-    impl_ggsw_automorphism_reference_full!(NTT4x30Avx512Rayon);
     impl_gglwe_automorphism_reference_full!(NTT4x30Avx512Rayon);
     impl_decryption_reference_full!(NTT4x30Avx512Rayon);
     impl_glwe_trace_reference_full!(NTT4x30Avx512Rayon);
     impl_glwe_packing_reference_full!(NTT4x30Avx512Rayon);
     impl_conversion_reference_full!(NTT4x30Avx512Rayon);
     impl_glwe_keyswitch_reference_full!(NTT4x30Avx512Rayon);
-    impl_gglwe_keyswitch_reference_full!(NTT4x30Avx512Rayon);
-    impl_ggsw_keyswitch_reference_full!(NTT4x30Avx512Rayon);
     impl_lwe_keyswitch_reference_full!(NTT4x30Avx512Rayon);
     impl_encryption_reference_full!(NTT4x30Avx512Rayon);
     poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx512Rayon, ntt4x30);
     impl_glwe_external_product_reference_full!(NTT4x30Avx512Rayon);
-    impl_gglwe_external_product_reference_full!(NTT4x30Avx512Rayon);
-    impl_ggsw_external_product_reference_full!(NTT4x30Avx512Rayon);
     impl_linear_transformation_reference_full!(NTT4x30Avx512Rayon);
 }
 
@@ -783,20 +741,15 @@ mod ifma_rayon_defaults {
     use super::*;
 
     impl_glwe_automorphism_reference_full!(NTT3x42IfmaRayon);
-    impl_ggsw_automorphism_reference_full!(NTT3x42IfmaRayon);
     impl_gglwe_automorphism_reference_full!(NTT3x42IfmaRayon);
     impl_decryption_reference_full!(NTT3x42IfmaRayon);
     impl_glwe_trace_reference_full!(NTT3x42IfmaRayon);
     impl_glwe_packing_reference_full!(NTT3x42IfmaRayon);
     impl_conversion_reference_full!(NTT3x42IfmaRayon);
     impl_glwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
-    impl_gglwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
-    impl_ggsw_keyswitch_reference_full!(NTT3x42IfmaRayon);
     impl_lwe_keyswitch_reference_full!(NTT3x42IfmaRayon);
     impl_encryption_reference_full!(NTT3x42IfmaRayon);
     poulpy_cpu_ref::impl_sampling_host!(NTT3x42IfmaRayon, ntt4x30);
     impl_glwe_external_product_reference_full!(NTT3x42IfmaRayon);
-    impl_gglwe_external_product_reference_full!(NTT3x42IfmaRayon);
-    impl_ggsw_external_product_reference_full!(NTT3x42IfmaRayon);
     impl_linear_transformation_reference_full!(NTT3x42IfmaRayon);
 }

@@ -45,7 +45,6 @@ poulpy_core::core_parity_test_suite! {
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
-        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -66,7 +65,6 @@ poulpy_core::core_parity_test_suite! {
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
-        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -88,7 +86,6 @@ poulpy_core::core_parity_test_suite! {
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
-        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -175,7 +172,6 @@ poulpy_core::core_parity_test_suite! {
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
-        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,
@@ -197,7 +193,6 @@ poulpy_core::core_parity_test_suite! {
     tests = {
         glwe_keyswitch => poulpy_core::test_suite::parity::test_glwe_keyswitch_parity,
         glwe_keyswitch_assign => poulpy_core::test_suite::parity::test_glwe_keyswitch_assign_parity,
-        gglwe_keyswitch => poulpy_core::test_suite::parity::test_gglwe_keyswitch_parity,
         glwe_automorphism => poulpy_core::test_suite::parity::test_glwe_automorphism_parity,
         glwe_external_product => poulpy_core::test_suite::parity::test_glwe_external_product_parity,
         glwe_add => poulpy_core::test_suite::parity::test_glwe_add_parity,

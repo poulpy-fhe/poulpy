@@ -3,9 +3,7 @@ use crate::{FFT64Neon, NTT4x30Neon};
 use crate::{FFT64NeonRayon, NTT4x30NeonRayon};
 use poulpy_core::{
     impl_conversion_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
-    impl_gglwe_automorphism_reference_full, impl_gglwe_external_product_reference_full, impl_gglwe_keyswitch_reference_full,
-    impl_gglwe_product_digits_strided_reference, impl_ggsw_automorphism_reference_full,
-    impl_ggsw_external_product_reference_full, impl_ggsw_keyswitch_reference_full, impl_glwe_automorphism_reference_full,
+    impl_gglwe_automorphism_reference_full, impl_gglwe_product_digits_strided_reference, impl_glwe_automorphism_reference_full,
     impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_packing_reference_full,
     impl_glwe_tensoring_reference, impl_glwe_trace_reference_full, impl_linear_transformation_reference_full,
     impl_lwe_keyswitch_reference_full,
@@ -28,8 +26,6 @@ impl_gglwe_product_digits_strided_reference!(NTT4x30NeonRayon);
 impl_glwe_automorphism_reference_full!(FFT64Neon);
 impl_glwe_automorphism_reference_full!(NTT4x30Neon);
 
-impl_ggsw_automorphism_reference_full!(FFT64Neon);
-impl_ggsw_automorphism_reference_full!(NTT4x30Neon);
 impl_gglwe_automorphism_reference_full!(FFT64Neon);
 impl_gglwe_automorphism_reference_full!(NTT4x30Neon);
 
@@ -45,10 +41,6 @@ impl_conversion_reference_full!(NTT4x30Neon);
 
 impl_glwe_keyswitch_reference_full!(FFT64Neon);
 impl_glwe_keyswitch_reference_full!(NTT4x30Neon);
-impl_gglwe_keyswitch_reference_full!(FFT64Neon);
-impl_gglwe_keyswitch_reference_full!(NTT4x30Neon);
-impl_ggsw_keyswitch_reference_full!(FFT64Neon);
-impl_ggsw_keyswitch_reference_full!(NTT4x30Neon);
 impl_lwe_keyswitch_reference_full!(FFT64Neon);
 impl_lwe_keyswitch_reference_full!(NTT4x30Neon);
 
@@ -59,10 +51,6 @@ poulpy_cpu_ref::impl_sampling_host!(NTT4x30Neon, ntt4x30);
 
 impl_glwe_external_product_reference_full!(FFT64Neon);
 impl_glwe_external_product_reference_full!(NTT4x30Neon);
-impl_gglwe_external_product_reference_full!(FFT64Neon);
-impl_gglwe_external_product_reference_full!(NTT4x30Neon);
-impl_ggsw_external_product_reference_full!(FFT64Neon);
-impl_ggsw_external_product_reference_full!(NTT4x30Neon);
 
 impl_linear_transformation_reference_full!(FFT64Neon);
 impl_linear_transformation_reference_full!(NTT4x30Neon);
@@ -74,20 +62,15 @@ mod rayon_defaults {
     macro_rules! impl_core_defaults {
         ($backend:ty) => {
             impl_glwe_automorphism_reference_full!($backend);
-            impl_ggsw_automorphism_reference_full!($backend);
             impl_gglwe_automorphism_reference_full!($backend);
             impl_decryption_reference_full!($backend);
             impl_glwe_trace_reference_full!($backend);
             impl_glwe_packing_reference_full!($backend);
             impl_conversion_reference_full!($backend);
             impl_glwe_keyswitch_reference_full!($backend);
-            impl_gglwe_keyswitch_reference_full!($backend);
-            impl_ggsw_keyswitch_reference_full!($backend);
             impl_lwe_keyswitch_reference_full!($backend);
             impl_encryption_reference_full!($backend);
             impl_glwe_external_product_reference_full!($backend);
-            impl_gglwe_external_product_reference_full!($backend);
-            impl_ggsw_external_product_reference_full!($backend);
             impl_linear_transformation_reference_full!($backend);
         };
     }

@@ -3,9 +3,7 @@ use crate::{FFT64Avx, NTT4x30Avx};
 use crate::{FFT64AvxRayon, NTT4x30AvxRayon};
 use poulpy_core::{
     impl_conversion_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
-    impl_gglwe_automorphism_reference_full, impl_gglwe_external_product_reference_full, impl_gglwe_keyswitch_reference_full,
-    impl_gglwe_product_digits_strided_reference, impl_ggsw_automorphism_reference_full,
-    impl_ggsw_external_product_reference_full, impl_ggsw_keyswitch_reference_full, impl_glwe_automorphism_reference_full,
+    impl_gglwe_automorphism_reference_full, impl_gglwe_product_digits_strided_reference, impl_glwe_automorphism_reference_full,
     impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full, impl_glwe_packing_reference_full,
     impl_glwe_tensoring_reference, impl_glwe_trace_reference_full, impl_linear_transformation_reference_full,
     impl_lwe_keyswitch_reference_full,
@@ -73,8 +71,6 @@ unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl for NTT4x30Avx {
 impl_glwe_automorphism_reference_full!(FFT64Avx);
 impl_glwe_automorphism_reference_full!(NTT4x30Avx);
 
-impl_ggsw_automorphism_reference_full!(FFT64Avx);
-impl_ggsw_automorphism_reference_full!(NTT4x30Avx);
 impl_gglwe_automorphism_reference_full!(FFT64Avx);
 impl_gglwe_automorphism_reference_full!(NTT4x30Avx);
 
@@ -90,10 +86,6 @@ impl_conversion_reference_full!(NTT4x30Avx);
 
 impl_glwe_keyswitch_reference_full!(FFT64Avx);
 impl_glwe_keyswitch_reference_full!(NTT4x30Avx);
-impl_gglwe_keyswitch_reference_full!(FFT64Avx);
-impl_gglwe_keyswitch_reference_full!(NTT4x30Avx);
-impl_ggsw_keyswitch_reference_full!(FFT64Avx);
-impl_ggsw_keyswitch_reference_full!(NTT4x30Avx);
 impl_lwe_keyswitch_reference_full!(FFT64Avx);
 impl_lwe_keyswitch_reference_full!(NTT4x30Avx);
 
@@ -104,10 +96,6 @@ poulpy_cpu_ref::impl_sampling_host!(NTT4x30Avx, ntt4x30);
 
 impl_glwe_external_product_reference_full!(FFT64Avx);
 impl_glwe_external_product_reference_full!(NTT4x30Avx);
-impl_gglwe_external_product_reference_full!(FFT64Avx);
-impl_gglwe_external_product_reference_full!(NTT4x30Avx);
-impl_ggsw_external_product_reference_full!(FFT64Avx);
-impl_ggsw_external_product_reference_full!(NTT4x30Avx);
 
 impl_linear_transformation_reference_full!(FFT64Avx);
 impl_linear_transformation_reference_full!(NTT4x30Avx);
@@ -117,38 +105,28 @@ mod rayon_defaults {
     use super::*;
 
     impl_glwe_automorphism_reference_full!(FFT64AvxRayon);
-    impl_ggsw_automorphism_reference_full!(FFT64AvxRayon);
     impl_gglwe_automorphism_reference_full!(FFT64AvxRayon);
     impl_decryption_reference_full!(FFT64AvxRayon);
     impl_glwe_trace_reference_full!(FFT64AvxRayon);
     impl_glwe_packing_reference_full!(FFT64AvxRayon);
     impl_conversion_reference_full!(FFT64AvxRayon);
     impl_glwe_keyswitch_reference_full!(FFT64AvxRayon);
-    impl_gglwe_keyswitch_reference_full!(FFT64AvxRayon);
-    impl_ggsw_keyswitch_reference_full!(FFT64AvxRayon);
     impl_lwe_keyswitch_reference_full!(FFT64AvxRayon);
     impl_encryption_reference_full!(FFT64AvxRayon);
     poulpy_cpu_ref::impl_sampling_host!(FFT64AvxRayon, fft64);
     impl_glwe_external_product_reference_full!(FFT64AvxRayon);
-    impl_gglwe_external_product_reference_full!(FFT64AvxRayon);
-    impl_ggsw_external_product_reference_full!(FFT64AvxRayon);
     impl_linear_transformation_reference_full!(FFT64AvxRayon);
 
     impl_glwe_automorphism_reference_full!(NTT4x30AvxRayon);
-    impl_ggsw_automorphism_reference_full!(NTT4x30AvxRayon);
     impl_gglwe_automorphism_reference_full!(NTT4x30AvxRayon);
     impl_decryption_reference_full!(NTT4x30AvxRayon);
     impl_glwe_trace_reference_full!(NTT4x30AvxRayon);
     impl_glwe_packing_reference_full!(NTT4x30AvxRayon);
     impl_conversion_reference_full!(NTT4x30AvxRayon);
     impl_glwe_keyswitch_reference_full!(NTT4x30AvxRayon);
-    impl_gglwe_keyswitch_reference_full!(NTT4x30AvxRayon);
-    impl_ggsw_keyswitch_reference_full!(NTT4x30AvxRayon);
     impl_lwe_keyswitch_reference_full!(NTT4x30AvxRayon);
     impl_encryption_reference_full!(NTT4x30AvxRayon);
     poulpy_cpu_ref::impl_sampling_host!(NTT4x30AvxRayon, ntt4x30);
     impl_glwe_external_product_reference_full!(NTT4x30AvxRayon);
-    impl_gglwe_external_product_reference_full!(NTT4x30AvxRayon);
-    impl_ggsw_external_product_reference_full!(NTT4x30AvxRayon);
     impl_linear_transformation_reference_full!(NTT4x30AvxRayon);
 }

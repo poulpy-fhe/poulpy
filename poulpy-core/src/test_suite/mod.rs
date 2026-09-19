@@ -76,24 +76,12 @@ macro_rules! core_backend_test_suite {
                 gglwe_tensor_key_compressed_encrypt_sk =>
                     $crate::test_suite::noise::encryption::test_gglwe_tensor_key_compressed_encrypt_sk,
                 gglwe_to_ggsw_key_encrypt_sk => $crate::test_suite::noise::encryption::test_gglwe_to_ggsw_key_encrypt_sk,
-                gglwe_switching_key_keyswitch => $crate::test_suite::noise::keyswitch::test_gglwe_switching_key_keyswitch,
-                gglwe_switching_key_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_gglwe_switching_key_keyswitch_assign,
-                gglwe_switching_key_external_product =>
-                    $crate::test_suite::noise::external_product::test_gglwe_switching_key_external_product,
-                gglwe_switching_key_external_product_assign =>
-                    $crate::test_suite::noise::external_product::test_gglwe_switching_key_external_product_assign,
                 gglwe_automorphism_key_automorphism =>
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism,
                 gglwe_automorphism_key_automorphism_assign =>
                     $crate::test_suite::noise::automorphism::test_gglwe_automorphism_key_automorphism_assign,
                 ggsw_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_encrypt_sk,
                 ggsw_compressed_encrypt_sk => $crate::test_suite::noise::encryption::test_ggsw_compressed_encrypt_sk,
-                ggsw_keyswitch => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch,
-                ggsw_keyswitch_assign => $crate::test_suite::noise::keyswitch::test_ggsw_keyswitch_assign,
-                ggsw_external_product => $crate::test_suite::noise::external_product::test_ggsw_external_product,
-                ggsw_external_product_assign => $crate::test_suite::noise::external_product::test_ggsw_external_product_assign,
-                ggsw_automorphism => $crate::test_suite::noise::automorphism::test_ggsw_automorphism,
-                ggsw_automorphism_assign => $crate::test_suite::noise::automorphism::test_ggsw_automorphism_assign,
                 lwe_keyswitch => $crate::test_suite::noise::keyswitch::test_lwe_keyswitch,
                 glwe_to_lwe => $crate::test_suite::noise::test_glwe_to_lwe,
                 lwe_to_glwe => $crate::test_suite::noise::test_lwe_to_glwe,

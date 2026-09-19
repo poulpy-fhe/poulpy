@@ -32,8 +32,7 @@
 //! trait and macro-forwards the rest:
 //!
 //! ```ignore
-//! use poulpy_core::oep::{GLWEKeyswitchReference, impl_gglwe_keyswitch_reference_full,
-//!                        impl_ggsw_keyswitch_reference_full, impl_lwe_keyswitch_reference_full};
+//! use poulpy_core::oep::{GLWEKeyswitchReference, impl_lwe_keyswitch_reference_full};
 //!
 //! impl GLWEKeyswitchReference<MyBackend> for Module<MyBackend> {
 //!     fn glwe_keyswitch_reference<R, A>(&self, res: &mut R, a: &A,
@@ -48,30 +47,27 @@
 //!     // ... tmp_bytes and assign
 //! }
 //!
-//! impl_gglwe_keyswitch_reference_full!(MyBackend);
-//! impl_ggsw_keyswitch_reference_full!(MyBackend);
 //! impl_lwe_keyswitch_reference_full!(MyBackend);
 //! ```
 //!
 //! `Module<MyBackend>` now implements the public `GLWEKeyswitch` trait, and the
-//! override composes: the reference GGLWE and GGSW bodies call
-//! `glwe_keyswitch_reference`, so they route through the fused kernel too.
+//! override composes: every reference body that key-switches a GLWE (the LWE
+//! conversions, the automorphisms, the trace) calls `glwe_keyswitch_reference`,
+//! so they route through the fused kernel too.
 //!
 //! The same shape applies where an `*Impl` trait spans several sub-families.
-//! `AutomorphismImpl` needs all three of `GLWEAutomorphismReference`,
-//! `GGSWAutomorphismReference` and `GGLWEAutomorphismReference`, so a backend with
-//! only a fused GLWE automorphism hand-writes that one and macro-forwards the
-//! other two:
+//! `AutomorphismImpl` needs both `GLWEAutomorphismReference` and
+//! `GGLWEAutomorphismReference`, so a backend with only a fused GLWE
+//! automorphism hand-writes that one and macro-forwards the other:
 //!
 //! ```ignore
 //! impl GLWEAutomorphismReference<MyBackend> for Module<MyBackend> { /* 9 methods */ }
-//! impl_ggsw_automorphism_reference_full!(MyBackend);
 //! impl_gglwe_automorphism_reference_full!(MyBackend);
 //! ```
 //!
 //! Note the size of that first impl. A `*Default` trait is abstract, so an
 //! override owes *every* method, not just the interesting one:
-//! `GLWEKeyswitchReference` is 3 methods, but `GLWEAutomorphismReference` is 9 —
+//! `GLWEKeyswitchReference` is 3 methods, but `GLWEAutomorphismReference` is 9,
 //! the plain and assign forms plus the `add`, `sub` and `sub_negate`
 //! compositions. An accelerator that only wants to replace the core map still
 //! writes the other six, forwarding them to
@@ -104,9 +100,7 @@ pub use sampling::*;
 
 pub use crate::{
     impl_conversion_reference_full, impl_decryption_reference_full, impl_encryption_reference_full,
-    impl_gglwe_automorphism_reference_full, impl_gglwe_external_product_reference_full, impl_gglwe_keyswitch_reference_full,
-    impl_ggsw_automorphism_reference_full, impl_ggsw_external_product_reference_full, impl_ggsw_keyswitch_reference_full,
-    impl_glwe_automorphism_reference_full, impl_glwe_external_product_reference_full, impl_glwe_keyswitch_reference_full,
-    impl_glwe_packing_reference_full, impl_glwe_trace_reference_full, impl_linear_transformation_reference_full,
-    impl_lwe_keyswitch_reference_full,
+    impl_gglwe_automorphism_reference_full, impl_glwe_automorphism_reference_full, impl_glwe_external_product_reference_full,
+    impl_glwe_keyswitch_reference_full, impl_glwe_packing_reference_full, impl_glwe_trace_reference_full,
+    impl_linear_transformation_reference_full, impl_lwe_keyswitch_reference_full,
 };

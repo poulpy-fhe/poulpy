@@ -20,16 +20,13 @@ use poulpy_hal::{
 use crate::{
     GLWERotate, ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut,
-        GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut,
-        LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
+        GGLWEInfos, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
+        GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef, Rank,
+        glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedBackendRef, GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
     },
     oep::{ConversionReference, GLWEKeyswitchReference},
-    reference::{
-        keyswitching::{GGLWEProductReference, gglwe_product_output_size},
-        operations::GLWECopyReference,
-    },
+    reference::keyswitching::{GGLWEProductReference, gglwe_product_output_size},
 };
 
 pub fn lwe_sample_extract_reference<BE, M, R, A>(module: &M, res: &mut R, a: &A)
@@ -454,53 +451,6 @@ pub fn lwe_from_glwe_reference<BE, M, R, A>(
         &vec_znx_backend_ref_from_ref::<BE>(&tmp_glwe_rank_1_ref.data).window_coeffs(0, n),
         1,
     );
-}
-
-pub fn ggsw_from_gglwe_tmp_bytes_reference<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
-where
-    BE: Backend,
-    M: ConversionReference<BE>,
-    R: GGSWInfos,
-    A: GGLWEInfos,
-{
-    module.ggsw_expand_rows_tmp_bytes_reference(res_infos, tsk_infos)
-}
-
-pub fn ggsw_from_gglwe_reference<BE, M, R, A>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
-    BE: Backend,
-    M: ConversionReference<BE> + ModuleN + GLWECopyReference<BE>,
-    R: GGSWToBackendMut<BE> + GGSWInfos,
-    A: GGLWEToBackendRef<BE> + GGLWEInfos,
-{
-    let mut res_backend = res.to_backend_mut();
-    let a_backend = a.to_backend_ref();
-
-    assert_eq!(res_backend.rank(), a_backend.rank_out());
-    assert_eq!(res_backend.dnum(), a_backend.dnum());
-    assert_eq!(res_backend.n(), module.n() as u32);
-    assert_eq!(a_backend.n(), module.n() as u32);
-    assert_eq!(tsk.n(), module.n() as u32);
-    assert_eq!(res_backend.base2k(), a_backend.base2k());
-    assert!(
-        scratch.available() >= module.ggsw_from_gglwe_tmp_bytes_reference(&res_backend, tsk),
-        "scratch.available(): {} < GGSWFromGGLWE::ggsw_from_gglwe_tmp_bytes: {}",
-        scratch.available(),
-        module.ggsw_from_gglwe_tmp_bytes_reference(&res_backend, tsk)
-    );
-
-    for row in 0..res_backend.dnum().into() {
-        let mut res_at = res_backend.at_view_mut(row, 0);
-        let a_at = a_backend.at_view(row, 0);
-        module.glwe_copy_reference(&mut res_at, &a_at, scratch);
-    }
-
-    module.ggsw_expand_row_reference(&mut res_backend, tsk, scratch)
 }
 
 pub fn ggsw_expand_rows_tmp_bytes_reference<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize

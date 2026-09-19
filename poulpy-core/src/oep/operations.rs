@@ -4,14 +4,11 @@ use std::collections::HashMap;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos,
-        GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey,
-    },
+    layouts::{GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey},
     operations::{
-        GGSWRotateReference, GLWEAddReference, GLWECopyReference, GLWEMulConstReference, GLWEMulPlainReference,
-        GLWEMulXpMinusOneReference, GLWENegateReference, GLWENormalizeReference, GLWERotateReference, GLWEShiftReference,
-        GLWESubReference, GLWEZeroReference,
+        GLWEAddReference, GLWECopyReference, GLWEMulConstReference, GLWEMulPlainReference, GLWEMulXpMinusOneReference,
+        GLWENegateReference, GLWENormalizeReference, GLWERotateReference, GLWEShiftReference, GLWESubReference,
+        GLWEZeroReference,
     },
     reference::{glwe_packing::GLWEPackingReference, glwe_trace::GLWETraceReference},
 };
@@ -210,24 +207,6 @@ pub unsafe trait GLWERotateImpl: Backend {
     fn glwe_rotate_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
     where
         R: GLWEToBackendMut<Self>;
-}
-
-/// Backend-provided GGSW rotation operations.
-///
-/// # Safety
-/// Implementations must preserve the GGSW structure for the backend and may only use scratch space
-/// and in-place mutation in ways compatible with the advertised contracts.
-pub unsafe trait GGSWRotateImpl: Backend {
-    fn ggsw_rotate_tmp_bytes(module: &Module<Self>) -> usize;
-
-    fn ggsw_rotate<R, A>(module: &Module<Self>, k: i64, res: &mut R, a: &A)
-    where
-        R: GGSWToBackendMut<Self> + GGSWAtViewMut<Self> + GGSWInfos,
-        A: GGSWToBackendRef<Self> + GGSWAtViewRef<Self> + GGSWInfos;
-
-    fn ggsw_rotate_assign<R>(module: &Module<Self>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, Self>)
-    where
-        R: GGSWToBackendMut<Self> + GGSWInfos;
 }
 
 /// Backend-provided multiplication by `X^p - 1` operations.
@@ -709,31 +688,6 @@ where
         R: GLWEToBackendMut<BE>,
     {
         module.glwe_normalize_assign_reference(res, scratch)
-    }
-}
-
-unsafe impl<BE: Backend> GGSWRotateImpl for BE
-where
-    Module<BE>: GGSWRotateReference<BE>,
-{
-    fn ggsw_rotate_tmp_bytes(module: &Module<BE>) -> usize {
-        module.ggsw_rotate_tmp_bytes_reference()
-    }
-
-    fn ggsw_rotate<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
-    where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
-    {
-        module.ggsw_rotate_reference(k, res, a)
-    }
-
-    fn ggsw_rotate_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-    {
-        let mut res_backend = res.to_backend_mut();
-        module.ggsw_rotate_assign_reference(k, &mut res_backend, scratch)
     }
 }
 

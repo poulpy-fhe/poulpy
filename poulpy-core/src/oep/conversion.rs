@@ -1,8 +1,8 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef,
+    GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos,
+    LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef,
     prepared::{GGLWEPreparedBackendRef, GGLWEToGGSWKeyPreparedBackendRef},
 };
 
@@ -50,21 +50,6 @@ pub unsafe trait ConversionImpl: Backend {
     ) where
         R: LWEToBackendMut<Self> + LWEInfos,
         A: GLWEToBackendRef<Self> + GLWEInfos;
-
-    fn ggsw_from_gglwe_tmp_bytes<R, A>(module: &Module<Self>, res_infos: &R, tsk_infos: &A) -> usize
-    where
-        R: GGSWInfos,
-        A: GGLWEInfos;
-
-    fn ggsw_from_gglwe<R, A>(
-        module: &Module<Self>,
-        res: &mut R,
-        a: &A,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: GGSWToBackendMut<Self> + GGSWInfos,
-        A: GGLWEToBackendRef<Self> + GGLWEInfos;
 
     fn glwe_expand_lwe_tmp_bytes<R, A>(module: &Module<Self>, lwe_infos: &R, a_infos: &A) -> usize
     where
@@ -142,21 +127,6 @@ pub trait ConversionReference<BE: Backend> {
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
-
-    fn ggsw_from_gglwe_tmp_bytes_reference<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
-    where
-        R: GGSWInfos,
-        A: GGLWEInfos;
-
-    fn ggsw_from_gglwe_reference<R, A>(
-        &self,
-        res: &mut R,
-        a: &A,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos;
 
     fn glwe_expand_lwe_tmp_bytes_reference<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
     where
@@ -247,27 +217,6 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         module.lwe_from_glwe_reference(res, a, a_idx, key, scratch)
-    }
-
-    fn ggsw_from_gglwe_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, tsk_infos: &A) -> usize
-    where
-        R: GGSWInfos,
-        A: GGLWEInfos,
-    {
-        module.ggsw_from_gglwe_tmp_bytes_reference(res_infos, tsk_infos)
-    }
-
-    fn ggsw_from_gglwe<R, A>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        tsk: &GGLWEToGGSWKeyPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        A: GGLWEToBackendRef<BE> + GGLWEInfos,
-    {
-        module.ggsw_from_gglwe_reference(res, a, tsk, scratch)
     }
 
     fn glwe_expand_lwe_tmp_bytes<R, A>(module: &Module<BE>, lwe_infos: &R, a_infos: &A) -> usize
@@ -383,27 +332,6 @@ macro_rules! impl_conversion_reference_full {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
                 $crate::reference::conversion::lwe_from_glwe_reference::<$be, _, _, _>(self, res, a, a_idx, key, scratch)
-            }
-
-            fn ggsw_from_gglwe_tmp_bytes_reference<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
-            where
-                R: $crate::layouts::GGSWInfos,
-                A: $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::conversion::ggsw_from_gglwe_tmp_bytes_reference::<$be, _, _, _>(self, res_infos, tsk_infos)
-            }
-
-            fn ggsw_from_gglwe_reference<R, A>(
-                &self,
-                res: &mut R,
-                a: &A,
-                tsk: &$crate::layouts::prepared::GGLWEToGGSWKeyPreparedBackendRef<'_, $be>,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
-            ) where
-                R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
-                A: $crate::layouts::GGLWEToBackendRef<$be> + $crate::layouts::GGLWEInfos,
-            {
-                $crate::reference::conversion::ggsw_from_gglwe_reference::<$be, _, _, _>(self, res, a, tsk, scratch)
             }
 
             fn glwe_expand_lwe_tmp_bytes_reference<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
