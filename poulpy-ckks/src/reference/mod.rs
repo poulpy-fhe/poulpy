@@ -5,9 +5,11 @@
 //! validated circuit: a backend runs them through the `impl_ckks_*_reference!`
 //! macros of [`crate::oep`], or overrides a family through its `oep` trait
 //! with a faster route to the same result, which the parity suite validates
-//! against these bodies: it runs the override and the reference body on the
-//! same inputs and requires the same result, and the override is correct only
-//! when that test passes.
+//! against an attested backend: it runs the override and that backend on the
+//! same inputs and requires the same result. Attestation is transitive
+//! back to these bodies: the portable backend runs them directly, and any
+//! backend already attested serves as the oracle for the next; an override is
+//! correct only when that test passes.
 
 pub mod add;
 pub mod bootstrapping;

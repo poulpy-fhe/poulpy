@@ -9,8 +9,9 @@
 //!
 //! The [`reference`](mod@crate::reference) module is the implementation of every CKKS operation, the
 //! only validated circuit; a backend override through [`oep`] is a faster route
-//! to the same result, validated by the parity suite against it and correct
-//! only when that test passes.
+//! to the same result, validated by the parity suite against an attested
+//! backend (attestation is transitive back to the reference) and correct only when that test
+//! passes.
 //!
 //! The crate uses a bivariate polynomial representation over the Torus
 //! (base-`2^{base2k}` digits) instead of the RNS representation used by

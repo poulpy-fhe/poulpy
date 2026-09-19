@@ -9,7 +9,9 @@
 //! across CPU, AVX, and future backends. The [`reference`](mod@crate::reference) module is the
 //! implementation of every operation, the only validated circuit; a backend
 //! override is a faster route to the same result, validated by the parity
-//! suite against it and correct only when that test passes.
+//! suite against an attested backend (attestation is transitive back to the
+//! reference, so any attested backend serves as the oracle) and correct only when that
+//! test passes.
 //!
 //! # Architecture
 //!

@@ -53,8 +53,8 @@ does not depend on any concrete backend crate. Its `reference` module is the
 implementation of every CKKS operation, composed from `poulpy-core` and
 `poulpy-hal`; a backend may override an operation through its `oep` trait with
 a faster route to the same result, never with a different behaviour; the
-override is validated by the parity test against the `reference` body on the
-overriding backend and is correct only when that test passes. Concrete execution comes from backend
+override is validated by the parity test against an attested backend, attestation being
+transitive back to `reference`, and is correct only when that test passes. Concrete execution comes from backend
 crates such as `poulpy-cpu-ref` and `poulpy-cpu-avx`.
 
 ## Design Notes
@@ -126,9 +126,11 @@ that follow the same pattern used throughout the Poulpy workspace:
 not a fallback. A backend overrides an operation by implementing the
 corresponding `oep` trait directly instead of the blanket wiring to `reference`,
 with a faster route to the same result. The override is validated, not
-trusted: the parity suite runs it and the `reference` body on the same inputs
-and requires the same result, and the override is correct only when that test
-passes on the overriding backend. Only hot-path operations need explicit
+trusted: the parity suite runs it and an attested backend on the same inputs
+and requires the same result. Attestation is transitive back to `reference`:
+the portable backend runs it directly, and any backend already attested serves
+as the oracle for the next (a GPU backend against an attested AVX-512 backend,
+for example); the override is correct only when that test passes. Only hot-path operations need explicit
 overrides; everything else runs `reference`.
 
 ### Layer descriptions
@@ -138,7 +140,7 @@ overrides; everything else runs `reference`.
 | `api` | public | Typed, ergonomic evaluator traits (`CKKSAddOps`, `CKKSMulOps`, `CKKSAffineOps`, …) that `Module<BE>` implements. These are what user code calls. |
 | `delegates` | crate-private | Implements each `api` trait on `Module<BE>` by delegating to `oep`. Also owns composite operations (affine, mul-add, dot-product, etc.) that are built from two or more primitives and therefore live above the OEP layer. |
 | `oep` | public | Operation Exposition Pattern. Each `CKKS*Impl<BE>` unsafe trait defines the raw dispatch surface: static methods taking `&Module<BE>` directly. A blanket `impl` wires every backend that satisfies the HAL bounds to the corresponding `reference` method. Macros (`impl_ckks_*_reference!`) are the only thing a backend crate needs to call to opt in. `CKKSImpl<BE>` is the aggregate supertrait required by composite ops. |
-| `reference` | public | One trait per operation family (e.g. `CKKSAddReference<BE>`) holding the implementation of every operation as regular methods on `Module<BE>`: the definition of what each operation computes and the only validated circuit. A backend that overrides an operation implements the corresponding `oep` trait directly with a faster route to the same result, validated by the parity test against this layer. |
+| `reference` | public | One trait per operation family (e.g. `CKKSAddReference<BE>`) holding the implementation of every operation as regular methods on `Module<BE>`: the definition of what each operation computes and the only validated circuit. A backend that overrides an operation implements the corresponding `oep` trait directly with a faster route to the same result, validated by the parity test against an attested backend, attestation being transitive back to this layer. |
 | `layouts` | public | CKKS-level data wrappers: `CKKSCiphertext<D>`, `CKKSPlaintext<D>`, `UnnormalizedCKKSCiphertext<D>`, allocation helpers (`CKKSModuleAlloc`), and the `CKKSPlaintextVecHostCodec<F>` encoding trait. |
 | `encoding` | public | Scheme-level encoding definitions shared by backends (e.g. the PaCo and SHIP host references `paco_coeff_encodings_host` / `ship_coeff_encodings_host`). Slot/coefficient encoding itself is a backend-resident operation exposed by `api::CKKSEncodingOps` and dispatched through `oep::CKKSEncodingImpl`. |
 | `test_suite` | public (feature `test-utils`) | Backend-agnostic test suite. Enable the `test-utils` feature (backend crates do so in dev-dependencies) and invoke `ckks_backend_test_suite!` in a backend crate's test module to run the full suite against that backend without duplicating test logic. |

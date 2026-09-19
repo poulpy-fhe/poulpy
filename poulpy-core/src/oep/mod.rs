@@ -12,8 +12,10 @@
 //!   each either forwarded to its reference body in [`crate::reference`] or
 //!   reimplemented as a faster route to the same result. The reference body is
 //!   the implementation; an override is validated by the parity suite, which
-//!   runs it against the reference body on the same inputs, and is correct
-//!   only when that test passes.
+//!   runs it against an attested backend on the same inputs (attestation is
+//!   transitive back to the reference body, so any attested backend serves
+//!   as the oracle),
+//!   and is correct only when that test passes.
 //! - [`SamplingImpl`] is the one exception: it has no `*Reference` twin and no
 //!   blanket impl, because `poulpy-core` has no reference body to offer. Every
 //!   other family's reference body composes HAL operations; drawing from a
