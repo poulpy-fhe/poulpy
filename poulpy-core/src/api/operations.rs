@@ -6,8 +6,6 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetAutomorphismKey, GetTensorKey};
 
 pub trait GLWETrace<BE: Backend> {
-    fn glwe_trace_galois_elements(&self) -> Vec<i64>;
-
     fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -27,8 +25,6 @@ pub trait GLWETrace<BE: Backend> {
 }
 
 pub trait GLWEPacking<BE: Backend> {
-    fn glwe_pack_galois_elements(&self) -> Vec<i64>;
-
     fn glwe_pack_tmp_bytes<R, K>(&self, res: &R, key: &K) -> usize
     where
         R: GLWEInfos,

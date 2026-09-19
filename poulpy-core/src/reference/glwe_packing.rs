@@ -79,8 +79,6 @@ fn pack_internal<M, A, B, H, BE: Backend>(
 
 #[doc(hidden)]
 pub trait GLWEPackingReference<BE: Backend> {
-    fn glwe_pack_galois_elements_reference(&self) -> Vec<i64>;
-
     fn glwe_pack_tmp_bytes_reference<R, K>(&self, res: &R, key: &K) -> usize
     where
         R: GLWEInfos,
@@ -102,14 +100,6 @@ pub trait GLWEPackingReference<BE: Backend> {
 /// Reference implementations of the [`GLWEPackingReference`] methods.
 pub mod glwe_packing_reference_impl {
     use super::*;
-
-    pub fn glwe_pack_galois_elements_reference<BE, M>(module: &M) -> Vec<i64>
-    where
-        BE: Backend,
-        M: GLWETrace<BE>,
-    {
-        module.glwe_trace_galois_elements()
-    }
 
     pub fn glwe_pack_tmp_bytes_reference<BE, M, R, K>(module: &M, res: &R, key: &K) -> usize
     where

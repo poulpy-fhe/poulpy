@@ -43,7 +43,7 @@ pub mod lwe;
 pub mod lwe_switching_key;
 pub mod lwe_to_glwe_key;
 
-pub use crate::api::{EncryptionInfos, GGSWEncryptSk, GLWEEncryptSk, GLWEMaskFill, LWEFillMask};
+pub use crate::api::{EncryptionInfos, GGSWEncryptSk, GLWEEncryptSk};
 pub use compressed::*;
 pub use gglwe::*;
 pub use gglwe_to_ggsw_key::*;

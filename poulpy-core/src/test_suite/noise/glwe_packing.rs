@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use itertools::Itertools;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScratchOwned},
+    layouts::{CyclotomicOrder, Module, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
@@ -88,7 +88,7 @@ where
 
     pt.encode_vec_i64(&data, pt_k.into());
 
-    let gal_els: Vec<i64> = module.glwe_pack_galois_elements();
+    let gal_els: Vec<i64> = crate::reference::glwe_trace::trace_galois_elements(module.log_n(), module.cyclotomic_order());
 
     let mut auto_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
     let mut tmp: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(&key_infos);

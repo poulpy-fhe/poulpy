@@ -276,8 +276,6 @@ pub unsafe trait GLWENormalizeImpl: Backend {
 /// Implementations must apply the requested automorphism sequence faithfully, interpret prepared
 /// keys correctly, and keep all accesses within the described ciphertext and scratch regions.
 pub unsafe trait GLWETraceImpl: Backend {
-    fn glwe_trace_galois_elements(module: &Module<Self>) -> Vec<i64>;
-
     fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<Self>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -308,8 +306,6 @@ pub unsafe trait GLWETraceImpl: Backend {
 /// Implementations must maintain ciphertext correctness while combining inputs, and must respect
 /// all backend buffer, aliasing, and scratch-space invariants expected by the higher layers.
 pub unsafe trait GLWEPackImpl: Backend {
-    fn glwe_pack_galois_elements(module: &Module<Self>) -> Vec<i64>;
-
     fn glwe_pack_tmp_bytes<R, K>(module: &Module<Self>, res: &R, key: &K) -> usize
     where
         R: GLWEInfos,
@@ -695,10 +691,6 @@ unsafe impl<BE: Backend> GLWETraceImpl for BE
 where
     Module<BE>: crate::reference::glwe_trace::GLWETraceReference<BE>,
 {
-    fn glwe_trace_galois_elements(module: &Module<BE>) -> Vec<i64> {
-        module.glwe_trace_galois_elements_reference()
-    }
-
     fn glwe_trace_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -733,10 +725,6 @@ where
     Module<BE>: crate::reference::glwe_packing::GLWEPackingReference<BE>,
     GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE>,
 {
-    fn glwe_pack_galois_elements(module: &Module<BE>) -> Vec<i64> {
-        module.glwe_pack_galois_elements_reference()
-    }
-
     fn glwe_pack_tmp_bytes<R, K>(module: &Module<BE>, res: &R, key: &K) -> usize
     where
         R: GLWEInfos,
@@ -775,10 +763,6 @@ macro_rules! impl_glwe_trace_reference_full {
                 $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_assign_tmp_bytes_reference::<$be, _, _, _>(
                     self, a_infos, key_infos,
                 )
-            }
-
-            fn glwe_trace_galois_elements_reference(&self) -> ::std::vec::Vec<i64> {
-                $crate::reference::glwe_trace::glwe_trace_reference_impl::glwe_trace_galois_elements_reference::<$be, _>(self)
             }
 
             fn glwe_trace_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -833,10 +817,6 @@ macro_rules! impl_glwe_trace_reference_full {
 macro_rules! impl_glwe_packing_reference_full {
     ($be:ty) => {
         impl $crate::reference::glwe_packing::GLWEPackingReference<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn glwe_pack_galois_elements_reference(&self) -> ::std::vec::Vec<i64> {
-                $crate::reference::glwe_packing::glwe_packing_reference_impl::glwe_pack_galois_elements_reference::<$be, _>(self)
-            }
-
             fn glwe_pack_tmp_bytes_reference<R, K>(&self, res: &R, key: &K) -> usize
             where
                 R: $crate::layouts::GLWEInfos,

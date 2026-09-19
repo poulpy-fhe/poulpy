@@ -43,17 +43,7 @@ mod key_prepared;
 /// [`bin_fhe_backend_test_suite!`](crate::bin_fhe_backend_test_suite).
 pub mod test_suite;
 
-pub(crate) fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
-    (0..log_n)
-        .map(|i| {
-            if i == 0 {
-                -1
-            } else {
-                poulpy_hal::layouts::galois_element(1 << (i - 1), cyclotomic_order)
-            }
-        })
-        .collect()
-}
+pub(crate) use poulpy_core::trace_galois_elements;
 
 pub use circuit::*;
 pub use key::*;

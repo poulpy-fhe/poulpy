@@ -327,9 +327,6 @@ impl_operations_delegate!(
     GLWETrace<BE>,
     GLWETraceImpl,
     GLWETraceReference<BE>,
-    fn glwe_trace_galois_elements(&self) -> Vec<i64> {
-        BE::glwe_trace_galois_elements(self)
-    },
     fn glwe_trace_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -359,9 +356,6 @@ impl_operations_delegate!(
     GLWEPacking<BE>,
     GLWEPackImpl,
     GLWEPackingReference<BE>,
-    fn glwe_pack_galois_elements(&self) -> Vec<i64> {
-        BE::glwe_pack_galois_elements(self)
-    },
     fn glwe_pack_tmp_bytes<R, K>(&self, res: &R, key: &K) -> usize
     where
         R: GLWEInfos,

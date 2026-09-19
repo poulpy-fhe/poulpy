@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssign, VecZnxSubAssign},
-    layouts::{Module, ScratchOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxViewMut},
+    layouts::{CyclotomicOrder, Module, ScratchOwned, VecZnxToBackendMut, VecZnxToBackendRef, ZnxViewMut},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
@@ -113,7 +113,7 @@ where
         );
 
         let mut auto_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
-        let gal_els: Vec<i64> = module.glwe_trace_galois_elements();
+        let gal_els: Vec<i64> = crate::reference::glwe_trace::trace_galois_elements(module.log_n(), module.cyclotomic_order());
         let tmp_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
             module.glwe_automorphism_key_alloc_from_infos(&key_infos);
         gal_els.iter().for_each(|gal_el| {

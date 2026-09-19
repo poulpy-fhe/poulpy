@@ -14,7 +14,7 @@
 //! are skipped, allowing partial traces that project onto larger subspaces.
 //!
 //! Requires automorphism keys indexed by the Galois elements returned
-//! from [`GLWETrace::glwe_trace_galois_elements`].
+//! from [`trace_galois_elements`].
 
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
@@ -127,8 +127,6 @@ pub trait GLWETraceReference<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace_galois_elements_reference(&self) -> Vec<i64>;
-
     fn glwe_trace_tmp_bytes_reference<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -186,14 +184,6 @@ pub mod glwe_trace_reference_impl {
         module
             .glwe_shift_tmp_bytes(a_infos.size())
             .max(module.glwe_automorphism_tmp_bytes(a_infos, a_infos, key_infos))
-    }
-
-    pub fn glwe_trace_galois_elements_reference<BE, M>(module: &M) -> Vec<i64>
-    where
-        BE: Backend,
-        M: ModuleLogN + CyclotomicOrder,
-    {
-        trace_galois_elements(module.log_n(), module.cyclotomic_order())
     }
 
     pub fn glwe_trace_tmp_bytes_reference<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
