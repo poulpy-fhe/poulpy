@@ -95,7 +95,7 @@
 //! - `enable-ifma`: implies `enable-avx512f` and also exports `NTT3x42Ifma`.
 //! - `enable-rayon`: implies `enable-avx512f` and exports `FFT64Avx512Rayon` and `NTT4x30Avx512Rayon`;
 //!   with `enable-ifma`, it also exports `NTT3x42IfmaRayon`.
-//! - `enable-ckks`: wires these backends into `poulpy-ckks` defaults.
+//! - `enable-ckks`: wires these backends into the `poulpy-ckks` reference implementations.
 //!
 //! # Platform support
 //!

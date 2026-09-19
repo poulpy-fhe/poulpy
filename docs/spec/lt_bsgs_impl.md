@@ -23,7 +23,7 @@ and so the layout/schedule math stays free of any backend.
 
 | File | Role | Spec § |
 |---|---|---|
-| [`linear_transformation.rs`](../../poulpy-core/src/reference/linear_transformation.rs) | Module root: re-exports the data types and the `*_default` reference functions a backend forwards to. | §11 |
+| [`linear_transformation.rs`](../../poulpy-core/src/reference/linear_transformation.rs) | Module root: re-exports the data types and the `*_reference` functions a backend forwards to. | §11 |
 | [`prepare.rs`](../../poulpy-core/src/reference/linear_transformation/prepare.rs) | **Setup, RHS:** encode-then-`cnv_prepare_right` the matrix diagonals into `CnvPVecR`. | §5 |
 | [`baby_steps.rs`](../../poulpy-core/src/reference/linear_transformation/baby_steps.rs) | **Setup, LHS / Phase A:** hoisted baby rotations `rot(v,k)`, prepared as `CnvPVecL`. | §6.2 |
 | [`inner_product.rs`](../../poulpy-core/src/reference/linear_transformation/inner_product.rs) | **Phase B, PROD:** per-giant DFT-domain inner sum `Σ_k ũ_{j,k} ⊙ rot(v,k)`. | §6.3 |
@@ -204,7 +204,7 @@ this final normalize.
 
 ## 5. Public entry points + scratch ([`eval.rs`](../../poulpy-core/src/reference/linear_transformation/eval.rs))
 
-These `*_default` free functions are what a backend forwards to from its
+These `*_reference` free functions are what a backend forwards to from its
 `crate::oep::LinearTransformationReference` impl (via `impl_linear_transformation_reference_full!`):
 
 | Function | Does |
@@ -212,8 +212,8 @@ These `*_default` free functions are what a backend forwards to from its
 | `glwe_prepare_linear_transformation_rhs_reference` | Setup §3.1 (prepare.rs). |
 | `glwe_prepare_linear_transformation_baby_steps_reference` | Setup §3.2 / Phase A (baby_steps.rs). |
 | `glwe_eval_linear_transformation_into_reference` | Prepared eval (§4) — asserts ≥ 1 non-empty giant step, then `glwe_eval_giant_steps`. |
-| `glwe_eval_linear_transformation_unprepared_rhs_into_default` | Streamed eval (§6). |
-| `*_tmp_bytes_default` siblings | Scratch sizing. |
+| `glwe_eval_linear_transformation_unprepared_rhs_into_reference` | Streamed eval (§6). |
+| `*_tmp_bytes_reference` siblings | Scratch sizing. |
 
 **Scratch sizing.** The `*_tmp_bytes` functions follow the additive-layout pattern of
 `glwe_keyswitch_tmp_bytes_reference`: they size each route (lazy DFT vs fallback, hoisted vs

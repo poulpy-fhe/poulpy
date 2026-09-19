@@ -26,7 +26,7 @@
 //! # Taking the override surface
 //!
 //! A backend opts into the reference algorithms one family at a time, with the
-//! `impl_*_defaults_full!` macros re-exported below. Each macro implements a
+//! `impl_*_reference_full!` macros re-exported below. Each macro implements a
 //! single `*Default` trait by forwarding every method to the corresponding
 //! reference body, so a backend that accelerates one family hand-writes that
 //! trait and macro-forwards the rest:
